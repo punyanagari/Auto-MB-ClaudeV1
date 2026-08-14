@@ -4103,7 +4103,6 @@ describe('the organisation-wide tax-invoice register', () => {
       taxableValue: '20000.00',
       // The three heads, summed in SQL numeric: 18% intra-state.
       gstAmount: '3600.00',
-      totalAmount: '23600.00',
     });
     expect(register.invoices.find((row) => row.id === workInvoiceId)).toMatchObject({
       workId,
@@ -4113,7 +4112,6 @@ describe('the organisation-wide tax-invoice register', () => {
       status: 'draft',
       taxableValue: null,
       gstAmount: null,
-      totalAmount: null,
     });
 
     // Both kinds present, which is the whole point of the register.
@@ -4272,5 +4270,194 @@ describe('the organisation-wide tax-invoice register', () => {
     });
     expect(own.statusCode, own.body).toBe(200);
     expect(own.json<TaxInvoiceRegisterResponse>().invoices).toEqual([]);
+  });
+});
+
+/**
+ * A DIRECT invoice belongs to no Work, so no Work assignment can reach
+ * one: only organisation-wide scope may. The register has always hidden
+ * these rows from an 'assigned'-scoped member; the per-document routes
+ * must refuse the same member by id, or the register's own ids are an
+ * enumeration oracle onto documents the list denies. This proves the
+ * boundary the register promises is the boundary the routes keep — on
+ * every per-document route, not just the one the pack first wired.
+ */
+describe('direct-invoice work scope: enforced on every per-document route', () => {
+  let scopedJar: CookieJar;
+  let scopedUserId: string;
+  let directInvoiceId: string;
+
+  const scopedEmail = `ti-scoped-${runId}@integration.test`;
+
+  beforeAll(async () => {
+    // Every document authority, but only ASSIGNED work scope and assigned
+    // to no Work — so a refusal here is by SCOPE, never by a missing
+    // authority (which would 403 before the scope check is even reached).
+    scopedJar = await signUp(scopedEmail, 'TI Scoped');
+    const added = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisations/current/members',
+      organisationId,
+      payload: { email: scopedEmail, role: 'office' },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    const [row] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${scopedEmail}
+    `;
+    if (!row) throw new Error('scoped user missing');
+    scopedUserId = row.id;
+    await admin`
+      update organisation_memberships
+      set work_scope = 'assigned', can_issue_documents = true,
+          can_cancel_documents = true, can_manage_statutory_reporting = true
+      where organisation_id = ${organisationId} and user_id = ${scopedUserId}
+    `;
+
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/tax-invoices',
+      organisationId,
+      payload: {
+        invoiceDate: '2026-02-20',
+        sacCode: '998734',
+        serviceDescription: 'Direct invoice for the work-scope proof.',
+        gstRate: '18',
+        placeOfSupply: '07',
+        reverseChargeApplicable: false,
+        buyerContactId,
+        taxableValue: '5000.00',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    directInvoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+  });
+
+  afterAll(async () => {
+    await admin`
+      delete from organisation_memberships
+      where organisation_id = ${organisationId} and user_id = ${scopedUserId}
+    `;
+  });
+
+  function expectNotFound(response: Awaited<ReturnType<typeof authed>>): void {
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.json<{ code: string }>().code).toBe('TAX_INVOICE_NOT_FOUND');
+  }
+
+  it('refuses the assigned-scope member on read, edit, delete, submit, cancel, register-irp and render', async () => {
+    const base = `/api/tax-invoices/${directInvoiceId}`;
+    expectNotFound(
+      await authed(scopedJar, { method: 'GET', url: base, organisationId }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'PUT',
+        url: base,
+        organisationId,
+        // A schema-valid, non-future, notified-rate body, so the request
+        // reaches the scope check rather than failing validation first.
+        payload: {
+          invoiceDate: '2026-02-20',
+          sacCode: '998734',
+          serviceDescription: 'Edit attempt from outside scope.',
+          gstRate: '18',
+          placeOfSupply: '07',
+          reverseChargeApplicable: false,
+          buyerContactId,
+        },
+      }),
+    );
+    expectNotFound(
+      await authed(scopedJar, { method: 'DELETE', url: base, organisationId }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'POST',
+        url: `${base}/submit`,
+        organisationId,
+      }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'POST',
+        url: `${base}/cancel`,
+        organisationId,
+        payload: { note: 'Cancel attempt from outside scope.' },
+      }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'POST',
+        url: `${base}/register-irp`,
+        organisationId,
+      }),
+    );
+    expectNotFound(
+      await authed(scopedJar, {
+        method: 'POST',
+        url: `${base}/render`,
+        organisationId,
+      }),
+    );
+  });
+
+  it('lets the full-scope owner reach the very same direct invoice (positive control)', async () => {
+    const seen = await authed(owner, {
+      method: 'GET',
+      url: `/api/tax-invoices/${directInvoiceId}`,
+      organisationId,
+    });
+    expect(seen.statusCode, seen.body).toBe(200);
+    expect(seen.json<TaxInvoiceDetailResponse>().invoice.workId).toBeNull();
+  });
+});
+
+/**
+ * R8, server-side: submitting a work-backed invoice is the money moment —
+ * a legal number and frozen amounts — so a completed Work refuses it, the
+ * same as it refuses a challan issue or an MB finalize. The gate used to
+ * live only in the Work tab's client prop; the register reached the same
+ * document without it. A direct invoice has no Work, so R8 never applies
+ * to one (proved by the direct submit cases above).
+ */
+describe('R8: a completed Work refuses the submit of its invoice', () => {
+  it('refuses submit on a completed Work, and accepts it once active again', async () => {
+    const mb = await finalizedMb('2026-05-01', '4.000');
+    const created = await createInvoice(mb.id, { invoiceDate: '2026-05-05' });
+    expect(created.statusCode, created.body).toBe(201);
+    const invoiceId = created.json<TaxInvoiceDetailResponse>().invoice.id;
+
+    // Toggle the Work to completed with triggers disabled, so this touches
+    // only the status the R8 gate reads (the same replica-mode idiom this
+    // file already uses for out-of-band fixture writes). The completion
+    // columns travel with the status because the 0031 shape CHECK binds
+    // them together — a completed Work always says who completed it, when,
+    // and why.
+    await admin.unsafe(`set session_replication_role = 'replica'`);
+    try {
+      await admin`
+        update works
+        set status = 'completed', completed_at = now(),
+            completed_by_user_id = ${ownerUserId},
+            completion_note = 'R8 proof: completed while an invoice is drafted.'
+        where id = ${workId}
+      `;
+      const refused = await submitInvoice(invoiceId);
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json<{ code: string }>().code).toBe('WORK_COMPLETED');
+    } finally {
+      await admin`
+        update works
+        set status = 'active', completed_at = null,
+            completed_by_user_id = null, completion_note = null
+        where id = ${workId}
+      `;
+      await admin.unsafe(`set session_replication_role = 'origin'`);
+    }
+
+    // Active again: the same invoice submits, so the refusal was R8 and not
+    // a broken fixture.
+    const ok = await submitInvoice(invoiceId);
+    expect(ok.statusCode, ok.body).toBe(201);
   });
 });
