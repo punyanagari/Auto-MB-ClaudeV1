@@ -1733,4 +1733,201 @@ describe('the standalone delivery challan as an e-way bill source', () => {
       organisationId,
     });
   });
+
+  it('refuses cancelling the challan while its e-way bill is live', async () => {
+    // goodsChallanId still carries the generated bill raised above. The
+    // challan cancel route mirrors the invoice interlock: the e-way bill
+    // moves this challan, so it goes first. (Guard-proof: stash the
+    // eway_bills read in the challan cancel route and this flips to 200.)
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${goodsChallanId}/cancel`,
+      organisationId,
+      payload: { note: 'trying to cancel under a live movement' },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe('EWAY_BILL_LIVE');
+    // The challan is untouched: still issued, still eligible.
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/challans/${goodsChallanId}`,
+      organisationId,
+    });
+    expect(detail.json<ChallanDetailResponse>().challan.status).toBe('issued');
+  });
+
+  it('refuses generating an e-way bill whose challan was cancelled under it', async () => {
+    resetProviderMocks();
+    const challanId = await standaloneChallan(
+      [
+        {
+          description: 'Cable drum',
+          unit: 'nos',
+          quantity: '1',
+          rate: '10.00',
+          hsnSacCode: '85444999',
+          isService: false,
+        },
+      ],
+      { movementReason: 'supply' },
+    );
+    const drafted = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/challans/${challanId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    const billId = drafted.json<EwayBillDetailResponse>().ewayBill.id;
+    // Force the state the route interlock normally prevents — a cancelled
+    // challan under a still-draft bill — so the generate route's own
+    // status re-read is what has to refuse. (Guard-proof: stash the
+    // challan re-read in the generate route and this reaches NIC instead.)
+    await admin`
+      update delivery_challans
+      set status = 'cancelled', cancelled_by_user_id = ${ownerUserId},
+          cancelled_at = now(), cancellation_note = 'forced for the backstop test'
+      where id = ${challanId}
+    `;
+    const generated = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${billId}/generate`,
+      organisationId,
+    });
+    expect(generated.statusCode, generated.body).toBe(409);
+    expect(generated.json<{ code: string }>().code).toBe('CHALLAN_STATUS_CONFLICT');
+    // The refusal is reached before any NIC call: no evidence attaches to a
+    // cancelled consignment.
+    expect(generateEwayBillDirectProvider).not.toHaveBeenCalled();
+  });
+
+  it('refuses a half-classified line at the database, both halves', async () => {
+    // A DRAFT challan, so 0001's line-mutation guard permits the write and
+    // 0075's code-shape CHECK is the thing that speaks. The route rejects a
+    // half-state as LINE_SHAPE_INVALID (proven above); this proves the
+    // database refuses it too, which is what stops readChallanSourceFacts
+    // silently dropping a half-line from the NIC declaration. (Guard-proof:
+    // revert the CHECK to the three-valued OR chain and both halves pass.)
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: '/api/delivery-challans',
+      organisationId,
+      payload: {
+        challanDate: '2026-08-08',
+        prefix: 'SDC',
+        consigneeContactId: buyerContactId,
+        movementReason: 'supply',
+        items: [
+          {
+            description: 'Cable drum',
+            unit: 'nos',
+            quantity: '1',
+            rate: '10.00',
+            hsnSacCode: '85444999',
+            isService: false,
+          },
+        ],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const draftId = draft.json<ChallanDetailResponse>().challan.id;
+    // hsn set, kind cleared.
+    await expect(
+      admin`
+        update delivery_challan_items set is_service = null
+        where delivery_challan_id = ${draftId}
+      `,
+    ).rejects.toThrow(/delivery_challan_items_code_shape/);
+    // kind set, hsn cleared.
+    await expect(
+      admin`
+        update delivery_challan_items set hsn_sac_code = null
+        where delivery_challan_id = ${draftId}
+      `,
+    ).rejects.toThrow(/delivery_challan_items_code_shape/);
+    await authed(owner, {
+      method: 'DELETE',
+      url: `/api/challans/${draftId}`,
+      organisationId,
+    });
+  });
+
+  it('refuses repointing a rendered bill at another tenant or an untracked object', async () => {
+    // Tenancy: 0076 copied the render ledger but omitted 0044's
+    // render-pointer machinery. Ported here — a parent key-scope CHECK plus
+    // the pointer guard — so /pdf can never be repointed at another
+    // tenant's object. (Guard-proof: stash both and the repoints below
+    // succeed.)
+    resetProviderMocks();
+    const challanId = await standaloneChallan(
+      [
+        {
+          description: 'Signalling cable',
+          unit: 'm',
+          quantity: '10',
+          rate: '100.00',
+          hsnSacCode: '85444999',
+          isService: false,
+        },
+      ],
+      { movementReason: 'supply' },
+    );
+    const drafted = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/challans/${challanId}/eway-bills`,
+      organisationId,
+      payload: roadBody({ vehicleNumber: 'DL01AB1234' }),
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    const billId = drafted.json<EwayBillDetailResponse>().ewayBill.id;
+    generateEwayBillDirectProvider.mockResolvedValueOnce({
+      ewbNumber: '991234567890',
+      ewbDateText: '08/08/2026 12:00:00',
+      ewbDate: '2026-08-08T06:30:00.000Z',
+      validUntilText: '09/08/2026 23:59:59',
+      validUntil: '2026-08-09T18:29:59.000Z',
+      rawResponse: '{"ewayBillNo":991234567890}',
+    });
+    const generated = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${billId}/generate`,
+      organisationId,
+    });
+    expect(generated.statusCode, generated.body).toBe(200);
+    const rendered = await authedOn(providerApp, owner, {
+      method: 'POST',
+      url: `/api/eway-bills/${billId}/render`,
+      organisationId,
+    });
+    expect(rendered.statusCode, rendered.body).toBe(200);
+    const [before] = await admin<{ rendered_object_key: string | null }[]>`
+      select rendered_object_key from eway_bills where id = ${billId}
+    `;
+    expect(before?.rendered_object_key).not.toBeNull();
+
+    // Cross-tenant: a key under another organisation's prefix is refused.
+    await expect(
+      admin`
+        update eway_bills
+        set rendered_object_key = ${`${outsiderOrganisationId}/ewb/forged.pdf`}
+        where id = ${billId}
+      `,
+    ).rejects.toMatchObject({ code: '23514' });
+
+    // Same-tenant but untracked: only the pointer guard catches this, so it
+    // proves the guard and not just the scope CHECK.
+    await expect(
+      admin`
+        update eway_bills
+        set rendered_object_key = ${`${organisationId}/ewb/untracked.pdf`}
+        where id = ${billId}
+      `,
+    ).rejects.toThrow(/render pointer must match its latest retained version/);
+
+    // The pointer is unmoved, so /pdf keeps serving the tracked bytes.
+    const [after] = await admin<{ rendered_object_key: string | null }[]>`
+      select rendered_object_key from eway_bills where id = ${billId}
+    `;
+    expect(after?.rendered_object_key).toBe(before?.rendered_object_key);
+  });
 });
