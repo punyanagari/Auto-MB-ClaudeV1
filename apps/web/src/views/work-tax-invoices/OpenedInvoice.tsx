@@ -71,6 +71,14 @@ export function OpenedInvoice({
   // and an ITEMISED one carries goods when any of its lines does.
   const invoiceCarriesGoods =
     invoice.lineShape === 'itemised' && detail.lines.some((line) => !line.isService);
+  // A bill can be RAISED only from a submitted goods invoice; a cancelled
+  // one keeps its history for cancel/reconcile but offers no new Raise.
+  const invoiceEwayEligible = invoice.status === 'submitted' && invoiceCarriesGoods;
+  // The panel is shown for any NON-DRAFT invoice, not only a submitted one:
+  // an invoice cancelled while its e-way bill is still live must keep the
+  // panel so the bill stays cancellable and reconcilable, which is exactly
+  // what the service-only refusal copy promises. A draft never has bills.
+  const showEwayPanel = invoice.status !== 'draft';
   return (
     <section>
       <InvoiceDetail
@@ -117,7 +125,7 @@ export function OpenedInvoice({
         refresh={refresh}
       />
 
-      {invoice.status === 'submitted' && (
+      {showEwayPanel && (
         <EwayBillsPanel
           api={api}
           organisationId={organisationId}
@@ -129,8 +137,11 @@ export function OpenedInvoice({
             // cumulative invoice carries one SAC service line by
             // definition and can never raise a bill; an itemised one is
             // asked whether any of its lines is goods. The server holds
-            // the same rule and refuses the same documents.
-            eligible: invoiceCarriesGoods,
+            // the same rule and refuses the same documents. Raising also
+            // requires a SUBMITTED invoice, so a cancelled one is not
+            // eligible even when its lines are goods — its bills stay
+            // visible for cancel/reconcile, but no new Raise is offered.
+            eligible: invoiceEwayEligible,
             refusal: invoiceCarriesGoods
               ? null
               : 'Every line of this invoice is a service. An e-way bill moves goods, so NIC refuses one for a service-only document; historical records stay readable, reconcilable and cancellable.',

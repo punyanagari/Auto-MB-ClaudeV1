@@ -277,7 +277,13 @@ async function readDetail(
       ewayBillEligible:
         row.challan_kind === 'standalone' &&
         row.status === 'issued' &&
-        challanEwayEligible(row.movement_reason, items),
+        challanEwayEligible(
+          row.movement_reason,
+          items.map((item) => ({
+            isService: item.isService ?? null,
+            hsnSacCode: item.hsnSacCode ?? null,
+          })),
+        ),
     },
     items,
     issuedSnapshot: parseJsonbColumn(row.issued_snapshot),

@@ -5,8 +5,9 @@ import { formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable } from '../ui/table.js';
-import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
+import { Field, FieldRow, Actions, FormError } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { openPdf } from '../lib/openPdf.js';
 import type { ActRunner } from './work-tax-invoices/shared.js';
 
 const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
@@ -265,7 +266,17 @@ export function EwayBillsPanel({
                     (bill.validUntil === null ? '—' : formatDate(bill.validUntil))}
                 </td>
                 <td>
-                  {bill.status === 'draft' && mayReconcile ? (
+                  {bill.status === 'draft' &&
+                  mayReconcile &&
+                  // Reconcile-by-lookup is the invoice path's alone: NIC's
+                  // lookup is by IRN and a challan-sourced bill has none, so
+                  // the route refuses it (EWAY_PROVIDER_STATE_CONFLICT). An
+                  // unknown challan generation is reconciled on the portal by
+                  // hand, so offer no dead button here.
+                  !(
+                    bill.providerState === 'generation_unknown' &&
+                    source.kind === 'delivery_challan'
+                  ) ? (
                     <Button
                       variant="secondary"
                       onClick={() => {
@@ -310,13 +321,9 @@ export function EwayBillsPanel({
                           variant="secondary"
                           onClick={() => {
                             void act(async () => {
-                              const blob = await api.downloadEwayBillPdf(
-                                organisationId,
-                                bill.id,
+                              await openPdf(() =>
+                                api.downloadEwayBillPdf(organisationId, bill.id),
                               );
-                              const url = URL.createObjectURL(blob);
-                              window.open(url, '_blank', 'noopener');
-                              URL.revokeObjectURL(url);
                             }, 'E-way bill summary opened in a new tab.');
                           }}
                           disabled={pending}
@@ -341,10 +348,13 @@ export function EwayBillsPanel({
       )}
 
       {ewayBills.some((bill) => bill.renderedAvailable === true) && (
-        <FormNotice>
+        // Standing legal text, not a transient success notice: a FormNotice
+        // self-destructs after a few seconds, and this disclaimer must stay
+        // visible for as long as a rendered summary exists.
+        <p className="text-muted-foreground">
           The rendered summary is a convenience print of the facts recorded here. The
           statutory e-way bill is the one held on the NIC portal.
-        </FormNotice>
+        </p>
       )}
 
       {mayCancelAtPortal &&

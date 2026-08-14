@@ -269,14 +269,31 @@ export function DeliveryChallans({
   // its Work — so only standalone details are fetched.
   useEffect(() => {
     let cancelled = false;
+    // Reset both the detail and its e-way bills the moment the open id
+    // changes, so navigating A -> B never shows A's bills against B while
+    // B loads (the panel's state is otherwise only written after an action).
+    setEwayBills([]);
     if (openChallanId === null) {
       setDetail(null);
       return;
     }
     api
       .getChallan(organisationId, openChallanId)
-      .then((response) => {
-        if (!cancelled) setDetail(response);
+      .then(async (response) => {
+        if (cancelled) return;
+        setDetail(response);
+        // The panel renders only for a non-draft standalone challan; match
+        // that here so a draft or a (pasted) work challan issues no needless
+        // or refused list request. Fetch on open, mirroring the invoice
+        // workspace's mount, so a challan with an existing bill shows it
+        // immediately rather than only after the first panel action.
+        if (
+          response.challan.kind === 'standalone' &&
+          response.challan.status !== 'draft'
+        ) {
+          const bills = await api.listChallanEwayBills(organisationId, openChallanId);
+          if (!cancelled) setEwayBills(bills);
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -855,7 +872,7 @@ export function DeliveryChallans({
                     <td className={numericCell}>{item.quantity}</td>
                     <td className={numericCell}>{formatRate(item.rate)}</td>
                     <td className={numericCell}>{formatInr(item.lineAmount)}</td>
-                    <td className={numericCell}>
+                    <td>
                       {item.hsnSacCode ?? '—'}
                       {item.isService === true
                         ? ' · service'
