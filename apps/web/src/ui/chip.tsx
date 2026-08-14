@@ -17,6 +17,11 @@ const CHIP_TONES = {
   completed: 'success',
   paid: 'success',
   installed: 'success',
+  // An installation record that still stands. Named separately from
+  // `installed` — which is a serial's own state — so the installation
+  // surfaces can render `status` straight from the record instead of
+  // translating one word into another at each call site.
+  recorded: 'success',
   approved: 'success',
 
   review: 'warning',

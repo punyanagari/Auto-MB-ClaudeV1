@@ -86,7 +86,7 @@ import type {
   WorkItemSerialsResponse,
   Installation,
   InstallationListResponse,
-  InstallationRegisterEntry,
+  InstallationRegisterResponse,
   RecordInstallationRequest,
   PaymentMatrixCategory,
   PaymentMatrixRow,
@@ -785,10 +785,18 @@ export interface ApiClient {
     workId: string,
   ) => Promise<InstallationListResponse>;
   /** The installation module's own register: every record in the
-   * organisation the caller may see, across all their Works. */
+   * organisation the caller may see, across all their Works. Paged — the
+   * screen sends a `limit` and pages with `nextCursor` — and narrowable to
+   * an inclusive `installedOn` window. */
   readonly listInstallations: (
     organisationId: string,
-  ) => Promise<readonly InstallationRegisterEntry[]>;
+    options?: {
+      readonly cursor?: string;
+      readonly limit?: number;
+      readonly installedFrom?: string;
+      readonly installedTo?: string;
+    },
+  ) => Promise<InstallationRegisterResponse>;
   readonly recordWorkInstallation: (
     organisationId: string,
     workId: string,
@@ -2506,12 +2514,20 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
-    async listInstallations(organisationId) {
-      const payload = await request<{ installations: InstallationRegisterEntry[] }>(
-        '/api/installations',
-        { organisationId },
-      );
-      return payload.installations;
+    async listInstallations(organisationId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) parameters.set('limit', String(options.limit));
+      if (options.installedFrom !== undefined) {
+        parameters.set('installedFrom', options.installedFrom);
+      }
+      if (options.installedTo !== undefined) {
+        parameters.set('installedTo', options.installedTo);
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<InstallationRegisterResponse>(`/api/installations${suffix}`, {
+        organisationId,
+      });
     },
     async recordWorkInstallation(organisationId, workId, body) {
       return request<Installation>(`/api/works/${workId}/installations`, {

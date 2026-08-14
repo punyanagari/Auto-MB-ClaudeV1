@@ -40,11 +40,18 @@ const CANCELLED: InstallationRegisterEntry = {
   status: 'cancelled',
 };
 
+function page(
+  installations: readonly InstallationRegisterEntry[],
+  nextCursor: string | null = null,
+) {
+  return { installations, nextCursor };
+}
+
 function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}) {
   const onOpenWork = vi.fn();
   const onOpenWorks = vi.fn();
   const api = stubApi({
-    listInstallations: vi.fn().mockResolvedValue([RECORDED, CANCELLED]),
+    listInstallations: vi.fn().mockResolvedValue(page([RECORDED, CANCELLED])),
     ...overrides,
   });
   render(
@@ -92,11 +99,65 @@ describe('the installation register', () => {
 
   it('offers the Works register when nothing has been installed yet', async () => {
     const { onOpenWorks } = renderRegister({
-      listInstallations: vi.fn().mockResolvedValue([]),
+      listInstallations: vi.fn().mockResolvedValue(page([])),
     });
 
     expect(await screen.findByText(/No installations recorded yet/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
     expect(onOpenWorks).toHaveBeenCalled();
+  });
+
+  it('asks for a page, and pages on with the cursor the server returned', async () => {
+    const listInstallations = vi
+      .fn()
+      .mockResolvedValueOnce(page([RECORDED], CANCELLED.id))
+      .mockResolvedValueOnce(page([CANCELLED]));
+    renderRegister({ listInstallations });
+
+    await screen.findByRole('link', { name: 'DCW-1' });
+    // A bounded first read: the register is not a table dump.
+    expect(listInstallations).toHaveBeenCalledWith(ORG_ID, { limit: 100 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more installations' }));
+    expect(await screen.findByRole('link', { name: 'DCW-2' })).toBeTruthy();
+    expect(listInstallations).toHaveBeenLastCalledWith(ORG_ID, {
+      limit: 100,
+      cursor: CANCELLED.id,
+    });
+    // The page that exhausted the register retires the button.
+    expect(
+      screen.queryByRole('button', { name: 'Load more installations' }),
+    ).toBeNull();
+    // …and the first page is still on screen beneath the second.
+    expect(screen.getByRole('link', { name: 'DCW-1' })).toBeTruthy();
+  });
+
+  it('narrows to a date window, and says so when the window is empty', async () => {
+    const listInstallations = vi
+      .fn()
+      .mockResolvedValueOnce(page([RECORDED, CANCELLED]))
+      .mockResolvedValueOnce(page([]));
+    renderRegister({ listInstallations });
+
+    await screen.findByRole('link', { name: 'DCW-1' });
+    fireEvent.change(screen.getByLabelText('Installed on or after'), {
+      target: { value: '2026-08-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Installed on or before'), {
+      target: { value: '2026-08-02' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply dates' }));
+
+    // A filtered zero is not the same state as an empty register: it
+    // offers the window back, not the Works list.
+    expect(
+      await screen.findByText(/No installations were recorded in these dates/),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open Works' })).toBeNull();
+    expect(listInstallations).toHaveBeenLastCalledWith(ORG_ID, {
+      limit: 100,
+      installedFrom: '2026-08-01',
+      installedTo: '2026-08-02',
+    });
   });
 });
