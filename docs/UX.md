@@ -323,8 +323,25 @@ direct-invoice editor lives on the register because there is no Work to put it
 on; it is the Work form's fields with the Measurement Book replaced by a stated
 taxable value, and an itemised direct invoice states no value at all.
 
-Fresh e-way-bill generation is unavailable for either shape. Historical records
-remain visible, reconcilable, and cancellable.
+An e-way bill is raised where the goods are: from a submitted tax invoice that
+carries goods lines, and from an issued standalone Delivery Challan that does.
+One panel serves both, because the operator's question is the same either way —
+what is moving, under what number, and is it still valid. Applicability is the
+server's answer and never the screen's: where a document cannot raise a bill
+the panel says why in a sentence that names the fix, rather than offering an
+action that would be refused. A service-only document is refused, which is the
+2026-08-10 ruling surviving intact and what NIC itself enforces.
+
+The standalone Delivery Challan editor carries the statutory facts that make
+this possible: per line an HSN/SAC code beside a goods-or-service marker, and
+per challan the movement reason and transport block. They are optional on the
+document and required before a bill can be raised, and the editor says so —
+they freeze at issue, so they belong on the draft.
+
+A generated e-way bill renders a printable summary. It is a convenience print
+and labelled as one on its face and in the panel: the statutory e-way bill is
+the document held on the NIC portal. Historical records remain visible,
+reconcilable, and cancellable.
 
 ## Definition of UX completion
 

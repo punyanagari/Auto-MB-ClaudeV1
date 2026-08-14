@@ -210,8 +210,17 @@ them side by side:
 - **Reach:** work-scope binds through a Work. A member without organisation-wide
   work scope reaches no standalone challan at all, because no assignment could
   ever grant one.
-- Statutory movement facts (HSN, movement reason, party GSTIN) and e-way bills
-  for these documents are a later stage and are not part of this module.
+- **Statutory movement facts** (ADR-0013) are optional on every Delivery
+  Challan and mandatory only on the path that raises an e-way bill. Per line:
+  an HSN/SAC code and a goods-or-service marker, recorded together or not at
+  all, in the same shape an itemised tax invoice uses. Per challan: the reason
+  for the movement in NIC's vocabulary (supply, job work, for own use,
+  others), the consignee's GSTIN where the party has one, and the transport
+  block — transporter, vehicle, transport document and distance. All of it is
+  entered on the draft and frozen at issue with everything else the consignee
+  is handed, which is what lets the e-way bill path trust it; a challan issued
+  without the facts cannot raise a bill, and the remedy is a corrected
+  challan rather than an edit to an issued one.
 
 ### Installation records
 
@@ -275,20 +284,20 @@ The system must prevent issue above the awarded quantity unless the Work explici
 
 ## 3. Domain glossary
 
-| Term         | Meaning                                                                  |
-| ------------ | ------------------------------------------------------------------------ |
-| Organisation | A tenant/legal entity using Auto-MB                                      |
-| LOA          | Railway Letter of Acceptance defining the awarded contract               |
-| Work         | One awarded contract created from one confirmed LOA                      |
-| Schedule     | A grouping of awarded lines inside a Work                                |
-| Work item    | One awarded description, unit, quantity, and effective rate              |
-| DC           | Delivery Challan accompanying moving material (Work-bound or standalone) |
-| Manual line  | A DC line that names no Work item: non-LOA material, inert to the ledger |
-| Consignee    | Railway/site party receiving material                                    |
-| MB           | Record, on-account, or final Measurement Book used for staged billing    |
-| PBG/PAC/DOC  | Guarantee, acceptance, and completion lifecycle records                  |
-| GST invoice  | Direct or MB-backed tax invoice; locally issued before IRP registration  |
-| E-way bill   | Statutory movement record associated with a submitted tax invoice        |
+| Term         | Meaning                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| Organisation | A tenant/legal entity using Auto-MB                                                                    |
+| LOA          | Railway Letter of Acceptance defining the awarded contract                                             |
+| Work         | One awarded contract created from one confirmed LOA                                                    |
+| Schedule     | A grouping of awarded lines inside a Work                                                              |
+| Work item    | One awarded description, unit, quantity, and effective rate                                            |
+| DC           | Delivery Challan accompanying moving material (Work-bound or standalone)                               |
+| Manual line  | A DC line that names no Work item: non-LOA material, inert to the ledger                               |
+| Consignee    | Railway/site party receiving material                                                                  |
+| MB           | Record, on-account, or final Measurement Book used for staged billing                                  |
+| PBG/PAC/DOC  | Guarantee, acceptance, and completion lifecycle records                                                |
+| GST invoice  | Direct or MB-backed tax invoice; locally issued before IRP registration                                |
+| E-way bill   | Statutory movement record raised from a submitted tax invoice or an issued standalone Delivery Challan |
 
 ## 4. Initial roles
 
@@ -966,8 +975,12 @@ The current product also includes:
 - optional, operator-triggered Whitebooks B2B IRP registration, document-detail
   lookup, and cancellation, with a durable provider-operation ledger and
   explicit failed, unknown, and recovery states;
-- historical and compatibility e-way-bill records with exact external evidence,
-  cancellation handling, and manual evidence clearly labelled unverified;
+- e-way bills raised from whichever document moves the goods — a submitted tax
+  invoice carrying goods lines, or an issued standalone Delivery Challan that
+  does — generated by IRN on the invoice path and directly on the challan path,
+  with exact external evidence, cancellation handling, manual evidence clearly
+  labelled unverified, and a printable summary that states on its face that the
+  NIC portal document is the statutory original;
 - optional contract-source PDFs accepted only after tender-number and
   name-of-work identity checks match their parent LOA.
 
@@ -1053,12 +1066,16 @@ supply — so a Railway invoice may be itemised and a private one cumulative.
 Editing the shape is a draft-only act. Once submitted it is frozen with every
 other business fact, and the lines become immutable with the invoice.
 
-The UI does not offer fresh e-way-bill generation, and the provider-generation
-and NIC-payload endpoints reject it. That refusal is being re-based on whether
-the document itself carries goods lines rather than on the invoice model as a
-whole; until then it applies to every invoice. Historical records remain
-readable and cancellable, and compatibility imports remain explicitly
-unverified.
+E-way bill applicability follows the document's LINES (ADR-0013). An invoice
+carrying at least one goods (HSN) line can raise one; a service-only document
+— every cumulative SAC invoice, and any itemised invoice whose lines are all
+services — is refused, with the code the refusal has always had. NIC states
+the same rule and enforces it: its error 4009 reads "E Way Bill can be
+generated provided at least HSN of one item belongs to goods", observed live
+during the 12 August sandbox certification. The rule is identical for railway
+and private documents; there is no per-customer-type switch, and it lives in
+one place server-side. Historical records remain readable and cancellable, and
+compatibility imports remain explicitly unverified.
 
 Reverse-charge liability is an explicit invoice fact rather than printed from
 a default. The current calculator supports forward charge only: submit requires
@@ -1146,9 +1163,14 @@ Remarks are never carried either: they are the individual movement's note.
   defined by current design-partner evidence;
 - unattended or scheduled statutory filing, and blind replay of an uncertain
   provider mutation;
-- fresh e-way-bill generation, for either line shape, until the applicability
-  decision follows from the document's own goods lines and a dispatch model
-  exists to carry it;
+- live NIC certification of the new e-way bill payloads: the 12 August sandbox
+  run covered IRN registration and EWB authentication only, and ADR-0013's
+  payloads must be certified against the sandbox before production use;
+- e-way bill vehicle updates, validity extension, and consolidated e-way bills,
+  which are their own NIC transactions;
+- reconcile-by-lookup for a challan-sourced bill: NIC's lookup is by IRN and a
+  challan has none, so an unknown generation is resolved on the portal by hand
+  rather than sent again blindly;
 - tenant-specific multi-GSTIN provider credential routing; the current adapter
   is bound to one configured GSTIN and refuses a mismatch;
 - broad reporting;
