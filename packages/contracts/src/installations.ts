@@ -98,6 +98,51 @@ export const InstallationItemSummarySchema = Type.Object(
 );
 export type InstallationItemSummary = Static<typeof InstallationItemSummarySchema>;
 
+/** One row of the tenant-wide installation register.
+ *
+ * Deliberately NOT the full `Installation`: the register answers "what
+ * went in, where, and under which Work", so it carries the Work's
+ * identity and a serial COUNT rather than the serial list. The record's
+ * own screen — its Work's Installations tab — remains the place the
+ * serial numbers, the remarks and the cancellation note are read. */
+export const InstallationRegisterEntrySchema = Type.Object(
+  {
+    id: UuidSchema,
+    workId: UuidSchema,
+    workCode: Type.String(),
+    workTitle: Type.String(),
+    workItemId: UuidSchema,
+    itemNumber: Type.String(),
+    quantity: DecimalStringSchema,
+    installedOn: DateOnlySchema,
+    /** Snapshot of the master's name at record time, exactly as on the
+     * record itself. */
+    locationName: Type.String(),
+    /** Serials still attached to this record. A cancelled record keeps
+     * its attachment history, so this stays the count it was recorded
+     * with rather than dropping to zero on release. */
+    serialCount: Type.Integer({ minimum: 0 }),
+    status: InstallationStatusSchema,
+  },
+  { additionalProperties: false },
+);
+export type InstallationRegisterEntry = Static<typeof InstallationRegisterEntrySchema>;
+
+/** Every installation record in the organisation the caller may see,
+ * newest first. Cancelled records stay listed with their status: a
+ * register that hid them would be a register of what is still true, not
+ * of what was recorded. `nextCursor` pages the list; see `pagination.ts`. */
+export const InstallationRegisterResponseSchema = Type.Object(
+  {
+    installations: Type.Array(InstallationRegisterEntrySchema),
+    nextCursor: NextCursorSchema,
+  },
+  { additionalProperties: false },
+);
+export type InstallationRegisterResponse = Static<
+  typeof InstallationRegisterResponseSchema
+>;
+
 /** The Work's installation records, with the per-item totals.
  *
  * `itemSummaries` is deliberately NOT paged with `installations`: it is

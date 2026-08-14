@@ -9,6 +9,7 @@ import type {
   ChallanDetailResponse,
   Installation,
   InstallationListResponse,
+  InstallationRegisterResponse,
   LocationMaster,
   Serial,
   SerialSearchResponse,
@@ -17,6 +18,7 @@ import type {
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import {
+  assertNoForeignKeyOrphans,
   createDatabasePool,
   removeOrganisationResidue,
   runMigrations,
@@ -372,6 +374,7 @@ afterAll(async () => {
       )
     `;
     await admin`delete from auth_users where "email" like ${`%-${runId}@integration.test`}`;
+    await assertNoForeignKeyOrphans(admin);
   }
   await app?.close();
   await admin?.end();
@@ -1382,5 +1385,218 @@ describe('installation quantity edits are cancel-and-re-record only', () => {
     });
     expect(cancelled.statusCode, cancelled.body).toBe(200);
     expect(cancelled.json<Installation>().status).toBe('cancelled');
+  });
+});
+
+/**
+ * The tenant-wide register (`GET /api/installations`).
+ *
+ * It reads across Works, so the only thing separating an
+ * 'assigned'-scoped member from another Work's records is the SQL
+ * predicate in the route — there is no per-record `assertWorkAccess` to
+ * fall back on in a list. That is what the scope test below is for, and
+ * why it uses a Work the member is deliberately NOT assigned to.
+ */
+describe('the tenant-wide installation register', () => {
+  let workCId: string;
+  let itemC1Id: string;
+  let recordedCId: string;
+  let cancelledCId: string;
+
+  async function readRegister(
+    jar: CookieJar,
+    query = '',
+  ): Promise<InstallationRegisterResponse> {
+    const response = await authed(jar, {
+      method: 'GET',
+      url: `/api/installations${query}`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json<InstallationRegisterResponse>();
+  }
+
+  beforeAll(async () => {
+    // A third Work, kept to itself: its rows are the fixture for the
+    // register's fields and for the scope denial, and nothing else in this
+    // file measures its quantities.
+    workCId = randomUUID();
+    const scheduleCId = randomUUID();
+    itemC1Id = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${workCId}, ${organisationId}, ${`INSTC-${runId.toUpperCase()}`},
+        ${`inst-letter-c-${runId}`}, '2025-06-01', 'Register fixture work C',
+        900.00, 800.00, 'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${scheduleCId}, ${organisationId}, ${workCId}, 'C', 'Schedule C', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, requires_serials
+      )
+      values (
+        ${itemC1Id}, ${organisationId}, ${workCId}, ${scheduleCId}, 'C/1',
+        'Cable trough', 'Nos', 10.000, 75.00, false
+      )
+    `;
+
+    for (const [installedOn, quantity] of [
+      ['2026-08-10', '3.000'],
+      ['2026-08-11', '1.500'],
+    ] as const) {
+      const recorded = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workCId}/installations`,
+        organisationId,
+        payload: {
+          workItemId: itemC1Id,
+          quantity,
+          installedOn,
+          locationId: stationLocationId,
+        },
+      });
+      expect(recorded.statusCode, recorded.body).toBe(201);
+      const installation = recorded.json<Installation>();
+      if (installedOn === '2026-08-10') recordedCId = installation.id;
+      else cancelledCId = installation.id;
+    }
+
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/installations/${cancelledCId}/cancel`,
+      organisationId,
+      payload: { note: 'Recorded against the wrong trough run' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+
+    // Stated here rather than inherited from the describe above, so this
+    // suite proves the scope on its own terms whatever else has run.
+    const [assignedUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${assignedEmail}
+    `;
+    if (!assignedUser) throw new Error('assigned user missing');
+    await admin`
+      update organisation_memberships set work_scope = 'assigned'
+      where organisation_id = ${organisationId} and user_id = ${assignedUser.id}
+    `;
+    await admin`
+      insert into work_assignments (organisation_id, work_id, user_id, created_by_user_id)
+      values (${organisationId}, ${workId}, ${assignedUser.id}, ${ownerUserId})
+      on conflict do nothing
+    `;
+  }, 60_000);
+
+  it('lists records across Works, newest first, with the Work they belong to', async () => {
+    const register = await readRegister(owner);
+
+    const row = register.installations.find(
+      (installation) => installation.id === recordedCId,
+    );
+    expect(row).toMatchObject({
+      workId: workCId,
+      workCode: `INSTC-${runId.toUpperCase()}`,
+      workTitle: 'Register fixture work C',
+      workItemId: itemC1Id,
+      itemNumber: 'C/1',
+      quantity: '3.000',
+      installedOn: '2026-08-10',
+      locationName: 'Nashik Road station',
+      serialCount: 0,
+      status: 'recorded',
+    });
+
+    // Rows from more than one Work, which is the whole point of the
+    // register — and the per-Work list is a strict subset of it.
+    const workIds = new Set(
+      register.installations.map((installation) => installation.workId),
+    );
+    expect(workIds.size).toBeGreaterThan(1);
+    expect(workIds.has(workId)).toBe(true);
+
+    const dates = register.installations.map(
+      (installation) => installation.installedOn,
+    );
+    expect([...dates].sort().reverse()).toEqual(dates);
+  });
+
+  it('keeps a cancelled record listed, and counts the serials of a serial-tracked one', async () => {
+    const register = await readRegister(owner);
+
+    expect(
+      register.installations.find((installation) => installation.id === cancelledCId)
+        ?.status,
+    ).toBe('cancelled');
+
+    // Work B's record attached one serial; the register reports the count
+    // rather than the numbers, which belong to the record's own screen.
+    const serialTracked = register.installations.find(
+      (installation) => installation.itemNumber === 'B/1',
+    );
+    expect(serialTracked?.serialCount).toBe(1);
+  });
+
+  it('shows an assigned-scope member only their own Works', async () => {
+    const mine = await readRegister(assigned);
+
+    expect(mine.installations.length).toBeGreaterThan(0);
+    // Every row is the one Work they are assigned to — no row of Work B or
+    // Work C leaves the database.
+    expect([
+      ...new Set(mine.installations.map((installation) => installation.workId)),
+    ]).toEqual([workId]);
+
+    // And the owner, who sees everything, sees strictly more.
+    const everything = await readRegister(owner);
+    expect(everything.installations.length).toBeGreaterThan(mine.installations.length);
+    expect(
+      everything.installations.some((installation) => installation.workId === workCId),
+    ).toBe(true);
+  });
+
+  it('walks the register one row at a time through its cursor', async () => {
+    const whole = await readRegister(owner);
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    for (let step = 0; step <= whole.installations.length; step += 1) {
+      const page: InstallationRegisterResponse = await readRegister(
+        owner,
+        cursor === null ? '?limit=1' : `?limit=1&cursor=${cursor}`,
+      );
+      if (page.installations.length === 0) break;
+      expect(page.installations).toHaveLength(1);
+      walked.push(page.installations[0]?.id ?? '');
+      cursor = page.nextCursor;
+      if (cursor === null) break;
+    }
+
+    expect(walked).toEqual(whole.installations.map((installation) => installation.id));
+  });
+
+  it('answers a member of another organisation with 403, not with rows', async () => {
+    const denied = await authed(outsider, {
+      method: 'GET',
+      url: '/api/installations',
+      organisationId,
+    });
+    expect(denied.statusCode, denied.body).toBe(403);
+
+    // Their own organisation has no Works at all, so the register is empty
+    // rather than absent.
+    const own = await authed(outsider, {
+      method: 'GET',
+      url: '/api/installations',
+      organisationId: outsiderOrganisationId,
+    });
+    expect(own.statusCode, own.body).toBe(200);
+    expect(own.json<InstallationRegisterResponse>().installations).toEqual([]);
   });
 });

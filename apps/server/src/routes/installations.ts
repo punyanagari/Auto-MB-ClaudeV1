@@ -1,6 +1,7 @@
 import {
   CancelInstallationRequestSchema,
   InstallationListResponseSchema,
+  InstallationRegisterResponseSchema,
   KeysetQuerySchema,
   InstallationSchema,
   RecordInstallationRequestSchema,
@@ -9,7 +10,7 @@ import {
 } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
@@ -183,6 +184,99 @@ export function registerInstallationRoutes(
             workItemId: summary.work_item_id,
             itemNumber: summary.item_number,
             installedQuantity: summary.installed_quantity,
+          })),
+        };
+      });
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // The tenant-wide installation register.
+  //
+  // An installation always belongs to a Work, so this adds no new kind of
+  // record and no new authority: it is the same rows the Work's own
+  // Installations tab lists, read across every Work the caller may see.
+  // What it buys is the question the per-Work list cannot answer — "what
+  // went in this week, anywhere" — which site supervision asks far more
+  // often than it asks about one contract.
+  // ------------------------------------------------------------------
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/installations',
+      schema: {
+        querystring: KeysetQuerySchema,
+        response: { 200: InstallationRegisterResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, user, tenant }) => {
+      const query = request.query;
+      return tenant(async (tx) => {
+        // Work-scope, decided in SQL so the rows an 'assigned'-scoped
+        // member may not see never leave the database. This is the same
+        // predicate the Delivery Challan register uses, and it is the
+        // ONLY thing standing between the two scopes here: there is no
+        // per-row `assertWorkAccess` to fall back on in a list.
+        const full = await hasFullWorkScope(tx, user.id);
+        // Newest first, so the keyset runs backward on
+        // (installed_on, created_at, id) — the same ordering, and the
+        // same trailing descending id, as the per-Work list above.
+        const cursor = await cursorRowId(tx, 'installations', query.cursor);
+        const rows = await tx<
+          {
+            id: string;
+            work_id: string;
+            work_code: string;
+            work_title: string;
+            work_item_id: string;
+            item_number: string;
+            quantity: string;
+            installed_on: string;
+            location_name: string;
+            serial_count: string;
+            status: Installation['status'];
+          }[]
+        >`
+          select i.id, i.work_id, w.work_code, w.title as work_title,
+                 i.work_item_id, wi.item_number,
+                 i.quantity::text as quantity,
+                 i.installed_on::text as installed_on,
+                 i.location_name,
+                 (
+                   select count(*) from installation_serials att
+                   where att.installation_id = i.id
+                 )::text as serial_count,
+                 i.status
+          from installations i
+          join work_items wi on wi.id = i.work_item_id
+          join works w on w.id = i.work_id
+          where w.deleted_at is null
+            and (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = i.work_id and wa.user_id = ${user.id}
+            ))
+            and (${cursor === null} or
+              (i.installed_on, i.created_at, i.id) < (
+                select c.installed_on, c.created_at, c.id from installations c
+                where c.id = ${cursor}))
+          order by i.installed_on desc, i.created_at desc, i.id desc
+          limit ${sqlLimit(query.limit)}
+        `;
+        const paged = keysetPage(rows, query.limit, (row) => row.id);
+        return {
+          nextCursor: paged.nextCursor,
+          installations: paged.rows.map((row) => ({
+            id: row.id,
+            workId: row.work_id,
+            workCode: row.work_code,
+            workTitle: row.work_title,
+            workItemId: row.work_item_id,
+            itemNumber: row.item_number,
+            quantity: row.quantity,
+            installedOn: row.installed_on,
+            locationName: row.location_name,
+            serialCount: Number(row.serial_count),
+            status: row.status,
           })),
         };
       });
