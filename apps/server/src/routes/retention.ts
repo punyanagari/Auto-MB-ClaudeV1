@@ -552,12 +552,21 @@ export function registerRetentionRoutes(
       const body = request.body;
       const instrument = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
+        // The works row lock every sibling child-creating route takes
+        // (challans.ts, issue-challans.ts, installations.ts, pac.ts).
+        // Without it this route read the Work and inserted against it in
+        // two statements with no serialisation, so a Work could be
+        // withdrawn between the read and the insert and the instrument
+        // would land on a superseded Work — the eligibility census having
+        // already seen an empty register. `for update of w` locks the
+        // Work alone; the joined organisations row is read, not locked.
         const [work] = await tx<{ id: string; letter_date: string; today: string }[]>`
             select w.id, w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
             from works w
             join organisations o on o.id = w.organisation_id
             where w.id = ${workId} and w.deleted_at is null
+            for update of w
           `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
         // Product invariant 8, the same window every other dated record
@@ -1013,6 +1022,31 @@ export function registerRetentionRoutes(
               409,
               'BILL_MEASUREMENT_BOOK_NOT_CLOSED',
               "This bill's Measurement Book is not closed by a verified railway bill.",
+            );
+          }
+          // And the money has to be accounted for (migration 0067).
+          // Before the payment register existed, `paid` was a word with
+          // no amount behind it — the specific complaint pack P15 was
+          // written for. It now asserts that the receipts and the
+          // deductions between them reach the railway's own figure.
+          //
+          // Enforced here AND by
+          // `app_private.guard_bill_paid_needs_full_settlement`, for the
+          // same reason the closure gate above is enforced twice.
+          const [position] = await tx<
+            { outstanding: string | null; reference: string | null }[]
+          >`
+            select app_private.bill_settlement_reference(${id})::text as reference,
+                   (app_private.bill_settlement_reference(${id})
+                     - app_private.bill_settled_total(${id}))::text as outstanding
+          `;
+          if (position?.outstanding == null || Number(position.outstanding) !== 0) {
+            throw httpError(
+              409,
+              'BILL_NOT_FULLY_SETTLED',
+              position?.outstanding == null
+                ? 'This bill has no settled railway amount to account for.'
+                : `${position.outstanding} of the railway's ${String(position.reference)} is still outstanding; record the receipt and its deductions first.`,
             );
           }
         }

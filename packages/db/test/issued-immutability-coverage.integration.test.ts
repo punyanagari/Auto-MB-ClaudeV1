@@ -75,6 +75,12 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'decision_note',
   ],
 
+  // A recorded receipt of money (0067). Every fact of it is frozen the
+  // moment it is written — there is no edit path at all — and the only
+  // later act is the void, which is the three columns below plus the
+  // maintained timestamp.
+  bill_payments: ['id', 'updated_at', 'voided_at', 'voided_by_user_id', 'void_reason'],
+
   // The legacy bill record (0006). Its money and lines snapshot are
   // frozen; submission and payment are the two later facts.
   bills: ['id', 'status', 'submitted_at', 'paid_at'],
@@ -317,6 +323,16 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'gst_basis',
     'gst_rate',
   ],
+
+  // A supersession record (0071) is written whole when a Work is
+  // withdrawn, and admits exactly two later facts, mutually exclusive and
+  // each written once: the Work that replaced it, or the discarding of the
+  // letter that would have produced one. Both are bind-once, and the guard
+  // freezes each the moment it stops being NULL — exactly as
+  // `approval_requests.entity_id` is bound once by an approved apply —
+  // which is why neither appears here. Nothing but the maintained
+  // timestamp is outside the freeze.
+  work_supersessions: ['updated_at'],
 };
 
 /**

@@ -196,7 +196,7 @@ Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-ac
 | Authority                        | What it permits                                                                                                 |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `can_issue_documents`            | Issue a numbered document                                                                                       |
-| `can_cancel_documents`           | Cancel an issued document                                                                                       |
+| `can_cancel_documents`           | Take an authoritative record out of service: cancel an issued document, or withdraw a confirmed Work (§5.6)     |
 | `can_approve_amendments`         | Decide an approval request                                                                                      |
 | `can_manage_statutory_reporting` | Register, reconcile or cancel a document at the IRP or NIC E-way Bill portal, and record manual portal evidence |
 
@@ -204,8 +204,8 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 
 ## 5. Business invariants
 
-1. **Work identity:** `work_code` is 1–20 uppercase letters, digits, `-`, `_`, or `/`, begins alphanumeric, and is unique forever within an organisation, including soft-deleted Works.
-2. **Letter identity:** LOA letter number is unique forever within an organisation.
+1. **Work identity:** `work_code` is 1–20 uppercase letters, digits, `-`, `_`, or `/`, begins alphanumeric, and is unique among an organisation's live Works. A **superseded** Work keeps the code it was confirmed under but stops claiming it, so the successor confirmed from the same letter carries the same identity — it is the same contract. Nothing else releases a work code.
+2. **Letter identity:** LOA letter number is unique among an organisation's live Works, released by supersession on the same terms as the work code.
 3. **One draft:** at most one draft DC per Work, and at most one open standalone draft per consignee contact.
 4. **Gap-free issue sequence:** numbers are assigned only at issue, serialised per Work — or per financial year for a standalone challan — and never reused after cancellation.
 5. **Quantity ceiling:** issued quantity cannot exceed awarded quantity unless excess delivery is explicitly enabled. Only Work item lines count towards it; manual and standalone lines are inert.
@@ -220,7 +220,8 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered, installed and/or certified quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened. Which quantity an item is measured on is decided by its payment category; see §5.4.
 15. **Executed value is measured on a recorded basis:** every Work records whether its LOA rates are quoted inclusive or exclusive of GST, and at what rate. Money is compared against a contract value only after both sides are stated on the same basis. See §5.2.
 16. **Settlement rests on the railway's own signed bill:** a finalized Measurement Book is closed, and the bill prepared from it recorded as paid, only against an On-Account Bill received from the railway whose three signatures are intact, chain to an installed trust anchor, and are made by three different certificates. See §5.5.
-17. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
+17. **A confirmed Work with wrong extracted data is superseded, not edited:** a Work whose letter was read wrongly cannot be amended into shape — an amendment records that the contract changed, and nothing changed. It is instead withdrawn by an approved **supersede** request and its letter returned to review, so the letter can be read again. This is available only while the Work carries no downstream document at all, and only through the approval engine; the decider needs the cancel authority as well as the approval authority. See §5.6.
+18. **Omission is authorised, not asserted:** omitting an item from a Work after the LOA has been accepted is a contractual variation, not a correction. An omission amendment may be FILED at any time, but it can only be APPROVED once the railway variation order authorising it has been uploaded and VERIFIED against the document itself. The order is never applied on filing, whatever authority the filer holds.
 
 ### 5.1 Verifying a variation order
 
@@ -496,6 +497,195 @@ older sense in which a submitted tax invoice closes the Measurement Book it
 bills. The two are independent, and a measurement can be invoiced before its
 railway bill arrives.
 
+### 5.6 Superseding a confirmed Work
+
+The awarded LOA baseline is immutable and an omission needs a railway
+variation order. Neither helps when the extraction itself was wrong — the
+rates read at advertised figures, a mistyped letter number, a quantity off
+by a decimal place. §5.3 records exactly this case: Works confirmed before
+the accepted-rate rule still carry advertised rates, and the remedy is to
+read the letter again. Until a Work can be withdrawn, there is no way to
+read it again, because a confirmed letter cannot be discarded.
+
+**The exit.** An owner or office member files a supersede request against
+the Work, with a reason. It never applies on filing, however much authority
+the filer holds. An approver who also holds the **cancel** authority decides
+it; approving withdraws the Work and returns its LOA document to review, in
+one transaction. The letter is then an ordinary unconfirmed intake package
+again: it can be reviewed and confirmed into a successor, or — when the
+scan is the problem — discarded and uploaded again.
+
+**Eligibility.** Only a Work with **no downstream document at all**. The
+seventeen registers that block it, in full: delivery challans, issue
+challans, installation records, Measurement Books, Measurement Book merge
+records, Measurement Book entries, tax invoices, credit notes, PAC
+certificates, correction notices, submitted instruments, bills, extension
+requests, purchase orders, received railway bills, cited variation orders,
+and live change requests (a pending or approved approval request; a
+rejected or withdrawn one moved nothing and does not block). Anything
+issued or received means the Work is corrected through the paths that
+already exist. Per-Work numbering counters, the lines and evidence hanging
+off those registers, and the Work's own body — schedules, items, payment
+matrix, consignee preferences, assignments — are not documents in their
+own right and do not block.
+
+**The successor's identity is not the confirmer's to choose.** The Work
+confirmed in the released letter's place carries the withdrawn Work's work
+code and letter number, unchanged; anything else is refused. An approver
+reads a reason for withdrawing a contract and approves _that_ — if whoever
+confirms the letter afterwards could file it under any code, superseding
+would be a work-code rename with no approval behind it. While the
+supersession is open, that identity is also **reserved**: no other letter
+may take the freed code or letter number. A genuinely wrong work code is
+corrected the way every other wrong extracted value is — discard the
+released letter and upload the correct one.
+
+**Assignments travel.** A member whose `work_scope` is `assigned` sees a
+contract only through its assignments, so the successor inherits the
+withdrawn Work's, audited. A correction must not silently revoke site
+access to the work being executed.
+
+**The letter's package is held together.** While a released letter is
+waiting to be confirmed again, its supporting tender documents cannot be
+discarded one at a time — the letter itself still can, which withdraws the
+whole package together.
+
+**What survives.** The withdrawn Work is soft-deleted, never removed: its
+items, its rates and its reason for withdrawal stay answerable. A
+supersession record carries the withdrawal, the approval that authorised
+it, the released letter, and — once the letter is confirmed again — the
+successor. The successor's own page shows what it replaced, the reason
+given, and the date; the withdrawn Work itself is not openable, which is
+why that line is the only place its identity survives. Numbering is
+untouched: the successor is a new Work with its own counters, and no
+number a superseded Work's series reached is ever minted twice.
+
+**One case has provenance in one direction only, by design.** If the
+released letter is discarded and a corrected copy uploaded instead, the
+Work confirmed from that new upload is a fresh record with no link back:
+the link is kept on the document, and that document was thrown away. The
+supersession still records the withdrawal, its reason, its approval and
+the letter that was released — it simply names no successor. The screen
+says so before the operator commits to the discard. Linking a re-uploaded
+letter to the Work it replaces would need a step the product does not have
+and has not been asked for.
+
+### 5.7 The payment, and what the railway kept
+
+Until the payment register existed, `bills.status = 'paid'` was the whole of
+this product's knowledge of money received: a word, with no amount, no date,
+no reference and no breakup. Both reviews of 13 August 2026 said the same
+thing about it — the spreadsheet an operator still keeps beside this product
+is the payment register, because a railway payment is never the bill amount.
+
+**A payment is three figures, never one.** What reached the bank, what the
+railway withheld, and what is still owed. The distinction is the point:
+
+- **GST TDS**, 2% under section 51 of the CGST Act, which the deductor
+  deposits and the agency reclaims in GSTR-7A;
+- **income-tax TDS** under section 194C, which surfaces on Form 26AS;
+- **security deposit / retention**, held by the railway against the contract.
+  This product records that it was withheld and nothing more: there is no
+  release path, no schedule of what is due back and no reconciliation
+  against what was eventually returned, so a retention figure here answers
+  "how much has been held" and never "how much is still held";
+- **penalties and recoveries**, argued individually;
+- **other**, which is the head that always turns up and is the only one that
+  cannot be recorded without saying what it is.
+
+Each is a typed row rather than free text or a nullable column, because each
+is a different conversation with a different authority on a different form.
+A named head may appear once per payment; two `other` rows on one advice are
+two different facts and both stay recordable.
+
+**A deduction is an operator's assertion, not evidence.** Everything about
+the railway's own On-Account Bill is extracted from the document and nothing
+about it can be typed (§5.5). A deduction is the opposite: somebody reads a
+payment advice and enters what it says, and this product holds no copy of
+that advice and no certificate behind any head. The register is therefore as
+good as the person keeping it — which is a large improvement on a
+spreadsheet nobody audits, and is not the same claim the railway bill makes.
+Two consequences follow and are stated rather than left to be discovered.
+The register cannot be used as proof of a TDS credit; GSTR-7A and Form 26AS
+remain the proof, and this is the working note beside them. And because
+receipts and deductions are the same arithmetic to the settlement rule, an
+operator who can record payments can reach `paid` by asserting a deduction
+for the whole shortfall — see the open question at the end of this
+section.
+
+**Deducted money is settled money.** A bill of ₹10,00,000 credited as
+₹9,52,000 is fully settled if ₹48,000 went to the heads above, and 4.8%
+outstanding if it did not. One of those is a closed matter and the other is a
+phone call, and a register that reports a single net figure cannot tell them
+apart — it reports every bill as short by its own statutory deductions,
+forever. So:
+
+    outstanding  =  what the railway settled  −  received  −  deducted
+
+**What "the railway settled" means, and why it is not the prepared amount.**
+The reference is the amount on the railway's own On-Account Bill (§5.5),
+reached through the Measurement Book that bill closed — never the total the
+agency prepared. Two reasons, and the second is load-bearing. The railway pays
+its own bill, so where its certified figure differs from the prepared one the
+difference is a conversation about the measurement rather than an unpaid
+balance. And a bank credit is GST-inclusive, always, as is the railway's bill
+amount; the prepared total is on the Work's recorded basis and is
+GST-exclusive on a GST-exclusive Work. Subtracting one from the other is
+exactly the mixing §5.2 names as the natural mistake. Both figures are
+reported so a difference between them is visible; only the railway's is
+subtracted from.
+
+It follows that **a payment cannot be recorded before the measurement is
+closed**: until then there is no agreed figure to be outstanding against, and
+the position reports no outstanding amount at all rather than reporting the
+prepared amount as a debt nobody has acknowledged.
+
+**`paid` stops being a word.** A prepared bill moves to `paid` only when the
+receipts and their deductions between them reach the railway's figure exactly.
+The status stays a MANUAL act — every state change in this product is an
+explicit, audited transition, and a status that flipped itself the moment a
+sum crossed a threshold would be the only one nobody performed. What changed
+is not who performs it but what it is allowed to assert: `paid` may now only
+be claimed where the register supports it, as an issued document may only be
+claimed where its evidence does.
+
+**Settlement and submission are independent.** Nothing requires a bill to
+have been submitted before money is recorded against it. The status machine
+still runs forward only, so a bill cannot reach `paid` without passing
+through `submitted`, and the position tells the truth at every point in
+between; a bill fully settled while still `prepared` is an unusual record
+rather than an impossible one, and refusing it would police an ordering the
+paper does not have.
+
+**A receipt is never edited and never deleted.** A mis-keyed one is
+**withdrawn** with a required reason: the row and the reason stay, and the
+amount becomes outstanding again. Once a bill is paid its register is closed
+in both directions — nothing may be added and nothing withdrawn — because the
+arithmetic that made it paid would stop holding and `bills` moves forward
+only. The correction is a compensating entry against a later bill, which is
+the remedy ADR-0006 already prescribes for a billed Measurement Book.
+
+**Open question: settlement by asserted deduction.** The two rules above
+compose into a gap the owner should close deliberately rather than by
+accident. Because a deduction settles a bill exactly as a receipt does, and
+because a receipt of zero is legitimate, a member holding the issue
+authority can mark a bill paid by recording nothing received and one
+deduction for the entire outstanding amount. Every step is audited and the
+row names its author, so this is visible after the fact rather than silent —
+but nothing refuses it at the time. Three mitigations are available and none
+is applied yet: cap the deductions of a receipt relative to what it credits;
+require a separate authority for a settlement that credits nothing; or
+accept it as an operator judgement and rely on the audit trail. Recorded
+here so the next reader does not mistake it for an oversight.
+
+**Both layers, doing different halves**, on the same terms §5.5 states for the
+railway bill. The database owns the arithmetic and the structure: that a
+reference figure exists, that the running total never passes it, that a
+recorded fact never changes, and that `paid` is unreachable while anything is
+outstanding — on insert as well as on update, because a bill row may be
+created in any of its three states. The server owns authority, work scope, the
+audit trail, and saying all of it in a sentence rather than a SQLSTATE.
+
 ### 5.8 A letter is read after it is accepted, not before
 
 Uploading an award letter used to wait for the whole of its reading:
@@ -555,7 +745,7 @@ and it is why there is no service account anywhere in the product.
 - Money is PostgreSQL `numeric`, represented as decimal strings at API boundaries.
 - Original filenames never become storage paths.
 - Issued records are never hard-deleted.
-- Soft-deleted Work identity remains reserved.
+- A superseded Work keeps its identity on the record and releases the organisation's live claim on it (§5.6); nothing else releases a work code or letter number.
 - All tenant-owned tables include `organisation_id`.
 
 ## 7. First-release acceptance

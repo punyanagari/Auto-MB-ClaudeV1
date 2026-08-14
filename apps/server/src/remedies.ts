@@ -169,6 +169,18 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Change at least one line before filing the correction; a notice identical to the issued document corrects nothing.',
   WORK_NOT_FULLY_EXECUTED:
     'Deliver and install the balance, record the acceptance certificate for any maintenance period already served, or amend the outstanding quantities down, before completing the Work.',
+  WORK_HAS_DOWNSTREAM_DOCUMENTS:
+    'Correct the Work through an amendment or a correction notice; superseding is available only while nothing has been issued or received against it.',
+  WORK_HAS_NO_LOA_DOCUMENT:
+    'Correct this Work through an amendment; a Work with no letter in the product has nothing to read again and no successor to be confirmed from.',
+  WORK_ALREADY_SUPERSEDED:
+    'Open the successor Work; the letter this Work came from has already been released and can be confirmed only once more.',
+  SUCCESSOR_IDENTITY_MISMATCH:
+    'Confirm the released letter under the withdrawn Work’s own work code and letter number, or discard it and upload the correct letter if the identity itself was the mistake.',
+  WORK_IDENTITY_RESERVED:
+    'Confirm or discard the released letter that is waiting for this identity before using it for another Work.',
+  SUPERSEDE_IN_PROGRESS:
+    'Confirm the released letter first, or discard the letter itself — that withdraws its whole package together rather than one document at a time.',
 
   // ---- The settlement chain the agency does not control -------------------
   //
@@ -184,6 +196,20 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Read the signature panel on the recorded railway bill, and ask the railway for a correctly signed copy if the bill itself is at fault.',
   BILL_MEASUREMENT_BOOK_NOT_CLOSED:
     "Close the Measurement Book with the railway's verified On-Account Bill first; payment is recorded against a settlement the railway signed.",
+  BILL_NOT_FULLY_SETTLED:
+    'Record the receipts and their deduction breakup against this bill until nothing is outstanding, because paid now means the money is accounted for and not merely that the railway settled the measurement.',
+  BILL_PAYMENT_EXCEEDS_SETTLEMENT:
+    'Re-read the register before recording this receipt: another one may have been recorded first, and the total of received plus deducted can never pass the amount the railway billed.',
+  BILL_PAYMENT_DUPLICATE_REFERENCE:
+    'Check whether this advice is already in the register under the same UTR or cheque number, and withdraw the earlier receipt first if it was recorded in error.',
+  BILL_PAYMENT_DATE_INVALID:
+    'Enter the date the money actually reached the bank, which is on or after the railway bill it settles and never in the future.',
+  BILL_PAYMENT_DEDUCTION_UNDESCRIBED:
+    'Say what the other deduction is, because a head with no name cannot be reconciled against a statement or claimed back later.',
+  BILL_PAYMENT_ALREADY_VOIDED:
+    'Reload the register: this receipt has already been withdrawn, and the amount it carried is outstanding again.',
+  BILL_ALREADY_PAID:
+    'Record the correction as a receipt or a deduction against a later bill, the way a billed Measurement Book is corrected on a subsequent one, because the register of a paid bill is closed in both directions.',
   RAILWAY_BILL_EXTRACTION_FAILED:
     'Upload the IWRCMS bill PDF as downloaded rather than a scan or a print; the bill number, date, amount and measurement are read from its text layer.',
   RAILWAY_BILL_MEASUREMENT_UNMATCHED:

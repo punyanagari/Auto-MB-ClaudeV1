@@ -194,9 +194,6 @@ importers:
 
   apps/worker:
     dependencies:
-      '@auto-mb/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
       '@auto-mb/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -206,9 +203,6 @@ importers:
       '@auto-mb/loa-parser':
         specifier: workspace:*
         version: link:../../packages/loa-parser
-      postgres:
-        specifier: 3.4.9
-        version: 3.4.9
 
   packages/contracts:
     dependencies:

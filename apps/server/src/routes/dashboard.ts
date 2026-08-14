@@ -262,7 +262,7 @@ export function registerDashboardRoutes(
             wi.expires_on::text as expires_on,
             (wi.expires_on - current_date)::text as due_in_days
           from work_instruments wi
-          join works w on w.id = wi.work_id
+          join works w on w.id = wi.work_id and w.deleted_at is null
           where wi.status = 'active'
             and (${full} or exists (
               select 1 from work_assignments wa
@@ -304,7 +304,7 @@ export function registerDashboardRoutes(
         >`
           select b.work_id, w.work_code, b.bill_number, b.status
           from bills b
-          join works w on w.id = b.work_id
+          join works w on w.id = b.work_id and w.deleted_at is null
           where b.status in ('prepared', 'submitted')
             and (${full} or exists (
               select 1 from work_assignments wa

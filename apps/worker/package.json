@@ -10,11 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@auto-mb/contracts": "workspace:*",
     "@auto-mb/db": "workspace:*",
     "@auto-mb/documents": "workspace:*",
-    "@auto-mb/loa-parser": "workspace:*",
-    "postgres": "3.4.9"
+    "@auto-mb/loa-parser": "workspace:*"
   },
   "exports": {
     "./runtime": {

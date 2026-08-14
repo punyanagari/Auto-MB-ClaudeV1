@@ -53,14 +53,16 @@
     "apps/server": {
       "entry": ["src/main.ts", "src/import/cli.ts", "test/**/*.test.ts"],
       "project": ["src/**/*.ts", "test/**/*.ts"],
-      // Frozen 2026-08-13 — 11 unused exports and types. The ASN.1
-      // universal-tag and CMS OID constants are exported as complete named
-      // vocabularies rather than only the subset currently read, and
-      // pdf-signature.ts / rate-limit.ts export type aliases describing their
-      // public surface. Which of those to retire is a judgement about the
-      // signature-verification and rate-limit modules, not dead-code hygiene,
-      // and this pack does not own those files.
-      "ignore": ["src/pdf-signature.ts", "src/pdf-signature/**", "src/rate-limit.ts"]
+      // Frozen 2026-08-13 — unused exports and types on rate-limit.ts, which
+      // exports type aliases describing its public surface. Which of those to
+      // retire is a judgement about the rate-limit module, not dead-code
+      // hygiene, and this pack does not own that file.
+      //
+      // The signature-verification half of this entry moved to
+      // packages/documents in pack P18, along with the files; the baseline
+      // travelled with it rather than being quietly dropped, and its reason
+      // is restated there.
+      "ignore": ["src/rate-limit.ts"]
     },
 
     "apps/web": {
@@ -69,8 +71,31 @@
     },
 
     "apps/worker": {
-      "entry": ["src/main.ts"],
-      "project": ["src/**/*.ts"]
+      // Two entry points that are not the process: the runtime and the LOA
+      // intake handler are also imported by apps/server's integration tests,
+      // which run the real handler against the queue rather than a stand-in
+      // (apps/server/test/helpers/worker-jobs.ts).
+      "entry": [
+        "src/main.ts",
+        "src/runtime.ts",
+        "src/handlers/*.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+
+    "packages/documents": {
+      "entry": ["src/index.ts", "test/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      // Frozen 2026-08-13, moved here from the apps/server entry by pack P18
+      // when the modules moved. The ASN.1 universal-tag and CMS OID constants
+      // are exported as complete named vocabularies rather than only the
+      // subset currently read, and pdf-signature.ts exports type aliases
+      // describing its public surface. Which of those to retire is a
+      // judgement about the signature-verification module, not dead-code
+      // hygiene, and neither the pack that froze it nor the pack that moved
+      // it owns that decision.
+      "ignore": ["src/pdf-signature.ts", "src/pdf-signature/**"]
     },
 
     "packages/contracts": {

@@ -70,6 +70,9 @@ const TENANT_TABLES = [
   'work_instruments',
   'bill_counters',
   'bills',
+  // The payment register and its typed deduction rows (0067).
+  'bill_payments',
+  'bill_payment_deductions',
   'mb_entries',
   'work_assignments',
   // The unified Contacts master and the Work<->consignee association
@@ -86,6 +89,9 @@ const TENANT_TABLES = [
   // The railway variation order cited for an omission (0058): uploaded
   // evidence, so the application role holds SELECT and INSERT only.
   'amendment_variation_orders',
+  // The record that a confirmed Work was withdrawn and what replaced it
+  // (0071).
+  'work_supersessions',
   'installations',
   'installation_serials',
   'correction_notices',
@@ -154,7 +160,11 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     table !== 'measurement_book_merge_provenance' &&
     // A cited variation order is immutable evidence (0058): the
     // application role has no UPDATE, and a trigger refuses one anyway.
-    table !== 'amendment_variation_orders',
+    table !== 'amendment_variation_orders' &&
+    // A deduction is corrected by voiding its whole payment advice, so
+    // the application role has no UPDATE and the 0067 guard refuses one
+    // anyway.
+    table !== 'bill_payment_deductions',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -174,6 +184,10 @@ const DELETE_REVOKED_TABLES = [
   'work_instruments',
   'bill_counters',
   'bills',
+  // A recorded receipt of money is voided, never deleted, and its
+  // deductions go with it (0067).
+  'bill_payments',
+  'bill_payment_deductions',
   'mb_entries',
   // Masters retire via the active flag; the app role holds no DELETE
   // (0013; contacts follows in 0028).
@@ -186,6 +200,9 @@ const DELETE_REVOKED_TABLES = [
   // A cited variation order is immutable evidence: no UPDATE and no
   // DELETE privilege at all (0058).
   'amendment_variation_orders',
+  // A supersession is the only record that a Work was withdrawn: it binds
+  // its successor once and is never removed (0071).
+  'work_supersessions',
   // Installation records cancel with a note; attachments release (0017).
   'installations',
   'installation_serials',
@@ -369,7 +386,7 @@ async function seedTenantGraph(
     `;
     if (!workItem) throw new Error('seed work item insert returned no row');
 
-    await tx`
+    const [loaDocument] = await tx<{ id: string }[]>`
       insert into loa_documents (
         organisation_id, object_key, original_filename, sha256,
         media_type, size_bytes, uploaded_by_user_id
@@ -378,7 +395,9 @@ async function seedTenantGraph(
         ${organisationId}, ${`${organisationId}/loa/${workCode}.pdf`}, ${`${workCode}.pdf`},
         ${shaFill.repeat(64)}, 'application/pdf', 1024, ${userId}
       )
+      returning id
     `;
+    if (!loaDocument) throw new Error('seed LOA document insert returned no row');
 
     const [challan] = await tx<{ id: string }[]>`
       insert into delivery_challans (
@@ -507,6 +526,20 @@ async function seedTenantGraph(
       returning id
     `;
     if (!approvalRequest) throw new Error('seed approval insert returned no row');
+
+    // The record of a Work withdrawn by an approved supersede request
+    // (0071). Seeded against the same approval row; the isolation proof
+    // needs the row to exist, not the Work to be soft-deleted.
+    await tx`
+      insert into work_supersessions (
+        organisation_id, superseded_work_id, loa_document_id,
+        approval_request_id, reason, superseded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${loaDocument.id},
+        ${approvalRequest.id}, 'Integration seed supersession', ${userId}
+      )
+    `;
 
     // The railway variation order an omission cites (0058). Only verified
     // orders exist, so the seed writes one.
@@ -709,17 +742,24 @@ async function seedTenantGraph(
 
     // The railway's own On-Account Bill against that finalized book
     // (0066). Present in both organisations so the cross-tenant reads
-    // below have something of each other's to fail to see. Left at the
-    // default `not_checked` verdict: nothing here closes a measurement
-    // against it, and a fabricated verdict would be a claim this suite
-    // has no business making.
-    await tx`
+    // below have something of each other's to fail to see.
+    //
+    // It carries a settleable verdict, which it did not before 0067. The
+    // payment register cannot hold a row against an unclosed measurement
+    // — that is 0067's gate, not an incidental precondition — so a suite
+    // that must seed one row in every tenant table now has to close this
+    // book, and closing it is what reads the verdict. The per-signature
+    // RULING stays the server's and is proved in the railway-bill suites;
+    // what the database asks for is exactly this shape, and stating that
+    // shape is not a claim about any real document.
+    const [railwayBill] = await tx<{ id: string }[]>`
       insert into received_railway_bills (
         organisation_id, work_id, measurement_book_id, object_key,
         original_filename, sha256, media_type, size_bytes, bill_number,
         bill_date, bill_amount, rate_inclusive_of_gst, measurement_number,
         measurement_sequence, letter_number, extraction_payload,
-        uploaded_by_user_id
+        uploaded_by_user_id, signature_status, signature_verdict,
+        signature_verified_at
       )
       values (
         ${organisationId}, ${work.id}, ${measurementBook.id},
@@ -727,8 +767,57 @@ async function seedTenantGraph(
         'bill.pdf', ${'b'.repeat(64)}, 'application/pdf', 2048,
         ${`${workCode}/B1`}, '2026-02-06', '10.00', true,
         '00341490147964/CSTM/1139316/OAM/FL2/01', 1, ${`LOA-${workCode}`},
-        '{"billNumber": "seed"}'::jsonb, ${userId}
+        '{"billNumber": "seed"}'::jsonb, ${userId}, 'signed_and_intact',
+        '{"signatures": [{"index": 1}, {"index": 2}, {"index": 3}]}'::jsonb,
+        now()
       )
+      returning id
+    `;
+    if (!railwayBill) throw new Error('seed railway bill insert returned no row');
+    await tx`
+      update measurement_books
+      set closed_at = now(), closed_by_user_id = ${userId},
+          closed_by_received_bill_id = ${railwayBill.id}
+      where id = ${measurementBook.id}
+    `;
+
+    // A bill prepared from that closed book, and the payment register
+    // against it (0067). Bill 1 above is a Milestone 5 sweep-era row with
+    // no `mb_id` and can never take a payment; this is the modern shape.
+    // The figures are the point rather than the amounts: ₹10 billed, ₹7
+    // received, ₹2 kept in two named heads, ₹1 still outstanding — the
+    // three-figure position the register exists to state.
+    const [mbBill] = await tx<{ id: string }[]>`
+      insert into bills (
+        organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+        prepared_by_user_id, mb_id
+      )
+      values (
+        ${organisationId}, ${work.id}, 2, '[]'::jsonb, '10.00', ${userId},
+        ${measurementBook.id}
+      )
+      returning id
+    `;
+    if (!mbBill) throw new Error('seed measurement-book bill insert returned no row');
+    const [billPayment] = await tx<{ id: string }[]>`
+      insert into bill_payments (
+        organisation_id, bill_id, received_on, received_amount, reference,
+        recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${mbBill.id}, '2026-02-20', '7.00',
+        ${`UTR-${workCode}`}, ${userId}
+      )
+      returning id
+    `;
+    if (!billPayment) throw new Error('seed bill payment insert returned no row');
+    await tx`
+      insert into bill_payment_deductions (
+        organisation_id, bill_payment_id, category, amount, description
+      )
+      values
+        (${organisationId}, ${billPayment.id}, 'GST_TDS', '1.00', null),
+        (${organisationId}, ${billPayment.id}, 'SECURITY_DEPOSIT', '1.00', null)
     `;
 
     // 0045 normalized merge provenance: a live target plus one selected

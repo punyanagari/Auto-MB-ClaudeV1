@@ -14,6 +14,10 @@ export const TIMELINE_ENTITY_TYPES = [
   'work_instruments',
   'mb_entries',
   'bills',
+  // The payment register (0067). Money received is the one part of the
+  // chain the timeline could not see, which made a Work's history stop
+  // at the bill it prepared.
+  'bill_payments',
   'installations',
   'approval_requests',
   'correction_notices',

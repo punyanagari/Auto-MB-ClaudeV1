@@ -224,6 +224,22 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     proposeAmendment: vi.fn<ApiClient['proposeAmendment']>(),
     proposeAddItem: vi.fn<ApiClient['proposeAddItem']>(),
     proposeItemRemoval: vi.fn<ApiClient['proposeItemRemoval']>(),
+    // Not superseding by default: a Work with a document behind it is the
+    // ordinary case, so a test that does not care about the supersede panel
+    // never sees it.
+    getSupersedeEligibility: vi
+      .fn<ApiClient['getSupersedeEligibility']>()
+      .mockResolvedValue({
+        workId: WORK_ID,
+        eligible: false,
+        blockers: [{ register: 'delivery_challans', label: 'delivery challans' }],
+        loaDocumentId: DOC_ID,
+        pendingRequestId: null,
+      }),
+    proposeWorkSupersede: vi.fn<ApiClient['proposeWorkSupersede']>(),
+    getWorkSupersession: vi
+      .fn<ApiClient['getWorkSupersession']>()
+      .mockResolvedValue(null),
     attachVariationOrder: vi.fn<ApiClient['attachVariationOrder']>(),
     downloadVariationOrderFile: vi.fn<ApiClient['downloadVariationOrderFile']>(),
     approveAmendment: vi.fn<ApiClient['approveAmendment']>(),
@@ -291,6 +307,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listReceivedRailwayBills']>()
       .mockResolvedValue([]),
     discardReceivedRailwayBill: vi.fn<ApiClient['discardReceivedRailwayBill']>(),
+    listBillSettlement: vi.fn<ApiClient['listBillSettlement']>().mockResolvedValue([]),
+    recordBillPayment: vi.fn<ApiClient['recordBillPayment']>(),
+    voidBillPayment: vi.fn<ApiClient['voidBillPayment']>(),
     closeMeasurementBook: vi.fn<ApiClient['closeMeasurementBook']>(),
     renderMeasurementBook: vi.fn<ApiClient['renderMeasurementBook']>(),
     downloadMeasurementBookPdf: vi.fn<ApiClient['downloadMeasurementBookPdf']>(),

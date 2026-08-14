@@ -52,6 +52,13 @@ import {
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
+import {
+  assertIdentityNotReserved,
+  assertSuccessorIdentity,
+  bindSupersessionSuccessor,
+  closeSupersessionOnDiscard,
+  readOpenSupersession,
+} from '../work-supersede.js';
 import { assertAmcStagePercentages } from './payment.js';
 import type { ObjectStorage } from '@auto-mb/documents';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
@@ -1001,12 +1008,19 @@ export function registerLoaRoutes(
           returning id, original_filename
         `;
 
+        // If this letter was released by a supersede and is now being
+        // thrown away, the supersession ends here rather than waiting
+        // forever for a successor that cannot arrive — and the identity it
+        // was holding is released with it (migration 0071).
+        const closedSupersessionId = await closeSupersessionOnDiscard(tx, id);
+
         await audit(tx, organisationId, user.id, 'loa.discarded', 'loa_documents', id, {
           filename: existing.original_filename,
           before: { extractionStatus: existing.extraction_status },
           after: { extractionStatus: 'discarded' },
           reason: reason ?? null,
           supportingDocumentIds: supporting.map((row) => row.id),
+          closedSupersessionId,
         });
         // One row per discarded supporting document, written as a single
         // statement (the shared `audit` helper writes exactly one row, so
@@ -1087,6 +1101,35 @@ export function registerLoaRoutes(
             `Only documents in review can be confirmed (status: ${document.extraction_status}).`,
           );
         }
+
+        // A letter released by an approved supersede (migration 0071) is
+        // not an ordinary letter in review, and confirming it is not an
+        // ordinary confirmation: it re-creates a Work that an approver
+        // decided to withdraw. Three refusals apply before anything is
+        // written, and all three are read under the supersession's own row
+        // lock (`readOpenSupersession` takes it).
+        const openSupersession = await readOpenSupersession(tx, documentId);
+        if (openSupersession !== null) {
+          //  1. ACCESS. The writer role alone is not enough — it does not
+          //     look at work_scope, and the withdrawn Work may be outside
+          //     the confirmer's. Whoever re-creates a Work must have been
+          //     able to see the one it replaces.
+          await assertWorkAccess(tx, user.id, openSupersession.supersededWorkId);
+          //  2. IDENTITY. The successor is the same contract, so it carries
+          //     the same work code and letter number. Anything else would
+          //     be an identity change riding an approval that described a
+          //     withdrawal.
+          assertSuccessorIdentity(openSupersession, body.workCode, body.letterNumber);
+        }
+        //  3. RESERVATION. Applies to every confirmation, not only to a
+        //     released letter: while some OTHER supersession is open, the
+        //     identity it freed is held for its own successor.
+        await assertIdentityNotReserved(
+          tx,
+          documentId,
+          body.workCode,
+          body.letterNumber,
+        );
         const parsedPayload = parseJsonbColumn(document.extraction_payload);
         const payload =
           parsedPayload !== null &&
@@ -1412,6 +1455,45 @@ export function registerLoaRoutes(
               and extraction_status <> 'discarded'
           `;
 
+        // If this letter was released by an approved supersession
+        // (migration 0071), the Work just confirmed is the successor the
+        // supersession was waiting for: the provenance is bound and the
+        // withdrawn Work's assignments carried across, in this same
+        // transaction. Confirming a letter that no supersession is
+        // waiting for is the ordinary case and binds nothing.
+        const bound =
+          openSupersession === null
+            ? null
+            : await bindSupersessionSuccessor(
+                tx,
+                organisationId,
+                user.id,
+                openSupersession,
+                work.id,
+              );
+        const supersessionId = bound?.supersessionId ?? null;
+        // The carried assignments get their own event, in the same shape
+        // the owner-managed assignment writes use, so a member's access
+        // to this contract has one trail whether it was granted, replaced
+        // or inherited from the Work this one supersedes.
+        if (bound !== null && bound.assignedUserIds.length > 0) {
+          await tx`
+              insert into audit_events (
+                organisation_id, actor_user_id, action, entity_type, entity_id,
+                details
+              )
+              values (
+                ${organisationId}, ${user.id}, 'work.assignments_carried',
+                'work_assignments', ${work.id},
+                ${jsonb(tx, {
+                  supersessionId,
+                  supersededWorkId: openSupersession?.supersededWorkId ?? null,
+                  memberUserIds: bound.assignedUserIds,
+                })}
+              )
+            `;
+        }
+
         await tx`
             insert into audit_events (
               organisation_id, actor_user_id, action, entity_type, entity_id, details
@@ -1420,6 +1502,10 @@ export function registerLoaRoutes(
               ${organisationId}, ${user.id}, 'work.created', 'works', ${work.id},
               ${jsonb(tx, {
                 loaDocumentId: documentId,
+                // Present only on a reconfirmation: the supersession this
+                // Work is the successor of. The trail then answers "where
+                // did this Work come from" without a join.
+                supersessionId,
                 workCode: body.workCode,
                 scheduleCount: body.schedules.length,
                 itemCount: body.schedules.reduce(
@@ -1492,6 +1578,7 @@ export function registerLoaRoutes(
                 organisation_id, work_id, user_id, created_by_user_id
               )
               values (${organisationId}, ${work.id}, ${user.id}, ${user.id})
+              on conflict do nothing
             `;
           const previousWorkIds = previousAssignments.map((row) => row.work_id);
           // Assignments are a set; both sides sort so the trail matches

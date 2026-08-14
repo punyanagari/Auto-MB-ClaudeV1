@@ -268,6 +268,17 @@ const SECTIONS: readonly ExportSection[] = [
     jsonbColumns: ['lines_snapshot'],
   },
   {
+    // The payment register (0067). Deductions follow their payment, and
+    // both are ordered so a diff of two exports is readable.
+    key: 'billPayments',
+    sql: `select * from bill_payments order by bill_id, received_on, id`,
+  },
+  {
+    key: 'billPaymentDeductions',
+    sql: `select * from bill_payment_deductions
+          order by bill_payment_id, category, id`,
+  },
+  {
     key: 'installations',
     sql: `select * from installations order by installed_on, created_at, id`,
   },
@@ -288,6 +299,13 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'amendmentVariationOrders',
     sql: `select * from amendment_variation_orders order by created_at, id`,
     jsonbColumns: ['verdict'],
+  },
+  // Which Works were withdrawn, why, on whose approval, and what replaced
+  // them (0071). A recovery package that carried the successor and not the
+  // withdrawal would present a Work with no history.
+  {
+    key: 'workSupersessions',
+    sql: `select * from work_supersessions order by superseded_at, id`,
   },
   {
     key: 'correctionNotices',

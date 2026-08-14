@@ -860,7 +860,7 @@ export async function readWorkIdentity(
 ): Promise<WorkIdentityRow> {
   const [work] = await tx<WorkIdentityRow[]>`
     select work_code, title, letter_number, letter_date::text as letter_date
-    from works where id = ${workId}
+    from works where id = ${workId} and deleted_at is null
   `;
   if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
   return work;

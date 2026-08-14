@@ -102,10 +102,18 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ['GET /api/works/:id/payment-matrix', 'at most four payment categories'],
   ['GET /api/works/:id/completion-readiness', 'blockers, one per unfinished item'],
   ['GET /api/works/:id/consignees', 'the consignees linked to one Work'],
+  [
+    'GET /api/works/:id/supersede-eligibility',
+    'blockers, at most one per downstream register',
+  ],
   ['GET /api/works/:id/instruments', 'the PBG/PAC/DOC instruments of one Work'],
   [
     'GET /api/works/:id/received-railway-bills',
     "one railway bill per measurement, and a Work's measurements are its Measurement Books",
+  ],
+  [
+    'GET /api/works/:id/bill-settlement',
+    'one position per prepared bill, and a bill is prepared from a Measurement Book; the whole point of the answer is that it is a Work-wide total',
   ],
   [
     'GET /api/organisations/current/members/:userId/assignments',

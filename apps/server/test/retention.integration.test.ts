@@ -629,6 +629,35 @@ describe('Measurement Book and the first partial-billing cycle', () => {
     );
     await closeBookForPayment(bill?.mb_id ?? '');
 
+    // Migration 0067: closure is no longer sufficient either. `paid` now
+    // asserts that the money is accounted for, so a bill with an empty
+    // payment register is refused however well the railway settled the
+    // measurement. The register itself is proved in
+    // bill-payments.integration.test.ts; what this suite needs is the one
+    // receipt that makes the forward transition legal.
+    const unaccounted = await authed(owner, {
+      method: 'POST',
+      url: `/api/bills/${bill?.id ?? ''}/status`,
+      organisationId,
+      payload: { status: 'paid' },
+    });
+    expect(unaccounted.statusCode, unaccounted.body).toBe(409);
+    expect(unaccounted.json<{ code: string }>().code).toBe('BILL_NOT_FULLY_SETTLED');
+
+    // The stand-in railway bill above is raised for 10.00, and the
+    // railway's own figure is what the register is measured against.
+    const receipt = await authed(owner, {
+      method: 'POST',
+      url: `/api/bills/${bill?.id ?? ''}/payments`,
+      organisationId,
+      payload: {
+        receivedOn: '2026-02-20',
+        receivedAmount: '8.00',
+        deductions: [{ category: 'GST_TDS', amount: '2.00' }],
+      },
+    });
+    expect(receipt.statusCode, receipt.body).toBe(201);
+
     const paid = await authed(owner, {
       method: 'POST',
       url: `/api/bills/${bill?.id ?? ''}/status`,

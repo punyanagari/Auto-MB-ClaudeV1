@@ -640,6 +640,48 @@ describe('WorkDetail R8 completion panel', () => {
     expect(screen.getByRole('button', { name: 'Reopen Work' })).toBeTruthy();
   });
 
+  it('keeps the receipt form open on a completed Work, as the server does', async () => {
+    // R8 closes every create/record surface with the Work, and the
+    // payment register is the one that must NOT close with it.
+    // `routes/retention.ts` says so in as many words and refuses nothing:
+    // recording that the railway paid moves no quantity and creates no
+    // document, and payment legitimately continues for months after
+    // execution finishes. Gated on `workActive`, this form disappeared
+    // while the bill's own "Mark paid" stayed — so a completed Work
+    // offered an action whose only precondition it had just hidden.
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue({ work: COMPLETED_WORK, ...DETAIL }),
+      listBillSettlement: vi.fn().mockResolvedValue([
+        {
+          billId: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d',
+          workId: WORK_ID,
+          billNumber: 1,
+          status: 'submitted' as const,
+          preparedAmount: '1000000.00',
+          measurementBookId: null,
+          measurementBookNumber: 'MB-01',
+          measurementClosedAt: '2026-05-11T06:00:00.000Z',
+          receivedRailwayBillId: null,
+          railwayBillNumber: 'RB/1',
+          railwayBillDate: '2026-05-11',
+          railwayBillAmount: '1000000.00',
+          receivedTotal: '0.00',
+          deductionTotal: '0.00',
+          outstandingAmount: '1000000.00',
+          payments: [],
+        },
+      ]),
+    });
+    renderDetail(api);
+
+    await screen.findByRole('heading', { name: 'Completion status' });
+    // The create surfaces this Work DOES close, for contrast.
+    expect(screen.queryByRole('button', { name: 'New Delivery Challan' })).toBeNull();
+
+    await openWorkTab('Bills');
+    expect(await screen.findByLabelText('Amount credited')).toBeTruthy();
+  });
+
   it('reopens with a note and reopens the create surfaces', async () => {
     const reopenWork = vi.fn().mockResolvedValue({ work: ACTIVE_WORK });
     const api = stubApi({

@@ -49,6 +49,7 @@ import { registerIssueChallanRoutes } from './routes/issue-challans.js';
 import { registerCorrectionRoutes } from './routes/corrections.js';
 import { registerContractSourceRoutes } from './routes/contract-sources.js';
 import { registerReceivedRailwayBillRoutes } from './routes/received-railway-bills.js';
+import { registerBillPaymentRoutes } from './routes/bill-payments.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -67,8 +68,12 @@ import { registerCreditNoteRoutes } from './routes/credit-notes.js';
 import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
-import { createFileSystemStorage } from '@auto-mb/documents';
-import { EMPTY_TRUST_ANCHOR_STORE, type TrustAnchorStore } from '@auto-mb/documents';
+import { registerWorkSupersedeRoutes } from './routes/work-supersede.js';
+import {
+  createFileSystemStorage,
+  EMPTY_TRUST_ANCHOR_STORE,
+  type TrustAnchorStore,
+} from '@auto-mb/documents';
 import { recordRegisteredRoutes, tenantRoutesOf } from './tenant-route.js';
 import { assertProductionMalwareScanning } from './upload-guards.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
@@ -902,6 +907,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerSearchRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
+    registerBillPaymentRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerContractSourceRoutes(
@@ -977,6 +983,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     );
     registerEwayBillRoutes(app, authInstance, database, options.statutoryProvider);
     registerWorkCompletionRoutes(app, authInstance, database);
+    registerWorkSupersedeRoutes(app, authInstance, database);
   }
 
   return app;

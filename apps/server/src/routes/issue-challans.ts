@@ -652,7 +652,7 @@ export function registerIssueChallanRoutes(
         >`
             select work_code, title, letter_number,
                    letter_date::text as letter_date, status
-            from works where id = ${challan.work_id}
+            from works where id = ${challan.work_id} and deleted_at is null
             for update
           `;
         if (!work) throw new Error('issue challan without a Work');

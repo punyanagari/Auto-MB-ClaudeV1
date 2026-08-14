@@ -305,6 +305,18 @@ no removal path at all today — `works.deleted_at` exists from migration
 stays refused until work removal is built with its own rules and
 evidence refusals.
 
+Superseding a confirmed Work (2026-08-14, migration 0071) is the first
+and so far only writer of `works.deleted_at`, and it does not reopen
+`cancelled`. It is a correction path rather than a removal path: it
+applies only to a Work carrying no downstream document at all, it runs
+through the approval engine as `entity_type = 'work_supersede'`, and its
+purpose is to release the Work's LOA document back to review so a letter
+that was read wrongly can be read again (`docs/PRODUCT.md` §5.4). The
+soft delete is guarded in both directions — no Work is withdrawn without
+a supersession record and a clean eligibility census, and a withdrawn
+Work is frozen, including its deletion stamp. Work CANCELLATION, which
+would have to say what happens to issued documents, remains unbuilt.
+
 Retrofit, closing hardening (2026-08-09, migration 0032): the freeze on
 a completed Work now runs in both directions. 0031 closed every path
 that ADDS a document; nothing stopped the evidence the predicate was
