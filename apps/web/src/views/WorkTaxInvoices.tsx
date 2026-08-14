@@ -34,6 +34,10 @@ interface WorkTaxInvoicesProps {
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
+  /** Reports how many invoices this tab knows of, whenever its list loads
+   * or changes — the Bills tab's badge counts invoices it never reads
+   * itself. */
+  readonly onInvoicesKnown: (count: number) => void;
 }
 
 /**
@@ -70,6 +74,7 @@ export function WorkTaxInvoices({
   canManageStatutory,
   pending,
   act,
+  onInvoicesKnown,
 }: WorkTaxInvoicesProps) {
   const [invoices, setInvoices] = useState<readonly TaxInvoice[] | null>(null);
   const [books, setBooks] = useState<readonly MeasurementBook[]>([]);
@@ -97,7 +102,9 @@ export function WorkTaxInvoices({
     api
       .listWorkTaxInvoices(organisationId, workId)
       .then((loaded) => {
-        if (!cancelled) setInvoices(loaded);
+        if (cancelled) return;
+        setInvoices(loaded);
+        onInvoicesKnown(loaded.length);
       })
       .catch(() => {
         if (!cancelled) setLoadError(true);
@@ -175,7 +182,9 @@ export function WorkTaxInvoices({
   }, [api, organisationId, workId, loadVersion]);
 
   async function refreshList() {
-    setInvoices(await api.listWorkTaxInvoices(organisationId, workId));
+    const fresh = await api.listWorkTaxInvoices(organisationId, workId);
+    setInvoices(fresh);
+    onInvoicesKnown(fresh.length);
   }
 
   async function openInvoiceDetail(invoiceId: string) {

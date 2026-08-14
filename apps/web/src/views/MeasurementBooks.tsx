@@ -50,6 +50,10 @@ interface MeasurementBooksProps {
   /** Lets the Work page refresh its Bills section once a bill is
    * prepared from a finalized MB. */
   readonly onBillPrepared: () => void;
+  /** Reports how many books this workspace knows of, whenever its list
+   * loads or changes — the Measurement tab's badge counts books it never
+   * reads itself. */
+  readonly onBooksKnown: (count: number) => void;
 }
 
 function sourceKey(sourceType: MbSourceType, sourceId: string): string {
@@ -118,6 +122,7 @@ export function MeasurementBooks({
   canPrepareBill,
   canCancel,
   onBillPrepared,
+  onBooksKnown,
 }: MeasurementBooksProps) {
   const [books, setBooks] = useState<readonly MeasurementBook[] | null>(null);
   const [detail, setDetail] = useState<MeasurementBookDetailResponse | null>(null);
@@ -164,7 +169,9 @@ export function MeasurementBooks({
     api
       .listWorkMeasurementBooks(organisationId, workId)
       .then((loaded) => {
-        if (!cancelled) setBooks(loaded.books);
+        if (cancelled) return;
+        setBooks(loaded.books);
+        onBooksKnown(loaded.books.length);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -225,8 +232,10 @@ export function MeasurementBooks({
   );
 
   const refreshList = useCallback(async () => {
-    setBooks((await api.listWorkMeasurementBooks(organisationId, workId)).books);
-  }, [api, organisationId, workId]);
+    const fresh = (await api.listWorkMeasurementBooks(organisationId, workId)).books;
+    setBooks(fresh);
+    onBooksKnown(fresh.length);
+  }, [api, organisationId, workId, onBooksKnown]);
 
   const loadCandidates = useCallback(async () => {
     const [challans, installationList, pacList] = await Promise.all([

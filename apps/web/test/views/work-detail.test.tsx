@@ -67,6 +67,8 @@ describe('WorkDetail retention', () => {
       },
     ],
     installationCounts: { recorded: 0, cancelled: 0 },
+    measurementBookCount: 0,
+    taxInvoiceCount: 0,
   };
 
   const ISSUED_CHALLAN = {
@@ -367,6 +369,41 @@ describe('WorkDetail retention', () => {
     });
     // …and the Work itself was read once, at open.
     expect(api.getWork).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts Measurement Books and tax invoices on their badges without reading them', async () => {
+    // The regression this pins: a Work with one formal Measurement Book and
+    // no loose evidence entries showed a Measurement badge of 0, because the
+    // badge counted only the entries — the books render inside their tab
+    // from their own read. Same shape on Bills with tax invoices.
+    const listWorkMeasurementBooks = vi.fn().mockResolvedValue({ books: [] });
+    const listWorkTaxInvoices = vi.fn().mockResolvedValue([]);
+    const api = retentionApi({
+      getWork: vi.fn().mockResolvedValue({
+        ...WORK_DETAIL,
+        measurementBookCount: 2,
+        taxInvoiceCount: 3,
+      }),
+      listWorkMeasurementBooks,
+      listWorkTaxInvoices,
+    });
+    renderWorkDetail(api);
+
+    const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
+    // The fixture carries 1 loose entry and 1 bill, so the badges must read
+    // 1 + 2 books = 3 and 1 + 3 invoices = 4 — with neither list read.
+    expect(
+      within(tabs).getByRole('button', {
+        name: (name: string) => name.startsWith('Measurement'),
+      }).textContent,
+    ).toContain('3');
+    expect(
+      within(tabs).getByRole('button', {
+        name: (name: string) => name.startsWith('Bills'),
+      }).textContent,
+    ).toContain('4');
+    expect(listWorkMeasurementBooks).not.toHaveBeenCalled();
+    expect(listWorkTaxInvoices).not.toHaveBeenCalled();
   });
 
   it('keeps stage-wise Measurement Books open when loose entries fail', async () => {

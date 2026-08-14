@@ -29,6 +29,9 @@ interface WorkMeasurementProps {
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
+  /** Forwarded to MeasurementBooks so the tab badge tracks the books
+   * this tab loads itself. */
+  readonly onBooksKnown: (count: number) => void;
 }
 
 /** What has been measured against this Work — the loose entries and the
@@ -53,6 +56,7 @@ export function WorkMeasurement({
   canCancel,
   pending,
   act,
+  onBooksKnown,
 }: WorkMeasurementProps) {
   return (
     <>
@@ -220,6 +224,7 @@ export function WorkMeasurement({
         canIssue={canIssue}
         canPrepareBill={billsState === 'ready'}
         canCancel={canCancel}
+        onBooksKnown={onBooksKnown}
         onBillPrepared={() => {
           // Through the page's shared runner so a failed refresh surfaces
           // as an action error instead of vanishing as an unhandled

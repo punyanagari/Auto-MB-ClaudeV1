@@ -587,6 +587,8 @@ export function challanDetail(
 export function challanWork(requiresSerials = false): WorkDetailResponse {
   const scheduleId = '77777777-7777-4777-8777-777777777777';
   return {
+    measurementBookCount: 0,
+    taxInvoiceCount: 0,
     work: {
       id: WORK_ID,
       workCode: 'DCW-1',
