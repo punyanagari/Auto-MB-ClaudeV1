@@ -1907,7 +1907,7 @@ export function registerChallanRoutes(
         >`
             select allow_excess_delivery, work_code, title, letter_number,
                    letter_date::text as letter_date, status
-            from works where id = ${workId}
+            from works where id = ${workId} and deleted_at is null
             for update
           `;
         if (!work) throw new Error('challan without a Work');

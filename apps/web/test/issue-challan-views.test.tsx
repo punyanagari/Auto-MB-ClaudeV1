@@ -171,13 +171,12 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     getSupersedeEligibility: vi.fn().mockResolvedValue({
       workId: WORK_ID,
       eligible: false,
-      blockers: [
-        { register: 'delivery_challans', label: 'delivery challans', count: 1 },
-      ],
+      blockers: [{ register: 'delivery_challans', label: 'delivery challans' }],
       loaDocumentId: null,
       pendingRequestId: null,
     }),
     proposeWorkSupersede: vi.fn(),
+    getWorkSupersession: vi.fn().mockResolvedValue(null),
     attachVariationOrder: vi.fn(),
     downloadVariationOrderFile: vi.fn(),
     approveAmendment: vi.fn(),

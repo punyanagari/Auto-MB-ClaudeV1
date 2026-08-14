@@ -319,17 +319,14 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   ],
 
   // A supersession record (0071) is written whole when a Work is
-  // withdrawn; the only later fact is which Work replaced it, and the
-  // stamps that travel with the binding. `successor_work_id` itself is
-  // absent here on purpose: it is bind-once, so the guard freezes it the
-  // moment it stops being NULL, exactly as `approval_requests.entity_id`
-  // is bound once by an approved apply.
-  work_supersessions: [
-    'id',
-    'successor_bound_at',
-    'successor_bound_by_user_id',
-    'updated_at',
-  ],
+  // withdrawn, and admits exactly two later facts, mutually exclusive and
+  // each written once: the Work that replaced it, or the discarding of the
+  // letter that would have produced one. Both are bind-once, and the guard
+  // freezes each the moment it stops being NULL — exactly as
+  // `approval_requests.entity_id` is bound once by an approved apply —
+  // which is why neither appears here. Nothing but the maintained
+  // timestamp is outside the freeze.
+  work_supersessions: ['updated_at'],
 };
 
 /**

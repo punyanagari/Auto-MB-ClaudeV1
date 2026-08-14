@@ -10,6 +10,7 @@ import type {
   ConfirmWorkRequest,
   SupersedeEligibilityResponse,
   WorkDetailResponse,
+  WorkSupersession,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import {
@@ -401,15 +402,13 @@ describe('supersede eligibility', () => {
     const result = await eligibility(work.id);
     expect(result.eligible).toBe(false);
     expect(result.blockers).toEqual([
-      { register: 'delivery_challans', label: 'delivery challans', count: 1 },
+      { register: 'delivery_challans', label: 'delivery challans' },
     ]);
 
     const refused = await propose(work.id);
     expect(refused.statusCode, refused.body).toBe(409);
     expect(refused.json()).toMatchObject({ code: 'WORK_HAS_DOWNSTREAM_DOCUMENTS' });
-    expect(refused.json<{ message: string }>().message).toContain(
-      '1 delivery challans',
-    );
+    expect(refused.json<{ message: string }>().message).toContain('delivery challans');
   });
 
   it('is denied to a member the Work is out of scope for', async () => {
@@ -596,35 +595,391 @@ describe('the whole remedy, end to end', () => {
   });
 });
 
-describe('the eligibility census', () => {
-  it('classifies every child of works as a document or as exempt', async () => {
-    const children = await admin<{ table_name: string }[]>`
-      select distinct child.relname as table_name
-      from pg_constraint c
-      join pg_class child on child.oid = c.conrelid
-      join pg_class parent on parent.oid = c.confrelid
-      where c.contype = 'f'
-        and parent.relname = 'works'
-        and child.relname <> 'works'
-      order by 1
+/**
+ * The identity half of the rule.
+ *
+ * Freeing the work code opens a question the approval never answered: who
+ * gets it. Without these three refusals, superseding is a work-code rename
+ * with no approval behind it — the approver reads a reason for withdrawing
+ * one contract and approves that, and whoever confirms the released letter
+ * afterwards decides what it becomes.
+ */
+describe('the successor identity', () => {
+  /** Supersedes a fresh Work and returns the released letter. */
+  async function releasedLetter(tag: string) {
+    const fixture = await freshWork(tag);
+    const filed = await propose(fixture.work.id);
+    expect(filed.statusCode, filed.body).toBe(201);
+    expect((await approve(filed.json<ApprovalRequest>().id)).statusCode).toBe(200);
+    return fixture;
+  }
+
+  it('refuses a successor confirmed under a different work code', async () => {
+    const { documentId, work } = await releasedLetter('IDENT');
+    const renamed = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: {
+        ...confirmBody(`RENAMED${runId.slice(0, 4)}`.toUpperCase(), work.letterNumber),
+      },
+    });
+    expect(renamed.statusCode, renamed.body).toBe(409);
+    expect(renamed.json()).toMatchObject({
+      code: 'SUCCESSOR_IDENTITY_MISMATCH',
+      details: {
+        expectedWorkCode: work.workCode,
+        expectedLetterNumber: work.letterNumber,
+      },
+    });
+
+    // The refusal saved nothing: no Work, and the letter still in review.
+    const works = await admin<{ id: string }[]>`
+      select id from works
+      where organisation_id = ${organisationId} and deleted_at is null
+        and work_code like ${'RENAMED%'}
     `;
+    expect(works).toHaveLength(0);
+    const [document] = await admin<{ extraction_status: string }[]>`
+      select extraction_status from loa_documents where id = ${documentId}
+    `;
+    expect(document?.extraction_status).toBe('review');
+  });
+
+  it('refuses a successor confirmed under a different letter number', async () => {
+    const { documentId, work } = await releasedLetter('LETTR');
+    const renamed = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: confirmBody(work.workCode, `LOA/RENAMED/${runId}`),
+    });
+    expect(renamed.statusCode, renamed.body).toBe(409);
+    expect(renamed.json()).toMatchObject({ code: 'SUCCESSOR_IDENTITY_MISMATCH' });
+  });
+
+  it('reserves the freed identity for the successor, and frees it on discard', async () => {
+    const { documentId, work } = await releasedLetter('RESRV');
+
+    // A DIFFERENT letter cannot take the freed identity while the released
+    // one is still waiting for it.
+    const otherDocument = await seedReviewDocument('RESRV-OTHER');
+    const stolen = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${otherDocument}/confirm`,
+      organisationId,
+      payload: confirmBody(work.workCode, `LOA/OTHER/${runId}`),
+    });
+    expect(stolen.statusCode, stolen.body).toBe(409);
+    expect(stolen.json()).toMatchObject({ code: 'WORK_IDENTITY_RESERVED' });
+
+    // Discarding the released letter ends the reservation: no successor can
+    // arrive through it any more, which is exactly the documented
+    // discard-and-re-upload remedy (docs/PRODUCT.md §5.6).
+    const discarded = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/discard`,
+      organisationId,
+      payload: { reason: 'The scan is illegible at the schedule headers.' },
+    });
+    expect(discarded.statusCode, discarded.body).toBe(200);
+
+    const reused = await authed(owner, {
+      method: 'POST',
+      url: `/api/loa-documents/${otherDocument}/confirm`,
+      organisationId,
+      payload: confirmBody(work.workCode, `LOA/OTHER/${runId}`),
+    });
+    expect(reused.statusCode, reused.body).toBe(201);
+    // And it is unlinked, by design: the document the link is kept on was
+    // thrown away, so the supersession stays without a successor.
+    const [supersession] = await admin<{ successor_work_id: string | null }[]>`
+      select successor_work_id from work_supersessions
+      where superseded_work_id = ${work.id}
+    `;
+    expect(supersession?.successor_work_id).toBeNull();
+  });
+
+  it('refuses a confirmer who could not see the Work being replaced', async () => {
+    const { documentId, work } = await releasedLetter('SCOPED');
+    // An 'assigned'-scope office member: the writer role alone passes, and
+    // before this refusal the work_scope was never consulted on this path.
+    const denied = await authed(scoped, {
+      method: 'POST',
+      url: `/api/loa-documents/${documentId}/confirm`,
+      organisationId,
+      payload: confirmBody(work.workCode, work.letterNumber),
+    });
+    expect(denied.statusCode, denied.body).toBe(404);
+    expect(denied.json()).toMatchObject({ code: 'WORK_NOT_FOUND' });
+  });
+
+  it("carries the withdrawn Work's assignments to its successor", async () => {
+    const { documentId, work } = await freshWork('ASSIGN');
+    const [scopedUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${scopedEmail}
+    `;
+    const [siteUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${viewerEmail}
+    `;
+    if (!scopedUser || !siteUser) throw new Error('assignment fixture users missing');
+    await admin`
+      insert into work_assignments (organisation_id, work_id, user_id, created_by_user_id)
+      values (${organisationId}, ${work.id}, ${scopedUser.id}, ${ownerUserId}),
+             (${organisationId}, ${work.id}, ${siteUser.id}, ${ownerUserId})
+    `;
+
+    const filed = await propose(work.id);
+    expect((await approve(filed.json<ApprovalRequest>().id)).statusCode).toBe(200);
+    const successor = (await confirmWork(documentId, work.workCode, work.letterNumber))
+      .work;
+
+    const carried = await admin<{ user_id: string }[]>`
+      select user_id from work_assignments
+      where work_id = ${successor.id} order by user_id
+    `;
+    expect(carried.map((row) => row.user_id).sort()).toEqual(
+      [scopedUser.id, siteUser.id].sort(),
+    );
+    const [event] = await admin<{ details: unknown }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'work.assignments_carried' and entity_id = ${successor.id}
+    `;
+    expect(event).toBeDefined();
+  });
+
+  it('holds a supporting document in the package for the whole window', async () => {
+    const { documentId, work } = await freshWork('SUPPORT');
+    const supporting = randomUUID();
+    await admin`
+      insert into loa_documents (
+        id, organisation_id, object_key, original_filename, sha256, media_type,
+        size_bytes, extraction_status, uploaded_by_user_id, document_kind,
+        parent_loa_document_id, confirmed_work_id, match_status, identity_match
+      )
+      values (
+        ${supporting}, ${organisationId},
+        ${`${organisationId}/source/${supporting}.pdf`}, 'tender-spec.pdf',
+        ${createHash('sha256').update(supporting).digest('hex')},
+        'application/pdf', 2048, 'confirmed', ${ownerUserId}, 'tender_specification',
+        ${documentId}, ${work.id}, 'matched',
+        ${jsonb(admin, { letterNumber: 'matched by the seed' })}
+      )
+    `;
+
+    const filed = await propose(work.id);
+    expect((await approve(filed.json<ApprovalRequest>().id)).statusCode).toBe(200);
+
+    // Mid-window the supersede has cleared confirmed_work_id, which is the
+    // very column the ordinary discard rule tests — so without the
+    // supersession check this would succeed and empty the package out from
+    // under the successor.
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/contract-source-documents/${supporting}/discard`,
+      organisationId,
+      payload: { reason: 'Attached to the wrong letter.' },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'SUPERSEDE_IN_PROGRESS' });
+
+    // Once the successor is confirmed, the ordinary rule applies again —
+    // and it refuses for its own reason, the package being a Work's
+    // evidence once more.
+    await confirmWork(documentId, work.workCode, work.letterNumber);
+    const afterwards = await authed(owner, {
+      method: 'POST',
+      url: `/api/contract-source-documents/${supporting}/discard`,
+      organisationId,
+      payload: { reason: 'Attached to the wrong letter.' },
+    });
+    expect(afterwards.statusCode, afterwards.body).toBe(409);
+    expect(afterwards.json()).toMatchObject({ code: 'CONTRACT_SOURCE_CONFIRMED' });
+  });
+});
+
+describe('reading where a Work came from', () => {
+  it("answers with the withdrawn Work's identity, reason and date", async () => {
+    const { documentId, work } = await freshWork('PROV');
+    const filed = await propose(work.id);
+    const approvalId = filed.json<ApprovalRequest>().id;
+    expect((await approve(approvalId)).statusCode).toBe(200);
+    const successor = (await confirmWork(documentId, work.workCode, work.letterNumber))
+      .work;
+
+    const provenance = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${successor.id}/supersession`,
+      organisationId,
+    });
+    expect(provenance.statusCode, provenance.body).toBe(200);
+    expect(
+      provenance.json<{ supersession: WorkSupersession }>().supersession,
+    ).toMatchObject({
+      supersededWorkId: work.id,
+      supersededWorkCode: work.workCode,
+      supersededLetterNumber: work.letterNumber,
+      successorWorkId: successor.id,
+      loaDocumentId: documentId,
+      approvalRequestId: approvalId,
+    });
+  });
+
+  it('answers null for a Work that replaced nothing, and 404 across organisations', async () => {
+    const { work } = await freshWork('NOPROV');
+    const own = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${work.id}/supersession`,
+      organisationId,
+    });
+    expect(own.statusCode, own.body).toBe(200);
+    expect(own.json()).toEqual({ supersession: null });
+
+    const foreign = await authed(outsider, {
+      method: 'GET',
+      url: `/api/works/${work.id}/supersession`,
+      organisationId: outsiderOrganisationId,
+    });
+    expect(foreign.statusCode, foreign.body).toBe(404);
+  });
+});
+
+describe('concurrency: a document racing the withdrawal', () => {
+  /**
+   * AGENTS.md asks for a simultaneous-request test on anything
+   * concurrency-sensitive, and this is the shape that matters: the
+   * eligibility census is only as good as the lock it runs under. Both
+   * orders are exercised, because the answer must be the same either way —
+   * exactly one of the two acts succeeds, and the loser is refused rather
+   * than leaving an instrument on a withdrawn Work.
+   */
+  async function race(instrumentFirst: boolean) {
+    const { work } = await freshWork(instrumentFirst ? 'RACEA' : 'RACEB');
+    const filed = await propose(work.id);
+    const approvalId = filed.json<ApprovalRequest>().id;
+
+    const instrument = () =>
+      authed(owner, {
+        method: 'POST',
+        url: `/api/works/${work.id}/instruments`,
+        organisationId,
+        payload: {
+          kind: 'PBG',
+          reference: `PBG/${work.workCode}`,
+          amount: '100000.00',
+          issuedOn: '2026-02-01',
+        },
+      });
+    const supersede = () => approve(approvalId);
+
+    const [first, second] = instrumentFirst
+      ? await Promise.all([instrument(), supersede()])
+      : await Promise.all([supersede(), instrument()]);
+    return { work, first, second };
+  }
+
+  it('takes the works row lock every sibling child-creating route takes', async () => {
+    // The two-order race below is a STANDING guard: it asserts the
+    // invariant but cannot force the interleaving that breaks it, so it
+    // passes on the pre-fix tree too. This assertion is the one that
+    // bites — the hazard is a read-then-insert with no lock between them,
+    // and that is a property of the statement, visible in the source.
+    //
+    // Without `for update`, an instrument insert and a supersede can both
+    // see the Work live: the census finds no instrument, the Work is
+    // withdrawn, and the instrument lands on it afterwards.
+    const source = await readFile(
+      fileURLToPath(new URL('../src/routes/retention.ts', import.meta.url)),
+      'utf8',
+    );
+    const instrumentRoute = source.slice(
+      source.indexOf("url: '/api/works/:id/instruments'"),
+    );
+    const worksRead = instrumentRoute.slice(
+      instrumentRoute.indexOf('from works w'),
+      instrumentRoute.indexOf('WORK_NOT_FOUND'),
+    );
+    expect(
+      worksRead,
+      'POST /api/works/:id/instruments must lock the works row it reads, like ' +
+        'every other route that creates a child of a Work — otherwise its ' +
+        'read and its insert straddle a concurrent supersede',
+    ).toContain('for update of w');
+  });
+
+  for (const instrumentFirst of [true, false]) {
+    it(`serialises an instrument against the withdrawal (${instrumentFirst ? 'instrument first' : 'supersede first'})`, async () => {
+      const { work, first, second } = await race(instrumentFirst);
+      const codes = [first.statusCode, second.statusCode];
+      // One side wins; the other is refused. Nothing here may 500, and
+      // nothing may leave an instrument attached to a withdrawn Work.
+      expect(codes.filter((code) => code < 400)).toHaveLength(1);
+      expect(codes.every((code) => code < 500)).toBe(true);
+
+      const [withdrawn] = await admin<{ deleted_at: Date | null }[]>`
+        select deleted_at from works where id = ${work.id}
+      `;
+      const instruments = await admin<{ id: string }[]>`
+        select id from work_instruments where work_id = ${work.id}
+      `;
+      if (withdrawn?.deleted_at === null) {
+        // The instrument won: the Work is live and carries it.
+        expect(instruments).toHaveLength(1);
+      } else {
+        // The supersede won: the Work is withdrawn and carries nothing,
+        // because the census that admitted it held the row lock.
+        expect(instruments).toHaveLength(0);
+      }
+    });
+  }
+});
+
+describe('the eligibility census', () => {
+  /** Every table that reaches `works` through a chain of foreign keys, not
+   * only the direct children — a document hanging off an EXEMPT parent
+   * would otherwise be invisible to the rule. */
+  async function tablesReachingWorks(): Promise<readonly string[]> {
+    const rows = await admin<{ table_name: string }[]>`
+      with recursive reaches(table_name) as (
+        select child.relname::text
+        from pg_constraint c
+        join pg_class child on child.oid = c.conrelid
+        join pg_class parent on parent.oid = c.confrelid
+        join pg_namespace n on n.oid = child.relnamespace
+        where c.contype = 'f' and parent.relname = 'works'
+          and child.relname <> 'works' and n.nspname = 'public'
+        union
+        select child.relname::text
+        from reaches
+        join pg_class parent on parent.relname::text = reaches.table_name
+        join pg_constraint c on c.confrelid = parent.oid and c.contype = 'f'
+        join pg_class child on child.oid = c.conrelid
+        join pg_namespace n on n.oid = child.relnamespace
+        where child.relname::text <> reaches.table_name
+          and child.relname <> 'works' and n.nspname = 'public'
+      )
+      select distinct table_name from reaches order by table_name
+    `;
+    return [...new Set(rows.map((row) => row.table_name))];
+  }
+
+  it('classifies every table that reaches works, however many hops away', async () => {
     const classified = new Set<string>([
       ...DOWNSTREAM_REGISTERS.map((entry) => entry.register),
       ...Object.keys(WORK_CHILD_TABLES_EXEMPT),
-      // The supersession record itself points at both ends of the change;
-      // it is the rule's own bookkeeping, never something downstream of a
-      // Work.
-      'work_supersessions',
     ]);
-    const unclassified = children
-      .map((row) => row.table_name)
-      .filter((name) => !classified.has(name));
+    const unclassified = (await tablesReachingWorks()).filter(
+      (name) => !classified.has(name),
+    );
 
     expect(
       unclassified,
-      'a new child of works must be declared a downstream document or exempt in ' +
+      'a table that can reach works — directly or through a parent that is itself ' +
+        'exempt — must be declared a downstream document or exempt in ' +
         'apps/server/src/work-supersede.ts, and added to migration 0071’s guard ' +
-        'if it blocks',
+        'if it blocks. A document hanging off an exempt parent is exactly the ' +
+        'case a direct-children-only census cannot see.',
     ).toEqual([]);
   });
 
@@ -642,5 +997,34 @@ describe('the eligibility census', () => {
     expect([...new Set(blocked)].sort()).toEqual(
       [...DOWNSTREAM_REGISTERS.map((entry) => entry.register)].sort(),
     );
+  });
+
+  it('keeps the two censuses saying the same thing about approval requests', async () => {
+    // Register names agreeing is not the whole comparison: the one
+    // register with a PREDICATE is the one where the two could disagree
+    // silently. If the server counted rejected requests and the guard did
+    // not, the screen would refuse a supersede the database would allow —
+    // or worse, the reverse. Both predicates are read out and compared as
+    // normalised text.
+    const guard = await readFile(supersedeMigration, 'utf8');
+    const sqlClause =
+      /AND t\.entity_type <> 'work_supersede'\s*\n\s*AND t\.status IN \(([^)]*)\)/.exec(
+        guard,
+      );
+    expect(sqlClause, 'the 0071 guard must qualify approval_requests').not.toBeNull();
+
+    const source = await readFile(
+      fileURLToPath(new URL('../src/work-supersede.ts', import.meta.url)),
+      'utf8',
+    );
+    const tsClause = /entity_type <> 'work_supersede' and status in \(([^)]*)\)/.exec(
+      source,
+    );
+    expect(tsClause, 'the server census must qualify approval_requests').not.toBeNull();
+
+    const statuses = (raw: string): readonly string[] =>
+      [...raw.matchAll(/'(\w+)'/g)].map((match) => match[1] as string).sort();
+    expect(statuses(sqlClause?.[1] ?? '')).toEqual(statuses(tsClause?.[1] ?? ''));
+    expect(statuses(sqlClause?.[1] ?? '')).toEqual(['approved', 'pending']);
   });
 });

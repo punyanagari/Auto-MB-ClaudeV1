@@ -10,6 +10,8 @@ import type {
   ProposeChallanCancelReplaceRequest,
   ProposeWorkSupersedeRequest,
   SupersedeEligibilityResponse,
+  WorkSupersession,
+  WorkSupersessionResponse,
   ProposeCorrectionNoticeRequest,
   ProposeIssueChallanCancelReplaceRequest,
   Bill,
@@ -734,6 +736,12 @@ export interface ApiClient {
     workId: string,
     body: ProposeWorkSupersedeRequest,
   ) => Promise<ApprovalRequest>;
+  /** The supersession this Work is the successor of; null for a Work that
+   * replaced nothing. The withdrawn Work is not otherwise readable. */
+  readonly getWorkSupersession: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkSupersession | null>;
   /** Cites the railway variation order that authorises an omission. The
    * server extracts and verifies every fact from the PDF itself; the
    * client sends only the file. */
@@ -2390,6 +2398,13 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/works/${workId}/supersede-eligibility`,
         { organisationId },
       );
+    },
+    async getWorkSupersession(organisationId, workId) {
+      const payload = await request<WorkSupersessionResponse>(
+        `/api/works/${workId}/supersession`,
+        { organisationId },
+      );
+      return payload.supersession;
     },
     async proposeWorkSupersede(organisationId, workId, body) {
       return request<ApprovalRequest>(`/api/works/${workId}/supersede-requests`, {

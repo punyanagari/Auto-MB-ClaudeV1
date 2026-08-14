@@ -14,6 +14,7 @@ import type {
   SupersedeEligibilityResponse,
   WorkCompletionReadiness,
   WorkDetailResponse,
+  WorkSupersession,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr, formatTimestampDate } from '../format.js';
@@ -360,6 +361,10 @@ export function WorkDetail({
    * offers nothing, which is the honest state for a question that could
    * not be asked. */
   const [supersede, setSupersede] = useState<SupersedeEligibilityResponse | null>(null);
+  /** The supersession this Work is the successor of, if any. Null both
+   * while unread and for the overwhelming majority of Works, which
+   * replaced nothing — the panel renders only when a row comes back. */
+  const [supersession, setSupersession] = useState<WorkSupersession | null>(null);
   const [ownTab, setOwnTab] = useState<WorkTab>('overview');
   const relatedGenerationRef = useRef(0);
   const tab = controlledTab ?? ownTab;
@@ -383,6 +388,7 @@ export function WorkDetail({
     setRelatedFailures(new Set());
     setReadiness(null);
     setSupersede(null);
+    setSupersession(null);
 
     // The Work identity and schedules are the page's critical read. Load them
     // independently so a temporary failure in one supporting register cannot
@@ -486,24 +492,54 @@ export function WorkDetail({
       .catch(() => {
         if (!cancelled) setReadiness(null);
       });
-    // Asked and allowed to fail for the same reason as the readiness read:
-    // it decides whether the supersede panel is worth offering, not whether
-    // the Work can be read, and the server refuses again on the way in.
+    // Where this Work came from: read for everyone, because a successor's
+    // provenance is part of reading the Work rather than part of changing
+    // it. Allowed to fail — the page has ten other areas.
     api
-      .getSupersedeEligibility(organisationId, workId)
+      .getWorkSupersession(organisationId, workId)
       .then((loaded) => {
-        if (!cancelled) setSupersede(loaded);
+        if (!cancelled) setSupersession(loaded);
       })
       .catch(() => {
-        if (!cancelled) setSupersede(null);
+        if (!cancelled) setSupersession(null);
       });
+    // The eligibility census reads seventeen registers. It is asked ONLY
+    // for a member who could act on the answer: a viewer, or a site member
+    // recording evidence, is never offered the supersede panel, so asking
+    // on their behalf would spend the census on every Work page open in
+    // the organisation to render nothing. Allowed to fail for the same
+    // reason as the readiness read, and the server refuses again on the
+    // way in either way.
+    if (canModify) {
+      api
+        .getSupersedeEligibility(organisationId, workId)
+        .then((loaded) => {
+          if (!cancelled) setSupersede(loaded);
+        })
+        .catch(() => {
+          if (!cancelled) setSupersede(null);
+        });
+    }
     return () => {
       cancelled = true;
       if (relatedGenerationRef.current === generation) {
         relatedGenerationRef.current += 1;
       }
     };
-  }, [api, organisationId, workId, loadVersion]);
+  }, [api, organisationId, workId, loadVersion, canModify]);
+
+  /** Re-reads eligibility after the Work's own state moves — filing a
+   * supersede request has to hide the form that filed it rather than
+   * leave it inviting a 409 (the server refuses a second pending request
+   * on the same Work). */
+  const reloadSupersede = useCallback(async (): Promise<void> => {
+    if (!canModify) return;
+    try {
+      setSupersede(await api.getSupersedeEligibility(organisationId, workId));
+    } catch {
+      setSupersede(null);
+    }
+  }, [api, organisationId, workId, canModify]);
 
   function retryWork(): void {
     setLoadVersion((current) => current + 1);
@@ -801,6 +837,32 @@ export function WorkDetail({
       <h1 id="work-title" tabIndex={-1}>
         {work.workCode} — {work.title}
       </h1>
+      {supersession !== null && (
+        // Where this Work came from. The withdrawn Work is not openable —
+        // every Works route filters it out — so this line is the only
+        // place its identity, its reason and its date are readable, and it
+        // says so rather than offering a link that would 404.
+        <section
+          aria-label="Supersedes an earlier Work"
+          className="mt-3 rounded-md border border-border bg-muted/40 p-3"
+        >
+          <p className="m-0 text-sm">
+            Supersedes{' '}
+            <span className="font-mono tabular-nums">
+              {supersession.supersededWorkCode}
+            </span>{' '}
+            (
+            <span className="font-mono tabular-nums">
+              {supersession.supersededLetterNumber}
+            </span>
+            ), withdrawn on {formatTimestampDate(supersession.supersededAt)}. That Work
+            is no longer open; this one replaced it.
+          </p>
+          <p className="m-0 mt-1 text-sm text-muted-foreground">
+            Reason given: {supersession.reason}
+          </p>
+        </section>
+      )}
       {failedSections.length > 0 && (
         <ErrorState
           onRetry={retryFailedSections}
@@ -1303,6 +1365,7 @@ export function WorkDetail({
             workItems={workItems}
             canCreateDocuments={canCreateDocuments}
             supersede={supersede}
+            reloadSupersede={reloadSupersede}
             pending={pending}
             act={act}
           />

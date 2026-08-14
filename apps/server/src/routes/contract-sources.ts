@@ -36,6 +36,7 @@ import {
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
 import { verifyUploadedPdf } from '../document-signature-evidence.js';
+import { assertSupportingDocumentDiscardable } from '../work-supersede.js';
 import type { TrustAnchorStore } from '../pdf-signature.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -627,6 +628,18 @@ export function registerContractSourceRoutes(
             { confirmedWorkId: existing.confirmed_work_id },
           );
         }
+        // The supersede window (migration 0071). A released letter's
+        // package had `confirmed_work_id` cleared by the supersede, which
+        // is precisely what the refusal above tests — so without this the
+        // window silently made every supporting document discardable one
+        // at a time, and the successor could be confirmed against a
+        // package emptied out underneath it. The test is the open
+        // supersession, not the cleared column.
+        await assertSupportingDocumentDiscardable(
+          tx,
+          id,
+          existing.parent_loa_document_id,
+        );
         await tx`
           update loa_documents
           set extraction_status = 'discarded', discarded_at = now(),

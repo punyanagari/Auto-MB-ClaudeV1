@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { SupersedeEligibilityResponse } from '@auto-mb/contracts';
 import type { ApiClient } from '../../src/api.js';
 import { WorkAmendments } from '../../src/views/WorkAmendments.js';
-import { openForm, stubApi, ORG_ID, DOC_ID, WORK_ID } from './helpers.js';
+import { WorkDetail } from '../../src/views/WorkDetail.js';
+import { challanWork, openForm, stubApi, ORG_ID, DOC_ID, WORK_ID } from './helpers.js';
 
 /*
  * The supersede panel (pack P19): the operator-facing half of the exit for
@@ -49,6 +50,7 @@ function renderPanel(
       workItems={[]}
       canCreateDocuments={canCreateDocuments}
       supersede={supersede}
+      reloadSupersede={vi.fn<() => Promise<void>>().mockResolvedValue(undefined)}
       pending={false}
       act={async (run) => {
         await run();
@@ -88,14 +90,14 @@ describe('the supersede panel', () => {
       ...ELIGIBLE,
       eligible: false,
       blockers: [
-        { register: 'delivery_challans', label: 'delivery challans', count: 2 },
-        { register: 'tax_invoices', label: 'tax invoices', count: 1 },
+        { register: 'delivery_challans', label: 'delivery challans' },
+        { register: 'tax_invoices', label: 'tax invoices' },
       ],
     });
 
     await openForm('Supersede this Work');
-    expect(screen.getByRole('rowheader', { name: 'delivery challans' })).toBeTruthy();
-    expect(screen.getByRole('rowheader', { name: 'tax invoices' })).toBeTruthy();
+    expect(screen.getByText('delivery challans')).toBeTruthy();
+    expect(screen.getByText('tax invoices')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Request supersede' })).toBeNull();
   });
 
@@ -125,5 +127,73 @@ describe('the supersede panel', () => {
 
     renderPanel(stubApi(), null);
     expect(screen.queryByRole('button', { name: /Supersede this Work/ })).toBeNull();
+  });
+});
+
+describe('the Work page', () => {
+  const noop = (): void => undefined;
+
+  function renderWork(api: ApiClient, canModify: boolean) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={canModify}
+        canRecordEvidence
+        canIssue
+        canCancel
+        canApprove
+        canManageStatutory
+        isOwner
+        onNewChallan={noop}
+        onOpenChallan={noop}
+        onNewIssueChallan={noop}
+        onOpenIssueChallan={noop}
+        onBack={noop}
+      />,
+    );
+  }
+
+  it('says what this Work replaced, and why, without offering a dead link', async () => {
+    const api = stubApi({
+      getWork: vi.fn<ApiClient['getWork']>().mockResolvedValue(challanWork()),
+      getWorkSupersession: vi.fn<ApiClient['getWorkSupersession']>().mockResolvedValue({
+        id: '55555555-5555-4555-8555-555555555555',
+        supersededWorkId: '66666666-6666-4666-8666-666666666666',
+        supersededWorkCode: 'PL-270',
+        supersededLetterNumber: 'LOA/PL-270/2026',
+        successorWorkId: WORK_ID,
+        loaDocumentId: DOC_ID,
+        approvalRequestId: '77777777-7777-4777-8777-777777777777',
+        reason: 'Confirmed at the advertised rates; the letter is 14.35% below.',
+        supersededAt: '2026-08-14T04:00:00.000Z',
+        supersededByUserId: 'user-1',
+        successorBoundAt: '2026-08-14T05:00:00.000Z',
+      }),
+    });
+    renderWork(api, true);
+
+    const panel = await screen.findByRole('region', {
+      name: 'Supersedes an earlier Work',
+    });
+    expect(panel.textContent).toContain('PL-270');
+    expect(panel.textContent).toContain('LOA/PL-270/2026');
+    expect(panel.textContent).toContain('14.35% below');
+    // The withdrawn Work is not openable, so nothing pretends it is.
+    expect(within(panel).queryByRole('link')).toBeNull();
+  });
+
+  it('does not spend the seventeen-register census on a member who cannot act', async () => {
+    const api = stubApi({
+      getWork: vi.fn<ApiClient['getWork']>().mockResolvedValue(challanWork()),
+    });
+    renderWork(api, false);
+
+    await screen.findByRole('heading', { name: /Supply of switchboards/ });
+    expect(api.getSupersedeEligibility).not.toHaveBeenCalled();
+    // The provenance read is not gated: reading where a Work came from is
+    // part of reading the Work.
+    expect(api.getWorkSupersession).toHaveBeenCalled();
   });
 });

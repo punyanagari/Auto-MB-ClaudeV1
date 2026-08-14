@@ -7,14 +7,21 @@ import { UuidSchema } from './primitives.js';
 // authoritative record, and it is available only while nothing downstream
 // depends on the Work.
 
-/** One reason a Work cannot be superseded, in the operator's words. */
+/**
+ * One reason a Work cannot be superseded, in the operator's words.
+ *
+ * Presence, not a count: the rule turns on whether a register holds
+ * anything at all, and asking for a number would make the census scan
+ * every matching row of seventeen registers on a screen that only needs
+ * to know which ones are non-empty. The server reads each with an
+ * `EXISTS`, which stops at the first row.
+ */
 export const SupersedeBlockerSchema = Type.Object(
   {
     /** The document register that still holds rows, e.g. `delivery_challans`. */
     register: Type.String({ minLength: 1, maxLength: 100 }),
     /** What that register is called on screen, e.g. "delivery challans". */
     label: Type.String({ minLength: 1, maxLength: 100 }),
-    count: Type.Integer({ minimum: 1 }),
   },
   { additionalProperties: false },
 );
@@ -55,8 +62,10 @@ export const WorkSupersessionSchema = Type.Object(
     id: UuidSchema,
     supersededWorkId: UuidSchema,
     supersededWorkCode: Type.String(),
+    /** What the withdrawn Work's letter said, so the successor's page can
+     * show the identity it inherited rather than only an id. */
+    supersededLetterNumber: Type.String(),
     successorWorkId: Type.Union([UuidSchema, Type.Null()]),
-    successorWorkCode: Type.Union([Type.String(), Type.Null()]),
     loaDocumentId: UuidSchema,
     approvalRequestId: UuidSchema,
     reason: Type.String(),
@@ -68,10 +77,13 @@ export const WorkSupersessionSchema = Type.Object(
 );
 export type WorkSupersession = Static<typeof WorkSupersessionSchema>;
 
-export const WorkSupersessionListResponseSchema = Type.Object(
-  { supersessions: Type.Array(WorkSupersessionSchema) },
+/** The provenance of ONE Work: the supersession it is the successor of,
+ * or null for a Work that replaced nothing — which is almost all of
+ * them. The withdrawn Work itself is not readable through the Works
+ * routes (every one filters `deleted_at is null`), so this record is
+ * where its identity, its reason and its date survive. */
+export const WorkSupersessionResponseSchema = Type.Object(
+  { supersession: Type.Union([WorkSupersessionSchema, Type.Null()]) },
   { additionalProperties: false },
 );
-export type WorkSupersessionListResponse = Static<
-  typeof WorkSupersessionListResponseSchema
->;
+export type WorkSupersessionResponse = Static<typeof WorkSupersessionResponseSchema>;

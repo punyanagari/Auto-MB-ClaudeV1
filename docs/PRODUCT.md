@@ -196,7 +196,7 @@ Role is combined with Work scope (`all` or `assigned`) and explicit sensitive-ac
 | Authority                        | What it permits                                                                                                 |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `can_issue_documents`            | Issue a numbered document                                                                                       |
-| `can_cancel_documents`           | Cancel an issued document                                                                                       |
+| `can_cancel_documents`           | Take an authoritative record out of service: cancel an issued document, or withdraw a confirmed Work (§5.6)     |
 | `can_approve_amendments`         | Decide an approval request                                                                                      |
 | `can_manage_statutory_reporting` | Register, reconcile or cancel a document at the IRP or NIC E-way Bill portal, and record manual portal evidence |
 
@@ -506,22 +506,60 @@ one transaction. The letter is then an ordinary unconfirmed intake package
 again: it can be reviewed and confirmed into a successor, or — when the
 scan is the problem — discarded and uploaded again.
 
-**Eligibility.** Only a Work with **no downstream document at all**: no
-delivery or issue challan, installation, Measurement Book or entry, tax
-invoice, credit note, PAC certificate, correction notice, submitted
-instrument, bill, extension request, purchase order, cited variation order,
-or live change request. Anything issued or received means the Work is
-corrected through the paths that already exist. Per-Work numbering counters
-and the Work's own body — schedules, items, payment matrix, consignee
-preferences, assignments — are not documents and do not block.
+**Eligibility.** Only a Work with **no downstream document at all**. The
+seventeen registers that block it, in full: delivery challans, issue
+challans, installation records, Measurement Books, Measurement Book merge
+records, Measurement Book entries, tax invoices, credit notes, PAC
+certificates, correction notices, submitted instruments, bills, extension
+requests, purchase orders, received railway bills, cited variation orders,
+and live change requests (a pending or approved approval request; a
+rejected or withdrawn one moved nothing and does not block). Anything
+issued or received means the Work is corrected through the paths that
+already exist. Per-Work numbering counters, the lines and evidence hanging
+off those registers, and the Work's own body — schedules, items, payment
+matrix, consignee preferences, assignments — are not documents in their
+own right and do not block.
+
+**The successor's identity is not the confirmer's to choose.** The Work
+confirmed in the released letter's place carries the withdrawn Work's work
+code and letter number, unchanged; anything else is refused. An approver
+reads a reason for withdrawing a contract and approves _that_ — if whoever
+confirms the letter afterwards could file it under any code, superseding
+would be a work-code rename with no approval behind it. While the
+supersession is open, that identity is also **reserved**: no other letter
+may take the freed code or letter number. A genuinely wrong work code is
+corrected the way every other wrong extracted value is — discard the
+released letter and upload the correct one.
+
+**Assignments travel.** A member whose `work_scope` is `assigned` sees a
+contract only through its assignments, so the successor inherits the
+withdrawn Work's, audited. A correction must not silently revoke site
+access to the work being executed.
+
+**The letter's package is held together.** While a released letter is
+waiting to be confirmed again, its supporting tender documents cannot be
+discarded one at a time — the letter itself still can, which withdraws the
+whole package together.
 
 **What survives.** The withdrawn Work is soft-deleted, never removed: its
 items, its rates and its reason for withdrawal stay answerable. A
 supersession record carries the withdrawal, the approval that authorised
 it, the released letter, and — once the letter is confirmed again — the
-successor, so the provenance reads in both directions. Numbering is
+successor. The successor's own page shows what it replaced, the reason
+given, and the date; the withdrawn Work itself is not openable, which is
+why that line is the only place its identity survives. Numbering is
 untouched: the successor is a new Work with its own counters, and no
 number a superseded Work's series reached is ever minted twice.
+
+**One case has provenance in one direction only, by design.** If the
+released letter is discarded and a corrected copy uploaded instead, the
+Work confirmed from that new upload is a fresh record with no link back:
+the link is kept on the document, and that document was thrown away. The
+supersession still records the withdrawal, its reason, its approval and
+the letter that was released — it simply names no successor. The screen
+says so before the operator commits to the discard. Linking a re-uploaded
+letter to the Work it replaces would need a step the product does not have
+and has not been asked for.
 
 ## 6. Data conventions
 

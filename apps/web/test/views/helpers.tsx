@@ -232,13 +232,14 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .mockResolvedValue({
         workId: WORK_ID,
         eligible: false,
-        blockers: [
-          { register: 'delivery_challans', label: 'delivery challans', count: 1 },
-        ],
+        blockers: [{ register: 'delivery_challans', label: 'delivery challans' }],
         loaDocumentId: DOC_ID,
         pendingRequestId: null,
       }),
     proposeWorkSupersede: vi.fn<ApiClient['proposeWorkSupersede']>(),
+    getWorkSupersession: vi
+      .fn<ApiClient['getWorkSupersession']>()
+      .mockResolvedValue(null),
     attachVariationOrder: vi.fn<ApiClient['attachVariationOrder']>(),
     downloadVariationOrderFile: vi.fn<ApiClient['downloadVariationOrderFile']>(),
     approveAmendment: vi.fn<ApiClient['approveAmendment']>(),

@@ -27,6 +27,9 @@ interface WorkAmendmentsProps {
    * (migration 0071), and what stands in the way if not. Null when the
    * question could not be asked, in which case nothing is offered. */
   readonly supersede: SupersedeEligibilityResponse | null;
+  /** Re-reads eligibility after a request is filed, so the form that filed
+   * it disappears instead of inviting a 409. */
+  readonly reloadSupersede: () => Promise<void>;
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
@@ -46,6 +49,7 @@ export function WorkAmendments({
   workItems,
   canCreateDocuments,
   supersede,
+  reloadSupersede,
   pending,
   act,
 }: WorkAmendmentsProps) {
@@ -56,6 +60,9 @@ export function WorkAmendments({
     const [freshDetail, freshAmendments] = await Promise.all([
       api.getWork(organisationId, workId),
       api.listWorkAmendments(organisationId, workId),
+      // Eligibility moves with the queue: a filed supersede request, and
+      // an approved amendment, both change what this Work may still do.
+      reloadSupersede(),
     ]);
     setDetail(freshDetail);
     setAmendments(freshAmendments);
@@ -170,9 +177,16 @@ function WorkSupersedePanel({
       <p className="text-muted-foreground">
         Withdraws this Work and returns its LOA document to review, so the letter can be
         read again and confirmed in its place. Use it when the extracted values are
-        wrong — the rates, the quantities, the letter number — rather than when the
-        railway has changed the contract. Nothing is withdrawn until an approver with
-        the cancel authority approves the request.
+        wrong — the rates, the quantities — rather than when the railway has changed the
+        contract. Nothing is withdrawn until an approver with the cancel authority
+        approves the request.
+      </p>
+      <p className="text-muted-foreground">
+        The Work confirmed in its place keeps this work code and letter number; it is
+        the same contract. If the letter itself is unreadable, discard it and upload a
+        clearer copy instead — the Work confirmed from that new upload starts a fresh
+        record and is <strong>not</strong> linked back to this one, because the document
+        the link is kept on was thrown away.
       </p>
       {eligibility.pendingRequestId !== null && (
         <p>A supersede request for this Work is already awaiting a decision.</p>
@@ -189,27 +203,11 @@ function WorkSupersedePanel({
             This Work cannot be superseded — it already carries documents that depend on
             it. Correct it through an amendment or a correction notice.
           </p>
-          <DataTable>
-            <caption className="sr-only">
-              Registers that hold documents for this Work
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Register</th>
-                <th scope="col">Records</th>
-              </tr>
-            </thead>
-            <tbody>
-              {eligibility.blockers.map((blocker) => (
-                <tr key={blocker.register}>
-                  <th scope="row" className={wrapCell}>
-                    {blocker.label}
-                  </th>
-                  <td className="font-mono tabular-nums">{blocker.count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
+          <ul>
+            {eligibility.blockers.map((blocker) => (
+              <li key={blocker.register}>{blocker.label}</li>
+            ))}
+          </ul>
         </>
       )}
       {eligibility.eligible && eligibility.pendingRequestId === null && (

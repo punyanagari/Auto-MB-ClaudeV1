@@ -347,7 +347,7 @@ describe('the works soft-delete guard', () => {
       const seed = await seedConfirmedWork(current.pool);
       await expect(
         current.pool`update works set deleted_at = now() where id = ${seed.workId}`,
-      ).rejects.toThrow(/supersession record/);
+      ).rejects.toThrow(/citing a live supersede request/);
     },
     TEST_TIMEOUT_MS,
   );
@@ -491,6 +491,208 @@ describe('the LOA release guard', () => {
   );
 });
 
+/**
+ * Confirms the successor: the Work row and its binding, in ONE
+ * transaction.
+ *
+ * The two halves cannot be separated. The reserved-identity guard is a
+ * DEFERRED constraint trigger, so it asks "is this row the successor?" at
+ * COMMIT — inserting the Work in one transaction and binding it in the
+ * next means the first commit sees an unbound supersession still holding
+ * the identity, and is refused. That is the guard working: in the product
+ * both halves are the confirm route's single transaction.
+ */
+async function confirmSuccessor(
+  pool: Sql,
+  seed: Seed,
+  supersessionId: string,
+  title = 'Successor work',
+): Promise<string> {
+  return pool.begin(async (tx) => {
+    const [successor] = await tx<{ id: string }[]>`
+      insert into works (
+        organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${seed.organisationId}, ${seed.workCode}, ${seed.letterNumber},
+        '2026-01-01', ${title}, '100000.00', '100000.00', 'per_schedule',
+        'supersede-test'
+      )
+      returning id
+    `;
+    if (!successor) throw new Error('successor insert returned no row');
+    await tx`
+      update work_supersessions
+      set successor_work_id = ${successor.id}, successor_bound_at = now(),
+          successor_bound_by_user_id = 'supersede-test'
+      where id = ${supersessionId}
+    `;
+    return successor.id;
+  });
+}
+
+describe('the guard reads the approval it is shown', () => {
+  /** Writes a supersession citing `approvalId` and tries the soft delete. */
+  async function withdrawCiting(seed: Seed, approvalId: string): Promise<void> {
+    await current.pool`
+      insert into work_supersessions (
+        organisation_id, superseded_work_id, loa_document_id,
+        approval_request_id, reason, superseded_by_user_id
+      )
+      values (
+        ${seed.organisationId}, ${seed.workId}, ${seed.loaDocumentId},
+        ${approvalId}, 'The letter was read at the advertised rates.',
+        'supersede-test'
+      )
+    `;
+    await current.pool`update works set deleted_at = now() where id = ${seed.workId}`;
+  }
+
+  async function approvalRow(
+    seed: Seed,
+    fields: {
+      readonly entityType: string;
+      readonly status: string;
+      readonly workId?: string;
+      readonly entityId?: string;
+    },
+  ): Promise<string> {
+    const decided = fields.status !== 'pending';
+    const [approval] = await current.pool<{ id: string }[]>`
+      insert into approval_requests (
+        organisation_id, entity_type, entity_id, work_id, proposed, diff,
+        reason, requested_by_user_id, status, decided_by_user_id, decided_at,
+        decision_note
+      )
+      values (
+        ${seed.organisationId}, ${fields.entityType},
+        ${fields.entityId ?? seed.workId}, ${fields.workId ?? seed.workId},
+        ${current.pool.json({ kind: 'work_supersede' })}, ${current.pool.json([])},
+        'A reason of at least three characters.', 'supersede-test',
+        ${fields.status}, ${decided ? 'supersede-test' : null},
+        ${decided ? new Date() : null},
+        ${fields.status === 'rejected' ? 'The letter says what it says.' : null}
+      )
+      returning id
+    `;
+    if (!approval) throw new Error('approval seed failed');
+    return approval.id;
+  }
+
+  it(
+    'refuses a supersession citing a REJECTED supersede request',
+    async () => {
+      const seed = await seedConfirmedWork(current.pool);
+      const approvalId = await approvalRow(seed, {
+        entityType: 'work_supersede',
+        status: 'rejected',
+      });
+      await expect(withdrawCiting(seed, approvalId)).rejects.toThrow(
+        /citing a live supersede request/,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'refuses a supersession citing an approval of a different KIND',
+    async () => {
+      const seed = await seedConfirmedWork(current.pool);
+      const approvalId = await approvalRow(seed, {
+        entityType: 'work_item_amendment',
+        status: 'approved',
+        entityId: seed.workItemId,
+      });
+      await expect(withdrawCiting(seed, approvalId)).rejects.toThrow(
+        /citing a live supersede request/,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "refuses a supersession citing another Work's supersede request",
+    async () => {
+      const seed = await seedConfirmedWork(current.pool);
+      const other = await addWork(current.pool, seed.organisationId, 'OTHER');
+      const approvalId = await approvalRow(seed, {
+        entityType: 'work_supersede',
+        status: 'pending',
+        workId: other,
+        entityId: other,
+      });
+      await expect(withdrawCiting(seed, approvalId)).rejects.toThrow(
+        /citing a live supersede request/,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe('the reserved identity', () => {
+  it(
+    'holds the freed work code for the successor, and releases it on discard',
+    async () => {
+      const seed = await seedConfirmedWork(current.pool);
+      await supersede(current.pool, seed);
+
+      // The identity is free of the unique index but reserved by the
+      // deferred guard, which speaks at COMMIT.
+      await expect(
+        current.pool.begin(async (tx) => {
+          await tx`
+            insert into works (
+              organisation_id, work_code, letter_number, letter_date, title,
+              advertised_value, contract_value, pricing_shape, created_by_user_id
+            )
+            values (
+              ${seed.organisationId}, ${seed.workCode}, ${`LOA/UNRELATED/${seed.workCode}`},
+              '2026-01-01', 'An unrelated Work stealing the code', '1.00', '1.00',
+              'per_schedule', 'supersede-test'
+            )
+          `;
+        }),
+      ).rejects.toThrow(/reserved for the successor/);
+
+      // Discarding the released letter ends the reservation: no successor
+      // can ever arrive through it. The guard reads the supersession's own
+      // stamp rather than the document's status, deliberately — it runs at
+      // COMMIT of every works INSERT, and reading loa_documents there
+      // would make every Work creation wait on any lock held on that
+      // table. The route writes both together; the test does the same.
+      await current.pool.begin(async (tx) => {
+        await tx`
+          update loa_documents
+          set extraction_status = 'discarded', discarded_at = now(),
+              discarded_by_user_id = 'supersede-test',
+              discard_reason = 'The scan is illegible at the schedule headers.'
+          where id = ${seed.loaDocumentId}
+        `;
+        await tx`
+          update work_supersessions set released_letter_discarded_at = now()
+          where loa_document_id = ${seed.loaDocumentId}
+            and successor_work_id is null
+        `;
+      });
+      await expect(
+        current.pool`
+          insert into works (
+            organisation_id, work_code, letter_number, letter_date, title,
+            advertised_value, contract_value, pricing_shape, created_by_user_id
+          )
+          values (
+            ${seed.organisationId}, ${seed.workCode}, ${`LOA/REUPLOAD/${seed.workCode}`},
+            '2026-01-01', 'The re-uploaded letter''s Work', '1.00', '1.00',
+            'per_schedule', 'supersede-test'
+          )
+        `,
+      ).resolves.toBeDefined();
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
 describe('the successor', () => {
   it(
     'reuses the contract identity a superseded Work no longer claims',
@@ -514,37 +716,18 @@ describe('the successor', () => {
 
       const { supersessionId } = await supersede(current.pool, seed);
 
-      const [successor] = await current.pool<{ id: string }[]>`
-        insert into works (
-          organisation_id, work_code, letter_number, letter_date, title,
-          advertised_value, contract_value, pricing_shape, created_by_user_id
-        )
-        values (
-          ${seed.organisationId}, ${seed.workCode}, ${seed.letterNumber},
-          '2026-01-01', 'Successor work', '100000.00', '100000.00',
-          'per_schedule', 'supersede-test'
-        )
-        returning id
-      `;
-      expect(successor?.id).toBeDefined();
-
-      await current.pool`
-        update work_supersessions
-        set successor_work_id = ${successor?.id ?? null},
-            successor_bound_at = now(),
-            successor_bound_by_user_id = 'supersede-test'
-        where id = ${supersessionId}
-      `;
+      const successorId = await confirmSuccessor(current.pool, seed, supersessionId);
+      expect(successorId).toBeDefined();
 
       // Provenance in both directions, from one row.
       const [forward] = await current.pool<{ successor_work_id: string }[]>`
         select successor_work_id from work_supersessions
         where superseded_work_id = ${seed.workId}
       `;
-      expect(forward?.successor_work_id).toBe(successor?.id);
+      expect(forward?.successor_work_id).toBe(successorId);
       const [backward] = await current.pool<{ superseded_work_id: string }[]>`
         select superseded_work_id from work_supersessions
-        where successor_work_id = ${successor?.id ?? null}
+        where successor_work_id = ${successorId}
       `;
       expect(backward?.superseded_work_id).toBe(seed.workId);
     },
@@ -580,6 +763,59 @@ describe('the successor', () => {
           where id = ${supersessionId}
         `,
       ).rejects.toThrow(/immutable/);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'refuses a THIRD live Work on the shared identity',
+    async () => {
+      // The direction the partial index has to hold once the successor is
+      // live: reuse is a one-for-one replacement, not a licence to keep
+      // adding Works under one contract's identity.
+      const seed = await seedConfirmedWork(current.pool);
+      const { supersessionId } = await supersede(current.pool, seed);
+      await confirmSuccessor(current.pool, seed, supersessionId);
+
+      await expect(
+        current.pool`
+          insert into works (
+            organisation_id, work_code, letter_number, letter_date, title,
+            advertised_value, contract_value, pricing_shape, created_by_user_id
+          )
+          values (
+            ${seed.organisationId}, ${seed.workCode}, ${seed.letterNumber},
+            '2026-01-01', 'A third claimant', '100000.00', '100000.00',
+            'per_schedule', 'supersede-test'
+          )
+        `,
+      ).rejects.toThrow(/works_live_work_code_key/);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'freezes the whole binding once the successor is named',
+    async () => {
+      const seed = await seedConfirmedWork(current.pool);
+      const { supersessionId } = await supersede(current.pool, seed);
+      await confirmSuccessor(current.pool, seed, supersessionId);
+
+      // Not only the id: the stamps that say when and by whom. A binding
+      // whose actor can be rewritten is not evidence of who re-created the
+      // Work.
+      await expect(
+        current.pool`
+          update work_supersessions set successor_bound_by_user_id = 'someone-else'
+          where id = ${supersessionId}
+        `,
+      ).rejects.toThrow(/already names its successor/);
+      await expect(
+        current.pool`
+          update work_supersessions set successor_bound_at = now() - interval '1 day'
+          where id = ${supersessionId}
+        `,
+      ).rejects.toThrow(/already names its successor/);
     },
     TEST_TIMEOUT_MS,
   );

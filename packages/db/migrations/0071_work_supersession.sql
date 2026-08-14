@@ -61,6 +61,18 @@ SET statement_timeout = '5min';
 --      become partial indexes over live rows: a successor for the same
 --      contract carries the same identity, since it IS the same contract.
 --
+-- IDENTITY IS NOT THE CONFIRMER'S TO CHOOSE. Freeing the work code opens
+-- a question the approval never answered: who gets it. An approver reads a
+-- reason for withdrawing PL-270 and approves THAT; if whoever confirms the
+-- released letter afterwards could file it under any code, superseding
+-- would be a work-code rename with no approval behind it and no audit
+-- event describing it as one. So the successor carries the withdrawn
+-- Work's identity unchanged (the route refuses anything else), and while
+-- the supersession is open that identity is RESERVED for it — section 4a
+-- below. A genuinely wrong work code is corrected the way every other
+-- wrong extracted value is: discard the released letter and upload the
+-- correct one, which is what the reservation lifting on discard permits.
+--
 -- NUMBERING. Nothing here reuses a number. Every per-Work counter is keyed
 -- (organisation_id, work_id) and the successor is a new Work with new
 -- counters starting at 1, so the predecessor's series — empty by the
@@ -70,13 +82,19 @@ SET statement_timeout = '5min';
 -- correct posture: a counter records what a series reached, not what
 -- survives.
 --
--- WHAT THIS GUARD DOES NOT DO. It backstops eligibility and provenance —
--- no Work is soft-deleted without a supersession record, and none while a
--- document points at it. It does not backstop the deciding AUTHORITY,
--- which is the route's job here exactly as it is for every other approval
--- kind: the trigger cannot see whether the transaction that is superseding
--- is the one that is also approving, because the approval engine marks the
--- request approved after the apply step runs.
+-- WHAT THE GUARDS DO NOT DO. They backstop eligibility, provenance and
+-- the reserved identity: no Work is soft-deleted without a supersession
+-- citing a live supersede request against that same Work, none while a
+-- document points at it, and no confirmation takes an identity another
+-- supersession is holding.
+--
+-- The one thing left to the route is the deciding AUTHORITY, exactly as it
+-- is for every other approval kind. The trigger cannot see whether the
+-- transaction that is superseding is the one that is also approving,
+-- because the approval engine marks the request approved AFTER the apply
+-- step runs — so the strongest fact available in the database is that the
+-- cited request is a supersede request against this Work and has not been
+-- rejected or withdrawn, and that is what is checked.
 
 -- ---------------------------------------------------------------------
 -- 1. Live identity. A superseded Work keeps its work code and letter
@@ -137,6 +155,13 @@ CREATE TABLE work_supersessions (
   superseded_by_user_id text NOT NULL,
   successor_bound_at timestamptz,
   successor_bound_by_user_id text,
+  -- The other way a supersession ends: the released letter was thrown
+  -- away, so no successor can ever arrive through it. Recorded here
+  -- rather than inferred from `loa_documents.extraction_status`, because
+  -- the reserved-identity guard (section 4a) must decide the question at
+  -- COMMIT of every works INSERT — and a guard that reads loa_documents
+  -- would make every Work insert wait on any lock held there.
+  released_letter_discarded_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organisation_id, id),
@@ -151,6 +176,9 @@ CREATE TABLE work_supersessions (
   FOREIGN KEY (organisation_id, approval_request_id)
     REFERENCES approval_requests(organisation_id, id),
   CHECK (successor_work_id IS NULL OR successor_work_id <> superseded_work_id),
+  -- A supersession ends once, one way: either the letter produced a
+  -- successor or it was discarded. Never both.
+  CHECK (successor_work_id IS NULL OR released_letter_discarded_at IS NULL),
   -- The successor triple is all-or-nothing, in the 0023/0055 style.
   CHECK (
     (successor_work_id IS NULL
@@ -200,9 +228,32 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  IF OLD.successor_work_id IS NOT NULL
-    AND NEW.successor_work_id IS DISTINCT FROM OLD.successor_work_id THEN
-    RAISE EXCEPTION 'this supersession already names its successor Work'
+  -- Once the successor is named, the whole binding freezes — the id it
+  -- names, and equally the stamps that say when and by whom. A binding
+  -- whose actor could be rewritten afterwards is not evidence of who
+  -- re-created the Work.
+  IF OLD.successor_work_id IS NOT NULL THEN
+    IF ROW(
+      NEW.id, NEW.successor_work_id, NEW.successor_bound_at,
+      NEW.successor_bound_by_user_id
+    ) IS DISTINCT FROM ROW(
+      OLD.id, OLD.successor_work_id, OLD.successor_bound_at,
+      OLD.successor_bound_by_user_id
+    ) THEN
+      RAISE EXCEPTION 'this supersession already names its successor Work'
+        USING ERRCODE = '23514';
+    END IF;
+  ELSIF NEW.id IS DISTINCT FROM OLD.id THEN
+    -- The row's own identity never moves, bound or not.
+    RAISE EXCEPTION 'a supersession record is immutable; only its successor may be bound'
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- The released letter is thrown away once, and never un-thrown.
+  IF OLD.released_letter_discarded_at IS NOT NULL
+    AND NEW.released_letter_discarded_at IS DISTINCT FROM OLD.released_letter_discarded_at
+  THEN
+    RAISE EXCEPTION 'this supersession already records its letter as discarded'
       USING ERRCODE = '23514';
   END IF;
 
@@ -243,15 +294,28 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Provenance: nothing withdraws a Work except an approved supersession,
-  -- whose row this transaction has already written.
+  -- Provenance: nothing withdraws a Work except a supersession whose
+  -- row this transaction has already written, AND whose cited approval
+  -- request is a live supersede request against THIS Work. Without the
+  -- second half a supersession could cite any approval row at all — a
+  -- rejected one, a challan correction, one belonging to another Work —
+  -- and the record would read as authorised when nothing had authorised
+  -- it. All three facts are in the database and are checked here.
   IF NOT EXISTS (
-    SELECT 1 FROM work_supersessions s
+    SELECT 1
+    FROM work_supersessions s
+    JOIN approval_requests r
+      ON r.organisation_id = s.organisation_id
+     AND r.id = s.approval_request_id
     WHERE s.organisation_id = NEW.organisation_id
       AND s.superseded_work_id = NEW.id
+      AND r.entity_type = 'work_supersede'
+      AND r.entity_id = NEW.id
+      AND r.work_id = NEW.id
+      AND r.status NOT IN ('rejected', 'withdrawn')
   ) THEN
     RAISE EXCEPTION
-      'a Work is withdrawn only by a supersession record; none names Work %',
+      'a Work is withdrawn only by a supersession citing a live supersede request against it; none names Work %',
       NEW.id
       USING ERRCODE = '23514';
   END IF;
@@ -349,6 +413,74 @@ $$;
 CREATE TRIGGER works_supersede_guard
 BEFORE UPDATE ON works
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_work_soft_delete();
+
+-- ---------------------------------------------------------------------
+-- 4a. The reserved identity: while a supersession is open, the work code
+--     and letter number it freed belong to its own successor.
+-- ---------------------------------------------------------------------
+--
+-- The partial indexes above release the identity the moment the
+-- predecessor is withdrawn, which is what lets the successor carry it.
+-- The gap that opens with it is that ANY confirmation could take the
+-- freed code during the window, and the successor — the Work the approver
+-- actually authorised — would be locked out of its own contract's
+-- identity, with no refusal saying why.
+--
+-- Deferred to COMMIT deliberately. The successor's works row is inserted
+-- before the binding is written, both in one transaction, so an immediate
+-- trigger would have to refuse the successor itself; at commit the
+-- question "is this row the successor?" has an answer. Everything it
+-- reads is same-tenant and visible to the invoking role, like every other
+-- guard since 0011.
+--
+-- The reservation lifts when the released letter is DISCARDED: a
+-- discarded letter can never be confirmed, so it can never produce the
+-- successor, and holding the identity for a successor that cannot arrive
+-- would make the discard-and-re-upload remedy unusable on the very Work
+-- it exists for (docs/PRODUCT.md §5.6).
+CREATE FUNCTION app_private.guard_reserved_work_identity()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  reserved record;
+BEGIN
+  -- Reads work_supersessions and works and NOTHING else, deliberately.
+  -- This fires at COMMIT of every works INSERT, so any table it touched
+  -- would become a table every Work creation can block on.
+  SELECT p.work_code, p.letter_number, p.id
+  INTO reserved
+  FROM work_supersessions s
+  JOIN works p
+    ON p.organisation_id = s.organisation_id
+   AND p.id = s.superseded_work_id
+  WHERE s.organisation_id = NEW.organisation_id
+    AND s.successor_work_id IS NULL
+    AND s.released_letter_discarded_at IS NULL
+    -- Only a WITHDRAWN Work's identity is reserved. A supersession row
+    -- whose predecessor is still live has freed nothing, so there is
+    -- nothing to hold; the live partial unique index is what refuses a
+    -- collision there, and saying so twice would refuse the predecessor's
+    -- own insert.
+    AND p.deleted_at IS NOT NULL
+    AND (p.work_code = NEW.work_code OR p.letter_number = NEW.letter_number)
+  LIMIT 1;
+
+  IF FOUND THEN
+    RAISE EXCEPTION
+      'work code % / letter number % is reserved for the successor of superseded Work %',
+      NEW.work_code, NEW.letter_number, reserved.id
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NULL;
+END
+$$;
+
+CREATE CONSTRAINT TRIGGER works_reserved_identity_guard
+AFTER INSERT ON works
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_reserved_work_identity();
 
 -- ---------------------------------------------------------------------
 -- 5. Releasing the letter. 0055 froze a confirmed document because it is

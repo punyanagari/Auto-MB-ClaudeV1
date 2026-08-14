@@ -175,6 +175,12 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Correct this Work through an amendment; a Work with no letter in the product has nothing to read again and no successor to be confirmed from.',
   WORK_ALREADY_SUPERSEDED:
     'Open the successor Work; the letter this Work came from has already been released and can be confirmed only once more.',
+  SUCCESSOR_IDENTITY_MISMATCH:
+    'Confirm the released letter under the withdrawn Work’s own work code and letter number, or discard it and upload the correct letter if the identity itself was the mistake.',
+  WORK_IDENTITY_RESERVED:
+    'Confirm or discard the released letter that is waiting for this identity before using it for another Work.',
+  SUPERSEDE_IN_PROGRESS:
+    'Confirm the released letter first, or discard the letter itself — that withdraws its whole package together rather than one document at a time.',
 
   // ---- The settlement chain the agency does not control -------------------
   //

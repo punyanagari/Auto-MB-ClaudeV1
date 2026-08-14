@@ -19,18 +19,21 @@
  */
 
 import type { TransactionSql } from '@auto-mb/db';
-import type { SupersedeBlocker } from '@auto-mb/contracts';
+import type { SupersedeBlocker, WorkSupersession } from '@auto-mb/contracts';
 import { httpError } from './http.js';
+import { assertWorkOperable } from './work-status.js';
 
 /**
  * The registers that make a Work ineligible: everything the agency issued,
  * received, or became bound by on this Work's account.
  *
- * `works` has 31 direct children. This list holds the 17 that are
- * documents; `WORK_CHILD_TABLES_EXEMPT` holds the rest with the reason each
- * is exempt, and the census in `test/work-supersede.integration.test.ts`
- * proves the union is exactly the catalog — so a table added later cannot
- * be silently omitted from the rule.
+ * Forty-four tables can reach `works` through a chain of foreign keys.
+ * This list holds the 17 that are documents in their own right;
+ * `WORK_CHILD_TABLES_EXEMPT` holds the other 27 with the reason each is
+ * exempt, and the census in `test/work-supersede.integration.test.ts`
+ * proves the union is exactly the catalog — TRANSITIVELY, not only over
+ * direct children, because a document hanging off an exempt parent is
+ * precisely the case a direct-children census cannot see.
  *
  * The identifiers are frozen literals interpolated as identifiers (postgres
  * has no parameter form for a table name); every value is a bound
@@ -85,6 +88,31 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   correction_notice_counters: 'numbering state, not a document',
   measurement_book_counters: 'numbering state, not a document',
   purchase_order_counters: 'numbering state, not a document',
+  // Lines, evidence and portal state hanging off a register that DOES
+  // block. Each reaches `works` only through its own parent, so blocking
+  // on the parent already covers it: a Work with none of the seventeen
+  // registers populated has none of these either, and adding them to the
+  // census would ask seventeen more questions with the same answer. They
+  // are listed rather than omitted because a table that reached `works`
+  // through an exempt parent WOULD be invisible to the rule, and telling
+  // the two cases apart is the census's whole job.
+  delivery_challan_items: 'lines of a delivery challan, which blocks',
+  challan_receipts: 'receipts against a delivery challan, which blocks',
+  challan_item_serials: 'serials on a delivery challan line, which blocks',
+  issue_challan_lines: 'lines of an issue challan, which blocks',
+  installation_serials: 'serials on an installation record, which blocks',
+  pac_certificate_items: 'lines of a PAC certificate, which blocks',
+  measurement_book_lines: 'lines of a Measurement Book, which blocks',
+  mb_sources: 'the measurements a Measurement Book claims, which blocks',
+  purchase_order_lines: 'lines of a purchase order, which blocks',
+  tax_invoice_lines: 'lines of a tax invoice, which blocks',
+  tax_invoice_renders: 'render history of a tax invoice, which blocks',
+  eway_bills: 'the e-way bill of a tax invoice, which blocks',
+  statutory_provider_operations:
+    'portal evidence for an invoice, credit note or e-way bill, each of which blocks',
+  // The rule's own bookkeeping: it points at both ends of the change, and
+  // is written by the supersede itself.
+  work_supersessions: 'the supersession record itself',
 };
 
 /** `approval_requests` blocks only while a request is live: a pending one
@@ -109,35 +137,38 @@ export async function readSupersedeBlockers(
   tx: TransactionSql,
   workId: string,
 ): Promise<readonly SupersedeBlocker[]> {
+  // `exists`, never `count(*)`: the rule turns on whether a register holds
+  // anything, and a count would scan every matching row of seventeen
+  // registers to answer a question the first row settles. This runs on
+  // every eligibility read AND inside the apply transaction, which holds
+  // the works row lock — the cheaper shape is the one that holds the lock
+  // for less time.
   const census = DOWNSTREAM_REGISTERS.map(
     ({ register }, index) =>
-      `select ${index} as position, '${register}' as register, ` +
-      `count(*)::int as count from ${register} ` +
+      `select ${index} as position, '${register}' as register ` +
+      `where exists (select 1 from ${register} ` +
       `where organisation_id = app_private.current_organisation_id() ` +
-      `and work_id = $1::uuid${registerPredicate(register)}`,
+      `and work_id = $1::uuid${registerPredicate(register)})`,
   ).join(' union all ');
   const rows = (await tx.unsafe(`${census} order by position`, [
     workId,
   ])) as unknown as {
     position: number;
     register: string;
-    count: number;
   }[];
   const labels = new Map<string, string>(
     DOWNSTREAM_REGISTERS.map((entry) => [entry.register, entry.label]),
   );
-  return rows
-    .filter((row) => row.count > 0)
-    .map((row) => ({
-      register: row.register,
-      label: labels.get(row.register) ?? row.register,
-      count: row.count,
-    }));
+  return rows.map((row) => ({
+    register: row.register,
+    label: labels.get(row.register) ?? row.register,
+  }));
 }
 
 export interface SupersedeEligibility {
   readonly workId: string;
   readonly workCode: string;
+  readonly letterNumber: string;
   readonly status: string;
   readonly blockers: readonly SupersedeBlocker[];
   readonly loaDocumentId: string | null;
@@ -155,14 +186,20 @@ export async function readSupersedeEligibility(
   workId: string,
   lock = false,
 ): Promise<SupersedeEligibility> {
+  type WorkRow = {
+    id: string;
+    work_code: string;
+    letter_number: string;
+    status: string;
+  };
   const [work] = lock
-    ? await tx<{ id: string; work_code: string; status: string }[]>`
-        select id, work_code, status from works
+    ? await tx<WorkRow[]>`
+        select id, work_code, letter_number, status from works
         where id = ${workId} and deleted_at is null
         for update
       `
-    : await tx<{ id: string; work_code: string; status: string }[]>`
-        select id, work_code, status from works
+    : await tx<WorkRow[]>`
+        select id, work_code, letter_number, status from works
         where id = ${workId} and deleted_at is null
       `;
   if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
@@ -185,6 +222,7 @@ export async function readSupersedeEligibility(
   return {
     workId: work.id,
     workCode: work.work_code,
+    letterNumber: work.letter_number,
     status: work.status,
     blockers: await readSupersedeBlockers(tx, workId),
     loaDocumentId: document?.id ?? null,
@@ -196,7 +234,7 @@ export async function readSupersedeEligibility(
  * reads the whole list rather than discovering it one refusal at a time. */
 export function describeBlockers(blockers: readonly SupersedeBlocker[]): string {
   return blockers
-    .map((blocker) => `${blocker.count} ${blocker.label}`)
+    .map((blocker) => blocker.label)
     .join(', ')
     .replace(/, ([^,]*)$/, blockers.length > 1 ? ' and $1' : '$1');
 }
@@ -250,6 +288,12 @@ export async function applyWorkSupersede(
 ): Promise<{ readonly supersessionId: string; readonly loaDocumentId: string }> {
   // Live state, under the works row lock — not the proposal snapshot.
   const eligibility = await readSupersedeEligibility(tx, proposed.workId, true);
+  // Defence in depth: the proposal route already refused a completed Work,
+  // and the census refuses one anyway (completion needs 100% executed
+  // value, which needs documents). Restated here because the decision can
+  // arrive days after the proposal, and a Work reopened, executed and
+  // completed in between must not be withdrawn on a stale request.
+  assertWorkOperable(eligibility.status, 'superseding it');
   const loaDocumentId = assertSupersedable(eligibility);
 
   const [supersession] = await tx<{ id: string }[]>`
@@ -304,30 +348,309 @@ export async function applyWorkSupersede(
   return { supersessionId: supersession.id, loaDocumentId };
 }
 
+/** An open supersession: the Work withdrawn, its identity, and the letter
+ * released for it, read from the document being confirmed. */
+export interface OpenSupersession {
+  readonly id: string;
+  readonly supersededWorkId: string;
+  readonly supersededWorkCode: string;
+  readonly supersededLetterNumber: string;
+}
+
 /**
- * Binds the successor when a released letter is confirmed again. Called
- * from the confirm route with the new Work already inserted, in the same
- * transaction. Returns the supersession id when one was bound.
+ * The supersession waiting on this letter, if any: withdrawn, released,
+ * and not yet answered by a successor. Read before the Work is inserted
+ * so the confirm route can refuse on authority and on identity before it
+ * writes anything.
+ */
+export async function readOpenSupersession(
+  tx: TransactionSql,
+  loaDocumentId: string,
+): Promise<OpenSupersession | null> {
+  const [row] = await tx<
+    {
+      id: string;
+      superseded_work_id: string;
+      work_code: string;
+      letter_number: string;
+    }[]
+  >`
+    select s.id, s.superseded_work_id, w.work_code, w.letter_number
+    from work_supersessions s
+    join works w
+      on w.organisation_id = s.organisation_id
+     and w.id = s.superseded_work_id
+    where s.loa_document_id = ${loaDocumentId}
+      and s.successor_work_id is null
+    for update of s
+  `;
+  if (!row) return null;
+  return {
+    id: row.id,
+    supersededWorkId: row.superseded_work_id,
+    supersededWorkCode: row.work_code,
+    supersededLetterNumber: row.letter_number,
+  };
+}
+
+/**
+ * THE IDENTITY RULE. A successor carries the withdrawn Work's work code
+ * and letter number, unchanged.
  *
- * Nothing here refuses: confirming a released letter is legitimate whether
- * or not a supersession is waiting for it, and a supersession left without
- * a successor (the operator discarded the letter and uploaded a corrected
- * copy instead) is a true record rather than a broken one.
+ * Without this, superseding is a work-code rename with no approval behind
+ * it: the approver reads a reason for withdrawing PL-270 and approves
+ * that, and whoever confirms the released letter afterwards could file it
+ * under any code they like — an authoritative identity change that no
+ * approval covers and no audit event describes as one. The successor is
+ * the SAME contract read again, so its identity is not the confirmer's to
+ * choose.
+ *
+ * A genuinely wrong work code or letter number is corrected the way every
+ * other wrong extracted value is: discard the released letter and upload
+ * the correct one, which the supersession has already made possible.
+ */
+export function assertSuccessorIdentity(
+  supersession: OpenSupersession,
+  workCode: string,
+  letterNumber: string,
+): void {
+  if (
+    workCode === supersession.supersededWorkCode &&
+    letterNumber === supersession.supersededLetterNumber
+  ) {
+    return;
+  }
+  throw httpError(
+    409,
+    'SUCCESSOR_IDENTITY_MISMATCH',
+    `This letter was released by an approved supersede of Work ${supersession.supersededWorkCode} (${supersession.supersededLetterNumber}), so the Work confirmed in its place carries that same work code and letter number — it is the same contract. Confirm it as ${supersession.supersededWorkCode} / ${supersession.supersededLetterNumber}, or discard this letter and upload the correct one if the identity itself is what was wrong. Nothing was saved.`,
+    {
+      supersededWorkId: supersession.supersededWorkId,
+      expectedWorkCode: supersession.supersededWorkCode,
+      expectedLetterNumber: supersession.supersededLetterNumber,
+    },
+  );
+}
+
+/**
+ * THE RESERVATION. While a supersession is open and its released letter
+ * still exists, the withdrawn Work's identity belongs to that letter's
+ * successor and to nothing else.
+ *
+ * The partial unique indexes free the code the moment the predecessor is
+ * withdrawn; without this, an unrelated confirmation could take it during
+ * the window and the successor would be locked out of its own contract's
+ * identity. The reservation lifts when the released letter is DISCARDED,
+ * because a discarded letter can never produce the successor — which is
+ * exactly the discard-and-re-upload path, and is why that path can reuse
+ * the code (docs/PRODUCT.md §5.6). That fact is read from the
+ * supersession's own `released_letter_discarded_at`, never from
+ * `loa_documents`: the database guard behind this check runs at COMMIT of
+ * every works INSERT, and a check that read the documents table would make
+ * every Work creation in the organisation wait on any lock held there.
+ */
+export async function assertIdentityNotReserved(
+  tx: TransactionSql,
+  loaDocumentId: string,
+  workCode: string,
+  letterNumber: string,
+): Promise<void> {
+  const [reserved] = await tx<{ work_code: string; letter_number: string }[]>`
+    select w.work_code, w.letter_number
+    from work_supersessions s
+    join works w
+      on w.organisation_id = s.organisation_id
+     and w.id = s.superseded_work_id
+    join loa_documents d
+      on d.organisation_id = s.organisation_id
+     and d.id = s.loa_document_id
+    where s.successor_work_id is null
+      -- Only a WITHDRAWN Work's identity is reserved; a supersession whose
+      -- predecessor is still live has freed nothing to hold.
+      and w.deleted_at is not null
+      and s.loa_document_id <> ${loaDocumentId}
+      and d.extraction_status <> 'discarded'
+      and (w.work_code = ${workCode} or w.letter_number = ${letterNumber})
+    limit 1
+  `;
+  if (!reserved) return;
+  const clash =
+    reserved.work_code === workCode
+      ? `work code ${workCode}`
+      : `letter number ${letterNumber}`;
+  throw httpError(
+    409,
+    'WORK_IDENTITY_RESERVED',
+    `The ${clash} belongs to a Work that has been superseded and whose letter is waiting to be confirmed again; it is reserved for that successor. Confirm the released letter, or discard it, before using this identity for anything else. Nothing was saved.`,
+    { workCode, letterNumber },
+  );
+}
+
+/**
+ * Binds the successor when a released letter is confirmed again, and
+ * carries the withdrawn Work's assignments across.
+ *
+ * Called from the confirm route with the new Work already inserted, in the
+ * same transaction, AFTER the identity and access checks above. Returns
+ * the supersession id when one was bound.
+ *
+ * Assignments travel because work_scope is how an 'assigned' member sees a
+ * contract at all: leaving them behind on the withdrawn Work would make a
+ * correction silently revoke every site member's access to the work they
+ * are executing. Copied as the same rows, audited in the shape the
+ * owner-managed assignment writes use.
  */
 export async function bindSupersessionSuccessor(
   tx: TransactionSql,
+  organisationId: string,
   userId: string,
-  loaDocumentId: string,
+  supersession: OpenSupersession,
   successorWorkId: string,
-): Promise<string | null> {
-  const [bound] = await tx<{ id: string; superseded_work_id: string }[]>`
+): Promise<{ readonly supersessionId: string; readonly assignedUserIds: string[] }> {
+  const [bound] = await tx<{ id: string }[]>`
     update work_supersessions
     set successor_work_id = ${successorWorkId},
         successor_bound_at = now(),
         successor_bound_by_user_id = ${userId}
+    where id = ${supersession.id}
+      and successor_work_id is null
+    returning id
+  `;
+  if (!bound) {
+    // Another transaction bound this supersession between the read above
+    // and here. Refused rather than silently left unbound: two Works
+    // claiming one contract's identity is the state the reservation
+    // exists to prevent.
+    throw httpError(
+      409,
+      'WORK_ALREADY_SUPERSEDED',
+      'This letter has already been confirmed into a successor Work. Nothing was saved.',
+    );
+  }
+
+  const carried = await tx<{ user_id: string }[]>`
+    insert into work_assignments (
+      organisation_id, work_id, user_id, created_by_user_id
+    )
+    select ${organisationId}, ${successorWorkId}, a.user_id, ${userId}
+    from work_assignments a
+    where a.organisation_id = ${organisationId}
+      and a.work_id = ${supersession.supersededWorkId}
+    on conflict do nothing
+    returning user_id
+  `;
+  return {
+    supersessionId: bound.id,
+    assignedUserIds: carried.map((row) => row.user_id).sort(),
+  };
+}
+
+/**
+ * The provenance of one Work: the supersession it is the successor of.
+ * Null for a Work that replaced nothing.
+ */
+export async function readWorkSupersession(
+  tx: TransactionSql,
+  successorWorkId: string,
+): Promise<WorkSupersession | null> {
+  const [row] = await tx<
+    {
+      id: string;
+      superseded_work_id: string;
+      work_code: string;
+      letter_number: string;
+      successor_work_id: string | null;
+      loa_document_id: string;
+      approval_request_id: string;
+      reason: string;
+      superseded_at: Date;
+      superseded_by_user_id: string;
+      successor_bound_at: Date | null;
+    }[]
+  >`
+    select s.id, s.superseded_work_id, w.work_code, w.letter_number,
+           s.successor_work_id, s.loa_document_id, s.approval_request_id,
+           s.reason, s.superseded_at, s.superseded_by_user_id,
+           s.successor_bound_at
+    from work_supersessions s
+    join works w
+      on w.organisation_id = s.organisation_id
+     and w.id = s.superseded_work_id
+    where s.successor_work_id = ${successorWorkId}
+  `;
+  if (!row) return null;
+  return {
+    id: row.id,
+    supersededWorkId: row.superseded_work_id,
+    supersededWorkCode: row.work_code,
+    supersededLetterNumber: row.letter_number,
+    successorWorkId: row.successor_work_id,
+    loaDocumentId: row.loa_document_id,
+    approvalRequestId: row.approval_request_id,
+    reason: row.reason,
+    supersededAt: row.superseded_at.toISOString(),
+    supersededByUserId: row.superseded_by_user_id,
+    successorBoundAt: row.successor_bound_at?.toISOString() ?? null,
+  };
+}
+
+/**
+ * Refuses to discard a supporting contract document while the letter it
+ * belongs to is mid-supersession.
+ *
+ * A released letter's package is evidence in flight: the letter is going
+ * to be confirmed again, and the tender specification or NIT attached to
+ * it is part of what a reviewer reads while doing so. Before this, the
+ * supersession cleared `confirmed_work_id` on the supporting documents,
+ * which is exactly what the ordinary discard rule tests — so the window
+ * silently made them discardable one at a time, and the successor could
+ * be confirmed against a package quietly emptied out underneath it.
+ *
+ * The letter ITSELF stays discardable: discarding it is the documented
+ * remedy for an illegible scan, and 0055 already takes the whole package
+ * with it.
+ */
+/**
+ * Records that a released letter was discarded, closing its supersession
+ * without a successor and lifting the identity reservation. Called from
+ * the LOA discard route; a no-op for a document no supersession released.
+ */
+export async function closeSupersessionOnDiscard(
+  tx: TransactionSql,
+  loaDocumentId: string,
+): Promise<string | null> {
+  const [closed] = await tx<{ id: string }[]>`
+    update work_supersessions
+    set released_letter_discarded_at = now()
     where loa_document_id = ${loaDocumentId}
       and successor_work_id is null
-    returning id, superseded_work_id
+      and released_letter_discarded_at is null
+    returning id
   `;
-  return bound?.id ?? null;
+  return closed?.id ?? null;
+}
+
+export async function assertSupportingDocumentDiscardable(
+  tx: TransactionSql,
+  documentId: string,
+  parentLoaDocumentId: string | null,
+): Promise<void> {
+  if (parentLoaDocumentId === null) return;
+  const [open] = await tx<{ work_code: string }[]>`
+    select w.work_code
+    from work_supersessions s
+    join works w
+      on w.organisation_id = s.organisation_id
+     and w.id = s.superseded_work_id
+    where s.loa_document_id = ${parentLoaDocumentId}
+      and s.successor_work_id is null
+      and s.released_letter_discarded_at is null
+  `;
+  if (!open) return;
+  throw httpError(
+    409,
+    'SUPERSEDE_IN_PROGRESS',
+    `This document supports a letter released by the supersede of Work ${open.work_code} and waiting to be confirmed again, so it cannot be withdrawn from the package on its own. Confirm the letter first, or discard the letter itself — which withdraws its whole package together. Nothing was changed.`,
+    { documentId },
+  );
 }

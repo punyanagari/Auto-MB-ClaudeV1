@@ -87,7 +87,9 @@ Primary risks:
   `organisation_memberships`, granted by an owner and checked
   server-side inside the bound-tenant transaction:
   - `can_issue_documents` — issue a numbered document;
-  - `can_cancel_documents` — cancel an issued document;
+  - `can_cancel_documents` — take an authoritative record out of
+    service: cancel an issued document, or (migration 0071) withdraw a
+    confirmed Work through an approved supersede;
   - `can_approve_amendments` — decide an approval request;
   - `can_manage_statutory_reporting` (migration 0061) — the compliance
     authority: register, reconcile-by-lookup or cancel a document at the

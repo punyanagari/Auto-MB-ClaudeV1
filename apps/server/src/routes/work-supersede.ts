@@ -29,6 +29,7 @@ import {
   ProposeWorkSupersedeRequestSchema,
   ApprovalRequestSchema,
   SupersedeEligibilityResponseSchema,
+  WorkSupersessionResponseSchema,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
@@ -40,6 +41,7 @@ import { assertWorkOperable } from '../work-status.js';
 import {
   assertSupersedable,
   readSupersedeEligibility,
+  readWorkSupersession,
   type WorkSupersedeProposal,
 } from '../work-supersede.js';
 import { readApproval } from './amendments.js';
@@ -76,6 +78,41 @@ export function registerWorkSupersedeRoutes(
           loaDocumentId: eligibility.loaDocumentId,
           pendingRequestId: eligibility.pendingRequestId,
         };
+      });
+    },
+  );
+
+  // --- Where this Work came from ------------------------------------------
+  //
+  // The withdrawn Work is unreachable through the Works routes — every one
+  // filters `deleted_at is null` — so without this its identity, the
+  // reason it was withdrawn and the date would be write-only: recorded in
+  // the database and readable nowhere, which is not what
+  // `docs/PRODUCT.md` §5.6 promises. The successor's own page answers
+  // "what did this replace, and why".
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/works/:id/supersession',
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: WorkSupersessionResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, user, tenant }) => {
+      const { id: workId } = request.params;
+      return tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        // `assertWorkAccess` answers "may this member reach this Work",
+        // not "does it exist here" — so the Work itself is read, under
+        // RLS, before an absent provenance can be reported as a null. A
+        // guessed id from another organisation must 404 like every other
+        // Work-addressed read, not answer "this Work replaced nothing".
+        const [work] = await tx<{ id: string }[]>`
+          select id from works where id = ${workId} and deleted_at is null
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        return { supersession: await readWorkSupersession(tx, workId) };
       });
     },
   );
