@@ -1879,8 +1879,13 @@ export function ReviewLoa({
                         )}
                       </td>
                       <td>
-                        {/* Optional, reviewer's judgement — the parser
-                            never proposes a category. Percentages are
+                        {/* Optional, reviewer's judgement — extraction
+                            proposes no category, because the letter's
+                            item table does not carry one. A row left
+                            uncategorised here is offered a keyword
+                            PROPOSAL by the payment setup dialog after the
+                            Work is created; a row decided here is left
+                            exactly as it stands. Percentages are
                             configured per category on the Work's payment
                             matrix, never per item (R10). */}
                         <select

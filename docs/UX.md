@@ -97,7 +97,16 @@ Upload LOA
   → manually confirm/edit the payment matrix
   → warn and preserve evidence when manual values differ from tender extraction
   → atomically confirm Work, source links and authoritative matrix
+  → open the new Work with its payment setup offered once
 ```
+
+The payment setup is a dialog, not a screen: stage percentages per category
+beside a category per item, with one Save and a Later that writes nothing.
+Items the reviewer left uncategorised arrive with a category proposed from
+their description and marked as a proposal until saved. It is offered by the
+navigation that follows confirmation and never again — a revisit or a refresh
+opens the Work page plainly — and both editors stay permanently on the Work's
+Schedules tab.
 
 Extracted payment terms, warranty/maintenance periods, PBG/security-deposit release clauses and item specifications are proposal evidence. They never bypass human review.
 

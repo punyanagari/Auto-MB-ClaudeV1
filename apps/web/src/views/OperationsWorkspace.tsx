@@ -377,6 +377,17 @@ export function OperationsWorkspace({
   const [mastersTab, setMastersTab] = useState<MastersTab>(
     initialRoute.mastersTab ?? 'contacts',
   );
+  /**
+   * The Work whose payment setup has been offered but not yet answered.
+   *
+   * Set by exactly one navigation — the one that follows a letter being
+   * confirmed into a Work — and cleared as soon as the dialog is saved or
+   * dismissed, or as soon as the operator goes anywhere else. It is
+   * deliberately NOT in the route: a payment setup prompt is a
+   * consequence of an act just performed, not a property of the address,
+   * so a refresh, a bookmark or a shared link opens the Work page plainly.
+   */
+  const [paymentSetupWorkId, setPaymentSetupWorkId] = useState<string | null>(null);
   const [challanWork, setChallanWork] = useState<{
     readonly workId: string;
     readonly status: Work['status'];
@@ -584,6 +595,9 @@ export function OperationsWorkspace({
     /** The Work tab to open with, for the views that address one. */
     readonly workTab?: WorkTab;
     readonly mastersTab?: MastersTab;
+    /** Open the Work page with its payment setup dialog, once. Only the
+     * confirmation of a letter passes it. */
+    readonly promptPaymentSetup?: boolean;
   }
 
   /**
@@ -599,6 +613,14 @@ export function OperationsWorkspace({
   function navigate(next: WorkspaceView, options: NavigateOptions = {}): void {
     const apply = (): void => {
       setView(next);
+      // The prompt belongs to one Work and one arrival at it. Any other
+      // move retires it, so an unanswered dialog cannot follow the
+      // operator around or reappear when they come back later.
+      setPaymentSetupWorkId(
+        next.name === 'work' && options.promptPaymentSetup === true
+          ? next.workId
+          : null,
+      );
       if (next.name === 'work' && options.workTab !== undefined) {
         setTabbedWorkId(next.workId);
         setWorkTab(options.workTab);
@@ -1253,10 +1275,12 @@ export function OperationsWorkspace({
                 canModify={canModify}
                 onConfirmed={(created) => {
                   // The letter is now a Work; the corrections are saved, so
-                  // there is nothing left to confirm.
+                  // there is nothing left to confirm. The Work opens with
+                  // its payment setup offered once — the only place in the
+                  // product that raises it.
                   navigate(
                     { name: 'work', workId: created.work.id },
-                    { confirmed: true },
+                    { confirmed: true, promptPaymentSetup: true },
                   );
                 }}
                 onBack={() => {
@@ -1347,6 +1371,10 @@ export function OperationsWorkspace({
                 onTabChange={(next) => {
                   setTabbedWorkId(view.workId);
                   setWorkTab(next);
+                }}
+                promptPaymentSetup={paymentSetupWorkId === view.workId}
+                onPaymentSetupClosed={() => {
+                  setPaymentSetupWorkId(null);
                 }}
               />
             )}

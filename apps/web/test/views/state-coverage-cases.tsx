@@ -24,6 +24,7 @@ import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
+import { WorkPaymentSetup } from '../../src/views/WorkPaymentSetup.js';
 import { WorkTaxInvoices } from '../../src/views/WorkTaxInvoices.js';
 import {
   billableBook,
@@ -290,6 +291,26 @@ export const STATE_CASES: readonly StateCase[] = [
     empty: {
       notApplicable:
         'A Work with no tender documents shows no comparison panel rather than an empty one.',
+    },
+  },
+  {
+    view: 'WorkPaymentSetup.tsx',
+    name: 'the payment matrix behind the post-creation setup dialog',
+    loads: ['getPaymentMatrix'],
+    render: (api) => (
+      <WorkPaymentSetup
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+        onClose={noop}
+        onSaved={noop}
+      />
+    ),
+    retry: /Retry payment setup/,
+    empty: {
+      notApplicable:
+        'The dialog is a fixed row per payment category over the items of one Work; an unconfigured category is a blank row, not an empty register.',
     },
   },
   {

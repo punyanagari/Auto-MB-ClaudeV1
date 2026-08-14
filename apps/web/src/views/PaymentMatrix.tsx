@@ -9,6 +9,18 @@ import type {
 import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
 import { AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import {
+  CATEGORY_LABELS,
+  LOCKED_AMC_STAGES,
+  STAGE_FIELDS,
+  draftFrom,
+  draftProblem,
+  draftTouched,
+  samePercent,
+  submittedDraft,
+  type RowDraft,
+  type StageField,
+} from '../lib/payment-matrix.js';
 import { Button } from '../ui/button.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
@@ -23,90 +35,6 @@ import { ErrorState, LoadingState } from '../ui/state.js';
  * All validation mirrors the server: 0–100 each, at most two decimals,
  * exact sum of 100 — checked in integer hundredths, never floats.
  */
-
-export const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
-  SUPPLY: 'Supply',
-  SUPPLY_AND_INSTALLATION: 'Supply + installation',
-  PURE_INSTALLATION: 'Purely installation',
-  SPARE_SUPPLY: 'Spare supply',
-  AMC: 'Annual maintenance (AMC)',
-  UNCATEGORISED: 'Uncategorised items',
-};
-
-const STAGE_FIELDS = [
-  ['pctSupply', 'Supply %'],
-  ['pctInstallation', 'Installation %'],
-  ['pctPac', 'PAC %'],
-  ['pctFinalBill', 'Final bill %'],
-] as const;
-
-type StageField = (typeof STAGE_FIELDS)[number][0];
-
-/** The two stages an AMC row may never bill on (migration 0068), because
- * an AMC item takes no Delivery Challan line and no installation record
- * and so can never move a quantity through either. */
-const LOCKED_AMC_STAGES: ReadonlySet<StageField> = new Set([
-  'pctSupply',
-  'pctInstallation',
-]);
-
-type RowDraft = Record<StageField, string>;
-
-/** Percentage in integer hundredths (two-decimal precision), or null
- * when the text is not a plain 0–100 decimal. Never floats. */
-function percentHundredths(raw: string): bigint | null {
-  const text = raw.trim();
-  const dot = text.indexOf('.');
-  const whole = dot === -1 ? text : text.slice(0, dot);
-  const fraction = dot === -1 ? '' : text.slice(dot + 1);
-  if (!/^\d{1,3}$/.test(whole)) return null;
-  if (dot !== -1 && !/^\d{1,2}$/.test(fraction)) return null;
-  const value = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0') || '0');
-  return value > 10000n ? null : value;
-}
-
-/**
- * The draft as it will actually be SUBMITTED.
- *
- * For an AMC row the two locked stages are 0 whatever the draft holds
- * (migration 0068), so validation, the sum-to-100 check and the request
- * body all read the same four numbers. Deriving the payload separately
- * from the thing that was validated is how a form comes to refuse a row
- * it would have accepted, or send one it showed as invalid.
- */
-function submittedDraft(category: string, draft: RowDraft): RowDraft {
-  if (category !== 'AMC') return draft;
-  return { ...draft, pctSupply: '0', pctInstallation: '0' };
-}
-
-/** Inline validation message for a draft, or null when it is saveable. */
-function draftProblem(draft: RowDraft): string | null {
-  let total = 0n;
-  for (const [field, label] of STAGE_FIELDS) {
-    const value = percentHundredths(draft[field]);
-    if (value === null) {
-      return `${label} must be a number between 0 and 100 with at most two decimals.`;
-    }
-    total += value;
-  }
-  if (total !== 10000n) {
-    return 'The four stages must sum to exactly 100.';
-  }
-  return null;
-}
-
-function draftFrom(row: PaymentMatrixRow | undefined): RowDraft {
-  return {
-    pctSupply: row?.pctSupply ?? '',
-    pctInstallation: row?.pctInstallation ?? '',
-    pctPac: row?.pctPac ?? '',
-    pctFinalBill: row?.pctFinalBill ?? '',
-  };
-}
-
-function samePercent(left: string, right: string): boolean {
-  return percentHundredths(left) === percentHundredths(right);
-}
 
 function matrixEvidenceWarnings(
   context: ContractSourceContext,
@@ -416,11 +344,7 @@ export function PaymentMatrix({
             const draft = drafts[category] ?? draftFrom(saved);
             const submitted = submittedDraft(category, draft);
             const problem = draftProblem(submitted);
-            const touched =
-              draft.pctSupply !== '' ||
-              draft.pctInstallation !== '' ||
-              draft.pctPac !== '' ||
-              draft.pctFinalBill !== '';
+            const touched = draftTouched(draft);
             if (!canModify) {
               return (
                 <tr key={category}>

@@ -13,18 +13,10 @@ import {
   Link2,
   ShieldCheck,
 } from 'lucide-react';
+import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
 import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
-
-const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
-  SUPPLY: 'Supply',
-  SUPPLY_AND_INSTALLATION: 'Supply + installation',
-  PURE_INSTALLATION: 'Purely installation',
-  SPARE_SUPPLY: 'Spare supply',
-  AMC: 'Annual maintenance (AMC)',
-  UNCATEGORISED: 'Uncategorised items',
-};
 
 const STAGES = [
   ['pctSupply', 'Supply %'],

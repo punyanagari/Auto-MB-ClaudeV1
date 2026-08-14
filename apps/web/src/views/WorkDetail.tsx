@@ -38,6 +38,7 @@ import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkBillingReadiness } from './WorkBillingReadiness.js';
 import { WorkBillSettlement } from './WorkBillSettlement.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
+import { WorkPaymentSetup } from './WorkPaymentSetup.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
 
@@ -64,6 +65,13 @@ interface WorkDetailProps {
    * page keeps its own tab — which is what the component tests rely on. */
   readonly tab?: WorkTab;
   readonly onTabChange?: (tab: WorkTab) => void;
+  /** This Work was created moments ago by confirming its letter, and the
+   * payment setup has not been offered yet. True exactly once, from the
+   * navigation that followed the confirmation: the shell holds it in
+   * memory, so a revisit, a refresh or a shared link never re-opens it. */
+  readonly promptPaymentSetup?: boolean;
+  /** The prompt is spent — saved or dismissed. */
+  readonly onPaymentSetupClosed?: () => void;
 }
 
 /** The Work page's areas. Eleven sections used to stack on one scroll; each
@@ -319,6 +327,8 @@ export function WorkDetail({
   onBack,
   tab: controlledTab,
   onTabChange,
+  promptPaymentSetup = false,
+  onPaymentSetupClosed,
 }: WorkDetailProps) {
   const [detail, setDetail] = useState<WorkDetailResponse | null>(null);
   const [challans, setChallans] = useState<readonly Challan[] | null>(null);
@@ -1422,6 +1432,44 @@ export function WorkDetail({
           Back to Works
         </Button>
       </Actions>
+
+      {/* Offered once, on the navigation that followed the confirmation of
+          this Work's letter, and only to someone who could act on it. It
+          writes nothing on its own: Later dismisses, and the same two
+          editors live permanently under Schedules & items. */}
+      {promptPaymentSetup && canModify && (
+        <WorkPaymentSetup
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          workItems={workItems}
+          onClose={() => {
+            onPaymentSetupClosed?.();
+          }}
+          onSaved={(saved) => {
+            setDetail((current) =>
+              current === null
+                ? current
+                : {
+                    ...current,
+                    schedules: current.schedules.map((schedule) => ({
+                      ...schedule,
+                      items: schedule.items.map((item) => {
+                        const updated = saved.find(
+                          (candidate) => candidate.id === item.id,
+                        );
+                        return updated === undefined
+                          ? item
+                          : { ...item, paymentCategory: updated.paymentCategory };
+                      }),
+                    })),
+                  },
+            );
+            setNotice('Payment setup saved for this Work.');
+            onPaymentSetupClosed?.();
+          }}
+        />
+      )}
     </Card>
   );
 }
