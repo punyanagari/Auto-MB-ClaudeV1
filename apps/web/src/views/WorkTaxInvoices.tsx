@@ -127,7 +127,12 @@ export function WorkTaxInvoices({
       .listContacts(organisationId)
       .then((contacts) => {
         if (!cancelled) {
-          setClients(contacts.filter((contact) => contact.isClient));
+          // Active clients only, exactly as the organisation-wide register
+          // filters them: the server refuses a retired buyer with
+          // CONTACT_RETIRED, so offering one is a picker that promises what
+          // submit rejects. An existing draft's own retired buyer is added
+          // back by BuyerOptions so editing it is never blocked.
+          setClients(contacts.filter((contact) => contact.isClient && contact.active));
           setShipToContacts(contacts);
         }
       })
@@ -223,7 +228,6 @@ export function WorkTaxInvoices({
     );
   }
 
-  const invoice = detail?.invoice ?? null;
   // A Measurement Book is billable once, so an MB already carrying a live
   // invoice leaves the picker; a cancelled OR superseded invoice puts it
   // back (supersession by an issued credit note releases the MB, 0051).
@@ -247,9 +251,9 @@ export function WorkTaxInvoices({
     canModify && canCreateDocuments && billableBooks.length > 0 && clients.length === 0;
 
   const refreshOpenInvoice = async () => {
-    if (invoice === null) return;
+    if (detail === null) return;
     await refreshList();
-    await openInvoiceDetail(invoice.id);
+    await openInvoiceDetail(detail.invoice.id);
   };
 
   return (

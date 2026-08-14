@@ -2,7 +2,7 @@ import type { Contact, GstRateMaster, TaxInvoiceLineShape } from '@auto-mb/contr
 import { formValue } from '../../api.js';
 import { Field, FieldRow, Hint } from '../../ui/form.js';
 import { InvoiceLineEditor, type DraftLine } from './InvoiceLineEditor.js';
-import { GstRateOptions } from './shared.js';
+import { BuyerOptions, GstRateOptions } from './shared.js';
 
 /**
  * Everything a tax invoice states about itself that is the same whether
@@ -242,11 +242,7 @@ export function InvoiceFactFields({
           <option value="" disabled>
             Pick a client contact
           </option>
-          {clients.map((client) => (
-            <option key={client.id} value={client.id}>
-              {client.designation}
-            </option>
-          ))}
+          <BuyerOptions clients={clients} allContacts={shipToContacts} />
         </select>
         <Hint>
           Snapshotted at submit, so a correction to the contact before submitting is

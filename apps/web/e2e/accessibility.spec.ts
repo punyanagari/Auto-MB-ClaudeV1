@@ -796,15 +796,6 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   // its Taxable value column, so a bare label lookup matches two things.
   await expect(page.getByRole('textbox', { name: 'Taxable value' })).toBeVisible();
   await expectNoAxeViolations(page, 'invoice register — direct invoice form');
-
-  /* No dark-palette scan here, deliberately. Adding one to this pack was
-     tried and it failed — on `Button`, in the shared primitives, and it
-     fails identically on the installation register this pack never
-     touched (measured 2026-08-14: `color-contrast`, serious, on the
-     primary and outline button variants). That is a dark-palette defect
-     in the design system, not a property of these screens, and fixing it
-     moves a token every screen reads. It is recorded in the pull request
-     rather than fixed here or hidden behind an allowlist entry. */
 });
 
 test('the workspace keeps the tenant header on every scoped request', async ({

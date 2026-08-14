@@ -4,6 +4,7 @@ import { Button } from '../../ui/button.js';
 import { StatusChip } from '../../ui/chip.js';
 import { DataTable, numericCell } from '../../ui/table.js';
 import { EmptyState } from '../../ui/state.js';
+import { IrpBadge } from './IrpBadge.js';
 
 interface InvoiceListProps {
   readonly invoices: readonly TaxInvoice[];
@@ -56,34 +57,12 @@ export function InvoiceList({ invoices, pending, onOpen }: InvoiceListProps) {
             <td>{formatDate(row.invoiceDate)}</td>
             <td>
               <StatusChip status={row.status}>{row.status}</StatusChip>
-              {row.irn !== null && (
-                <StatusChip
-                  status={
-                    row.irpProvider === 'whitebooks'
-                      ? 'issued'
-                      : 'registered_unverified'
-                  }
-                >
-                  {row.irpProvider === 'whitebooks'
-                    ? 'IRP registered'
-                    : 'manual — unverified'}
-                </StatusChip>
-              )}
-              {/* The frozen reporting window (migration 0049): amber
-                  while it is open, red once it has lawfully closed.
-                  A signal only — local validity never changes. */}
-              {row.status === 'submitted' &&
-                (row.irpReportingOverdue ? (
-                  <StatusChip status="expired">IRP overdue</StatusChip>
-                ) : (
-                  row.irpReportingDeadline !== null &&
-                  row.irpProviderState !== 'registered' &&
-                  row.irpProviderState !== 'registered_unverified' && (
-                    <StatusChip status="review">
-                      IRP due {formatDate(row.irpReportingDeadline)}
-                    </StatusChip>
-                  )
-                ))}
+              {/* The statutory standing, from the one shared badge the
+                  register uses too (IrpBadge): registration read from the
+                  provider state so a cancelled IRN is never "registered",
+                  and the frozen reporting window (migration 0049) as a
+                  signal only — local validity never changes. */}
+              <IrpBadge row={row} prefix="IRP " placeholder={null} />
             </td>
             <td className={numericCell}>
               {row.totalAmount === null ? '—' : formatInr(row.totalAmount)}

@@ -19,11 +19,12 @@ import {
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
-import { FormError } from '../ui/form.js';
+import { FormError, FormNotice } from '../ui/form.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { WorkLink } from '../ui/work-link.js';
 import { DirectInvoiceForm } from './work-tax-invoices/DirectInvoiceForm.js';
+import { IrpBadge } from './work-tax-invoices/IrpBadge.js';
 import { OpenedInvoice } from './work-tax-invoices/OpenedInvoice.js';
 
 /**
@@ -101,8 +102,13 @@ export function InvoicesRegister({
     readonly from: string;
     readonly to: string;
   }>({ from: '', to: '' });
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  // Three independent retry triggers, one per load, so a failed picker
+  // does not re-fetch the list the operator is reading, and retrying the
+  // opened invoice does not throw away the pages they have loaded. Each
+  // failure state bumps only its own.
+  const [listVersion, setListVersion] = useState(0);
+  const [pickerVersion, setPickerVersion] = useState(0);
+  const [detailVersion, setDetailVersion] = useState(0);
 
   const [clients, setClients] = useState<readonly Contact[]>([]);
   const [shipToContacts, setShipToContacts] = useState<readonly Contact[]>([]);
@@ -117,6 +123,13 @@ export function InvoicesRegister({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
   const [creditNotes, setCreditNotes] = useState<readonly CreditNote[]>([]);
+  /** Whether the opened invoice's Work is still active, for R8. A DIRECT
+   * invoice has no Work, so it is not gated and this stays true; a
+   * work-backed invoice on a completed Work must not offer Submit or IRP
+   * registration here any more than on the Work tab. Fails OPEN when the
+   * Work status cannot be read — the server backstop (assertInvoiceWork-
+   * Operable) is the real gate, exactly as the challan register trusts it. */
+  const [openWorkActive, setOpenWorkActive] = useState(true);
 
   const fetchPage = useCallback(
     (cursor?: string) =>
@@ -151,7 +164,7 @@ export function InvoicesRegister({
     return () => {
       cancelled = true;
     };
-  }, [fetchPage, loadVersion]);
+  }, [fetchPage, listVersion]);
 
   // The masters the draft form needs. They are conveniences: an
   // unavailable contact master must not stop the invoices that already
@@ -194,25 +207,46 @@ export function InvoicesRegister({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, pickerVersion]);
 
+  // Loads one invoice's detail, its e-way bills and its credit notes — and,
+  // for a work-backed one, its Work's status for the R8 gate. `isCurrent`
+  // is checked before EVERY state write so a slower response for an invoice
+  // the operator has already navigated away from can never overwrite the
+  // one now open: a rapid A -> B open must show B's document, never A's
+  // e-way bills under B's header.
   const loadDetail = useCallback(
-    async (invoiceId: string) => {
+    async (invoiceId: string, isCurrent: () => boolean) => {
       const loaded = await api.getTaxInvoice(organisationId, invoiceId);
+      if (!isCurrent()) return;
       setDetail(loaded);
+      // R8 needs the Work's status; a direct invoice has none and is not
+      // gated. A failed read leaves the gate open — the server enforces it.
+      if (loaded.invoice.workId === null) {
+        setOpenWorkActive(true);
+      } else {
+        const work = await api
+          .getWork(organisationId, loaded.invoice.workId)
+          .then((response) => response.work.status === 'active')
+          .catch(() => true);
+        if (!isCurrent()) return;
+        setOpenWorkActive(work);
+      }
       // E-way bills exist only for a submitted invoice; asking for a
       // draft's would be a guaranteed empty round trip.
-      setEwayBills(
+      const bills =
         loaded.invoice.status === 'submitted'
           ? await api.listInvoiceEwayBills(organisationId, invoiceId)
-          : [],
-      );
+          : [];
+      if (!isCurrent()) return;
+      setEwayBills(bills);
       // Credit notes ride submitted and superseded invoices (0051).
-      setCreditNotes(
+      const notes =
         loaded.invoice.status === 'submitted' || loaded.invoice.status === 'superseded'
           ? await api.listInvoiceCreditNotes(organisationId, invoiceId)
-          : [],
-      );
+          : [];
+      if (!isCurrent()) return;
+      setCreditNotes(notes);
     },
     [api, organisationId],
   );
@@ -224,11 +258,13 @@ export function InvoicesRegister({
     if (openInvoiceId === null) {
       setDetail(null);
       setDetailError(null);
+      setOpenWorkActive(true);
       return;
     }
     setDetail(null);
     setDetailError(null);
-    loadDetail(openInvoiceId).catch((cause: unknown) => {
+    setOpenWorkActive(true);
+    loadDetail(openInvoiceId, () => !cancelled).catch((cause: unknown) => {
       if (cancelled) return;
       setDetailError(
         cause instanceof RequestFailedError
@@ -239,7 +275,7 @@ export function InvoicesRegister({
     return () => {
       cancelled = true;
     };
-  }, [openInvoiceId, loadDetail, loadVersion]);
+  }, [openInvoiceId, loadDetail, detailVersion]);
 
   const act = useCallback(async (run: () => Promise<void>, done: string) => {
     setPending(true);
@@ -259,10 +295,22 @@ export function InvoicesRegister({
     }
   }, []);
 
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
+  function retryList(): void {
+    setListVersion((current) => current + 1);
+  }
+  function retryPickers(): void {
+    setPickerVersion((current) => current + 1);
+  }
+  function retryDetail(): void {
+    setDetailVersion((current) => current + 1);
   }
 
+  // After an action, return to the register's NEWEST page. The pages the
+  // operator had loaded are not stitched back: a keyset page taken after a
+  // mutation can straddle the same boundary differently, and merging that
+  // reliably is not worth the risk when the acted-on document is already
+  // shown whole in the opened detail below — which reloads with the same
+  // action. The list is a finding aid; the document is the subject.
   async function refreshList(): Promise<void> {
     const page = await fetchPage();
     setInvoices(page.invoices);
@@ -289,6 +337,14 @@ export function InvoicesRegister({
   }
 
   const filtered = dateWindow.from !== '' || dateWindow.to !== '';
+  // R8 for the OPENED invoice: submitting or registering a work-backed
+  // invoice on a completed Work is refused, the same as on the Work tab
+  // (which passes `canIssueDocuments = canIssue && workActive`). A direct
+  // invoice has no Work and is never gated. This governs both Submit and
+  // IRP registration, which each require `canIssue`.
+  const canIssueOpened =
+    canIssue &&
+    (detail === null || detail.invoice.workId === null || openWorkActive);
   const canDraftDirect = canModify && clients.length > 0;
   // The one prerequisite an operator can fix elsewhere right now: no
   // client contact exists to name as the buyer. Shown as a disabled
@@ -343,11 +399,14 @@ export function InvoicesRegister({
           </Button>
         </form>
 
-        {notice !== null && <p role="status">{notice}</p>}
+        {/* Success is transient and clears itself; an error persists until
+            the operator fixes it (FormNotice vs FormError, as the forms
+            do). */}
+        {notice !== null && <FormNotice>{notice}</FormNotice>}
         {actionError !== null && <FormError>{actionError}</FormError>}
 
         {loadError !== null && (
-          <ErrorState onRetry={retry} retryLabel="Retry invoices">
+          <ErrorState onRetry={retryList} retryLabel="Retry invoices">
             {loadError}
           </ErrorState>
         )}
@@ -409,7 +468,7 @@ export function InvoicesRegister({
                         <StatusChip status={row.status} />
                       </td>
                       <td>
-                        <IrpCell row={row} />
+                        <IrpBadge row={row} />
                       </td>
                       <td>
                         {row.workId !== null &&
@@ -461,7 +520,7 @@ export function InvoicesRegister({
             offering an action that would refuse identically. */}
         {pickerFailure !== null &&
           (pickerFailure.retryable ? (
-            <ErrorState retryLabel="Retry contacts" onRetry={retry}>
+            <ErrorState retryLabel="Retry contacts" onRetry={retryPickers}>
               {pickerFailure.message} Raising a direct invoice is unavailable until it
               loads — the invoices above are unaffected.
             </ErrorState>
@@ -505,7 +564,7 @@ export function InvoicesRegister({
         )}
 
         {detailError !== null && (
-          <ErrorState onRetry={retry} retryLabel="Retry this invoice">
+          <ErrorState onRetry={retryDetail} retryLabel="Retry this invoice">
             {detailError}
           </ErrorState>
         )}
@@ -521,14 +580,14 @@ export function InvoicesRegister({
             shipToContacts={shipToContacts}
             gstRates={gstRates}
             canModify={canModify}
-            canIssue={canIssue}
+            canIssue={canIssueOpened}
             canCancel={canCancel}
             canManageStatutory={canManageStatutory}
             pending={pending}
             act={act}
             refresh={async () => {
               await refreshList();
-              if (openInvoiceId !== null) await loadDetail(openInvoiceId);
+              if (openInvoiceId !== null) await loadDetail(openInvoiceId, () => true);
             }}
             onDeleted={async () => {
               await refreshList();
@@ -540,32 +599,4 @@ export function InvoicesRegister({
       </section>
     </>
   );
-}
-
-/** The statutory state, kept visibly separate from the local one: a
- * locally issued invoice is never represented as IRP-registered without
- * provider evidence, and the frozen reporting window (migration 0049) is
- * a signal about lawful reporting, never about local validity. */
-function IrpCell({ row }: { readonly row: TaxInvoiceRegisterEntry }) {
-  if (row.irn !== null) {
-    return (
-      <StatusChip
-        status={row.irpProvider === 'whitebooks' ? 'issued' : 'registered_unverified'}
-      >
-        {row.irpProvider === 'whitebooks' ? 'Registered' : 'Manual — unverified'}
-      </StatusChip>
-    );
-  }
-  if (row.status !== 'submitted') return <>—</>;
-  if (row.irpReportingOverdue) {
-    return <StatusChip status="expired">Overdue</StatusChip>;
-  }
-  if (row.irpReportingDeadline !== null) {
-    return (
-      <StatusChip status="review">
-        Due {formatDate(row.irpReportingDeadline)}
-      </StatusChip>
-    );
-  }
-  return <>—</>;
 }
