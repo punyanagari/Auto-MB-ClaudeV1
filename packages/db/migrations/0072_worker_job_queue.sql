@@ -35,13 +35,32 @@ SET LOCAL statement_timeout = '5min';
 -- same decision where the privilege matrix lives, so neither can be
 -- undone quietly.
 --
--- The residual exposure ADR-0011 states plainly, and this file will not
--- pretend otherwise: arbitrary SQL as the application role can call
--- `claim_next_job` and learn one job's metadata — its id, kind, and
--- timestamps, never its payload — and can starve the queue by claiming
--- without completing. That is denial of service, not a tenancy break, and
--- the claim lease below is what bounds it: an unfinished claim expires
--- and the job returns to the queue.
+-- The residual exposure, stated at its true bound rather than a
+-- comfortable one. ADR-0011 §2 described it as lease-bounded starvation;
+-- the review of this pack showed that understates it, and the ADR carries
+-- a proposed amendment saying so. What arbitrary SQL holding the
+-- application role can actually do:
+--
+--   * learn one job's metadata per call — id, kind, timestamps, and the
+--     payload REFERENCE, never the document behind it, which stays under
+--     tenant RLS;
+--   * receive that job's claim token, and therefore DESTROY the job:
+--     `complete_job` marks work done that never ran, and
+--     `fail_job(..., 'refused_bind')` additionally forges a
+--     membership-revocation signal an operator would read as a real
+--     access change;
+--   * starve the queue by claiming without completing.
+--
+-- The first and third are denial of service and information disclosure of
+-- job metadata. The second is destructive, and it is not bounded by the
+-- lease, because a completed job never returns. It remains NOT a tenancy
+-- break — no document content is readable and no cross-tenant write is
+-- possible — and it requires arbitrary SQL as the application role, which
+-- is already game over for availability. What this pack does about it is
+-- reduce the blast: since a terminal job now reconciles its document to a
+-- `failed` state with an operator remedy (section 5), a destroyed job
+-- leaves a document that visibly failed and can be re-uploaded, rather
+-- than one stranded mid-flight with a queue that looks healthy.
 
 -- ---------------------------------------------------------------------
 -- 1. The table.
@@ -188,7 +207,9 @@ CREATE INDEX worker_jobs_organisation_state_idx
 ALTER TABLE worker_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE worker_jobs FORCE ROW LEVEL SECURITY;
 
-GRANT SELECT, INSERT, UPDATE ON worker_jobs TO auto_mb_definer;
+-- DELETE is here only for `purge_finished_jobs`; nothing else removes a
+-- queue row, and the purge is owner-only.
+GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer;
 
 -- Deliberately absent: any GRANT to auto_mb_app. Revoked explicitly
 -- rather than merely omitted, so a database that once carried a hand-made
@@ -261,6 +282,88 @@ ALTER FUNCTION app_private.enqueue_job(text, jsonb) OWNER TO auto_mb_definer;
 REVOKE ALL ON FUNCTION app_private.enqueue_job(text, jsonb) FROM PUBLIC;
 
 -- ---------------------------------------------------------------------
+-- 3b. reconcile_terminal_job — a dead job must not strand a live document.
+--
+-- The queue knows a job is over. Nothing else did, and that was the hole
+-- this pack's review found: a job that failed, was refused, or ran out of
+-- attempts left its LOA document sitting in `pending` or `processing` for
+-- ever, with a queue that looked perfectly healthy and a screen that said
+-- the letter was still being read.
+--
+-- So every terminal transition passes through here, and here moves the
+-- document to `failed` — a state the product already understands, already
+-- displays, and already offers a remedy for (discard, then re-upload;
+-- docs/RUNBOOK.md §9).
+--
+-- It lives in SQL rather than in the worker deliberately. The worker is
+-- exactly what cannot be relied on at this moment: the two paths that
+-- reach a terminal state without any worker still running are a lease
+-- that expired because the process died, and an over-budget job parked by
+-- somebody else's `claim_next_job`. A reconciliation that only ran in the
+-- worker would miss precisely the cases it exists for.
+--
+-- The per-kind CASE is a small coupling between the queue and the tables
+-- its jobs touch, and it is the honest place for it: a new kind that
+-- needs reconciliation must edit this function, which is a change a
+-- reviewer sees, rather than inheriting silence.
+CREATE FUNCTION app_private.reconcile_terminal_job(p_job_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, app_private, pg_temp
+AS $$
+DECLARE
+  v_kind text;
+  v_document_ref text;
+  v_document_id uuid;
+BEGIN
+  SELECT j.kind, j.payload_ref->>'documentId'
+    INTO v_kind, v_document_ref
+    FROM worker_jobs AS j WHERE j.id = p_job_id;
+
+  -- The cast is guarded rather than direct. `payload_ref` is only shape-
+  -- checked by the table (an object, under 8 KB), so a reference that is
+  -- not a uuid is a malformed payload — a real possibility from a future
+  -- kind, a hand-inserted row, or a bug. Casting it directly would raise
+  -- `invalid input syntax for type uuid` from inside `fail_job`, which
+  -- would then fail to record the outcome at all: one bad payload would
+  -- stop every job in the queue from being able to fail cleanly. A
+  -- reference that is not a uuid simply has no document to reconcile.
+  IF v_document_ref ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+    v_document_id := v_document_ref::uuid;
+  END IF;
+
+  IF v_kind = 'loa_document_intake' AND v_document_id IS NOT NULL THEN
+    -- Only from the in-flight states. A document that was already read,
+    -- confirmed, or discarded is not the business of a job that died
+    -- afterwards, and the 0055 discard state especially must not be
+    -- overwritten with a failure the operator did not cause.
+    UPDATE loa_documents
+       SET extraction_status = 'failed',
+           extraction_payload = coalesce(extraction_payload, '{}'::jsonb)
+             || jsonb_build_object(
+                  'error', 'the background reading of this letter did not complete'
+                )
+     WHERE id = v_document_id
+       AND extraction_status IN ('pending', 'processing');
+  END IF;
+END
+$$;
+
+ALTER FUNCTION app_private.reconcile_terminal_job(uuid) OWNER TO auto_mb_definer;
+REVOKE ALL ON FUNCTION app_private.reconcile_terminal_job(uuid) FROM PUBLIC;
+
+-- The definer role reaches loa_documents for this and nothing else.
+-- BYPASSRLS carries no privileges, so the grant is separate and explicit,
+-- and it is deliberately narrow: SELECT and UPDATE, no INSERT and no
+-- DELETE. Reconciliation moves an existing row from an in-flight state to
+-- `failed`; it never creates a document and never removes one. The role
+-- is NOLOGIN and reachable only through the definer functions above, so
+-- this widens what those functions can do rather than what any session
+-- can do.
+GRANT SELECT, UPDATE ON loa_documents TO auto_mb_definer;
+
+-- ---------------------------------------------------------------------
 -- 4. claim_next_job — FOR UPDATE SKIP LOCKED, one row, with a lease.
 --
 -- The inner SELECT takes the row lock and the outer UPDATE writes the
@@ -268,11 +371,22 @@ REVOKE ALL ON FUNCTION app_private.enqueue_job(text, jsonb) FROM PUBLIC;
 -- step over a row the first is already taking instead of queueing behind
 -- it, so N workers make progress on N jobs rather than serialising.
 --
--- The `claim_expires_at < now()` arm is the re-queue. A worker that dies
--- holding a claim leaves the row in `claimed` forever otherwise; here the
--- lease simply lapses and the next claim picks it up, incrementing
--- attempts so a job that repeatedly kills its worker still exhausts its
--- budget rather than looping without end.
+-- The `claim_expires_at < now()` arm is the re-queue: a worker that dies
+-- holding a claim would otherwise leave the row in `claimed` for ever, so
+-- the lease lapses and the next claim picks it up.
+--
+-- THE BUDGET IS PART OF THAT ARM, and the first version of this file got
+-- it wrong. Its comment claimed the re-queue incremented attempts "so a
+-- job that repeatedly kills its worker still exhausts its budget rather
+-- than looping without end" — but nothing checked the budget on this
+-- path. `fail_job` enforces it, and a crashed worker never calls
+-- `fail_job`, so a job that reliably kills whatever picks it up (an OOM
+-- on a huge document is the realistic one) would be re-claimed for ever,
+-- taking a worker down with it each time. Two things close it: the
+-- candidate filter below refuses a job whose attempts are spent, and the
+-- reconciliation step above it parks such a job as `failed` — because a
+-- row that is merely unclaimable is invisible, and invisible is how the
+-- first bug looked too.
 CREATE FUNCTION app_private.claim_next_job(
   p_claimed_by text,
   p_lease_seconds integer
@@ -293,6 +407,7 @@ SET search_path = public, app_private, pg_temp
 AS $$
 DECLARE
   v_token uuid := gen_random_uuid();
+  v_stale record;
 BEGIN
   IF p_claimed_by IS NULL OR length(p_claimed_by) = 0 THEN
     RAISE EXCEPTION 'a claim must name the worker making it'
@@ -302,6 +417,41 @@ BEGIN
     RAISE EXCEPTION 'a claim lease must be at least one second'
       USING ERRCODE = 'check_violation';
   END IF;
+
+  -- Reconciliation, before the claim. An expired claim whose attempts are
+  -- spent belongs to a worker that is not coming back, so nothing else
+  -- will ever call `fail_job` for it. Parking it here is what turns "this
+  -- job is quietly unclaimable" into "this job failed, and its document
+  -- says so".
+  --
+  -- Bounded per call so a large backlog cannot make one claim arbitrarily
+  -- slow; the next claim takes the next few, and claims are frequent.
+  -- Every column reference here is qualified. This function declares OUT
+  -- parameters named `id`, `state`, `attempts` and so on (RETURNS TABLE),
+  -- and plpgsql resolves a bare name to the parameter rather than the
+  -- column, so an unqualified `id` is an ambiguous-reference error at run
+  -- time rather than a compile-time one.
+  FOR v_stale IN
+    SELECT stale.id AS stale_id FROM worker_jobs AS stale
+     WHERE stale.state = 'claimed'
+       AND stale.claim_expires_at < now()
+       AND stale.attempts >= stale.max_attempts
+     ORDER BY stale.claim_expires_at
+       FOR UPDATE SKIP LOCKED
+     LIMIT 10
+  LOOP
+    UPDATE worker_jobs AS parked
+       SET state = 'failed',
+           finished_at = now(),
+           last_error = 'the claim lease expired with no attempts remaining; '
+             || 'the worker holding it did not report an outcome',
+           claim_token = NULL,
+           claimed_by = NULL,
+           claimed_at = NULL,
+           claim_expires_at = NULL
+     WHERE parked.id = v_stale.stale_id;
+    PERFORM app_private.reconcile_terminal_job(v_stale.stale_id);
+  END LOOP;
 
   RETURN QUERY
   UPDATE worker_jobs AS j
@@ -314,8 +464,11 @@ BEGIN
    WHERE j.id = (
      SELECT candidate.id
        FROM worker_jobs AS candidate
-      WHERE (candidate.state = 'queued' AND candidate.run_after <= now())
-         OR (candidate.state = 'claimed' AND candidate.claim_expires_at < now())
+      WHERE candidate.attempts < candidate.max_attempts
+        AND (
+          (candidate.state = 'queued' AND candidate.run_after <= now())
+          OR (candidate.state = 'claimed' AND candidate.claim_expires_at < now())
+        )
       ORDER BY candidate.run_after, candidate.created_at, candidate.id
         FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -404,6 +557,7 @@ SET search_path = public, app_private, pg_temp
 AS $$
 DECLARE
   v_updated integer;
+  v_state text;
 BEGIN
   IF p_terminal_state NOT IN ('failed', 'refused_bind') THEN
     RAISE EXCEPTION 'a job fails as failed or refused_bind, not %', p_terminal_state
@@ -426,7 +580,87 @@ BEGIN
            WHEN p_retry_at IS NOT NULL AND attempts < max_attempts THEN NULL
            ELSE now()
          END,
-         last_error = p_error,
+         -- Capped, and deliberately. An error message is written by
+         -- whatever threw it, and the things that throw here have read
+         -- the document: pdftotext echoes file content in some failures,
+         -- and a parser stack can carry a fragment of the letter. This
+         -- column lives on an RLS-exempt table that no tenant boundary
+         -- protects, so an unbounded message is a route for tenant text
+         -- to end up outside tenant RLS. 500 characters is enough to name
+         -- a fault and not enough to carry a letter; the full error is in
+         -- the worker's log, which is where diagnosis belongs.
+         last_error = left(p_error, 500),
+         claim_token = NULL,
+         claimed_by = NULL,
+         claimed_at = NULL,
+         claim_expires_at = NULL
+   WHERE id = p_job_id
+     AND state = 'claimed'
+     AND claim_token = p_claim_token;
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+
+  -- A job that has actually finished must not leave its document in
+  -- flight. Only on a terminal transition: a retry is still going to run,
+  -- and marking the document failed between attempts would flicker a
+  -- failure the operator cannot act on and the next attempt would undo.
+  IF v_updated = 1 THEN
+    SELECT state INTO v_state FROM worker_jobs WHERE id = p_job_id;
+    IF v_state IN ('failed', 'refused_bind') THEN
+      PERFORM app_private.reconcile_terminal_job(p_job_id);
+    END IF;
+  END IF;
+
+  RETURN v_updated = 1;
+END
+$$;
+
+ALTER FUNCTION app_private.fail_job(uuid, uuid, text, timestamptz, text)
+  OWNER TO auto_mb_definer;
+REVOKE ALL ON FUNCTION app_private.fail_job(uuid, uuid, text, timestamptz, text)
+  FROM PUBLIC;
+
+-- ---------------------------------------------------------------------
+-- 5a. release_job — hand a job back without spending an attempt.
+--
+-- `claim_next_job` increments `attempts` when it hands a job out, which is
+-- right when the worker is going to try: it is what bounds a job that
+-- keeps killing whatever picks it up. It is wrong when the worker never
+-- tried at all.
+--
+-- The case that matters is a rolling deploy. Mid-rollout, an OLD worker
+-- claims a job of a kind only the NEW workers implement. It cannot run it
+-- and says so — but if that costs an attempt, five such claims (about two
+-- and a half minutes at the default backoff) kill the job terminally,
+-- and it is a perfectly good job that the new workers would have run
+-- correctly. The worker's own comment promised this did not consume the
+-- budget; this function is what makes the promise true.
+--
+-- `attempts - 1` rather than a saved value: the only caller is a worker
+-- that was just handed this row, so the decrement exactly undoes the
+-- increment that handed it over. `greatest(0, ...)` keeps the CHECK
+-- satisfied whatever happens.
+CREATE FUNCTION app_private.release_job(
+  p_job_id uuid,
+  p_claim_token uuid,
+  p_reason text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, app_private, pg_temp
+AS $$
+DECLARE
+  v_updated integer;
+BEGIN
+  UPDATE worker_jobs
+     SET state = 'queued',
+         attempts = greatest(0, attempts - 1),
+         -- Held briefly so a single worker in a rolling deploy cannot spin
+         -- on the same unimplementable job; long enough for the rollout to
+         -- move on, short enough not to delay a real backlog.
+         run_after = now() + interval '30 seconds',
+         last_error = left(p_reason, 500),
          claim_token = NULL,
          claimed_by = NULL,
          claimed_at = NULL,
@@ -440,14 +674,69 @@ BEGIN
 END
 $$;
 
-ALTER FUNCTION app_private.fail_job(uuid, uuid, text, timestamptz, text)
-  OWNER TO auto_mb_definer;
-REVOKE ALL ON FUNCTION app_private.fail_job(uuid, uuid, text, timestamptz, text)
-  FROM PUBLIC;
+ALTER FUNCTION app_private.release_job(uuid, uuid, text) OWNER TO auto_mb_definer;
+REVOKE ALL ON FUNCTION app_private.release_job(uuid, uuid, text) FROM PUBLIC;
+
+-- ---------------------------------------------------------------------
+-- 5b. purge_finished_jobs — the queue is not an archive.
+--
+-- Without this the table only grows. Every LOA upload writes a row that
+-- reaches `done` and then stays for ever, and the claim index carries
+-- none of them (it is partial on the live states) but the heap and the
+-- organisation index do. A pilot host does not notice for a year and then
+-- notices all at once.
+--
+-- Retention is a parameter rather than a constant because the right
+-- window is an operator's judgement: `done` rows are only evidence that
+-- something ran, and the audit trail already records what it did, but
+-- `failed` and `refused_bind` rows are the operator's own diagnostic
+-- history and are worth keeping longer. Run from the owner role — this
+-- one is deliberately NOT granted to `auto_mb_app`, because bulk deletion
+-- is not something a compromised application role should be able to
+-- reach. docs/RUNBOOK.md §9 has the schedule.
+CREATE FUNCTION app_private.purge_finished_jobs(p_older_than interval)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, app_private, pg_temp
+AS $$
+DECLARE
+  v_deleted integer;
+BEGIN
+  IF p_older_than IS NULL OR p_older_than < interval '1 day' THEN
+    RAISE EXCEPTION 'refusing to purge jobs younger than a day'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  DELETE FROM worker_jobs
+   WHERE state IN ('done', 'failed', 'refused_bind')
+     AND finished_at < now() - p_older_than;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END
+$$;
+
+ALTER FUNCTION app_private.purge_finished_jobs(interval) OWNER TO auto_mb_definer;
+REVOKE ALL ON FUNCTION app_private.purge_finished_jobs(interval) FROM PUBLIC;
 
 -- ---------------------------------------------------------------------
 -- 6. The application role's entire access to the queue: EXECUTE on four
 -- functions, and nothing on the table.
+--
+-- The REVOKE above each of these is the load-bearing half. PostgreSQL
+-- grants EXECUTE to PUBLIC on a newly created function by default, so a
+-- function that is only GRANTed is already reachable by everyone; the
+-- explicit `REVOKE ALL ... FROM PUBLIC` beside every definition is what
+-- makes this list the whole surface rather than a decoration on top of an
+-- open one. `worker-queue.integration.test.ts` asserts the resulting ACLs
+-- against the catalog, including that PUBLIC holds nothing, so a restore
+-- or a hand-edited function that comes back with the default grant fails
+-- a test instead of quietly widening the queue.
+--
+-- `reconcile_terminal_job` and `purge_finished_jobs` are deliberately
+-- absent: the first is only ever called from inside the two functions
+-- above, and the second is an operator action.
 
 DO $$
 BEGIN
@@ -457,6 +746,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION app_private.complete_job(uuid, uuid, jsonb) TO auto_mb_app;
     GRANT EXECUTE ON FUNCTION app_private.fail_job(uuid, uuid, text, timestamptz, text)
       TO auto_mb_app;
+    GRANT EXECUTE ON FUNCTION app_private.release_job(uuid, uuid, text) TO auto_mb_app;
   END IF;
 END
 $$;

@@ -1,15 +1,24 @@
 # ADR-0011: Worker jobs impersonate their requesting user; the queue is reached only through definer functions
 
-- Status: Accepted (owner approval 2026-08-14)
+- Status: Accepted (owner approval 2026-08-14), with **two amendments
+  proposed by the P18 implementation review and awaiting owner
+  ratification** — see "Proposed amendments" at the foot of this file.
+  Both correct statements of fact that turned out to be wrong; neither
+  changes the decision, and the implementation follows the corrected text.
 - Date: 2026-08-14
 - Programme reference: P18 (worker wiring), IMPROVEMENT-PROGRAMME-2026-08-13 §2.4; ADR-0008 (worker scaffold); ADR-0010 (bind-time verification)
 
 ## Context
 
-P18 moves four operations off the request path into `apps/worker`:
-Gotenberg render, ClamAV scan, Poppler extraction, and signature
-verification, coordinated through a `FOR UPDATE SKIP LOCKED` queue
-table. Every one of these touches tenant data, and since ADR-0010 the
+P18 moves work off the request path into `apps/worker`, coordinated
+through a `FOR UPDATE SKIP LOCKED` queue table. The four candidates were
+Gotenberg render, ClamAV scan, Poppler extraction and signature
+verification; **two of them moved** — Poppler extraction and signature
+verification, which share one job on the LOA intake path. The ClamAV scan
+stayed synchronous by design (it is an admission gate: nothing unscanned
+is ever stored, and an asynchronous scan could only promise the weaker
+"nothing unscanned is ever served"), and the Gotenberg render was
+deferred with its design recorded. See amendment (b). Every one of these touches tenant data, and since ADR-0010 the
 only way to bind a tenant context is `app_private.bind_tenant`, which
 proves an **active membership** for a named user and fails closed with
 `28A01`. ADR-0010 deliberately gave it no service bypass and deferred
@@ -60,12 +69,20 @@ pattern:
 - `complete_job(id, outcome)` / `fail_job(id, error, retry_at)` —
   callable only by the claimant's session for the job it claimed.
 
-Residual exposure, stated honestly: arbitrary SQL as the app role can
-call `claim_next_job()` and see one job's metadata (ids, kind,
-timestamps — not payloads, which live behind tenant RLS) and can
-starve the queue by claiming without completing. That is a
-denial-of-service surface, not a tenancy break; claims expire by
-timeout and re-queue.
+Residual exposure, stated honestly — and **corrected by amendment (a)**,
+because the paragraph as first written stated a bound that is not true.
+Arbitrary SQL as the app role can call `claim_next_job()` and see one
+job's metadata (ids, kind, timestamps, and the payload reference — not
+payloads, which live behind tenant RLS); can starve the queue by claiming
+without completing; and — the part the original paragraph missed — is
+handed that job's claim token by the call, so it can also **destroy** the
+job, with `complete_job` marking work done that never ran or
+`fail_job(..., 'refused_bind')` additionally forging a
+membership-revocation signal. Destruction is not bounded by the lease,
+because a completed job never returns. It remains a denial-of-service and
+job-metadata surface rather than a tenancy break — no document content is
+readable and no cross-tenant write is possible — but "claims expire by
+timeout and re-queue" is not the whole answer to it.
 
 **3. Payloads stay behind tenant RLS.** The queue row carries
 references, never content. The worker reads the actual document bytes
@@ -116,3 +133,39 @@ so a job claimed maliciously yields nothing readable.
 - This ADR touches the security kernel's boundary. The implementation
   PR is opened, not merged — CONTRIBUTING's fresh-human-review
   requirement applies, and approval of this ADR does not waive it.
+
+## Proposed amendments (P18 implementation review, 2026-08-14)
+
+Raised by the review of the implementation pull request, applied to the
+implementation, and recorded here for owner ratification rather than
+folded in silently — the treatment ADR-0010's own correction had in
+pull request #70. Neither changes the decision this ADR takes.
+
+**(a) The residual-exposure bound was falsifiable, and false.** The
+original text held that the exposure was metadata disclosure plus
+lease-bounded starvation. It is not: `claim_next_job()` returns the claim
+token to whoever called it, so an attacker holding the application role
+can complete or fail the job it claimed. That is permanent destruction of
+queued work, and `fail_job(..., 'refused_bind')` additionally plants a
+signal an operator would reasonably read as a real membership revocation.
+The Decision section above now states the true bound.
+
+Two things mitigate it and neither was available when the paragraph was
+written. Terminal jobs now reconcile their document to a `failed` state
+carrying an operator remedy, so a destroyed job leaves a visibly failed
+document rather than one stranded mid-flight; and the whole surface still
+requires arbitrary SQL as the application role, which is already a
+availability compromise. The alternative — a claimant identity the caller
+cannot influence at all — was considered and not taken: the session-level
+GUC it would need is exactly the shape ADR-0010 rejected for tenancy, and
+it would not help, because the same attacker holds the same session.
+
+**(b) "P18 moves four operations off the request path" was wrong by
+two.** Two moved. The ClamAV scan stayed synchronous on a security
+argument the pack states in `docs/PRODUCT.md` §5.8, and the Gotenberg
+render was deferred to a follow-up with its design (HTML by reference
+through object storage, so the queue row still carries no content)
+written down. The Context section above now says so. This matters beyond
+tidiness: a reader taking the original sentence at face value would
+believe upload scanning had become asynchronous, which is the opposite of
+what the pack decided and the opposite of what the code does.

@@ -25,6 +25,21 @@ Deploy as a modular monolith: one web build, one API service, one worker service
 - `apps/web`: React UI; no authoritative money or quantity logic.
 - `apps/server`: HTTP routes and product modules.
 - `apps/worker`: asynchronous execution. Claims jobs from `worker_jobs` and runs each one under the tenant binding of the user who caused it (ADR-0011).
+
+The worker **polls** for work — a `FOR UPDATE SKIP LOCKED` claim every
+second when the queue is idle, and back-to-back while it is not. The
+alternative considered and rejected was PostgreSQL `LISTEN`/`NOTIFY`: it
+would cut idle latency from up to a second to near zero, and it would cost
+a dedicated long-lived connection per worker outside the pool, a
+reconnect-and-resynchronise path for every dropped connection, and a
+fallback poll anyway — because `NOTIFY` is delivered at most once and is
+lost entirely if the listener is not connected, so a notification-only
+worker silently drops the jobs enqueued while it was restarting. Polling
+is one query against a partial index on a queue that receives a few rows
+per upload, and a second of latency is invisible against a job that takes
+tens of seconds. `LISTEN`/`NOTIFY` becomes worth its complexity if a job
+kind ever needs sub-second dispatch; none does.
+
 - `packages/db`: SQL migrations, DB connection, organisation-scoped transactions.
 - `packages/contracts`: TypeBox schemas shared by server and web.
 - `packages/loa-parser`: pure parser and real regression corpus.

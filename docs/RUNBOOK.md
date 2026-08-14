@@ -523,6 +523,81 @@ When a user reports a lost authenticator AND exhausted backup codes:
    new enrolment (`two_factor_enabled` audit row) before closing the
    ticket.
 
+## 7b. The worker and its job queue
+
+The worker runs asynchronous jobs — today only `loa_document_intake`,
+which reads an uploaded award letter with Poppler and verifies its digital
+signatures. It publishes no port and has no healthcheck, deliberately: it
+answers no request, and a process-liveness probe would call a wedged claim
+loop healthy. **The queue's own states are the signal.**
+
+Every query below runs as the OWNER role (`psql` on the host). The
+application role holds no privilege on `worker_jobs` at all — that is
+ADR-0011's design, not an oversight — so these cannot be run from the API
+container or through any application path.
+
+### Is the queue healthy?
+
+```sql
+SELECT state, count(*), min(created_at) AS oldest
+FROM worker_jobs GROUP BY state ORDER BY state;
+```
+
+Read it like this:
+
+| What you see                         | What it means                                                         | What to do                                                                                |
+| ------------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `queued` rising, `oldest` ageing     | the worker is down, or behind                                         | `docker compose ps worker`, then its logs                                                 |
+| `claimed` rows with a stale `oldest` | a worker died holding a lease                                         | nothing — the lease expires and the job returns; confirm the count falls                  |
+| any `refused_bind`                   | the user who commissioned the job lost their membership before it ran | the work must be re-requested under a live user — see below                               |
+| `failed` climbing                    | jobs are exhausting their attempts                                    | read `last_error`; it is capped at 500 characters and the full error is in the worker log |
+
+For the detail behind a bad state:
+
+```sql
+SELECT id, kind, state, attempts, max_attempts, run_after, last_error,
+       organisation_id, user_id
+FROM worker_jobs
+WHERE state IN ('failed', 'refused_bind')
+   OR (state = 'claimed' AND claim_expires_at < now())
+ORDER BY updated_at DESC LIMIT 50;
+```
+
+### A letter is stuck, or its reading failed
+
+A job that goes terminal reconciles its document to `extraction_status =
+'failed'`, so the letter shows as failed on screen rather than being stuck
+on "still being read". **The remedy is discard-then-re-upload, and the
+order matters**: re-uploading first is refused as a duplicate, because the
+original row still holds the same SHA-256. Discarding excludes it from
+that check (migration 0055).
+
+1. In the product, open the letter and discard it, giving the reason.
+2. Upload the letter again. A fresh job is enqueued with it.
+
+If a document is somehow still sitting in `pending` or `processing` with
+no live job — which the reconciliation above is designed to prevent, so
+treat it as a bug worth reporting — the same remedy applies.
+
+For `refused_bind` specifically: the job is terminal by design and no
+retry can succeed, because the user is no longer a member. Either restore
+that user's membership and have them re-upload, or have a current member
+upload the letter.
+
+### Retention
+
+`worker_jobs` is not an archive and nothing prunes it automatically:
+
+```sql
+SELECT app_private.purge_finished_jobs(interval '30 days');
+```
+
+Returns the number of rows removed. It only ever deletes rows in `done`,
+`failed` or `refused_bind` that finished before the window, refuses a
+window under a day, and is owner-only — bulk deletion is deliberately not
+something the application role can reach. Monthly is ample; the table
+gains roughly one row per uploaded letter.
+
 ## 8. Design-partner onboarding checklist
 
 Per partner (3–5 for the pilot):

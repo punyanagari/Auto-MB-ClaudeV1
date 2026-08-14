@@ -21,9 +21,13 @@ No production secret, database dump, or customer document belongs in local devel
   call a wedged claim loop healthy. The queue's own states are the signal —
   a rising `queued` depth means the worker is behind or down, and anything
   in `refused_bind` means a job's commissioning user lost their membership
-  before it ran and the work must be re-requested under a live user. Both
-  are read through `app_private` functions or as the owner role; the
-  application role cannot see the table at all (ADR-0011);
+  before it ran and the work must be re-requested under a live user.
+  **Reading them is an owner-role `psql` operation**: the application role
+  holds no privilege on `worker_jobs` whatsoever (ADR-0011), so there is no
+  API endpoint and no application path to this, by design. The queries, and
+  what each state obliges an operator to do, are docs/RUNBOOK.md §7b;
+  retention is `app_private.purge_finished_jobs`, also owner-only, since
+  nothing prunes the table automatically;
 - PostgreSQL;
 - private object storage;
 - private Gotenberg;

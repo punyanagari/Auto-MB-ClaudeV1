@@ -225,6 +225,7 @@ const FUNCTION_GRANTS = [
   'app_private.claim_next_job(text, integer)',
   'app_private.complete_job(uuid, uuid, jsonb)',
   'app_private.fail_job(uuid, uuid, text, timestamptz, text)',
+  'app_private.release_job(uuid, uuid, text)',
 ];
 
 /** Functions that MUST be owned by the BYPASSRLS definer role: they are
@@ -295,6 +296,16 @@ export async function applyGrants(admin: Sql): Promise<void> {
   await admin.unsafe(
     `GRANT SELECT, INSERT ON organisations, organisation_memberships, audit_events
      TO auto_mb_definer`,
+  );
+  // Migration 0072: `reconcile_terminal_job` moves an LOA document out of
+  // its in-flight state when the job reading it dies. Narrow on purpose —
+  // no INSERT, no DELETE — and repaired here for the same reason the rest
+  // of the matrix is: a fresh-cluster restore brings the function back
+  // without the grant, and reconciliation would then fail silently at the
+  // exact moment a job was already failing.
+  await admin.unsafe(`GRANT SELECT, UPDATE ON loa_documents TO auto_mb_definer`);
+  await admin.unsafe(
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer`,
   );
   for (const fn of DEFINER_FUNCTIONS) {
     await admin.unsafe(`ALTER FUNCTION ${fn} OWNER TO auto_mb_definer`);

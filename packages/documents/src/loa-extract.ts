@@ -126,7 +126,7 @@ let popplerCheck: Promise<void> | null = null;
  * server; a failed check is NOT cached, so fixing the environment and
  * retrying works without a restart in development.
  */
-async function assertPopplerPdfToText(): Promise<void> {
+export async function assertPopplerPdfToText(): Promise<void> {
   popplerCheck ??= (async () => {
     const command = pdftotextCommand();
     const banner = await readPdfToTextBanner(command);

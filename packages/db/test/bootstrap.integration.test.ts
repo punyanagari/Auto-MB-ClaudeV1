@@ -71,6 +71,7 @@ beforeAll(async () => {
     'app_private.claim_next_job(text, integer)',
     'app_private.complete_job(uuid, uuid, jsonb)',
     'app_private.fail_job(uuid, uuid, text, timestamptz, text)',
+    'app_private.release_job(uuid, uuid, text)',
   ]) {
     await bootAdmin.unsafe(`alter function ${fn} owner to auto_mb_owner`);
   }
@@ -142,10 +143,10 @@ describe('production bootstrap', () => {
         and p.proname in (
           'current_organisation_id', 'current_user_id',
           'create_organisation_with_owner', 'bind_tenant',
-          'enqueue_job', 'claim_next_job', 'complete_job', 'fail_job'
+          'enqueue_job', 'claim_next_job', 'complete_job', 'fail_job', 'release_job'
         )
     `;
-    expect(owners).toHaveLength(8);
+    expect(owners).toHaveLength(9);
     for (const row of owners) {
       expect(row.owner, row.proname).toBe('auto_mb_definer');
     }

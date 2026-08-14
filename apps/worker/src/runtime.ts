@@ -5,6 +5,7 @@ import {
   completeJob,
   failJob,
   refuseJobBind,
+  releaseJob,
   withJobAuthority,
 } from '@auto-mb/db';
 
@@ -39,6 +40,18 @@ export type JobHandler = (
 ) => Promise<Record<string, unknown> | null>;
 
 export type JobHandlers = Readonly<Record<JobKind, JobHandler>>;
+
+/**
+ * What became of one claim.
+ *
+ * `released` and `lost` are separate from the rest on purpose: neither is
+ * a job that ran. `released` is this worker handing back a kind it cannot
+ * execute, without spending an attempt; `lost` is this worker finishing
+ * work whose lease had already passed to somebody else. Folding either
+ * into `done` would make the worker report successes it did not have.
+ */
+export type JobOutcome =
+  'done' | 'lost' | 'released' | 'retry' | 'failed' | 'refused_bind';
 
 export interface JobLogger {
   info(fields: Record<string, unknown>): void;
@@ -88,36 +101,31 @@ export async function runJob(
   job: ClaimedJob,
   handlers: JobHandlers,
   log: JobLogger,
-): Promise<'done' | 'retry' | 'failed' | 'refused_bind'> {
+): Promise<JobOutcome> {
   const handler = handlers[job.kind];
   if (handler === undefined) {
-    // A kind the database admits and this worker does not implement. That
-    // is a deployment skew — an older worker against a newer schema — and
-    // it must not consume the retry budget silently, so it is logged as an
-    // error and retried: the job is probably fine, this process is not.
+    // A kind the database admits and this worker does not implement: a
+    // deployment skew, an older worker against a newer schema. The job is
+    // probably fine and this process is not, so it is handed BACK rather
+    // than failed — `releaseJob` returns it to the queue and gives back
+    // the attempt the claim consumed.
+    //
+    // That distinction is the whole point. Failing with a retry still
+    // spends an attempt, so five such claims during a rolling deploy —
+    // about two and a half minutes — would terminally kill a job the new
+    // workers would have run correctly.
     log.error({ jobId: job.id, kind: job.kind, message: 'no handler for job kind' });
-    await failJob(sql, job, `no handler for job kind ${job.kind}`, nextRetry(job));
-    return 'retry';
+    await releaseJob(sql, job, `no handler for job kind ${job.kind}`);
+    return 'released';
   }
 
+  let outcome: Record<string, unknown> | null;
   try {
-    const outcome = await handler({
+    outcome = await handler({
       job,
       log,
       tenant: (work) => withJobAuthority(sql, job, work),
     });
-    const held = await completeJob(sql, job, outcome);
-    if (!held) {
-      // The lease lapsed while the work ran and somebody else owns the job
-      // now. Normal under a lease, not a fault — but worth saying, because
-      // a steady stream of these means the lease is too short.
-      log.info({
-        jobId: job.id,
-        kind: job.kind,
-        message: 'claim lost before completion',
-      });
-    }
-    return 'done';
   } catch (error) {
     if (error instanceof TenantBindRefusedError) {
       // ADR-0011: work commissioned by a user who has since lost the
@@ -144,6 +152,36 @@ export async function runJob(
     await failJob(sql, job, message, nextRetry(job));
     return job.attempts >= job.maxAttempts ? 'failed' : 'retry';
   }
+
+  // Recording the success sits OUTSIDE the handler's try, deliberately.
+  //
+  // Inside it, a `complete_job` that failed on a dropped connection was
+  // caught by the same `catch` as a job that broke, and answered by
+  // calling `fail_job` — reporting the work as failed when it had in fact
+  // committed. Out here, that failure propagates to the loop, which backs
+  // off; the claim's lease then expires and the job runs again.
+  //
+  // Running again is safe because the handlers are resumable: the LOA
+  // intake job re-claims its own `processing` document and every write it
+  // makes is guarded on state it can only satisfy once. So the honest
+  // outcome of "the work committed but I could not say so" is to say
+  // nothing and let the job be redone, rather than to record the opposite
+  // of what happened.
+  const held = await completeJob(sql, job, outcome);
+  if (!held) {
+    // The lease lapsed while the work ran and somebody else owns the job
+    // now. Normal under a lease, not a fault — but this is not `done`
+    // either, because this worker completed nothing: the row belongs to
+    // another claimant. A steady stream of these means the lease is too
+    // short for the workload.
+    log.info({
+      jobId: job.id,
+      kind: job.kind,
+      message: 'claim lost before completion; another worker owns this job',
+    });
+    return 'lost';
+  }
+  return 'done';
 }
 
 function nextRetry(job: ClaimedJob): Date {
@@ -176,6 +214,7 @@ export async function runWorkerLoop(
 ): Promise<void> {
   const sleep = options.sleep ?? defaultSleep;
   let consecutiveClaimFailures = 0;
+  let consecutiveOutcomeFailures = 0;
 
   while (!options.signal.aborted) {
     let job: ClaimedJob | undefined;
@@ -198,8 +237,40 @@ export async function runWorkerLoop(
       continue;
     }
 
-    const outcome = await runJob(sql, job, options.handlers, options.log);
-    options.log.info({ jobId: job.id, kind: job.kind, outcome });
+    // `runJob` reports outcomes rather than raising for job failures, but
+    // it is not exception-free: its LAST act on every path is a call into
+    // the database — complete_job, fail_job, refuseJobBind, releaseJob —
+    // and a connection that dies in that window throws out of it.
+    //
+    // Unhandled, that rejection escapes the loop and ends the process. The
+    // orchestrator restarts it, the restarted worker claims the same job,
+    // and if the database is still unwell it dies again — a crash loop
+    // where a backoff belongs, on the one class of fault most likely to be
+    // transient. So the loop treats it exactly like a failed claim: log,
+    // back off, carry on. The job itself is safe either way, because its
+    // lease expires and it returns to the queue.
+    try {
+      const outcome = await runJob(sql, job, options.handlers, options.log);
+      options.log.info({ jobId: job.id, kind: job.kind, outcome });
+      consecutiveOutcomeFailures = 0;
+    } catch (error) {
+      // Counted separately from claim failures, and NOT reset by a
+      // successful claim. A database that accepts claims and then drops
+      // the connection on every completion would otherwise never escalate
+      // past the first delay, because each iteration would clear the
+      // counter it had just incremented.
+      consecutiveOutcomeFailures += 1;
+      options.log.error({
+        jobId: job.id,
+        kind: job.kind,
+        message:
+          'the job outcome could not be recorded; it will be retried ' +
+          'when its lease expires',
+        error: error instanceof Error ? error.message : String(error),
+        consecutiveOutcomeFailures,
+      });
+      await sleep(retryDelayMs(consecutiveOutcomeFailures), options.signal);
+    }
   }
 }
 

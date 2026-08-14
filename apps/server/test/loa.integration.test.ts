@@ -496,6 +496,198 @@ describe('LOA upload and extraction', () => {
     ).toContain(body.id);
   });
 
+  it('resumes an extraction a killed worker left in progress', async () => {
+    // The severe finding of this pack's review. The first version treated
+    // any status other than `pending` as somebody else's work and reported
+    // the job DONE, so a worker killed after the `processing` flip — a
+    // crash, an OOM on a big letter, a deploy restarting the container —
+    // left the document at `processing` for ever behind a queue that
+    // looked perfectly healthy.
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=resumed.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: buildTestPdf('Auto-MB resumed extraction line'),
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const { id } = response.json<{ id: string }>();
+
+    // Exactly what a killed worker leaves behind: the document flipped to
+    // `processing`, and the job back in the queue when its lease lapsed.
+    // Nothing reported an outcome, because nothing was alive to report it.
+    await admin`
+      update loa_documents set extraction_status = 'processing' where id = ${id}
+    `;
+
+    // The retry must REDO the work, not skip it.
+    await runQueuedJobs(admin, createFileSystemStorage(storageDir));
+
+    const [row] = await admin<{ extraction_status: string; payload: unknown }[]>`
+      select extraction_status, extraction_payload as payload
+      from loa_documents where id = ${id}
+    `;
+    expect(row?.extraction_status, 'a resumed extraction must complete').toBe('review');
+    expect(row?.payload).not.toBeNull();
+  });
+
+  it('does not stamp a verdict on a letter that was discarded before it was read', async () => {
+    // The discard race. The final transaction's signature write was
+    // guarded only on `signature_status = 'not_checked'`, which a
+    // discarded document still satisfies, and the audit row was guarded on
+    // nothing at all — so a letter withdrawn before its job ran collected
+    // a signature verdict and an audit entry claiming it had been read.
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=discarded-before-read.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: buildTestPdf('Auto-MB discarded before read'),
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const { id } = response.json<{ id: string }>();
+
+    await admin`
+      update loa_documents
+      set extraction_status = 'discarded',
+          discarded_at = now(),
+          discarded_by_user_id = ${ownerUserId}
+      where id = ${id}
+    `;
+
+    await runQueuedJobs(admin, createFileSystemStorage(storageDir));
+
+    const [row] = await admin<
+      { extraction_status: string; signature_status: string }[]
+    >`
+      select extraction_status, signature_status from loa_documents where id = ${id}
+    `;
+    expect(row?.extraction_status, 'a discard is not undone by a late job').toBe(
+      'discarded',
+    );
+    expect(row?.signature_status, 'and no verdict is stamped on it').toBe(
+      'not_checked',
+    );
+
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${id}
+    `;
+    expect(
+      events.map((event) => event.action),
+      'nor is a reading recorded that never landed',
+    ).not.toContain('loa.extracted');
+  });
+
+  it('writes nothing for a letter discarded while the reading was under way', async () => {
+    // The mid-flight discard, which is the case the applied-gate uniquely
+    // covers. The handler runs in two bound transactions with the slow
+    // work between them, and an operator can discard the letter inside
+    // that window — tens of seconds wide, because pdftotext is in it.
+    //
+    // Before the fix the second transaction wrote regardless: the
+    // extraction UPDATE applied zero rows (the status had moved), but the
+    // signature UPDATE was guarded only on `not_checked`, which a
+    // discarded document still satisfies, and the audit INSERT was guarded
+    // on nothing. So a withdrawn letter ended up with a verdict and an
+    // audit trail saying it had been read.
+    //
+    // The seam is the storage read: it happens exactly between the two
+    // transactions, so discarding from inside it reproduces the race
+    // deterministically instead of racing a real clock.
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=discarded-mid-flight.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: buildTestPdf('Auto-MB discarded mid flight'),
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const { id } = response.json<{ id: string }>();
+
+    const realStorage = createFileSystemStorage(storageDir);
+    const discardingStorage = {
+      put: (key: string, bytes: Buffer) => realStorage.put(key, bytes),
+      get: async (key: string) => {
+        const bytes = await realStorage.get(key);
+        await admin`
+          update loa_documents
+          set extraction_status = 'discarded',
+              discarded_at = now(),
+              discarded_by_user_id = ${ownerUserId}
+          where id = ${id}
+        `;
+        return bytes;
+      },
+    };
+
+    await runQueuedJobs(admin, discardingStorage);
+
+    const [row] = await admin<
+      { extraction_status: string; signature_status: string }[]
+    >`
+      select extraction_status, signature_status from loa_documents where id = ${id}
+    `;
+    expect(row?.extraction_status, 'the discard stands').toBe('discarded');
+    expect(
+      row?.signature_status,
+      'no verdict is stamped on a letter nobody wants',
+    ).toBe('not_checked');
+
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${id}
+        and action = 'loa.extracted'
+    `;
+    expect(events, 'and no reading is recorded that never landed').toHaveLength(0);
+  });
+
+  it('records the reading once even when the job is run twice', async () => {
+    // The other half of resumability. A job that committed its work and
+    // then failed to say so — a dropped connection on `complete_job` — is
+    // deliberately left to run again, so running twice must be
+    // indistinguishable from running once. The extraction UPDATE is what
+    // decides: on the second pass the document is no longer `processing`,
+    // so it applies zero rows and the audit INSERT beneath it is skipped.
+    //
+    // Without that gate the second pass wrote a second `loa.extracted`
+    // event, and the audit trail said the letter had been read twice.
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/loa-documents?filename=run-twice.pdf',
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: buildTestPdf('Auto-MB run twice line'),
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const { id } = response.json<{ id: string }>();
+
+    await runQueuedJobs(admin, createFileSystemStorage(storageDir));
+
+    // Exactly what an expired lease produces: the same job, runnable
+    // again, against a document whose work already landed.
+    await admin`
+      update worker_jobs
+      set state = 'queued', finished_at = null, attempts = 0,
+          claim_token = null, claimed_by = null, claimed_at = null,
+          claim_expires_at = null
+      where payload_ref->>'documentId' = ${id}
+    `;
+    await runQueuedJobs(admin, createFileSystemStorage(storageDir));
+
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${id}
+        and action = 'loa.extracted'
+    `;
+    expect(events, 'one reading, one audit event').toHaveLength(1);
+
+    const [row] = await admin<{ extraction_status: string }[]>`
+      select extraction_status from loa_documents where id = ${id}
+    `;
+    expect(row?.extraction_status).toBe('review');
+  });
+
   it('rejects non-PDF bytes despite a PDF content type', async () => {
     const response = await authed(owner, {
       method: 'POST',

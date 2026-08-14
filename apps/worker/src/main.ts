@@ -1,6 +1,10 @@
 import { createDatabasePool } from '@auto-mb/db';
-import { EMPTY_TRUST_ANCHOR_STORE, createFileSystemStorage } from '@auto-mb/documents';
-import { loadTrustAnchors } from '@auto-mb/documents';
+import {
+  EMPTY_TRUST_ANCHOR_STORE,
+  assertPopplerPdfToText,
+  createFileSystemStorage,
+  loadTrustAnchors,
+} from '@auto-mb/documents';
 import { readWorkerConfig } from './config.js';
 import { createLoaDocumentIntakeHandler } from './handlers/loa-document-intake.js';
 import { runWorkerLoop, type JobHandlers, type JobLogger } from './runtime.js';
@@ -45,6 +49,29 @@ const trustAnchors =
   config.pdfTrustAnchorsPath === undefined || config.pdfTrustAnchorsPath === ''
     ? EMPTY_TRUST_ANCHOR_STORE
     : await loadTrustAnchors(config.pdfTrustAnchorsPath);
+
+// Poppler, at boot rather than at the first job.
+//
+// `config.ts` refuses to start on a missing DATABASE_URL or
+// OBJECT_STORAGE_DIR, and pdftotext belongs in the same category: it is a
+// system dependency of the only job kind this worker runs, and an image
+// or a host missing it produces a worker that starts cleanly, claims
+// every job, and fails every one. The probe is a `-v` banner read, so it
+// also catches the subtler fault the extractor already guards against at
+// run time — Xpdf's same-named binary, whose -layout output the LOA
+// corpus is not calibrated against.
+//
+// Deliberately fatal. A worker that cannot do its work should not be
+// holding claims and burning attempts on them.
+try {
+  await assertPopplerPdfToText();
+} catch (error) {
+  log.error({
+    message: 'refusing to start: pdftotext is not usable',
+    error: error instanceof Error ? error.message : String(error),
+  });
+  process.exit(1);
+}
 
 const sql = createDatabasePool({
   url: config.databaseUrl,

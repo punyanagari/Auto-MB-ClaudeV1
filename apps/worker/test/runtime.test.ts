@@ -27,6 +27,9 @@ const failJob = vi.fn((..._args: unknown[]): Promise<boolean> => Promise.resolve
 const refuseJobBind = vi.fn((..._args: unknown[]): Promise<boolean> =>
   Promise.resolve(true),
 );
+const releaseJob = vi.fn((..._args: unknown[]): Promise<boolean> =>
+  Promise.resolve(true),
+);
 const claimNextJob = vi.fn((): Promise<ClaimedJob | undefined> =>
   Promise.resolve(undefined),
 );
@@ -42,6 +45,7 @@ vi.mock('@auto-mb/db', async () => {
     completeJob: (...args: unknown[]) => completeJob(...args),
     failJob: (...args: unknown[]) => failJob(...args),
     refuseJobBind: (...args: unknown[]) => refuseJobBind(...args),
+    releaseJob: (...args: unknown[]) => releaseJob(...args),
     claimNextJob: (...args: unknown[]) => claimNextJob(...(args as [])),
     withJobAuthority: (...args: unknown[]) =>
       withJobAuthority(...(args as Parameters<typeof withJobAuthority>)),
@@ -79,7 +83,15 @@ function handlerThrowing(error: Error) {
 }
 
 beforeEach(() => {
+  // clearAllMocks resets CALLS but not implementations, and several tests
+  // below install a rejecting one. Left in place it would leak into the
+  // next test as an unhandled rejection and take the vitest worker down,
+  // so every mock is put back to its default here explicitly.
   vi.clearAllMocks();
+  completeJob.mockResolvedValue(true);
+  failJob.mockResolvedValue(true);
+  refuseJobBind.mockResolvedValue(true);
+  releaseJob.mockResolvedValue(true);
   claimNextJob.mockResolvedValue(undefined);
   withJobAuthority.mockImplementation(
     (_sql: unknown, _job: ClaimedJob, work: (tx: unknown) => Promise<unknown>) =>
@@ -159,12 +171,29 @@ describe('runJob', () => {
     ).toBe('failed');
   });
 
-  it('retries rather than fails a kind it has no handler for', async () => {
-    // Deployment skew: an older worker against a newer schema. The job is
-    // probably fine and this process is not, so the retry budget must not
-    // be spent silently on it.
-    expect(await runJob(sql, job(), {} as never, silent)).toBe('retry');
-    expect(failJob).toHaveBeenCalledOnce();
+  it('releases a kind it has no handler for, spending no attempt', async () => {
+    // Deployment skew: an older worker against a newer schema, which is
+    // the ordinary state of a rolling deploy. The job is probably fine and
+    // this process is not, so it goes BACK — `releaseJob` returns the
+    // attempt the claim consumed.
+    //
+    // The distinction is the point. `failJob` with a retry would also
+    // re-queue it, but would keep the attempt, so five such claims would
+    // terminally kill a job the new workers would have run correctly.
+    expect(await runJob(sql, job(), {} as never, silent)).toBe('released');
+    expect(releaseJob).toHaveBeenCalledOnce();
+    expect(
+      failJob,
+      'a kind this build cannot run is not a job failure',
+    ).not.toHaveBeenCalled();
+  });
+
+  it('reports a lost claim as lost rather than done', async () => {
+    // The lease expired while the work ran and another worker owns the job
+    // now. Reporting `done` would count a completion this worker did not
+    // have, and hide a lease that is too short for the workload.
+    completeJob.mockResolvedValueOnce(false);
+    expect(await runJob(sql, job(), handlerReturning(null), silent)).toBe('lost');
   });
 });
 
@@ -180,6 +209,41 @@ describe('retryDelayMs', () => {
 });
 
 describe('runWorkerLoop', () => {
+  it('backs off instead of exiting when the outcome cannot be recorded', async () => {
+    // `runJob`'s last act on every path is a database call. A connection
+    // that dies in that window throws out of it, and unhandled that
+    // rejection ends the process: the orchestrator restarts, the restarted
+    // worker claims the same job, and if the database is still unwell it
+    // dies again — a crash loop on the one fault most likely to be
+    // transient.
+    const controller = new AbortController();
+    const theJob = job();
+    claimNextJob.mockResolvedValue(theJob);
+    completeJob.mockRejectedValue(new Error('connection terminated'));
+    // The handler succeeded; only the recording of it failed. That is the
+    // case the job must NOT be marked failed for.
+
+    const delays: number[] = [];
+    const sleep = (ms: number): Promise<void> => {
+      delays.push(ms);
+      if (delays.length === 2) controller.abort();
+      return Promise.resolve();
+    };
+
+    await runWorkerLoop(sql, {
+      claimedBy: 'test',
+      leaseSeconds: 60,
+      idlePollMs: 25,
+      signal: controller.signal,
+      handlers: handlerReturning(null),
+      log: silent,
+      sleep,
+    });
+
+    // Backed off rather than escaped, and escalating.
+    expect(delays).toEqual([10_000, 20_000]);
+  });
+
   it('waits the idle interval when the queue is empty, and stops on abort', async () => {
     const controller = new AbortController();
     let waits = 0;

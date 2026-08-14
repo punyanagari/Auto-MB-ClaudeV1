@@ -222,3 +222,28 @@ export async function withJobAuthority<T>(
 }
 
 export { TenantBindRefusedError };
+
+/**
+ * Hands a claimed job back without spending an attempt.
+ *
+ * For the worker that CANNOT run the job rather than the one that tried
+ * and failed: today, a kind this build does not implement, which happens
+ * mid-rolling-deploy when an old worker claims a new kind. `fail_job` with
+ * a retry would return the job to the queue too, but it would keep the
+ * attempt the claim consumed, and five such claims would kill a perfectly
+ * good job in about two and a half minutes.
+ */
+export async function releaseJob(
+  sql: Sql,
+  job: ClaimedJob,
+  reason: string,
+): Promise<boolean> {
+  const [row] = await sql<{ release_job: boolean }[]>`
+    select app_private.release_job(
+      ${job.id}::uuid,
+      ${job.claimToken}::uuid,
+      ${reason}
+    )
+  `;
+  return row?.release_job === true;
+}

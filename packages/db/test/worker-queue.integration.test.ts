@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Sql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
@@ -9,6 +10,7 @@ import {
   enqueueJob,
   failJob,
   refuseJobBind,
+  releaseJob,
   withJobAuthority,
   type ClaimedJob,
 } from '../src/queue.js';
@@ -79,6 +81,14 @@ afterAll(async () => {
 // owner pool, because nothing else can touch this table.
 beforeEach(async () => {
   await admin`delete from worker_jobs`;
+  // Guard (c) revokes a membership to provoke the bind refusal. Restoring
+  // it here rather than only at the end of that test means a failure
+  // there cannot cascade: every later test would otherwise refuse its own
+  // bind and report a membership problem it did not cause.
+  await admin`
+    update organisation_memberships set status = 'active'
+    where organisation_id = ${tenant.organisationId} and user_id = ${tenant.userId}
+  `;
 });
 
 /** Enqueues through the application role, inside a real bound tenant
@@ -165,6 +175,74 @@ describe('ADR-0011 guard (a): the queue table is unreachable from the applicatio
     // adding the table to TABLE_PRIVILEGES has to remove it from here
     // first and read the reason on the way past.
     expect(Object.keys(UNGRANTED_BY_DESIGN)).toContain('worker_jobs');
+  });
+
+  it('grants EXECUTE on the queue functions to nobody but the application role', async () => {
+    // The four functions ARE the queue's entire surface, so their ACLs are
+    // as load-bearing as the table's. PostgreSQL grants EXECUTE to PUBLIC
+    // on a newly created function by default: a restore, or a hand-edited
+    // function recreated without the REVOKE, comes back reachable by every
+    // role in the cluster while the table's zero grants still look correct.
+    const rows = await admin<{ proname: string; acl: string | null }[]>`
+      select p.proname, array_to_string(p.proacl, ',') as acl
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'app_private'
+        and p.proname in (
+          'enqueue_job', 'claim_next_job', 'complete_job', 'fail_job',
+          'release_job', 'reconcile_terminal_job', 'purge_finished_jobs'
+        )
+      order by p.proname
+    `;
+    expect(rows).toHaveLength(7);
+
+    for (const row of rows) {
+      const acl = row.acl ?? '';
+      // `=X/` with an empty grantee is PUBLIC. Its presence would mean any
+      // role at all can call it.
+      expect(acl, `${row.proname} must not grant EXECUTE to PUBLIC`).not.toMatch(
+        /(^|,)=X?\*?\//,
+      );
+    }
+
+    const callable = new Map(rows.map((row) => [row.proname, row.acl ?? '']));
+    // The five the worker and the request path actually call.
+    for (const fn of [
+      'enqueue_job',
+      'claim_next_job',
+      'complete_job',
+      'fail_job',
+      'release_job',
+    ]) {
+      expect(callable.get(fn), `${fn} must be callable by auto_mb_app`).toContain(
+        'auto_mb_app=X',
+      );
+    }
+    // And the two that are not part of that surface: an internal
+    // reconciliation helper and an operator's bulk delete.
+    for (const fn of ['reconcile_terminal_job', 'purge_finished_jobs']) {
+      expect(
+        callable.get(fn),
+        `${fn} must NOT be callable by auto_mb_app`,
+      ).not.toContain('auto_mb_app=X');
+    }
+  });
+
+  it('carries no default privilege that would grant a future queue object away', async () => {
+    // ALTER DEFAULT PRIVILEGES is invisible in every check above: it does
+    // not appear on the table or the functions, it applies to whatever is
+    // created NEXT. A default privilege naming auto_mb_app in the schemas
+    // this queue lives in would quietly grant the next queue table or
+    // function away at creation time.
+    const defaults = await admin<{ defaclacl: string | null }[]>`
+      select array_to_string(d.defaclacl, ',') as defaclacl
+      from pg_default_acl d
+      join pg_namespace n on n.oid = d.defaclnamespace
+      where n.nspname in ('public', 'app_private')
+    `;
+    for (const row of defaults) {
+      expect(row.defaclacl ?? '').not.toContain('auto_mb_app');
+    }
   });
 
   it('refuses a direct read through the application role', async () => {
@@ -322,6 +400,43 @@ describe('ADR-0011 guard (d): an expired claim returns to the queue', () => {
     expect(await completeJob(app, second, { ok: true })).toBe(true);
     expect((await stateOf(jobId)).state).toBe('done');
   });
+
+  it('parks a job that exhausts its budget by expiry alone, rather than re-claiming it for ever', async () => {
+    // The hole the review found. `fail_job` enforces the retry budget, and
+    // a crashed worker never calls `fail_job` — so a job that reliably
+    // kills whatever picks it up (an OOM on a huge letter is the realistic
+    // one) was re-claimed on every expiry with nothing counting. Every
+    // worker that touched it died; the queue looked busy; the job was
+    // immortal.
+    const jobId = await enqueueAs(tenant, { documentId: 'kills-its-worker' });
+    await admin`update worker_jobs set max_attempts = 3 where id = ${jobId}`;
+
+    // Three claims, each abandoned exactly as a crash abandons one: the
+    // lease expires and nothing reports an outcome.
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const claim = await claimNextJob(app, `worker-that-dies-${String(attempt)}`, 60);
+      expect(claim?.id, `attempt ${String(attempt)} should claim the job`).toBe(jobId);
+      expect((await stateOf(jobId)).attempts).toBe(attempt);
+      await admin`
+        update worker_jobs set claim_expires_at = now() - interval '1 second'
+        where id = ${jobId}
+      `;
+    }
+
+    // The budget is spent. The next claim must not hand it out again — and
+    // must not merely skip it either, because a row nothing will ever
+    // claim is invisible, which is how the first bug looked too.
+    const afterBudget = await claimNextJob(app, 'worker-that-lives', 60);
+    expect(afterBudget?.id).not.toBe(jobId);
+
+    const row = await stateOf(jobId);
+    expect(row.state, 'an over-budget expired claim must be parked, not left').toBe(
+      'failed',
+    );
+    expect(row.attempts).toBe(3);
+    expect(row.finished_at).not.toBeNull();
+    expect(row.last_error).toContain('lease expired');
+  });
 });
 
 // ---------------------------------------------------------------------
@@ -408,5 +523,232 @@ describe('the retry budget', () => {
     const row = await stateOf(jobId);
     expect(row.state).toBe('failed');
     expect(row.last_error).toBe('still broken');
+  });
+});
+
+// ---------------------------------------------------------------------
+// The document lifecycle, tied to the job lifecycle.
+
+describe('a terminal job does not strand its document', () => {
+  /** A minimal LOA row in the state the upload route now writes. */
+  async function pendingDocument(): Promise<string> {
+    const sha = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
+    const [row] = await admin<{ id: string }[]>`
+      insert into loa_documents (
+        organisation_id, object_key, original_filename, sha256, media_type,
+        size_bytes, extraction_status, uploaded_by_user_id
+      )
+      values (
+        ${tenant.organisationId},
+        ${`${tenant.organisationId}/loa/${randomUUID()}.pdf`},
+        'stranded.pdf', ${sha.slice(0, 64)},
+        'application/pdf', 1024, 'pending', ${tenant.userId}
+      )
+      returning id
+    `;
+    if (row === undefined) throw new Error('document seed failed');
+    return row.id;
+  }
+
+  async function extractionStatusOf(documentId: string): Promise<string> {
+    const [row] = await admin<{ extraction_status: string }[]>`
+      select extraction_status from loa_documents where id = ${documentId}
+    `;
+    return row?.extraction_status ?? '(missing)';
+  }
+
+  it('moves the document to failed when the job runs out of attempts', async () => {
+    // Before the review this left the document in `pending` for ever, with
+    // a queue that reported the failure and a screen that said the letter
+    // was still being read.
+    const documentId = await pendingDocument();
+    const jobId = await enqueueAs(tenant, { documentId });
+    await admin`update worker_jobs set max_attempts = 1 where id = ${jobId}`;
+
+    const job = await claimNextJob(app, 'worker-A', 60);
+    if (job === undefined) throw new Error('claim failed');
+    await failJob(app, job, 'extraction blew up', new Date(Date.now() - 1_000));
+
+    expect((await stateOf(jobId)).state).toBe('failed');
+    expect(await extractionStatusOf(documentId)).toBe('failed');
+  });
+
+  it('moves the document to failed when the bind is refused', async () => {
+    const documentId = await pendingDocument();
+    const jobId = await enqueueAs(tenant, { documentId });
+    const job = await claimNextJob(app, 'worker-A', 60);
+    if (job === undefined) throw new Error('claim failed');
+
+    await refuseJobBind(app, job, 'membership revoked');
+
+    expect((await stateOf(jobId)).state).toBe('refused_bind');
+    // The letter reads as failed, which is a state the UI shows and offers
+    // a remedy for; `refused_bind` is the queue's word, not the operator's.
+    expect(await extractionStatusOf(documentId)).toBe('failed');
+  });
+
+  it('moves the document to failed when an expired claim exhausts the budget', async () => {
+    // The path with no worker left alive to reconcile anything: the
+    // parking is done by somebody else's claim_next_job.
+    const documentId = await pendingDocument();
+    const jobId = await enqueueAs(tenant, { documentId });
+    await admin`update worker_jobs set max_attempts = 1 where id = ${jobId}`;
+
+    const job = await claimNextJob(app, 'worker-that-dies', 60);
+    expect(job?.id).toBe(jobId);
+    await admin`
+      update worker_jobs set claim_expires_at = now() - interval '1 second'
+      where id = ${jobId}
+    `;
+
+    await claimNextJob(app, 'worker-that-lives', 60);
+
+    expect((await stateOf(jobId)).state).toBe('failed');
+    expect(await extractionStatusOf(documentId)).toBe('failed');
+  });
+
+  it('leaves a document alone once it has actually been read', async () => {
+    // A job that dies AFTER its work committed must not overwrite the
+    // result with a failure.
+    const documentId = await pendingDocument();
+    const jobId = await enqueueAs(tenant, { documentId });
+    await admin`update worker_jobs set max_attempts = 1 where id = ${jobId}`;
+    await admin`
+      update loa_documents set extraction_status = 'review'
+      where id = ${documentId}
+    `;
+
+    const job = await claimNextJob(app, 'worker-A', 60);
+    if (job === undefined) throw new Error('claim failed');
+    await failJob(app, job, 'died after committing');
+
+    expect((await stateOf(jobId)).state).toBe('failed');
+    expect(await extractionStatusOf(documentId)).toBe('review');
+  });
+});
+
+describe('releasing a job a worker cannot run', () => {
+  it('returns it to the queue without spending an attempt', async () => {
+    // The rolling-deploy case: an old worker claims a kind only the new
+    // ones implement. Failing-with-retry would still spend an attempt, and
+    // five such claims would kill a job the new workers would have run.
+    const jobId = await enqueueAs(tenant, { documentId: 'unknown-kind' });
+
+    const job = await claimNextJob(app, 'old-worker', 60);
+    if (job === undefined) throw new Error('claim failed');
+    expect((await stateOf(jobId)).attempts).toBe(1);
+
+    expect(await releaseJob(app, job, 'no handler for job kind')).toBe(true);
+
+    const row = await stateOf(jobId);
+    expect(row.state).toBe('queued');
+    expect(row.attempts, 'a release must give the attempt back').toBe(0);
+
+    // Held briefly, so one worker cannot spin on it.
+    const immediately = await claimNextJob(app, 'old-worker', 60);
+    expect(immediately?.id).not.toBe(jobId);
+
+    await admin`update worker_jobs set run_after = now() where id = ${jobId}`;
+    const later = await claimNextJob(app, 'new-worker', 60);
+    expect(later?.id).toBe(jobId);
+  });
+
+  it('refuses a release from anyone but the claimant', async () => {
+    const jobId = await enqueueAs(tenant, { documentId: 'release-wrong-claimant' });
+    const job = await claimNextJob(app, 'worker-A', 60);
+    if (job === undefined) throw new Error('claim failed');
+    const forged: ClaimedJob = {
+      ...job,
+      claimToken: '00000000-0000-4000-8000-000000000000',
+    };
+    expect(await releaseJob(app, forged, 'forged')).toBe(false);
+    expect((await stateOf(jobId)).state).toBe('claimed');
+  });
+});
+
+describe('purge_finished_jobs', () => {
+  it('removes only finished rows past the window, and refuses a silly window', async () => {
+    // Two rows: one that finishes long ago, one that never finishes. The
+    // purge must take exactly the first.
+    await enqueueAs(tenant, { documentId: 'long-done' });
+    const job = await claimNextJob(app, 'worker-A', 60);
+    if (job === undefined) throw new Error('claim failed');
+    const queuedId = await enqueueAs(tenant, { documentId: 'still-queued' });
+    await completeJob(app, job, null);
+    await admin`
+      update worker_jobs set finished_at = now() - interval '90 days'
+      where id = ${job.id}
+    `;
+
+    const [purged] = await admin<{ purge_finished_jobs: number }[]>`
+      select app_private.purge_finished_jobs(interval '30 days')
+    `;
+    expect(purged?.purge_finished_jobs).toBe(1);
+
+    const remaining = await admin<{ id: string }[]>`
+      select id from worker_jobs
+    `;
+    const ids = remaining.map((row) => row.id);
+    expect(ids, 'the finished row is gone').not.toContain(job.id);
+    expect(ids, 'an unfinished row is untouched whatever its age').toContain(queuedId);
+
+    await expect(
+      admin`select app_private.purge_finished_jobs(interval '1 hour')`,
+    ).rejects.toThrow(/younger than a day/);
+  });
+});
+
+describe('SKIP LOCKED, deterministically', () => {
+  it('steps over a row another session holds locked instead of waiting for it', async () => {
+    // The concurrency tests above fire two claims together and assert that
+    // exactly one wins, which is the real-world property but is decided by
+    // whichever transaction gets there first. This one removes the race: a
+    // second connection takes and HOLDS the row lock, so the claim meets a
+    // definitely-locked row.
+    //
+    // Without SKIP LOCKED the claim would block until the holder commits;
+    // with it, the claim steps over and takes the next job. Both halves
+    // are asserted, because "returned nothing" alone would also be true of
+    // a query that matched nothing.
+    const lockedId = await enqueueAs(tenant, { documentId: 'held-under-lock' });
+    const reachableId = await enqueueAs(tenant, { documentId: 'not-locked' });
+
+    let release = (): void => {};
+    const lockHeld = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked = (): void => {};
+    const lockTaken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+
+    // The owner pool, on its own connection, holding a row lock open. The
+    // claim below runs on the separate application pool, so this is two
+    // real sessions rather than two statements on one.
+    const holding = admin.begin(async (tx) => {
+      await tx`select id from worker_jobs where id = ${lockedId} for update`;
+      locked();
+      await lockHeld;
+    });
+
+    try {
+      await lockTaken;
+
+      const claimed = await claimNextJob(app, 'stepping-over', 60);
+      expect(claimed?.id, 'the locked row must be skipped, not waited for').not.toBe(
+        lockedId,
+      );
+      expect(claimed?.id, 'and the next runnable job taken instead').toBe(reachableId);
+    } finally {
+      // Always, or the transaction above holds the lock for the rest of
+      // the file and every later test blocks on it.
+      release();
+      await holding;
+    }
+
+    // Once the lock is gone the skipped job is claimable, which proves it
+    // was stepped over rather than consumed or filtered out.
+    const afterRelease = await claimNextJob(app, 'after-release', 60);
+    expect(afterRelease?.id).toBe(lockedId);
   });
 });

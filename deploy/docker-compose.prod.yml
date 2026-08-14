@@ -229,11 +229,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # Not a hard dependency for correctness — a job whose Gotenberg call
-      # fails simply retries — but starting the worker before its
-      # dependencies only produces a burst of avoidable retries.
-      gotenberg:
-        condition: service_started
     environment:
       NODE_ENV: production
       # The SAME application role as the API, with no additional
@@ -250,7 +245,6 @@ services:
       # on both containers — which is why they read the same variable and
       # the same default path out of the same image.
       AUTO_MB_PDF_TRUST_ANCHORS: ${AUTO_MB_PDF_TRUST_ANCHORS:-/etc/auto-mb/pdf-trust}
-      GOTENBERG_URL: http://gotenberg:3000
       # How long a claim is held before it lapses and the job returns to
       # the queue. It must exceed the slowest job comfortably: too short
       # and a healthy worker's job is taken from under it and done twice.
@@ -258,6 +252,14 @@ services:
       WORKER_IDLE_POLL_MS: ${WORKER_IDLE_POLL_MS:-1000}
     volumes:
       - objects:/data/objects
+    # Docker's default is 10 seconds, and the slowest job here is a large
+    # letter through pdftotext plus signature verification — comfortably
+    # longer than that. With the default, every ordinary deploy SIGKILLs a
+    # worker mid-extraction, which is the routine trigger for the
+    # crash-mid-job path rather than a rare one. 90 seconds lets an
+    # in-flight job finish; anything still running after it is a job whose
+    # lease will expire and be resumed, which is safe but avoidable noise.
+    stop_grace_period: 90s
     # No healthcheck. The worker exposes no endpoint, and a process-liveness
     # probe would report a wedged claim loop as healthy; the queue's own
     # states are the honest signal — a rising `queued` depth or anything in
