@@ -4,6 +4,8 @@ import {
   PAYMENT_MATRIX_CATEGORIES,
   PaymentMatrixResponseSchema,
   PaymentMatrixRowSchema,
+  PaymentSetupResponseSchema,
+  SavePaymentSetupRequestSchema,
   SetWorkItemPaymentCategoryRequestSchema,
   UpsertPaymentMatrixRowRequestSchema,
   UuidSchema,
@@ -349,6 +351,221 @@ const MATRIX_COLUMNS_SQL = `
   pct_final_bill::text as pct_final_bill, created_at, updated_at
 `;
 
+/**
+ * Writes one matrix row and its audit event, inside a caller's
+ * transaction and after the caller has proved access to the Work.
+ *
+ * Shared by the per-row upsert route and the payment-setup save, so the
+ * row lock, the ON CONFLICT upsert and the before/after audit pair are
+ * the same act in both — a second copy is how one of them comes to skip
+ * the lock or write a diff against nothing. Percentage validation stays
+ * with the CALLER: both validate every row before opening the
+ * transaction, so a refusal writes nothing at all.
+ */
+async function writeMatrixRow(
+  tx: TransactionSql,
+  args: {
+    readonly organisationId: string;
+    readonly userId: string;
+    readonly workId: string;
+    readonly category: PaymentMatrixCategory;
+    readonly body: UpsertPaymentMatrixRowRequest;
+  },
+): Promise<MatrixRowRecord> {
+  const { organisationId, userId, workId, category, body } = args;
+
+  // Row lock (when the row exists) serialises concurrent upserts
+  // for the same category so the before/after audit pairs stay
+  // truthful; the ON CONFLICT upsert below makes the write itself
+  // atomic either way — last write wins cleanly, no duplicate-key
+  // corruption.
+  const [existing] = await tx<
+    {
+      pct_supply: string;
+      pct_installation: string;
+      pct_pac: string;
+      pct_final_bill: string;
+    }[]
+  >`
+    select pct_supply::text as pct_supply,
+           pct_installation::text as pct_installation,
+           pct_pac::text as pct_pac,
+           pct_final_bill::text as pct_final_bill
+    from payment_matrices
+    where work_id = ${workId} and category = ${category}
+    for update
+  `;
+
+  const rows = (await tx.unsafe(
+    `insert into payment_matrices (
+       organisation_id, work_id, category, pct_supply,
+       pct_installation, pct_pac, pct_final_bill, created_by_user_id
+     )
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     on conflict (organisation_id, work_id, category) do update set
+       pct_supply = excluded.pct_supply,
+       pct_installation = excluded.pct_installation,
+       pct_pac = excluded.pct_pac,
+       pct_final_bill = excluded.pct_final_bill
+     returning ${MATRIX_COLUMNS_SQL}`,
+    [
+      organisationId,
+      workId,
+      category,
+      body.pctSupply,
+      body.pctInstallation,
+      body.pctPac,
+      body.pctFinalBill,
+      userId,
+    ],
+  )) as unknown as MatrixRowRecord[];
+  const row = rows[0];
+  if (!row) throw new Error('payment matrix upsert returned no row');
+
+  const changes = auditDiff(
+    existing === undefined
+      ? {}
+      : {
+          pctSupply: existing.pct_supply,
+          pctInstallation: existing.pct_installation,
+          pctPac: existing.pct_pac,
+          pctFinalBill: existing.pct_final_bill,
+        },
+    {
+      pctSupply: row.pct_supply,
+      pctInstallation: row.pct_installation,
+      pctPac: row.pct_pac,
+      pctFinalBill: row.pct_final_bill,
+    },
+  );
+  await audit(
+    tx,
+    organisationId,
+    userId,
+    existing === undefined
+      ? 'payment_matrix.row_created'
+      : 'payment_matrix.row_updated',
+    'payment_matrices',
+    row.id,
+    { workId, category, before: changes.before, after: changes.after },
+  );
+  return row;
+}
+
+/**
+ * Sets one item's payment category and its audit event, given the Work
+ * row the caller has already locked and proved access to.
+ *
+ * Shared by the per-item PATCH and the payment-setup save. Everything
+ * that decides whether the change is ALLOWED lives here — R8, the
+ * billing freeze and the two AMC guards — so a caller cannot acquire the
+ * write without them.
+ */
+async function writeItemPaymentCategory(
+  tx: TransactionSql,
+  args: {
+    readonly organisationId: string;
+    readonly userId: string;
+    readonly work: { readonly id: string; readonly status: string };
+    readonly workItemId: string;
+    readonly paymentCategory: SetWorkItemPaymentCategoryRequest['paymentCategory'];
+  },
+): Promise<{
+  id: string;
+  itemNumber: string;
+  paymentCategory: SetWorkItemPaymentCategoryRequest['paymentCategory'];
+}> {
+  const { organisationId, userId, work, workItemId, paymentCategory } = args;
+
+  // R8: a completed Work is closed to edits until it is reopened.
+  // The category decides which quantity the completion predicate
+  // measured, so changing it under a completed Work would rewrite
+  // the basis of a closure that has already been recorded.
+  assertWorkOperable(work.status, "changing an item's payment category");
+
+  // Row lock: serialises concurrent category edits so the
+  // before/after audit pairs chain truthfully. The `work_id` predicate
+  // is what makes this safe for a caller holding a Work rather than an
+  // item: an id belonging to another Work — or to another tenant, which
+  // RLS has already hidden — is simply not found.
+  const [item] = await tx<
+    {
+      id: string;
+      work_id: string;
+      item_number: string;
+      payment_category: string | null;
+    }[]
+  >`
+    select id, work_id, item_number, payment_category
+    from work_items
+    where id = ${workItemId} and work_id = ${work.id} and deleted_at is null
+    for update
+  `;
+  if (!item) {
+    throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+  }
+
+  // The category is configuration only until a Measurement Book
+  // bills the item; after that it is part of what was paid. Re-
+  // submitting the value the item already carries changes nothing
+  // and stays a harmless no-op, so the guard runs only when the
+  // value actually moves.
+  //
+  // The two AMC guards are symmetric on purpose. Moving IN is
+  // refused while the item carries movement, because an AMC item
+  // takes none; moving OUT is refused while it carries
+  // certificates, because those were capped at the sanctioned
+  // quantity under the AMC rule and every other category caps at
+  // the installed total. Guarding only one direction leaves the
+  // other as a way to reach exactly the state the guard exists to
+  // prevent.
+  if (paymentCategory !== item.payment_category) {
+    await assertItemNotBilled(tx, item.id, item.item_number);
+    if (paymentCategory === 'AMC') {
+      await assertItemHasNoMovement(tx, item.id, item.item_number);
+    }
+    if (item.payment_category === 'AMC') {
+      await assertItemHasNoCertification(tx, item.id, item.item_number);
+    }
+  }
+
+  const [updated] = await tx<
+    { id: string; item_number: string; payment_category: string | null }[]
+  >`
+    update work_items
+    set payment_category = ${paymentCategory}
+    where id = ${workItemId}
+    returning id, item_number, payment_category
+  `;
+  if (!updated) {
+    throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+  }
+  const changes = auditDiff(
+    { paymentCategory: item.payment_category },
+    { paymentCategory: updated.payment_category },
+  );
+  await audit(
+    tx,
+    organisationId,
+    userId,
+    'work_item.payment_category_changed',
+    'work_items',
+    workItemId,
+    {
+      workId: item.work_id,
+      itemNumber: item.item_number,
+      before: changes.before,
+      after: changes.after,
+    },
+  );
+  return {
+    id: updated.id,
+    itemNumber: updated.item_number,
+    paymentCategory:
+      updated.payment_category as SetWorkItemPaymentCategoryRequest['paymentCategory'],
+  };
+}
+
 /* --- Item tax facts (migration 0033) -----------------------------------
  *
  * PATCH /api/work-items/:id/tax-facts writes the three columns 0033 added
@@ -461,87 +678,15 @@ export function registerPaymentRoutes(
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
 
-        // Row lock (when the row exists) serialises concurrent upserts
-        // for the same category so the before/after audit pairs stay
-        // truthful; the ON CONFLICT upsert below makes the write itself
-        // atomic either way — last write wins cleanly, no duplicate-key
-        // corruption.
-        const [existing] = await tx<
-          {
-            pct_supply: string;
-            pct_installation: string;
-            pct_pac: string;
-            pct_final_bill: string;
-          }[]
-        >`
-          select pct_supply::text as pct_supply,
-                 pct_installation::text as pct_installation,
-                 pct_pac::text as pct_pac,
-                 pct_final_bill::text as pct_final_bill
-          from payment_matrices
-          where work_id = ${workId} and category = ${category}
-          for update
-        `;
-
-        const rows = (await tx.unsafe(
-          `insert into payment_matrices (
-             organisation_id, work_id, category, pct_supply,
-             pct_installation, pct_pac, pct_final_bill, created_by_user_id
-           )
-           values ($1, $2, $3, $4, $5, $6, $7, $8)
-           on conflict (organisation_id, work_id, category) do update set
-             pct_supply = excluded.pct_supply,
-             pct_installation = excluded.pct_installation,
-             pct_pac = excluded.pct_pac,
-             pct_final_bill = excluded.pct_final_bill
-           returning ${MATRIX_COLUMNS_SQL}`,
-          [
+        return toMatrixRow(
+          await writeMatrixRow(tx, {
             organisationId,
+            userId: user.id,
             workId,
             category,
-            body.pctSupply,
-            body.pctInstallation,
-            body.pctPac,
-            body.pctFinalBill,
-            user.id,
-          ],
-        )) as unknown as MatrixRowRecord[];
-        const row = rows[0];
-        if (!row) throw new Error('payment matrix upsert returned no row');
-
-        const changes = auditDiff(
-          existing === undefined
-            ? {}
-            : {
-                pctSupply: existing.pct_supply,
-                pctInstallation: existing.pct_installation,
-                pctPac: existing.pct_pac,
-                pctFinalBill: existing.pct_final_bill,
-              },
-          {
-            pctSupply: row.pct_supply,
-            pctInstallation: row.pct_installation,
-            pctPac: row.pct_pac,
-            pctFinalBill: row.pct_final_bill,
-          },
+            body,
+          }),
         );
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          existing === undefined
-            ? 'payment_matrix.row_created'
-            : 'payment_matrix.row_updated',
-          'payment_matrices',
-          row.id,
-          {
-            workId,
-            category,
-            before: changes.before,
-            after: changes.after,
-          },
-        );
-        return toMatrixRow(row);
       });
     },
   );
@@ -652,90 +797,121 @@ export function registerPaymentRoutes(
           throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
         }
         await assertWorkAccess(tx, user.id, work.id);
-        // R8: a completed Work is closed to edits until it is reopened.
-        // The category decides which quantity the completion predicate
-        // measured, so changing it under a completed Work would rewrite
-        // the basis of a closure that has already been recorded.
-        assertWorkOperable(work.status, "changing an item's payment category");
+        return writeItemPaymentCategory(tx, {
+          organisationId,
+          userId: user.id,
+          work,
+          workItemId,
+          paymentCategory: body.paymentCategory,
+        });
+      });
+    },
+  );
 
-        // Row lock: serialises concurrent category edits so the
-        // before/after audit pairs chain truthfully.
-        const [item] = await tx<
-          {
-            id: string;
-            work_id: string;
-            item_number: string;
-            payment_category: string | null;
-          }[]
-        >`
-          select id, work_id, item_number, payment_category
-          from work_items
-          where id = ${workItemId} and deleted_at is null
+  /**
+   * POST /api/works/:id/payment-setup — the whole payment configuration
+   * of one Work in one transaction, which is what the post-creation
+   * payment setup dialog offers as a single Save.
+   *
+   * It is a composition, not a new authority: every matrix row goes
+   * through `writeMatrixRow` after the same percentage/sum/AMC
+   * validation the per-row upsert applies, and every item through
+   * `writeItemPaymentCategory` with its R8, billing-freeze and AMC
+   * guards. What the single request buys is atomicity — a save that
+   * refuses one item leaves the Work exactly as it was, rather than
+   * three rows in and no way for the operator to know which.
+   *
+   * Lock order is the one every Work-scoped writer takes: the works row
+   * first, then work_items, and the items in a deterministic order so
+   * two concurrent saves of the same Work queue instead of deadlocking.
+   */
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/works/:id/payment-setup',
+      schema: {
+        params: IdParamsSchema,
+        body: SavePaymentSetupRequestSchema,
+        response: { 200: PaymentSetupResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      const body = request.body;
+
+      // Everything decidable without the database is decided first, so a
+      // malformed submission never opens a transaction.
+      const seenCategory = new Set<string>();
+      for (const row of body.matrixRows) {
+        if (seenCategory.has(row.category)) {
+          throw httpError(
+            400,
+            'PAYMENT_MATRIX_CATEGORY_DUPLICATE',
+            `The payment setup names ${row.category} more than once.`,
+          );
+        }
+        seenCategory.add(row.category);
+        assertPercentagesSumTo100(row);
+        assertAmcStagePercentages(row.category, row);
+      }
+      const seenItem = new Set<string>();
+      for (const entry of body.itemCategories) {
+        if (seenItem.has(entry.workItemId)) {
+          throw httpError(
+            400,
+            'PAYMENT_SETUP_ITEM_DUPLICATE',
+            'The payment setup names the same Work item more than once, with no way to tell which category was meant. Nothing was saved.',
+            { workItemId: entry.workItemId },
+          );
+        }
+        seenItem.add(entry.workItemId);
+      }
+
+      return tenant(async (tx) => {
+        // The works row lock FIRST, before any work_items row — the order
+        // every other Work-scoped writer takes, so this cannot invert a
+        // lock order and deadlock against a challan save or a completion.
+        const [work] = await tx<{ id: string; status: string }[]>`
+          select id, status from works
+          where id = ${workId} and deleted_at is null
           for update
         `;
-        if (!item) {
-          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        await assertWorkAccess(tx, user.id, workId);
+
+        const rows: PaymentMatrixRow[] = [];
+        for (const row of [...body.matrixRows].sort((left, right) =>
+          left.category.localeCompare(right.category),
+        )) {
+          rows.push(
+            toMatrixRow(
+              await writeMatrixRow(tx, {
+                organisationId,
+                userId: user.id,
+                workId,
+                category: row.category,
+                body: row,
+              }),
+            ),
+          );
         }
 
-        // The category is configuration only until a Measurement Book
-        // bills the item; after that it is part of what was paid. Re-
-        // submitting the value the item already carries changes nothing
-        // and stays a harmless no-op, so the guard runs only when the
-        // value actually moves.
-        //
-        // The two AMC guards are symmetric on purpose. Moving IN is
-        // refused while the item carries movement, because an AMC item
-        // takes none; moving OUT is refused while it carries
-        // certificates, because those were capped at the sanctioned
-        // quantity under the AMC rule and every other category caps at
-        // the installed total. Guarding only one direction leaves the
-        // other as a way to reach exactly the state the guard exists to
-        // prevent.
-        if (body.paymentCategory !== item.payment_category) {
-          await assertItemNotBilled(tx, item.id, item.item_number);
-          if (body.paymentCategory === 'AMC') {
-            await assertItemHasNoMovement(tx, item.id, item.item_number);
-          }
-          if (item.payment_category === 'AMC') {
-            await assertItemHasNoCertification(tx, item.id, item.item_number);
-          }
+        const items = [];
+        for (const entry of [...body.itemCategories].sort((left, right) =>
+          left.workItemId.localeCompare(right.workItemId),
+        )) {
+          items.push(
+            await writeItemPaymentCategory(tx, {
+              organisationId,
+              userId: user.id,
+              work,
+              workItemId: entry.workItemId,
+              paymentCategory: entry.paymentCategory,
+            }),
+          );
         }
-
-        const [updated] = await tx<
-          { id: string; item_number: string; payment_category: string | null }[]
-        >`
-          update work_items
-          set payment_category = ${body.paymentCategory}
-          where id = ${workItemId}
-          returning id, item_number, payment_category
-        `;
-        if (!updated) {
-          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
-        }
-        const changes = auditDiff(
-          { paymentCategory: item.payment_category },
-          { paymentCategory: updated.payment_category },
-        );
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_item.payment_category_changed',
-          'work_items',
-          workItemId,
-          {
-            workId: item.work_id,
-            itemNumber: item.item_number,
-            before: changes.before,
-            after: changes.after,
-          },
-        );
-        return {
-          id: updated.id,
-          itemNumber: updated.item_number,
-          paymentCategory:
-            updated.payment_category as SetWorkItemPaymentCategoryRequest['paymentCategory'],
-        };
+        return { rows, items };
       });
     },
   );

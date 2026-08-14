@@ -105,6 +105,58 @@ export type SetWorkItemPaymentCategoryRequest = Static<
   typeof SetWorkItemPaymentCategoryRequestSchema
 >;
 
+/** One row of the matrix as the payment-setup dialog submits it: the
+ * category it configures plus its four stage percentages. Same values as
+ * the per-row upsert body, with the category inside the object because
+ * the whole matrix travels in one request. */
+export const PaymentSetupMatrixRowSchema = Type.Object(
+  {
+    category: PaymentMatrixCategorySchema,
+    pctSupply: DecimalStringSchema,
+    pctInstallation: DecimalStringSchema,
+    pctPac: DecimalStringSchema,
+    pctFinalBill: DecimalStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type PaymentSetupMatrixRow = Static<typeof PaymentSetupMatrixRowSchema>;
+
+export const PaymentSetupItemCategorySchema = Type.Object(
+  {
+    workItemId: UuidSchema,
+    paymentCategory: Type.Union([WorkItemPaymentCategorySchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type PaymentSetupItemCategory = Static<typeof PaymentSetupItemCategorySchema>;
+
+/**
+ * POST /api/works/:id/payment-setup — the whole payment configuration of
+ * a Work in ONE request, which is what the post-creation setup dialog
+ * asks the operator for and therefore what its Save must do.
+ *
+ * It exists because the alternative is a burst of up to six matrix
+ * upserts and one PATCH per item from the browser: a failure part-way
+ * through leaves the Work half-configured with no statement of what
+ * landed, and the operator cannot tell which half to redo. One request
+ * is one transaction — every row and every item, or none of them.
+ *
+ * It adds NO authority. Each row goes through the same percentage, sum
+ * and AMC rules as the per-row upsert, and each item through the same
+ * work-scope, Work-operable, billed and AMC guards as the per-item
+ * PATCH — the same functions, not copies of them.
+ */
+export const SavePaymentSetupRequestSchema = Type.Object(
+  {
+    matrixRows: Type.Array(PaymentSetupMatrixRowSchema, {
+      maxItems: PAYMENT_MATRIX_CATEGORIES.length,
+    }),
+    itemCategories: Type.Array(PaymentSetupItemCategorySchema, { maxItems: 5000 }),
+  },
+  { additionalProperties: false },
+);
+export type SavePaymentSetupRequest = Static<typeof SavePaymentSetupRequestSchema>;
+
 export const WorkItemPaymentCategoryResponseSchema = Type.Object(
   {
     id: UuidSchema,
@@ -116,3 +168,14 @@ export const WorkItemPaymentCategoryResponseSchema = Type.Object(
 export type WorkItemPaymentCategoryResponse = Static<
   typeof WorkItemPaymentCategoryResponseSchema
 >;
+
+/** What the payment-setup save wrote: the matrix as it now stands for the
+ * categories the request named, and each item whose category it set. */
+export const PaymentSetupResponseSchema = Type.Object(
+  {
+    rows: Type.Array(PaymentMatrixRowSchema),
+    items: Type.Array(WorkItemPaymentCategoryResponseSchema),
+  },
+  { additionalProperties: false },
+);
+export type PaymentSetupResponse = Static<typeof PaymentSetupResponseSchema>;

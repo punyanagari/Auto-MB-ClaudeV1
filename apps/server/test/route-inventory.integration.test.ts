@@ -339,6 +339,11 @@ const PAYLOAD_OVERRIDES = new Map<string, unknown>([
     'PUT /api/works/:id/payment-matrix/:category',
     { pctSupply: '100.00', pctInstallation: '0', pctPac: '0', pctFinalBill: '0' },
   ],
+  // Same guard, reached through the payment-setup save: it validates
+  // every submitted row before opening the transaction, and the sampler's
+  // one synthesised row cannot sum to 100. An empty setup is a valid
+  // request that writes nothing, which is exactly what this probe wants.
+  ['POST /api/works/:id/payment-setup', { matrixRows: [], itemCategories: [] }],
   // The AMENDMENT_EMPTY guard runs before the tenant transaction; the
   // sampler omits optional fields, so name one change explicitly.
   [

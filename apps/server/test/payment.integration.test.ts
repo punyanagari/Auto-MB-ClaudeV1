@@ -734,6 +734,239 @@ describe('item payment categories', () => {
   });
 });
 
+/**
+ * POST /api/works/:id/payment-setup — the whole payment configuration in
+ * one transaction, which is what the post-creation setup dialog's single
+ * Save posts.
+ *
+ * The properties worth proving are the ones the composition could lose:
+ * that it writes both halves, that it refuses as a unit (a bad item takes
+ * the matrix rows down with it), and that it inherits — rather than
+ * re-implements — the role, work-scope and tenant checks the two routes
+ * it composes already carry.
+ */
+describe('payment setup in one transaction', () => {
+  it('writes the matrix rows and the item categories together', async () => {
+    const response = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'PURE_INSTALLATION',
+            pctSupply: '0.00',
+            pctInstallation: '85.00',
+            pctPac: '5.00',
+            pctFinalBill: '10.00',
+          },
+          {
+            category: 'UNCATEGORISED',
+            pctSupply: '70.00',
+            pctInstallation: '20.00',
+            pctPac: '0.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [
+          { workItemId: itemAId, paymentCategory: 'PURE_INSTALLATION' },
+          { workItemId: itemBId, paymentCategory: null },
+        ],
+      },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const saved = response.json<{
+      rows: PaymentMatrixRow[];
+      items: { id: string; itemNumber: string; paymentCategory: string | null }[];
+    }>();
+    expect(saved.rows.map((row) => row.category).sort()).toEqual([
+      'PURE_INSTALLATION',
+      'UNCATEGORISED',
+    ]);
+    expect(saved.items.find((item) => item.id === itemAId)?.paymentCategory).toBe(
+      'PURE_INSTALLATION',
+    );
+    expect(saved.items.find((item) => item.id === itemBId)?.paymentCategory).toBeNull();
+
+    const matrix = await listMatrix();
+    const installation = matrix.rows.find(
+      (row) => row.category === 'PURE_INSTALLATION',
+    );
+    expect(installation?.pctInstallation).toBe('85.00');
+    const [stored] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemAId}
+    `;
+    expect(stored?.payment_category).toBe('PURE_INSTALLATION');
+
+    // One audit row per matrix row and one per item, all under the same
+    // actor — the trail a reviewer reads is the same whether the write
+    // came through this route or through the two it composes.
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId}
+        and action in ('payment_matrix.row_created', 'payment_matrix.row_updated',
+                       'work_item.payment_category_changed')
+      order by occurred_at desc
+      limit 4
+    `;
+    expect(
+      events.filter((event) => event.action === 'work_item.payment_category_changed')
+        .length,
+    ).toBe(2);
+    expect(
+      events.filter((event) => event.action.startsWith('payment_matrix.')).length,
+    ).toBe(2);
+  });
+
+  it('writes nothing at all when one item in the request is refused', async () => {
+    const foreignItemId = randomUUID();
+    const response = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'SPARE_SUPPLY',
+            pctSupply: '90.00',
+            pctInstallation: '0.00',
+            pctPac: '0.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [
+          { workItemId: itemAId, paymentCategory: 'SUPPLY' },
+          // Not an item of this Work: the row the dialog never sends, and
+          // the one that proves the transaction is a unit.
+          { workItemId: foreignItemId, paymentCategory: 'SUPPLY' },
+        ],
+      },
+    });
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.json<{ code: string }>().code).toBe('WORK_ITEM_NOT_FOUND');
+
+    const matrix = await listMatrix();
+    expect(matrix.rows.some((row) => row.category === 'SPARE_SUPPLY')).toBe(false);
+    const [unchanged] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemAId}
+    `;
+    expect(unchanged?.payment_category).toBe('PURE_INSTALLATION');
+  });
+
+  it('applies the same percentage, AMC and duplicate rules as the per-row upsert', async () => {
+    const sum = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'SUPPLY',
+            pctSupply: '50.00',
+            pctInstallation: '10.00',
+            pctPac: '0.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [],
+      },
+    });
+    expect(sum.statusCode).toBe(400);
+    expect(sum.json<{ code: string }>().code).toBe('PAYMENT_MATRIX_SUM_INVALID');
+
+    const amc = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          {
+            category: 'AMC',
+            pctSupply: '40.00',
+            pctInstallation: '0.00',
+            pctPac: '50.00',
+            pctFinalBill: '10.00',
+          },
+        ],
+        itemCategories: [],
+      },
+    });
+    expect(amc.statusCode).toBe(400);
+    expect(amc.json<{ code: string }>().code).toBe('PAYMENT_MATRIX_AMC_STAGE_INVALID');
+
+    const duplicateCategory = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [
+          { category: 'SUPPLY', ...FULL_SUPPLY },
+          { category: 'SUPPLY', ...FULL_SUPPLY },
+        ],
+        itemCategories: [],
+      },
+    });
+    expect(duplicateCategory.statusCode).toBe(400);
+    expect(duplicateCategory.json<{ code: string }>().code).toBe(
+      'PAYMENT_MATRIX_CATEGORY_DUPLICATE',
+    );
+
+    const duplicateItem = await authed(office, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [],
+        itemCategories: [
+          { workItemId: itemAId, paymentCategory: 'SUPPLY' },
+          { workItemId: itemAId, paymentCategory: 'PURE_INSTALLATION' },
+        ],
+      },
+    });
+    expect(duplicateItem.statusCode).toBe(400);
+    expect(duplicateItem.json<{ code: string }>().code).toBe(
+      'PAYMENT_SETUP_ITEM_DUPLICATE',
+    );
+  });
+
+  it('gates the save on the writer role, work scope and tenant', async () => {
+    const payload = {
+      matrixRows: [{ category: 'SUPPLY', ...FULL_SUPPLY }],
+      itemCategories: [{ workItemId: itemAId, paymentCategory: 'SUPPLY' }],
+    };
+
+    const deniedRole = await authed(viewer, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload,
+    });
+    expect(deniedRole.statusCode).toBe(403);
+
+    const deniedScope = await authed(assigned, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload,
+    });
+    expect(deniedScope.statusCode).toBe(404);
+
+    const crossTenant = await authed(outsider, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId: outsiderOrganisationId,
+      payload,
+    });
+    expect(crossTenant.statusCode).toBe(404);
+
+    // None of the three refusals wrote anything.
+    const [unchanged] = await admin<{ payment_category: string | null }[]>`
+      select payment_category from work_items where id = ${itemAId}
+    `;
+    expect(unchanged?.payment_category).toBe('PURE_INSTALLATION');
+  });
+});
+
 describe('export surface', () => {
   it('includes payment matrix rows in the organisation export', async () => {
     const response = await authed(owner, {

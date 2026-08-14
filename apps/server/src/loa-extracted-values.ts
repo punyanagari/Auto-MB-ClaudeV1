@@ -72,8 +72,14 @@
  *    relabelling can loosen.
  *  - `scheduleCode` / schedule `title`: container labels the client
  *    composes around the parsed rows.
- *  - `paymentCategory` and the initial payment matrix: the parser never
- *    proposes either; both are the reviewer's judgement (spec §8).
+ *  - `paymentCategory` and the initial payment matrix: EXTRACTION never
+ *    proposes either, so there is no extracted truth to defend; both are
+ *    the reviewer's judgement (spec §8). After the Work exists, the
+ *    payment setup dialog may PROPOSE a category from the item's own
+ *    description and the reviewer confirms it — a proposal made on the
+ *    far side of confirmation, against a Work rather than a letter, and
+ *    persisted only by an explicit save (POST
+ *    /api/works/:id/payment-setup). It never reaches this lock.
  *  - `gstBasis` / `gstRate` (migration 0062): whether the letter's rates are
  *    quoted inclusive or exclusive of GST. The letter does not say —
  *    searching the PL-270 corpus letter for "inclusive of GST", "GST extra"
