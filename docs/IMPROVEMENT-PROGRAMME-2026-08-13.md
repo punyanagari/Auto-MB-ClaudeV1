@@ -209,6 +209,12 @@ managed Postgres, registry + protected environments, staging + DAST, outbound
 DSC signing (ADR-0009's two procurement blockers), IRP production
 certification, Aadhaar eSign evaluation.
 
+> 2026-08-14 update: the outbound-signing and eSign rows above resolved
+> together into **ADR-0012** (hybrid: eSign default, kiosk-held DSC by
+> exception), decided after the owner confirmed the signer approves from
+> a phone and the token stays at one private machine. The vertical is a
+> wave-4 pack, gated on ASP onboarding with an ESP and the TSA contract.
+
 ### 2.5 Parallel execution plan
 
 **Sessions.** Each pack is one session in its own worktree
