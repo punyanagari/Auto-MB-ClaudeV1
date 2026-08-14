@@ -482,6 +482,15 @@ and is expected to be revisited. Stating the split this way is deliberate: "it
 is enforced twice" would suggest two copies of one rule, and two copies of a
 subtle rule drift apart.
 
+**Every act on the bill shows on the Work's timeline.** Recording a bill,
+discarding one, and closing a measurement against one are audit events, and
+`received_railway_bills` is a timeline entity type: the events appear in the
+Work's activity trail, can be filtered like any other record type, and each
+bill answers its own per-record history. A standing census test
+(`audit-timeline-census`) holds every audited entity type against the timeline
+whitelist, so the next document kind cannot repeat the gap this closed —
+its events either join the timeline or are documented as off it.
+
 Note that "closed" here is a railway fact and is deliberately separate from the
 older sense in which a submitted tax invoice closes the Measurement Book it
 bills. The two are independent, and a measurement can be invoiced before its

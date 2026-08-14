@@ -8,6 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   MeasurementBookDetailResponse,
   ReceivedRailwayBill,
+  TimelineResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, runMigrations } from '@auto-mb/db';
@@ -1167,5 +1168,126 @@ describe('the register', () => {
       as: strangerCookie,
     });
     expect([403, 404]).toContain(stranger.statusCode);
+  });
+});
+
+describe('the timeline', () => {
+  // Recording, discarding, and closing against a railway bill were audit
+  // events from the day pack P14 shipped — but until the entity type
+  // joined TIMELINE_ENTITY_TYPES and the work-scoping arm, no
+  // operator-reachable screen ever showed them. These tests read the
+  // events back the way the Work Detail screen does.
+  it('shows a bill being recorded, discarded, and closing its measurement', async () => {
+    const { workId, bookId, letterNumber } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBT1',
+      sequence: 1,
+    });
+    expect(
+      (await upload(bookId, signedBill({ letterNumber, signatures: 1 }))).statusCode,
+    ).toBe(201);
+    const [first] = await admin<{ id: string }[]>`
+      select id from received_railway_bills where measurement_book_id = ${bookId}
+    `;
+    const discarded = await authed({
+      method: 'POST',
+      url: `/api/received-railway-bills/${first?.id ?? ''}/discard`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { reason: 'the railway re-issued it with all three signatures' },
+    });
+    expect(discarded.statusCode, discarded.body).toBe(200);
+    expect((await upload(bookId, signedBill({ letterNumber }))).statusCode).toBe(201);
+    expect((await close(bookId)).statusCode).toBe(200);
+
+    const response = await authed({
+      method: 'GET',
+      url: `/api/works/${workId}/timeline`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const { events } = response.json<TimelineResponse>();
+    const actions = events.map((event) => event.action);
+    expect(actions).toContain('received_railway_bill.recorded');
+    expect(actions).toContain('received_railway_bill.discarded');
+    expect(actions).toContain('measurement_book.closed');
+    const recorded = events.filter(
+      (event) => event.action === 'received_railway_bill.recorded',
+    );
+    expect(recorded).toHaveLength(2);
+    expect(recorded[0]?.entityType).toBe('received_railway_bills');
+
+    // The filter the screen's dropdown sends.
+    const filtered = await authed({
+      method: 'GET',
+      url: `/api/works/${workId}/timeline?entityTypes=received_railway_bills`,
+      organisationId,
+    });
+    expect(filtered.statusCode, filtered.body).toBe(200);
+    const filteredEvents = filtered.json<TimelineResponse>().events;
+    expect(filteredEvents.length).toBe(3);
+    for (const event of filteredEvents) {
+      expect(event.entityType).toBe('received_railway_bills');
+    }
+  });
+
+  it('serves one bill’s own history, and only within its organisation', async () => {
+    const { bookId, letterNumber } = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBT2',
+      sequence: 1,
+    });
+    const created = await upload(bookId, signedBill({ letterNumber }));
+    expect(created.statusCode, created.body).toBe(201);
+    const bill = created.json<ReceivedRailwayBill>();
+
+    const history = await authed({
+      method: 'GET',
+      url: `/api/audit/entity/received_railway_bills/${bill.id}`,
+      organisationId,
+    });
+    expect(history.statusCode, history.body).toBe(200);
+    const { events } = history.json<TimelineResponse>();
+    expect(events).toHaveLength(1);
+    expect(events[0]?.action).toBe('received_railway_bill.recorded');
+
+    // A stranger probing the same id learns nothing — the same 404 an
+    // unknown id earns, exactly like the register and the file above.
+    const stranger = await authed({
+      method: 'GET',
+      url: `/api/audit/entity/received_railway_bills/${bill.id}`,
+      organisationId: strangerOrganisationId,
+      as: strangerCookie,
+    });
+    expect(stranger.statusCode).toBe(404);
+  });
+
+  it('keeps one Work’s bills out of another Work’s trail', async () => {
+    const seeded = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBT3',
+      sequence: 1,
+    });
+    const other = await seedFinalizedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: 'RBT4',
+      sequence: 1,
+    });
+    expect(
+      (await upload(seeded.bookId, signedBill({ letterNumber: seeded.letterNumber })))
+        .statusCode,
+    ).toBe(201);
+
+    const response = await authed({
+      method: 'GET',
+      url: `/api/works/${other.workId}/timeline?entityTypes=received_railway_bills`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<TimelineResponse>().events).toHaveLength(0);
   });
 });
