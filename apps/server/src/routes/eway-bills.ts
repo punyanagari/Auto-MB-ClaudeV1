@@ -123,6 +123,7 @@ interface EwayBillRow {
   provider_cancel_remark: string | null;
   cancellation_note: string | null;
   rendered_object_key: string | null;
+  rendered_sha256: string | null;
   rendered_version: number | null;
   created_at: Date;
   generated_at: Date | null;
@@ -140,7 +141,8 @@ const EB_COLUMNS = `
   eb.legacy_evidence_missing,
   eb.provider_cancelled_at, eb.provider_cancelled_at_text,
   eb.provider_cancel_reason_code, eb.provider_cancel_remark,
-  eb.cancellation_note, eb.rendered_object_key, eb.rendered_version,
+  eb.cancellation_note, eb.rendered_object_key, eb.rendered_sha256,
+  eb.rendered_version,
   eb.created_at, eb.generated_at, eb.cancelled_at
 `;
 
@@ -1818,20 +1820,19 @@ export function registerEwayBillRoutes(
       const rendered = await tenant(async (tx) => {
         const row = await readEwayBill(tx, id);
         await assertBillAccess(tx, user.id, row);
-        if (row.rendered_object_key === null) {
+        // The pointer's key and digest are read from ONE row snapshot (the
+        // render_pointer_shape CHECK keeps them both-null-or-both-set), so a
+        // concurrent re-render advancing the pointer between two reads can
+        // no longer pair a new key with an old digest and fail integrity by
+        // version skew.
+        if (row.rendered_object_key === null || row.rendered_sha256 === null) {
           throw httpError(
             404,
             'PDF_NOT_AVAILABLE',
             'This e-way bill summary has not been rendered yet.',
           );
         }
-        const [pointer] = await tx<{ rendered_sha256: string | null }[]>`
-          select rendered_sha256 from eway_bills where id = ${id}
-        `;
-        if (!pointer?.rendered_sha256) {
-          throw new Error(`e-way bill ${id} lost its render digest`);
-        }
-        return { key: row.rendered_object_key, sha256: pointer.rendered_sha256 };
+        return { key: row.rendered_object_key, sha256: row.rendered_sha256 };
       });
       const bytes = await storage.get(rendered.key);
       const actualSha256 = createHash('sha256').update(bytes).digest('hex');

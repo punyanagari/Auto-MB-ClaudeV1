@@ -69,17 +69,13 @@ export interface EwayBillSourceFacts {
   /** The IRN, on the invoice path only: generation by IRN is that path's
    * shape and the challan path has no IRN to offer. */
   readonly irn: string | null;
-  /** The transport particulars recorded on the source document itself,
-   * where it records any. The e-way bill row remains authoritative for
-   * what goes on the wire; this is the prefill and the printed fact. */
-  readonly transport: {
-    readonly transporterId: string | null;
-    readonly transporterName: string | null;
-    readonly vehicleNumber: string | null;
-    readonly transportDocNumber: string | null;
-    readonly transportDocDate: string | null;
-    readonly distanceKm: number | null;
-  };
+  // No transport block here: the e-way bill ROW (EwayCarriage) is the sole
+  // authority for what goes on the NIC wire, exactly as 0075 states — the
+  // challan's own transport columns are the recorded fact of the movement
+  // and are displayed on the challan detail, but the payload never reads
+  // them. A prefill projection was resolved here and consumed by nothing,
+  // so it is not carried: two records of one movement, neither reading the
+  // other at write time (0075).
 }
 
 /** Does this document move goods at all?
@@ -207,14 +203,6 @@ export async function readInvoiceSourceFacts(
     // case the challan path exists for.
     movementReason: 'supply',
     irn: invoice.irn,
-    transport: {
-      transporterId: null,
-      transporterName: null,
-      vehicleNumber: null,
-      transportDocNumber: null,
-      transportDocDate: null,
-      distanceKm: null,
-    },
   };
 }
 
@@ -226,12 +214,6 @@ interface ChallanRow {
   readonly consignee_snapshot: unknown;
   readonly consignee_gstin: string | null;
   readonly movement_reason: string | null;
-  readonly transporter_id: string | null;
-  readonly transporter_name: string | null;
-  readonly vehicle_number: string | null;
-  readonly transport_doc_number: string | null;
-  readonly transport_doc_date: string | null;
-  readonly transport_distance_km: number | null;
   readonly organisation_name: string;
   readonly trade_name: string | null;
   readonly organisation_gstin: string | null;
@@ -266,10 +248,7 @@ export async function readChallanSourceFacts(
   const [challan] = (await tx.unsafe(
     `select dc.status, dc.challan_kind, dc.challan_number,
             dc.challan_date::text as challan_date, dc.consignee_snapshot,
-            dc.consignee_gstin, dc.movement_reason, dc.transporter_id,
-            dc.transporter_name, dc.vehicle_number, dc.transport_doc_number,
-            dc.transport_doc_date::text as transport_doc_date,
-            dc.transport_distance_km,
+            dc.consignee_gstin, dc.movement_reason,
             org.name as organisation_name, org.trade_name,
             org.gstin as organisation_gstin, org.address as organisation_address,
             org.state_code as organisation_state_code,
@@ -349,14 +328,6 @@ export async function readChallanSourceFacts(
       ? challan.movement_reason
       : 'supply',
     irn: null,
-    transport: {
-      transporterId: challan.transporter_id,
-      transporterName: challan.transporter_name,
-      vehicleNumber: challan.vehicle_number,
-      transportDocNumber: challan.transport_doc_number,
-      transportDocDate: challan.transport_doc_date,
-      distanceKm: challan.transport_distance_km,
-    },
   };
 }
 

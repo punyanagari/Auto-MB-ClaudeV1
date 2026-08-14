@@ -79,12 +79,11 @@ ALTER TABLE delivery_challan_items
     )
   );
 
--- The applicability rule's read: "does this challan carry at least one
--- goods line". Partial on the goods marker so the index holds only the
--- rows the question is ever asked about.
-CREATE INDEX delivery_challan_items_goods_idx
-  ON delivery_challan_items (organisation_id, delivery_challan_id)
-  WHERE is_service = false;
+-- The applicability rule reads every classified line of a challan already
+-- in hand (challanEwayEligible over readItems / readChallanSourceFacts's
+-- own full-line read), never a "has at least one goods line" existence
+-- probe, so no partial goods index is created here: it would have no
+-- reader, and an index nothing queries is dead weight on every write.
 
 COMMENT ON COLUMN delivery_challan_items.is_service IS
   'Whether this line supplies a SERVICE (SAC, six digits) or GOODS (HSN, '
