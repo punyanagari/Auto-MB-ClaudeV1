@@ -281,6 +281,18 @@ describe('OperationsWorkspace mobile shell', () => {
     expect(document.title).toBe('Installations · Sharma Constructions · Auto-MB');
   });
 
+  it('reaches the invoice register from the Documents rail', async () => {
+    renderWorkspace();
+    const rail = await screen.findByRole('navigation', { name: 'Modules' });
+    fireEvent.click(within(rail).getByRole('button', { name: 'Invoices' }));
+
+    // Anchored on the loaded register rather than on its heading, which the
+    // loading branch renders too (`loading-anchor-census`).
+    expect(await screen.findByText(/No tax invoice has been raised yet/)).toBeTruthy();
+    expect(window.location.hash).toBe('#/invoices');
+    expect(document.title).toBe('Invoices · Sharma Constructions · Auto-MB');
+  });
+
   it(
     'splits the mobile Record sheet between a challan and an installation',
     { timeout: 30_000 },

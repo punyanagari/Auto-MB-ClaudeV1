@@ -14,6 +14,7 @@ import { WORK_TABS } from '../src/views/WorkDetail.js';
 const WORK_ID = '33333333-3333-4333-8333-333333333333';
 const DOC_ID = '22222222-2222-4222-8222-222222222222';
 const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
+const INVOICE_ID = '55555555-5555-4555-8555-555555555555';
 
 /** One route per WorkspaceView kind — the union's exhaustiveness proof
  * for the serializer. A new view name that is not added here fails the
@@ -43,6 +44,8 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'issue-challan', workId: WORK_ID, challanId: CHALLAN_ID } },
   { view: { name: 'delivery-challans' } },
   { view: { name: 'delivery-challan', challanId: CHALLAN_ID } },
+  { view: { name: 'invoices' } },
+  { view: { name: 'invoice', invoiceId: INVOICE_ID } },
   { view: { name: 'quotations' } },
   { view: { name: 'approvals' } },
   { view: { name: 'serials' } },
