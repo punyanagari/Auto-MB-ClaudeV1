@@ -32,7 +32,12 @@ import {
   type IssueChallanCancelReplaceProposal,
 } from '../corrections-apply.js';
 import { httpError } from '../http.js';
-import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
+import {
+  cursorRowId,
+  keysetPage,
+  sqlLimit,
+  workScopedCursorRowId,
+} from '../pagination.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { extractPdfText, PdfToTextConfigurationError } from '@auto-mb/documents';
 import type { MalwareScanner } from '../malware-scan.js';
@@ -1426,16 +1431,6 @@ export function registerAmendmentRoutes(
     },
   );
 
-  /** Both approval registers order newest first on (created_at, id), so
-   * they share one cursor resolver. The queue and the per-Work history
-   * read the same table; a cursor from one is a valid position in the
-   * other, which is harmless — the WHERE clause still decides what the
-   * caller may see. */
-  const approvalCursor = (
-    tx: TransactionSql,
-    cursor: string | undefined,
-  ): Promise<string | null> => cursorRowId(tx, 'approval_requests', cursor);
-
   // --- Per-Work amendment history ------------------------------------------
   tenantRoute(
     {
@@ -1456,7 +1451,10 @@ export function registerAmendmentRoutes(
             select id from works where id = ${workId} and deleted_at is null
           `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        const cursor = await approvalCursor(tx, query.cursor);
+        // The cursor must name a request OF THIS WORK — an id from another
+        // Work is refused as CURSOR_INVALID, indistinguishable from a
+        // nonexistent one; see `cursorRowId` for the oracle this closes.
+        const cursor = await cursorRowId(tx, 'approval_requests', query.cursor, workId);
         const rows = await tx<ApprovalRow[]>`
             ${tx.unsafe(APPROVAL_SELECT)}
             where ar.work_id = ${workId}
@@ -1487,7 +1485,14 @@ export function registerAmendmentRoutes(
       const paged = await tenant(async (tx) => {
         // 'assigned'-scoped memberships see only their Works' requests.
         const full = await hasFullWorkScope(tx, user.id);
-        const cursor = await approvalCursor(tx, rawCursor);
+        // The queue narrows its rows by work-scope, so its cursor answers
+        // to the same predicate: a forbidden Work's request id is refused
+        // against the tenant; see `workScopedCursorRowId` for the oracle
+        // this closes.
+        const cursor = await workScopedCursorRowId(tx, 'approval_requests', rawCursor, {
+          userId: user.id,
+          full,
+        });
         const rows = await tx<ApprovalRow[]>`
             ${tx.unsafe(APPROVAL_SELECT)}
             where (${status ?? null}::text is null or ar.status = ${status ?? null})

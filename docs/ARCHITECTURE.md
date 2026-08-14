@@ -220,11 +220,15 @@ A cursor is caller input, and proving it merely exists in the underlying
 table proves it as far as RLS narrows that table — the organisation, not
 the list being paged. That shape is an existence oracle: a caller learns
 whether a guessed or leaked id exists outside their scope by offering it
-as a cursor. A cursor must therefore be proven against the same predicate
-as the page it restarts (the timeline routes prove the event against the
-same entity-to-Work mapping their WHERE clause uses), and the refusal is
-the same `400 CURSOR_INVALID` whether the cursor is outside the trail or
-never existed.
+as a cursor, and the keyset comparison against the forbidden row's sort
+key lets its date be binary-searched without a row of it ever being
+returned. A cursor must therefore be proven against the same predicate as
+the page it restarts: the path Work's `work_id` on a per-Work list, the
+caller's work-scope on a scope-narrowed register
+(`apps/server/src/pagination.ts`), and the routes' own entity-to-Work
+mapping on the timeline trails. The refusal is the same `400
+CURSOR_INVALID` whether the cursor is outside the register or never
+existed, so the two are indistinguishable.
 
 Not every list pages. Which ones do not, and the fact that bounds each, is
 recorded in `UNPAGINATED_LISTS` in
