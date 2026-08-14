@@ -1268,9 +1268,75 @@ export function registerChallanRoutes(
           group by wi.id
           order by wi.item_number
         `;
+        // What a NEW draft opens on: the Work's most recent ISSUED
+        // challan, chosen by sequence number rather than by date or by
+        // row age. The sequence is assigned at issue and is the Work's
+        // real series order, so a challan back-entered with an older
+        // challan date — or written to the table out of order — cannot
+        // displace a later one. `status = 'issued'` excludes drafts,
+        // which hold no sequence at all, and cancelled challans, which
+        // are no precedent: whatever was wrong with one may be exactly
+        // these fields. `work_id` excludes standalone challans, which
+        // carry no Work by construction (migration 0056).
+        const [deliverySource] = await tx<
+          {
+            prefix: string;
+            consignee_name: string;
+            consignee_address: string;
+            consignee_phone: string | null;
+            challan_number: string;
+          }[]
+        >`
+          select prefix,
+                 coalesce(consignee_snapshot->>'name', '') as consignee_name,
+                 coalesce(consignee_snapshot->>'address', '') as consignee_address,
+                 consignee_snapshot->>'phone' as consignee_phone,
+                 challan_number
+          from delivery_challans
+          where work_id = ${workId} and status = 'issued'
+          order by sequence_number desc
+          limit 1
+        `;
+        // The Issue Challan side of the same question, chosen the same
+        // way. Movement type is deliberately not read: it is the field
+        // that decides what the document DOES, and one 'return' must not
+        // turn every later Issue Challan into a return.
+        const [issueSource] = await tx<
+          {
+            issued_to_name: string;
+            issued_to_role: string | null;
+            location: string | null;
+            challan_number: string;
+          }[]
+        >`
+          select issued_to_name, issued_to_role, location, challan_number
+          from issue_challans
+          where work_id = ${workId} and status = 'issued'
+          order by sequence_number desc
+          limit 1
+        `;
         return {
           allowExcessDelivery: work.allow_excess_delivery,
           today: work.today,
+          deliveryCarryForward:
+            deliverySource === undefined
+              ? null
+              : {
+                  prefix: deliverySource.prefix,
+                  consigneeName: deliverySource.consignee_name,
+                  consigneeAddress: deliverySource.consignee_address,
+                  consigneePhone: deliverySource.consignee_phone,
+                  sourceChallanNumber: deliverySource.challan_number,
+                },
+          issueCarryForward:
+            issueSource === undefined
+              ? null
+              : {
+                  issuedToName: issueSource.issued_to_name,
+                  issuedToRole: issueSource.issued_to_role,
+                  location: issueSource.location,
+                  sourceChallanNumber: issueSource.challan_number,
+                },
           items: rows.map((row) => ({
             workItemId: row.work_item_id,
             itemNumber: row.item_number,

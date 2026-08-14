@@ -15,6 +15,7 @@ import type {
 import type { Sql } from '@auto-mb/db';
 import {
   createDatabasePool,
+  jsonb,
   removeOrganisationResidue,
   runMigrations,
 } from '@auto-mb/db';
@@ -1673,5 +1674,183 @@ describe('numbering scope across Works (finding 8)', () => {
     // Both Works sit at counter value 1; the Work code is what keeps the
     // organisation-wide numbers distinct.
     expect(new Set(numbers).size).toBe(2);
+  });
+});
+
+describe('what a new draft carries forward, decided on the server', () => {
+  // A Work of its own, so the challans written here are the only history
+  // the balance can read.
+  const carryWorkId = randomUUID();
+  const carryItemId = randomUUID();
+  let sequence = 0;
+
+  /** Writes one challan of this Work straight to the table.
+   *
+   * Direct inserts rather than the API because the two facts under test —
+   * a sequence number that disagrees with row age, and a cancelled
+   * challan holding the highest sequence — cannot be produced through it.
+   * Issue assigns the sequence in creation order, so the API can only
+   * ever make the two orders agree. */
+  async function writeChallan(row: {
+    status: 'draft' | 'issued' | 'cancelled';
+    prefix: string;
+    consignee: { name: string; address: string; phone?: string };
+    createdAt: string;
+  }): Promise<number | null> {
+    const id = randomUUID();
+    const issued = row.status !== 'draft';
+    const nextSequence = issued ? (sequence += 1) : null;
+    const number = issued
+      ? `${row.prefix}-${runId.toUpperCase()}/${String(nextSequence)}`
+      : null;
+    await admin`
+      insert into delivery_challans (
+        id, organisation_id, work_id, status, challan_date, challan_number,
+        sequence_number, prefix, consignee_snapshot, issued_snapshot,
+        created_by_user_id, issued_by_user_id, issued_at,
+        cancelled_by_user_id, cancelled_at, cancellation_note, created_at
+      )
+      values (
+        ${id}, ${organisationId}, ${carryWorkId}, ${row.status}, '2025-07-01',
+        ${number}, ${nextSequence}, ${row.prefix}, ${jsonb(admin, row.consignee)},
+        ${issued ? jsonb(admin, {}) : null},
+        ${ownerUserId}, ${issued ? ownerUserId : null},
+        ${issued ? '2025-07-01T10:00:00.000Z' : null},
+        ${row.status === 'cancelled' ? ownerUserId : null},
+        ${row.status === 'cancelled' ? '2025-07-02T10:00:00.000Z' : null},
+        ${row.status === 'cancelled' ? 'Wrong consignee' : null},
+        ${row.createdAt}
+      )
+    `;
+    return nextSequence;
+  }
+
+  async function carriedDelivery() {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${carryWorkId}/balance`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json<WorkBalanceResponse>().deliveryCarryForward ?? null;
+  }
+
+  beforeAll(async () => {
+    const scheduleId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, letter_percentage,
+        letter_percentage_direction, created_by_user_id
+      )
+      values (
+        ${carryWorkId}, ${organisationId}, ${`DCC-${runId.toUpperCase()}`},
+        ${`dc-carry-letter-${runId}`}, '2025-06-01', 'Carry-forward fixture work',
+        1000.00, 900.00, 'per_schedule', null, null, ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${scheduleId}, ${organisationId}, ${carryWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (${carryItemId}, ${organisationId}, ${carryWorkId}, ${scheduleId},
+              'A/1', 'Carry switchboard', 'Nos', 5.000, 100.00)
+    `;
+  });
+
+  it('carries nothing while the Work has no issued challan, draft or not', async () => {
+    expect(await carriedDelivery()).toBeNull();
+
+    // A draft holds no sequence and is nobody's precedent: it is not a
+    // document the operator ever handed over.
+    await writeChallan({
+      status: 'draft',
+      prefix: 'DCC/DRAFT',
+      consignee: { name: 'Draft consignee', address: 'Draft address' },
+      createdAt: '2025-07-01T09:00:00.000Z',
+    });
+    expect(await carriedDelivery()).toBeNull();
+  });
+
+  it('takes the highest issued sequence, not the newest row', async () => {
+    await writeChallan({
+      status: 'issued',
+      prefix: 'DCC/ONE',
+      consignee: { name: 'Sr. DEE (G) NR', address: 'Delhi Division', phone: '011-1' },
+      createdAt: '2025-07-01T10:00:00.000Z',
+    });
+    await writeChallan({
+      status: 'issued',
+      prefix: 'DCC/TWO',
+      consignee: {
+        name: 'SSE (Signal) GZB',
+        address: 'Signal Workshop, Ghaziabad',
+        phone: '0120-2',
+      },
+      createdAt: '2025-07-02T10:00:00.000Z',
+    });
+
+    // Sequence 2 is the Work's latest challan, and it is also the newest
+    // row — the two orders agree here, which is the ordinary case.
+    expect(await carriedDelivery()).toEqual({
+      prefix: 'DCC/TWO',
+      consigneeName: 'SSE (Signal) GZB',
+      consigneeAddress: 'Signal Workshop, Ghaziabad',
+      consigneePhone: '0120-2',
+      sourceChallanNumber: `DCC/TWO-${runId.toUpperCase()}/2`,
+    });
+
+    // Now make them disagree: the row for sequence 1 is written to look
+    // newer than every other, as a challan entered late for an earlier
+    // despatch would be. Sequence is assigned at issue and is the Work's
+    // real series order, so the answer must not move.
+    await admin`
+      update delivery_challans
+      set created_at = '2026-01-01T10:00:00.000Z'
+      where work_id = ${carryWorkId} and sequence_number = 1
+    `;
+    expect((await carriedDelivery())?.prefix).toBe('DCC/TWO');
+
+    // Nor is a draft a precedent, however new its row is: it holds no
+    // sequence, and it is not a document anyone was ever handed.
+    await admin`
+      update delivery_challans
+      set created_at = '2026-02-01T10:00:00.000Z'
+      where work_id = ${carryWorkId} and status = 'draft'
+    `;
+    expect((await carriedDelivery())?.sourceChallanNumber).toBe(
+      `DCC/TWO-${runId.toUpperCase()}/2`,
+    );
+  });
+
+  it('never takes a cancelled challan, even when it holds the highest sequence', async () => {
+    await writeChallan({
+      status: 'cancelled',
+      prefix: 'DCC/GONE',
+      consignee: { name: 'Cancelled consignee', address: 'Cancelled address' },
+      createdAt: '2025-07-03T10:00:00.000Z',
+    });
+
+    // Whatever was wrong with a cancelled challan may be exactly these
+    // fields, so the last challan that still stands is used instead.
+    expect((await carriedDelivery())?.prefix).toBe('DCC/TWO');
+  });
+
+  it('reports a missing phone as null rather than inventing one', async () => {
+    await writeChallan({
+      status: 'issued',
+      prefix: 'DCC/NOPHONE',
+      consignee: { name: 'No phone consignee', address: 'Some address' },
+      createdAt: '2025-07-04T10:00:00.000Z',
+    });
+
+    const carried = await carriedDelivery();
+    expect(carried?.prefix).toBe('DCC/NOPHONE');
+    expect(carried?.consigneePhone).toBeNull();
   });
 });

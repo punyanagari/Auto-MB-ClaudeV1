@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { SaveIssueChallanRequest } from '@auto-mb/contracts';
+import type {
+  IssueChallanCarryForward,
+  SaveIssueChallanRequest,
+  WorkBalanceResponse,
+} from '@auto-mb/contracts';
 import { type ApiClient } from '../../src/api.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
@@ -199,5 +203,243 @@ describe('IssueChallanEditor awarded-item quantities', () => {
     ];
     expect(body.lines).toEqual([{ workItemId: ITEM_A, quantity: '2.500' }]);
     expect(screen.queryByText(/Enter a quantity greater than zero/)).toBeNull();
+  });
+});
+
+describe('IssueChallanEditor carries the previous Issue Challan forward', () => {
+  const IC_ID = 'aaaa5555-5555-4555-8555-555555555555';
+  const BALANCE: WorkBalanceResponse = {
+    allowExcessDelivery: false,
+    today: '2026-08-11',
+    items: [
+      {
+        workItemId: ITEM_A,
+        itemNumber: 'A/1',
+        description: 'Main switchboard',
+        unitCode: 'Nos',
+        awardedQuantity: '5.000',
+        deliveredQuantity: '0.000',
+        remainingQuantity: '5.000',
+        effectiveRate: '100.00',
+      },
+    ],
+  };
+  /** What the server read off this Work's last ISSUED Issue Challan. It
+   * carries no movement type by design: that field decides what the
+   * document DOES. */
+  const ISSUE: IssueChallanCarryForward = {
+    issuedToName: 'SSE/Signal/Delhi',
+    issuedToRole: 'Store keeper',
+    location: 'Ghaziabad depot',
+    sourceChallanNumber: 'DCW-1-IC/1',
+  };
+  const CARRIED: WorkBalanceResponse = {
+    ...BALANCE,
+    issueCarryForward: ISSUE,
+  };
+
+  function renderNewDraft(api: ApiClient) {
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  it('opens a second Issue Challan on the carried recipient and location', async () => {
+    const createIssueChallan = vi.fn().mockResolvedValue({
+      issueChallan: { id: IC_ID },
+      lines: [],
+      issuedSnapshot: null,
+    });
+    const listIssueChallans = vi.fn();
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(CARRIED),
+      listIssueChallans,
+      createIssueChallan,
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('Main switchboard');
+    // The history is never read: the balance the editor was already
+    // waiting on answered the only question it had about it.
+    expect(listIssueChallans).not.toHaveBeenCalled();
+    expect(screen.getByLabelText<HTMLInputElement>('Issued to (name)').value).toBe(
+      'SSE/Signal/Delhi',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Role (optional)').value).toBe(
+      'Store keeper',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Location (optional)').value).toBe(
+      'Ghaziabad depot',
+    );
+    expect(
+      screen.getByText(/Carried from DCW-1-IC\/1 — edit if this movement differs\./),
+    ).toBeTruthy();
+    // The date is this organisation's today, the remarks belong to the
+    // movement that carried them, and last time's quantities are no
+    // proposal for this time's.
+    expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
+      BALANCE.today,
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Remarks (optional)').value).toBe(
+      '',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this Issue Challan')
+        .value,
+    ).toBe('');
+
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(createIssueChallan).toHaveBeenCalled();
+    });
+    const [, , body] = createIssueChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveIssueChallanRequest,
+    ];
+    expect(body.issuedToName).toBe('SSE/Signal/Delhi');
+    expect(body.issuedToRole).toBe('Store keeper');
+    expect(body.location).toBe('Ghaziabad depot');
+    expect(body.challanDate).toBe(BALANCE.today);
+    expect(body.lines).toEqual([{ workItemId: ITEM_A, quantity: '1' }]);
+  });
+
+  it('opens on Issue however the last movement went, and saves it that way', async () => {
+    // The movement type is the one standing choice never carried. It
+    // decides what the document does to stock, and an Issue Challan is
+    // immutable once issued: after a single return, carrying it would
+    // open every later movement as a return and invert the stock
+    // direction of documents nobody meant to reverse.
+    const createIssueChallan = vi.fn().mockResolvedValue({
+      issueChallan: { id: IC_ID },
+      lines: [],
+      issuedSnapshot: null,
+    });
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(CARRIED),
+      createIssueChallan,
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('Main switchboard');
+    expect(screen.getByLabelText<HTMLSelectElement>('Movement').value).toBe('issue');
+
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this Issue Challan'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(createIssueChallan).toHaveBeenCalled();
+    });
+    const [, , body] = createIssueChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveIssueChallanRequest,
+    ];
+    expect(body.movementType).toBe('issue');
+  });
+
+  it('leaves a box the source challan left empty empty', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue({
+        ...BALANCE,
+        issueCarryForward: { ...ISSUE, issuedToRole: null, location: null },
+      }),
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('Main switchboard');
+    expect(screen.getByLabelText<HTMLInputElement>('Issued to (name)').value).toBe(
+      'SSE/Signal/Delhi',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Role (optional)').value).toBe('');
+    expect(screen.getByLabelText<HTMLInputElement>('Location (optional)').value).toBe(
+      '',
+    );
+  });
+
+  it('opens the Work’s first Issue Challan on the plain defaults, and claims nothing', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue({
+        ...BALANCE,
+        issueCarryForward: null,
+      }),
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('Main switchboard');
+    expect(screen.getByLabelText<HTMLSelectElement>('Movement').value).toBe('issue');
+    expect(screen.getByLabelText<HTMLInputElement>('Issued to (name)').value).toBe('');
+    expect(screen.getByLabelText<HTMLInputElement>('Location (optional)').value).toBe(
+      '',
+    );
+    expect(screen.queryByText(/Carried from/)).toBeNull();
+  });
+
+  it('never reseeds an existing draft, whatever the balance carries', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(CARRIED),
+      getIssueChallan: vi.fn().mockResolvedValue({
+        issueChallan: {
+          id: IC_ID,
+          workId: WORK_ID,
+          status: 'draft',
+          movementType: 'return',
+          challanDate: '2026-08-09',
+          challanNumber: null,
+          sequenceNumber: null,
+          prefix: 'DCW-1-IC',
+          issuedToName: 'SSE/TRD/Delhi',
+          issuedToRole: null,
+          location: null,
+          remarks: null,
+          templateVersion: null,
+          renderedAvailable: false,
+          signedCopyAvailable: false,
+          cancellationNote: null,
+          createdAt: '2026-08-09T00:00:00.000Z',
+          issuedAt: null,
+          cancelledAt: null,
+        },
+        lines: [],
+        issuedSnapshot: null,
+      }),
+    });
+    render(
+      <IssueChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        challanId={IC_ID}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('Main switchboard');
+    // The draft is already whatever the operator saved, down to the boxes
+    // they deliberately left empty, and it claims nothing about carrying.
+    expect(screen.getByLabelText<HTMLSelectElement>('Movement').value).toBe('return');
+    expect(screen.getByLabelText<HTMLInputElement>('Issued to (name)').value).toBe(
+      'SSE/TRD/Delhi',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Role (optional)').value).toBe('');
+    expect(screen.getByLabelText<HTMLInputElement>('Location (optional)').value).toBe(
+      '',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
+      '2026-08-09',
+    );
+    expect(screen.queryByText(/Carried from/)).toBeNull();
   });
 });

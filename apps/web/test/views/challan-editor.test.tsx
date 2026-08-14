@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { SaveChallanRequest } from '@auto-mb/contracts';
-import { RequestFailedError } from '../../src/api.js';
+import type {
+  ChallanCarryForward,
+  SaveChallanRequest,
+  WorkBalanceResponse,
+} from '@auto-mb/contracts';
+import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { ChallanEditor } from '../../src/views/ChallanEditor.js';
 import { PacCertificates } from '../../src/views/PacCertificates.js';
 import {
@@ -403,6 +407,178 @@ describe('ChallanEditor', () => {
     fireEvent.change(prefix, { target: { value: 'dc/2026' } });
     expect(prefix.value).toBe('DC/2026');
     expect(prefix.validationMessage).toBe('');
+  });
+});
+
+describe('ChallanEditor carries the previous challan forward', () => {
+  /** The Work balance as the server serves it once the Work has an issued
+   * challan. The carried values ride along with the balance the editor
+   * already asks for, so opening a draft costs no second request — and
+   * the policy deciding WHICH challan they came from lives in one place,
+   * on the server, rather than being re-derived here. */
+  const DELIVERY: ChallanCarryForward = {
+    prefix: 'DCW-1/SUP',
+    consigneeName: 'Sr. DEE (G) NR',
+    consigneeAddress: 'Delhi Division, New Delhi',
+    consigneePhone: '011-23385678',
+    sourceChallanNumber: 'DCW-1/SUP/1',
+  };
+  const CARRIED: WorkBalanceResponse = {
+    ...BALANCE,
+    deliveryCarryForward: DELIVERY,
+  };
+
+  function renderNewDraft(api: ApiClient) {
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  it('opens a second challan on the carried prefix and consignee, and on nothing else', async () => {
+    const createChallan = vi.fn().mockResolvedValue(challanDetail());
+    const listChallans = vi.fn();
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(CARRIED),
+      listChallans,
+      createChallan,
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('2.000');
+    // The history is never read: the server answered the only question
+    // the editor had about it, in the response it was already waiting on.
+    expect(listChallans).not.toHaveBeenCalled();
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1/SUP',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G) NR',
+    );
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Consignee address').value).toBe(
+      'Delhi Division, New Delhi',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
+    ).toBe('011-23385678');
+    // The date is this organisation's today, never the previous movement's,
+    // and last time's quantities are no proposal for this time's.
+    expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
+      BALANCE.today,
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
+    ).toBe('');
+
+    // And the carried values are what a save sends, beside this challan's
+    // own quantity.
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(createChallan).toHaveBeenCalled();
+    });
+    const [, , body] = createChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveChallanRequest,
+    ];
+    expect(body.prefix).toBe('DCW-1/SUP');
+    expect(body.consignee).toEqual({
+      name: 'Sr. DEE (G) NR',
+      address: 'Delhi Division, New Delhi',
+      phone: '011-23385678',
+    });
+    expect(body.challanDate).toBe(BALANCE.today);
+    expect(body.items).toEqual([{ workItemId: ITEM_A, quantity: '1' }]);
+  });
+
+  it('names the challan the consignee was carried from', async () => {
+    const api = stubApi({ workBalance: vi.fn().mockResolvedValue(CARRIED) });
+    renderNewDraft(api);
+
+    // A prefilled form that never says so reads as one the operator
+    // already filled in — and the picker above still says "Manual entry".
+    await screen.findByText('2.000');
+    expect(
+      screen.getByText(/Carried from DCW-1\/SUP\/1 — edit if this delivery differs\./),
+    ).toBeTruthy();
+  });
+
+  it('leaves a box the source challan left empty empty', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue({
+        ...CARRIED,
+        deliveryCarryForward: { ...DELIVERY, consigneePhone: null },
+      }),
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('2.000');
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
+    ).toBe('');
+  });
+
+  it('opens the Work’s first challan on the plain defaults, and claims nothing', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue({
+        ...BALANCE,
+        deliveryCarryForward: null,
+      }),
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('2.000');
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe('');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Consignee address').value).toBe(
+      '',
+    );
+    expect(screen.queryByText(/Carried from/)).toBeNull();
+  });
+
+  it('never reseeds an existing draft, whatever the balance carries', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(CARRIED),
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={CHALLAN_ID}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    // The draft is already whatever the operator saved, down to the empty
+    // phone box, and it claims nothing about carrying.
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe('DC');
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G)',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
+    ).toBe('');
+    expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
+      '2026-08-08',
+    );
+    expect(screen.queryByText(/Carried from/)).toBeNull();
   });
 });
 
