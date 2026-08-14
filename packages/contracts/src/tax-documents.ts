@@ -567,10 +567,10 @@ export const TaxInvoiceRegisterEntrySchema = Type.Object(
     invoiceNumber: Type.Union([Type.String(), Type.Null()]),
     invoiceDate: DateOnlySchema,
     status: TaxInvoiceStatusSchema,
-    /** The buyer contact's designation as the master reads it now. The
-     * invoice's own frozen buyer snapshot is what the DOCUMENT prints; a
-     * register is a finding aid, so it shows the name the operator would
-     * search by. */
+    /** The buyer as the DOCUMENT states it: the invoice's frozen submit-time
+     * snapshot designation, so a register line matches the printed and filed
+     * invoice even after the contact master is edited. A draft has no
+     * snapshot yet and falls back to the live contact's designation. */
     buyerName: Type.String(),
     taxableValue: Type.Union([DecimalStringSchema, Type.Null()]),
     /** CGST + SGST + IGST. Which heads carry it is a property of the

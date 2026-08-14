@@ -10,6 +10,7 @@ import { keysetPage, sqlLimit, workScopedCursorRowId } from '../../pagination.js
 import { errorResponses } from '../shared.js';
 import type { AppInstance } from '../../app-instance.js';
 import { createTenantRouteRegistrar } from '../../tenant-route.js';
+import { irpReportingOverdueSql } from './internal.js';
 
 /**
  * The organisation-wide tax-invoice register.
@@ -103,7 +104,13 @@ export function registerTaxInvoiceRegisterRoute(
           select ti.id, ti.work_id, w.work_code, w.title as work_title,
                  ti.invoice_number, ti.invoice_date::text as invoice_date,
                  ti.status,
-                 coalesce(c.designation, '') as buyer_name,
+                 -- The buyer as the DOCUMENT states it: the frozen submit-time
+                 -- snapshot wins, so the register line matches the printed and
+                 -- filed invoice even after the contact master is edited. A
+                 -- draft has no snapshot yet and falls back to the live
+                 -- contact (the same order search.ts and challans.ts use).
+                 coalesce(ti.buyer_snapshot->>'designation', c.designation, '')
+                   as buyer_name,
                  ti.taxable_value::text as taxable_value,
                  -- The three heads summed in SQL numeric, never in
                  -- JavaScript (engineering rule 5). NULL while the
@@ -113,15 +120,11 @@ export function registerTaxInvoiceRegisterRoute(
                  ti.total_amount::text as total_amount,
                  ti.irn, ti.irp_provider, ti.irp_provider_state,
                  ti.irp_reporting_deadline::text as irp_reporting_deadline,
-                 -- The frozen reporting window (migration 0049), derived
-                 -- exactly as TI_COLUMNS derives it so the register and
-                 -- the document cannot disagree about an overdue one.
-                 (ti.irp_reporting_deadline is not null
-                    and ti.irp_provider_state
-                      not in ('registered', 'registered_unverified')
-                    and ti.irp_reporting_deadline <
-                      (select (now() at time zone o.timezone)::date
-                       from organisations o where o.id = ti.organisation_id))
+                 -- The frozen reporting window (migration 0049): the SAME
+                 -- fragment TI_COLUMNS derives, spliced in as trusted static
+                 -- SQL, so the register and the document cannot disagree
+                 -- about an overdue one and cannot drift as copies could.
+                 ${tx.unsafe(irpReportingOverdueSql('ti'))}
                    as irp_reporting_overdue
           from tax_invoices ti
           -- LEFT joins throughout: a direct invoice names no Work, and an

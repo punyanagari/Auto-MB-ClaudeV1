@@ -12,6 +12,7 @@ import {
 } from '@auto-mb/contracts';
 import type { TransactionSql } from '@auto-mb/db';
 import { assertWorkAccess, hasFullWorkScope } from '../../authz.js';
+import { assertWorkOperable } from '../../work-status.js';
 import { assertGstRateNotified } from '../../gst-rates.js';
 import { draftConflictError } from '../../draft-conflict.js';
 import { stringifyStatutoryJson } from '../../gsp/statutory-json.js';
@@ -51,12 +52,17 @@ import type { parseTaxInvoiceIssuedSnapshot } from '../../tax-invoice-snapshot.j
  * database refusals surfaced as named 400/409s — is the delivery
  * challan's (routes/challans.ts).
  *
- * TWO DELIBERATE DEPARTURES from the site documents:
+ * ONE DELIBERATE DEPARTURE from the site documents, and one boundary
+ * drawn WITHIN R8:
  *
- * - No completed-Work refusal. R8 freezes OPERATIONS (challans,
- *   installations, MBs); the invoice bills measurement that is already
- *   frozen, and billing legitimately outlives completion — the bill
- *   preparation route (measurement-books.ts) takes the same view.
+ * - R8 binds only the ISSUE moment of a WORK-backed invoice. Submitting
+ *   assigns a legal number and freezes money, so a completed Work refuses
+ *   it exactly as it refuses a challan issue or an MB finalize
+ *   (`assertInvoiceWorkOperable`, the server authority behind the Work
+ *   tab's long-standing `canIssueDocuments` gate). What legitimately
+ *   OUTLIVES completion is the statutory follow-through — registering an
+ *   already-frozen invoice at the IRP, rendering its PDF — and that is not
+ *   gated. A DIRECT invoice has no Work, so R8 has nothing to bind to it.
  * - Invoice dates are organisation-local calendar facts. A delayed entry may
  *   record a past date across a financial-year boundary, but never a future
  *   date; an MB-backed invoice also cannot predate the Measurement Book.
@@ -141,6 +147,29 @@ export interface InvoiceRow {
   line_value: string | null;
 }
 
+/**
+ * The frozen IRP reporting window (migration 0049) as ONE SQL fragment, so
+ * the document (TI_COLUMNS) and the organisation-wide register cannot
+ * disagree about whether an invoice is overdue. It was hand-copied into
+ * both; now the copy is the same call.
+ *
+ * The organisation's local "today" is read through the DECORRELATED
+ * `app_private.current_organisation_id()` form, not `where o.id =
+ * ti.organisation_id`. A tenant transaction is bound to one organisation,
+ * so today is a single value for the whole query and PostgreSQL evaluates
+ * it once as an InitPlan, rather than re-deriving it per row (the idiom
+ * work-supersede.ts uses). The derivation is otherwise identical, and the
+ * `alias` parameter lets a caller point it at `ti` under either join.
+ */
+export function irpReportingOverdueSql(alias: string): string {
+  return `(${alias}.irp_reporting_deadline is not null
+     and ${alias}.irp_provider_state
+       not in ('registered', 'registered_unverified')
+     and ${alias}.irp_reporting_deadline <
+       (select (now() at time zone timezone)::date from organisations
+        where id = app_private.current_organisation_id()))`;
+}
+
 /** `buyer_contact_id` is a real column on the invoice row (migration
  * 0041), read directly in both draft and submitted states. It was once
  * resolved from the newest audit event while draft; that made the audit
@@ -166,11 +195,7 @@ export const TI_COLUMNS = `
   ti.irp_legacy_evidence_missing, ti.irp_cancelled_at,
   ti.irp_cancelled_at_text, ti.irp_cancel_reason_code, ti.irp_cancel_remark,
   ti.irp_reporting_deadline::text as irp_reporting_deadline,
-  (ti.irp_reporting_deadline is not null
-     and ti.irp_provider_state not in ('registered', 'registered_unverified')
-     and ti.irp_reporting_deadline <
-       (select (now() at time zone o.timezone)::date from organisations o
-        where o.id = ti.organisation_id))
+  ${irpReportingOverdueSql('ti')}
     as irp_reporting_overdue,
   case when ti.ack_date is null or ti.irp_legacy_evidence_missing
     then null else ti.ack_date + interval '24 hours' end
@@ -616,15 +641,31 @@ export async function requireBuyer(
  * reasons — a retired consignee is as wrong to deliver to as it is to
  * bill. Named separately so its refusals say which of the two parties is
  * at fault. */
-/** A direct invoice belongs to no Work, so there is no Work-scope check
- * to make — RLS and the organisation header already bound it. An
- * MB-backed one is checked exactly as before. */
+/**
+ * The per-document work-scope boundary, dispatched by the invoice's own
+ * work_id exactly as `assertChallanAccess` dispatches a challan's
+ * (routes/challans.ts): an MB-backed invoice is checked against its Work,
+ * and a DIRECT invoice — which belongs to no Work, so no assignment could
+ * ever reach it — is checked against `assertDirectInvoiceAccess`, the
+ * organisation-wide reach the register already demands to list it.
+ *
+ * A null work_id is NOT a free pass. Returning on it (as this once did)
+ * left every per-document route — read, edit, delete, submit, cancel,
+ * render and the whole IRP transport — open to any 'assigned'-scoped
+ * member of the tenant, because they all resolve the row and call THIS.
+ * The register hid direct invoices from that member while these routes
+ * handed them over by id: the list was the enumeration oracle and this
+ * was the door. The two now agree.
+ */
 export async function assertInvoiceWorkAccess(
   tx: TransactionSql,
   userId: string,
   workId: string | null,
 ): Promise<void> {
-  if (workId === null) return;
+  if (workId === null) {
+    await assertDirectInvoiceAccess(tx, userId);
+    return;
+  }
   await assertWorkAccess(tx, userId, workId);
 }
 
@@ -651,6 +692,39 @@ export async function assertDirectInvoiceAccess(
 ): Promise<void> {
   if (await hasFullWorkScope(tx, userId)) return;
   throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
+}
+
+/**
+ * R8 at the money moment, for a WORK-backed invoice only.
+ *
+ * Submitting a tax invoice assigns a legal number and freezes money — the
+ * same class of act as issuing a Delivery Challan or finalizing a
+ * Measurement Book, which `assertWorkOperable` closes with the Work. The
+ * Work tab has always withheld the Submit control on a completed Work (it
+ * passes `canIssueDocuments = canIssue && workActive`); this makes the
+ * server the authority for that rule rather than a client prop, so the
+ * gate holds however the document was reached — including the
+ * organisation-wide register, which reaches the very same document.
+ *
+ * A DIRECT invoice has no Work, so R8 has nothing to bind to and this is a
+ * no-op for it — the caller passes `work_id`, which is null there.
+ *
+ * Scope is deliberately the ISSUE moment. The IRP transport of an
+ * already-submitted invoice is statutory follow-through on a document
+ * whose number and money are already frozen, and it legitimately outlives
+ * completion, so it is NOT gated here.
+ */
+export async function assertInvoiceWorkOperable(
+  tx: TransactionSql,
+  workId: string | null,
+): Promise<void> {
+  if (workId === null) return;
+  const [work] = await tx<{ status: string }[]>`
+    select status from works where id = ${workId} and deleted_at is null
+    for update
+  `;
+  if (!work) throw new Error('work-backed tax invoice without a Work');
+  assertWorkOperable(work.status, 'submitting a tax invoice');
 }
 
 export async function requireShipTo(
