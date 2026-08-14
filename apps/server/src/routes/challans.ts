@@ -31,7 +31,7 @@ import {
   type ChallanSnapshot,
 } from '../challan-html.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
-import { carriesGoods } from '../gsp/eway-source.js';
+import { challanEwayEligible } from '../gsp/eway-source.js';
 import { httpError } from '../http.js';
 import {
   NumberTemplateError,
@@ -268,16 +268,16 @@ async function readDetail(
       ...toChallan(row),
       // The server's own applicability answer, so the screen offers the
       // e-way bill action exactly where the route would accept it
-      // (ADR-0013). It reads the SAME rule the route enforces —
-      // `carriesGoods` — over the lines already in hand, rather than
-      // restating the test in a second place. An UNCLASSIFIED line is not
-      // goods here: only an explicit goods marker counts, which is what
-      // the payload builder does with the same rows.
+      // (ADR-0013). It calls the SAME predicate the route gates on —
+      // `challanEwayEligible` — which requires the movement reason, every
+      // line classified (no half/unclassified line), and at least one goods
+      // line. The earlier form omitted the per-line completeness test and
+      // so offered Raise on an issued challan with an unclassified line
+      // that the route permanently refuses (its facts frozen at issue).
       ewayBillEligible:
         row.challan_kind === 'standalone' &&
         row.status === 'issued' &&
-        row.movement_reason !== null &&
-        carriesGoods(items.map((item) => ({ isService: item.isService !== false }))),
+        challanEwayEligible(row.movement_reason, items),
     },
     items,
     issuedSnapshot: parseJsonbColumn(row.issued_snapshot),
@@ -426,14 +426,6 @@ function integerDigitCount(value: string): number {
   return whole.length;
 }
 
-/** The consignee block exactly as it will be printed. `ConsigneeSchema`
- * counts RAW characters, so `{name: '  ', address: '   '}` satisfies its
- * minimums, is frozen into the issued snapshot, and reaches the railway
- * as a delivery document with a blank consignee — and `consignee_snapshot`
- * is bare jsonb, so nothing below catches it either. Trim first, then
- * prove the printed parts survived. A phone of only spaces is dropped
- * rather than stored blank. (The web editor already trims; this closes
- * the same hole for direct API callers.) */
 /** The statutory movement facts of a standalone challan, trimmed the way
  * their CHECKs measure them (migration 0075).
  *
@@ -491,7 +483,15 @@ export function normaliseChallanStatutory(
   }
   return {
     movementReason: body.movementReason ?? null,
-    consigneeGstin: blankToNull(body.consigneeGstin) ?? contactGstin,
+    // Omitting the field defaults it from the master at draft time; sending
+    // it — including an explicit blank — is honoured exactly. The old
+    // `blankToNull(...) ?? contactGstin` re-applied the master on a blank,
+    // so a deliberate clear on a draft silently pulled the GSTIN back and
+    // could never be cleared. `undefined` is "not sent"; '' is "clear".
+    consigneeGstin:
+      body.consigneeGstin === undefined
+        ? contactGstin
+        : blankToNull(body.consigneeGstin),
     transporterId: blankToNull(body.transporterId),
     transporterName: blankToNull(body.transporterName),
     vehicleNumber: blankToNull(body.vehicleNumber),
@@ -501,6 +501,14 @@ export function normaliseChallanStatutory(
   };
 }
 
+/** The consignee block exactly as it will be printed. `ConsigneeSchema`
+ * counts RAW characters, so `{name: '  ', address: '   '}` satisfies its
+ * minimums, is frozen into the issued snapshot, and reaches the railway
+ * as a delivery document with a blank consignee — and `consignee_snapshot`
+ * is bare jsonb, so nothing below catches it either. Trim first, then
+ * prove the printed parts survived. A phone of only spaces is dropped
+ * rather than stored blank. (The web editor already trims; this closes
+ * the same hole for direct API callers.) */
 export function normaliseConsignee(consignee: Consignee): Consignee {
   const name = consignee.name.trim();
   const address = consignee.address.trim();
@@ -513,6 +521,13 @@ export function normaliseConsignee(consignee: Consignee): Consignee {
     );
   }
   return { name, address, ...(phone.length > 0 ? { phone } : {}) };
+}
+
+interface StandaloneConsignee {
+  readonly consignee: Consignee;
+  /** The party's GSTIN as the master holds it right now — the default the
+   * draft is seeded with, then frozen onto the challan. */
+  readonly gstin: string | null;
 }
 
 /** The consignee block for a STANDALONE challan, taken from the contacts
@@ -529,13 +544,6 @@ export function normaliseConsignee(consignee: Consignee): Consignee {
  * and a retired party is one the operator has already said they no longer
  * deal with. An address is required for the same reason the free-text
  * block requires one — it is the delivery address on the paper. */
-interface StandaloneConsignee {
-  readonly consignee: Consignee;
-  /** The party's GSTIN as the master holds it right now — the default the
-   * draft is seeded with, then frozen onto the challan. */
-  readonly gstin: string | null;
-}
-
 async function loadStandaloneConsignee(
   tx: TransactionSql,
   contactId: string,
@@ -774,12 +782,6 @@ function requireStatus(row: ChallanRow, status: Challan['status']): void {
   }
 }
 
-/** One line, resolved to the shape it actually is.
- *
- * A `work_item` line takes description/unit/rate from the live schedule
- * item and is the only shape the quantity ledger sees. A `manual` line
- * carries its own printed text and is inert — non-LOA installation
- * material on a work challan, or the whole of a standalone challan. */
 /** The statutory classification a line may carry (ADR-0013, migration
  * 0075). Both null on a line that carries none — the pair travels
  * together because a code with no kind cannot be read. */
@@ -788,6 +790,12 @@ interface LineStatutoryFacts {
   readonly isService: boolean | null;
 }
 
+/** One line, resolved to the shape it actually is.
+ *
+ * A `work_item` line takes description/unit/rate from the live schedule
+ * item and is the only shape the quantity ledger sees. A `manual` line
+ * carries its own printed text and is inert — non-LOA installation
+ * material on a work challan, or the whole of a standalone challan. */
 type ResolvedLine =
   | {
       readonly shape: 'work_item';

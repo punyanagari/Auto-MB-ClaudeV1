@@ -131,8 +131,12 @@ export type SaveChallanRequest = Static<typeof SaveChallanRequestSchema>;
 const challanStatutoryFields = {
   movementReason: Type.Optional(MovementReasonSchema),
   /** The consignee's GSTIN, frozen onto the document. Absent when the
-   * party is unregistered — which is lawful, and not an error. */
-  consigneeGstin: Type.Optional(GstinSchema),
+   * party is unregistered — which is lawful, and not an error. A fifteen-
+   * character GSTIN sets it; an EMPTY STRING clears it (the field-wide
+   * convention above), which the length-only `GstinSchema` would otherwise
+   * reject, so the empty string is admitted explicitly. Omitting the field
+   * entirely defaults it from the contacts master at draft time. */
+  consigneeGstin: Type.Optional(Type.Union([GstinSchema, Type.Literal('')])),
   transporterId: Type.Optional(
     Type.String({
       pattern: '^[0-9]{2}[0-9A-Z]{13}$',

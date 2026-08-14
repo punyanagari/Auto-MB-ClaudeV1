@@ -109,6 +109,35 @@ export function assertCarriesGoods(source: EwayBillSourceFacts): void {
   );
 }
 
+/** One challan line's statutory classification, as either the panel read
+ * (readDetail's items) or the route read (delivery_challan_items) holds it. */
+export interface ChallanClassificationLine {
+  readonly isService: boolean | null;
+  readonly hsnSacCode: string | null;
+}
+
+/** Whether an issued standalone challan may raise an e-way bill, as a pure
+ * predicate over the two facts the route gates on: the movement reason and
+ * the classified lines. `readDetail` offers the Raise action exactly when
+ * this is true, so the panel can never offer it where the route would
+ * refuse. The route enforces the same three conditions through
+ * `assertChallanStatutoryFactsComplete` (movement reason present AND no
+ * unclassified/half-classified line) and `assertCarriesGoods` (at least one
+ * goods line), which together accept exactly this predicate — both read
+ * this shape so the panel and the route cannot drift. Kind and status are
+ * the caller's to check; this is the per-line completeness the panel used
+ * to omit. */
+export function challanEwayEligible(
+  movementReason: string | null,
+  lines: readonly ChallanClassificationLine[],
+): boolean {
+  return (
+    isMovementReason(movementReason) &&
+    lines.every((line) => line.hsnSacCode !== null && line.isService !== null) &&
+    lines.some((line) => line.isService === false)
+  );
+}
+
 interface InvoiceRow {
   readonly status: string;
   readonly invoice_number: string | null;
