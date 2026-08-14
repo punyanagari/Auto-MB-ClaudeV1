@@ -380,6 +380,12 @@ export function WorkDetail({
    * the badge tracks the tab without a page reload. */
   const [installationCounts, setInstallationCounts] =
     useState<InstallationCounts | null>(null);
+  /** Same arrangement for the two other tabs whose registers load only on
+   * open: the formal Measurement Books and the tax invoices ride the Work
+   * read as counts, and the tabs patch them back when their own lists
+   * load or change, so the badges track the tabs without a reload. */
+  const [measurementBookCount, setMeasurementBookCount] = useState<number | null>(null);
+  const [taxInvoiceCount, setTaxInvoiceCount] = useState<number | null>(null);
   const [amendments, setAmendments] = useState<readonly ApprovalRequest[]>([]);
   const [correctionNotices, setCorrectionNotices] = useState<
     readonly CorrectionNotice[]
@@ -438,6 +444,8 @@ export function WorkDetail({
     setBills([]);
     setSerials([]);
     setInstallationCounts(null);
+    setMeasurementBookCount(null);
+    setTaxInvoiceCount(null);
     setAmendments([]);
     setCorrectionNotices([]);
     setLoadError(null);
@@ -456,6 +464,8 @@ export function WorkDetail({
         if (cancelled) return;
         setDetail(loaded);
         setInstallationCounts(loaded.installationCounts);
+        setMeasurementBookCount(loaded.measurementBookCount);
+        setTaxInvoiceCount(loaded.taxInvoiceCount);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -925,8 +935,22 @@ export function WorkDetail({
         value: String((issueChallans ?? []).filter((c) => c.status === 'draft').length),
       },
     ],
-    measurement: [{ label: 'Entries recorded', value: String(mbEntries.length) }],
-    bills: [{ label: 'Prepared', value: String(bills.length) }],
+    measurement: [
+      // Em dash until the Work read lands — an unmeasured zero reads as
+      // "no books", which is a different claim from "not read yet".
+      {
+        label: 'Measurement Books',
+        value: measurementBookCount === null ? '—' : String(measurementBookCount),
+      },
+      { label: 'Entries recorded', value: String(mbEntries.length) },
+    ],
+    bills: [
+      { label: 'Prepared', value: String(bills.length) },
+      {
+        label: 'Tax invoices',
+        value: taxInvoiceCount === null ? '—' : String(taxInvoiceCount),
+      },
+    ],
     instruments: [
       {
         label: 'Active',
@@ -955,9 +979,17 @@ export function WorkDetail({
         : null,
     issues:
       relatedStateForTab('issues') === 'ready' ? (issueChallans?.length ?? 0) : null,
+    // Books and invoices render inside their tabs from their own reads,
+    // so the badges add the counts carried on the Work read — an entry
+    // count alone claimed zero measurements beside an existing book.
     measurement:
-      relatedStateForTab('measurement') === 'ready' ? mbEntries.length : null,
-    bills: relatedStateForTab('bills') === 'ready' ? bills.length : null,
+      relatedStateForTab('measurement') === 'ready'
+        ? mbEntries.length + (measurementBookCount ?? 0)
+        : null,
+    bills:
+      relatedStateForTab('bills') === 'ready'
+        ? bills.length + (taxInvoiceCount ?? 0)
+        : null,
     instruments:
       relatedStateForTab('instruments') === 'ready' ? instruments.length : null,
     amendments: relatedStateForTab('amendments') === 'ready' ? amendments.length : null,
@@ -1456,6 +1488,7 @@ export function WorkDetail({
           canCreateDocuments={canCreateDocuments}
           canIssue={canIssue}
           canCancel={canCancel}
+          onBooksKnown={setMeasurementBookCount}
           pending={pending}
           act={act}
         />
@@ -1525,6 +1558,7 @@ export function WorkDetail({
             canManageStatutory={canManageStatutory}
             pending={pending}
             act={act}
+            onInvoicesKnown={setTaxInvoiceCount}
           />
         </>
       )}

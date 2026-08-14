@@ -802,6 +802,7 @@ describe('MeasurementBooks workspace', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
+        onBooksKnown={() => {}}
         canModify={options.canModify ?? true}
         canIssue={options.canIssue ?? true}
         canPrepareBill={options.canPrepareBill ?? true}

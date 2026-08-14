@@ -36,6 +36,8 @@ const OPAQUE_ITEM = '99999999-9999-4999-8999-999999999999';
 function freshWork(): WorkDetailResponse {
   return {
     installationCounts: { recorded: 0, cancelled: 0 },
+    measurementBookCount: 0,
+    taxInvoiceCount: 0,
     work: {
       id: WORK_ID,
       workCode: 'PL270-CRB',
