@@ -304,6 +304,14 @@ export async function applyGrants(admin: Sql): Promise<void> {
   // without the grant, and reconciliation would then fail silently at the
   // exact moment a job was already failing.
   await admin.unsafe(`GRANT SELECT, UPDATE ON loa_documents TO auto_mb_definer`);
+  // 0072's enqueue_job runs as auto_mb_definer and reads the binding
+  // through these two. They are definer-OWNED after the loop below, which
+  // makes the grant redundant here — but only after it, and only while
+  // that stays true, so it is stated rather than inferred.
+  await admin.unsafe(
+    `GRANT EXECUTE ON FUNCTION app_private.current_user_id(),
+       app_private.current_organisation_id() TO auto_mb_definer`,
+  );
   await admin.unsafe(
     `GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer`,
   );

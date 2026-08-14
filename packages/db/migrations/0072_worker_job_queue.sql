@@ -211,6 +211,23 @@ ALTER TABLE worker_jobs FORCE ROW LEVEL SECURITY;
 -- queue row, and the purge is owner-only.
 GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer;
 
+-- `enqueue_job` runs AS auto_mb_definer and calls these two to read the
+-- binding, so the definer role needs EXECUTE on them. That is not
+-- automatic and its absence is invisible under the usual setup: the
+-- bootstrap re-owns both functions to auto_mb_definer, and an owner has
+-- implicit EXECUTE, so a bootstrapped database works while a
+-- migrations-only one — which is how the server suite builds its
+-- database, and how CI runs it — fails with `permission denied for
+-- function current_user_id` from inside the definer function.
+--
+-- Granting explicitly makes the dependency true in both shapes rather
+-- than resting on who happens to own what. `current_organisation_id` is
+-- already definer-owned (0004) and so is redundant today; it is named
+-- anyway, because a silent dependency on ownership is exactly what went
+-- wrong above.
+GRANT EXECUTE ON FUNCTION app_private.current_user_id() TO auto_mb_definer;
+GRANT EXECUTE ON FUNCTION app_private.current_organisation_id() TO auto_mb_definer;
+
 -- Deliberately absent: any GRANT to auto_mb_app. Revoked explicitly
 -- rather than merely omitted, so a database that once carried a hand-made
 -- grant converges to the same state as a fresh one — the revoke-then-
