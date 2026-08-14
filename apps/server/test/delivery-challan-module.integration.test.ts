@@ -908,6 +908,69 @@ describe('the register and its permission gate', () => {
     expect(rows.some((row) => row.movement === 'standalone')).toBe(false);
   });
 
+  /**
+   * The register's cursor is part of the same scope boundary as its rows.
+   *
+   * A cursor proven only against the organisation would answer 200 for a
+   * standalone challan's id and 400 for a nonexistent one, disclosing the
+   * document's existence — and the keyset comparison would then run
+   * against that challan's (challan_date, created_at, id), so a caller
+   * paging with chosen cursors could recover its date and creation instant
+   * without ever being sent a row of it.
+   */
+  it('refuses a cursor naming a challan out of scope, exactly as a nonexistent one', async () => {
+    const [standalone] = await admin<{ id: string }[]>`
+      select id from delivery_challans
+      where organisation_id = ${organisationId} and challan_kind = 'standalone'
+      order by created_at limit 1
+    `;
+    const standaloneId = standalone?.id ?? '';
+
+    const forbidden = await authed(scoped, {
+      method: 'GET',
+      url: `/api/delivery-challans?limit=1&cursor=${standaloneId}`,
+      organisationId,
+    });
+    expect(forbidden.statusCode, forbidden.body).toBe(400);
+    expect(forbidden.json<{ code: string }>().code).toBe('CURSOR_INVALID');
+
+    const absent = await authed(scoped, {
+      method: 'GET',
+      url: `/api/delivery-challans?limit=1&cursor=${randomUUID()}`,
+      organisationId,
+    });
+    expect(absent.statusCode, absent.body).toBe(400);
+    expect(absent.json<{ message: string }>().message).toBe(
+      forbidden.json<{ message: string }>().message,
+    );
+
+    // Positive control on the SAME id: the owner reaches every challan, so
+    // for them the cursor is a position rather than a refusal.
+    const allowed = await authed(owner, {
+      method: 'GET',
+      url: `/api/delivery-challans?limit=1&cursor=${standaloneId}`,
+      organisationId,
+    });
+    expect(allowed.statusCode, allowed.body).toBe(200);
+
+    // And the scoped member still pages their own Work's challans.
+    const firstPage = await authed(scoped, {
+      method: 'GET',
+      url: '/api/delivery-challans?limit=1',
+      organisationId,
+    });
+    expect(firstPage.statusCode, firstPage.body).toBe(200);
+    const first = firstPage.json<{ challans: DeliveryChallanRegisterEntry[] }>()
+      .challans[0];
+    if (!first) throw new Error('scoped register unexpectedly empty');
+    const onward = await authed(scoped, {
+      method: 'GET',
+      url: `/api/delivery-challans?limit=1&cursor=${first.id}`,
+      organisationId,
+    });
+    expect(onward.statusCode, onward.body).toBe(200);
+  });
+
   it('answers a standalone challan they guessed the id of as unknown', async () => {
     const [standalone] = await admin<{ id: string }[]>`
       select id from delivery_challans

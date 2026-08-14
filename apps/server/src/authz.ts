@@ -158,11 +158,22 @@ export async function assertWorkAccess(
 }
 
 /** True when the membership sees every Work; false when list queries
- * must filter to assignments. */
+ * must filter to assignments.
+ *
+ * A MISSING membership answers false, not true. It cannot normally
+ * happen — the tenant binding refuses an unbound caller before a route
+ * body runs — but this function's answer is the entire scope predicate of
+ * the cross-Work registers, so the failure it can produce is a register
+ * that lists every Work in the organisation. Optional chaining on an
+ * inequality reads as a safe default and is the opposite of one: absent
+ * `work_scope` is `undefined`, which is not `'assigned'`, which was
+ * `true`. The posture matches `assertWorkAccess` above, which treats a
+ * missing membership as no access at all. */
 export async function hasFullWorkScope(
   tx: TransactionSql,
   userId: string,
 ): Promise<boolean> {
   const membership = await membershipOf(tx, userId);
-  return membership?.work_scope !== 'assigned';
+  if (membership === undefined) return false;
+  return membership.work_scope !== 'assigned';
 }

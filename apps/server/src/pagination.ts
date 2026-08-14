@@ -94,12 +94,67 @@ export async function cursorRowId(
   const [row] = await tx<{ id: string }[]>`
     select id from ${tx.unsafe(table)} where id = ${cursor}
   `;
-  if (!row) {
-    throw httpError(
-      400,
-      'CURSOR_INVALID',
-      'The pagination cursor does not name a row in this register.',
-    );
-  }
+  if (!row) throw cursorInvalid();
   return row.id;
+}
+
+/** The work-scope a cross-Work register filters its rows by, restated for
+ * its cursor. */
+export interface WorkScope {
+  readonly userId: string;
+  /** True for a membership that sees every Work of the organisation. */
+  readonly full: boolean;
+}
+
+/**
+ * {@link cursorRowId} for a register whose rows are narrowed by work-scope
+ * rather than by tenancy alone.
+ *
+ * RLS proves the cursor belongs to the caller's ORGANISATION. On a
+ * cross-Work register that is not the same question as whether the caller
+ * may see the row: an 'assigned'-scoped member reaches only the Works they
+ * are assigned to, and the organisation contains records of every other
+ * Work as well. Validating such a cursor organisation-wide leaves an
+ * oracle. The register would answer 200 for a forbidden row's id and 400
+ * for a nonexistent one — existence disclosed — and worse, the keyset
+ * predicate then compares against that row's sort key, so a caller who
+ * pages with deliberately chosen cursors can binary-search a record they
+ * may not read down to its date and creation instant. No row of it ever
+ * leaves the database, and its position is recovered anyway.
+ *
+ * So the cursor is proven against the SAME predicate the register's rows
+ * are: it must name a row of a Work the caller may see. A cursor that
+ * fails it is refused exactly as a nonexistent one is — same status, same
+ * code, same sentence — which is what makes the two indistinguishable.
+ * The register's own sort-key subselect then reads a row already proven
+ * in scope, so it needs no predicate of its own.
+ *
+ * `table` is a fixed identifier from this repository's own route code and
+ * must carry a `work_id` column; every value is parameterised.
+ */
+export async function workScopedCursorRowId(
+  tx: TransactionSql,
+  table: string,
+  cursor: string | undefined,
+  scope: WorkScope,
+): Promise<string | null> {
+  if (cursor === undefined) return null;
+  const [row] = await tx<{ id: string }[]>`
+    select r.id from ${tx.unsafe(table)} r
+    where r.id = ${cursor}
+      and (${scope.full} or exists (
+        select 1 from work_assignments wa
+        where wa.work_id = r.work_id and wa.user_id = ${scope.userId}
+      ))
+  `;
+  if (!row) throw cursorInvalid();
+  return row.id;
+}
+
+function cursorInvalid(): Error {
+  return httpError(
+    400,
+    'CURSOR_INVALID',
+    'The pagination cursor does not name a row in this register.',
+  );
 }
