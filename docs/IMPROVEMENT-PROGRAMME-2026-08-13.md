@@ -479,6 +479,26 @@ Process notes for future waves:
 
 ---
 
+### 2.10 Wave 4 — owner observations of 2026-08-14
+
+Commissioned from four owner observations delivered in session on
+2026-08-14, with three scope decisions ratified the same day: the
+installations space is both a Work tab and a top-level register; the
+e-way bill takes the full scope (invoices and challan "stage 3b"
+statutory facts); keyword auto-mapping leaves unmatched items
+uncategorised rather than guessing. Invoice and e-way-bill PDF
+generation exposed in the UI was added to scope by the owner mid-wave.
+
+| Pack | Scope | Notes |
+| --- | --- | --- |
+| **W4-P1 Challan carry-forward** | From the second Delivery/Issue Challan of a Work, the standing choices of the previous document (DC: prefix + consignee snapshot; IC: issued-to/role/location) are the new draft's defaults. Movement type is never carried. | Review moved the source of truth server-side: the balance payload carries the last **issued** challan's standing fields, chosen by sequence. |
+| **W4-P2 Installations space** | Installation records leave the Deliveries tab: own Work tab (with the serial trace) plus a top-level cross-work register with a new tenant-wide, work-scoped list route. | The new list route touches work-scope authorisation — fresh human review required. |
+| **W4-P3 Payment-matrix prompt** | After LOA confirm, a one-time popup collects the payment matrix and proposes item categories from description keywords (supply / supply+installation / installation trade words). Proposals never persist unconfirmed; unmatched items stay uncategorised; SPARE_SUPPLY and AMC are never proposed. | Evolves the spec §8 rule: extraction still never proposes; the popup proposes, the reviewer confirms. |
+| **W4-P4 Direct-invoice workspace** | Org-wide tax-invoice module UI over the existing direct-invoice server path (private customers), including render/PDF surfaced in the UI. | Money + issued documents — fresh human review required. Sequenced after W4-P2 (same nav files). |
+| **W4-P5 E-way bill module** | Goods/HSN facts (challan stage 3b), NIC payload builder re-authored, SAC refusal narrowed to line content, EWB printable PDF, UI. Supersedes the blanket generation refusal from the 2026-08-10 audit disposition finding 1 — by owner decision. | Largest pack; design recorded before code. Linkage change: EWB raisable from a goods invoice or a standalone challan. |
+
+---
+
 ## 3. Standing corrections
 
 1. ~~`docs/OPERATIONS.md` and `docs/RUNBOOK.md` must state only what
