@@ -146,7 +146,11 @@ export function InstallationsRegister({
                     </th>
                     <td>{row.itemNumber}</td>
                     <td className={numericCell}>{row.quantity}</td>
-                    <td className={numericCell}>{formatDate(row.installedOn)}</td>
+                    {/* Left-aligned, as the Delivery Challan register's date
+                        column is: the two registers sit one nav item apart
+                        and a date that changes side between them reads as a
+                        different kind of column. */}
+                    <td>{formatDate(row.installedOn)}</td>
                     <td className={wrapCell}>{row.locationName}</td>
                     <td className={numericCell}>
                       {row.serialCount > 0 ? row.serialCount : '—'}
