@@ -67,9 +67,11 @@ The desktop navigation is intentionally small:
 
 Capabilities that belong to one contract—Delivery Challans, Issue Challans, installations, Measurement Books, bills, guarantees and amendments—normally live inside the Work workspace rather than competing as permanent global destinations.
 
-The exception is earned, not assumed: a capability also gets a global register when the operator's real question crosses Works. Delivery Challans did, because two of their three movements have no Work to live under. Installations did, because site supervision asks what went in this week and where, and a gang works several Works in a day. Recording still happens on the Work in both cases — the register reads across, it does not create.
+The exception is earned, not assumed: a capability also gets a global register when the operator's real question crosses Works. Delivery Challans did, because two of their three movements have no Work to live under. Installations did, because site supervision asks what went in this week and where, and a gang works several Works in a day. Tax invoices did, because a direct invoice — raised against a private customer, outside any works contract — has no Work to live under either, and because "what have we billed, and what is still unreported" is an office question about the organisation rather than about one contract.
 
-A global register carries the filter its question needs and no more. The installation register's is an inclusive date window, because "what went in this week" is a date range; it reads a page at a time with an explicit action to fetch the next, rather than serialising a division's whole history into one response. Work and status filters stay out: a Work's own records are read on the Work, and a status filter would offer to hide exactly what the register exists to keep visible.
+Recording still happens on the Work where a Work is what caps or measures the record: an installation is recorded on its Work, and an invoice that bills a finalized Measurement Book is drafted on the Work that holds it. The register reads across. The exception to the exception is a document with no Work at all — a standalone Delivery Challan, a direct invoice — which is created on the register, because there is nowhere else for it to be created. Such a document takes organisation-wide reach: work scope binds through a Work, and one with none is reachable by every member or by none.
+
+A global register carries the filter its question needs and no more. The installation register's is an inclusive date window, because "what went in this week" is a date range; the invoice register's is the same window over the invoice date. Both read a page at a time with an explicit action to fetch the next, rather than serialising a division's whole history into one response. Work and status filters stay out: a Work's own records are read on the Work, and a status filter would offer to hide exactly what the register exists to keep visible — a cancelled challan, a cancelled invoice, a record that was made and withdrawn.
 
 ## Work workspace
 
@@ -256,6 +258,8 @@ The approved design pack covers:
 23. Organisation-wide document register
 24. Serial lookup and traceability
 25. Installation register (tenant-wide)
+25a. Tax-invoice register (organisation-wide), with the direct-invoice
+    editor and the shared invoice detail it opens
 26. Contacts
 27. Locations, units and signatories
 28. Members and permissions
@@ -308,6 +312,16 @@ itemised HSN/SAC lines with their own quantity, unit, rate and GST rate. The
 switch starts on the organisation's default and is a choice about the document
 in hand, never about the buyer. An itemised invoice's detail and PDF print a
 line table instead of a single description.
+
+Invoices are also a module of their own under Documents. Its register reads
+every invoice the caller may see — work-backed and direct — with the local
+status and the IRP state as separate columns and the source named as a Work
+link or as Direct. A row opens the same detail surface the Work's Bills tab
+opens, which is what puts Generate PDF, Open PDF, the IRP transport and the
+credit note within reach of a direct invoice for the first time. The
+direct-invoice editor lives on the register because there is no Work to put it
+on; it is the Work form's fields with the Measurement Book replaced by a stated
+taxable value, and an itemised direct invoice states no value at all.
 
 Fresh e-way-bill generation is unavailable for either shape. Historical records
 remain visible, reconcilable, and cancellable.

@@ -533,10 +533,17 @@ Delivered locally (2026-08-10 through 2026-08-12, migrations 0035–0045):
 - full RLS, work-scope, authority, audit, concurrency, lifecycle, and database
   backstop tests for the new records.
 
+Added 2026-08-14 (migration 0074): an organisation-wide invoice register
+(`GET /api/tax-invoices`, keyset-paged over an invoice-date window and bounded
+by work scope), the direct-invoice editor it carries, and one invoice detail
+surface shared by the register and the Work's Bills tab — which is what put
+PDF generation, IRP transport and credit notes within reach of a direct
+invoice.
+
 Remaining: live Whitebooks sandbox/production certification, provider-specific
-metrics and alerts, an organisation-wide workspace for direct invoices, the
-staging Gotenberg proof, and the focused production security review. Provider
-actions remain operator-triggered and auditable, never unattended filing.
+metrics and alerts, the staging Gotenberg proof, and the focused production
+security review. Provider actions remain operator-triggered and auditable,
+never unattended filing.
 
 ## Milestone 11 — contract-source intake and product experience
 

@@ -1049,6 +1049,49 @@ a default. The current calculator supports forward charge only: submit requires
 the operator to confirm forward charge, refuses reverse charge, and preserves a
 missing historical value as unknown.
 
+### The tax-invoice register, and where a direct invoice lives
+
+A tax invoice has two parents and only ever had one home. An MB-backed
+invoice bills a finalized Measurement Book of a Work and is read on that
+Work; a DIRECT invoice descends from no LOA, names no Work and no
+Measurement Book, and states its own taxable value — so there was no Work
+to read it on, and no screen listed one.
+
+- **Two homes, one document.** An organisation-wide register lists every
+  tax invoice, work-backed and direct together, newest first, with its
+  number, buyer, date, taxable value, GST, local status, IRP state, and
+  its source: a link to its Work, or the word Direct. Opening a row opens
+  the same detail surface the Work's Bills tab opens, so the frozen facts,
+  the draft editor, the PDF, the IRP transport, the Section 34 credit note
+  and the cancellation are the same controls wherever the invoice was
+  reached from.
+- **Drafting follows the parent.** A Work's invoice is still drafted on
+  the Work, because it bills that Work's finalized Measurement Book and
+  the picker for that is the Work's own. A direct invoice is drafted on
+  the register, because there is no Work for it to be drafted on. Both
+  forms collect the same document facts; the only difference is that one
+  names a Measurement Book and the other states the value that Book would
+  have measured. An itemised direct invoice states no value at all — its
+  lines already say what the supply is worth, and the server sums them.
+- **Reach.** The register is bounded by Work scope exactly as the Work
+  page is: a member without organisation-wide work scope sees only the
+  invoices of the Works they are assigned to. A DIRECT invoice belongs to
+  no Work, so no assignment can reach it, and such a member sees none of
+  them and may not raise one — the same posture, for the same reason, as a
+  standalone Delivery Challan. The scope binds the pagination cursor as
+  well as the rows: a cursor naming an invoice outside the caller's reach
+  is refused exactly as a nonexistent one is, so paging cannot be used to
+  learn that such an invoice exists or when it was raised.
+- **Window.** The register's one filter is an inclusive `invoiceDate`
+  range, read a page at a time. Cancelled and superseded invoices stay
+  listed with their status: a numbered document that was cancelled is
+  precisely the fact a register must keep reporting.
+- **Two status languages, never merged.** The local lifecycle (draft,
+  submitted, cancelled, superseded) and the statutory one (registered at
+  the IRP, manual and unverified, reporting window due or overdue) are
+  separate columns. A locally issued invoice is never shown as
+  IRP-registered without provider evidence.
+
 ### Standing choices on a new Issue Challan
 
 Material leaves to the same storekeeper, at the same location, movement after
