@@ -156,6 +156,7 @@ export const DASHBOARD = {
       workId: '33333333-3333-4333-8333-333333333333',
       workCode: 'PL270-CRB',
       dueInDays: 38,
+      settlement: null,
     },
     {
       kind: 'loa_review_pending',
@@ -164,6 +165,25 @@ export const DASHBOARD = {
       workId: null,
       workCode: null,
       dueInDays: null,
+      settlement: null,
+    },
+    // A bill part settled with the railway, carried here so the
+    // accessibility and responsive gates scan the settlement figures
+    // rather than only the alerts that predate the payment register.
+    {
+      kind: 'bill_part_settled',
+      severity: 'warning',
+      message:
+        "Bill 2 for PL270-CRB is submitted and part settled against the railway's bill.",
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      dueInDays: null,
+      settlement: {
+        reference: '100000.00',
+        received: '95000.00',
+        deducted: '2000.00',
+        outstanding: '3000.00',
+      },
     },
   ],
   works: [

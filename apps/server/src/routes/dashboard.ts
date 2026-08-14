@@ -185,8 +185,9 @@ export const DASHBOARD_PBG_SQL = `
 /**
  * The signed-in landing view: everything across the organisation that
  * needs attention (expiring instruments, review queues, open drafts,
- * unpaid bills) plus per-work delivery progress. All sums are exact SQL
- * numeric arithmetic; RLS scopes every query to the bound tenant.
+ * bills not yet paid and the settlement position of each) plus per-work
+ * delivery progress. All sums are exact SQL numeric arithmetic; RLS
+ * scopes every query to the bound tenant.
  */
 export function registerDashboardRoutes(
   app: AppInstance,
@@ -299,18 +300,66 @@ export function registerDashboardRoutes(
           user.id,
         ])) as unknown as PbgRequirementRow[];
 
+        // Bills not yet moved to `paid`, each with the position its
+        // settlement register puts it in.
+        //
+        // Read from `bill_settlement_positions` (migration 0067) rather
+        // than summed here: that view IS the definition of the three
+        // figures, including which reference they are measured against,
+        // and a second derivation of money that had to agree with it
+        // would eventually not. This replaces the statement that stood
+        // here rather than joining onto one — the dashboard still issues
+        // exactly the reads it did, and pack P16's rule against putting
+        // new work on a loader something else already runs is why no
+        // part of this was folded into the progress aggregate.
         const unpaidBills = await tx<
-          { work_id: string; work_code: string; bill_number: number; status: string }[]
+          {
+            work_id: string;
+            work_code: string;
+            bill_number: number;
+            status: string;
+            railway_bill_amount: string | null;
+            received_total: string;
+            deduction_total: string;
+            outstanding_amount: string | null;
+            // The two comparisons that decide which sentence is printed,
+            // made in SQL against the exact numerics rather than on the
+            // decimal text after it reaches this process. Both are null
+            // exactly when there is no railway figure, which the first
+            // branch below has already answered by then.
+            nothing_outstanding: boolean | null;
+            something_settled: boolean;
+          }[]
         >`
-          select b.work_id, w.work_code, b.bill_number, b.status
-          from bills b
-          join works w on w.id = b.work_id and w.deleted_at is null
-          where b.status in ('prepared', 'submitted')
+          select
+            p.work_id,
+            w.work_code,
+            p.bill_number,
+            p.status,
+            p.railway_bill_amount::text as railway_bill_amount,
+            p.received_total::text as received_total,
+            p.deduction_total::text as deduction_total,
+            p.outstanding_amount::text as outstanding_amount,
+            (p.outstanding_amount = 0) as nothing_outstanding,
+            -- Asked of the MONEY rather than of the receipt count: a
+            -- receipt of zero carrying no deductions is a legitimate row
+            -- (migration 0067 allows it) and it settles nothing, so
+            -- counting rows would report a bill as part settled on the
+            -- strength of one that moved nothing.
+            (p.received_total > 0 or p.deduction_total > 0) as something_settled
+          from bill_settlement_positions p
+          join works w on w.id = p.work_id and w.deleted_at is null
+          where p.status in ('prepared', 'submitted')
             and (${full} or exists (
               select 1 from work_assignments wa
               where wa.work_id = w.id and wa.user_id = ${user.id}
             ))
-          order by b.created_at asc
+          -- The predecessor ordered by the bill's created_at, which the
+          -- position view does not carry. Work code then bill number is
+          -- the order the operator's own register is in, and it is
+          -- stable where a timestamp on two bills prepared in the same
+          -- second is not.
+          order by w.work_code asc, p.bill_number asc
         `;
 
         const alerts: DashboardAlert[] = [];
@@ -327,6 +376,7 @@ export function registerDashboardRoutes(
             workId: instrument.work_id,
             workCode: instrument.work_code,
             dueInDays,
+            settlement: null,
           });
         }
         for (const completion of completions) {
@@ -341,6 +391,7 @@ export function registerDashboardRoutes(
             workId: completion.work_id,
             workCode: completion.work_code,
             dueInDays,
+            settlement: null,
           });
         }
         const loaAwaitingReview = Number(counts?.loa_review ?? '0');
@@ -355,6 +406,7 @@ export function registerDashboardRoutes(
             workId: null,
             workCode: null,
             dueInDays: null,
+            settlement: null,
           });
         }
         // The reporting-window signals. Overdue is danger — the window
@@ -374,6 +426,7 @@ export function registerDashboardRoutes(
             workId: null,
             workCode: null,
             dueInDays: null,
+            settlement: null,
           });
         }
         if (irpReportingDue > 0) {
@@ -387,6 +440,7 @@ export function registerDashboardRoutes(
             workId: null,
             workCode: null,
             dueInDays: null,
+            settlement: null,
           });
         }
         const openDrafts = Number(counts?.open_drafts ?? '0');
@@ -401,17 +455,69 @@ export function registerDashboardRoutes(
             workId: null,
             workCode: null,
             dueInDays: null,
+            settlement: null,
           });
         }
+        // A bill that is not `paid` is in one of four positions, and until
+        // the settlement register existed the dashboard reported all four
+        // with one sentence: "submitted and awaiting payment". That read
+        // the same for a bill nobody has paid a rupee of, a bill 95%
+        // settled with only a retention argument left, and a bill whose
+        // measurement is not closed — where, by §5.7's rule, the
+        // outstanding figure is not zero but UNKNOWN. The register can
+        // tell them apart, so the landing screen does.
         for (const bill of unpaidBills) {
-          alerts.push({
-            kind: 'bill_unpaid',
-            severity: 'warning',
-            message: `Bill ${String(bill.bill_number)} for ${bill.work_code} is ${bill.status === 'prepared' ? 'prepared but not submitted' : 'submitted and awaiting payment'}.`,
+          const settlement = {
+            reference: bill.railway_bill_amount,
+            received: bill.received_total,
+            deducted: bill.deduction_total,
+            outstanding: bill.outstanding_amount,
+          };
+          const subject = `Bill ${String(bill.bill_number)} for ${bill.work_code}`;
+          const stage =
+            bill.status === 'prepared' ? 'prepared but not submitted' : 'submitted';
+          const common = {
             workId: bill.work_id,
             workCode: bill.work_code,
             dueInDays: null,
-          });
+            settlement,
+          };
+          if (bill.outstanding_amount === null) {
+            // No railway figure yet, so the position has no arithmetic at
+            // all. Not a debt and not a settled matter — a document that
+            // has not arrived, which is a different thing to do.
+            alerts.push({
+              kind: 'bill_awaiting_closure',
+              severity: 'notice',
+              message: `${subject} is ${stage}. Its measurement is not closed, so nothing is outstanding against it yet — record the railway's On-Account Bill first.`,
+              ...common,
+            });
+          } else if (bill.nothing_outstanding === true) {
+            alerts.push({
+              kind: 'bill_fully_settled',
+              severity: 'notice',
+              message: `${subject} is settled in full — receipts and deductions reach the railway's figure — but is still ${stage}. ${
+                bill.status === 'prepared'
+                  ? 'Submit it, then mark it paid.'
+                  : 'Mark it paid.'
+              }`,
+              ...common,
+            });
+          } else if (bill.something_settled) {
+            alerts.push({
+              kind: 'bill_part_settled',
+              severity: 'warning',
+              message: `${subject} is ${stage} and part settled against the railway's bill.`,
+              ...common,
+            });
+          } else {
+            alerts.push({
+              kind: 'bill_unpaid',
+              severity: 'warning',
+              message: `${subject} is ${stage}. Nothing has been received or deducted against the railway's bill.`,
+              ...common,
+            });
+          }
         }
         // PBG requirement panels: (a) required but no active instrument,
         // with days to/past the normal due date; (b) active instruments
@@ -431,6 +537,7 @@ export function registerDashboardRoutes(
                 workId: requirement.work_id,
                 workCode: requirement.work_code,
                 dueInDays: daysToExtended,
+                settlement: null,
               });
             } else {
               const overdue = daysToNormal < 0;
@@ -443,6 +550,7 @@ export function registerDashboardRoutes(
                 workId: requirement.work_id,
                 workCode: requirement.work_code,
                 dueInDays: daysToNormal,
+                settlement: null,
               });
             }
           } else if (requirement.under_required) {
@@ -453,6 +561,7 @@ export function registerDashboardRoutes(
               workId: requirement.work_id,
               workCode: requirement.work_code,
               dueInDays: null,
+              settlement: null,
             });
           }
         }

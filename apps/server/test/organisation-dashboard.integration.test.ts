@@ -347,7 +347,23 @@ describe('dashboard', () => {
     expect(kinds).toContain('instrument_expired');
     expect(kinds).toContain('instrument_expiring');
     expect(kinds).toContain('loa_review_pending');
-    expect(kinds).toContain('bill_unpaid');
+    // This bill was prepared without a Measurement Book, so no railway
+    // figure exists to be outstanding against and the position reports
+    // none. It used to be announced as "prepared but not submitted" with
+    // nothing said about the money, which read exactly like a bill the
+    // railway had certified and not paid.
+    expect(kinds).toContain('bill_awaiting_closure');
+    expect(kinds).not.toContain('bill_unpaid');
+    const awaiting = dashboard.alerts.find(
+      (alert) => alert.kind === 'bill_awaiting_closure',
+    );
+    expect(awaiting?.severity).toBe('notice');
+    expect(awaiting?.settlement).toEqual({
+      reference: null,
+      received: '0.00',
+      deducted: '0.00',
+      outstanding: null,
+    });
 
     const expired = dashboard.alerts.find(
       (alert) => alert.kind === 'instrument_expired',
@@ -420,5 +436,194 @@ describe('dashboard', () => {
     } finally {
       await admin`delete from works where id = ${exclusiveWorkId}`;
     }
+  });
+
+  /**
+   * Three bills on one Work, identical but for their settlement register:
+   * one the railway has certified and paid nothing of, one 97% settled
+   * with an argument left over, and one settled to the rupee and waiting
+   * only for somebody to move its status.
+   *
+   * Before the settlement register was read here all three raised the
+   * same alert with the same sentence — "submitted and awaiting payment" —
+   * which is the conflation this test exists to refuse. Run it against
+   * the pre-fix tree and the distinct-kind and distinct-message
+   * assertions both fail with three identical `bill_unpaid` rows.
+   *
+   * Seeded through `admin` rather than through the API: the payment
+   * routes are proved by `bill-payments.integration.test.ts`, and what is
+   * under test here is what the dashboard SAYS about a register, not how
+   * the register is written. The residue is left to `afterAll`'s
+   * `removeOrganisationResidue`, which knows the dependency order.
+   */
+  it('separates untouched, part-settled and fully settled bills', async () => {
+    const payWorkId = randomUUID();
+    const railwayAmount = '100000.00';
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${payWorkId}, ${organisationId}, 'DASH-PAY', 'L-79/2026', '2026-02-01',
+        'Three bills, three settlement positions', '400000.00', '300000.00',
+        'per_schedule', ${ownerUserId}
+      )
+    `;
+
+    /** A finalized Measurement Book, the railway's On-Account Bill that
+     * closes it, and the bill prepared from it. */
+    async function seedSettledBill(number: number): Promise<string> {
+      const bookId = randomUUID();
+      const billId = randomUUID();
+      await admin`
+        insert into measurement_books (
+          id, organisation_id, work_id, status, mb_date, created_by_user_id, kind
+        )
+        values (${bookId}, ${organisationId}, ${payWorkId}, 'draft', '2026-05-09',
+                ${ownerUserId}, 'on_account')
+      `;
+      await admin`
+        update measurement_books
+        set status = 'finalized', mb_number = ${`DASH-PAY-MB-0${String(number)}`},
+            sequence_number = ${number}, total_amount = ${railwayAmount},
+            remark_template_version = 'mb-remark-v1', finalized_at = now(),
+            finalized_by_user_id = ${ownerUserId}
+        where id = ${bookId}
+      `;
+      await admin`
+        insert into bills (
+          id, organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+          prepared_by_user_id, mb_id, status, submitted_at
+        )
+        values (
+          ${billId}, ${organisationId}, ${payWorkId}, ${number},
+          ${jsonb(admin, [])}, ${railwayAmount}, ${ownerUserId}, ${bookId},
+          'submitted', now()
+        )
+      `;
+      const [received] = await admin<{ id: string }[]>`
+        insert into received_railway_bills (
+          organisation_id, work_id, measurement_book_id, object_key,
+          original_filename, sha256, media_type, size_bytes, bill_number,
+          bill_date, bill_amount, rate_inclusive_of_gst, measurement_number,
+          measurement_sequence, letter_number, extraction_payload,
+          uploaded_by_user_id, signature_status, signature_verdict,
+          signature_verified_at
+        )
+        values (
+          ${organisationId}, ${payWorkId}, ${bookId},
+          ${`${organisationId}/railwaybill/${bookId}.pdf`}, 'bill.pdf',
+          ${'d'.repeat(64)}, 'application/pdf', 4096,
+          ${`DASH-PAY/B${String(number)}`}, '2026-05-11', ${railwayAmount}, true,
+          ${`DASH-PAY/OAM/FL2/0${String(number)}`}, ${number}, 'L-79/2026',
+          ${jsonb(admin, { billNumber: 'fixture' })}, ${ownerUserId},
+          'signed_and_intact',
+          ${jsonb(admin, { signatures: [{ index: 1 }, { index: 2 }, { index: 3 }] })},
+          now()
+        )
+        returning id
+      `;
+      await admin`
+        update measurement_books
+        set closed_at = now(), closed_by_user_id = ${ownerUserId},
+            closed_by_received_bill_id = ${received?.id ?? ''}
+        where id = ${bookId}
+      `;
+      return billId;
+    }
+
+    /** One credit and its deductions. Both settle the bill — that is the
+     * rule the register exists to state — so the pair below reaches the
+     * railway's figure exactly on the third bill. */
+    async function recordPayment(
+      billId: string,
+      amount: string,
+      deductions: readonly { readonly category: string; readonly amount: string }[],
+    ): Promise<void> {
+      const [payment] = await admin<{ id: string }[]>`
+        insert into bill_payments (
+          organisation_id, bill_id, received_on, received_amount, reference,
+          recorded_by_user_id
+        )
+        values (
+          ${organisationId}, ${billId}, '2026-06-01', ${amount},
+          ${`UTR-${billId.slice(0, 8)}`}, ${ownerUserId}
+        )
+        returning id
+      `;
+      for (const deduction of deductions) {
+        await admin`
+          insert into bill_payment_deductions (
+            organisation_id, bill_payment_id, category, amount
+          )
+          values (${organisationId}, ${payment?.id ?? ''}, ${deduction.category},
+                  ${deduction.amount})
+        `;
+      }
+    }
+
+    await seedSettledBill(1);
+    const part = await seedSettledBill(2);
+    const settled = await seedSettledBill(3);
+    // 95,000 credited with 2,000 of GST TDS kept: 97,000 of 100,000
+    // accounted for, 3,000 genuinely outstanding.
+    await recordPayment(part, '95000.00', [{ category: 'GST_TDS', amount: '2000.00' }]);
+    // The same credit, with the rest of the railway's figure accounted
+    // for by deduction. Nothing is outstanding; the status has simply not
+    // been moved, which §5.7 keeps as a manual act.
+    await recordPayment(settled, '95000.00', [
+      { category: 'GST_TDS', amount: '2000.00' },
+      { category: 'INCOME_TAX_TDS', amount: '1000.00' },
+      { category: 'SECURITY_DEPOSIT', amount: '2000.00' },
+    ]);
+
+    const response = await authed(viewer, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const dashboard = response.json<DashboardResponse>();
+    const billAlerts = dashboard.alerts.filter(
+      (alert) => alert.workCode === 'DASH-PAY',
+    );
+    expect(billAlerts.map((alert) => alert.kind)).toEqual([
+      'bill_unpaid',
+      'bill_part_settled',
+      'bill_fully_settled',
+    ]);
+
+    // THE regression assertion. A bill 97% settled must not reach the
+    // reader as the same statement as one nobody has paid a rupee of.
+    const [untouchedAlert, partAlert, settledAlert] = billAlerts;
+    expect(partAlert?.message).not.toBe(untouchedAlert?.message);
+    expect(partAlert?.settlement).not.toEqual(untouchedAlert?.settlement);
+    expect(new Set(billAlerts.map((alert) => alert.message)).size).toBe(3);
+
+    expect(untouchedAlert?.severity).toBe('warning');
+    expect(untouchedAlert?.settlement).toEqual({
+      reference: railwayAmount,
+      received: '0.00',
+      deducted: '0.00',
+      outstanding: '100000.00',
+    });
+    expect(partAlert?.severity).toBe('warning');
+    expect(partAlert?.settlement).toEqual({
+      reference: railwayAmount,
+      received: '95000.00',
+      deducted: '2000.00',
+      outstanding: '3000.00',
+    });
+    // Nothing to chase, so nothing that reads as due: the only thing left
+    // is the status, and the alert says so.
+    expect(settledAlert?.severity).toBe('notice');
+    expect(settledAlert?.settlement).toEqual({
+      reference: railwayAmount,
+      received: '95000.00',
+      deducted: '5000.00',
+      outstanding: '0.00',
+    });
+    expect(settledAlert?.message).toContain('Mark it paid.');
   });
 });

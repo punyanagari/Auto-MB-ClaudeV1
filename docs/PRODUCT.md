@@ -640,6 +640,18 @@ closed**: until then there is no agreed figure to be outstanding against, and
 the position reports no outstanding amount at all rather than reporting the
 prepared amount as a debt nobody has acknowledged.
 
+**The landing screen says which position a bill is in.** A bill that has not
+reached `paid` raises one of four signals on the dashboard, because a single
+sentence for all four was the register's own conflation restated on the one
+screen every session opens with. Nothing received or deducted; part settled,
+against a railway figure that is partly covered; settled in full, waiting
+only for the status to be moved by hand; or awaiting closure, where the
+measurement is still open and the outstanding amount is unknown rather than
+zero. The first three carry the railway's figure and the three figures of
+the position beside them; the fourth carries none, because there are none to
+carry. All of them are read from the settlement position itself — the
+dashboard states the position, it does not compute a second one.
+
 **`paid` stops being a word.** A prepared bill moves to `paid` only when the
 receipts and their deductions between them reach the railway's figure exactly.
 The status stays a MANUAL act — every state change in this product is an
