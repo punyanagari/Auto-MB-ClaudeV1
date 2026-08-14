@@ -40,7 +40,13 @@ export const DashboardBillSettlementSchema = Type.Object(
 );
 export type DashboardBillSettlement = Static<typeof DashboardBillSettlementSchema>;
 
-/** One actionable item on the dashboard, ordered most urgent first. */
+/** One actionable item on the dashboard.
+ *
+ * The array is ordered most urgent first: `danger`, then `warning`, then
+ * `notice`, and within a severity in the order the server built it —
+ * soonest expiry, then work code and bill number. A client that shows only
+ * the head of the list can rely on that, which is the point of ranking it
+ * on the server rather than leaving each client to sort or not. */
 export const DashboardAlertSchema = Type.Object(
   {
     kind: Type.Union([

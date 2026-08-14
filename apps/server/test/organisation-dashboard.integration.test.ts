@@ -364,6 +364,13 @@ describe('dashboard', () => {
       deducted: '0.00',
       outstanding: null,
     });
+    // And it names a step this bill's operator can actually take. With no
+    // Measurement Book there is nothing for the railway to have
+    // certified, so sending them to record an On-Account Bill would point
+    // at a document that cannot exist yet.
+    expect(awaiting?.message).toContain('not backed by a Measurement Book');
+    expect(awaiting?.message).toContain('Measurement Book and finalize it first');
+    expect(awaiting?.message).not.toContain('On-Account Bill');
 
     const expired = dashboard.alerts.find(
       (alert) => alert.kind === 'instrument_expired',
@@ -533,6 +540,39 @@ describe('dashboard', () => {
       return billId;
     }
 
+    /** A finalized Measurement Book with no railway bill against it, and
+     * the bill prepared from it. The other unclosed case: a measurement
+     * exists, so the next step IS recording the railway's On-Account
+     * Bill. */
+    async function seedOpenBill(number: number): Promise<void> {
+      const bookId = randomUUID();
+      await admin`
+        insert into measurement_books (
+          id, organisation_id, work_id, status, mb_date, created_by_user_id, kind
+        )
+        values (${bookId}, ${organisationId}, ${payWorkId}, 'draft', '2026-05-09',
+                ${ownerUserId}, 'on_account')
+      `;
+      await admin`
+        update measurement_books
+        set status = 'finalized', mb_number = ${`DASH-PAY-MB-0${String(number)}`},
+            sequence_number = ${number}, total_amount = ${railwayAmount},
+            remark_template_version = 'mb-remark-v1', finalized_at = now(),
+            finalized_by_user_id = ${ownerUserId}
+        where id = ${bookId}
+      `;
+      await admin`
+        insert into bills (
+          organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+          prepared_by_user_id, mb_id
+        )
+        values (
+          ${organisationId}, ${payWorkId}, ${number}, ${jsonb(admin, [])},
+          ${railwayAmount}, ${ownerUserId}, ${bookId}
+        )
+      `;
+    }
+
     /** One credit and its deductions. Both settle the bill — that is the
      * rule the register exists to state — so the pair below reaches the
      * railway's figure exactly on the third bill. */
@@ -577,6 +617,8 @@ describe('dashboard', () => {
       { category: 'INCOME_TAX_TDS', amount: '1000.00' },
       { category: 'SECURITY_DEPOSIT', amount: '2000.00' },
     ]);
+    // The fourth: measured, but the railway has not certified it.
+    await seedOpenBill(4);
 
     const response = await authed(viewer, {
       method: 'GET',
@@ -588,18 +630,35 @@ describe('dashboard', () => {
     const billAlerts = dashboard.alerts.filter(
       (alert) => alert.workCode === 'DASH-PAY',
     );
+    // Warnings first and notices after, and inside each severity the
+    // bill-number order the statement built — so bill 1 still precedes
+    // bill 2, and bill 3 still precedes bill 4.
     expect(billAlerts.map((alert) => alert.kind)).toEqual([
       'bill_unpaid',
       'bill_part_settled',
       'bill_fully_settled',
+      'bill_awaiting_closure',
     ]);
 
     // THE regression assertion. A bill 97% settled must not reach the
     // reader as the same statement as one nobody has paid a rupee of.
-    const [untouchedAlert, partAlert, settledAlert] = billAlerts;
+    const [untouchedAlert, partAlert, settledAlert, openAlert] = billAlerts;
     expect(partAlert?.message).not.toBe(untouchedAlert?.message);
     expect(partAlert?.settlement).not.toEqual(untouchedAlert?.settlement);
-    expect(new Set(billAlerts.map((alert) => alert.message)).size).toBe(3);
+    expect(new Set(billAlerts.map((alert) => alert.message)).size).toBe(4);
+
+    // The measured-but-uncertified bill names the step its operator can
+    // take, which is not the step the Measurement-Book-less bill in the
+    // first test is given.
+    expect(openAlert?.severity).toBe('notice');
+    expect(openAlert?.message).toContain('measurement is not closed');
+    expect(openAlert?.message).toContain("record the railway's On-Account Bill first");
+    expect(openAlert?.settlement).toEqual({
+      reference: null,
+      received: '0.00',
+      deducted: '0.00',
+      outstanding: null,
+    });
 
     expect(untouchedAlert?.severity).toBe('warning');
     expect(untouchedAlert?.settlement).toEqual({
@@ -625,5 +684,93 @@ describe('dashboard', () => {
       outstanding: '0.00',
     });
     expect(settledAlert?.message).toContain('Mark it paid.');
+  });
+
+  /**
+   * The list is ordered by urgency, not by which loop built it.
+   *
+   * A client shows the head of `alerts` and drops the tail — the web
+   * dashboard shows seven — so the order decides what an operator never
+   * sees. The list used to be section-ordered, with the PBG signals
+   * pushed last of all, so enough low-severity rows ahead of them pushed
+   * an overdue bank guarantee off the screen. Eight notices are enough.
+   *
+   * Run against the pre-fix tree and the first assertion fails: the
+   * `pbg_missing` danger lands past the cap.
+   */
+  it('ranks danger ahead of notice, whichever loop built it', async () => {
+    const rankWorkId = randomUUID();
+    // A Work whose letter demands a PBG that was never submitted, with the
+    // normal window closed and the extension window still open. Dates are
+    // relative to `current_date` so the fixture cannot age into a
+    // different branch.
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id,
+        pbg_required_amount, pbg_submission_days, pbg_extension_days,
+        pbg_requirement_source
+      )
+      values (
+        ${rankWorkId}, ${organisationId}, 'DASH-RANK', 'L-80/2026',
+        current_date - 100, 'A danger built last, behind eight notices',
+        '900000.00', '800000.00', 'per_schedule', ${ownerUserId},
+        '80000.00', 30, 200,
+        ${jsonb(admin, { origin: 'fixture', raw: 'PBG 10% within 30 days' })}
+      )
+    `;
+    // Eight bills with no Measurement Book: eight `bill_awaiting_closure`
+    // notices, all built BEFORE the PBG loop runs.
+    for (let number = 1; number <= 8; number++) {
+      await admin`
+        insert into bills (
+          organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+          prepared_by_user_id
+        )
+        values (
+          ${organisationId}, ${rankWorkId}, ${number}, ${jsonb(admin, [])},
+          '1000.00', ${ownerUserId}
+        )
+      `;
+    }
+
+    const response = await authed(viewer, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const dashboard = response.json<DashboardResponse>();
+
+    // The eight notices exist, so the crowding this guards against is
+    // real rather than hypothetical.
+    expect(
+      dashboard.alerts.filter(
+        (alert) =>
+          alert.kind === 'bill_awaiting_closure' && alert.workCode === 'DASH-RANK',
+      ),
+    ).toHaveLength(8);
+
+    // THE assertion: the danger survives the client's cap.
+    const visible = dashboard.alerts.slice(0, 7);
+    expect(visible.map((alert) => alert.kind)).toContain('pbg_missing');
+    const pbg = dashboard.alerts.find((alert) => alert.kind === 'pbg_missing');
+    expect(pbg?.severity).toBe('danger');
+    expect(pbg?.workCode).toBe('DASH-RANK');
+
+    // And the whole list is ranked, not just its head.
+    const rank = { danger: 0, warning: 1, notice: 2 } as const;
+    const ranks = dashboard.alerts.map((alert) => rank[alert.severity]);
+    expect(ranks).toEqual([...ranks].sort((left, right) => left - right));
+
+    // Stable within a severity: the eight notices keep the bill-number
+    // order the statement built them in.
+    const numbers = dashboard.alerts
+      .filter(
+        (alert) =>
+          alert.kind === 'bill_awaiting_closure' && alert.workCode === 'DASH-RANK',
+      )
+      .map((alert) => Number(/^Bill (\d+) /.exec(alert.message)?.[1] ?? '0'));
+    expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 });

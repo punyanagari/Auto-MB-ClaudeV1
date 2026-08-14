@@ -28,6 +28,14 @@ const EXPIRY_WARNING_DAYS = 60;
  * and post before the date lapses. */
 const COMPLETION_WARNING_DAYS = 30;
 
+/** Urgency order for the alert list. A client shows the head of it and
+ * drops the tail, so this decides what an operator never sees. */
+const SEVERITY_RANK: Record<DashboardAlert['severity'], number> = {
+  danger: 0,
+  warning: 1,
+  notice: 2,
+};
+
 interface ProgressRow extends Record<string, unknown> {
   work_id: string;
   work_code: string;
@@ -322,6 +330,12 @@ export function registerDashboardRoutes(
             received_total: string;
             deduction_total: string;
             outstanding_amount: string | null;
+            // Which of the two unclosed cases this is. A bill with a
+            // Measurement Book is waiting for the railway's On-Account
+            // Bill against that book; a bill with none is waiting for a
+            // measurement to exist at all, and telling its operator to
+            // record a railway bill names a step they cannot take.
+            measurement_book_id: string | null;
             // The two comparisons that decide which sentence is printed,
             // made in SQL against the exact numerics rather than on the
             // decimal text after it reaches this process. Both are null
@@ -340,6 +354,7 @@ export function registerDashboardRoutes(
             p.received_total::text as received_total,
             p.deduction_total::text as deduction_total,
             p.outstanding_amount::text as outstanding_amount,
+            p.measurement_book_id,
             (p.outstanding_amount = 0) as nothing_outstanding,
             -- Asked of the MONEY rather than of the receipt count: a
             -- receipt of zero carrying no deductions is a legitimate row
@@ -486,10 +501,23 @@ export function registerDashboardRoutes(
             // No railway figure yet, so the position has no arithmetic at
             // all. Not a debt and not a settled matter — a document that
             // has not arrived, which is a different thing to do.
+            //
+            // Two different things to do, in fact, and the alert names
+            // whichever one this bill is actually waiting on. A bill with
+            // a Measurement Book needs the railway's On-Account Bill
+            // recorded against that book. A bill with NO book — only
+            // reachable in data predating migration 0024, since ADR-0006
+            // left exactly one statement inserting a bill and it always
+            // sets `mb_id` — has nothing for the railway to have
+            // certified, so pointing its reader at an On-Account Bill
+            // would name a step that cannot be taken.
             alerts.push({
               kind: 'bill_awaiting_closure',
               severity: 'notice',
-              message: `${subject} is ${stage}. Its measurement is not closed, so nothing is outstanding against it yet — record the railway's On-Account Bill first.`,
+              message:
+                bill.measurement_book_id === null
+                  ? `${subject} is ${stage}. It is not backed by a Measurement Book, so there is nothing for the railway to certify and no amount can be outstanding yet — measure the work into a Measurement Book and finalize it first.`
+                  : `${subject} is ${stage}. Its measurement is not closed, so nothing is outstanding against it yet — record the railway's On-Account Bill first.`,
               ...common,
             });
           } else if (bill.nothing_outstanding === true) {
@@ -565,6 +593,27 @@ export function registerDashboardRoutes(
             });
           }
         }
+
+        // Most urgent first, which is what the contract has always
+        // promised and what the client's seven-row cap assumes.
+        //
+        // Until now the list was merely SECTION-ordered — instruments,
+        // then completions, then the counted signals, then bills, then
+        // PBG — so its urgency ordering was an accident of which loop ran
+        // first. A PBG danger is pushed last of all, and eight notices
+        // ahead of it were enough to push it past the cap and off the
+        // screen entirely. That was already reachable before this change
+        // (`challan_draft_open` is a notice), and this change widened it
+        // by making two of the four bill signals notices, so it is fixed
+        // here rather than left for the next reader to discover.
+        //
+        // One sort, at the route boundary, on severity alone.
+        // `Array.prototype.sort` is stable, so every within-severity
+        // order the loops above established survives it — including the
+        // bill alerts' work-code-then-number order.
+        alerts.sort(
+          (left, right) => SEVERITY_RANK[left.severity] - SEVERITY_RANK[right.severity],
+        );
 
         const sumDecimal = (values: readonly string[]): string => {
           // Paise-exact summation without floating point: shift to

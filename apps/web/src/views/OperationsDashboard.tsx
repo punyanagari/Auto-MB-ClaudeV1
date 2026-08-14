@@ -612,6 +612,11 @@ export function OperationsDashboard({
             </div>
           ) : (
             <ul className="m-0 divide-y divide-border p-0">
+              {/* The first seven of a list the server has already ranked
+                  by severity, so what this drops is always the least
+                  urgent. It used to drop whatever the server happened to
+                  build last, which on a busy organisation could be an
+                  overdue PBG. */}
               {data.alerts.slice(0, 7).map((alert, index) => {
                 const tone = ALERT_TONE[alert.severity];
                 const due = dueLabel(alert.dueInDays);
