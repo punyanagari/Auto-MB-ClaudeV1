@@ -766,3 +766,87 @@ describe('single-entity history API', () => {
     expect(allowed.statusCode, allowed.body).toBe(200);
   });
 });
+
+describe('a cursor from another Work', () => {
+  /*
+   * The cursor is caller input, and proving it merely EXISTS in
+   * audit_events proves it organisation-wide — RLS never narrows that
+   * table to a Work. That shape made the timeline an existence oracle: a
+   * member scoped away from Work B could tell a leaked Work B event id
+   * (200) from a made-up one (400) by offering it as a cursor against a
+   * Work they can read. The cursor row is now proven against the same
+   * predicate as the page it restarts, and the refusal is byte-identical
+   * to the unknown-id refusal.
+   */
+  let workAEventId: string;
+  let workBEventId: string;
+
+  beforeAll(async () => {
+    const eventId = async (workId: string): Promise<string> => {
+      const [row] = await admin<{ id: string }[]>`
+        select id from audit_events
+        where organisation_id = ${organisationId}
+          and entity_type = 'works' and entity_id = ${workId}
+        order by occurred_at desc, id desc
+        limit 1
+      `;
+      if (!row) throw new Error('fixture work.created event missing');
+      return row.id;
+    };
+    workAEventId = await eventId(workAId);
+    workBEventId = await eventId(workBId);
+  });
+
+  it("restarts the per-Work trail from that Work's own event", async () => {
+    const response = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${workAId}/timeline?limit=1&cursor=${workAEventId}`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+  });
+
+  it("refuses another Work's event id exactly like an unknown one", async () => {
+    const foreign = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${workAId}/timeline?limit=1&cursor=${workBEventId}`,
+      organisationId,
+    });
+    expect(foreign.statusCode).toBe(400);
+    expect(foreign.json()).toMatchObject({ code: 'CURSOR_INVALID' });
+
+    const unknown = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${workAId}/timeline?limit=1&cursor=${randomUUID()}`,
+      organisationId,
+    });
+    expect(unknown.statusCode).toBe(400);
+    // Identical refusals apart from the per-request id: a cursor outside
+    // the trail is indistinguishable from one that never existed.
+    const shape = (response: { json: () => unknown }) => {
+      const { code, message } = response.json() as {
+        code: string;
+        message: string;
+      };
+      return { code, message };
+    };
+    expect(shape(foreign)).toEqual(shape(unknown));
+  });
+
+  it('holds the same line on the single-entity history', async () => {
+    const own = await authed(owner, {
+      method: 'GET',
+      url: `/api/audit/entity/works/${workAId}?limit=1&cursor=${workAEventId}`,
+      organisationId,
+    });
+    expect(own.statusCode, own.body).toBe(200);
+
+    const foreign = await authed(owner, {
+      method: 'GET',
+      url: `/api/audit/entity/works/${workAId}?limit=1&cursor=${workBEventId}`,
+      organisationId,
+    });
+    expect(foreign.statusCode).toBe(400);
+    expect(foreign.json()).toMatchObject({ code: 'CURSOR_INVALID' });
+  });
+});

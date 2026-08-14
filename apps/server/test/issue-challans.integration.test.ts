@@ -6,10 +6,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
-import type { IssueChallanDetailResponse } from '@auto-mb/contracts';
+import type {
+  IssueChallanDetailResponse,
+  WorkBalanceResponse,
+} from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import {
   createDatabasePool,
+  jsonb,
   removeOrganisationResidue,
   runMigrations,
 } from '@auto-mb/db';
@@ -1230,5 +1234,184 @@ describe('Issue Challan invariant exit suite', () => {
       expect(manualLine.statusCode, `${quantity}: ${manualLine.body}`).toBe(400);
       expect(manualLine.json()).toMatchObject({ code: 'QUANTITY_INVALID' });
     }
+  });
+});
+
+describe('what a new Issue Challan draft carries forward, decided on the server', () => {
+  // A Work of its own, so the Issue Challans written here are the only
+  // history the balance can read.
+  const carryWorkId = randomUUID();
+  const carryItemId = randomUUID();
+  let sequence = 0;
+
+  /** Writes one Issue Challan of this Work straight to the table.
+   *
+   * Direct inserts rather than the API because the two facts under test —
+   * a sequence number that disagrees with row age, and a cancelled
+   * challan holding the highest sequence — cannot be produced through it.
+   * Issue assigns the sequence in creation order, so the API can only
+   * ever make the two orders agree. */
+  async function writeIssueChallan(row: {
+    status: 'draft' | 'issued' | 'cancelled';
+    issuedToName: string;
+    issuedToRole?: string;
+    location?: string;
+    createdAt: string;
+  }): Promise<void> {
+    const id = randomUUID();
+    const issued = row.status !== 'draft';
+    const nextSequence = issued ? (sequence += 1) : null;
+    const number = issued
+      ? `ICC-${runId.toUpperCase()}/IC/${String(nextSequence)}`
+      : null;
+    await admin`
+      insert into issue_challans (
+        id, organisation_id, work_id, movement_type, status, challan_date,
+        challan_number, sequence_number, prefix, issued_to_name, issued_to_role,
+        location, remarks, issued_snapshot, created_by_user_id, issued_by_user_id,
+        issued_at, cancelled_by_user_id, cancelled_at, cancellation_note, created_at
+      )
+      values (
+        ${id}, ${organisationId}, ${carryWorkId}, 'return', ${row.status},
+        '2025-07-01', ${number}, ${nextSequence}, ${`ICC-${runId.toUpperCase()}`},
+        ${row.issuedToName}, ${row.issuedToRole ?? null}, ${row.location ?? null},
+        null, ${issued ? jsonb(admin, {}) : null},
+        ${ownerUserId}, ${issued ? ownerUserId : null},
+        ${issued ? '2025-07-01T10:00:00.000Z' : null},
+        ${row.status === 'cancelled' ? ownerUserId : null},
+        ${row.status === 'cancelled' ? '2025-07-02T10:00:00.000Z' : null},
+        ${row.status === 'cancelled' ? 'Wrong storekeeper' : null},
+        ${row.createdAt}
+      )
+    `;
+  }
+
+  async function carriedIssue() {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${carryWorkId}/balance`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json<WorkBalanceResponse>().issueCarryForward ?? null;
+  }
+
+  beforeAll(async () => {
+    const scheduleId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, letter_percentage,
+        letter_percentage_direction, created_by_user_id
+      )
+      values (
+        ${carryWorkId}, ${organisationId}, ${`ICC-${runId.toUpperCase()}`},
+        ${`ic-carry-letter-${runId}`}, '2025-06-01', 'IC carry-forward fixture work',
+        1000.00, 900.00, 'per_schedule', null, null, ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${scheduleId}, ${organisationId}, ${carryWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (${carryItemId}, ${organisationId}, ${carryWorkId}, ${scheduleId},
+              'A/1', 'Carry switchboard', 'Nos', 5.000, 100.00)
+    `;
+  });
+
+  it('carries nothing while the Work has no issued Issue Challan, draft or not', async () => {
+    expect(await carriedIssue()).toBeNull();
+
+    await writeIssueChallan({
+      status: 'draft',
+      issuedToName: 'Draft storekeeper',
+      createdAt: '2025-07-01T09:00:00.000Z',
+    });
+    expect(await carriedIssue()).toBeNull();
+  });
+
+  it('takes the highest issued sequence, not the newest row', async () => {
+    await writeIssueChallan({
+      status: 'issued',
+      issuedToName: 'SSE/TRD/Delhi',
+      issuedToRole: 'Section engineer',
+      location: 'Delhi depot',
+      createdAt: '2025-07-01T10:00:00.000Z',
+    });
+    await writeIssueChallan({
+      status: 'issued',
+      issuedToName: 'SSE/Signal/Delhi',
+      issuedToRole: 'Store keeper',
+      location: 'Ghaziabad depot',
+      createdAt: '2025-07-02T10:00:00.000Z',
+    });
+
+    expect(await carriedIssue()).toEqual({
+      issuedToName: 'SSE/Signal/Delhi',
+      issuedToRole: 'Store keeper',
+      location: 'Ghaziabad depot',
+      sourceChallanNumber: `ICC-${runId.toUpperCase()}/IC/2`,
+    });
+
+    // Back-enter sequence 1 so its row looks newer than every other, and
+    // make the draft newer still. Neither moves the answer: sequence is
+    // the Work's real series order, and a draft holds no sequence at all.
+    await admin`
+      update issue_challans
+      set created_at = '2026-01-01T10:00:00.000Z'
+      where work_id = ${carryWorkId} and sequence_number = 1
+    `;
+    await admin`
+      update issue_challans
+      set created_at = '2026-02-01T10:00:00.000Z'
+      where work_id = ${carryWorkId} and status = 'draft'
+    `;
+    expect((await carriedIssue())?.sourceChallanNumber).toBe(
+      `ICC-${runId.toUpperCase()}/IC/2`,
+    );
+  });
+
+  it('never takes a cancelled Issue Challan, even when it holds the highest sequence', async () => {
+    await writeIssueChallan({
+      status: 'cancelled',
+      issuedToName: 'Cancelled storekeeper',
+      createdAt: '2025-07-03T10:00:00.000Z',
+    });
+
+    expect((await carriedIssue())?.issuedToName).toBe('SSE/Signal/Delhi');
+  });
+
+  it('reports the optional boxes the source left empty as null', async () => {
+    await writeIssueChallan({
+      status: 'issued',
+      issuedToName: 'Bare storekeeper',
+      createdAt: '2025-07-04T10:00:00.000Z',
+    });
+
+    expect(await carriedIssue()).toEqual({
+      issuedToName: 'Bare storekeeper',
+      issuedToRole: null,
+      location: null,
+      sourceChallanNumber: `ICC-${runId.toUpperCase()}/IC/4`,
+    });
+  });
+
+  it('never carries the movement type, whatever the last movement was', async () => {
+    // Every challan above was written as a 'return' — the movement that
+    // inverts the stock direction. The carried shape has no field for it,
+    // so no later Issue Challan can open as a return by inheritance.
+    const carried = await carriedIssue();
+    expect(carried).not.toBeNull();
+    expect(Object.keys(carried ?? {}).sort()).toEqual([
+      'issuedToName',
+      'issuedToRole',
+      'location',
+      'sourceChallanNumber',
+    ]);
   });
 });

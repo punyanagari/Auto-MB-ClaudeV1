@@ -311,6 +311,18 @@ export function ChallanEditor({
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
+  /* The Work code only ever seeds a new draft's prefix, but it is not
+   * stable: on reload or deep-link the workspace mounts this editor with
+   * workCode '' and swaps in the real code once its own Work request
+   * resolves. With workCode in the load effect's dependencies that swap
+   * re-ran the whole load, and the second run's setState threw away
+   * everything typed while it was in flight. So the load reads the code
+   * through this ref instead, and the effect below patches a prefix that
+   * is still empty — and only that — when the code arrives late. */
+  const workCodeRef = useRef(workCode);
+  useEffect(() => {
+    workCodeRef.current = workCode;
+  }, [workCode]);
   /* comparableContent sorts and stringifies every entered quantity, so on
    * a 129-item Work it is the most expensive thing a keystroke does — and
    * it ran twice per render, once for each side. Memoised per side: the
@@ -393,12 +405,24 @@ export function ChallanEditor({
               poLines[item.workItemId] = item.purchaseOrderLineId;
             }
           }
+          // The standing choices the server read off this Work's last
+          // ISSUED challan, and only those. It is null on the Work's
+          // first challan, and null again whenever a draft is being
+          // EDITED: a draft is already whatever the operator saved, down
+          // to the boxes they deliberately left empty, and an optional
+          // box they emptied must not silently refill from a document
+          // they are not looking at. The date stays the organisation's
+          // today, and nothing about what moved last time — quantities,
+          // purchase-order lines — is a default for what moves this time.
+          const carried =
+            existing === null ? (loadedBalance.deliveryCarryForward ?? null) : null;
           const loaded: EditorState = {
             challanDate: existing?.challan.challanDate ?? loadedBalance.today,
-            prefix: existing?.challan.prefix ?? workCode,
-            name: existing?.challan.consignee.name ?? '',
-            address: existing?.challan.consignee.address ?? '',
-            phone: existing?.challan.consignee.phone ?? '',
+            prefix: existing?.challan.prefix ?? carried?.prefix ?? workCodeRef.current,
+            name: existing?.challan.consignee.name ?? carried?.consigneeName ?? '',
+            address:
+              existing?.challan.consignee.address ?? carried?.consigneeAddress ?? '',
+            phone: existing?.challan.consignee.phone ?? carried?.consigneePhone ?? '',
             quantities,
             poLines,
           };
@@ -417,7 +441,28 @@ export function ChallanEditor({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId, challanId, workCode]);
+  }, [api, organisationId, workId, challanId]);
+
+  /* The late half of the workCode story above. An empty prefix is a
+   * reliable marker for "seeded from a workspace that did not know the
+   * code yet": the server never stores an empty prefix, and a carried
+   * prefix is never empty either. Each side is patched only while it is
+   * still empty, so a prefix the operator has typed is left alone — and
+   * patching loadedState alongside keeps the untouched form pristine, so
+   * Cancel still leaves without a discard prompt. */
+  useEffect(() => {
+    if (workCode === '') return;
+    setState((current) =>
+      current === null || current.prefix !== ''
+        ? current
+        : { ...current, prefix: workCode },
+    );
+    setLoadedState((loaded) =>
+      loaded === null || loaded.prefix !== ''
+        ? loaded
+        : { ...loaded, prefix: workCode },
+    );
+  }, [workCode]);
 
   const prefix = state?.prefix ?? null;
   // Carries the readable rule into the browser's own bubble. It runs on the
@@ -663,6 +708,14 @@ export function ChallanEditor({
   // always did.
   const offersPoLines = poLineChoices.size > 0;
 
+  // Where the consignee in these boxes came from, when it was not typed
+  // here. A prefilled form that never says so reads as a form the
+  // operator already filled in, and the picker above still says "Manual
+  // entry" — so the document that supplied the values is named. Only a
+  // new draft is ever seeded; an existing draft loaded its own values.
+  const carriedFrom =
+    challanId === null ? (balance.deliveryCarryForward ?? null) : null;
+
   return (
     <Card className="w-full" aria-labelledby="challan-editor-title">
       <h1 id="challan-editor-title" tabIndex={-1}>
@@ -869,6 +922,12 @@ export function ChallanEditor({
             </FieldError>
           )}
         </Field>
+        {carriedFrom !== null && (
+          <Hint>
+            Carried from {carriedFrom.sourceChallanNumber} — edit if this delivery
+            differs.
+          </Hint>
+        )}
 
         <h2>Items</h2>
         <DataTable scroll className="[&_input]:w-28">

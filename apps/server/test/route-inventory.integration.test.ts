@@ -99,7 +99,7 @@ const UNPAGINATED_LISTS = new Map<string, string>([
 
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],
-  ['GET /api/works/:id/payment-matrix', 'one row per payment category, at most six'],
+  ['GET /api/works/:id/payment-matrix', 'at most one row per payment matrix category'],
   ['GET /api/works/:id/completion-readiness', 'blockers, one per unfinished item'],
   ['GET /api/works/:id/consignees', 'the consignees linked to one Work'],
   [

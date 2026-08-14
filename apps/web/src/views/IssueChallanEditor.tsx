@@ -17,6 +17,7 @@ import {
   ActionBar,
   FormError,
   FieldError,
+  Hint,
 } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
@@ -147,12 +148,26 @@ export function IssueChallanEditor({
             });
           }
         }
+        // The standing choices the server read off this Work's last
+        // ISSUED Issue Challan, and only those. It is null on the Work's
+        // first Issue Challan, and null again whenever a draft is being
+        // EDITED: the draft is already whatever the operator saved, down
+        // to the boxes they deliberately left empty. The MOVEMENT is
+        // never among them: it decides what the document does, and one
+        // 'return' must not open every later Issue Challan as a return.
+        // The date stays the organisation's today, the remarks are this
+        // movement's own note, and what moved last time is no default
+        // for what moves this time.
+        const carried =
+          existing === null ? (loadedBalance.issueCarryForward ?? null) : null;
         const loaded: EditorState = {
           challanDate: existing?.issueChallan.challanDate ?? loadedBalance.today,
           movementType: existing?.issueChallan.movementType ?? 'issue',
-          issuedToName: existing?.issueChallan.issuedToName ?? '',
-          issuedToRole: existing?.issueChallan.issuedToRole ?? '',
-          location: existing?.issueChallan.location ?? '',
+          issuedToName:
+            existing?.issueChallan.issuedToName ?? carried?.issuedToName ?? '',
+          issuedToRole:
+            existing?.issueChallan.issuedToRole ?? carried?.issuedToRole ?? '',
+          location: existing?.issueChallan.location ?? carried?.location ?? '',
           remarks: existing?.issueChallan.remarks ?? '',
           quantities,
           manualLines,
@@ -399,6 +414,12 @@ export function IssueChallanEditor({
     );
   }
 
+  // Where the recipient in these boxes came from, when it was not typed
+  // here. A prefilled form that never says so reads as one the operator
+  // already filled in, so the document that supplied the values is named.
+  // Only a new draft is ever seeded; an existing draft loaded its own.
+  const carriedFrom = challanId === null ? (balance.issueCarryForward ?? null) : null;
+
   return (
     <Card className="w-full" aria-labelledby="issue-challan-editor-title">
       <h1 id="issue-challan-editor-title" tabIndex={-1}>
@@ -517,6 +538,12 @@ export function IssueChallanEditor({
             />
           </Field>
         </FieldRow>
+        {carriedFrom !== null && (
+          <Hint>
+            Carried from {carriedFrom.sourceChallanNumber} — edit if this movement
+            differs.
+          </Hint>
+        )}
 
         <h2>Awarded items</h2>
         <DataTable scroll className="[&_input]:w-28">
