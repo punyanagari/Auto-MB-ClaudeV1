@@ -366,7 +366,11 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('delivery_challan_items_code_shape');
     expect(sql).toMatch(/\(is_service AND hsn_sac_code ~ '\^\[0-9\]\{6\}\$'\)/);
     expect(sql).toMatch(/\(NOT is_service AND hsn_sac_code ~ '\^\[0-9\]\{6,8\}\$'\)/);
-    expect(sql).toContain('(hsn_sac_code IS NULL AND is_service IS NULL)');
+    // Both-or-neither is its own equality, not folded into the OR chain: a
+    // three-valued disjunction passes a CHECK on a half-classified line
+    // because it evaluates to NULL, so the pairing is stated as an equality
+    // that is FALSE (never NULL) when exactly one column is null.
+    expect(sql).toContain('(hsn_sac_code IS NULL) = (is_service IS NULL)');
     // The header facts: NIC's movement vocabulary and the transport
     // shapes 0035 proved on eway_bills.
     expect(sql).toMatch(
@@ -450,5 +454,31 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('a draft e-way bill has no NIC facts to print');
     expect(sql).toContain('e-way bill render versions are contiguous from one');
     expect(sql).toContain('eway_bills_render_pointer_shape');
+    // The parent pointer is scope-checked directly and may only advance to
+    // the latest retained render (0044's render-pointer machinery, ported).
+    expect(sql).toContain('eway_bills_rendered_key_scope');
+    expect(sql).toContain(
+      "rendered_object_key LIKE organisation_id::text || '/ewb/%'",
+    );
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_eway_bill_render_pointer()',
+    );
+    expect(sql).toContain('CREATE TRIGGER eway_bills_render_pointer_guard');
+    expect(sql).toContain(
+      'e-way bill render pointer must match its latest retained version',
+    );
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.advance_eway_bill_render_pointer()',
+    );
+    expect(sql).toContain('CREATE TRIGGER eway_bill_renders_advance_pointer');
+    // The render-INSERT guard is INVOKER-rights, deliberately: RLS hides a
+    // foreign-tenant parent so a probe collapses to one generic message.
+    const renderInsertGuard = sql.slice(
+      sql.indexOf(
+        'CREATE FUNCTION app_private.guard_eway_bill_render_insert()',
+      ),
+      sql.indexOf('CREATE TRIGGER eway_bill_renders_insert_guard'),
+    );
+    expect(renderInsertGuard).not.toContain('SECURITY DEFINER');
   });
 });

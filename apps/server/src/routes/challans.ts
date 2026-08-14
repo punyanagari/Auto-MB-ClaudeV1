@@ -2541,6 +2541,23 @@ export function registerChallanRoutes(
         // cancelled — the MB must be cancelled first (the 0024 database
         // guard backstops this against every writer).
         await assertSourceNotBilled(tx, 'delivery_challan', id);
+        // An e-way bill moves THIS challan; cancelling it under a live
+        // movement document would leave the e-way bill moving a cancelled
+        // consignment. The e-way bill goes first — the same interlock the
+        // invoice cancel path enforces (tax-invoices/cancel.ts). The
+        // invoice path carries no DB backstop for this and neither does the
+        // challan path; both refuse it at the route.
+        const [liveEwb] = await tx<{ id: string; ewb_number: string | null }[]>`
+          select id, ewb_number from eway_bills
+          where delivery_challan_id = ${id} and status <> 'cancelled'
+        `;
+        if (liveEwb) {
+          throw httpError(
+            409,
+            'EWAY_BILL_LIVE',
+            `E-way bill ${liveEwb.ewb_number ?? liveEwb.id} still moves this challan; cancel it first.`,
+          );
+        }
         await tx`
           update delivery_challans
           set status = 'cancelled', cancelled_by_user_id = ${user.id},

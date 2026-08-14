@@ -238,10 +238,9 @@ async function assertWorkAccess(
 /** A standalone challan belongs to no Work, so work scope has nothing to
  * bind through: it is reachable by every member with organisation-wide
  * reach, and by nobody else (the rule 0056's module established, restated
- * here through the same helper the challan routes use). The existence
- * check comes first so a scoped user asking about a challan that is not
- * there gets the same 404 as one asking about a challan they may not
- * see. */
+ * here through the same helper the challan routes use). Access is checked
+ * before the kind, so a challan a scoped user may not see gets the same
+ * 404 whether it is a work challan or a guessed id that names nothing. */
 async function assertChallanReadable(
   tx: TransactionSql,
   userId: string,
@@ -253,6 +252,13 @@ async function assertChallanReadable(
   if (!challan) {
     throw httpError(404, 'CHALLAN_NOT_FOUND', 'No such delivery challan.');
   }
+  // Access BEFORE kind, matching the sibling POST at this file. A scoped
+  // membership does not reach standalone challans at all, so it 404s here;
+  // if the kind check ran first, a scoped user asking about a WORK challan
+  // in their org would get 409 CHALLAN_NOT_STANDALONE while a random UUID
+  // got 404 — a difference that confirms the work challan exists. With the
+  // access check first the unreachable id is always 404, whatever it names.
+  await assertStandaloneChallanAccess(tx, userId);
   if (challan.challan_kind !== 'standalone') {
     throw httpError(
       409,
@@ -260,7 +266,6 @@ async function assertChallanReadable(
       'An e-way bill is raised from a standalone delivery challan. A work challan moves under the Work it belongs to.',
     );
   }
-  await assertStandaloneChallanAccess(tx, userId);
 }
 
 /** Who may see a bill, decided by the source it names.
@@ -1031,6 +1036,24 @@ export function registerEwayBillRoutes(
           }
           gstin = source.supplier.gstin ?? '';
         } else {
+          // Re-read the challan's live status the way the invoice branch
+          // re-reads the invoice's: the source must still be an ISSUED
+          // standalone challan at the moment of generation. The challan
+          // cancel route refuses while a non-cancelled bill references it,
+          // so this is a race/raw-SQL backstop — NIC evidence must never
+          // attach to a cancelled consignment.
+          const [challan] = await tx<{ status: string; challan_kind: string }[]>`
+              select status, challan_kind from delivery_challans
+              where id = ${row.delivery_challan_id} for update
+            `;
+          if (!challan) throw new Error(`e-way bill ${id} lost its challan`);
+          if (challan.challan_kind !== 'standalone' || challan.status !== 'issued') {
+            throw httpError(
+              409,
+              'CHALLAN_STATUS_CONFLICT',
+              `An e-way bill moves an issued standalone challan (current status: ${challan.status}) — a cancelled challan moves nothing.`,
+            );
+          }
           await assertChallanStatutoryFactsComplete(tx, row.delivery_challan_id ?? '');
           if (source.supplier.gstin === null) {
             throw httpError(
