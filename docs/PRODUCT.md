@@ -121,6 +121,37 @@ item-level holes, how many manual rows, and how many parsed rows were omitted.
 7. Cancelling an issued challan requires a note, retains the number forever, reverses its ledger contribution, and never deletes history.
 8. A signed-copy attachment may be added after issue.
 
+### Standing choices carry forward to the next challan
+
+A Work delivers to the same consignee, under the same number prefix, challan
+after challan; material leaves to the same storekeeper, at the same location,
+under the same movement type, Issue Challan after Issue Challan. Retyping all
+of that on every draft is transcription, and transcription is where a snapshot
+drifts.
+
+A NEW draft for a Work that already has challans therefore opens pre-filled
+from that Work's most recent challan of the same kind:
+
+| Document         | Carried forward                                   |
+| ---------------- | ------------------------------------------------- |
+| Delivery Challan | number prefix, consignee name, address, and phone |
+| Issue Challan    | movement type, issued-to name, role, and location |
+
+Rules:
+
+- The first challan of a Work is unchanged: the prefix still defaults to the
+  Work code, and every other box opens empty.
+- A cancelled challan is never the source — whatever was wrong with it may be
+  exactly these fields. The most recent challan that still stands is used, and
+  when none does the plain defaults apply.
+- Nothing about the last movement carries: the date is always the
+  organisation's today, quantities and purchase-order receipt links start
+  empty, Issue Challan remarks start empty, and no serial is proposed.
+- Editing an existing draft never reseeds it. The draft is whatever the
+  operator saved, down to the boxes they deliberately left empty.
+- Every carried value is an editable default, not a binding. The consignee
+  remains a per-challan snapshot; it is copied, never referenced.
+
 ### Delivery Challan module (three movements)
 
 The Delivery Challan is the MOVEMENT document. The Issue Challan is stock

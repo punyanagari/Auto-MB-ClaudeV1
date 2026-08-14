@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type {
+  IssueChallan,
   IssueChallanLineInput,
   IssueChallanMovementType,
   SaveIssueChallanRequest,
@@ -63,6 +64,20 @@ interface EditorState {
 const QUANTITY_PATTERN = /^(?:0|[1-9]\d*)$|^(?:0|[1-9]\d*)\.\d{1,3}$/;
 const NONZERO_DIGIT = /[1-9]/;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The Issue Challan a NEW draft copies its standing choices from: the
+ * Work's most recent one that still stands.
+ *
+ * Material leaves the same store, to the same storekeeper, at the same
+ * location, movement after movement; retyping all three every time is
+ * transcription, and transcription is where they drift apart. A cancelled
+ * challan is not a precedent — whatever was wrong with it may be exactly
+ * these fields. The list arrives newest first.
+ */
+function carryForwardSource(challans: readonly IssueChallan[]): IssueChallan | null {
+  return challans.find((challan) => challan.status !== 'cancelled') ?? null;
+}
 
 function emptyManualLine(key: string): ManualLine {
   return { key, description: '', unit: '', quantity: '' };
@@ -129,8 +144,16 @@ export function IssueChallanEditor({
       challanId === null
         ? Promise.resolve(null)
         : api.getIssueChallan(organisationId, challanId),
+      // Only a new draft carries anything forward, so only a new draft
+      // asks for the history — and an unreadable history simply leaves
+      // the defaults as they always were.
+      challanId === null
+        ? api
+            .listIssueChallans(organisationId, workId)
+            .catch(() => [] as readonly IssueChallan[])
+        : Promise.resolve([] as readonly IssueChallan[]),
     ])
-      .then(([loadedBalance, existing]) => {
+      .then(([loadedBalance, existing, history]) => {
         if (cancelled) return;
         setBalance(loadedBalance);
         const quantities: Record<string, string> = {};
@@ -147,12 +170,20 @@ export function IssueChallanEditor({
             });
           }
         }
+        // The previous challan's standing choices, and only those. The
+        // date stays the organisation's today, the remarks are this
+        // movement's own note, and what moved last time is no default for
+        // what moves this time.
+        const previous = carryForwardSource(history);
         const loaded: EditorState = {
           challanDate: existing?.issueChallan.challanDate ?? loadedBalance.today,
-          movementType: existing?.issueChallan.movementType ?? 'issue',
-          issuedToName: existing?.issueChallan.issuedToName ?? '',
-          issuedToRole: existing?.issueChallan.issuedToRole ?? '',
-          location: existing?.issueChallan.location ?? '',
+          movementType:
+            existing?.issueChallan.movementType ?? previous?.movementType ?? 'issue',
+          issuedToName:
+            existing?.issueChallan.issuedToName ?? previous?.issuedToName ?? '',
+          issuedToRole:
+            existing?.issueChallan.issuedToRole ?? previous?.issuedToRole ?? '',
+          location: existing?.issueChallan.location ?? previous?.location ?? '',
           remarks: existing?.issueChallan.remarks ?? '',
           quantities,
           manualLines,

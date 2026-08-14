@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { SaveChallanRequest } from '@auto-mb/contracts';
-import { RequestFailedError } from '../../src/api.js';
+import type { Challan, SaveChallanRequest } from '@auto-mb/contracts';
+import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { ChallanEditor } from '../../src/views/ChallanEditor.js';
 import { PacCertificates } from '../../src/views/PacCertificates.js';
 import {
@@ -403,6 +403,201 @@ describe('ChallanEditor', () => {
     fireEvent.change(prefix, { target: { value: 'dc/2026' } });
     expect(prefix.value).toBe('DC/2026');
     expect(prefix.validationMessage).toBe('');
+  });
+});
+
+describe('ChallanEditor carries the previous challan forward', () => {
+  const EARLIER_ID = 'bbbb1111-1111-4111-8111-bbbbbbbbbb11';
+  const LATEST_ID = 'bbbb2222-2222-4222-8222-bbbbbbbbbb22';
+
+  /** A challan of this Work as the list endpoint returns it, newest first. */
+  function previousChallan(overrides: Partial<Challan> = {}): Challan {
+    return challanDetail({
+      id: LATEST_ID,
+      status: 'issued',
+      challanDate: '2026-07-02',
+      challanNumber: 'DCW-1/SUP/1',
+      sequenceNumber: 1,
+      prefix: 'DCW-1/SUP',
+      consignee: {
+        name: 'Sr. DEE (G) NR',
+        address: 'Delhi Division, New Delhi',
+        phone: '011-23385678',
+      },
+      issuedAt: '2026-07-02T10:00:00.000Z',
+      ...overrides,
+    }).challan;
+  }
+
+  function renderNewDraft(api: ApiClient) {
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  it('opens a second challan on the first one’s prefix and consignee, and on nothing else', async () => {
+    const createChallan = vi.fn().mockResolvedValue(challanDetail());
+    const listChallans = vi.fn().mockResolvedValue([previousChallan({})]);
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listChallans,
+      createChallan,
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('2.000');
+    expect(listChallans).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1/SUP',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G) NR',
+    );
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Consignee address').value).toBe(
+      'Delhi Division, New Delhi',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
+    ).toBe('011-23385678');
+    // The date is this organisation's today, never the previous movement's,
+    // and last time's quantities are no proposal for this time's.
+    expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
+      BALANCE.today,
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Quantity of A/1 on this challan').value,
+    ).toBe('');
+
+    // And the carried values are what a save sends, beside this challan's
+    // own quantity.
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => {
+      expect(createChallan).toHaveBeenCalled();
+    });
+    const [, , body] = createChallan.mock.calls[0] as [
+      string,
+      string,
+      SaveChallanRequest,
+    ];
+    expect(body.prefix).toBe('DCW-1/SUP');
+    expect(body.consignee).toEqual({
+      name: 'Sr. DEE (G) NR',
+      address: 'Delhi Division, New Delhi',
+      phone: '011-23385678',
+    });
+    expect(body.challanDate).toBe(BALANCE.today);
+    expect(body.items).toEqual([{ workItemId: ITEM_A, quantity: '1' }]);
+  });
+
+  it('skips a cancelled challan and takes the most recent one that still stands', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listChallans: vi.fn().mockResolvedValue([
+        previousChallan({ status: 'cancelled', cancellationNote: 'Wrong consignee' }),
+        previousChallan({
+          id: EARLIER_ID,
+          prefix: 'DCW-1/OLD',
+          consignee: {
+            name: 'SSE (Signal) GZB',
+            address: 'Signal Workshop, Ghaziabad',
+          },
+        }),
+      ]),
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('2.000');
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1/OLD',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'SSE (Signal) GZB',
+    );
+    // That challan carried no phone, so the box stays empty rather than
+    // inheriting one from the cancelled document above it.
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
+    ).toBe('');
+  });
+
+  it('falls back to the Work code and empty fields when every challan was cancelled', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listChallans: vi
+        .fn()
+        .mockResolvedValue([previousChallan({ status: 'cancelled' })]),
+    });
+    renderNewDraft(api);
+
+    await screen.findByText('2.000');
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe('');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Consignee address').value).toBe(
+      '',
+    );
+  });
+
+  it('leaves the defaults alone when the history cannot be read', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listChallans: vi.fn().mockRejectedValue(new Error('history unavailable')),
+    });
+    renderNewDraft(api);
+
+    // A convenience must never be able to block the editor.
+    await screen.findByText('2.000');
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe(
+      'DCW-1',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe('');
+  });
+
+  it('never reseeds an existing draft from the history', async () => {
+    const listChallans = vi.fn().mockResolvedValue([previousChallan({})]);
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      listChallans,
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={CHALLAN_ID}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    // The draft is already whatever the operator saved, down to the empty
+    // phone box; the history is not even asked for.
+    expect(listChallans).not.toHaveBeenCalled();
+    expect(screen.getByLabelText<HTMLInputElement>('Number prefix').value).toBe('DC');
+    expect(screen.getByLabelText<HTMLInputElement>('Consignee name').value).toBe(
+      'Sr. DEE (G)',
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('Consignee phone (optional)').value,
+    ).toBe('');
+    expect(screen.getByLabelText<HTMLInputElement>('Challan date').value).toBe(
+      '2026-08-08',
+    );
   });
 });
 
