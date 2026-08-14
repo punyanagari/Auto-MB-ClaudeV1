@@ -15,5 +15,15 @@
     "@auto-mb/documents": "workspace:*",
     "@auto-mb/loa-parser": "workspace:*",
     "postgres": "3.4.9"
+  },
+  "exports": {
+    "./runtime": {
+      "types": "./src/runtime.ts",
+      "default": "./src/runtime.ts"
+    },
+    "./handlers/loa-document-intake": {
+      "types": "./src/handlers/loa-document-intake.ts",
+      "default": "./src/handlers/loa-document-intake.ts"
+    }
   }
 }

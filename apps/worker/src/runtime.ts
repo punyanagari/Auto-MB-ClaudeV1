@@ -218,3 +218,33 @@ function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
     }
   });
 }
+
+/**
+ * Runs every currently runnable job to completion and reports how many.
+ *
+ * For tests and for operators draining a queue by hand. The product's own
+ * worker uses `runWorkerLoop`; this is the same claim/run/report sequence
+ * without the waiting, so an integration test can assert the state a job
+ * produces without sleeping or racing a background process.
+ *
+ * `limit` is a stop, not a target: a handler that re-enqueues its own kind
+ * would otherwise spin here for ever.
+ */
+export async function drainJobs(
+  sql: Sql,
+  options: {
+    readonly handlers: JobHandlers;
+    readonly log: JobLogger;
+    readonly limit?: number;
+  },
+): Promise<number> {
+  const limit = options.limit ?? 100;
+  let ran = 0;
+  while (ran < limit) {
+    const job = await claimNextJob(sql, 'drain', 300);
+    if (job === undefined) return ran;
+    await runJob(sql, job, options.handlers, options.log);
+    ran += 1;
+  }
+  return ran;
+}

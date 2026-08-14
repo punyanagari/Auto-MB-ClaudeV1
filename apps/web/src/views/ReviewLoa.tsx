@@ -488,8 +488,21 @@ export function ReviewLoa({
         setDocument(loaded);
         const payload = asExtractionPayload(loaded.extractionPayload);
         if (payload === null) {
+          // Two different absences, and they must not read the same. Since
+          // pack P18 the letter is read by the worker after the upload is
+          // accepted, so a document can legitimately have no payload YET —
+          // saying it "produced no reviewable content" would tell the
+          // reviewer the letter is unusable when it has simply not been
+          // read. There is no progress to report and no spinner to invent:
+          // the honest statement is that the reading is still to happen,
+          // and reopening the document shows the result.
+          const stillReading =
+            loaded.extractionStatus === 'pending' ||
+            loaded.extractionStatus === 'processing';
           setExtractionArrival(
-            `Extraction for ${loaded.originalFilename} produced no reviewable content.`,
+            stillReading
+              ? `${loaded.originalFilename} has been stored and is still being read. Its items and dates appear here once the reading finishes; open it again in a moment.`
+              : `Extraction for ${loaded.originalFilename} produced no reviewable content.`,
           );
           return;
         }

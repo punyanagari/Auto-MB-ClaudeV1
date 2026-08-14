@@ -1,11 +1,12 @@
 import { defineConfig } from 'vitest/config';
 
-// passWithNoTests is a deliberate, temporary exception: the worker is a
-// process boundary that logs and blocks, with no job logic. Remove the flag
-// when the first real async workflow (pg-boss) lands.
+// `passWithNoTests` was a deliberate, temporary exception while the worker
+// was a process boundary that logged and blocked, with no job logic. Pack
+// P18 landed that logic, so the exception is spent and the flag is gone:
+// this package now fails, like every other, if it has nothing to run.
 export default defineConfig({
   test: {
     environment: 'node',
-    passWithNoTests: true,
+    include: ['test/**/*.{test,spec}.{js,ts}'],
   },
 });

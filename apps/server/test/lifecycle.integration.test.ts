@@ -21,6 +21,8 @@ import {
   removeOrganisationResidue,
   runMigrations,
 } from '@auto-mb/db';
+import { createFileSystemStorage } from '@auto-mb/documents';
+import { runQueuedJobs } from './helpers/worker-jobs.js';
 import { buildApp } from '../src/app.js';
 import { deriveIrn } from '../src/gsp/irn.js';
 
@@ -408,7 +410,11 @@ describe('1 — LOA to Work', () => {
     });
     expect(uploaded.statusCode, uploaded.body).toBe(201);
     const document = uploaded.json<{ id: string; extractionStatus: string }>();
-    expect(document.extractionStatus).toBe('review');
+    // The upload answers on acceptance; the letter is read by the worker
+    // (pack P18). Both halves run here, in order, so the lifecycle this
+    // suite walks is the one a real organisation walks.
+    expect(document.extractionStatus).toBe('pending');
+    await runQueuedJobs(admin, createFileSystemStorage(storageDir));
 
     // The reviewer types the three awarded items in; the parsed test
     // letter names none, so every row carries the manual-entry marker.

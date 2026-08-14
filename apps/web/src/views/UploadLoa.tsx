@@ -177,7 +177,17 @@ export function UploadLoa({
         (await api.uploadLoa(organisationId, loaFile as File, (loaFile as File).name));
       setUploadedLoa(loa);
 
-      if (loa.extractionStatus !== 'review') {
+      // `pending` and `processing` are the normal answer now, not a
+      // failure: since pack P18 the letter is read by the worker after the
+      // upload is accepted, so a freshly uploaded document is always
+      // `pending` here. Supporting documents attach against it regardless
+      // — they hang off the LOA row, not off its extraction — and the
+      // workspace lands the reviewer on the register, where the document
+      // carries a Pending badge until the reading finishes.
+      //
+      // Only a document that was read and produced nothing reviewable is
+      // an error, which is what `failed` means.
+      if (loa.extractionStatus === 'failed' || loa.extractionStatus === 'discarded') {
         setError(
           'The LOA could not be extracted into a reviewable record. Supporting documents were not attached.',
         );

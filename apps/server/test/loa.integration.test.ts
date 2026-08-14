@@ -12,7 +12,14 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, jsonb, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  jsonb,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
+import { createFileSystemStorage } from '@auto-mb/documents';
+import { runQueuedJobs } from './helpers/worker-jobs.js';
 import {
   loadCorpus,
   loadLetter,
@@ -374,22 +381,14 @@ beforeAll(async () => {
 afterAll(async () => {
   if (admin) {
     if (organisationId) {
-      for (const table of [
-        'audit_events',
-        'payment_matrices',
-        'work_items',
-        'work_schedules',
-        'loa_documents',
-        'works',
-        'gst_rates',
-        'organisation_memberships',
-        'organisations',
-      ]) {
-        await admin.unsafe(
-          `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-          [organisationId],
-        );
-      }
+      // Was a hand-kept table list, which is exactly the thing
+      // `removeOrganisationResidue` exists to replace: the list went stale
+      // the moment migration 0072 added `worker_jobs`, and the failure was
+      // an FK violation deleting the organisation rather than anything
+      // that named the missing table. The catalog-driven helper discovers
+      // every tenant-owned table at runtime and finishes with a
+      // whole-database orphan census.
+      await removeOrganisationResidue(admin, [organisationId]);
     }
     await admin`
       delete from identity_audit_events
@@ -424,7 +423,35 @@ describe('LOA upload and extraction', () => {
       payload: pdf,
     });
     expect(response.statusCode, response.body).toBe(201);
-    const body = response.json<{
+    const accepted = response.json<{
+      id: string;
+      extractionStatus: string;
+      sha256: string;
+      extractionPayload: unknown;
+    }>();
+
+    // Since pack P18 the upload ANSWERS before the letter is read. What
+    // it answers is the acceptance — the document exists, in `pending`,
+    // with no payload yet — and the reading is a queued job.
+    expect(accepted.extractionStatus).toBe('pending');
+    expect(accepted.extractionPayload).toBeNull();
+
+    // The second half of the same user outcome, run here rather than
+    // waited for. This is the real worker handler, so what it produces is
+    // what production produces.
+    // At least this upload's job. Earlier tests in the file upload their
+    // own letters, so the queue is not this test's alone.
+    expect(
+      await runQueuedJobs(admin, createFileSystemStorage(storageDir)),
+    ).toBeGreaterThanOrEqual(1);
+
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/loa-documents/${accepted.id}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    const body = detail.json<{
       id: string;
       extractionStatus: string;
       sha256: string;
@@ -454,6 +481,9 @@ describe('LOA upload and extraction', () => {
       where organisation_id = ${organisationId} and entity_id = ${body.id}
     `;
     expect(events.map((event) => event.action)).toContain('loa.uploaded');
+    // The reading is its own recorded act, attributed to the uploader —
+    // the worker runs on their authority, not on one of its own.
+    expect(events.map((event) => event.action)).toContain('loa.extracted');
 
     const list = await authed(owner, {
       method: 'GET',
@@ -1485,6 +1515,12 @@ describe('duplicate LOA uploads', () => {
     });
     expect(first.statusCode, first.body).toBe(201);
     firstUploadId = first.json<{ id: string }>().id;
+
+    // Read the first letter before re-sending it, which is the realistic
+    // order: a duplicate arrives minutes or days later, not inside the
+    // window where the first is still queued. The refusal then reports a
+    // real extraction status rather than `pending`.
+    await runQueuedJobs(admin, createFileSystemStorage(storageDir));
 
     const again = await authed(owner, {
       method: 'POST',
