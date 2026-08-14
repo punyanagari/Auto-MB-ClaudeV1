@@ -25,8 +25,8 @@ connects as.
 
 **1. Jobs run as the user who caused them.** Every P18 job is
 request-triggered: some authenticated user uploaded the document or
-requested the render. The enqueue happens *inside that request's
-tenant transaction*, so the queue row's `(organisation_id, user_id)`
+requested the render. The enqueue happens _inside that request's
+tenant transaction_, so the queue row's `(organisation_id, user_id)`
 pair is written under an already-verified binding — the enqueuer
 cannot record an organisation it does not hold. At execution the
 worker calls the ordinary `withTenant(sql, {organisationId, userId},
