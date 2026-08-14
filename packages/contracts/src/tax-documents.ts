@@ -729,13 +729,30 @@ export type CancelEwayBillRequest = Static<typeof CancelEwayBillRequestSchema>;
 
 // --- E-way bill read model ---------------------------------------------------
 
+/** Which document the consignment travels under. Exactly one of the two
+ * source ids is set on every bill (ADR-0013, migration 0076). */
+export const EwayBillSourceSchema = Type.Union([
+  Type.Literal('tax_invoice'),
+  Type.Literal('delivery_challan'),
+]);
+export type EwayBillSource = Static<typeof EwayBillSourceSchema>;
+
 export const EwayBillSchema = Type.Object(
   {
     id: UuidSchema,
-    taxInvoiceId: UuidSchema,
+    /** Null when the source is a delivery challan. */
+    taxInvoiceId: Type.Union([UuidSchema, Type.Null()]),
+    /** Null when the source is a tax invoice. */
+    deliveryChallanId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    /** Which of the two the bill names. Optional in the schema so
+     * responses built before the second source existed stay valid — the
+     * server always serves it. */
+    source: Type.Optional(EwayBillSourceSchema),
     /** The moved invoice's number — an e-way bill only ever exists for a
-     * submitted (numbered) invoice. */
+     * submitted (numbered) invoice. Null on the challan path. */
     invoiceNumber: Type.Union([Type.String(), Type.Null()]),
+    /** The moved challan's number, on the challan path. */
+    challanNumber: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     status: EwayBillStatusSchema,
     transportMode: TransportModeSchema,
     transporterId: Type.Union([Type.String(), Type.Null()]),
@@ -770,6 +787,15 @@ export const EwayBillSchema = Type.Object(
     createdAt: Type.String({ format: 'date-time' }),
     generatedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     cancelledAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /** Whether a printable summary has been rendered, and which version
+     * the bill currently points at. The PDF is a convenience print — the
+     * NIC portal document remains the statutory original — and it exists
+     * only once NIC has answered. Optional in the schema so responses
+     * built before the render existed stay valid. */
+    renderedAvailable: Type.Optional(Type.Boolean()),
+    renderedVersion: Type.Optional(
+      Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+    ),
   },
   { additionalProperties: false },
 );

@@ -256,6 +256,12 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Reload the e-way bill and let the provider operation settle before changing carriage facts; the portal's state is the authoritative one.",
   EWAY_BILL_LIVE:
     'Cancel the live e-way bill first; goods cannot be under a live way bill for an invoice being withdrawn.',
+  EWAY_BILL_NOT_APPLICABLE_TO_SERVICE_INVOICE:
+    'No action clears this one: an e-way bill moves goods, and NIC refuses one for a document whose every line is a service. Raise the bill from the delivery challan that carries the goods, if there is one.',
+  CHALLAN_STATUTORY_FACTS_REQUIRED:
+    'Record the movement reason and the per-line HSN codes on the challan draft before issuing it; an issued challan is immutable, so a challan issued without them cannot raise an e-way bill.',
+  EWAY_SOURCE_FACTS_INCOMPLETE:
+    'Complete the organisation profile under Administration, and the consignee contact, so the document can state the parties NIC requires.',
 
   // ---- Uploads and rendering ----------------------------------------------
   MALWARE_DETECTED:

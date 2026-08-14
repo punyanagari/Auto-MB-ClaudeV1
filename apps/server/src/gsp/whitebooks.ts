@@ -423,12 +423,22 @@ function normaliseIrp(
 function normaliseEway(
   rawTexts: readonly string[],
   value: unknown,
+  /** The IRP's e-way responses carry a `Status` field and a bill that is
+   * not `ACT` must never be recorded as one that is. The e-way bill API's
+   * own direct-generation response (ADR-0013) carries no such field: it
+   * answers with the number, date and validity of the bill it has just
+   * created, and there is no state for a just-created bill to be in other
+   * than active. Absence is accepted only where the response shape has no
+   * status to give; a status that is PRESENT and not ACT is refused on
+   * both paths. */
+  statusOptional = false,
 ): Omit<EwayBillProviderEvidence, 'rawResponse'> {
   const providerStatus = textValue(value, ['Status']);
   if (providerStatus === null) {
-    throw new StatutoryProviderError('WHITEBOOKS_EWB_STATUS_MISSING', 'unknown');
-  }
-  if (providerStatus.toUpperCase() !== 'ACT') {
+    if (!statusOptional) {
+      throw new StatutoryProviderError('WHITEBOOKS_EWB_STATUS_MISSING', 'unknown');
+    }
+  } else if (providerStatus.toUpperCase() !== 'ACT') {
     throw new StatutoryProviderError(
       'WHITEBOOKS_EWB_NOT_ACTIVE',
       'unknown',
@@ -856,6 +866,36 @@ export class WhitebooksProvider implements StatutoryProvider {
     if (!result) throw new StatutoryProviderError('WHITEBOOKS_EWB_EMPTY', 'unknown');
     return withRawResponse(result.raw, () => ({
       ...normaliseEway(result.rawTexts, result.parsed),
+      rawResponse: result.raw,
+    }));
+  }
+
+  /** Direct generation on the e-way bill API, for a movement with no IRN
+   * behind it (ADR-0013).
+   *
+   * It rides the DEDICATED e-way credential pair rather than the
+   * e-invoice one — the same pair `cancelEwayBill` uses and the sandbox
+   * certification of 12 August proved against
+   * `/ewaybillapi/v1.03/authenticate` — because this endpoint lives on the
+   * e-way bill API rather than behind the IRP. */
+  async generateEwayBill(input: {
+    readonly gstin: string;
+    readonly payloadJson: string;
+  }): Promise<EwayBillProviderEvidence> {
+    await this.#authenticateEway(input.gstin);
+    const result = await this.#request(
+      'POST',
+      '/ewaybillapi/v1.03/ewayapi/genewaybill',
+      {
+        query: { email: this.config.email, irp: this.config.irp },
+        headers: this.#ewayCommonHeaders(input.gstin),
+        body: input.payloadJson,
+        mutation: true,
+      },
+    );
+    if (!result) throw new StatutoryProviderError('WHITEBOOKS_EWB_EMPTY', 'unknown');
+    return withRawResponse(result.raw, () => ({
+      ...normaliseEway(result.rawTexts, result.parsed, true),
       rawResponse: result.raw,
     }));
   }

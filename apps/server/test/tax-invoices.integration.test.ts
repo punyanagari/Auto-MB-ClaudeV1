@@ -127,6 +127,8 @@ const registerInvoiceProvider = vi.fn<StatutoryProvider['registerInvoice']>();
 const findInvoiceProvider = vi.fn<StatutoryProvider['findInvoiceByDocument']>();
 const cancelInvoiceProvider = vi.fn<StatutoryProvider['cancelInvoice']>();
 const generateEwayBillProvider = vi.fn<StatutoryProvider['generateEwayBillByIrn']>();
+const generateEwayBillDirectProvider =
+  vi.fn<StatutoryProvider['generateEwayBill']>();
 const findEwayBillProvider = vi.fn<StatutoryProvider['findEwayBillByIrn']>();
 const cancelEwayBillProvider = vi.fn<StatutoryProvider['cancelEwayBill']>();
 const STUB_PORTAL = 'NIC1 via apisandbox.whitebooks.in';
@@ -138,6 +140,7 @@ const providerStub: StatutoryProvider = {
   findInvoiceByDocument: findInvoiceProvider,
   cancelInvoice: cancelInvoiceProvider,
   generateEwayBillByIrn: generateEwayBillProvider,
+  generateEwayBill: generateEwayBillDirectProvider,
   findEwayBillByIrn: findEwayBillProvider,
   cancelEwayBill: cancelEwayBillProvider,
 };
@@ -316,6 +319,7 @@ function resetProviderMocks(): void {
   findInvoiceProvider.mockReset();
   cancelInvoiceProvider.mockReset();
   generateEwayBillProvider.mockReset();
+  generateEwayBillDirectProvider.mockReset();
   findEwayBillProvider.mockReset();
   cancelEwayBillProvider.mockReset();
 }

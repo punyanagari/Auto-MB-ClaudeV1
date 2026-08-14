@@ -108,6 +108,7 @@ const providerStub: StatutoryProvider = {
   findInvoiceByDocument: findInvoiceProvider,
   cancelInvoice: cancelInvoiceProvider,
   generateEwayBillByIrn: vi.fn(),
+  generateEwayBill: vi.fn(),
   findEwayBillByIrn: vi.fn(),
   cancelEwayBill: vi.fn(),
 };

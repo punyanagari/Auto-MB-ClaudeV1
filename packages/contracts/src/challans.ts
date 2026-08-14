@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { GstinSchema } from './masters.js';
 import { NextCursorSchema } from './pagination.js';
 import {
   DateOnlySchema,
@@ -25,6 +26,26 @@ export const ConsigneeSchema = Type.Object(
   { additionalProperties: false },
 );
 export type Consignee = Static<typeof ConsigneeSchema>;
+
+/** Six digits for a SAC, six to eight for a goods HSN; which of the two
+ * it is comes from `isService` beside it, never from the length. The
+ * database pairs the two (migration 0075, restating 0057's rule). */
+const HsnSacCodeSchema = Type.String({
+  pattern: '^[0-9]{6,8}$',
+  description: 'HSN (goods, six to eight digits) or SAC (services, six).',
+});
+
+/** Why the goods move, in NIC's e-way bill vocabulary. */
+export const MOVEMENT_REASONS = [
+  'supply',
+  'job_work',
+  'for_own_use',
+  'others',
+] as const;
+export const MovementReasonSchema = Type.Union(
+  MOVEMENT_REASONS.map((reason) => Type.Literal(reason)),
+);
+export type MovementReason = Static<typeof MovementReasonSchema>;
 
 /** A challan line, in one of two shapes.
  *
@@ -64,6 +85,14 @@ export const ChallanItemInputSchema = Type.Object(
      * line ordered is a warning, never a refusal — vendors over-ship (see
      * ChallanOverReceiptWarningSchema). */
     purchaseOrderLineId: Type.Optional(UuidSchema),
+    /** The statutory classification of what this line moves (ADR-0013),
+     * in the shape an itemised tax invoice already uses. Sent together or
+     * not at all: a code with no kind cannot be read, because the kind is
+     * what decides whether the line is GOODS. Optional everywhere, and
+     * required only on a challan an e-way bill is raised from — at least
+     * one goods line is what makes the challan an e-way bill source. */
+    hsnSacCode: Type.Optional(HsnSacCodeSchema),
+    isService: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -87,12 +116,48 @@ export type SaveChallanRequest = Static<typeof SaveChallanRequestSchema>;
  * picture. The consignee comes from the contacts master rather than free
  * text — a standalone challan has no Work to hang the party off, and the
  * one-open-draft rule counts per consignee. Its lines are always manual. */
+/** The statutory movement facts a Delivery Challan may carry (ADR-0013,
+ * migration 0075).
+ *
+ * The transport shapes are the ones `eway_bills` already proved, said
+ * again here because the challan is the paper that travels WITH the goods
+ * and states its own carriage particulars. Every field is optional: a
+ * challan is a valid movement document without any of them, and they are
+ * required only on the path that raises an e-way bill.
+ *
+ * Sending an empty string clears a fact; the server trims and reads a
+ * blank as "not recorded", which is how a form that shows every field can
+ * leave most of them alone. */
+const challanStatutoryFields = {
+  movementReason: Type.Optional(MovementReasonSchema),
+  /** The consignee's GSTIN, frozen onto the document. Absent when the
+   * party is unregistered — which is lawful, and not an error. */
+  consigneeGstin: Type.Optional(GstinSchema),
+  transporterId: Type.Optional(
+    Type.String({
+      pattern: '^[0-9]{2}[0-9A-Z]{13}$',
+      description: 'Fifteen-character transporter enrolment id.',
+    }),
+  ),
+  transporterName: Type.Optional(Type.String({ maxLength: 200 })),
+  vehicleNumber: Type.Optional(
+    Type.String({
+      pattern: '^[A-Z0-9]{6,12}$',
+      description: 'Vehicle registration, uppercase letters and digits.',
+    }),
+  ),
+  transportDocNumber: Type.Optional(Type.String({ maxLength: 30 })),
+  transportDocDate: Type.Optional(DateOnlySchema),
+  transportDistanceKm: Type.Optional(Type.Integer({ minimum: 0, maximum: 4000 })),
+} as const;
+
 export const SaveStandaloneChallanRequestSchema = Type.Object(
   {
     challanDate: DateOnlySchema,
     prefix: PrefixSchema,
     consigneeContactId: UuidSchema,
     items: Type.Array(ChallanItemInputSchema, { minItems: 1 }),
+    ...challanStatutoryFields,
   },
   { additionalProperties: false },
 );
@@ -123,6 +188,11 @@ export const ChallanItemSchema = Type.Object(
      * responses built before the receipt link existed stay valid — the
      * server always serves it. */
     purchaseOrderLineId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    /** The line's statutory classification (ADR-0013); both null when the
+     * line carries none. Optional in the schema so responses built before
+     * the facts existed stay valid — the server always serves them. */
+    hsnSacCode: Type.Optional(Type.Union([HsnSacCodeSchema, Type.Null()])),
+    isService: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   },
   { additionalProperties: false },
 );
@@ -190,6 +260,24 @@ export const ChallanSchema = Type.Object(
     createdAt: Type.String({ format: 'date-time' }),
     issuedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     cancelledAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /** The statutory movement facts (ADR-0013), null where not recorded.
+     * Optional in the schema so responses built before they existed stay
+     * valid — the server always serves them. */
+    movementReason: Type.Optional(Type.Union([MovementReasonSchema, Type.Null()])),
+    consigneeGstin: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    transporterId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    transporterName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    vehicleNumber: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    transportDocNumber: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    transportDocDate: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
+    transportDistanceKm: Type.Optional(
+      Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    ),
+    /** Whether this challan may raise an e-way bill: the server's own
+     * applicability answer, so the screen offers the action exactly when
+     * the route would accept it (ADR-0013). Standalone, issued, carrying
+     * at least one goods line. */
+    ewayBillEligible: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
