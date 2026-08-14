@@ -118,9 +118,10 @@ export const InstallationRegisterEntrySchema = Type.Object(
     /** Snapshot of the master's name at record time, exactly as on the
      * record itself. */
     locationName: Type.String(),
-    /** Serials still attached to this record. A cancelled record keeps
-     * its attachment history, so this stays the count it was recorded
-     * with rather than dropping to zero on release. */
+    /** How many serials this record was made against. A cancelled record
+     * keeps its attachment history, so the count stays what it was
+     * recorded with rather than dropping to zero when release returns the
+     * units to the pool. */
     serialCount: Type.Integer({ minimum: 0 }),
     status: InstallationStatusSchema,
   },
