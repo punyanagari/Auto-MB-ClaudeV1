@@ -212,7 +212,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     upsertPaymentMatrixRow: vi.fn(),
     deletePaymentMatrixRow: vi.fn().mockResolvedValue(undefined),
     setWorkItemPaymentCategory: vi.fn(),
-    saveWorkPaymentSetup: vi.fn().mockResolvedValue({ rows: [], items: [] }),
+    saveWorkPaymentSetup: vi.fn().mockResolvedValue({ items: [] }),
     listWorkPacCertificates: vi
       .fn()
       .mockResolvedValue({ certificates: [], itemSummaries: [] }),

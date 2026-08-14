@@ -786,8 +786,13 @@ describe('WorkDetail billing readiness panel', () => {
   it('shows a retryable failure without pretending readiness is known', async () => {
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
+      // Refused twice, then available. The Work page reads the matrix on
+      // mount as well — it is what its payment-setup prompt answers from
+      // — so the readiness panel's own read is the second call, and the
+      // retry below is the third.
       getPaymentMatrix: vi
         .fn()
+        .mockRejectedValueOnce(new Error('Matrix unavailable.'))
         .mockRejectedValueOnce(new Error('Matrix unavailable.'))
         .mockResolvedValue([MATRIX_ROW]),
       listContacts: vi.fn().mockResolvedValue([COMPLETE_CLIENT]),

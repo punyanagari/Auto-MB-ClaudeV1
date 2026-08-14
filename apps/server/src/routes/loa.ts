@@ -1421,7 +1421,7 @@ export function registerLoaRoutes(
 
         const matrixRows = body.paymentMatrix ?? [];
         if (matrixRows.length > 0) {
-          await tx`
+          const insertedMatrix = await tx<{ id: string; category: string }[]>`
               insert into payment_matrices (
                 organisation_id, work_id, category, pct_supply,
                 pct_installation, pct_pac, pct_final_bill, created_by_user_id
@@ -1437,6 +1437,46 @@ export function registerLoaRoutes(
               ) as m(
                 category, pct_supply, pct_installation, pct_pac, pct_final_bill
               )
+              returning id, category
+            `;
+          // The third writer of this table, and the one that used to say
+          // nothing. The per-row upsert and the payment-setup save both
+          // emit `payment_matrix.row_created`, and `routes/timeline.ts`
+          // surfaces those events against the Work — so a matrix entered
+          // WITH the letter appeared on the timeline from nowhere, with
+          // no actor and no values, while every later edit to it was
+          // attributed. One statement for the whole set, in the batched
+          // shape this file already uses for discarded documents; the
+          // `before` is empty because these rows did not exist.
+          const byCategory = new Map(
+            matrixRows.map((matrixRow) => [matrixRow.category, matrixRow]),
+          );
+          await tx`
+              insert into audit_events (
+                organisation_id, actor_user_id, action, entity_type, entity_id,
+                details
+              )
+              select ${organisationId}, ${user.id}, 'payment_matrix.row_created',
+                     'payment_matrices', created.id, created.details::jsonb
+              from unnest(
+                ${insertedMatrix.map((row) => row.id)}::uuid[],
+                ${insertedMatrix.map((row) => {
+                  const submitted = byCategory.get(
+                    row.category as (typeof matrixRows)[number]['category'],
+                  );
+                  return JSON.stringify({
+                    workId: work.id,
+                    category: row.category,
+                    before: {},
+                    after: {
+                      pctSupply: submitted?.pctSupply,
+                      pctInstallation: submitted?.pctInstallation,
+                      pctPac: submitted?.pctPac,
+                      pctFinalBill: submitted?.pctFinalBill,
+                    },
+                  });
+                })}::text[]
+              ) as created(id, details)
             `;
         }
 

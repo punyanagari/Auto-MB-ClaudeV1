@@ -11,6 +11,7 @@ import { AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import {
   CATEGORY_LABELS,
+  ITEM_CATEGORY_OPTIONS,
   LOCKED_AMC_STAGES,
   STAGE_FIELDS,
   draftFrom,
@@ -331,10 +332,11 @@ export function PaymentMatrix({
         <thead>
           <tr>
             <th scope="col">Category</th>
-            <th scope="col">Supply %</th>
-            <th scope="col">Installation %</th>
-            <th scope="col">PAC %</th>
-            <th scope="col">Final bill %</th>
+            {STAGE_FIELDS.map(([field, label]) => (
+              <th key={field} scope="col">
+                {label}
+              </th>
+            ))}
             <th scope="col">Row actions</th>
           </tr>
         </thead>
@@ -490,7 +492,16 @@ export function PaymentMatrix({
             {workItems.map((item) => (
               <tr key={item.id}>
                 <th scope="row">{item.itemNumber}</th>
-                <td className={wrapCell}>{item.description}</td>
+                {/* What an approved amendment left, or the awarded text
+                    when nothing amended it — the same reading
+                    Installations and PAC certificates take, and the text
+                    the setup dialog proposes against. Showing the stale
+                    awarded wording here would have the operator
+                    categorising an item by a description no longer in
+                    force. */}
+                <td className={wrapCell}>
+                  {item.effectiveDescription ?? item.description}
+                </td>
                 <td>
                   {canModify ? (
                     <select
@@ -512,14 +523,11 @@ export function PaymentMatrix({
                         }, `Payment category updated for ${item.itemNumber}.`);
                       }}
                     >
-                      <option value="">Uncategorised</option>
-                      <option value="SUPPLY">Supply</option>
-                      <option value="SUPPLY_AND_INSTALLATION">
-                        Supply + installation
-                      </option>
-                      <option value="PURE_INSTALLATION">Purely installation</option>
-                      <option value="SPARE_SUPPLY">Spare supply</option>
-                      <option value="AMC">Annual maintenance (AMC)</option>
+                      {ITEM_CATEGORY_OPTIONS.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
                     </select>
                   ) : (
                     <span

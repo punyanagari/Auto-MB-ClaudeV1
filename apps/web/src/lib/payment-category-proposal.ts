@@ -40,13 +40,28 @@ import type { WorkItemPaymentCategory } from '@auto-mb/contracts';
  *  5. neither                  → no proposal.
  *
  * The installation family deliberately includes the trade verbs a
- * railway BOQ uses instead of the word "installation" — laying, cutting,
- * blowing, jointing, termination, splicing, trenching, fixing — because
- * "Laying of armoured optical fibre cable" is installation work and
- * saying otherwise would be the same guess in a different direction.
- * That is why "Supply and laying of PVC cable" proposes
- * SUPPLY_AND_INSTALLATION: both families are present, and a line that
- * supplies the cable AND lays it is exactly what that category means.
+ * railway BOQ uses instead of the word "installation" — laying, blowing,
+ * jointing, termination, splicing, trenching — because "Laying of
+ * armoured optical fibre cable" is installation work and saying
+ * otherwise would be the same guess in a different direction. That is
+ * why "Supply and laying of PVC cable" proposes SUPPLY_AND_INSTALLATION:
+ * both families are present, and a line that supplies the cable AND lays
+ * it is exactly what that category means.
+ *
+ * TWO OF THOSE VERBS ARE WEAK, and the distinction is the whole reason
+ * the family is split in two. "Cutting" and "fixing" are also NOUN
+ * ADJUNCTS in the names of goods a railway schedule buys — a "tile/rock
+ * cutting machine", a set of "GI fixing clamps" — so on a line that
+ * already says supply they are describing the MERCHANDISE, not a second
+ * activity. "Supply of tile/rock cutting machine" is a supply line, and
+ * reading it as supply-and-installation would split its value across a
+ * stage nothing will ever move quantity through. So they count toward
+ * installation only when no supply word is present ("Cutting of trench
+ * for cable route" is still installation work); when a supply word IS
+ * present they contribute nothing, and the line falls to SUPPLY unless a
+ * strong installation word appears beside them ("Supply, laying and
+ * fixing of FRP tray" is still supply and installation, on the strength
+ * of "laying").
  *
  * This is NOT the uncategorised-item fallback the completion predicate
  * and the Measurement Book remark use (`description ilike '%installation%'`
@@ -60,17 +75,23 @@ import type { WorkItemPaymentCategory } from '@auto-mb/contracts';
 const SUPPLY_WORDS =
   /\b(supply|supplies|supplying|supplied|provision|providing|provide)\b/;
 
-/** Installation wording: the explicit words first, then the trade verbs a
- * railway schedule uses in their place. */
-const INSTALLATION_WORDS =
-  /\b(install|installs|installing|installation|installations|erect|erecting|erection|commission|commissioning|cutting|laying|lay|blowing|jointing|termination|terminating|splicing|trenching|fixing)\b/;
+/** Installation wording that means installation wherever it appears: the
+ * explicit words first, then the trade verbs a railway schedule uses in
+ * their place. None of these is ever the name of a thing. */
+const STRONG_INSTALLATION_WORDS =
+  /\b(install|installs|installing|installation|installations|erect|erecting|erection|commission|commissioning|laying|lay|blowing|jointing|termination|terminating|splicing|trenching)\b/;
+
+/** Installation wording that is ALSO how a railway schedule names goods —
+ * a "rock cutting machine", "GI fixing clamps". Counted only on a line
+ * with no supply word on it (see the header). */
+const WEAK_INSTALLATION_WORDS = /\b(cutting|fixing)\b/;
 
 /** Maintenance wording, which suppresses any proposal. Deliberately
  * narrow: the bare word "maintenance" appears in ordinary supply lines
  * ("spares for maintenance"), so only the phrasings that actually name a
  * maintenance SCHEDULE count. */
 const MAINTENANCE_WORDS =
-  /\b(amc|annual\s+maintenance|comprehensive\s+maintenance|maintenance\s+contract|maintenance\s+of\s+the\s+system)\b/;
+  /\b(amc|annual\s+maintenance|comprehensive\s+maintenance|maintenance\s+contract)\b/;
 
 /**
  * The category proposed for this description, or null when nothing is
@@ -82,7 +103,9 @@ export function proposePaymentCategory(
   const text = description.toLowerCase();
   if (MAINTENANCE_WORDS.test(text)) return null;
   const supply = SUPPLY_WORDS.test(text);
-  const installation = INSTALLATION_WORDS.test(text);
+  const installation =
+    STRONG_INSTALLATION_WORDS.test(text) ||
+    (!supply && WEAK_INSTALLATION_WORDS.test(text));
   if (supply && installation) return 'SUPPLY_AND_INSTALLATION';
   if (installation) return 'PURE_INSTALLATION';
   if (supply) return 'SUPPLY';

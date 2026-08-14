@@ -308,10 +308,11 @@ export const STATE_CASES: readonly StateCase[] = [
       />
     ),
     retry: /Retry payment setup/,
-    empty: {
-      notApplicable:
-        'The dialog is a fixed row per payment category over the items of one Work; an unconfigured category is a blank row, not an empty register.',
-    },
+    // The percentage half is a fixed row per category, which has no
+    // empty state — but the ITEMS half is a register of the Work's items,
+    // and a Work with none of them is a real state the dialog can open
+    // in. It is what a confirmation with an empty schedule produces.
+    empty: { text: /This Work has no items/ },
   },
   {
     view: 'RailwayBillPanel.tsx',

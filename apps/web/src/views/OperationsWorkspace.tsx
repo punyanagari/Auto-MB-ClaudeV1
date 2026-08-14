@@ -378,16 +378,25 @@ export function OperationsWorkspace({
     initialRoute.mastersTab ?? 'contacts',
   );
   /**
-   * The Work whose payment setup has been offered but not yet answered.
+   * Whether the payment setup has been offered on the current screen and
+   * not yet answered.
    *
    * Set by exactly one navigation — the one that follows a letter being
    * confirmed into a Work — and cleared as soon as the dialog is saved or
-   * dismissed, or as soon as the operator goes anywhere else. It is
-   * deliberately NOT in the route: a payment setup prompt is a
+   * dismissed, or as soon as the operator goes anywhere else. A plain
+   * boolean is enough because it is set and cleared in the same act that
+   * sets `view`: holding the Work's id here as well and comparing the two
+   * would be two names for one fact, and the comparison could only ever
+   * be true.
+   *
+   * It is deliberately NOT in the route: a payment setup prompt is a
    * consequence of an act just performed, not a property of the address,
-   * so a refresh, a bookmark or a shared link opens the Work page plainly.
+   * so a refresh, a bookmark or a shared link opens the Work page
+   * plainly. The Work page keeps its own, data-derived prompt for a
+   * configuration that is still incomplete, which is what makes this
+   * one-shot honest rather than forgetful.
    */
-  const [paymentSetupWorkId, setPaymentSetupWorkId] = useState<string | null>(null);
+  const [paymentSetupOffered, setPaymentSetupOffered] = useState(false);
   const [challanWork, setChallanWork] = useState<{
     readonly workId: string;
     readonly status: Work['status'];
@@ -616,10 +625,8 @@ export function OperationsWorkspace({
       // The prompt belongs to one Work and one arrival at it. Any other
       // move retires it, so an unanswered dialog cannot follow the
       // operator around or reappear when they come back later.
-      setPaymentSetupWorkId(
-        next.name === 'work' && options.promptPaymentSetup === true
-          ? next.workId
-          : null,
+      setPaymentSetupOffered(
+        next.name === 'work' && options.promptPaymentSetup === true,
       );
       if (next.name === 'work' && options.workTab !== undefined) {
         setTabbedWorkId(next.workId);
@@ -1372,9 +1379,9 @@ export function OperationsWorkspace({
                   setTabbedWorkId(view.workId);
                   setWorkTab(next);
                 }}
-                promptPaymentSetup={paymentSetupWorkId === view.workId}
+                promptPaymentSetup={paymentSetupOffered}
                 onPaymentSetupClosed={() => {
-                  setPaymentSetupWorkId(null);
+                  setPaymentSetupOffered(false);
                 }}
               />
             )}

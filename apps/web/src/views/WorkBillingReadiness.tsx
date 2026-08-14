@@ -7,6 +7,11 @@ import type {
 } from '@auto-mb/contracts';
 import { CheckCircle, CircleAlert } from 'lucide-react';
 import type { ApiClient } from '../api.js';
+// The same names the matrix screen prints on its rows. This checklist
+// tells the operator to go and add a row; naming it "Pure installation"
+// while that screen shows "Purely installation" sends them looking for a
+// row that is not there under that name.
+import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
 import { mastersHash, SETTINGS_HASH, workHash } from '../lib/workspace-routes.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
@@ -48,15 +53,6 @@ function missingOrganisationFacts(profile: OrganisationProfile): readonly string
     ...((profile.locality ?? null) === null ? ['locality'] : []),
   ];
 }
-
-const CATEGORY_LABELS: Record<string, string> = {
-  SUPPLY: 'Supply',
-  SUPPLY_AND_INSTALLATION: 'Supply and installation',
-  PURE_INSTALLATION: 'Pure installation',
-  SPARE_SUPPLY: 'Spare supply',
-  AMC: 'Annual maintenance (AMC)',
-  UNCATEGORISED: 'Uncategorised',
-};
 
 /**
  * Whether this Work can reach a submitted GST invoice, answered before

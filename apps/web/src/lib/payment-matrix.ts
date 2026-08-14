@@ -1,4 +1,5 @@
 import type { PaymentMatrixCategory, PaymentMatrixRow } from '@auto-mb/contracts';
+import { WORK_ITEM_PAYMENT_CATEGORIES } from '@auto-mb/contracts';
 
 /**
  * The payment matrix as a FORM: the four stage percentages of one
@@ -21,6 +22,26 @@ export const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
   UNCATEGORISED: 'Uncategorised items',
 };
 
+/**
+ * The options an item-category select offers, in the order both the
+ * Schedules screen and the setup dialog show them.
+ *
+ * Generated from CATEGORY_LABELS rather than typed out per screen: two
+ * hand-written option lists is how one screen comes to call a category
+ * something the other does not, on a field whose value decides which
+ * matrix row bills the item.
+ *
+ * The empty value is the item's own uncategorised STATE, not the
+ * UNCATEGORISED matrix row, so it keeps its own shorter name — an item
+ * is "Uncategorised"; the row it falls back to is "Uncategorised items".
+ */
+export const ITEM_CATEGORY_OPTIONS: readonly (readonly [string, string])[] = [
+  ['', 'Uncategorised'],
+  ...WORK_ITEM_PAYMENT_CATEGORIES.map(
+    (category) => [category, CATEGORY_LABELS[category]] as const,
+  ),
+];
+
 export const STAGE_FIELDS = [
   ['pctSupply', 'Supply %'],
   ['pctInstallation', 'Installation %'],
@@ -40,15 +61,46 @@ export const LOCKED_AMC_STAGES: ReadonlySet<StageField> = new Set([
 
 export type RowDraft = Record<StageField, string>;
 
+/**
+ * The exact shape the wire accepts, narrowed to a percentage.
+ *
+ * `DecimalStringSchema` (packages/contracts/src/primitives.ts) is
+ * `^-?(?:0|[1-9]\d*)(?:\.\d{1,3})?$`: no leading zeros, no surrounding
+ * whitespace, no bare `.5`. Anything outside it is a 400 from Fastify's
+ * own body validation, BEFORE the route's friendly percentage message
+ * ever runs — so a client rule looser than this one buys the operator a
+ * schema error naming a field instead of the sentence that says what to
+ * type. `05`, ` 50` and `0100` are the three that used to get through.
+ *
+ * Narrower than the schema in two ways, both deliberate: no minus sign
+ * (a negative stage percentage is meaningless and the column's CHECK
+ * refuses it) and two fraction digits rather than three (the stored
+ * column is numeric(5,2), and the server validates in hundredths).
+ *
+ * Checked part by part rather than with one composite pattern: the
+ * security linter reads a bounded quantifier nested under an alternation
+ * as catastrophic-backtracking bait, and the parts are already split
+ * here to be converted. `errors.ts` makes the same trade for the same
+ * reason.
+ */
+const DIGITS = /^\d+$/;
+
 /** Percentage in integer hundredths (two-decimal precision), or null
- * when the text is not a plain 0–100 decimal. Never floats. */
+ * when the text is not a plain 0–100 decimal in the wire's own shape.
+ * Never floats. */
 export function percentHundredths(raw: string): bigint | null {
-  const text = raw.trim();
-  const dot = text.indexOf('.');
-  const whole = dot === -1 ? text : text.slice(0, dot);
-  const fraction = dot === -1 ? '' : text.slice(dot + 1);
-  if (!/^\d{1,3}$/.test(whole)) return null;
-  if (dot !== -1 && !/^\d{1,2}$/.test(fraction)) return null;
+  const dot = raw.indexOf('.');
+  const whole = dot === -1 ? raw : raw.slice(0, dot);
+  const fraction = dot === -1 ? '' : raw.slice(dot + 1);
+  if (whole.length < 1 || whole.length > 3 || !DIGITS.test(whole)) return null;
+  // `05` and `0100` are refused by the wire's own schema, so they are
+  // refused here rather than one layer later and less legibly.
+  if (whole.length > 1 && whole.startsWith('0')) return null;
+  if (dot !== -1) {
+    if (fraction.length < 1 || fraction.length > 2 || !DIGITS.test(fraction)) {
+      return null;
+    }
+  }
   const value = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0') || '0');
   return value > 10000n ? null : value;
 }
@@ -92,13 +144,41 @@ export function draftFrom(row: PaymentMatrixRow | undefined): RowDraft {
   };
 }
 
-/** Whether the operator has typed anything at all into this row. A row
+/**
+ * Whether the operator has typed anything at all into this row. A row
  * left entirely blank is "not configured", which is a legitimate state —
- * it is not an invalid row and it is never submitted. */
+ * it is not an invalid row and it is never submitted.
+ *
+ * A SPACE counts. It is a keystroke the operator made, and the row it
+ * made is unsaveable: `percentHundredths` refuses whitespace exactly as
+ * the wire's own schema does. Trimming here would have called the row
+ * untouched, hidden the inline message that says why Save is held, and
+ * left the operator looking at a Save button disabled for no visible
+ * reason. Touched decides whether the row EXPLAINS itself; `problem`
+ * still decides whether it may be submitted, and a whitespace row is
+ * still never submitted.
+ */
 export function draftTouched(draft: RowDraft): boolean {
-  return STAGE_FIELDS.some(([field]) => draft[field].trim() !== '');
+  return STAGE_FIELDS.some(([field]) => draft[field] !== '');
 }
 
 export function samePercent(left: string, right: string): boolean {
   return percentHundredths(left) === percentHundredths(right);
+}
+
+/**
+ * Whether a submitted draft says exactly what the saved row already
+ * says. Used to keep an untouched row OUT of a save.
+ *
+ * Compared as percentages rather than as text, because the two are not
+ * the same string: the column is numeric(5,2), so a row typed as `80`
+ * loads back as `80.00`, and comparing text would call every loaded row
+ * changed and write an audit event whose before and after are equal.
+ */
+export function sameRowPercentages(
+  draft: RowDraft,
+  row: PaymentMatrixRow | undefined,
+): boolean {
+  if (row === undefined) return false;
+  return STAGE_FIELDS.every(([field]) => samePercent(draft[field], row[field]));
 }

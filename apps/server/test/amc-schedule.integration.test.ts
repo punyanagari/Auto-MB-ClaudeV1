@@ -588,6 +588,23 @@ describe('an AMC item takes no movement record', () => {
     expect(refused.json()).toMatchObject({ code: 'ITEM_HAS_MOVEMENT' });
     expect(refused.json<{ message: string }>().message).toContain('installation dated');
 
+    // The same refusal through the payment-setup save, which changes
+    // many items at once and evaluates this guard over the SET rather
+    // than per item. A set-based guard that named no item, or named the
+    // wrong one, would still be a 409 — so the item number is asserted.
+    const refusedInBulk = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [],
+        itemCategories: [{ workItemId: supplyItemId, paymentCategory: 'AMC' }],
+      },
+    });
+    expect(refusedInBulk.statusCode, refusedInBulk.body).toBe(409);
+    expect(refusedInBulk.json()).toMatchObject({ code: 'ITEM_HAS_MOVEMENT' });
+    expect(refusedInBulk.json<{ message: string }>().message).toContain('A/1');
+
     // Put the fixture back: the completion walk below measures A/1 on
     // delivery, and a stray installation is not part of that story.
     const cancelled = await authed(owner, {
@@ -702,6 +719,23 @@ describe('certification of an AMC item', () => {
     });
     expect(cleared.statusCode, cleared.body).toBe(409);
     expect(cleared.json()).toMatchObject({ code: 'ITEM_HAS_CERTIFICATION' });
+
+    // And through the payment-setup save, whose guard runs over the set
+    // of items leaving AMC rather than over one.
+    const refusedInBulk = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/payment-setup`,
+      organisationId,
+      payload: {
+        matrixRows: [],
+        itemCategories: [
+          { workItemId: amcItemId, paymentCategory: 'PURE_INSTALLATION' },
+        ],
+      },
+    });
+    expect(refusedInBulk.statusCode, refusedInBulk.body).toBe(409);
+    expect(refusedInBulk.json()).toMatchObject({ code: 'ITEM_HAS_CERTIFICATION' });
+    expect(refusedInBulk.json<{ message: string }>().message).toContain('AMC-YEAR-1-2');
 
     // Still AMC, and still certified 2.000 — the refusals changed
     // nothing.

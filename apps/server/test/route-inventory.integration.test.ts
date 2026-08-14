@@ -99,7 +99,7 @@ const UNPAGINATED_LISTS = new Map<string, string>([
 
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],
-  ['GET /api/works/:id/payment-matrix', 'at most four payment categories'],
+  ['GET /api/works/:id/payment-matrix', 'one row per payment category, at most six'],
   ['GET /api/works/:id/completion-readiness', 'blockers, one per unfinished item'],
   ['GET /api/works/:id/consignees', 'the consignees linked to one Work'],
   [
@@ -341,9 +341,26 @@ const PAYLOAD_OVERRIDES = new Map<string, unknown>([
   ],
   // Same guard, reached through the payment-setup save: it validates
   // every submitted row before opening the transaction, and the sampler's
-  // one synthesised row cannot sum to 100. An empty setup is a valid
-  // request that writes nothing, which is exactly what this probe wants.
-  ['POST /api/works/:id/payment-setup', { matrixRows: [], itemCategories: [] }],
+  // one synthesised row cannot sum to 100. A REAL row and a real item,
+  // not an empty setup: an empty body clears the pre-tenant guards
+  // trivially, so it would prove the membership floor holds for a
+  // request that asks for nothing. This one asks for both halves of the
+  // save and must still be refused at the floor.
+  [
+    'POST /api/works/:id/payment-setup',
+    {
+      matrixRows: [
+        {
+          category: 'SUPPLY',
+          pctSupply: '100.00',
+          pctInstallation: '0',
+          pctPac: '0',
+          pctFinalBill: '0',
+        },
+      ],
+      itemCategories: [{ workItemId: randomUUID(), paymentCategory: 'SUPPLY' }],
+    },
+  ],
   // The AMENDMENT_EMPTY guard runs before the tenant transaction; the
   // sampler omits optional fields, so name one change explicitly.
   [

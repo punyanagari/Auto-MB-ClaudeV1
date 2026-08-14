@@ -184,17 +184,20 @@ describe('the payment setup prompt after a Work is created', () => {
     // long — confirm, navigate, load the Work, load its matrix — and a
     // loaded CI runner can spend more than the default second on it.
     expect(
-      (await screen.findAllByText('proposed', undefined, { timeout: 5000 })).length,
+      (await screen.findAllByText('proposed', undefined, { timeout: 15_000 })).length,
     ).toBe(2);
     expect(
       screen.getByRole('dialog', { name: 'Set up payment for this Work' }),
     ).toBeTruthy();
-  });
+    // The whole test gets more than the query inside it: vitest's own
+    // 5s default would expire at the same moment as the 5s wait above,
+    // and the test would die before the query could report what it saw.
+  }, 20_000);
 
   it('does not reopen when the operator comes back to the same Work', async () => {
     renderWorkspaceAtReview(workspaceApi());
     await confirmTheLetter();
-    await screen.findAllByText('proposed', undefined, { timeout: 5000 });
+    await screen.findAllByText('proposed', undefined, { timeout: 15_000 });
     const dialog = screen.getByRole('dialog', {
       name: 'Set up payment for this Work',
     });
@@ -223,7 +226,15 @@ describe('the payment setup prompt after a Work is created', () => {
       }),
     ).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
-  });
+
+    // The dialog is spent, but the Work is still unconfigured — so the
+    // page keeps saying so, quietly and in place, rather than by
+    // re-opening a modal the operator already dismissed.
+    expect(
+      await screen.findByText(/This Work has no payment matrix row for/),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open payment setup' })).toBeTruthy();
+  }, 20_000);
 });
 
 describe('WorkPaymentSetup', () => {
@@ -346,29 +357,48 @@ describe('WorkPaymentSetup', () => {
     ).toBe('');
   });
 
+  /** Types the four stage percentages of one category's row. */
+  function fillRow(
+    label: string,
+    [supply, installation, pac, finalBill]: readonly [string, string, string, string],
+  ): void {
+    fireEvent.change(screen.getByLabelText(`Supply % for ${label}`), {
+      target: { value: supply },
+    });
+    fireEvent.change(screen.getByLabelText(`Installation % for ${label}`), {
+      target: { value: installation },
+    });
+    fireEvent.change(screen.getByLabelText(`PAC % for ${label}`), {
+      target: { value: pac },
+    });
+    fireEvent.change(screen.getByLabelText(`Final bill % for ${label}`), {
+      target: { value: finalBill },
+    });
+  }
+
+  /** Every row the fixture Work's four items resolve through once A/2 is
+   * moved to supply-and-installation: A/1 supply, A/2 supply and
+   * installation, A/3 spare supply, A/4 uncategorised. */
+  function fillEveryUsedRow(): void {
+    fillRow('Supply', ['80', '0', '10', '10']);
+    fillRow('Supply + installation', ['60', '30', '5', '5']);
+    fillRow('Spare supply', ['100', '0', '0', '0']);
+    fillRow('Uncategorised items', ['70', '20', '0', '10']);
+  }
+
   it('saves the typed rows and only the items whose category moved', async () => {
     const saveWorkPaymentSetup = vi
       .fn()
-      .mockResolvedValue({ rows: [], items: [{ id: SUPPLY_ITEM }] });
+      .mockResolvedValue({ items: [{ id: SUPPLY_ITEM }] });
     const api = dialogApi({ saveWorkPaymentSetup });
     const { onSaved } = renderDialog(api);
 
-    fireEvent.change(await screen.findByLabelText('Supply % for Supply'), {
-      target: { value: '80' },
-    });
-    fireEvent.change(screen.getByLabelText('Installation % for Supply'), {
-      target: { value: '0' },
-    });
-    fireEvent.change(screen.getByLabelText('PAC % for Supply'), {
-      target: { value: '10' },
-    });
-    fireEvent.change(screen.getByLabelText('Final bill % for Supply'), {
-      target: { value: '10' },
-    });
+    await screen.findByLabelText('Supply % for Supply');
     // The operator overrides one proposal and accepts the rest.
     fireEvent.change(screen.getByLabelText('Payment category for A/2'), {
       target: { value: 'SUPPLY_AND_INSTALLATION' },
     });
+    fillEveryUsedRow();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save payment setup' }));
     await waitFor(() => {
@@ -388,13 +418,124 @@ describe('WorkPaymentSetup', () => {
         pctPac: '10',
         pctFinalBill: '10',
       },
+      {
+        category: 'SUPPLY_AND_INSTALLATION',
+        pctSupply: '60',
+        pctInstallation: '30',
+        pctPac: '5',
+        pctFinalBill: '5',
+      },
+      {
+        category: 'SPARE_SUPPLY',
+        pctSupply: '100',
+        pctInstallation: '0',
+        pctPac: '0',
+        pctFinalBill: '0',
+      },
+      {
+        category: 'UNCATEGORISED',
+        pctSupply: '70',
+        pctInstallation: '20',
+        pctPac: '0',
+        pctFinalBill: '10',
+      },
     ]);
     // A/3 was already SPARE_SUPPLY and nobody touched it, so it is not in
-    // the request; A/4 stays uncategorised and is not in it either.
+    // the request; A/4 stays uncategorised and is not in it either. A/1
+    // travels as an accepted proposal, A/2 as a typed choice — the
+    // distinction the audit trail keeps.
     expect(body.itemCategories).toEqual([
-      { workItemId: SUPPLY_ITEM, paymentCategory: 'SUPPLY' },
-      { workItemId: LAYING_ITEM, paymentCategory: 'SUPPLY_AND_INSTALLATION' },
+      { workItemId: SUPPLY_ITEM, paymentCategory: 'SUPPLY', proposed: true },
+      {
+        workItemId: LAYING_ITEM,
+        paymentCategory: 'SUPPLY_AND_INSTALLATION',
+        proposed: false,
+      },
     ]);
+  });
+
+  it('counts the untouched proposals the Save button is about to commit', async () => {
+    renderDialog(dialogApi());
+
+    // Two proposals stand: A/1 supply, A/2 purely installation.
+    expect(
+      await screen.findByText('2 proposed categories will be saved.'),
+    ).toBeTruthy();
+
+    // Answering one leaves one proposal, and the line agrees.
+    fireEvent.change(screen.getByLabelText('Payment category for A/2'), {
+      target: { value: 'SUPPLY_AND_INSTALLATION' },
+    });
+    expect(screen.getByText('1 proposed category will be saved.')).toBeTruthy();
+  });
+
+  it('refuses a save that would leave an item billing through no row', async () => {
+    const saveWorkPaymentSetup = vi.fn();
+    const api = dialogApi({ saveWorkPaymentSetup });
+    renderDialog(api);
+
+    // One row typed, four categories in use: the exact state a
+    // Measurement Book refuses in, days later.
+    await screen.findByLabelText('Supply % for Supply');
+    fillRow('Supply', ['80', '0', '10', '10']);
+    fireEvent.click(screen.getByRole('button', { name: 'Save payment setup' }));
+
+    const refusal = await screen.findByText(/Enter the stage percentages for/);
+    expect(refusal.textContent).toContain('Purely installation');
+    expect(refusal.textContent).toContain('Spare supply');
+    expect(refusal.textContent).toContain('Uncategorised items');
+    // The one category that IS configured is not named.
+    expect(refusal.textContent).not.toContain('Supply +');
+    expect(saveWorkPaymentSetup).not.toHaveBeenCalled();
+  });
+
+  it('leaves a loaded row out of the request when nothing about it moved', async () => {
+    // `80` typed and `80.00` returned are the same percentage; comparing
+    // the text would resubmit every loaded row and write a row_updated
+    // audit event whose before and after are equal.
+    const saveWorkPaymentSetup = vi.fn().mockResolvedValue({ items: [] });
+    const api = dialogApi({
+      saveWorkPaymentSetup,
+      getPaymentMatrix: vi.fn().mockResolvedValue(
+        (
+          [
+            ['SUPPLY', '80.00', '0.00', '10.00', '10.00'],
+            ['PURE_INSTALLATION', '0.00', '90.00', '5.00', '5.00'],
+            ['SPARE_SUPPLY', '100.00', '0.00', '0.00', '0.00'],
+            ['UNCATEGORISED', '70.00', '20.00', '0.00', '10.00'],
+          ] as const
+        ).map(
+          ([category, pctSupply, pctInstallation, pctPac, pctFinalBill], index) => ({
+            id: `aaaaaaaa-aaaa-4aaa-8aaa-00000000000${String(index)}`,
+            workId: WORK_ID,
+            category,
+            pctSupply,
+            pctInstallation,
+            pctPac,
+            pctFinalBill,
+            createdAt: '2026-08-08T00:00:00.000Z',
+            updatedAt: '2026-08-08T00:00:00.000Z',
+          }),
+        ),
+      ),
+    });
+    renderDialog(api);
+
+    // Retype one row's value in a different but equal spelling.
+    fireEvent.change(await screen.findByLabelText('Supply % for Supply'), {
+      target: { value: '80' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save payment setup' }));
+
+    await waitFor(() => {
+      expect(saveWorkPaymentSetup).toHaveBeenCalledOnce();
+    });
+    const [, , body] = saveWorkPaymentSetup.mock.calls[0] as [
+      string,
+      string,
+      SavePaymentSetupRequest,
+    ];
+    expect(body.matrixRows).toEqual([]);
   });
 
   it('holds Save while a partly filled row cannot sum to 100', async () => {
@@ -408,6 +549,65 @@ describe('WorkPaymentSetup', () => {
     expect(screen.getByRole('alert').textContent).toContain(
       'Installation % must be a number',
     );
+  });
+
+  it('says which of the three reasons nothing was proposed', async () => {
+    // (i) Every item decided on the review screen: nothing was DUE to be
+    // proposed, which is not the same as nothing matching.
+    const decided = freshWork().schedules.flatMap((schedule) =>
+      schedule.items.map((item) => ({
+        ...item,
+        paymentCategory: 'SUPPLY' as const,
+      })),
+    );
+    const { unmount } = render(
+      <WorkPaymentSetup
+        api={dialogApi()}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={decided}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByText(/Every item already carries a category/),
+    ).toBeTruthy();
+    unmount();
+
+    // (ii) Uncategorised items that no keyword reaches.
+    const opaque = freshWork()
+      .schedules.flatMap((schedule) => schedule.items)
+      .filter((item) => item.id === OPAQUE_ITEM);
+    const second = render(
+      <WorkPaymentSetup
+        api={dialogApi()}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={opaque}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByText(/No category could be read from the descriptions/),
+    ).toBeTruthy();
+    second.unmount();
+
+    // (iii) No items at all: the shared empty state, and no sentence
+    // about descriptions that do not exist.
+    render(
+      <WorkPaymentSetup
+        api={dialogApi()}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workItems={[]}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText(/This Work has no items/)).toBeTruthy();
+    expect(screen.queryByText(/No category could be read/)).toBeNull();
   });
 
   it('writes nothing when the operator chooses Later', async () => {
@@ -436,9 +636,15 @@ describe('WorkPaymentSetup', () => {
     });
     const { onSaved, onClose } = renderDialog(api);
 
-    fireEvent.change(await screen.findByLabelText('Payment category for A/4'), {
+    await screen.findByLabelText('Supply % for Supply');
+    fireEvent.change(screen.getByLabelText('Payment category for A/4'), {
       target: { value: 'SUPPLY' },
     });
+    // Every category in use configured, so the request actually leaves
+    // the dialog and the server's own refusal is what comes back.
+    fillRow('Supply', ['80', '0', '10', '10']);
+    fillRow('Purely installation', ['0', '90', '5', '5']);
+    fillRow('Spare supply', ['100', '0', '0', '0']);
     fireEvent.click(screen.getByRole('button', { name: 'Save payment setup' }));
 
     expect(

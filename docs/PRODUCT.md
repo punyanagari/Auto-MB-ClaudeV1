@@ -52,7 +52,16 @@ It helps a contractor move from an awarded Letter of Acceptance (LOA) to defensi
    until the operator saves, "Later" writes nothing at all, and both editors
    live permanently on the Work's Schedules tab. The prompt belongs to the
    act of creating the Work, not to its address: a revisit, a refresh or a
-   shared link opens the Work page plainly.
+   shared link opens the Work page plainly. The Work page keeps its own,
+   quieter version of the question in place of a returning dialog — while
+   any item on the Work would bill through a category that has no matrix
+   row, the overview says so in one line and offers the same dialog, and it
+   stops as soon as that is no longer true.
+   The save itself refuses to leave that state: a payment setup that would
+   end with an item resolving to a matrix row which does not exist is
+   refused naming the categories, on the server as well as in the dialog,
+   because that is precisely the state a Measurement Book would refuse to
+   finalize in days later.
 9. Empty numeric and category fields are stored as null, never as zero or empty strings.
 10. A byte-identical re-upload within the organisation is refused, naming the
     document already held — its filename, upload date, status, and whether it
@@ -417,16 +426,26 @@ them guesses silently.
   saves. The reading is by keyword, in a fixed order: maintenance wording
   proposes nothing; supply and installation wording together propose
   `SUPPLY_AND_INSTALLATION`; installation wording alone — including the
-  trade verbs a railway schedule uses instead, such as laying, cutting,
-  blowing, jointing, termination, splicing, trenching and fixing — proposes
-  `PURE_INSTALLATION`; supply wording alone proposes `SUPPLY`; anything
-  else proposes nothing and the item stays uncategorised. So "Supply and
-  laying of armoured cable" is supply-and-installation, and "Laying of PVC
-  cable" is pure installation. `SPARE_SUPPLY` and `AMC` are never proposed:
+  trade verbs a railway schedule uses instead, such as laying, erection,
+  commissioning, blowing, jointing, termination, splicing and trenching —
+  proposes `PURE_INSTALLATION`; supply wording alone proposes `SUPPLY`;
+  anything else proposes nothing and the item stays uncategorised. So
+  "Supply and laying of armoured cable" is supply-and-installation, and
+  "Laying of PVC cable" is pure installation. Two trade words, **cutting**
+  and **fixing**, count only on a line that says nothing about supply: they
+  are also how a schedule names goods — a "rock cutting machine", "GI
+  fixing clamps" — so on a supply line they describe the merchandise, and
+  reading them as work would split the item's value across a stage no
+  quantity ever moves through. `SPARE_SUPPLY` and `AMC` are never proposed:
   a spare is a supply line by its words and only the contract distinguishes
   it, and a maintenance schedule is recognised by its heading and its
   `Year` unit rather than by a word in the row — where a wrong guess is
   expensive in both directions.
+  Save commits the proposals still standing when it is pressed, including
+  the ones below the fold, and says how many it is about to commit. Each
+  is recorded on its audit event as an accepted proposal rather than as a
+  typed choice, so a category that later turns out wrong can be traced to
+  the act that set it.
 - **The Schedules tab, at any time afterwards**, until a Measurement Book
   bills the item.
 

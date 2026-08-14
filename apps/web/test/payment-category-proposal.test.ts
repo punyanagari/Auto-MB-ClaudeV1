@@ -70,6 +70,34 @@ describe('proposePaymentCategory', () => {
     }
   });
 
+  it('reads cutting and fixing as goods on a supply line, not as work', () => {
+    // "Cutting" and "fixing" are noun adjuncts in the names of things a
+    // railway schedule buys. On a line that already says supply they
+    // describe the merchandise, and proposing supply-and-installation
+    // would split the item's value across a stage no quantity will ever
+    // move through.
+    for (const description of [
+      'Supply of tile/rock cutting machine',
+      'Supply of GI fixing clamps',
+      'Providing of rock cutting bits for the drilling rig',
+    ]) {
+      expect(proposePaymentCategory(description), description).toBe('SUPPLY');
+    }
+    // A strong installation word beside them still carries the line.
+    expect(
+      proposePaymentCategory('Supply, laying and fixing of FRP perforated tray'),
+    ).toBe('SUPPLY_AND_INSTALLATION');
+    // And with no supply word on the line they still mean the work.
+    for (const description of [
+      'Cutting of trench for cable route',
+      'Fixing of the pole mount bracket at platform 3',
+    ]) {
+      expect(proposePaymentCategory(description), description).toBe(
+        'PURE_INSTALLATION',
+      );
+    }
+  });
+
   it('proposes supply for supply-only wording', () => {
     for (const description of [
       'Supply of True colour MLDB',

@@ -165,8 +165,41 @@ export function assertAmcStagePercentages(
 }
 
 interface BilledLineRecord {
+  work_item_id: string;
   id: string;
   mb_number: string | null;
+}
+
+/** One item whose category the caller is about to move, already locked
+ * and read. The three guards below all speak about a SET of these,
+ * because the payment-setup save changes many at once and a guard that
+ * ran per item would be one round trip per item. */
+interface ItemUnderChange {
+  readonly id: string;
+  readonly itemNumber: string;
+}
+
+/**
+ * The first item, in item-number order, that a guard's rows implicate —
+ * and every row belonging to it.
+ *
+ * A set-based guard finds every offender in one query, but a refusal
+ * names ONE item, with its own records in it, exactly as the per-item
+ * route always did. Item-number order makes the choice deterministic:
+ * the same request refuses with the same sentence every time, rather
+ * than with whichever row the planner returned first.
+ */
+function firstOffender<T extends { work_item_id: string }>(
+  items: readonly ItemUnderChange[],
+  rows: readonly T[],
+): { readonly item: ItemUnderChange; readonly rows: readonly T[] } | undefined {
+  if (rows.length === 0) return undefined;
+  const implicated = new Set(rows.map((row) => row.work_item_id));
+  const item = [...items]
+    .filter((candidate) => implicated.has(candidate.id))
+    .sort((left, right) => left.itemNumber.localeCompare(right.itemNumber))[0];
+  if (item === undefined) return undefined;
+  return { item, rows: rows.filter((row) => row.work_item_id === item.id) };
 }
 
 /**
@@ -198,16 +231,16 @@ interface BilledLineRecord {
  * including all-zero lines for the items it did not bill, so the line
  * alone is not billing.
  */
-async function assertItemNotBilled(
+async function assertItemsNotBilled(
   tx: TransactionSql,
-  workItemId: string,
-  itemNumber: string,
+  items: readonly ItemUnderChange[],
 ): Promise<void> {
+  if (items.length === 0) return;
   const billed = await tx<BilledLineRecord[]>`
-    select mb.id, mb.mb_number
+    select mbl.work_item_id, mb.id, mb.mb_number
     from measurement_book_lines mbl
     join measurement_books mb on mb.id = mbl.measurement_book_id
-    where mbl.work_item_id = ${workItemId}
+    where mbl.work_item_id = any(${items.map((item) => item.id)}::uuid[])
       and mb.status <> 'cancelled'
       and (
         mbl.delta_supplied <> 0 or mbl.delta_installed <> 0
@@ -217,16 +250,18 @@ async function assertItemNotBilled(
       )
     order by mb.mb_number
   `;
-  if (billed.length === 0) return;
-  const names = billed.map((row) => row.mb_number ?? row.id);
+  const offender = firstOffender(items, billed);
+  if (offender === undefined) return;
+  const { item, rows } = offender;
+  const names = rows.map((row) => row.mb_number ?? row.id);
   throw httpError(
     409,
     'ITEM_BILLED_IN_MB',
-    `Item ${itemNumber} is already billed in Measurement Book${names.length > 1 ? 's' : ''} ${names.join(', ')}, so its payment category can no longer be changed — that Measurement Book billed with the category and stage percentages in force at the time, and changing them now would bill stages a second time. Correct the billed amount with a compensating entry on the next Measurement Book instead.`,
+    `Item ${item.itemNumber} is already billed in Measurement Book${names.length > 1 ? 's' : ''} ${names.join(', ')}, so its payment category can no longer be changed — that Measurement Book billed with the category and stage percentages in force at the time, and changing them now would bill stages a second time. Correct the billed amount with a compensating entry on the next Measurement Book instead.`,
     {
-      workItemId,
-      itemNumber,
-      billedMeasurementBooks: billed.map((row) => ({
+      workItemId: item.id,
+      itemNumber: item.itemNumber,
+      billedMeasurementBooks: rows.map((row) => ({
         id: row.id,
         mbNumber: row.mb_number,
       })),
@@ -251,35 +286,38 @@ async function assertItemNotBilled(
  * Cancelled challans and cancelled installations do not count. They
  * released their quantities, so the item has moved nothing.
  */
-async function assertItemHasNoMovement(
+async function assertItemsHaveNoMovement(
   tx: TransactionSql,
-  workItemId: string,
-  itemNumber: string,
+  items: readonly ItemUnderChange[],
 ): Promise<void> {
-  const movement = await tx<{ kind: string; label: string }[]>`
-    select 'delivery_challan' as kind,
+  if (items.length === 0) return;
+  const ids = items.map((item) => item.id);
+  const movement = await tx<{ work_item_id: string; kind: string; label: string }[]>`
+    select dci.work_item_id, 'delivery_challan' as kind,
            coalesce(dc.challan_number, dc.id::text) as label
     from delivery_challan_items dci
     join delivery_challans dc on dc.id = dci.delivery_challan_id
-    where dci.work_item_id = ${workItemId} and dc.status <> 'cancelled'
+    where dci.work_item_id = any(${ids}::uuid[]) and dc.status <> 'cancelled'
     union all
-    select 'installation', i.installed_on::text
+    select i.work_item_id, 'installation', i.installed_on::text
     from installations i
-    where i.work_item_id = ${workItemId} and i.status = 'recorded'
-    order by 1, 2
+    where i.work_item_id = any(${ids}::uuid[]) and i.status = 'recorded'
+    order by 2, 3
   `;
-  if (movement.length === 0) return;
+  const offender = firstOffender(items, movement);
+  if (offender === undefined) return;
+  const { item, rows } = offender;
   throw httpError(
     409,
     'ITEM_HAS_MOVEMENT',
-    `Item ${itemNumber} cannot become an AMC item: annual maintenance is certified rather than delivered or installed, and this item already carries movement — ${nameFirst(
-      movement.map((row) =>
+    `Item ${item.itemNumber} cannot become an AMC item: annual maintenance is certified rather than delivered or installed, and this item already carries movement — ${nameFirst(
+      rows.map((row) =>
         row.kind === 'delivery_challan'
           ? `delivery challan ${row.label}`
           : `installation dated ${row.label}`,
       ),
     )}. Cancel those records first if the item really is a maintenance schedule.`,
-    { workItemId, itemNumber },
+    { workItemId: item.id, itemNumber: item.itemNumber },
   );
 }
 
@@ -308,26 +346,32 @@ async function assertItemHasNoMovement(
  * The remedy is to cancel the certificates — which releases their
  * quantities — not to relabel around them, so the refusal names them.
  */
-async function assertItemHasNoCertification(
+async function assertItemsHaveNoCertification(
   tx: TransactionSql,
-  workItemId: string,
-  itemNumber: string,
+  items: readonly ItemUnderChange[],
 ): Promise<void> {
-  const certificates = await tx<{ reference: string; certified: string }[]>`
-    select pc.reference, pci.certified_quantity::text as certified
+  if (items.length === 0) return;
+  const certificates = await tx<
+    { work_item_id: string; reference: string; certified: string }[]
+  >`
+    select pci.work_item_id, pc.reference,
+           pci.certified_quantity::text as certified
     from pac_certificate_items pci
     join pac_certificates pc on pc.id = pci.pac_certificate_id
-    where pci.work_item_id = ${workItemId} and pc.status = 'recorded'
+    where pci.work_item_id = any(${items.map((item) => item.id)}::uuid[])
+      and pc.status = 'recorded'
     order by pc.reference
   `;
-  if (certificates.length === 0) return;
+  const offender = firstOffender(items, certificates);
+  if (offender === undefined) return;
+  const { item, rows } = offender;
   throw httpError(
     409,
     'ITEM_HAS_CERTIFICATION',
-    `Item ${itemNumber} cannot leave the AMC category: it is certified against its sanctioned quantity, which only a maintenance item may be, and moving it would leave more certified than installed — ${nameFirst(
-      certificates.map((row) => `certificate ${row.reference} for ${row.certified}`),
+    `Item ${item.itemNumber} cannot leave the AMC category: it is certified against its sanctioned quantity, which only a maintenance item may be, and moving it would leave more certified than installed — ${nameFirst(
+      rows.map((row) => `certificate ${row.reference} for ${row.certified}`),
     )}. Cancel those certificates first, which releases their quantities.`,
-    { workItemId, itemNumber },
+    { workItemId: item.id, itemNumber: item.itemNumber },
   );
 }
 
@@ -343,6 +387,55 @@ function nameFirst(labels: readonly string[]): string {
   const shown = labels.slice(0, 3).join('; ');
   const rest = labels.length - 3;
   return rest > 0 ? `${shown} and ${String(rest)} more` : shown;
+}
+
+/**
+ * Refuses a Work left with an item that resolves to a matrix row which
+ * does not exist.
+ *
+ * The authority for the payment-setup save's one added rule, run on the
+ * FINAL state inside the transaction, so it reads what was actually
+ * written rather than what was submitted — a save that changed nothing
+ * on a Work that was already incomplete is refused for the same reason
+ * as one that made it incomplete, and neither can be talked past by a
+ * client that computed the coverage differently.
+ *
+ * The resolution is the one `payment-matrix.ts` performs at billing
+ * time: an item's own category, and `UNCATEGORISED` when it has none. A
+ * categorised item deliberately does not fall back, so a SUPPLY item on
+ * a Work with only an UNCATEGORISED row is uncovered and named here.
+ */
+async function assertEveryItemResolves(
+  tx: TransactionSql,
+  workId: string,
+): Promise<void> {
+  const uncovered = await tx<{ category: string }[]>`
+    select distinct coalesce(wi.payment_category, 'UNCATEGORISED') as category
+    from work_items wi
+    where wi.work_id = ${workId} and wi.deleted_at is null
+      and not exists (
+        select 1 from payment_matrices pm
+        where pm.work_id = wi.work_id
+          and pm.category = coalesce(wi.payment_category, 'UNCATEGORISED')
+      )
+    order by 1
+  `;
+  if (uncovered.length === 0) return;
+  const names = uncovered.map((row) => row.category);
+  throw httpError(
+    400,
+    'PAYMENT_MATRIX_ROW_MISSING',
+    `This Work has items that would bill through ${names.join(
+      ', ',
+    )}, and it has no payment matrix row for ${
+      names.length > 1 ? 'those categories' : 'that category'
+    }. Enter the four stage percentages for ${
+      names.length > 1 ? 'them' : 'it'
+    } — a Measurement Book cannot be finalized until the row${
+      names.length > 1 ? 's exist' : ' exists'
+    }. Nothing was saved.`,
+    { categories: names },
+  );
 }
 
 const MATRIX_COLUMNS_SQL = `
@@ -452,30 +545,60 @@ async function writeMatrixRow(
   return row;
 }
 
+type ItemCategoryValue = SetWorkItemPaymentCategoryRequest['paymentCategory'];
+
+interface ItemCategoryAssignment {
+  readonly workItemId: string;
+  readonly paymentCategory: ItemCategoryValue;
+  /** The value was the dialog's keyword proposal, accepted untouched.
+   * Recorded on the audit event; it grants nothing. */
+  readonly proposed?: boolean;
+}
+
 /**
- * Sets one item's payment category and its audit event, given the Work
- * row the caller has already locked and proved access to.
+ * Sets the payment category of a SET of items and writes their audit
+ * events, given the Work row the caller has already locked and proved
+ * access to.
  *
- * Shared by the per-item PATCH and the payment-setup save. Everything
- * that decides whether the change is ALLOWED lives here — R8, the
- * billing freeze and the two AMC guards — so a caller cannot acquire the
- * write without them.
+ * Shared by the per-item PATCH (which passes one) and the payment-setup
+ * save (which passes up to five hundred). Everything that decides
+ * whether a change is ALLOWED lives here — R8, the billing freeze and
+ * the two AMC guards — so a caller cannot acquire the write without
+ * them.
+ *
+ * Written as a SET rather than as a loop over one, which is the shape
+ * `routes/challans.ts` already uses for its lines: one `= any(...) order
+ * by id for update` to take every row lock in a deterministic order, the
+ * three guards once each over the whole set, one `unnest` update, and
+ * one audit insert. A loop would have taken four round trips per item —
+ * a 129-item Work costs five hundred of them, inside a transaction
+ * holding the Work's row lock the whole time.
+ *
+ * `source` is the act the change came from, when the caller is not the
+ * plain per-item edit. The PATCH omits it and its audit details are
+ * unchanged; the payment-setup save names itself, so a reviewer reading
+ * a category that turned out wrong can tell a bulk save from a
+ * deliberate single correction — and, with `proposed`, an accepted
+ * keyword proposal from a typed choice.
  */
-async function writeItemPaymentCategory(
+async function writeItemPaymentCategories(
   tx: TransactionSql,
   args: {
     readonly organisationId: string;
     readonly userId: string;
     readonly work: { readonly id: string; readonly status: string };
-    readonly workItemId: string;
-    readonly paymentCategory: SetWorkItemPaymentCategoryRequest['paymentCategory'];
+    readonly entries: readonly ItemCategoryAssignment[];
+    readonly source?: string;
   },
-): Promise<{
-  id: string;
-  itemNumber: string;
-  paymentCategory: SetWorkItemPaymentCategoryRequest['paymentCategory'];
-}> {
-  const { organisationId, userId, work, workItemId, paymentCategory } = args;
+): Promise<
+  {
+    id: string;
+    itemNumber: string;
+    paymentCategory: ItemCategoryValue;
+  }[]
+> {
+  const { organisationId, userId, work, entries, source } = args;
+  if (entries.length === 0) return [];
 
   // R8: a completed Work is closed to edits until it is reopened.
   // The category decides which quantity the completion predicate
@@ -483,12 +606,16 @@ async function writeItemPaymentCategory(
   // the basis of a closure that has already been recorded.
   assertWorkOperable(work.status, "changing an item's payment category");
 
-  // Row lock: serialises concurrent category edits so the
-  // before/after audit pairs chain truthfully. The `work_id` predicate
-  // is what makes this safe for a caller holding a Work rather than an
+  // Row locks in id order, taken in ONE statement before anything is
+  // read off the rows — the works -> work_items order every writer takes,
+  // and the ordering that stops two concurrent saves of overlapping item
+  // sets from deadlocking against each other. The `work_id` predicate is
+  // what makes this safe for a caller holding a Work rather than an
   // item: an id belonging to another Work — or to another tenant, which
-  // RLS has already hidden — is simply not found.
-  const [item] = await tx<
+  // RLS has already hidden — is simply not found, and the short count
+  // below turns that into a 404 rather than a silent partial write.
+  const wantedIds = [...new Set(entries.map((entry) => entry.workItemId))].sort();
+  const locked = await tx<
     {
       id: string;
       work_id: string;
@@ -498,18 +625,21 @@ async function writeItemPaymentCategory(
   >`
     select id, work_id, item_number, payment_category
     from work_items
-    where id = ${workItemId} and work_id = ${work.id} and deleted_at is null
+    where id = any(${wantedIds}::uuid[]) and work_id = ${work.id}
+      and deleted_at is null
+    order by id
     for update
   `;
-  if (!item) {
+  if (locked.length !== wantedIds.length) {
     throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
   }
+  const current = new Map(locked.map((item) => [item.id, item]));
 
   // The category is configuration only until a Measurement Book
   // bills the item; after that it is part of what was paid. Re-
   // submitting the value the item already carries changes nothing
-  // and stays a harmless no-op, so the guard runs only when the
-  // value actually moves.
+  // and stays a harmless no-op, so the guards run only over the
+  // items whose value actually moves.
   //
   // The two AMC guards are symmetric on purpose. Moving IN is
   // refused while the item carries movement, because an AMC item
@@ -519,51 +649,89 @@ async function writeItemPaymentCategory(
   // the installed total. Guarding only one direction leaves the
   // other as a way to reach exactly the state the guard exists to
   // prevent.
-  if (paymentCategory !== item.payment_category) {
-    await assertItemNotBilled(tx, item.id, item.item_number);
-    if (paymentCategory === 'AMC') {
-      await assertItemHasNoMovement(tx, item.id, item.item_number);
-    }
-    if (item.payment_category === 'AMC') {
-      await assertItemHasNoCertification(tx, item.id, item.item_number);
-    }
-  }
+  const moving = entries.filter(
+    (entry) =>
+      entry.paymentCategory !== current.get(entry.workItemId)?.payment_category,
+  );
+  const under = (subset: readonly ItemCategoryAssignment[]): ItemUnderChange[] =>
+    subset.map((entry) => ({
+      id: entry.workItemId,
+      itemNumber: current.get(entry.workItemId)?.item_number ?? entry.workItemId,
+    }));
+  await assertItemsNotBilled(tx, under(moving));
+  await assertItemsHaveNoMovement(
+    tx,
+    under(moving.filter((entry) => entry.paymentCategory === 'AMC')),
+  );
+  await assertItemsHaveNoCertification(
+    tx,
+    under(
+      moving.filter(
+        (entry) => current.get(entry.workItemId)?.payment_category === 'AMC',
+      ),
+    ),
+  );
 
-  const [updated] = await tx<
+  const updated = await tx<
     { id: string; item_number: string; payment_category: string | null }[]
   >`
-    update work_items
-    set payment_category = ${paymentCategory}
-    where id = ${workItemId}
-    returning id, item_number, payment_category
+    update work_items wi
+    set payment_category = requested.payment_category
+    from unnest(
+      ${entries.map((entry) => entry.workItemId)}::uuid[],
+      ${entries.map((entry) => entry.paymentCategory)}::text[]
+    ) as requested(work_item_id, payment_category)
+    where wi.id = requested.work_item_id and wi.work_id = ${work.id}
+      and wi.deleted_at is null
+    returning wi.id, wi.item_number, wi.payment_category
   `;
-  if (!updated) {
+  if (updated.length !== wantedIds.length) {
     throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
   }
-  const changes = auditDiff(
-    { paymentCategory: item.payment_category },
-    { paymentCategory: updated.payment_category },
-  );
-  await audit(
-    tx,
-    organisationId,
-    userId,
-    'work_item.payment_category_changed',
-    'work_items',
-    workItemId,
-    {
-      workId: item.work_id,
+
+  // One statement for the whole set. The shared `audit` helper writes
+  // exactly one row, so a multi-row event is inlined here — the shape
+  // `routes/challans.ts` and `routes/loa.ts` already use for their own
+  // batched events.
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, entity_id, details
+    )
+    select ${organisationId}, ${userId}, 'work_item.payment_category_changed',
+           'work_items', changed.id, changed.details::jsonb
+    from unnest(
+      ${entries.map((entry) => entry.workItemId)}::uuid[],
+      ${entries.map((entry) => {
+        const before = current.get(entry.workItemId)?.payment_category ?? null;
+        const changes = auditDiff(
+          { paymentCategory: before },
+          { paymentCategory: entry.paymentCategory },
+        );
+        return JSON.stringify({
+          workId: work.id,
+          itemNumber: current.get(entry.workItemId)?.item_number,
+          before: changes.before,
+          after: changes.after,
+          ...(source === undefined
+            ? {}
+            : { source, proposed: entry.proposed === true }),
+        });
+      })}::text[]
+    ) as changed(id, details)
+  `;
+
+  const byId = new Map(updated.map((item) => [item.id, item]));
+  return entries.map((entry) => {
+    const item = byId.get(entry.workItemId);
+    if (item === undefined) {
+      throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+    }
+    return {
+      id: item.id,
       itemNumber: item.item_number,
-      before: changes.before,
-      after: changes.after,
-    },
-  );
-  return {
-    id: updated.id,
-    itemNumber: updated.item_number,
-    paymentCategory:
-      updated.payment_category as SetWorkItemPaymentCategoryRequest['paymentCategory'],
-  };
+      paymentCategory: item.payment_category as ItemCategoryValue,
+    };
+  });
 }
 
 /* --- Item tax facts (migration 0033) -----------------------------------
@@ -797,13 +965,16 @@ export function registerPaymentRoutes(
           throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
         }
         await assertWorkAccess(tx, user.id, work.id);
-        return writeItemPaymentCategory(tx, {
+        const [updated] = await writeItemPaymentCategories(tx, {
           organisationId,
           userId: user.id,
           work,
-          workItemId,
-          paymentCategory: body.paymentCategory,
+          entries: [{ workItemId, paymentCategory: body.paymentCategory }],
         });
+        if (updated === undefined) {
+          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
+        }
+        return updated;
       });
     },
   );
@@ -816,10 +987,20 @@ export function registerPaymentRoutes(
    * It is a composition, not a new authority: every matrix row goes
    * through `writeMatrixRow` after the same percentage/sum/AMC
    * validation the per-row upsert applies, and every item through
-   * `writeItemPaymentCategory` with its R8, billing-freeze and AMC
+   * `writeItemPaymentCategories` with its R8, billing-freeze and AMC
    * guards. What the single request buys is atomicity — a save that
    * refuses one item leaves the Work exactly as it was, rather than
    * three rows in and no way for the operator to know which.
+   *
+   * It adds ONE rule of its own, and it is a rule about the Work rather
+   * than about the request: when the transaction is done, every item of
+   * the Work must resolve to a matrix row that exists. That is the state
+   * a Measurement Book refuses to finalize in, days later and to
+   * whoever happens to be billing, and a setup dialog that could leave
+   * the Work in it would be asking the question for nothing. Checked on
+   * the FINAL state read back from the database rather than on what the
+   * browser believed, because the client's view of the Work is a
+   * snapshot and another operator may have moved an item under it.
    *
    * Lock order is the one every Work-scoped writer takes: the works row
    * first, then work_items, and the items in a deterministic order so
@@ -860,7 +1041,7 @@ export function registerPaymentRoutes(
         if (seenItem.has(entry.workItemId)) {
           throw httpError(
             400,
-            'PAYMENT_SETUP_ITEM_DUPLICATE',
+            'DUPLICATE_ITEM',
             'The payment setup names the same Work item more than once, with no way to tell which category was meant. Nothing was saved.',
             { workItemId: entry.workItemId },
           );
@@ -869,49 +1050,46 @@ export function registerPaymentRoutes(
       }
 
       return tenant(async (tx) => {
-        // The works row lock FIRST, before any work_items row — the order
-        // every other Work-scoped writer takes, so this cannot invert a
-        // lock order and deadlock against a challan save or a completion.
+        // Work scope FIRST, then the works row lock — the order the
+        // sibling PUT takes. A member who may not see this Work is
+        // refused before they can make anyone else wait on its row, and
+        // a 404 for an out-of-scope Work costs no lock at all.
+        await assertWorkAccess(tx, user.id, workId);
+        // The works row lock before any work_items row — the order every
+        // other Work-scoped writer takes, so this cannot invert a lock
+        // order and deadlock against a challan save or a completion.
         const [work] = await tx<{ id: string; status: string }[]>`
           select id, status from works
           where id = ${workId} and deleted_at is null
           for update
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        await assertWorkAccess(tx, user.id, workId);
 
-        const rows: PaymentMatrixRow[] = [];
+        // At most one row per category (six), so the loop is bounded by
+        // the vocabulary rather than by the request, and each row still
+        // takes its own lock and writes its own before/after pair.
         for (const row of [...body.matrixRows].sort((left, right) =>
           left.category.localeCompare(right.category),
         )) {
-          rows.push(
-            toMatrixRow(
-              await writeMatrixRow(tx, {
-                organisationId,
-                userId: user.id,
-                workId,
-                category: row.category,
-                body: row,
-              }),
-            ),
-          );
+          await writeMatrixRow(tx, {
+            organisationId,
+            userId: user.id,
+            workId,
+            category: row.category,
+            body: row,
+          });
         }
 
-        const items = [];
-        for (const entry of [...body.itemCategories].sort((left, right) =>
-          left.workItemId.localeCompare(right.workItemId),
-        )) {
-          items.push(
-            await writeItemPaymentCategory(tx, {
-              organisationId,
-              userId: user.id,
-              work,
-              workItemId: entry.workItemId,
-              paymentCategory: entry.paymentCategory,
-            }),
-          );
-        }
-        return { rows, items };
+        const items = await writeItemPaymentCategories(tx, {
+          organisationId,
+          userId: user.id,
+          work,
+          entries: body.itemCategories,
+          source: 'payment_setup',
+        });
+
+        await assertEveryItemResolves(tx, workId);
+        return { items };
       });
     },
   );
