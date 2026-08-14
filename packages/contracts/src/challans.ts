@@ -309,6 +309,52 @@ export const WorkBalanceItemSchema = Type.Object(
 );
 export type WorkBalanceItem = Static<typeof WorkBalanceItemSchema>;
 
+/** The standing choices a NEW Delivery Challan draft for this Work opens
+ * on, taken from the Work's most recent ISSUED challan.
+ *
+ * A Work delivers to the same consignee under the same number prefix
+ * challan after challan, so retyping both on every draft is pure
+ * transcription — and transcription is where the consignee snapshot
+ * drifts. The source is chosen server-side by sequence number, which is
+ * the Work's true series order: it is assigned at issue, so a challan
+ * back-entered with an older date cannot displace a later one, and drafts
+ * and cancelled challans carry no sequence authority at all. Cancelled
+ * documents are excluded because whatever was wrong with one may be
+ * exactly these fields.
+ *
+ * Every value is an editable default. The consignee remains a per-challan
+ * snapshot: it is copied, never referenced. */
+export const ChallanCarryForwardSchema = Type.Object(
+  {
+    prefix: Type.String(),
+    consigneeName: Type.String(),
+    consigneeAddress: Type.String(),
+    consigneePhone: Type.Union([Type.String(), Type.Null()]),
+    /** The challan number the values came from, so the editor can say so. */
+    sourceChallanNumber: Type.String(),
+  },
+  { additionalProperties: false },
+);
+export type ChallanCarryForward = Static<typeof ChallanCarryForwardSchema>;
+
+/** The Issue Challan equivalent, from the Work's most recent ISSUED Issue
+ * Challan, chosen the same way.
+ *
+ * Movement type is deliberately absent. It is the one field that changes
+ * what the document DOES — a 'return' inverts the stock direction — so
+ * carrying it would make one return silently turn every later Issue
+ * Challan into a return. The Movement select always opens on 'issue'. */
+export const IssueChallanCarryForwardSchema = Type.Object(
+  {
+    issuedToName: Type.String(),
+    issuedToRole: Type.Union([Type.String(), Type.Null()]),
+    location: Type.Union([Type.String(), Type.Null()]),
+    sourceChallanNumber: Type.String(),
+  },
+  { additionalProperties: false },
+);
+export type IssueChallanCarryForward = Static<typeof IssueChallanCarryForwardSchema>;
+
 export const WorkBalanceResponseSchema = Type.Object(
   {
     allowExcessDelivery: Type.Boolean(),
@@ -316,6 +362,25 @@ export const WorkBalanceResponseSchema = Type.Object(
      * instead of a browser or UTC clock when defaulting a document date. */
     today: DateOnlySchema,
     items: Type.Array(WorkBalanceItemSchema),
+    /** What a new Delivery Challan draft opens on; null when the Work has
+     * no issued Delivery Challan, so its first challan opens on the plain
+     * defaults exactly as it always did.
+     *
+     * Both editors read this one endpoint, which is why the Issue Challan
+     * answer sits beside this one rather than nested under a shared key:
+     * an object property here would read to the route-inventory census as
+     * "this response names an entity", and quietly drop the route out of
+     * the pagination census that covers its `items` list.
+     *
+     * Optional in the schema so responses built before carry-forward
+     * existed stay valid; the server always serves it. */
+    deliveryCarryForward: Type.Optional(
+      Type.Union([ChallanCarryForwardSchema, Type.Null()]),
+    ),
+    /** The same answer for a new Issue Challan draft. */
+    issueCarryForward: Type.Optional(
+      Type.Union([IssueChallanCarryForwardSchema, Type.Null()]),
+    ),
   },
   { additionalProperties: false },
 );

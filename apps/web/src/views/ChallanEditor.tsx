@@ -393,12 +393,24 @@ export function ChallanEditor({
               poLines[item.workItemId] = item.purchaseOrderLineId;
             }
           }
+          // The standing choices the server read off this Work's last
+          // ISSUED challan, and only those. It is null on the Work's
+          // first challan, and null again whenever a draft is being
+          // EDITED: a draft is already whatever the operator saved, down
+          // to the boxes they deliberately left empty, and an optional
+          // box they emptied must not silently refill from a document
+          // they are not looking at. The date stays the organisation's
+          // today, and nothing about what moved last time — quantities,
+          // purchase-order lines — is a default for what moves this time.
+          const carried =
+            existing === null ? (loadedBalance.deliveryCarryForward ?? null) : null;
           const loaded: EditorState = {
             challanDate: existing?.challan.challanDate ?? loadedBalance.today,
-            prefix: existing?.challan.prefix ?? workCode,
-            name: existing?.challan.consignee.name ?? '',
-            address: existing?.challan.consignee.address ?? '',
-            phone: existing?.challan.consignee.phone ?? '',
+            prefix: existing?.challan.prefix ?? carried?.prefix ?? workCode,
+            name: existing?.challan.consignee.name ?? carried?.consigneeName ?? '',
+            address:
+              existing?.challan.consignee.address ?? carried?.consigneeAddress ?? '',
+            phone: existing?.challan.consignee.phone ?? carried?.consigneePhone ?? '',
             quantities,
             poLines,
           };
@@ -663,6 +675,14 @@ export function ChallanEditor({
   // always did.
   const offersPoLines = poLineChoices.size > 0;
 
+  // Where the consignee in these boxes came from, when it was not typed
+  // here. A prefilled form that never says so reads as a form the
+  // operator already filled in, and the picker above still says "Manual
+  // entry" — so the document that supplied the values is named. Only a
+  // new draft is ever seeded; an existing draft loaded its own values.
+  const carriedFrom =
+    challanId === null ? (balance.deliveryCarryForward ?? null) : null;
+
   return (
     <Card className="w-full" aria-labelledby="challan-editor-title">
       <h1 id="challan-editor-title" tabIndex={-1}>
@@ -869,6 +889,12 @@ export function ChallanEditor({
             </FieldError>
           )}
         </Field>
+        {carriedFrom !== null && (
+          <Hint>
+            Carried from {carriedFrom.sourceChallanNumber} — edit if this delivery
+            differs.
+          </Hint>
+        )}
 
         <h2>Items</h2>
         <DataTable scroll className="[&_input]:w-28">
