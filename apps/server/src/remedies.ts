@@ -130,7 +130,9 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   DUPLICATE_ENTRY:
     'Give the item a number no item in this Work has held; numbers stay reserved even after an item is omitted.',
   DUPLICATE_ITEM:
-    'Remove the repeated line and carry its quantity on the single line for that item.',
+    'Name each Work item once in the request; on a challan, carry the whole quantity on that item’s single line.',
+  PAYMENT_MATRIX_ROW_MISSING:
+    'Enter the four stage percentages for every category this Work’s items bill through, under the Work’s Schedules and items tab; an item with no matrix row stops the Measurement Book that would bill it.',
   NUMBER_CONFLICT:
     'Issue again under a distinct prefix in Settings, Number series; a number already used in this organisation is never reissued.',
   IRP_ALREADY_RECORDED:

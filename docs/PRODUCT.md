@@ -44,14 +44,32 @@ It helps a contractor move from an awarded Letter of Acceptance (LOA) to defensi
    validated against the organisation's notified GST rate master as of the
    letter date. See "Executed value is measured on a recorded basis", below.
 7. Confirmation atomically creates the Work, schedules, and items.
-8. Empty numeric and category fields are stored as null, never as zero or empty strings.
-9. A byte-identical re-upload within the organisation is refused, naming the
-   document already held — its filename, upload date, status, and whether it
-   became a Work.
-10. A letter number matching an earlier document or Work is **not** refused;
+8. The new Work then opens with its **payment setup** offered once — the
+   stage percentages per category and a payment category per item, in one
+   dialog with one Save. Items the reviewer left uncategorised arrive with a
+   category **proposed** from their own description (see "The payment
+   category decides how an item is executed", below); nothing is written
+   until the operator saves, "Later" writes nothing at all, and both editors
+   live permanently on the Work's Schedules tab. The prompt belongs to the
+   act of creating the Work, not to its address: a revisit, a refresh or a
+   shared link opens the Work page plainly. The Work page keeps its own,
+   quieter version of the question in place of a returning dialog — while
+   any item on the Work would bill through a category that has no matrix
+   row, the overview says so in one line and offers the same dialog, and it
+   stops as soon as that is no longer true.
+   The save itself refuses to leave that state: a payment setup that would
+   end with an item resolving to a matrix row which does not exist is
+   refused naming the categories, on the server as well as in the dialog,
+   because that is precisely the state a Measurement Book would refuse to
+   finalize in days later.
+9. Empty numeric and category fields are stored as null, never as zero or empty strings.
+10. A byte-identical re-upload within the organisation is refused, naming the
+    document already held — its filename, upload date, status, and whether it
+    became a Work.
+11. A letter number matching an earlier document or Work is **not** refused;
     revised and re-issued letters legitimately repeat one. The review screen
     names the earlier intake so the reviewer decides.
-11. An intake package that has not become a Work can be **discarded**: it leaves
+12. An intake package that has not become a Work can be **discarded**: it leaves
     the working list with its supporting contract documents, keeps its stored
     object for the retention path, and records who discarded it, when, and why.
     A single supporting document can be discarded on its own. Discard is
@@ -91,7 +109,10 @@ Every other field is **fillable**, and the reviewer supplies it.
 **Not locked**, because the parser never produced them: the work code (the
 contractor's own filing reference), the per-Work item number and schedule
 labels, the payment category and the initial payment matrix, and any row the
-reviewer adds — which stays marked as a manual entry.
+reviewer adds — which stays marked as a manual entry. The rule for the payment
+category is precisely **extraction never proposes; the post-creation payment
+setup proposes, and the reviewer confirms** — the letter's item table carries no
+category, so there is no extracted truth to defend either way.
 
 **Enforcement.** The confirm endpoint compares every locked field in the
 submitted payload against the stored parse and refuses a mismatch with
@@ -431,6 +452,48 @@ and three rules follow.
 - **An AMC matrix row bills only on the certification and final-bill
   stages.** Its supply and installation stage deltas are permanently
   zero, so contract value parked on either could never be billed.
+
+**How an item gets its category.** Three moments, in order, and none of
+them guesses silently.
+
+- **LOA review.** The reviewer may set a category per row while confirming
+  the letter. Extraction proposes nothing here: the letter's item table
+  does not carry a category, so there is no extracted value to protect.
+- **The payment setup offered once after the Work is created.** Every item
+  still uncategorised is offered a category read from its own description,
+  shown as a **proposal** beside the item and saved only if the operator
+  saves. The reading is by keyword, in a fixed order: maintenance wording
+  proposes nothing; supply and installation wording together propose
+  `SUPPLY_AND_INSTALLATION`; installation wording alone — including the
+  trade verbs a railway schedule uses instead, such as laying, erection,
+  commissioning, blowing, jointing, termination, splicing and trenching —
+  proposes `PURE_INSTALLATION`; supply wording alone proposes `SUPPLY`;
+  anything else proposes nothing and the item stays uncategorised. So
+  "Supply and laying of armoured cable" is supply-and-installation, and
+  "Laying of PVC cable" is pure installation. Two trade words, **cutting**
+  and **fixing**, count only on a line that says nothing about supply: they
+  are also how a schedule names goods — a "rock cutting machine", "GI
+  fixing clamps" — so on a supply line they describe the merchandise, and
+  reading them as work would split the item's value across a stage no
+  quantity ever moves through. `SPARE_SUPPLY` and `AMC` are never proposed:
+  a spare is a supply line by its words and only the contract distinguishes
+  it, and a maintenance schedule is recognised by its heading and its
+  `Year` unit rather than by a word in the row — where a wrong guess is
+  expensive in both directions.
+  Save commits the proposals still standing when it is pressed, including
+  the ones below the fold, and says how many it is about to commit. Each
+  is recorded on its audit event as an accepted proposal rather than as a
+  typed choice, so a category that later turns out wrong can be traced to
+  the act that set it.
+- **The Schedules tab, at any time afterwards**, until a Measurement Book
+  bills the item.
+
+A proposal is not a default and not extraction: it is a suggestion a human
+accepts, changes, or ignores, and it is written only by the save that
+follows. An item left uncategorised keeps behaving exactly as the table
+above says — installed if its description mentions installation, else
+delivered — which is the fallback the proposer exists to make unnecessary
+rather than to replace.
 
 **Why it matters.** Before the category existed, an AMC item fell through
 to the uncategorised rule; a maintenance description does not contain the

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type {
   ApprovalRequest,
   Bill,
@@ -7,6 +14,8 @@ import type {
   Instrument,
   IssueChallan,
   MbEntry,
+  PaymentMatrixCategory,
+  PaymentMatrixRow,
   PurchaseOrder,
   Serial,
   UnfinishedWorkItem,
@@ -16,9 +25,11 @@ import type {
   WorkDetailResponse,
   WorkSupersession,
 } from '@auto-mb/contracts';
+import { CircleAlert } from 'lucide-react';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatInr, formatTimestampDate } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
@@ -38,6 +49,7 @@ import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkBillingReadiness } from './WorkBillingReadiness.js';
 import { WorkBillSettlement } from './WorkBillSettlement.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
+import { WorkPaymentSetup } from './WorkPaymentSetup.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
 
@@ -64,6 +76,13 @@ interface WorkDetailProps {
    * page keeps its own tab — which is what the component tests rely on. */
   readonly tab?: WorkTab;
   readonly onTabChange?: (tab: WorkTab) => void;
+  /** This Work was created moments ago by confirming its letter, and the
+   * payment setup has not been offered yet. True exactly once, from the
+   * navigation that followed the confirmation: the shell holds it in
+   * memory, so a revisit, a refresh or a shared link never re-opens it. */
+  readonly promptPaymentSetup?: boolean;
+  /** The prompt is spent — saved or dismissed. */
+  readonly onPaymentSetupClosed?: () => void;
 }
 
 /** The Work page's areas. Eleven sections used to stack on one scroll; each
@@ -106,6 +125,7 @@ const RELATED = {
   amendments: 'amendments',
   correctionNotices: 'correction notices',
   purchaseOrders: 'purchase orders',
+  paymentMatrix: 'the payment matrix',
 } as const;
 
 type RelatedLabel = (typeof RELATED)[keyof typeof RELATED];
@@ -319,6 +339,8 @@ export function WorkDetail({
   onBack,
   tab: controlledTab,
   onTabChange,
+  promptPaymentSetup = false,
+  onPaymentSetupClosed,
 }: WorkDetailProps) {
   const [detail, setDetail] = useState<WorkDetailResponse | null>(null);
   const [challans, setChallans] = useState<readonly Challan[] | null>(null);
@@ -336,6 +358,13 @@ export function WorkDetail({
   const [correctionNotices, setCorrectionNotices] = useState<
     readonly CorrectionNotice[]
   >([]);
+  const [paymentMatrixRows, setPaymentMatrixRows] = useState<
+    readonly PaymentMatrixRow[]
+  >([]);
+  /** Open while the operator asked for the payment setup from the
+   * overview prompt, as distinct from being offered it by the
+   * navigation that created the Work. */
+  const [paymentSetupOpen, setPaymentSetupOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   /** Bumped by the failure state's retry, to re-run the Work load below. */
   const [loadVersion, setLoadVersion] = useState(0);
@@ -479,6 +508,16 @@ export function WorkDetail({
       RELATED.purchaseOrders,
       api.listWorkPurchaseOrders(organisationId, workId),
       setPurchaseOrders,
+    );
+    // Read on the Work page, not only inside the matrix editor, because
+    // the overview asks a question of it: whether any item on this Work
+    // would bill through a category that has no row. That is the state
+    // the Measurement Book refuses in, and the page that can see it is
+    // the page that should say so.
+    loadRelated(
+      RELATED.paymentMatrix,
+      api.getPaymentMatrix(organisationId, workId),
+      setPaymentMatrixRows,
     );
     // Asked separately, and allowed to fail. It decides whether the
     // completion form is worth offering, not whether the page can be read;
@@ -643,6 +682,13 @@ export function WorkDetail({
         setPurchaseOrders,
       );
     }
+    if (labels.has(RELATED.paymentMatrix)) {
+      retryRelated(
+        RELATED.paymentMatrix,
+        api.getPaymentMatrix(organisationId, workId),
+        setPaymentMatrixRows,
+      );
+    }
   }
 
   const act = useCallback(
@@ -701,6 +747,40 @@ export function WorkDetail({
     [workId],
   );
 
+  /**
+   * The Work's items, flattened once per Work rather than once per
+   * render.
+   *
+   * Nine things read this list, and one of them — the payment setup
+   * dialog — memoises its keyword proposals on the array identity. A
+   * fresh array on every render re-ran that memo whenever any of the ten
+   * supporting registers settled, which is several times per second
+   * while the page is loading.
+   */
+  const workItems = useMemo(
+    () => (detail?.schedules ?? []).flatMap((schedule) => schedule.items),
+    [detail],
+  );
+
+  /**
+   * The categories items on this Work bill through that have no matrix
+   * row — the same resolution the server's `resolvePaymentPercentages`
+   * performs, with a NULL category falling back to the UNCATEGORISED
+   * row.
+   *
+   * This is the durable half of the payment setup prompt. The dialog is
+   * offered once by the navigation that created the Work; this is
+   * derived from the data instead, so a Work whose configuration is
+   * still incomplete keeps saying so — and stops as soon as it is not.
+   */
+  const uncoveredCategories = useMemo<readonly PaymentMatrixCategory[]>(() => {
+    const configured = new Set(paymentMatrixRows.map((row) => row.category));
+    const used = new Set<PaymentMatrixCategory>(
+      workItems.map((item) => item.paymentCategory ?? 'UNCATEGORISED'),
+    );
+    return [...used].filter((category) => !configured.has(category)).sort();
+  }, [workItems, paymentMatrixRows]);
+
   if (loadError !== null) {
     return (
       <Card aria-labelledby="work-title">
@@ -738,7 +818,6 @@ export function WorkDetail({
   }
 
   const { work, schedules } = detail;
-  const workItems = schedules.flatMap((schedule) => schedule.items);
   const pendingRemovals = pendingRemovalItemIds(amendments);
   const issuedChallans = (challans ?? []).filter(
     (challan) => challan.status === 'issued',
@@ -1043,6 +1122,45 @@ export function WorkDetail({
               );
             })}
           </div>
+
+          {/* The durable half of the payment setup prompt.
+              The dialog itself is offered once, by the navigation that
+              followed the letter's confirmation, because that is when the
+              letter is still in the operator's hands. A modal that
+              re-opened on every visit until it was answered would be a
+              nag; a Work that quietly bills nothing because a matrix row
+              was never entered is worse. So the question is asked here
+              instead, derived from the Work's own data: it appears
+              exactly while an item would bill through a category with no
+              row, and it goes away by itself when that stops being true.
+              Read-only members see nothing — the remedy is not theirs. */}
+          {canModify &&
+            relatedStateFor([RELATED.paymentMatrix]) === 'ready' &&
+            uncoveredCategories.length > 0 && (
+              <p className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+                <CircleAlert
+                  className="mt-0.5 size-4 shrink-0 self-center text-warning-foreground"
+                  aria-hidden="true"
+                />
+                <span>
+                  This Work has no payment matrix row for{' '}
+                  {uncoveredCategories
+                    .map((category) => CATEGORY_LABELS[category])
+                    .join(', ')}
+                  , so a Measurement Book cannot be finalized for the items that bill
+                  through {uncoveredCategories.length === 1 ? 'it' : 'them'}.
+                </span>
+                <Button
+                  variant="link"
+                  size="inline"
+                  onClick={() => {
+                    setPaymentSetupOpen(true);
+                  }}
+                >
+                  Open payment setup
+                </Button>
+              </p>
+            )}
 
           <section aria-labelledby="work-completion-heading">
             <h2 id="work-completion-heading">Completion status</h2>
@@ -1422,6 +1540,58 @@ export function WorkDetail({
           Back to Works
         </Button>
       </Actions>
+
+      {/* Two ways in, one dialog. The navigation that followed the
+          confirmation of this Work's letter offers it once, unasked; the
+          overview prompt above opens it again for as long as the
+          configuration is incomplete. Either way it writes nothing on its
+          own — Later dismisses, and the same two editors live permanently
+          under Schedules & items — and neither is offered to someone who
+          could not act on it. */}
+      {(promptPaymentSetup || paymentSetupOpen) && canModify && (
+        <WorkPaymentSetup
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          workItems={workItems}
+          onClose={() => {
+            setPaymentSetupOpen(false);
+            onPaymentSetupClosed?.();
+          }}
+          onSaved={(saved) => {
+            setDetail((current) =>
+              current === null
+                ? current
+                : {
+                    ...current,
+                    schedules: current.schedules.map((schedule) => ({
+                      ...schedule,
+                      items: schedule.items.map((item) => {
+                        const updated = saved.find(
+                          (candidate) => candidate.id === item.id,
+                        );
+                        return updated === undefined
+                          ? item
+                          : { ...item, paymentCategory: updated.paymentCategory };
+                      }),
+                    })),
+                  },
+            );
+            // Re-read the matrix rather than trusting what was sent: the
+            // save may have been refused in part, another operator may
+            // have configured a row meanwhile, and the overview prompt
+            // above answers from these rows. One GET is cheaper than a
+            // prompt that lies in either direction.
+            void api
+              .getPaymentMatrix(organisationId, workId)
+              .then(setPaymentMatrixRows)
+              .catch(() => undefined);
+            setNotice('Payment setup saved for this Work.');
+            setPaymentSetupOpen(false);
+            onPaymentSetupClosed?.();
+          }}
+        />
+      )}
     </Card>
   );
 }

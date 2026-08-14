@@ -173,9 +173,13 @@ export const ConfirmWorkRequestSchema = Type.Object(
     gstBasis: Type.Optional(GstBasisSchema),
     gstRate: Type.Optional(GstRateSchema),
     pbgRequirement: Type.Optional(ConfirmPbgRequirementSchema),
+    /** At most one row per matrix category, which is what the reviewer's
+     * editor offers. The bound was a bare `5` and stayed there when
+     * migration 0068 added AMC and made it six, so a reviewer who filled
+     * every row was refused by the schema with no message naming the
+     * cause. Derived from the vocabulary now, so the next category
+     * carries its own ceiling with it. */
     paymentMatrix: Type.Optional(
-      // At most one row per matrix category (the server rejects
-      // duplicates), so the category vocabulary is the ceiling.
       Type.Array(ConfirmPaymentMatrixRowSchema, {
         minItems: 1,
         maxItems: PAYMENT_MATRIX_CATEGORIES.length,

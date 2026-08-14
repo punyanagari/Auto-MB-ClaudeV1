@@ -339,6 +339,28 @@ const PAYLOAD_OVERRIDES = new Map<string, unknown>([
     'PUT /api/works/:id/payment-matrix/:category',
     { pctSupply: '100.00', pctInstallation: '0', pctPac: '0', pctFinalBill: '0' },
   ],
+  // Same guard, reached through the payment-setup save: it validates
+  // every submitted row before opening the transaction, and the sampler's
+  // one synthesised row cannot sum to 100. A REAL row and a real item,
+  // not an empty setup: an empty body clears the pre-tenant guards
+  // trivially, so it would prove the membership floor holds for a
+  // request that asks for nothing. This one asks for both halves of the
+  // save and must still be refused at the floor.
+  [
+    'POST /api/works/:id/payment-setup',
+    {
+      matrixRows: [
+        {
+          category: 'SUPPLY',
+          pctSupply: '100.00',
+          pctInstallation: '0',
+          pctPac: '0',
+          pctFinalBill: '0',
+        },
+      ],
+      itemCategories: [{ workItemId: randomUUID(), paymentCategory: 'SUPPLY' }],
+    },
+  ],
   // The AMENDMENT_EMPTY guard runs before the tenant transaction; the
   // sampler omits optional fields, so name one change explicitly.
   [
