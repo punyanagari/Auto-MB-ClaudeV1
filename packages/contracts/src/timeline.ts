@@ -21,6 +21,11 @@ export const TIMELINE_ENTITY_TYPES = [
   'payment_matrices',
   'pac_certificates',
   'measurement_books',
+  // The railway's own On-Account Bill (0066). Recording and discarding
+  // it are acts on the Work's paper trail, and closure of a Measurement
+  // Book rests on it — a trail that omitted the bill would show a
+  // measurement closing with no sign of what closed it.
+  'received_railway_bills',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

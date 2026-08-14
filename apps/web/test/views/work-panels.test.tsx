@@ -602,6 +602,70 @@ describe('Timeline', () => {
     });
   });
 
+  it('labels railway bill events and offers their filter', async () => {
+    const BILL_ID = '88888888-8888-4888-8888-888888888888';
+    const workTimeline = vi.fn().mockResolvedValue({
+      events: [
+        {
+          id: 'e3333333-3333-4333-8333-333333333333',
+          occurredAt: '2026-08-08T12:00:00.000Z',
+          actorUserId: 'user-a',
+          actorName: 'Owner Person',
+          action: 'received_railway_bill.recorded',
+          entityType: 'received_railway_bills',
+          entityId: BILL_ID,
+          details: { billNumber: 'PA02R262600392', billAmount: '23516112.00' },
+        },
+        {
+          id: 'e4444444-4444-4444-8444-444444444444',
+          occurredAt: '2026-08-08T11:00:00.000Z',
+          actorUserId: 'user-a',
+          actorName: 'Owner Person',
+          action: 'received_railway_bill.discarded',
+          entityType: 'received_railway_bills',
+          entityId: BILL_ID,
+          details: { billNumber: 'PA02R262600391', reason: 'wrongly attached' },
+        },
+        {
+          id: 'e5555555-5555-4555-8555-555555555555',
+          occurredAt: '2026-08-08T10:00:00.000Z',
+          actorUserId: 'user-a',
+          actorName: 'Owner Person',
+          action: 'measurement_book.closed',
+          entityType: 'measurement_books',
+          entityId: '99999999-9999-4999-8999-999999999999',
+          details: { billNumber: 'PA02R262600392' },
+        },
+      ],
+      nextCursor: null,
+    });
+    render(
+      <Timeline
+        api={stubApi({ workTimeline })}
+        organisationId={ORG_ID}
+        scope={{ kind: 'work', workId: WORK_ID }}
+      />,
+    );
+
+    expect(await screen.findByText('Railway bill recorded')).toBeTruthy();
+    expect(screen.getByText('Railway bill discarded')).toBeTruthy();
+    expect(screen.getByText('Measurement closed by railway bill')).toBeTruthy();
+    expect(screen.queryByText('received_railway_bill.recorded')).toBeNull();
+
+    const filter = screen.getByLabelText<HTMLSelectElement>(
+      'Filter timeline by record type',
+    );
+    expect([...filter.options].map((option) => option.value)).toContain(
+      'received_railway_bills',
+    );
+    fireEvent.change(filter, { target: { value: 'received_railway_bills' } });
+    await waitFor(() => {
+      expect(workTimeline).toHaveBeenLastCalledWith(ORG_ID, WORK_ID, {
+        entityTypes: ['received_railway_bills'],
+      });
+    });
+  });
+
   it('shows the same component on the challan detail via the entity history', async () => {
     const entityTimeline = vi
       .fn()
