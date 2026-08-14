@@ -903,7 +903,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
-    registerLoaRoutes(app, authInstance, database, storage, scanner, pdfTrustAnchors);
+    registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerContractSourceRoutes(
       app,
       authInstance,
