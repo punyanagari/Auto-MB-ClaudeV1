@@ -335,6 +335,24 @@ export function registerBillPaymentRoutes(
       const { id: workId } = request.params;
       return tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
+        // The Work has to exist, and be live, before its money is
+        // reported. Without this the register answered `{positions: []}`
+        // for an unknown id and for another organisation's Work alike —
+        // indistinguishable from a Work of one's own that nobody has
+        // billed yet, which is the empty-register lie about a register.
+        //
+        // `deleted_at is null` is the merged tree's liveness predicate
+        // (migration 0071). It is defence in depth here rather than a
+        // reachable case: superseding refuses while any bill exists, so a
+        // Work carrying a settlement position cannot be withdrawn. It is
+        // written anyway, because relying on that would be relying on a
+        // rule that lives in another module and could be relaxed there.
+        const [live] = await tx<{ id: string }[]>`
+          select id from works where id = ${workId} and deleted_at is null
+        `;
+        if (live === undefined) {
+          throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        }
         // Its own statement against `bill_settlement_positions` — the
         // aggregate is deliberately never folded into a loader that
         // something else already runs. The Measurement Book loader's
@@ -404,7 +422,17 @@ export function registerBillPaymentRoutes(
         );
       }
 
-      return tenant(async (tx) => {
+      // The transaction is awaited to COMPLETION before the response is
+      // sent, and that ordering is load-bearing rather than tidy.
+      // `reply.send()` dispatches immediately, so calling it inside the
+      // callback lets a 201 reach the client while the COMMIT is still in
+      // flight — and a screen that refetches the register on success then
+      // renders without the receipt it just recorded. It surfaced as an
+      // intermittently failing assertion on the partial-payments test,
+      // which is the polite version of the bug: the impolite version is an
+      // operator recording a payment twice because the first one did not
+      // appear. Every sibling route in the tree sends after the await.
+      const recorded = await tenant(async (tx) => {
         // Lock the bill first, in the same order the database guard takes
         // it, so two advices recorded at once cannot jointly pass the
         // railway's figure.
@@ -567,8 +595,9 @@ export function registerBillPaymentRoutes(
             reference: payment.reference,
           },
         );
-        return reply.status(201).send(payment);
+        return payment;
       });
+      return reply.status(201).send(recorded);
     },
   );
 

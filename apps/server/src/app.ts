@@ -68,6 +68,7 @@ import { registerCreditNoteRoutes } from './routes/credit-notes.js';
 import { registerEwayBillRoutes } from './routes/eway-bills.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
 import { registerWorkCompletionRoutes } from './routes/work-completion.js';
+import { registerWorkSupersedeRoutes } from './routes/work-supersede.js';
 import { createFileSystemStorage } from './storage.js';
 import { EMPTY_TRUST_ANCHOR_STORE, type TrustAnchorStore } from './pdf-signature.js';
 import { recordRegisteredRoutes, tenantRoutesOf } from './tenant-route.js';
@@ -979,6 +980,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     );
     registerEwayBillRoutes(app, authInstance, database, options.statutoryProvider);
     registerWorkCompletionRoutes(app, authInstance, database);
+    registerWorkSupersedeRoutes(app, authInstance, database);
   }
 
   return app;

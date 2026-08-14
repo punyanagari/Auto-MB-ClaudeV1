@@ -87,11 +87,22 @@ dynamically at run time.
 A new definer function `app_private.bind_tenant(p_organisation_id uuid,
 p_user_id text)` performs the two `set_config` calls (transaction-local,
 exactly as `tenant.ts` does today) and then proves the active membership,
-raising `28000` if it does not hold. `withTenantAt` in
+raising `28A01` if it does not hold. `withTenantAt` in
 `packages/db/src/tenant.ts` replaces its two `set_config` statements with
 one `SELECT app_private.bind_tenant(...)` call — one round trip instead of
 two, and a wrong binding now fails at the top of the transaction with a
 named error instead of producing silent empty results downstream.
+
+_This ADR first named `28000` here and in the two places below; implementation
+review took `28A01`, and this record states the decision as taken. `28000` is
+`invalid_authorization_specification`, which PostgreSQL itself raises when a
+connection fails `pg_hba`, LOGIN or role authorisation — so a caller mapping it
+to "not a member" would answer a cluster-wide authentication outage with a
+fleet of tenant-shaped 403s and no 5xx at all, and the outage would read as a
+permissions change. Class 28 carries exactly two upstream codes (`28000` and
+`28P01`), so `28A01` is unused by PostgreSQL and unused anywhere in this
+schema, and `tenant.ts` catches exactly it. See the migration header and
+`TENANT_BIND_REFUSED_SQLSTATE` in `packages/db/src/tenant.ts`._
 
 Bind-time verification is **additive, not load-bearing**: the policies do
 not trust it. If a future code path binds GUCs without calling
@@ -124,7 +135,7 @@ BUFFERS)` on a register query at fixture scale, before and after, stated
   adds an additional check at transaction start.
 - `withUserContext` (user-scoped, no organisation) is untouched.
 - Callers of `withTenant`/`withTenantSnapshot` that bind with an **absent
-  user id** would now raise `28000` at bind instead of silently reading
+  user id** would now raise `28A01` at bind instead of silently reading
   nothing. Implementation must census such call sites first; the
   expectation is zero live ones (they were already broken-silent). If the
   census finds one, it is a pre-existing bug to surface, not a reason to
@@ -138,7 +149,7 @@ BUFFERS)` on a register query at fixture scale, before and after, stated
      (non-InitPlan) helper call** — must fail on the pre-fix tree.
   2. A plan-shape assertion (P11 precedent) that a tenant register scan
      evaluates the helper via InitPlan, not per row.
-  3. A fail-closed test: binding a non-member organisation raises `28000`
+  3. A fail-closed test: binding a non-member organisation raises `28A01`
      at `bind_tenant`, before any statement runs.
   4. The existing tenancy suite (`packages/db/test/tenancy.integration.test.ts`,
      `organisation-read-pinning`, `cross-org-authority`) must pass

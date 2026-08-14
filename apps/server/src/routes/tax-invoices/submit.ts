@@ -254,7 +254,7 @@ async function readWorkGstBasis(
 ): Promise<WorkGstBasis> {
   const [row] = await tx<{ gst_basis: GstBasis; gst_rate: string }[]>`
     select gst_basis, gst_rate::text as gst_rate
-    from works where id = ${workId}
+    from works where id = ${workId} and deleted_at is null
   `;
   if (!row) {
     // An MB-backed invoice always has a Work; a missing one is a broken

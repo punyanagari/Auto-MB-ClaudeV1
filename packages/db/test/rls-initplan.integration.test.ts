@@ -244,9 +244,16 @@ describe('guard 1: no tenant policy calls a helper in bare filter position', () 
   it('still routes every one of those policies through a helper', async () => {
     // The counterpart to the census: moving the calls must not have
     // DELETED any. Compared as sets against the pre-fix tree, so this
-    // measures the rewrite rather than a number somebody typed. 0070 adds
-    // no policy, so the two populations are the same policies.
-    expect(await helperPolicies(head.pool)).toEqual(await helperPolicies(staged.pool));
+    // measures the rewrite rather than a number somebody typed.
+    //
+    // Containment rather than equality, because a migration after 0069 may
+    // legitimately ADD a tenant table — 0071's `work_supersessions` is the
+    // first — and a new policy is held to InitPlan form by the census
+    // above, not by this comparison. What this assertion owns is that the
+    // rewrite dropped nothing.
+    const rewritten = await helperPolicies(head.pool);
+    const before = await helperPolicies(staged.pool);
+    expect(before.filter((policy) => !rewritten.includes(policy))).toEqual([]);
   });
 });
 

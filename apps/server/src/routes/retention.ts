@@ -552,12 +552,21 @@ export function registerRetentionRoutes(
       const body = request.body;
       const instrument = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
+        // The works row lock every sibling child-creating route takes
+        // (challans.ts, issue-challans.ts, installations.ts, pac.ts).
+        // Without it this route read the Work and inserted against it in
+        // two statements with no serialisation, so a Work could be
+        // withdrawn between the read and the insert and the instrument
+        // would land on a superseded Work — the eligibility census having
+        // already seen an empty register. `for update of w` locks the
+        // Work alone; the joined organisations row is read, not locked.
         const [work] = await tx<{ id: string; letter_date: string; today: string }[]>`
             select w.id, w.letter_date::text as letter_date,
                    (now() at time zone o.timezone)::date::text as today
             from works w
             join organisations o on o.id = w.organisation_id
             where w.id = ${workId} and w.deleted_at is null
+            for update of w
           `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
         // Product invariant 8, the same window every other dated record

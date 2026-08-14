@@ -888,23 +888,42 @@ describe('the column CHECKs refuse what no route would send', () => {
 describe('tenancy and scope', () => {
   it('hides the settlement of another organisation and refuses money against it', async () => {
     const { workId, billId } = await seedBill('BPN');
-    // The register answers, and answers with nothing: the stranger is a
-    // full-scope member of their OWN organisation, so the work-scope
-    // check has no complaint to make and row-level security is what
-    // decides. An empty position list is the correct answer to "what do
-    // you owe on somebody else's Work", and the same shape every other
-    // Work-addressed register in the tree returns.
+    // The stranger is a full-scope member of their OWN organisation, so
+    // the work-scope check has no complaint to make and row-level
+    // security is what decides. Under it the Work does not exist, and the
+    // read now says so: 404 rather than the `200 {positions: []}` it
+    // answered before the liveness read, which was indistinguishable from
+    // a Work of their own that nobody had billed yet. 404 and not 403 —
+    // a guessed id must not confirm the Work exists somewhere.
     const read = await authed({
       method: 'GET',
       url: `/api/works/${workId}/bill-settlement`,
       organisationId: strangerOrganisationId,
       as: strangerCookie,
     });
-    expect(read.statusCode, read.body).toBe(200);
-    expect(read.json<BillSettlementResponse>().positions).toEqual([]);
+    expect(read.statusCode, read.body).toBe(404);
+    expect(read.json<{ code: string }>().code).toBe('WORK_NOT_FOUND');
 
     const write = await record(billId, HALF, strangerCookie);
     expect([403, 404]).toContain(write.statusCode);
+  });
+
+  it('answers no such Work rather than an empty register for an unknown id', async () => {
+    // The register used to answer `200 {positions: []}` for a Work that
+    // does not exist, because `assertWorkAccess` only checks membership
+    // and the view simply matched nothing. An empty register and a Work
+    // that is not there are different facts, and every other
+    // Work-addressed read in the tree tells them apart.
+    //
+    // The same read carries `deleted_at is null` for consistency with the
+    // merged tree, though that state is unreachable from the product:
+    // migration 0071 refuses a withdrawal written by hand, and superseding
+    // refuses while any bill exists — so a Work with a settlement position
+    // can never be withdrawn. Stated rather than tested, because a test
+    // would have to fabricate a row the database is right to refuse.
+    const response = await settlement('00000000-0000-4000-8000-000000000000');
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.json<{ code: string }>().code).toBe('WORK_NOT_FOUND');
   });
 
   it('hides the register from an assigned-scope member with no assignment', async () => {

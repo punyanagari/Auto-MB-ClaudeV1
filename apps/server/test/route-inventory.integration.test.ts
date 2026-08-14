@@ -102,6 +102,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ['GET /api/works/:id/payment-matrix', 'at most four payment categories'],
   ['GET /api/works/:id/completion-readiness', 'blockers, one per unfinished item'],
   ['GET /api/works/:id/consignees', 'the consignees linked to one Work'],
+  [
+    'GET /api/works/:id/supersede-eligibility',
+    'blockers, at most one per downstream register',
+  ],
   ['GET /api/works/:id/instruments', 'the PBG/PAC/DOC instruments of one Work'],
   [
     'GET /api/works/:id/received-railway-bills',

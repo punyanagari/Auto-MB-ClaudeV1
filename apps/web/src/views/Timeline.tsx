@@ -37,6 +37,9 @@ const ACTION_LABELS: Record<string, string> = {
   'bill.prepared': 'Bill prepared',
   'bill.submitted': 'Bill submitted',
   'bill.paid': 'Bill paid',
+  'received_railway_bill.recorded': 'Railway bill recorded',
+  'received_railway_bill.discarded': 'Railway bill discarded',
+  'measurement_book.closed': 'Measurement closed by railway bill',
   'bill_payment.recorded': 'Payment received',
   'bill_payment.voided': 'Payment withdrawn',
 };
@@ -92,6 +95,7 @@ const ENTITY_FILTERS = [
   { value: 'approval_requests', label: 'Approvals' },
   { value: 'correction_notices', label: 'Correction notices' },
   { value: 'measurement_books', label: 'Measurement books' },
+  { value: 'received_railway_bills', label: 'Railway bills' },
   { value: 'work_items', label: 'Items' },
   { value: 'payment_matrices', label: 'Payment matrix' },
   { value: 'pac_certificates', label: 'PAC certificates' },

@@ -41,6 +41,7 @@ const TYPE_LABELS: Record<ApprovalRequest['entityType'], string> = {
   challan_cancel_replace: 'Challan cancel & replace',
   issue_challan_cancel_replace: 'Issue Challan cancel & replace',
   challan_correction_notice: 'Correction notice',
+  work_supersede: 'Work supersede',
 };
 
 /** Whether this request is the kind that needs a railway variation order:

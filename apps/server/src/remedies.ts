@@ -169,6 +169,18 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Change at least one line before filing the correction; a notice identical to the issued document corrects nothing.',
   WORK_NOT_FULLY_EXECUTED:
     'Deliver and install the balance, record the acceptance certificate for any maintenance period already served, or amend the outstanding quantities down, before completing the Work.',
+  WORK_HAS_DOWNSTREAM_DOCUMENTS:
+    'Correct the Work through an amendment or a correction notice; superseding is available only while nothing has been issued or received against it.',
+  WORK_HAS_NO_LOA_DOCUMENT:
+    'Correct this Work through an amendment; a Work with no letter in the product has nothing to read again and no successor to be confirmed from.',
+  WORK_ALREADY_SUPERSEDED:
+    'Open the successor Work; the letter this Work came from has already been released and can be confirmed only once more.',
+  SUCCESSOR_IDENTITY_MISMATCH:
+    'Confirm the released letter under the withdrawn Work’s own work code and letter number, or discard it and upload the correct letter if the identity itself was the mistake.',
+  WORK_IDENTITY_RESERVED:
+    'Confirm or discard the released letter that is waiting for this identity before using it for another Work.',
+  SUPERSEDE_IN_PROGRESS:
+    'Confirm the released letter first, or discard the letter itself — that withdraws its whole package together rather than one document at a time.',
 
   // ---- The settlement chain the agency does not control -------------------
   //
