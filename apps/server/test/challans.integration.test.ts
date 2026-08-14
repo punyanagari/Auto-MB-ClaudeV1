@@ -15,6 +15,7 @@ import type {
 import type { Sql } from '@auto-mb/db';
 import {
   createDatabasePool,
+  ensureClusterRoles,
   jsonb,
   removeOrganisationResidue,
   runMigrations,
@@ -125,17 +126,7 @@ beforeAll(async () => {
     );
   }
 
-  const escapedPassword = appPassword.replaceAll("'", "''");
-  await admin.unsafe(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
-        CREATE ROLE auto_mb_app LOGIN PASSWORD '${escapedPassword}'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-      END IF;
-    END
-    $$;
-  `);
+  await ensureClusterRoles(admin, appPassword);
   await runMigrations(admin, migrationsDirectory);
 
   // A stub PDF service: the render endpoint's full HTTP path runs against
