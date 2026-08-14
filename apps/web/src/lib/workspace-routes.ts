@@ -27,6 +27,11 @@ export type WorkspaceView =
   | { name: 'quotations' }
   | { name: 'approvals' }
   | { name: 'serials' }
+  /** The installation module's own register: every recorded installation
+   * across the Works the caller may see. A record still opens through its
+   * Work (`work` above, Installations tab) — this is the way in when the
+   * question is about a date or a location rather than a contract. */
+  | { name: 'installations' }
   /** Tenant-wide record search. The query is part of the route, so a
    * result set can be linked, bookmarked and reached by Back — the same
    * durability finding 28 gave every other view. */
@@ -49,6 +54,7 @@ const WORK_TAB_NAMES = [
   'overview',
   'schedules',
   'deliveries',
+  'installations',
   'procurement',
   'issues',
   'measurement',
@@ -128,6 +134,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/approvals';
     case 'serials':
       return '#/serials';
+    case 'installations':
+      return '#/installations';
     case 'search':
       // encodeURIComponent escapes '/' as %2F, and the parser splits the
       // raw fragment before decoding, so a query containing a slash stays
@@ -249,6 +257,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'quotations':
     case 'approvals':
     case 'serials':
+    case 'installations':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;

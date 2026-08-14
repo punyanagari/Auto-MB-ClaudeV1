@@ -264,6 +264,75 @@ describe('OperationsWorkspace mobile shell', () => {
     expect(screen.queryByRole('group', { name: 'Record actions' })).toBeNull();
   });
 
+  it('reaches the installation register from the Operations rail', async () => {
+    renderWorkspace();
+    // The rail is shell chrome, so it needs no arrival await on the
+    // Dashboard's own fetch.
+    const rail = await screen.findByRole('navigation', { name: 'Modules' });
+    fireEvent.click(within(rail).getByRole('button', { name: 'Installations' }));
+
+    // Anchored on the loaded register rather than on its heading, which the
+    // loading branch renders too (`loading-anchor-census`).
+    expect(await screen.findByText(/No installations recorded yet/)).toBeTruthy();
+    expect(window.location.hash).toBe('#/installations');
+    expect(document.title).toBe('Installations · Sharma Constructions · Auto-MB');
+  });
+
+  it(
+    'splits the mobile Record sheet between a challan and an installation',
+    { timeout: 30_000 },
+    async () => {
+      renderWorkspace({
+        dashboard: vi.fn().mockResolvedValue({
+          totals: {
+            works: 1,
+            contractValue: '900.00',
+            deliveredValue: '0.00',
+            billedValue: '0.00',
+            openDrafts: 0,
+            loaAwaitingReview: 0,
+          },
+          alerts: [],
+          works: [
+            {
+              workId: WORK_ID,
+              workCode: 'DCW-1',
+              title: 'Supply of switchboards',
+              status: 'active',
+              contractValue: '900.00',
+              deliveredValue: '0.00',
+              billedValue: '0.00',
+              issuedChallans: 0,
+            },
+          ],
+        }),
+        getWork: vi.fn().mockResolvedValue(challanWork()),
+        workBalance: vi.fn().mockResolvedValue(BALANCE),
+      });
+
+      fireEvent.click(await screen.findByRole('link', { name: 'DCW-1' }));
+      await screen.findByRole('navigation', { name: 'Work sections' });
+
+      // One "Delivery evidence" button used to serve both records. They are
+      // two tabs now, and a site user tapping Record means one of them.
+      fireEvent.click(screen.getByRole('button', { name: 'Open record actions' }));
+      expect(screen.getByRole('button', { name: 'Delivery challan' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Installation' }));
+
+      const workTabs = await screen.findByRole('navigation', {
+        name: 'Work sections',
+      });
+      expect(
+        within(workTabs)
+          .getByRole('button', {
+            name: (name: string) => name.startsWith('Installations'),
+          })
+          .getAttribute('aria-current'),
+      ).toBe('page');
+      expect(window.location.hash).toBe(`#/works/${WORK_ID}/installations`);
+    },
+  );
+
   // The heaviest test in this package: one full workspace render, then
   // Dashboard -> Work detail -> Deliveries -> the challan editor, then three
   // navigation-guard round trips, each re-rendering the whole shell. It costs

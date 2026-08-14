@@ -323,6 +323,32 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  // The tenant-wide register, which reads the same records across Works.
+  // Registered before the Work-scoped route above would ever be consulted
+  // for it: the two paths are distinct, so neither pattern shadows the
+  // other.
+  await page.route('**/api/installations', (route) =>
+    route.fulfill(
+      json({
+        installations: [
+          {
+            id: '99999999-9999-4999-8999-999999999999',
+            workId: WORK_ID,
+            workCode: 'DCW-1',
+            workTitle: 'Supply of switchboards',
+            workItemId: ITEM_ID,
+            itemNumber: 'A/1',
+            quantity: '1.000',
+            installedOn: '2026-08-03',
+            locationName: 'Nashik Road station',
+            serialCount: 1,
+            status: 'recorded',
+          },
+        ],
+        nextCursor: null,
+      }),
+    ),
+  );
   await page.route('**/api/masters/locations', (route) =>
     route.fulfill(
       json({
@@ -574,11 +600,17 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
 
   await openTab('Deliveries');
   await expect(
+    page.getByRole('heading', { name: 'Delivery Challans', exact: true }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'work detail — deliveries');
+
+  await openTab('Installations');
+  await expect(
     page.getByRole('heading', { name: 'Installations', exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'New installation' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
-  await expectNoAxeViolations(page, 'work detail — deliveries');
+  await expectNoAxeViolations(page, 'work detail — installations');
 
   await openTab('Measurement');
   await expect(
@@ -654,6 +686,21 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expectNoAxeViolations(page, 'challan editor — discard confirmation');
   await page.keyboard.press('Escape');
   await expect(confirmation).toHaveCount(0);
+
+  /* The tenant-wide installation register, reached from the Operations
+     group of the rail. Scanned here rather than in a suite of its own
+     because the fixture that makes a Work's installations readable is
+     already mounted on this page. */
+  await page
+    .getByRole('navigation', { name: 'Modules' })
+    .getByRole('button', { name: 'Installations' })
+    .click();
+  // The editor is still dirty from the line above, so the shell asks
+  // before it lets go.
+  await page.getByRole('button', { name: 'Discard and leave' }).click();
+  await expect(page.getByRole('link', { name: 'DCW-1' })).toBeVisible();
+  await expect(page.getByText('Nashik Road station')).toBeVisible();
+  await expectNoAxeViolations(page, 'installation register');
 });
 
 test('the workspace keeps the tenant header on every scoped request', async ({

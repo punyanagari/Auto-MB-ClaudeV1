@@ -62,10 +62,12 @@ The desktop navigation is intentionally small:
 - **Home** — attention queue, deadlines, progress and financial follow-up;
 - **Works** — contract registry and LOA intake;
 - **Documents** — cross-Work legal-document register and quotations;
-- **Operations** — serial traceability and bounded operational registers;
+- **Operations** — search, serial traceability, the installation register, and bounded operational registers;
 - **Administration** — masters, members, organisation profile, numbering and security.
 
 Capabilities that belong to one contract—Delivery Challans, Issue Challans, installations, Measurement Books, bills, guarantees and amendments—normally live inside the Work workspace rather than competing as permanent global destinations.
+
+The exception is earned, not assumed: a capability also gets a global register when the operator's real question crosses Works. Delivery Challans did, because two of their three movements have no Work to live under. Installations did, because site supervision asks what went in this week and where, and a gang works several Works in a day. Recording still happens on the Work in both cases — the register reads across, it does not create.
 
 ## Work workspace
 
@@ -74,7 +76,7 @@ Every Work is organised into seven operator-facing areas:
 1. **Overview** — contract identity, progress, upcoming obligations, exceptions and next actions;
 2. **Items & rates** — schedules, effective quantities, rates, payment categories and specifications;
 3. **Documents** — Delivery Challans, Issue Challans, extension letters and other issued Work documents;
-4. **Material & site** — procurement position, receipts, custody, serials, installations and PAC evidence;
+4. **Material & site** — procurement position, receipts, custody, and PAC evidence, with the installation records and the serial trace on a section of their own (they were the tail of the delivery section, below the challans and their correction notices, and the serial pool a recording draws from is the same list the trace prints);
 5. **Measurement & billing** — measurement evidence, formal Measurement Books, contractual bills and GST invoices;
 6. **Guarantees** — PBG, security deposit, warranty/maintenance obligations, completion and acceptance dates;
 7. **Activity** — audit timeline, amendments, correction chains and approval decisions.
@@ -233,14 +235,15 @@ The approved design pack covers:
 22. Approval queue and decision detail
 23. Organisation-wide document register
 24. Serial lookup and traceability
-25. Contacts
-26. Locations, units and signatories
-27. Members and permissions
-28. Organisation profile
-29. Numbering, tax and compliance settings
-30. Mobile home
-31. Mobile record hub
-32. Mobile installation/serial evidence
+25. Installation register (tenant-wide)
+26. Contacts
+27. Locations, units and signatories
+28. Members and permissions
+29. Organisation profile
+30. Numbering, tax and compliance settings
+31. Mobile home
+32. Mobile record hub
+33. Mobile installation/serial evidence
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use shared patterns rather than becoming separate product architectures.
 

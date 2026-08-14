@@ -5,6 +5,7 @@ import type {
   Challan,
   CorrectionNotice,
   Instrument,
+  InstallationListResponse,
   IssueChallan,
   MbEntry,
   PurchaseOrder,
@@ -38,6 +39,7 @@ import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkBillingReadiness } from './WorkBillingReadiness.js';
 import { WorkBillSettlement } from './WorkBillSettlement.js';
 import { WorkDeliveries } from './WorkDeliveries.js';
+import { WorkInstallations } from './WorkInstallations.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
 
@@ -72,6 +74,7 @@ const WORK_TABS = [
   'overview',
   'schedules',
   'deliveries',
+  'installations',
   'procurement',
   'issues',
   'measurement',
@@ -87,6 +90,7 @@ const WORK_TAB_LABELS: Record<WorkTab, string> = {
   overview: 'Overview',
   schedules: 'Schedules & items',
   deliveries: 'Deliveries',
+  installations: 'Installations',
   procurement: 'Procurement',
   issues: 'Issues',
   measurement: 'Measurement',
@@ -102,6 +106,7 @@ const RELATED = {
   measurements: 'Measurement Book entries',
   bills: 'bills',
   serials: 'serials',
+  installations: 'installation records',
   issueChallans: 'Issue Challans',
   amendments: 'amendments',
   correctionNotices: 'correction notices',
@@ -113,6 +118,10 @@ type RelatedState = 'loading' | 'unavailable' | 'ready';
 const ALL_RELATED_LABELS = Object.values(RELATED);
 const RELATED_BY_TAB: Partial<Record<WorkTab, readonly RelatedLabel[]>> = {
   deliveries: [RELATED.challans],
+  // The serial trace shares this tab but not this gate: it carries its own
+  // state below, exactly as the correction notices do on Deliveries, so a
+  // serial failure must not blank the installation count.
+  installations: [RELATED.installations],
   procurement: [RELATED.purchaseOrders],
   issues: [RELATED.issueChallans],
   measurement: [RELATED.measurements],
@@ -332,6 +341,14 @@ export function WorkDetail({
   const [mbEntries, setMbEntries] = useState<readonly MbEntry[]>([]);
   const [bills, setBills] = useState<readonly Bill[]>([]);
   const [serials, setSerials] = useState<readonly Serial[]>([]);
+  /** Read here only for the Installations tab's count and summary — the
+   * tab's own <Installations> panel owns its load, its retry and its
+   * refresh-after-record, and must keep owning them (its recording flow
+   * re-reads the list and the serial pool together). Counting a register
+   * before its tab is opened is what every other tab does with its own
+   * list, and it is the same one request per Work page open. */
+  const [installationSummary, setInstallationSummary] =
+    useState<InstallationListResponse | null>(null);
   const [amendments, setAmendments] = useState<readonly ApprovalRequest[]>([]);
   const [correctionNotices, setCorrectionNotices] = useState<
     readonly CorrectionNotice[]
@@ -382,6 +399,7 @@ export function WorkDetail({
     setMbEntries([]);
     setBills([]);
     setSerials([]);
+    setInstallationSummary(null);
     setAmendments([]);
     setCorrectionNotices([]);
     setLoadError(null);
@@ -459,6 +477,11 @@ export function WorkDetail({
       RELATED.serials,
       api.listWorkSerials(organisationId, workId),
       setSerials,
+    );
+    loadRelated(
+      RELATED.installations,
+      api.listWorkInstallations(organisationId, workId),
+      setInstallationSummary,
     );
     loadRelated(
       RELATED.issueChallans,
@@ -613,6 +636,13 @@ export function WorkDetail({
         RELATED.serials,
         api.listWorkSerials(organisationId, workId),
         setSerials,
+      );
+    }
+    if (labels.has(RELATED.installations)) {
+      retryRelated(
+        RELATED.installations,
+        api.listWorkInstallations(organisationId, workId),
+        setInstallationSummary,
       );
     }
     if (labels.has(RELATED.issueChallans)) {
@@ -779,6 +809,29 @@ export function WorkDetail({
             : '—',
       },
     ],
+    installations: [
+      {
+        label: 'Recorded',
+        value: String(
+          (installationSummary?.installations ?? []).filter(
+            (installation) => installation.status === 'recorded',
+          ).length,
+        ),
+      },
+      {
+        label: 'Cancelled',
+        value: String(
+          (installationSummary?.installations ?? []).filter(
+            (installation) => installation.status === 'cancelled',
+          ).length,
+        ),
+      },
+      {
+        label: 'Serials traced',
+        value:
+          relatedStateFor([RELATED.serials]) === 'ready' ? String(serials.length) : '—',
+      },
+    ],
     procurement: [
       {
         label: 'Issued',
@@ -819,6 +872,10 @@ export function WorkDetail({
     schedules: relatedStateForTab('schedules') === 'ready' ? workItems.length : null,
     deliveries:
       relatedStateForTab('deliveries') === 'ready' ? (challans?.length ?? 0) : null,
+    installations:
+      relatedStateForTab('installations') === 'ready'
+        ? (installationSummary?.installations.length ?? 0)
+        : null,
     procurement:
       relatedStateForTab('procurement') === 'ready'
         ? (purchaseOrders?.length ?? 0)
@@ -1198,21 +1255,29 @@ export function WorkDetail({
           organisationId={organisationId}
           workId={workId}
           work={work}
-          workItems={workItems}
           challans={challans}
           challansState={relatedStateFor([RELATED.challans])}
           correctionNotices={correctionNotices}
           correctionNoticesState={relatedStateFor([RELATED.correctionNotices])}
           setCorrectionNotices={setCorrectionNotices}
-          serials={serials}
-          serialsState={relatedStateFor([RELATED.serials])}
-          setSerials={setSerials}
           canCreateDocuments={canCreateDocuments}
-          canRecordSiteEvidence={canRecordSiteEvidence}
           onNewChallan={onNewChallan}
           onOpenChallan={onOpenChallan}
           pending={pending}
           act={act}
+        />
+      )}
+
+      {tab === 'installations' && (
+        <WorkInstallations
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          workItems={workItems}
+          serials={serials}
+          serialsState={relatedStateFor([RELATED.serials])}
+          setSerials={setSerials}
+          canRecordSiteEvidence={canRecordSiteEvidence}
         />
       )}
 

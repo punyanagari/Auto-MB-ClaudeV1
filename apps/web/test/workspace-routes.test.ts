@@ -23,6 +23,7 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'review', documentId: DOC_ID } },
   { view: { name: 'work', workId: WORK_ID } },
   { view: { name: 'work', workId: WORK_ID }, workTab: 'bills' },
+  { view: { name: 'work', workId: WORK_ID }, workTab: 'installations' },
   { view: { name: 'challan-new', workId: WORK_ID, workCode: '' } },
   {
     view: {
@@ -43,6 +44,7 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'quotations' } },
   { view: { name: 'approvals' } },
   { view: { name: 'serials' } },
+  { view: { name: 'installations' } },
   { view: { name: 'members' } },
   { view: { name: 'settings' } },
 ];
@@ -87,6 +89,8 @@ describe('workspace hash routes', () => {
   it('builds the link helpers views render as hrefs', () => {
     expect(workHash(WORK_ID)).toBe(`#/works/${WORK_ID}`);
     expect(workHash(WORK_ID, 'schedules')).toBe(`#/works/${WORK_ID}/schedules`);
+    // The register's row link: a record opens on its Work's own tab.
+    expect(workHash(WORK_ID, 'installations')).toBe(`#/works/${WORK_ID}/installations`);
     expect(challanHash(WORK_ID, CHALLAN_ID)).toBe(
       `#/works/${WORK_ID}/challans/${CHALLAN_ID}`,
     );

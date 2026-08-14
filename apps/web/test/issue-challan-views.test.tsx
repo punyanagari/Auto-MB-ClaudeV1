@@ -190,6 +190,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listWorkInstallations: vi
       .fn()
       .mockResolvedValue({ installations: [], itemSummaries: [] }),
+    listInstallations: vi.fn().mockResolvedValue([]),
     recordWorkInstallation: vi.fn(),
     cancelWorkInstallation: vi.fn(),
     challanCorrectionEligibility: vi.fn().mockResolvedValue({

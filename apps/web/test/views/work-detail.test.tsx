@@ -242,8 +242,32 @@ describe('WorkDetail retention', () => {
     ).toBeTruthy();
     expect(screen.queryByText('No Delivery Challans yet.')).toBeNull();
     expect(screen.queryByRole('button', { name: 'New Delivery Challan' })).toBeNull();
+    // The site evidence is a tab of its own now, and an unreadable challan
+    // register does not close it.
+    expect(screen.queryByRole('heading', { name: 'Installations' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Serial trace' })).toBeNull();
+
+    await openWorkTab('Installations');
+    expect(await screen.findByText('No installations recorded yet.')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Installations' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Serial trace' })).toBeTruthy();
+  });
+
+  it('keeps the installation records and the serial trace on their own tab', async () => {
+    const api = retentionApi();
+    renderWorkDetail(api);
+
+    await openWorkTab('Deliveries');
+    expect(await screen.findByRole('link', { name: 'DC/1' })).toBeTruthy();
+    // Deliveries is the movement documents alone.
+    expect(screen.queryByRole('heading', { name: 'Installations' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Serial trace' })).toBeNull();
+
+    await openWorkTab('Installations');
+    expect(await screen.findByText('No installations recorded yet.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Serial trace' })).toBeTruthy();
+    // …and the challan register does not follow it there.
+    expect(screen.queryByRole('link', { name: 'DC/1' })).toBeNull();
   });
 
   it('keeps stage-wise Measurement Books open when loose entries fail', async () => {

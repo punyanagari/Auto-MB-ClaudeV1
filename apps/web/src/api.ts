@@ -86,6 +86,7 @@ import type {
   WorkItemSerialsResponse,
   Installation,
   InstallationListResponse,
+  InstallationRegisterEntry,
   RecordInstallationRequest,
   PaymentMatrixCategory,
   PaymentMatrixRow,
@@ -783,6 +784,11 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<InstallationListResponse>;
+  /** The installation module's own register: every record in the
+   * organisation the caller may see, across all their Works. */
+  readonly listInstallations: (
+    organisationId: string,
+  ) => Promise<readonly InstallationRegisterEntry[]>;
   readonly recordWorkInstallation: (
     organisationId: string,
     workId: string,
@@ -2499,6 +2505,13 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<InstallationListResponse>(`/api/works/${workId}/installations`, {
         organisationId,
       });
+    },
+    async listInstallations(organisationId) {
+      const payload = await request<{ installations: InstallationRegisterEntry[] }>(
+        '/api/installations',
+        { organisationId },
+      );
+      return payload.installations;
     },
     async recordWorkInstallation(organisationId, workId, body) {
       return request<Installation>(`/api/works/${workId}/installations`, {
