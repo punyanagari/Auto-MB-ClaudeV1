@@ -6,6 +6,7 @@ import type { ObjectStorage } from '@auto-mb/documents';
 import { registerTaxInvoiceCancelRoute } from './cancel.js';
 import { registerTaxInvoiceDraftingRoutes } from './drafting.js';
 import { registerTaxInvoiceProviderRoutes } from './provider.js';
+import { registerTaxInvoiceRegisterRoute } from './register.js';
 import { registerTaxInvoiceRenderRoutes } from './render.js';
 import { registerTaxInvoiceSubmitRoute } from './submit.js';
 
@@ -29,6 +30,7 @@ export function registerTaxInvoiceRoutes(
   provider?: StatutoryProvider,
 ): void {
   registerTaxInvoiceDraftingRoutes(app, auth, database);
+  registerTaxInvoiceRegisterRoute(app, auth, database);
   registerTaxInvoiceSubmitRoute(app, auth, database);
   registerTaxInvoiceRenderRoutes(app, auth, database, storage, gotenbergUrl);
   registerTaxInvoiceProviderRoutes(app, auth, database, provider);

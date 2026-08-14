@@ -22,6 +22,7 @@ import type { AppInstance } from '../../app-instance.js';
 import { createTenantRouteRegistrar } from '../../tenant-route.js';
 import {
   assertBookUninvoiced,
+  assertDirectInvoiceAccess,
   assertInvoiceDate,
   assertInvoiceDateNotFuture,
   assertInvoiceWorkAccess,
@@ -216,6 +217,11 @@ export function registerTaxInvoiceDraftingRoutes(
       const document = documentFields(body);
 
       const detail = await tenant(async (tx) => {
+        // Raising a document that belongs to no Work needs
+        // organisation-wide reach, exactly as a standalone Delivery
+        // Challan does — and exactly as the register that lists these
+        // invoices decides who may see one.
+        await assertDirectInvoiceAccess(tx, user.id);
         await assertInvoiceDateNotFuture(tx, body.invoiceDate);
         if (header.gstRate !== null) {
           await assertGstRateNotified(tx, header.gstRate, body.invoiceDate);

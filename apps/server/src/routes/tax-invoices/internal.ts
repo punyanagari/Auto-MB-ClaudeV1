@@ -11,7 +11,7 @@ import {
   type UpdateTaxInvoiceRequest,
 } from '@auto-mb/contracts';
 import type { TransactionSql } from '@auto-mb/db';
-import { assertWorkAccess } from '../../authz.js';
+import { assertWorkAccess, hasFullWorkScope } from '../../authz.js';
 import { assertGstRateNotified } from '../../gst-rates.js';
 import { draftConflictError } from '../../draft-conflict.js';
 import { stringifyStatutoryJson } from '../../gsp/statutory-json.js';
@@ -626,6 +626,31 @@ export async function assertInvoiceWorkAccess(
 ): Promise<void> {
   if (workId === null) return;
   await assertWorkAccess(tx, userId, workId);
+}
+
+/**
+ * The reach a DIRECT invoice needs to be raised at all: organisation-wide.
+ *
+ * Work-scope binds through a Work, and this document has none, so no
+ * assignment could ever reach it. That leaves two coherent answers, and
+ * the product has already chosen one for the other document of this shape:
+ * `assertStandaloneChallanAccess` refuses a standalone Delivery Challan to
+ * an 'assigned'-scoped member, and the Delivery Challan register hides the
+ * same rows from the same member. The organisation-wide tax-invoice
+ * register decides direct invoices identically, so the writer check has to
+ * agree with it — a member who could raise an invoice and then not find it
+ * in the register would have been handed a document that vanished.
+ *
+ * 404, not 403, and the invoice module's own not-found sentence: whether a
+ * direct invoice may be raised is not a fact worth disclosing to someone
+ * who may not raise one.
+ */
+export async function assertDirectInvoiceAccess(
+  tx: TransactionSql,
+  userId: string,
+): Promise<void> {
+  if (await hasFullWorkScope(tx, userId)) return;
+  throw httpError(404, 'TAX_INVOICE_NOT_FOUND', 'No such tax invoice.');
 }
 
 export async function requireShipTo(
