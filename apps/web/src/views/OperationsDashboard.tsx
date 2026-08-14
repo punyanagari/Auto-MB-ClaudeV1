@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   Contact,
   DashboardAlert,
+  DashboardBillSettlement,
   DashboardResponse,
   OrganisationProfile,
   Signatory,
@@ -324,6 +325,47 @@ function SetupChecklist({
   );
 }
 
+/**
+ * The settlement position behind a bill alert: the railway's own bill, and
+ * the three figures §5.7 says it takes to state the position honestly.
+ *
+ * Rendered only where there IS arithmetic. While the measurement is open
+ * there is no reference figure and no outstanding one, and a row of
+ * dashes beside two zeroes would say less than the alert's own sentence
+ * already does. Nothing here divides, adds or compares money — every
+ * figure arrives from the server as an exact decimal string.
+ */
+function SettlementFigures({
+  settlement,
+}: {
+  readonly settlement: DashboardBillSettlement;
+}) {
+  const { reference, outstanding } = settlement;
+  if (reference === null || outstanding === null) return null;
+  const figures = [
+    { label: 'Railway bill', amount: reference, lead: false },
+    { label: 'Received', amount: settlement.received, lead: false },
+    { label: 'Deducted', amount: settlement.deducted, lead: false },
+    // The one an operator is actually reading for, and the one the old
+    // single sentence could not say.
+    { label: 'Outstanding', amount: outstanding, lead: true },
+  ];
+  return (
+    <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+      {figures.map((figure) => (
+        <div key={figure.label} className="flex items-baseline gap-1">
+          <dt className="text-muted-foreground">{figure.label}</dt>
+          <dd
+            className={`m-0 font-mono tabular-nums ${figure.lead ? 'font-semibold' : ''}`}
+          >
+            {formatInr(figure.amount)}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function dueLabel(days: number | null): string | null {
   if (days === null) return null;
   if (days < 0) return `${String(-days)} days overdue`;
@@ -570,6 +612,11 @@ export function OperationsDashboard({
             </div>
           ) : (
             <ul className="m-0 divide-y divide-border p-0">
+              {/* The first seven of a list the server has already ranked
+                  by severity, so what this drops is always the least
+                  urgent. It used to drop whatever the server happened to
+                  build last, which on a busy organisation could be an
+                  overdue PBG. */}
               {data.alerts.slice(0, 7).map((alert, index) => {
                 const tone = ALERT_TONE[alert.severity];
                 const due = dueLabel(alert.dueInDays);
@@ -595,6 +642,9 @@ export function OperationsDashboard({
                         )}
                       </div>
                       <p className="mt-1 text-sm leading-5">{alert.message}</p>
+                      {alert.settlement !== null && (
+                        <SettlementFigures settlement={alert.settlement} />
+                      )}
                     </div>
                     {alert.workId !== null ? (
                       <Button

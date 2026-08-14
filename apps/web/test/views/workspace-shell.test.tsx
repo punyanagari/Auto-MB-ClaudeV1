@@ -39,6 +39,7 @@ describe('OperationsDashboard', () => {
             workId: WORK_ID,
             workCode: 'PL270-CRB',
             dueInDays: 38,
+            settlement: null,
           },
           {
             kind: 'loa_review_pending',
@@ -47,6 +48,7 @@ describe('OperationsDashboard', () => {
             workId: null,
             workCode: null,
             dueInDays: null,
+            settlement: null,
           },
         ],
         works: [
