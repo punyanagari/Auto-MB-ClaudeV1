@@ -3,6 +3,7 @@ import { glob } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { blankNonCode } from './helpers/blank-non-code.js';
 
 /**
  * The standing check behind pack P11's write-loop conversions.
@@ -73,87 +74,10 @@ interface Finding {
   readonly text: string;
 }
 
-/**
- * The source with every comment and string literal blanked to spaces,
- * line structure intact. Brace counting has to run over THIS rather than
- * the raw text: the SQL these loops carry is full of braces
- * (`'{}'::jsonb`, `${array}`), and counting those loses the nesting.
- * Template literals are blanked whole, expressions included, which keeps
- * the braces balanced.
- */
-function blankNonCode(source: string): string {
-  let out = '';
-  let index = 0;
-  // Each open template literal, and the `${` depth inside it.
-  const templates: number[] = [];
-  while (index < source.length) {
-    const character = source[index] ?? '';
-    const next = source[index + 1] ?? '';
-    if (templates.length === 0 && character === '/' && next === '/') {
-      while (index < source.length && source[index] !== '\n') {
-        out += ' ';
-        index += 1;
-      }
-      continue;
-    }
-    if (templates.length === 0 && character === '/' && next === '*') {
-      while (
-        index < source.length &&
-        !(source[index] === '*' && source[index + 1] === '/')
-      ) {
-        out += source[index] === '\n' ? '\n' : ' ';
-        index += 1;
-      }
-      out += '  ';
-      index += 2;
-      continue;
-    }
-    if (templates.length === 0 && (character === "'" || character === '"')) {
-      const quote = character;
-      out += ' ';
-      index += 1;
-      while (index < source.length && source[index] !== quote) {
-        if (source[index] === '\\') {
-          out += ' ';
-          index += 1;
-        }
-        out += source[index] === '\n' ? '\n' : ' ';
-        index += 1;
-      }
-      out += ' ';
-      index += 1;
-      continue;
-    }
-    if (character === '`') {
-      if (templates.length > 0 && templates[templates.length - 1] === 0)
-        templates.pop();
-      else templates.push(0);
-      out += ' ';
-      index += 1;
-      continue;
-    }
-    if (templates.length > 0) {
-      const depth = templates[templates.length - 1] ?? 0;
-      if (character === '$' && next === '{') {
-        templates[templates.length - 1] = depth + 1;
-        out += '  ';
-        index += 2;
-        continue;
-      }
-      if (character === '}' && depth > 0) {
-        templates[templates.length - 1] = depth - 1;
-      }
-      out += character === '\n' ? '\n' : ' ';
-      index += 1;
-      continue;
-    }
-    out += character;
-    index += 1;
-  }
-  return out;
-}
-
-/** Every SQL write statement that sits inside a loop body. */
+/** Every SQL write statement that sits inside a loop body. Brace
+ * counting runs over `blankNonCode` output rather than the raw text —
+ * see `helpers/blank-non-code.ts`, where the blanking lived inline here
+ * until the reply-inside-transaction census needed the same ground. */
 function findInLoopWrites(source: string, file: string): Finding[] {
   const findings: Finding[] = [];
   const lines = source.split(/\r?\n/);
