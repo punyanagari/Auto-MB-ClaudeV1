@@ -411,6 +411,16 @@ settlement has: their bill amount is the invoice's grand total, never its
 taxable value. On a GST-exclusive Work no conversion happens. Itemised lines
 are held to the converted figure, not the raw measured total.
 
+**Completion binds the issue, not the follow-through.** Submitting a tax
+invoice assigns a legal number and freezes its money, so a completed Work
+refuses it exactly as it refuses a challan issue or a Measurement Book
+finalize (§4, rule 14) — enforced on the server, so the refusal holds
+whether the invoice was opened from its Work or from the organisation-wide
+register. What legitimately outlives completion is the statutory
+follow-through on a document already frozen: registering it at the IRP,
+cancelling that registration, rendering its PDF. A direct invoice has no
+Work, so completion never binds it.
+
 **Known gap.** The per-Work money figures on the dashboard (contract,
 delivered, billed) are still added as printed rupees across Works. On a
 portfolio mixing bases that sum is not on any single basis. It is left that way
@@ -1082,6 +1092,16 @@ to read it on, and no screen listed one.
   well as the rows: a cursor naming an invoice outside the caller's reach
   is refused exactly as a nonexistent one is, so paging cannot be used to
   learn that such an invoice exists or when it was raised.
+
+  The same boundary holds on EVERY per-document route, not only in the
+  list: reading, editing, deleting, submitting, cancelling, rendering and
+  the whole IRP transport of a direct invoice each answer a member without
+  organisation-wide scope with the module's ordinary not-found refusal, so
+  an id learned elsewhere opens nothing the register would have denied.
+  Credit notes follow their invoice — a note against a direct invoice is
+  neither listed to nor reachable by such a member — because a note that
+  outlived its invoice's boundary would disclose the invoice through it.
+
 - **Window.** The register's one filter is an inclusive `invoiceDate`
   range, read a page at a time. Cancelled and superseded invoices stay
   listed with their status: a numbered document that was cancelled is

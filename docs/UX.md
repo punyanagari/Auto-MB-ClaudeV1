@@ -258,16 +258,16 @@ The approved design pack covers:
 23. Organisation-wide document register
 24. Serial lookup and traceability
 25. Installation register (tenant-wide)
-    25a. Tax-invoice register (organisation-wide), with the direct-invoice
+26. Tax-invoice register (organisation-wide), with the direct-invoice
     editor and the shared invoice detail it opens
-26. Contacts
-27. Locations, units and signatories
-28. Members and permissions
-29. Organisation profile
-30. Numbering, tax and compliance settings
-31. Mobile home
-32. Mobile record hub
-33. Mobile installation/serial evidence
+27. Contacts
+28. Locations, units and signatories
+29. Members and permissions
+30. Organisation profile
+31. Numbering, tax and compliance settings
+32. Mobile home
+33. Mobile record hub
+34. Mobile installation/serial evidence
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use shared patterns rather than becoming separate product architectures.
 

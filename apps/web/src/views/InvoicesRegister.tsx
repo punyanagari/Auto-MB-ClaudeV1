@@ -349,8 +349,7 @@ export function InvoicesRegister({
   // invoice has no Work and is never gated. This governs both Submit and
   // IRP registration, which each require `canIssue`.
   const canIssueOpened =
-    canIssue &&
-    (detail === null || detail.invoice.workId === null || openWorkActive);
+    canIssue && (detail === null || detail.invoice.workId === null || openWorkActive);
   // A direct invoice needs organisation-wide scope; the server refuses an
   // 'assigned'-scoped member with a 404, so the form is not offered to one.
   const canDraftDirect = canModify && hasFullWorkScope && clients.length > 0;
@@ -550,8 +549,8 @@ export function InvoicesRegister({
               Raise an invoice for a private customer
             </Button>
             <p className="text-muted-foreground">
-              A direct invoice belongs to no Work, so raising one needs access to all
-              of the organisation&rsquo;s Works. Your membership is limited to assigned
+              A direct invoice belongs to no Work, so raising one needs access to all of
+              the organisation&rsquo;s Works. Your membership is limited to assigned
               Works — an owner can widen it, or raise the invoice for you.
             </p>
           </div>
