@@ -360,6 +360,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listWorkTaxInvoices: vi
       .fn<ApiClient['listWorkTaxInvoices']>()
       .mockResolvedValue([]),
+    listTaxInvoices: vi
+      .fn<ApiClient['listTaxInvoices']>()
+      .mockResolvedValue({ invoices: [], nextCursor: null }),
     createWorkTaxInvoice: vi.fn<ApiClient['createWorkTaxInvoice']>(),
     getTaxInvoice: vi.fn<ApiClient['getTaxInvoice']>(),
     updateTaxInvoice: vi.fn<ApiClient['updateTaxInvoice']>(),

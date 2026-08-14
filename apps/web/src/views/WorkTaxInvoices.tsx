@@ -15,15 +15,9 @@ import { mastersHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { FormError } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
-import { CreditNotesPanel } from './work-tax-invoices/CreditNotesPanel.js';
-import { EwayBillsPanel } from './work-tax-invoices/EwayBillsPanel.js';
 import { InvoiceDraftForm } from './work-tax-invoices/InvoiceDraftForm.js';
-import {
-  InvoiceCancelPanel,
-  InvoiceDetail,
-} from './work-tax-invoices/InvoiceDetail.js';
 import { InvoiceList } from './work-tax-invoices/InvoiceList.js';
-import { IrpPanel } from './work-tax-invoices/IrpPanel.js';
+import { OpenedInvoice } from './work-tax-invoices/OpenedInvoice.js';
 
 interface WorkTaxInvoicesProps {
   readonly api: ApiClient;
@@ -327,80 +321,29 @@ export function WorkTaxInvoices({
         />
       )}
 
-      {invoice !== null && (
-        <section>
-          <InvoiceDetail
-            key={`${invoice.id}-${invoice.status}`}
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            lines={detail?.lines ?? []}
-            clients={clients}
-            shipToContacts={shipToContacts}
-            gstRates={gstRates}
-            canModify={canModify}
-            canIssue={canIssue}
-            pending={pending}
-            act={act}
-            refresh={refreshOpenInvoice}
-            onDeleted={async () => {
-              setDetail(null);
-              await refreshList();
-            }}
-          />
-
-          <IrpPanel
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            canIssue={canIssue}
-            canCancel={canCancel}
-            canManageStatutory={canManageStatutory}
-            pending={pending}
-            act={act}
-            refresh={refreshOpenInvoice}
-          />
-
-          <CreditNotesPanel
-            key={`credit-notes-${invoice.id}`}
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            creditNotes={creditNotes}
-            canModify={canModify}
-            canIssue={canIssue}
-            canCancel={canCancel}
-            canManageStatutory={canManageStatutory}
-            pending={pending}
-            act={act}
-            refresh={refreshOpenInvoice}
-          />
-
-          <EwayBillsPanel
-            api={api}
-            organisationId={organisationId}
-            invoice={invoice}
-            ewayBills={ewayBills}
-            canIssue={canIssue}
-            canCancel={canCancel}
-            canManageStatutory={canManageStatutory}
-            pending={pending}
-            act={act}
-            onEwayBillsChanged={setEwayBills}
-          />
-
-          {canCancel && (
-            <InvoiceCancelPanel
-              key={`cancel-${invoice.id}`}
-              api={api}
-              organisationId={organisationId}
-              invoice={invoice}
-              pending={pending}
-              act={act}
-              refresh={refreshOpenInvoice}
-            />
-          )}
-        </section>
+      {detail !== null && (
+        <OpenedInvoice
+          api={api}
+          organisationId={organisationId}
+          detail={detail}
+          ewayBills={ewayBills}
+          creditNotes={creditNotes}
+          clients={clients}
+          shipToContacts={shipToContacts}
+          gstRates={gstRates}
+          canModify={canModify}
+          canIssue={canIssue}
+          canCancel={canCancel}
+          canManageStatutory={canManageStatutory}
+          pending={pending}
+          act={act}
+          refresh={refreshOpenInvoice}
+          onDeleted={async () => {
+            setDetail(null);
+            await refreshList();
+          }}
+          onEwayBillsChanged={setEwayBills}
+        />
       )}
     </>
   );

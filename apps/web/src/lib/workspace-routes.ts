@@ -32,6 +32,13 @@ export type WorkspaceView =
    * Work (`work` above, Installations tab) — this is the way in when the
    * question is about a date or a location rather than a contract. */
   | { name: 'installations' }
+  /** The tax-invoice module's own register: every invoice the caller may
+   * see, work-backed and direct alike. A DIRECT invoice — raised against
+   * a private customer, so belonging to no Work — has no Work to open
+   * through, which is why the opened invoice is a route of its own here
+   * rather than only a section of a Work. */
+  | { name: 'invoices' }
+  | { name: 'invoice'; invoiceId: string }
   /** Tenant-wide record search. The query is part of the route, so a
    * result set can be linked, bookmarked and reached by Back — the same
    * durability finding 28 gave every other view. */
@@ -144,6 +151,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/serials';
     case 'installations':
       return '#/installations';
+    case 'invoices':
+      return '#/invoices';
+    case 'invoice':
+      return `#/invoices/${view.invoiceId}`;
     case 'search':
       // encodeURIComponent escapes '/' as %2F, and the parser splits the
       // raw fragment before decoding, so a query containing a slash stays
@@ -261,6 +272,12 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (challanId === undefined) return { view: { name: 'delivery-challans' } };
       if (!isRecordId(challanId) || extra.length > 0) return null;
       return { view: { name: 'delivery-challan', challanId } };
+    }
+    case 'invoices': {
+      const [invoiceId, ...extra] = rest;
+      if (invoiceId === undefined) return { view: { name: 'invoices' } };
+      if (!isRecordId(invoiceId) || extra.length > 0) return null;
+      return { view: { name: 'invoice', invoiceId } };
     }
     case 'quotations':
     case 'approvals':

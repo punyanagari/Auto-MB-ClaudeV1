@@ -264,6 +264,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setBudgetaryQuotationOutcome: vi.fn(),
     deleteBudgetaryQuotation: vi.fn().mockResolvedValue(undefined),
     listWorkTaxInvoices: vi.fn().mockResolvedValue([]),
+    listTaxInvoices: vi.fn().mockResolvedValue({ invoices: [], nextCursor: null }),
     createWorkTaxInvoice: vi.fn(),
     getTaxInvoice: vi.fn(),
     updateTaxInvoice: vi.fn(),
