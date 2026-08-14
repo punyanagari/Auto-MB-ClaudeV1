@@ -69,6 +69,8 @@ Capabilities that belong to one contract—Delivery Challans, Issue Challans, in
 
 The exception is earned, not assumed: a capability also gets a global register when the operator's real question crosses Works. Delivery Challans did, because two of their three movements have no Work to live under. Installations did, because site supervision asks what went in this week and where, and a gang works several Works in a day. Recording still happens on the Work in both cases — the register reads across, it does not create.
 
+A global register carries the filter its question needs and no more. The installation register's is an inclusive date window, because "what went in this week" is a date range; it reads a page at a time with an explicit action to fetch the next, rather than serialising a division's whole history into one response. Work and status filters stay out: a Work's own records are read on the Work, and a status filter would offer to hide exactly what the register exists to keep visible.
+
 ## Work workspace
 
 Every Work is organised into seven operator-facing areas:
@@ -262,7 +264,9 @@ Workspace navigation is serialized into `location.hash` (hand-rolled, no
 router library): a refresh restores the exact view including the Work
 workspace section, browser Back/Forward walk the view history, register rows
 render real links so middle-click works, and unknown or stale fragments fall
-back to the Dashboard. Blocked actions whose remedy lives on another screen
+back to the Dashboard — except a Work fragment naming a section this build
+does not know, which keeps the Work and opens its Overview, because the id is
+the durable half of that address. Blocked actions whose remedy lives on another screen
 (payment matrix rows, organisation GST profile, buyer contact facts) link
 directly to that screen, and each Work's Bills section opens with a billing
 readiness checklist deriving the same prerequisites from existing reads.

@@ -6,8 +6,10 @@ import {
   parseWorkspaceHash,
   workHash,
   workspaceHashOf,
+  WORK_TAB_NAMES,
   type WorkspaceRoute,
 } from '../src/lib/workspace-routes.js';
+import { WORK_TABS } from '../src/views/WorkDetail.js';
 
 const WORK_ID = '33333333-3333-4333-8333-333333333333';
 const DOC_ID = '22222222-2222-4222-8222-222222222222';
@@ -67,6 +69,16 @@ describe('workspace hash routes', () => {
     }
   });
 
+  /* The parser deliberately does not import the Work page — a route
+     module that pulled in a view would drag the whole workspace into the
+     bundle that decides where to go. So the tab vocabulary is written
+     twice, and this is what stops the two copies drifting: a tab added to
+     the page and not to the parser is simply unreachable by URL, which
+     nothing else in the suite would notice. */
+  it('parses exactly the tabs the Work page renders', () => {
+    expect([...WORK_TAB_NAMES].sort()).toEqual([...WORK_TABS].sort());
+  });
+
   it('treats the empty and root fragments as the Dashboard', () => {
     expect(parseWorkspaceHash('')).toEqual({ view: { name: 'dashboard' } });
     expect(parseWorkspaceHash('#')).toEqual({ view: { name: 'dashboard' } });
@@ -77,7 +89,12 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('#payment-matrix')).toBeNull();
     expect(parseWorkspaceHash('#/nonsense')).toBeNull();
     expect(parseWorkspaceHash('#/works/not-a-uuid')).toBeNull();
-    expect(parseWorkspaceHash(`#/works/${WORK_ID}/unknown-tab`)).toBeNull();
+    // …but a Work fragment with a section this build does not know keeps
+    // the Work and degrades to its Overview. The id is the durable half of
+    // the address; a renamed section is no reason to lose it.
+    expect(parseWorkspaceHash(`#/works/${WORK_ID}/unknown-tab`)).toEqual({
+      view: { name: 'work', workId: WORK_ID },
+    });
     expect(
       parseWorkspaceHash(`#/works/${WORK_ID}/challans/${CHALLAN_ID}/x`),
     ).toBeNull();

@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
-import { challanHash, navigateOnClick } from '../lib/workspace-routes.js';
+import { challanHash, navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { CardHeader } from '../ui/card.js';
@@ -24,6 +24,9 @@ interface WorkDeliveriesProps {
   readonly canCreateDocuments: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
+  /** Switches the Work page to its Installations tab, where the records
+   * that used to sit below the challans now live. */
+  readonly onOpenInstallations: () => void;
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
@@ -47,6 +50,7 @@ export function WorkDeliveries({
   canCreateDocuments,
   onNewChallan,
   onOpenChallan,
+  onOpenInstallations,
   pending,
   act,
 }: WorkDeliveriesProps) {
@@ -76,6 +80,21 @@ export function WorkDeliveries({
             </Button>
           ))}
       </CardHeader>
+      {/* Always here, not only in the failure branch. The installation
+          records and the serial trace used to be the tail of this tab, and
+          an operator who knew where they were will look here first; a
+          pointer that appears only when the challan register happens to be
+          broken is a pointer nobody sees. */}
+      <p className="m-0 text-sm text-muted-foreground">
+        Installation records and the serial trace moved to the{' '}
+        <a
+          href={workHash(workId, 'installations')}
+          onClick={navigateOnClick(onOpenInstallations)}
+        >
+          Installations tab
+        </a>
+        .
+      </p>
       {challansState === 'unavailable' ? (
         <FormError>
           Delivery Challans could not be loaded. Installation and serial information

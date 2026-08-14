@@ -139,7 +139,10 @@ describe('OperationsWorkspace mobile shell', () => {
     slug: 'sharma',
   };
 
-  function renderWorkspace(overrides: Partial<ApiClient> = {}) {
+  function renderWorkspace(
+    overrides: Partial<ApiClient> = {},
+    membershipOverrides: Parameters<typeof membership>[0] = {},
+  ) {
     const api = stubApi({
       dashboard: vi.fn().mockResolvedValue({
         totals: {
@@ -160,7 +163,7 @@ describe('OperationsWorkspace mobile shell', () => {
         api={api}
         me={{
           user: { id: 'user-a', email: 'owner@example.test' },
-          memberships: [membership({})],
+          memberships: [membership(membershipOverrides)],
           twoFactorEnabled: true,
           mfaRequired: true,
           mfaEnforced: false,
@@ -329,6 +332,59 @@ describe('OperationsWorkspace mobile shell', () => {
           })
           .getAttribute('aria-current'),
       ).toBe('page');
+      expect(window.location.hash).toBe(`#/works/${WORK_ID}/installations`);
+    },
+  );
+
+  it(
+    'offers a site membership only the records it may actually make',
+    { timeout: 30_000 },
+    async () => {
+      // A site membership records evidence but does not modify Works, so
+      // drafting a Delivery Challan is not one of its actions. Offering the
+      // button anyway opened the Deliveries tab with nothing on it to do,
+      // which is exactly the dead end this sheet exists to prevent.
+      renderWorkspace(
+        {
+          dashboard: vi.fn().mockResolvedValue({
+            totals: {
+              works: 1,
+              contractValue: '900.00',
+              deliveredValue: '0.00',
+              billedValue: '0.00',
+              openDrafts: 0,
+              loaAwaitingReview: 0,
+            },
+            alerts: [],
+            works: [
+              {
+                workId: WORK_ID,
+                workCode: 'DCW-1',
+                title: 'Supply of switchboards',
+                status: 'active',
+                contractValue: '900.00',
+                deliveredValue: '0.00',
+                billedValue: '0.00',
+                issuedChallans: 0,
+              },
+            ],
+          }),
+          getWork: vi.fn().mockResolvedValue(challanWork()),
+          workBalance: vi.fn().mockResolvedValue(BALANCE),
+        },
+        { role: 'site', canIssueDocuments: false, canCancelDocuments: false },
+      );
+
+      fireEvent.click(await screen.findByRole('link', { name: 'DCW-1' }));
+      await screen.findByRole('navigation', { name: 'Work sections' });
+      fireEvent.click(screen.getByRole('button', { name: 'Open record actions' }));
+
+      expect(screen.queryByRole('button', { name: 'Delivery challan' })).toBeNull();
+      // The two it can make are still one tap each.
+      expect(screen.getByRole('button', { name: 'Installation' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Measurements' })).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Installation' }));
       expect(window.location.hash).toBe(`#/works/${WORK_ID}/installations`);
     },
   );

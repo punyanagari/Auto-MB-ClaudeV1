@@ -1682,17 +1682,26 @@ export function OperationsWorkspace({
               </p>
               {/* Two buttons, not one "Delivery evidence": the two records
                   now live on different tabs, and a site user tapping Record
-                  on a phone means one of them specifically. */}
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                onClick={() => {
-                  openRecordTab(recordWorkId, 'deliveries');
-                }}
-              >
-                <Truck className="size-4 text-primary" aria-hidden="true" />
-                Delivery challan
-              </button>
+                  on a phone means one of them specifically.
+
+                  Drafting a challan is a Work modification, which a site
+                  membership does not carry — so the button is not offered
+                  to one, the way Upload LOA is not. Offering it would open
+                  a tab whose only action is absent, which is the dead end
+                  this sheet exists to avoid; the two records it CAN make
+                  are still one tap each. */}
+              {canModify && (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+                  onClick={() => {
+                    openRecordTab(recordWorkId, 'deliveries');
+                  }}
+                >
+                  <Truck className="size-4 text-primary" aria-hidden="true" />
+                  Delivery challan
+                </button>
+              )}
               <button
                 type="button"
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
