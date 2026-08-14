@@ -22,8 +22,8 @@ import { loadLetter, reviewLoaLetter, resolveCanonicalUnitCode } from '../src/in
  * differently (Advt.Value figures hoisted into schedule-title rows, a
  * three-way-split header, blank lines between wrapped description lines).
  * Fed that text, the reader yields NULL units on 42 of 54 rows — exactly the
- * owner's report. `apps/server/src/loa-extract.ts` now refuses a non-Poppler
- * binary, and `apps/server/test/loa-extract.test.ts` pins that guard.
+ * owner's report. `packages/documents/src/loa-extract.ts` now refuses a non-Poppler
+ * binary, and `packages/documents/test/loa-extract.test.ts` pins that guard.
  *
  * This file is the parser-side half of the evidence: it proves the letter's
  * every item reads correctly from the Poppler views, so the guard is

@@ -44,7 +44,7 @@ unit column on 42 of 54 item rows and mis-owned descriptions, i.e. silently
 wrong values for the quantities and rates every downstream figure derives
 from.
 
-`apps/server/src/loa-extract.ts` therefore probes the binary's `-v` banner
+`packages/documents/src/loa-extract.ts` therefore probes the binary's `-v` banner
 once per process and refuses to extract unless it is Poppler's. The probe
 reads both stdout and stderr and ignores the exit status, because the two
 implementations disagree on both: Poppler writes the banner to stderr and
@@ -79,7 +79,7 @@ Operational notes:
 
 ## PDF digital-signature verification adds no dependency
 
-`apps/server/src/pdf-signature/` reads PDF signature dictionaries and CMS
+`packages/documents/src/pdf-signature/` reads PDF signature dictionaries and CMS
 SignedData blobs with about 900 lines of hand-written DER and PDF parsing,
 and does no cryptography of its own: digests, RSA PKCS#1 v1.5, RSASSA-PSS,
 ECDSA verification, X.509 parsing and issuer-link checking are all

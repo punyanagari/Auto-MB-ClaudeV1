@@ -162,7 +162,11 @@ Every pack below traces to one of these.
   by editing this file. P6 was not expected to need one; it takes 0070
   rather than 0066 so the wave-3 reservations are left undisturbed, and the
   gap is harmless because the runner applies any unapplied id regardless of
-  relative order.
+  relative order. **0072** → P18, taken at the time that pack finalised
+  rather than reserved here, on the same footing as P19's 0071: its row
+  carried no migration, and the queue table turned out to need one. 0071
+  (P19) and 0067 (P15) were still open pull requests when P18 finalised, so
+  0072 is the next id no other pack holds — not the next id on disk.
 
 ### 2.2 Wave 1 — guards and closures (all seven packs runnable in parallel)
 

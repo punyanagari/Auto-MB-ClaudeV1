@@ -1,7 +1,15 @@
 # ADR-0008: The empty apps/worker scaffold stays, as a declared boundary
 
-- Status: Accepted
+- Status: Accepted; its tripwire was **retired by pack P18** on 2026-08-14
 - Date: 2026-08-12
+- Retirement: ADR-0011 and the P18 pull request. The scaffold is no longer
+  empty and is no longer undeployed, so the two claims below that depended
+  on emptiness — "the scaffold is **not deployed**" and the tripwire — are
+  marked spent where they appear rather than deleted. The decision itself
+  (keep the boundary rather than fold the worker into the server) stands,
+  and P18 is the evidence for it: the first real job landed in
+  `apps/worker` exactly as the boundary anticipated, without the
+  re-extraction the third bullet warned about.
 
 ## Context
 
@@ -37,7 +45,16 @@ Keep the scaffold. It is a boundary declaration, not a framework.
 
 - The worker stays in `pnpm dev`, typecheck and test fan-outs at
   near-zero cost (its test suite is empty and vitest exits cleanly).
-- The scaffold is **not deployed**. Correcting a claim this ADR carried as
+- ~~The scaffold is **not deployed**.~~ **Spent on 2026-08-14 (pack P18).**
+  The worker is now a service in `docker-compose.prod.yml`, running the
+  compiled `apps/worker/dist/worker.mjs` out of the same image as the API,
+  and `scripts/check-config.mjs` fails the build if that service or its
+  entry point disappears. Everything the paragraph below says about the
+  compose files and workflows was true when it was written and is now
+  historical. The rest of it is kept because the correction it records —
+  that the original "churn twice" argument was false — is still the reason
+  the decision above rests on the boundary declaration alone.
+  Correcting a claim this ADR carried as
   accepted until 2026-08-13: the third decision bullet argued that folding
   the worker into the server and re-extracting it would "churn the compose
   files, CI, and the process supervisor twice". It would not, because none
@@ -52,10 +69,19 @@ Keep the scaffold. It is a boundary declaration, not a framework.
   scaffold does not buy.
 - A corollary the tripwire below depends on: the first pull request to
   land a real job must also give the worker a deployment, because today
-  nothing would run it.
-- Tripwire: the first PR that lands a real asynchronous workflow must
-  either put its jobs here or, if it concludes in-process execution is
-  correct for that workload, replace this ADR with one that removes the
-  scaffold and amends `docs/ARCHITECTURE.md` and AGENTS.md in the same
-  change. The scaffold may not simply persist past that decision point
-  unexamined.
+  nothing would run it. **Discharged**: pack P18 deploys it in the same
+  pull request that lands the job.
+- ~~Tripwire~~ **— sprung and retired on 2026-08-14.** It read: the first
+  PR that lands a real asynchronous workflow must either put its jobs here
+  or, if it concludes in-process execution is correct for that workload,
+  replace this ADR with one that removes the scaffold and amends
+  `docs/ARCHITECTURE.md` and AGENTS.md in the same change; the scaffold may
+  not simply persist past that decision point unexamined.
+
+  Pack P18 took the first branch. `apps/worker` runs the LOA intake job
+  against the queue in migration 0072, under the execution model ADR-0011
+  decided, and it is deployed. `docs/ARCHITECTURE.md` and
+  `docs/OPERATIONS.md` were amended in the same change to stop describing
+  a worker that runs nothing. The tripwire has nothing left to catch, and
+  a standing tripwire over a decision already taken is a false signal to
+  the next reader — so it is retired here rather than left armed.

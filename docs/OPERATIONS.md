@@ -15,7 +15,15 @@ No production secret, database dump, or customer document belongs in local devel
 
 - static web assets;
 - API service;
-- worker service;
+- worker service — deployed since pack P18, running the same image as the
+  API with `node apps/worker/dist/worker.mjs`. It publishes no port and has
+  no healthcheck: it answers no request, and a process-liveness probe would
+  call a wedged claim loop healthy. The queue's own states are the signal —
+  a rising `queued` depth means the worker is behind or down, and anything
+  in `refused_bind` means a job's commissioning user lost their membership
+  before it ran and the work must be re-requested under a live user. Both
+  are read through `app_private` functions or as the owner role; the
+  application role cannot see the table at all (ADR-0011);
 - PostgreSQL;
 - private object storage;
 - private Gotenberg;

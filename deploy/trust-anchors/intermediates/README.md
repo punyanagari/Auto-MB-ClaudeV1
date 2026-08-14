@@ -3,7 +3,7 @@
 Empty on purpose. Drop a licensed CA's sub-CA certificate here (`.pem`,
 `.crt` or `.cer`) when a signer embedded only its leaf certificate and its
 chain therefore has nowhere to go — the ProDigiSign case described in
-`apps/server/src/pdf-signature/trust-anchors.ts`.
+`packages/documents/src/pdf-signature/trust-anchors.ts`.
 
 Certificates here can **complete** a path and can never **end** one: the
 path is only trusted when it terminates at a certificate in the parent

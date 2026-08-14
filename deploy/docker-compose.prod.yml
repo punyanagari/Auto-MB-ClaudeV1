@@ -209,6 +209,70 @@ services:
         reservations:
           memory: 256M
 
+  # --- asynchronous jobs ------------------------------------------------
+  # The worker enters the deployed set here, discharging ADR-0008's
+  # tripwire: the scaffold was deliberately not deployed until a real job
+  # existed, and pack P18's queue (migration 0072) is that job.
+  #
+  # It runs the SAME image as `server` with a different command, because
+  # its runtime needs are the same ones — poppler-utils, the CCA trust
+  # anchors, the object-storage volume, the database client. It publishes
+  # no port and answers no request.
+  worker:
+    image: auto-mb-prod-server:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    command: ['node', 'apps/worker/dist/worker.mjs']
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Not a hard dependency for correctness — a job whose Gotenberg call
+      # fails simply retries — but starting the worker before its
+      # dependencies only produces a burst of avoidable retries.
+      gotenberg:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      # The SAME application role as the API, with no additional
+      # privilege. ADR-0011's whole decision is that a worker holds nothing
+      # a request handler does not: it binds a tenant through
+      # `app_private.bind_tenant` like every request, and the membership is
+      # re-proved in the database at execution time. A separate role, or
+      # this one with BYPASSRLS, would be the bypass ADR-0010 refused.
+      DATABASE_URL: postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD:?set in .env.production}@postgres:5432/auto_mb
+      # It reads the bytes the API stored, so it mounts the same volume.
+      OBJECT_STORAGE_DIR: /data/objects
+      # Signature verification runs here now, so the anchors matter here
+      # too, and the quarterly refresh in docs/OPERATIONS.md §8 must land
+      # on both containers — which is why they read the same variable and
+      # the same default path out of the same image.
+      AUTO_MB_PDF_TRUST_ANCHORS: ${AUTO_MB_PDF_TRUST_ANCHORS:-/etc/auto-mb/pdf-trust}
+      GOTENBERG_URL: http://gotenberg:3000
+      # How long a claim is held before it lapses and the job returns to
+      # the queue. It must exceed the slowest job comfortably: too short
+      # and a healthy worker's job is taken from under it and done twice.
+      WORKER_LEASE_SECONDS: ${WORKER_LEASE_SECONDS:-120}
+      WORKER_IDLE_POLL_MS: ${WORKER_IDLE_POLL_MS:-1000}
+    volumes:
+      - objects:/data/objects
+    # No healthcheck. The worker exposes no endpoint, and a process-liveness
+    # probe would report a wedged claim loop as healthy; the queue's own
+    # states are the honest signal — a rising `queued` depth or anything in
+    # `refused_bind` is what an operator watches (docs/OPERATIONS.md §2).
+    deploy:
+      resources:
+        limits:
+          # Poppler and signature verification are CPU-bound, and this is a
+          # single pilot host shared with the API. One core keeps a backlog
+          # of extractions from starving the request path.
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          memory: 192M
+
   caddy:
     # Same explicit tag rationale as `server` above.
     image: auto-mb-prod-caddy:latest
