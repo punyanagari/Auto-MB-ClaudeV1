@@ -232,9 +232,35 @@ over non-cancelled records for the item — computed nowhere else.
 - Recording is a site action, not an office one: the location is picked
   from the master or created inline while standing at it, and serial-
   flagged items attach exactly one delivered, uninstalled serial per unit.
-- Per item, the cumulative installed quantity never exceeds the sanctioned
-  LOA quantity. The excess-delivery permission lifts the delivery ceiling
-  only and deliberately does not apply here.
+- **Installation is measured as it happened, even past the sanction**
+  (owner decision, 2026-08-17). Work goes in before the paperwork catches
+  up: the railway asks for more at the site meeting, the gang installs it,
+  and the variation order arrives weeks later. Refusing the record would
+  not stop the units going in — it would only stop the product knowing
+  about them — so the cumulative installed quantity may exceed the
+  sanctioned LOA quantity, and the item is flagged **pending variation**
+  when it does. The excess-delivery permission is not involved in either
+  direction: it lifts the delivery ceiling only, and it never reached this
+  rule when this rule was a ceiling.
+- **Pending variation is a derived fact, not a status somebody sets.** It
+  is true exactly while the item's installed total stands above
+  `effective_quantity ?? awarded_quantity`, recomputed by the database on
+  every write that can move either side, and it clears by exactly two
+  moves: an approved amendment raising the sanctioned quantity to cover
+  the work (the variation order arriving, §5.1), or cancelling the
+  installation record that measured the excess. It cannot be cleared by
+  amending the quantity DOWN — the amendment floor refuses any reduction
+  below what is already installed, which is what keeps a measured excess
+  from being paperwork'd away.
+- **What the lifted cap does not lift.** Measuring more than the contract
+  sanctions is honest; invoicing it is not. A Measurement Book still bills
+  no more installed quantity than the sanctioned figure, so the excess
+  waits outside the money until the variation lands — while everything up
+  to the sanctioned quantity bills normally, and the contractor is not
+  held out of what the contract already owes. Completion is unmoved too: a
+  Work closes only at exact equality, so an over-installed item is as
+  unfinished as a short one and no Work closes on the strength of
+  unsanctioned work.
 - Records are never edited. A record cancels with a note, keeps its
   history, and releases its serials back to the delivered-but-uninstalled
   pool.
@@ -334,7 +360,7 @@ The statutory authority is checked **in addition to** issue or cancel, never ins
 11. **Rounding:** round each line to two decimals, then sum lines.
 12. **Audit:** every create, confirm, issue, cancel, permission change, and destructive action records actor, time, entity, action, and relevant detail.
 13. **Tenant boundary:** cross-organisation access always fails, regardless of guessed identifiers.
-14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered, installed and/or certified quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened. Which quantity an item is measured on is decided by its payment category; see §5.4.
+14. **Work completion:** a Work is marked completed only at 100% executed value — every item's delivered, installed and/or certified quantity, per its payment category, equals its effective quantity exactly — and only with nothing live still holding a claim on it. Equality is the whole rule: an item measuring ABOVE its sanctioned quantity is as unfinished as a short one, and its remedy runs the other way (amend the sanctioned quantity up, which is what the railway's variation order authorises). Completion and reopen each take a note; a completed Work accepts no new operational document until it is reopened. Which quantity an item is measured on is decided by its payment category; see §5.4.
 15. **Executed value is measured on a recorded basis:** every Work records whether its LOA rates are quoted inclusive or exclusive of GST, and at what rate. Money is compared against a contract value only after both sides are stated on the same basis. See §5.2.
 16. **Settlement rests on the railway's own signed bill:** a finalized Measurement Book is closed, and the bill prepared from it recorded as paid, only against an On-Account Bill received from the railway whose three signatures are intact, chain to an installed trust anchor, and are made by three different certificates. See §5.5.
 17. **A confirmed Work with wrong extracted data is superseded, not edited:** a Work whose letter was read wrongly cannot be amended into shape — an amendment records that the contract changed, and nothing changed. It is instead withdrawn by an approved **supersede** request and its letter returned to review, so the letter can be read again. This is available only while the Work carries no downstream document at all, and only through the approval engine; the decider needs the cancel authority as well as the approval authority. See §5.6.
@@ -515,7 +541,10 @@ and three rules follow.
   total.** Every other item is capped at what was installed, because a
   certificate accepts work that exists. An AMC item has no installation
   at all, so that ceiling would be zero; its ceiling is the sanctioned
-  quantity, which is the ceiling installation itself already carries.
+  quantity instead. (Installation itself no longer carries that ceiling —
+  see "Installation records" — but certification still does: a certificate
+  accepts what the contract sanctions, and an unsanctioned excess is
+  certified once its variation order is applied.)
 - **An AMC matrix row bills only on the certification and final-bill
   stages.** Its supply and installation stage deltas are permanently
   zero, so contract value parked on either could never be billed.
@@ -955,7 +984,14 @@ The current product also includes:
   (recorded on the Work, and listed tenant-wide in their own register),
   warranty certificates, instruments, and PAC certificates;
 - record, on-account, and final Measurement Books with category payment
-  matrices, stage-wise billing, immutable snapshots, and generated documents;
+  matrices, stage-wise billing, immutable snapshots, and generated documents.
+  Billing caps at the sanctioned quantity: a book whose lifetime billed
+  installation for an item would pass `effective_quantity ?? awarded_quantity`
+  is refused, which is how an unsanctioned excess stays measured but unpaid
+  until its variation order is applied (see "Installation records"). A final
+  book, which must sweep every open source, therefore cannot be finalized at
+  all while an excess stands — closing the payment cycle over it would strand
+  the variation forever;
 - the railway's own received On-Account Bill, linked to the Measurement Book
   it settles by measurement sequence, with every fact extracted from the PDF
   and a three-signature verdict that gates measurement closure and payment

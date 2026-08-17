@@ -318,15 +318,16 @@ describe('Installations', () => {
   });
 
   it('announces a cap conflict in an alert region', async () => {
-    const recordWorkInstallation = vi
-      .fn()
-      .mockRejectedValue(
-        new RequestFailedError(
-          409,
-          'INSTALLATION_EXCEEDS_LOA',
-          'Cumulative installation for A/1 would exceed the sanctioned LOA quantity.',
-        ),
-      );
+    const recordWorkInstallation = vi.fn().mockRejectedValue(
+      // The sanctioned quantity stopped capping installation in
+      // migration 0077; the delivery floor below it did not, and it is
+      // the cap conflict the recording form can still meet.
+      new RequestFailedError(
+        409,
+        'INSTALLATION_EXCEEDS_DELIVERY',
+        'Cumulative installation for A/1 would exceed the delivered quantity.',
+      ),
+    );
     const api = installationsApi({ recordWorkInstallation });
     renderInstallations(api);
 
@@ -340,7 +341,7 @@ describe('Installations', () => {
     fireEvent.click(submitButton('Record installation'));
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('exceed the sanctioned LOA quantity');
+    expect(alert.textContent).toContain('exceed the delivered quantity');
   });
 
   it('hides recording and cancellation from read-only members', async () => {

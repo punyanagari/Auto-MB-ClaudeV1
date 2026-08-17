@@ -276,6 +276,14 @@ export const WorkItemSchema = Type.Object(
      * quantity-level installation records for the item (Milestone 7) —
      * the authoritative installed quantity Milestone 8 billing reads. */
     installedQuantity: Type.Optional(DecimalStringSchema),
+    /** Present on the Work detail response: the item has more installed
+     * than the contract sanctions, so it owes a railway variation order
+     * (migration 0077). Installation is measured as it happened; the
+     * excess is not billable until a variation raises the sanctioned
+     * quantity, and the Work cannot complete while it stands. Derived in
+     * the database from `installedQuantity` against
+     * `effectiveQuantity ?? awardedQuantity` — never submitted. */
+    pendingVariation: Type.Optional(Type.Boolean()),
     /** Milestone 8 payment category; null/absent = uncategorised (the
      * item resolves through the Work's UNCATEGORISED matrix row). */
     paymentCategory: Type.Optional(
@@ -392,13 +400,16 @@ export const WorkCompletionRequirementSchema = Type.Union([
 export type WorkCompletionRequirement = Static<typeof WorkCompletionRequirementSchema>;
 
 /** Which way an item misses 100%. The predicate is exact equality, so an
- * over-delivered item (reachable only with the Work's excess-delivery
- * toggle, R4) is as unfinished as a short one — but the remedies are
- * opposite. 'short' amends the sanctioned quantity DOWN; 'excess' amends
- * it UP to match what was delivered, which is exactly what the R7 floor
- * permits and what amending down would be refused for. An item over on
- * either measured dimension is 'excess': while any dimension exceeds the
- * baseline, the floor refuses every reduction, so up is the only move. */
+ * item measuring ABOVE its baseline is as unfinished as a short one — but
+ * the remedies are opposite. 'short' amends the sanctioned quantity DOWN;
+ * 'excess' amends it UP to match what was measured, which is exactly what
+ * the R7 floor permits and what amending down would be refused for. An
+ * item over on either measured dimension is 'excess': while any dimension
+ * exceeds the baseline, the floor refuses every reduction, so up is the
+ * only move. Over-DELIVERY reaches 'excess' only with the Work's
+ * excess-delivery toggle (R4); over-INSTALLATION reaches it whenever site
+ * ran ahead of the variation order that sanctions the extra work
+ * (migration 0077), which is the ordinary way an item lands here. */
 export const WorkCompletionDirectionSchema = Type.Union([
   Type.Literal('short'),
   Type.Literal('excess'),
@@ -431,8 +442,8 @@ export type UnfinishedWorkItem = Static<typeof UnfinishedWorkItemSchema>;
 
 /** `details` of the 409 WORK_NOT_FULLY_EXECUTED — the operator's
  * worklist, each row carrying the direction of its own remedy: short
- * items amend down through the approval path, over-delivered items amend
- * the sanctioned quantity up to match the delivery. */
+ * items amend down through the approval path, items measuring above the
+ * baseline amend the sanctioned quantity up to match the measurement. */
 export const WorkNotFullyExecutedDetailsSchema = Type.Object(
   { unfinishedItems: Type.Array(UnfinishedWorkItemSchema) },
   { additionalProperties: false },

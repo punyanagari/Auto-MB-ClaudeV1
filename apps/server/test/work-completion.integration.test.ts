@@ -385,7 +385,9 @@ describe('the R8 completion predicate', () => {
     expect(refused.json<{ message: string }>().message).toContain(
       'amend those quantities down',
     );
-    expect(refused.json<{ message: string }>().message).not.toContain('over-delivered');
+    expect(refused.json<{ message: string }>().message).not.toContain(
+      'measure above the sanctioned quantity',
+    );
 
     const items = unfinishedBy(refused);
     // The soft-deleted item owes nothing and must not appear.
@@ -630,11 +632,100 @@ describe('the R8 completion predicate', () => {
     const message = refused.json<{ message: string }>().message;
     expect(message).toContain('1 item(s) are short: E/2');
     expect(message).toContain('amend those quantities down');
-    expect(message).toContain('1 item(s) are over-delivered: E/1');
-    expect(message).toContain('amend the sanctioned quantity up to match the delivery');
-    // The short instruction must not be attached to the over-delivered
+    expect(message).toContain('1 item(s) measure above the sanctioned quantity: E/1');
+    expect(message).toContain(
+      'amend the sanctioned quantity up to match the measurement',
+    );
+    // The short instruction must not be attached to the over-measured
     // item: the two sentences name disjoint item lists.
     expect(message).not.toMatch(/are short:[^.]*E\/1/);
+  });
+
+  it('refuses completion on an over-INSTALLED item, variation pending', async () => {
+    // Migration 0077 lifted the installation cap; it deliberately did not
+    // touch R8. An item measuring above its sanction is 'excess' on the
+    // installation dimension exactly as an over-delivered one is on the
+    // delivery dimension, so a Work still cannot be closed on the
+    // strength of work the contract has not sanctioned. No excess-delivery
+    // toggle here — over-installation needs no permission at all.
+    const varWorkId = randomUUID();
+    const varScheduleId = randomUUID();
+    const varItemId = randomUUID();
+    const varCode = `WCV1${runId.slice(0, 4).toUpperCase()}`;
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${varWorkId}, ${organisationId}, ${varCode}, ${`wc-variation-${runId}`},
+        '2025-06-01', 'Pending variation fixture work', 200.00, 180.00,
+        'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${varScheduleId}, ${organisationId}, ${varWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values
+        (${varItemId}, ${organisationId}, ${varWorkId}, ${varScheduleId},
+         'V/1', 'Signal post erection', 'Nos', 5.000, 100.00,
+         'PURE_INSTALLATION')
+    `;
+
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${varWorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: varItemId,
+        quantity: '6.000',
+        installedOn: '2026-08-04',
+        newLocation: { name: `Variation site ${runId}`, kind: 'station' },
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+
+    const [item] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${varItemId}
+    `;
+    expect(item?.pending_variation).toBe(true);
+
+    const refusedVariation = await complete(
+      owner,
+      'Attempting closure while a variation is pending.',
+      varWorkId,
+    );
+    expect(refusedVariation.statusCode, refusedVariation.body).toBe(409);
+    expect(refusedVariation.json()).toMatchObject({
+      code: 'WORK_NOT_FULLY_EXECUTED',
+    });
+    expect(unfinishedBy(refusedVariation).get('V/1')).toMatchObject({
+      direction: 'excess',
+      requirement: 'installation',
+      requiredQuantity: '5.000',
+      installedQuantity: '6.000',
+    });
+    expect(refusedVariation.json<{ message: string }>().message).toContain(
+      '1 item(s) measure above the sanctioned quantity: V/1',
+    );
+
+    // The variation order arrives, the sanctioned quantity is raised to
+    // match what was built, and the Work closes.
+    await admin`
+      update work_items set effective_quantity = 6.000 where id = ${varItemId}
+    `;
+    const completed = await complete(
+      owner,
+      'Variation sanctioned; closing the contract.',
+      varWorkId,
+    );
+    expect(completed.statusCode, completed.body).toBe(200);
   });
 });
 

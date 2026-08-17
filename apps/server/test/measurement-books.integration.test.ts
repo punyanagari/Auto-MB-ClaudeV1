@@ -3069,3 +3069,102 @@ describe('the three kinds (0034): record MBs, merge, and un-merge', () => {
     expect(recordRefused.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
   });
 });
+
+describe('billing caps at the sanctioned quantity while a variation is pending', () => {
+  // Owner decision 2026-08-17 (migration 0077): installation may run past
+  // the sanctioned quantity and flags the item as owing a variation
+  // order. Measurement is not payment — the excess stays out of every
+  // Measurement Book until an amendment sanctions it.
+  let workVId: string;
+  let vItemId: string;
+  let firstInstallationId: string;
+  let excessInstallationId: string;
+
+  it('bills installation inside the sanctioned quantity as before', async () => {
+    vItemId = randomUUID();
+    workVId = await seedWork({
+      code: `VAR1${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: vItemId,
+          itemNumber: '1',
+          description: 'Signal post erection',
+          unit: 'Nos',
+          quantity: '10.000',
+          rate: '100.00',
+          paymentCategory: 'PURE_INSTALLATION',
+        },
+      ],
+    });
+    await insertMatrixRow(workVId, 'PURE_INSTALLATION', [
+      '0.00',
+      '90.00',
+      '0.00',
+      '10.00',
+    ]);
+
+    firstInstallationId = await recordInstallation(workVId, vItemId, '6.000');
+    const draft = await createDraft(workVId, { mbDate: '2026-08-01' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'installation', sourceId: firstInstallationId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+    const finalized = await finalize(draft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    expect(
+      finalized.json<MeasurementBookDetailResponse>().lines[0]?.deltaInstalled,
+    ).toBe('6.000');
+  });
+
+  it('refuses to finalize a book whose installation total passes the sanction', async () => {
+    // Site installs six more against a sanctioned ten: recorded, and the
+    // item now owes a variation.
+    excessInstallationId = await recordInstallation(workVId, vItemId, '6.000');
+    const [item] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${vItemId}
+    `;
+    expect(item?.pending_variation).toBe(true);
+
+    const draft = await createDraft(workVId, { mbDate: '2026-08-02' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'installation', sourceId: excessInstallationId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    // 6.000 already billed plus 6.000 claimed is 12.000 against a
+    // sanctioned 10.000 — the money stops here even though the
+    // measurement did not.
+    const refused = await finalize(draft.book.id);
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'MB_EXCEEDS_SANCTIONED' });
+    expect(refused.json<{ message: string }>().message).toContain(
+      '12.000 installed against a sanctioned 10.000',
+    );
+    // Nothing was numbered or snapshotted by the refusal.
+    const [book] = await admin<{ status: string; mb_number: string | null }[]>`
+      select status, mb_number from measurement_books where id = ${draft.book.id}
+    `;
+    expect(book).toMatchObject({ status: 'draft', mb_number: null });
+  });
+
+  it('bills the excess once the variation raises the sanctioned quantity', async () => {
+    await admin`
+      update work_items set effective_quantity = 12.000 where id = ${vItemId}
+    `;
+    const [item] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${vItemId}
+    `;
+    expect(item?.pending_variation).toBe(false);
+
+    const [draftRow] = await admin<{ id: string }[]>`
+      select id from measurement_books
+      where work_id = ${workVId} and status = 'draft'
+    `;
+    if (!draftRow) throw new Error('the refused draft is missing');
+    const finalized = await finalize(draftRow.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.lines[0]?.deltaInstalled).toBe('6.000');
+    expect(detail.lines[0]?.priorInstalled).toBe('6.000');
+  });
+});

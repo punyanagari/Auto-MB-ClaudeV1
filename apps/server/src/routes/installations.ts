@@ -436,24 +436,35 @@ export function registerInstallationRoutes(
         // snapshotted onto the record below.
         const location = await resolveLocation(tx, organisationId, user.id, body);
 
-        // R5, first half: per item, total installed never exceeds the
-        // LOA quantity (effective when amended, else awarded). The
-        // excess-delivery toggle deliberately does NOT apply here.
-        const [loaCap] = await tx<{ exceeded: boolean }[]>`
-            select (
-              coalesce((
-                select sum(quantity) from installations
-                where work_item_id = ${body.workItemId} and status = 'recorded'
-              ), 0) + ${body.quantity}::numeric(18,3)
-            ) > ${item.loa_quantity}::numeric(18,3) as exceeded
+        // R5, first half, as the owner settled it on 2026-08-17: the
+        // sanctioned quantity no longer caps INSTALLATION. Work goes in
+        // before the variation order that sanctions it arrives, and
+        // refusing the record refuses the measurement without stopping
+        // the units — so the excess is recorded and the item is flagged
+        // as owing a variation instead (migration 0077 derives
+        // work_items.pending_variation from this same sum, under the
+        // item row lock held above).
+        //
+        // What the lifted cap does NOT lift: the sanctioned quantity
+        // still caps BILLING (measurement-books/finalize.ts,
+        // MB_EXCEEDS_SANCTIONED) and still decides COMPLETION
+        // (work-completion.ts measures equality), so an unsanctioned
+        // excess can be measured but never invoiced or closed on.
+        // Delivery-cap semantics — including the excess-delivery
+        // toggle, which never reached this rule — are untouched.
+        const [variation] = await tx<{ exceeds: boolean; installed: string }[]>`
+            select cumulative.installed::text as installed,
+                   (cumulative.installed
+                      > ${item.loa_quantity}::numeric(18,3)) as exceeds
+            from (
+              select coalesce((
+                       select sum(quantity) from installations
+                       where work_item_id = ${body.workItemId}
+                         and status = 'recorded'
+                     ), 0) + ${body.quantity}::numeric(18,3) as installed
+            ) cumulative
           `;
-        if (loaCap?.exceeded === true) {
-          throw httpError(
-            409,
-            'INSTALLATION_EXCEEDS_LOA',
-            `Cumulative installation for ${item.item_number} would exceed the sanctioned LOA quantity ${item.loa_quantity}. If the railway sanctioned more, amend the item quantity first.`,
-          );
-        }
+        const pendingVariation = variation?.exceeds === true;
 
         // R5, second half: supply-type items cannot be installed beyond
         // what issued Delivery Challans delivered. Milestone 7 knows
@@ -644,6 +655,13 @@ export function registerInstallationRoutes(
             locationId: location.id,
             locationName: location.name,
             serialCount: serialIds.length,
+            // The variation this recording opens (or leaves open), and the
+            // two numbers that decide it. A flag on the item says an item
+            // is over-installed; the audit trail is where "which recording
+            // took it over, and by how much" is answerable afterwards.
+            pendingVariation,
+            cumulativeInstalled: variation?.installed ?? null,
+            sanctionedQuantity: item.loa_quantity,
           },
         );
         return toInstallation(full);

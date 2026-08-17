@@ -1757,6 +1757,7 @@ export function registerLoaRoutes(
             requires_serials: boolean;
             payment_category: WorkItemPaymentCategory | null;
             installed_quantity: string;
+            pending_variation: boolean;
             pac_certified_quantity: string;
           }[]
         >`
@@ -1766,6 +1767,12 @@ export function registerLoaRoutes(
                  effective_unit_rate::text as effective_unit_rate,
                  effective_description, effective_unit, amendment_added,
                  requires_serials, payment_category,
+                 -- Migration 0077: the item holds more installed than the
+                 -- contract sanctions and owes a variation order. Read from
+                 -- the column rather than recomputed here — the database
+                 -- derives it from the same sum below, and two readings of
+                 -- one fact is how they drift.
+                 pending_variation,
                  -- Milestone 7: the authoritative installed quantity —
                  -- SUM over non-cancelled installation records.
                  coalesce((
@@ -1813,6 +1820,7 @@ export function registerLoaRoutes(
               amendmentAdded: item.amendment_added,
               requiresSerials: item.requires_serials,
               installedQuantity: item.installed_quantity,
+              pendingVariation: item.pending_variation,
               // Milestone 8: null = uncategorised (resolves through the
               // Work's UNCATEGORISED matrix row).
               paymentCategory: item.payment_category,

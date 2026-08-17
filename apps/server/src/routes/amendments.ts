@@ -347,8 +347,18 @@ export async function applyApproval(
       // lawful fix R5 prescribes ("amend the item quantity first") is
       // precisely an increase that may still sit below the delivered
       // total. Flooring it would refuse the one remedy the rule names.
-      // Installed and certified can never exceed the CURRENT ceiling, so
-      // an increase cannot breach R5 or R18 either.
+      // The same now goes for INSTALLED: since migration 0077 a site may
+      // install beyond the sanctioned quantity, which flags the item as
+      // pending variation, and the increase applied here is exactly the
+      // variation order that clears it (the flag is recomputed by the
+      // work_items trigger as this UPDATE lands). Certified can still
+      // never exceed the current ceiling, so R18 is unaffected.
+      //
+      // The reduction floor is deliberately UNCHANGED by 0077: an item
+      // that is over-installed cannot be amended down to hide the
+      // excess. Withdrawing an over-installation means cancelling the
+      // installation record that measured it, which is the record that
+      // would otherwise be contradicted.
       const [floor] = await tx<
         {
           delivered: string;

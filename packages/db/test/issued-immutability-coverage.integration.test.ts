@@ -303,6 +303,12 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'gst_rate',
     'is_service',
     'advertised_rate',
+    // Derived, and mutable precisely because it is derived: the 0077
+    // trigger recomputes it on every write of this row, so it tracks the
+    // installed total rather than recording a decision anyone made. It
+    // carries no contract fact that freezing could protect — and freezing
+    // it would freeze the recomputation itself.
+    'pending_variation',
   ],
 
   // The Work itself. 0031 freezes the completion and reopen evidence and

@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 160;
+const TRIGGER_CENSUS = 162;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -120,6 +120,46 @@ describe('tenant migration contract', () => {
     );
   });
 
+  it('lifts the installation ceiling and derives the variation flag in 0077', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0077_installation_variation.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    // 0046's installation ceiling goes, trigger and function together —
+    // a dropped trigger over a surviving function is a guard that comes
+    // back the next time somebody re-creates the trigger.
+    expect(sql).toContain('DROP TRIGGER installations_quantity_ceiling_guard');
+    expect(sql).toContain(
+      'DROP FUNCTION app_private.guard_installation_quantity_ceiling();',
+    );
+    // The DELIVERY ceiling is a different rule and must survive untouched.
+    expect(sql).not.toContain('delivery_challans_quantity_ceiling_guard');
+    expect(sql).toContain(
+      'ADD COLUMN pending_variation boolean NOT NULL DEFAULT false',
+    );
+    // Both halves of the derivation: the item side overwrites whatever a
+    // writer supplied, and the installation side locks the item row before
+    // it reads the sum, so two concurrent recordings cannot both conclude
+    // they fit.
+    expect(sql).toContain('CREATE TRIGGER work_items_pending_variation_sync');
+    expect(sql).toContain('NEW.pending_variation :=');
+    expect(sql).toContain('CREATE TRIGGER installations_pending_variation_sync');
+    const installationSync = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.refresh_work_item_pending_variation()'),
+      sql.indexOf('CREATE TRIGGER installations_pending_variation_sync'),
+    );
+    expect(installationSync).toContain('FOR UPDATE');
+    // Neither trigger may consult the excess-delivery toggle: that lifts
+    // the delivery cap and has never had anything to say about
+    // installation.
+    expect(sql).not.toContain('allow_excess_delivery');
+    // A database restored from before 0046 can hold an over-installed item,
+    // so the flag is backfilled rather than assumed false.
+    expect(sql).toContain('SET pending_variation = true');
+  });
+
   it('binds the delivery and installation quantity ceilings in 0046', async () => {
     const sql = await readFile(
       path.join(migrationsDirectory, '0046_quantity_ceilings_and_fk_indexes.sql'),
@@ -127,6 +167,10 @@ describe('tenant migration contract', () => {
     );
     expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
     expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    // What 0046 wrote, asserted over 0046's own bytes. Its installation
+    // ceiling was lifted by 0077 (owner decision, 2026-08-17) and the
+    // assertions here describe the migration, not the live schema — an
+    // applied migration's text never changes, so this stays true.
     expect(sql).toContain('installations_quantity_ceiling_guard');
     expect(sql).toContain('delivery_challans_quantity_ceiling_guard');
     // The ceiling reads happen under a work_items row lock, which is what makes

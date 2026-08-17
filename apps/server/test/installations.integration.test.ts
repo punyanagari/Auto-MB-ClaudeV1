@@ -542,8 +542,18 @@ describe('recording installations by quantity', () => {
   });
 });
 
-describe('the LOA quantity cap (R5)', () => {
-  it('caps cumulative installed quantity at the awarded quantity in exact SQL arithmetic', async () => {
+describe('installation past the sanctioned quantity (R5, owner decision 2026-08-17)', () => {
+  /** The item's derived variation flag, read straight from the row. */
+  async function pendingVariation(workItemId: string): Promise<boolean> {
+    const [item] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${workItemId}
+    `;
+    if (!item) throw new Error('work item read returned no row');
+    return item.pending_variation;
+  }
+
+  it('records the excess and flags the item as owing a variation', async () => {
+    // Item B is sanctioned 2.000.
     const first = await record(site, {
       workItemId: itemBId,
       quantity: '1.500',
@@ -551,31 +561,46 @@ describe('the LOA quantity cap (R5)', () => {
       locationId: stationLocationId,
     });
     expect(first.statusCode, first.body).toBe(201);
+    expect(await pendingVariation(itemBId)).toBe(false);
 
+    // The gang installs a unit the contract has not sanctioned yet. It is
+    // recorded — refusing the record would not stop the unit going in —
+    // and the item is marked as owing the variation order.
     const over = await record(site, {
       workItemId: itemBId,
       quantity: '1.000',
       installedOn: '2026-08-05',
       locationId: stationLocationId,
     });
-    expect(over.statusCode).toBe(409);
-    expect(over.json<{ code: string }>().code).toBe('INSTALLATION_EXCEEDS_LOA');
+    expect(over.statusCode, over.body).toBe(201);
+    expect(await pendingVariation(itemBId)).toBe(true);
 
-    // Exactly at the cap is allowed: 1.500 + 0.500 = 2.000.
-    const exact = await record(site, {
-      workItemId: itemBId,
-      quantity: '0.500',
-      installedOn: '2026-08-05',
-      locationId: stationLocationId,
+    const list = await listInstallations();
+    expect(summaryOf(list, itemBId)).toBe('2.500');
+
+    // The Work read carries the flag, which is where the Variation tab
+    // will find it.
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}`,
+      organisationId,
     });
-    expect(exact.statusCode, exact.body).toBe(201);
+    expect(detail.statusCode, detail.body).toBe(200);
+    const items = detail
+      .json<WorkDetailResponse>()
+      .schedules.flatMap((schedule) => schedule.items);
+    expect(items.find((item) => item.id === itemBId)?.pendingVariation).toBe(true);
+    expect(items.find((item) => item.id === itemAId)?.pendingVariation).toBe(false);
   });
 
-  it('uses the amendment overlay (effective_quantity) when present', async () => {
-    // The Milestone 6 amendment overlay lifts the cap to 3.000.
+  it('clears the flag when the amendment overlay sanctions the excess', async () => {
+    // The variation order arrives: the Milestone 6 overlay raises the
+    // sanctioned quantity to 3.000, which covers the 2.500 installed.
     await admin`
       update work_items set effective_quantity = 3.000 where id = ${itemBId}
     `;
+    expect(await pendingVariation(itemBId)).toBe(false);
+
     const allowed = await record(site, {
       workItemId: itemBId,
       quantity: '0.500',
@@ -583,20 +608,24 @@ describe('the LOA quantity cap (R5)', () => {
       locationId: stationLocationId,
     });
     expect(allowed.statusCode, allowed.body).toBe(201);
+    expect(await pendingVariation(itemBId)).toBe(false);
+
+    // …and going over the NEW sanctioned quantity raises it again.
     const over = await record(site, {
       workItemId: itemBId,
       quantity: '0.750',
       installedOn: '2026-08-06',
       locationId: stationLocationId,
     });
-    expect(over.statusCode).toBe(409);
-    expect(over.json<{ code: string }>().code).toBe('INSTALLATION_EXCEEDS_LOA');
+    expect(over.statusCode, over.body).toBe(201);
+    expect(await pendingVariation(itemBId)).toBe(true);
   });
 
-  it('holds the cap under simultaneous recordings', async () => {
-    // Installed 2.500 of effective 3.000: two concurrent 0.500 recordings
-    // both pass a stale read — the work-item row lock serialises them, so
-    // exactly one commits.
+  it('flags the item exactly once under simultaneous recordings', async () => {
+    // Installed 3.750 of effective 3.000, so the flag already stands.
+    // Two concurrent recordings both commit — nothing caps them — and the
+    // work-item row lock the 0077 trigger takes is what keeps the derived
+    // flag from being computed off a stale sum by either of them.
     const [first, second] = await Promise.all([
       record(site, {
         workItemId: itemBId,
@@ -612,10 +641,16 @@ describe('the LOA quantity cap (R5)', () => {
       }),
     ]);
     const statuses = [first.statusCode, second.statusCode].sort();
-    expect(statuses, `${first.body} | ${second.body}`).toEqual([201, 409]);
+    expect(statuses, `${first.body} | ${second.body}`).toEqual([201, 201]);
     const list = await listInstallations();
-    expect(summaryOf(list, itemBId)).toBe('3.000');
+    expect(summaryOf(list, itemBId)).toBe('4.750');
+    expect(await pendingVariation(itemBId)).toBe(true);
   });
+
+  // The race that raises the flag FROM NOTHING — two recordings that each
+  // fit alone and together do not — is proved at the database, where the
+  // proof can park one writer on the row lock and watch it wake:
+  // packages/db/test/quantity-ceilings.integration.test.ts.
 });
 
 describe('serial attachment (R6)', () => {
@@ -896,7 +931,7 @@ describe('trace, timeline, export, and tenancy', () => {
     expect(detail.statusCode, detail.body).toBe(200);
     const { schedules } = detail.json<WorkDetailResponse>();
     const items = schedules.flatMap((schedule) => schedule.items);
-    expect(items.find((item) => item.id === itemBId)?.installedQuantity).toBe('3.000');
+    expect(items.find((item) => item.id === itemBId)?.installedQuantity).toBe('4.750');
     expect(items.find((item) => item.id === itemCId)?.installedQuantity).toBe('2.000');
 
     const search = await authed(owner, {
@@ -1195,12 +1230,16 @@ describe('serials of another Work and the assigned scope', () => {
 // record freeze against direct SQL.
 //
 // What was NOT pinned, and is pinned here: the excess-delivery toggle
-// lifting the DELIVERY ceiling while leaving the INSTALLATION ceiling
-// exactly where R5 puts it, and the deliberate absence of an in-place
-// quantity-edit endpoint (Milestone 7's settled cancel-and-re-record).
+// lifting the DELIVERY ceiling and having nothing whatever to say about
+// installation — before migration 0077 that meant installation stayed
+// capped while delivery ran over, and since 0077 it means installation
+// runs over without the toggle's permission and flags a variation
+// instead. The toggle is orthogonal in both regimes, which is the point.
+// Also pinned: the deliberate absence of an in-place quantity-edit
+// endpoint (Milestone 7's settled cancel-and-re-record).
 // ---------------------------------------------------------------------------
 
-describe('the excess-delivery toggle never lifts the installation cap (R5)', () => {
+describe('the excess-delivery toggle is orthogonal to installation (R5)', () => {
   let excessWorkId: string;
   let excessItemId: string;
 
@@ -1261,8 +1300,8 @@ describe('the excess-delivery toggle never lifts the installation cap (R5)', () 
     expect(issued.statusCode, issued.body).toBe(201);
   });
 
-  it('still caps installation at the LOA quantity, not the delivered quantity', async () => {
-    // 4 installed is exactly the sanctioned quantity and is accepted…
+  it('installs past the sanctioned quantity without the toggle being consulted', async () => {
+    // 4 installed is exactly the sanctioned quantity, and owes nothing.
     const atCap = await authed(owner, {
       method: 'POST',
       url: `/api/works/${excessWorkId}/installations`,
@@ -1275,10 +1314,13 @@ describe('the excess-delivery toggle never lifts the installation cap (R5)', () 
       },
     });
     expect(atCap.statusCode, atCap.body).toBe(201);
+    const [before] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${excessItemId}
+    `;
+    expect(before?.pending_variation).toBe(false);
 
-    // …and the fifth unit is refused even though six were delivered.
-    // Payment is per LOA quantity: the toggle deliberately does not reach
-    // this cap (spec R5, "the excess toggle never applies").
+    // The fifth unit goes in. Since migration 0077 it is recorded, and the
+    // item is flagged as owing a variation order.
     const overCap = await authed(owner, {
       method: 'POST',
       url: `/api/works/${excessWorkId}/installations`,
@@ -1290,14 +1332,12 @@ describe('the excess-delivery toggle never lifts the installation cap (R5)', () 
         newLocation: { name: 'Excess ballast yard', kind: 'other' },
       },
     });
-    expect(overCap.statusCode).toBe(409);
-    expect(overCap.json()).toMatchObject({ code: 'INSTALLATION_EXCEEDS_LOA' });
-    expect(overCap.json<{ message: string }>().message).toContain(
-      'amend the item quantity first',
-    );
+    expect(overCap.statusCode, overCap.body).toBe(201);
+    const [after] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${excessItemId}
+    `;
+    expect(after?.pending_variation).toBe(true);
 
-    // The toggle really is on — the refusal is the installation cap
-    // speaking, not a Work that forgot its own setting.
     const [work] = await admin<{ allow_excess_delivery: boolean }[]>`
       select allow_excess_delivery from works where id = ${excessWorkId}
     `;
@@ -1314,11 +1354,13 @@ describe('the excess-delivery toggle never lifts the installation cap (R5)', () 
           as installed
     `;
     expect(totals?.delivered).toBe('6.000');
-    expect(totals?.installed).toBe('4.000');
+    expect(totals?.installed).toBe('5.000');
   });
 
-  it('accepts the extra unit only after the item quantity is amended up', async () => {
-    // The lawful path R5 names: amend the sanctioned quantity, then install.
+  it('clears the variation when the amendment sanctions what was built', async () => {
+    // The lawful path R5 still names: the railway's variation order lands
+    // as an approved amendment, and the flag goes out with it. The
+    // installation was never held up waiting for it.
     await admin`
       update organisation_memberships set can_approve_amendments = true
       where organisation_id = ${organisationId} and user_id = ${ownerUserId}
@@ -1335,6 +1377,12 @@ describe('the excess-delivery toggle never lifts the installation cap (R5)', () 
     });
     expect(amended.statusCode, amended.body).toBe(201);
 
+    const [item] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${excessItemId}
+    `;
+    expect(item?.pending_variation).toBe(false);
+
+    // …and going past the newly sanctioned five raises it again.
     const accepted = await authed(owner, {
       method: 'POST',
       url: `/api/works/${excessWorkId}/installations`,
@@ -1347,6 +1395,10 @@ describe('the excess-delivery toggle never lifts the installation cap (R5)', () 
       },
     });
     expect(accepted.statusCode, accepted.body).toBe(201);
+    const [again] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${excessItemId}
+    `;
+    expect(again?.pending_variation).toBe(true);
   });
 });
 

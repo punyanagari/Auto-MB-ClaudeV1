@@ -251,7 +251,11 @@ const REQUIREMENT_LABELS: Record<UnfinishedWorkItem['requirement'], string> = {
  * served and its certificate has not been recorded yet — so the row
  * names the certificate first and the amendment second. */
 function directionRemedy(item: UnfinishedWorkItem): string {
-  if (item.direction === 'excess') return 'over-delivered — amend the quantity up';
+  // 'excess' has two dimensions since migration 0077 — an over-delivered
+  // item and an over-installed one both land here — so the row names the
+  // comparison rather than the movement.
+  if (item.direction === 'excess')
+    return 'above the sanctioned quantity — amend the quantity up';
   return item.requirement === 'service'
     ? 'not yet certified — record the acceptance certificate, or amend the quantity down'
     : 'short — amend the quantity down';

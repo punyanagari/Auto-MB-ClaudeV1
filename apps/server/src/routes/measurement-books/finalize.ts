@@ -253,6 +253,70 @@ export function registerMeasurementBookFinalizeRoutes(
           );
         }
 
+        // BILLING CAPS AT THE SANCTIONED QUANTITY (owner decision,
+        // 2026-08-17; migration 0077). Installation is no longer capped
+        // there — an item may hold more installed than the contract
+        // sanctions while its variation order is awaited — but the
+        // measurement that is BILLED still may not. Until 0077 this held
+        // itself: nothing could be installed above the ceiling, so
+        // nothing above it could reach a Measurement Book. Now it has to
+        // be said.
+        //
+        // The measure is the item's LIFETIME billed installation:
+        // prior_installed (summed over other finalized books) plus this
+        // book's delta. Two consequences worth naming. A Work may still
+        // bill up to the sanctioned quantity while an excess waits — the
+        // contractor is not held out of the money the contract already
+        // owes. And the FINAL book, which must sweep every open source,
+        // therefore cannot be finalized at all while an excess stands,
+        // which is correct: the final book closes the payment cycle, and
+        // closing it over an unsanctioned quantity would strand the
+        // variation forever.
+        //
+        // The final-bill stage needs no separate check. Its base is the
+        // item's cumulative installed quantity, and it is computed on
+        // the final book only — where the sweep guarantees every
+        // installation is either prior-billed or in this delta, so the
+        // sum below already covers it.
+        //
+        // Exact SQL numeric throughout, against the item rows the Work
+        // row lock above holds still.
+        // Only lines this book actually adds installation to are judged
+        // (`claim.delta > 0`, decided in SQL rather than by string
+        // comparison on an exact-decimal '0.000'): a book that bills no
+        // installation for an item cannot be the one that took it over.
+        const overBilled = await tx<
+          { item_number: string; billed: string; sanctioned: string }[]
+        >`
+          select wi.item_number,
+                 (claim.prior + claim.delta)::text as billed,
+                 coalesce(wi.effective_quantity, wi.awarded_quantity)::text
+                   as sanctioned
+          from unnest(
+            ${computation.lines.map((line) => line.workItemId)}::uuid[],
+            ${computation.lines.map((line) => line.priorInstalled)}::numeric(18,3)[],
+            ${computation.lines.map((line) => line.deltaInstalled)}::numeric(18,3)[]
+          ) as claim(work_item_id, prior, delta)
+          join work_items wi on wi.id = claim.work_item_id
+          where claim.delta > 0
+            and claim.prior + claim.delta
+              > coalesce(wi.effective_quantity, wi.awarded_quantity)
+          order by wi.item_number
+        `;
+        if (overBilled.length > 0) {
+          const names = overBilled
+            .map(
+              (row) =>
+                `${row.item_number} (${row.billed} installed against a sanctioned ${row.sanctioned})`,
+            )
+            .join('; ');
+          throw httpError(
+            409,
+            'MB_EXCEEDS_SANCTIONED',
+            `A Measurement Book bills no more than the sanctioned quantity — ${names}. Amend the sanctioned quantity up through the approval path once the railway's variation order arrives, or leave the excess out of this book by deselecting the installation records that carry it.`,
+          );
+        }
+
         // Gapless <work_code>-MB-NN under the counter row lock (0014
         // mechanics): concurrent finalizes serialise here; rollback
         // rolls the number back with the transaction.
