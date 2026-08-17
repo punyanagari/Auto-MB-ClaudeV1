@@ -94,6 +94,10 @@ const ALLOWED_EXTERNAL = new Map([
     'measurement-book.tsx',
     'a component of the v0 MOCK repository (punyanagari/Auto-MB-Vercel-du) — same reason as installation-capture-flow.tsx above: the unbillable-variation-exposure panel cites the mock screen it replicates',
   ],
+  [
+    'work-section-nav.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work page for the section rail it replicates',
+  ],
 ]);
 
 /**
