@@ -50,6 +50,7 @@ import { registerCorrectionRoutes } from './routes/corrections.js';
 import { registerContractSourceRoutes } from './routes/contract-sources.js';
 import { registerReceivedRailwayBillRoutes } from './routes/received-railway-bills.js';
 import { registerBillPaymentRoutes } from './routes/bill-payments.js';
+import { registerCompanyDocumentRoutes } from './routes/company-documents.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -908,6 +909,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     registerBillPaymentRoutes(app, authInstance, database);
+    registerCompanyDocumentRoutes(app, authInstance, database, storage, scanner);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerContractSourceRoutes(

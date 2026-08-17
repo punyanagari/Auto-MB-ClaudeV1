@@ -10,6 +10,7 @@ import { executedPercent, portfolioExecutedPercent } from '../executed-value.js'
 import type { Auth } from '../auth.js';
 import { hasFullWorkScope } from '../authz.js';
 import type { AppInstance } from '../app-instance.js';
+import { EXPIRY_WARNING_DAYS } from './shared.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 const errorResponses = {
@@ -18,10 +19,10 @@ const errorResponses = {
   403: ApiErrorSchema,
 } as const;
 
-/** Instruments within this window of their expiry date raise a warning;
- * past it they escalate to danger. Bank guarantees need lead time to
- * extend, so the window is generous. */
-const EXPIRY_WARNING_DAYS = 60;
+/* Instruments within `EXPIRY_WARNING_DAYS` of their expiry date raise a
+ * warning; past it they escalate to danger. The window lives in
+ * `./shared.js` because the company document library reads the same one:
+ * "expiring soon" is one product-wide meaning, not a per-screen guess. */
 
 /** Works whose current completion date is this close (or past) surface on
  * the dashboard: a DOC extension request takes time to draft, finalise,
