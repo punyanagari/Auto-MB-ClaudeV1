@@ -107,7 +107,7 @@ describe('first run — dashboard', () => {
       screen
         .getByRole('link', { name: 'Open Masters → Contacts' })
         .getAttribute('href'),
-    ).toBe('#/masters');
+    ).toBe('#/masters/contacts');
     expect(
       screen
         .getByRole('link', { name: 'Open organisation settings' })

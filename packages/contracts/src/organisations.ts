@@ -1,5 +1,12 @@
 import { Type, type Static } from '@sinclair/typebox';
 import {
+  BankAccountHolderSchema,
+  BankAccountNumberSchema,
+  BankBranchSchema,
+  BankNameSchema,
+  IfscSchema,
+} from './masters.js';
+import {
   DateOnlySchema,
   GstStateCodeSchema,
   TaxInvoiceLineShapeSchema,
@@ -276,6 +283,60 @@ export const OrganisationProfileSchema = Type.Object(
   { additionalProperties: false },
 );
 export type OrganisationProfile = Static<typeof OrganisationProfileSchema>;
+
+// --- The organisation's own bank accounts (migration 0078) ------------------
+//
+// A LIST, unlike the single beneficiary a contact carries, because the
+// mock's Company settings card is a list with an "Add account" dialog
+// above it. The shapes of a holder, a bank name, an account number and an
+// IFSC are the Contacts master's shapes, imported rather than restated, so
+// the two surfaces cannot drift.
+//
+// The stored account number is NOT returned. This list is add-and-retire
+// with no edit control anywhere in the mock, so nothing needs to
+// round-trip the value, and the only rendering the mock draws is its last
+// four digits. Handing back the whole number would be exposure with no
+// reader. `apps/server/src/routes/organisation.ts` selects the last four
+// in SQL and never lifts the full value out of the database.
+
+export const OrganisationBankAccountSchema = Type.Object(
+  {
+    id: UuidSchema,
+    accountHolder: BankAccountHolderSchema,
+    bankName: BankNameSchema,
+    /** The last four characters only — see the note above. */
+    accountNumberLast4: Type.String({ minLength: 4, maxLength: 4 }),
+    ifsc: IfscSchema,
+    branch: Type.Union([BankBranchSchema, Type.Null()]),
+    active: Type.Boolean(),
+    createdAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+export type OrganisationBankAccount = Static<typeof OrganisationBankAccountSchema>;
+
+export const CreateOrganisationBankAccountRequestSchema = Type.Object(
+  {
+    accountHolder: BankAccountHolderSchema,
+    bankName: BankNameSchema,
+    accountNumber: BankAccountNumberSchema,
+    /** Accepted in any case; stored upper. */
+    ifsc: IfscSchema,
+    branch: Type.Optional(BankBranchSchema),
+  },
+  { additionalProperties: false },
+);
+export type CreateOrganisationBankAccountRequest = Static<
+  typeof CreateOrganisationBankAccountRequestSchema
+>;
+
+export const OrganisationBankAccountListResponseSchema = Type.Object(
+  { accounts: Type.Array(OrganisationBankAccountSchema) },
+  { additionalProperties: false },
+);
+export type OrganisationBankAccountListResponse = Static<
+  typeof OrganisationBankAccountListResponseSchema
+>;
 
 export const UpdateOrganisationProfileRequestSchema = Type.Object(
   {

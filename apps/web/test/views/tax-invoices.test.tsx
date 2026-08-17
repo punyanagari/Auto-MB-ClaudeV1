@@ -795,7 +795,7 @@ describe('WorkDetail billing readiness panel', () => {
     const matrixLink = screen.getByRole('link', { name: 'Open the payment matrix' });
     expect(matrixLink.getAttribute('href')).toBe(`#/works/${WORK_ID}/schedules`);
     const contactsLink = screen.getByRole('link', { name: 'Open Masters → Contacts' });
-    expect(contactsLink.getAttribute('href')).toBe('#/masters');
+    expect(contactsLink.getAttribute('href')).toBe('#/masters/contacts');
     const settingsLink = screen.getByRole('link', {
       name: 'Open organisation settings',
     });
@@ -956,7 +956,7 @@ describe('Tax invoice draft gating and wayfinding', () => {
     const link = screen.getByRole('link', {
       name: 'Add one under Masters → Contacts',
     });
-    expect(link.getAttribute('href')).toBe('#/masters');
+    expect(link.getAttribute('href')).toBe('#/masters/contacts');
   });
 
   it('turns a submit refusal that names the organisation profile into a link there', async () => {

@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 163;
+const TRIGGER_CENSUS = 165;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -191,6 +191,54 @@ describe('tenant migration contract', () => {
     // No index on the flag: nothing filters on it at scale, and the
     // per-Work reads that show it already have work_items_work_idx.
     expect(sql).not.toContain('CREATE INDEX');
+  });
+
+  it('binds the bank-detail shapes and derives item mapping in 0078', async () => {
+    const sql = await readFile(
+      path.join(
+        migrationsDirectory,
+        '0078_masters_bank_details_and_canonical_items.sql',
+      ),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+    // The two shapes the server also proves. Bound on BOTH tables that
+    // store a bank account, because a rule enforced on one of two writers
+    // is a rule with a door in it.
+    expect([...sql.matchAll(/\^\[A-Z\]\{4\}0\[A-Z0-9\]\{6\}\$/g)]).toHaveLength(2);
+    // The digit lookahead travels with the alphanumeric range on both
+    // tables: without it, the route's space-stripping turns a note into
+    // a nine-character all-letter "account number" that passes.
+    expect([
+      ...sql.matchAll(/'\^\(\?=\.\*\[0-9\]\)\[0-9A-Z\]\{6,18\}\$'/g),
+    ]).toHaveLength(2);
+    // A contact's four payable fields are all present or all absent — a
+    // partial set is not a beneficiary anyone can be paid as.
+    expect(sql).toContain('CONSTRAINT contacts_bank_details_shape_check');
+    // No mapping COLUMN on work_items: the link is derived from the
+    // aliases, and a nullable foreign key with no writer would feed
+    // counts that all read zero. Asserted over the DDL rather than the
+    // whole file, because the header names the column it declines to add
+    // and explains why — which is the record this test protects.
+    expect(sql).not.toMatch(/ADD COLUMN canonical_item_id/);
+    expect(sql).not.toContain('ALTER TABLE work_items');
+    // One canonical item per wording, case- and space-insensitively: two
+    // rows claiming one wording would both count the same schedule lines.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX canonical_items_name_per_org\s+ON canonical_items \(organisation_id, lower\(btrim\(name\)\)\);/,
+    );
+    // A retired organisation bank account stops blocking its own number,
+    // which is how one retired in error comes back.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX organisation_bank_accounts_live_account\s+ON organisation_bank_accounts \(organisation_id, ifsc, account_number\)\s+WHERE active;/,
+    );
+    // Both new tables are masters: they retire by flag, so neither hands
+    // the application role a DELETE.
+    for (const table of ['canonical_items', 'organisation_bank_accounts']) {
+      expect(sql, table).toContain(`GRANT SELECT, INSERT, UPDATE ON ${table}`);
+      expect(sql, table).not.toContain(`DELETE ON ${table}`);
+    }
   });
 
   it('binds the delivery and installation quantity ceilings in 0046', async () => {

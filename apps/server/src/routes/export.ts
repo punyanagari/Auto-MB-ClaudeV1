@@ -17,6 +17,17 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v13: the two masters migration 0078 added — the canonical item
+ * catalogue and the organisation's own bank accounts — join the record.
+ * Both sections take `select *`, which for the bank accounts means the
+ * STORED account number travels. That is deliberate and is not a
+ * contradiction of `routes/organisation.ts`, which never projects that
+ * column: the API withholds it because no screen needs it back, while
+ * this export is the contractor's own portability snapshot and an export
+ * you cannot restore an account from is not one. The contacts section
+ * has carried beneficiary numbers on the same terms since 0078 too, by
+ * the same `select *`.
+ *
  * export-v12: every inbound PDF carries the digital-signature verdict
  * recorded when its bytes were accepted (0060) — signature_status,
  * signature_verdict and signature_verified_at ride along on loaDocuments.
@@ -29,7 +40,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v12';
+const EXPORT_FORMAT_VERSION = 'export-v13';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -411,6 +422,16 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'organisationSignatories',
     sql: `select * from organisation_signatories order by created_at, id`,
+  },
+  // Migration 0078. Aliases are a text[] rather than jsonb, so no
+  // jsonbColumns entry: the driver already hands back a JavaScript array.
+  {
+    key: 'canonicalItems',
+    sql: `select * from canonical_items order by group_name, name, id`,
+  },
+  {
+    key: 'organisationBankAccounts',
+    sql: `select * from organisation_bank_accounts order by created_at, id`,
   },
   {
     key: 'purchaseOrders',

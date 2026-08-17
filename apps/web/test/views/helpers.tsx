@@ -35,6 +35,19 @@ export async function openForm(label: string) {
   fireEvent.click(await screen.findByRole('button', { name: label, expanded: false }));
 }
 
+/**
+ * Open one of the Masters categories from its rail.
+ *
+ * The rail is navigation rather than a tablist (see `views/Masters.tsx`),
+ * so each category is a plain button and only the open one is mounted.
+ * Masters opens on Items — the first category on the rail, matching the
+ * mock — so a test about any other category clicks its way there first,
+ * exercising the same control an operator uses.
+ */
+export function openMastersCategory(label: string): void {
+  fireEvent.click(screen.getByRole('button', { name: label }));
+}
+
 /** With the panel open, two buttons carry the same name: the disclosure,
  * which has aria-expanded, and the form's submit button, which does not. */
 export function submitButton(label: string): HTMLElement {
@@ -222,6 +235,17 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listSignatories: vi.fn<ApiClient['listSignatories']>().mockResolvedValue([]),
     saveSignatory: vi.fn<ApiClient['saveSignatory']>(),
     setSignatoryActive: vi.fn<ApiClient['setSignatoryActive']>(),
+    listCanonicalItems: vi
+      .fn<ApiClient['listCanonicalItems']>()
+      .mockResolvedValue({ items: [], unmappedLineCount: 0 }),
+    saveCanonicalItem: vi.fn<ApiClient['saveCanonicalItem']>(),
+    setCanonicalItemActive: vi.fn<ApiClient['setCanonicalItemActive']>(),
+    listOrganisationBankAccounts: vi
+      .fn<ApiClient['listOrganisationBankAccounts']>()
+      .mockResolvedValue([]),
+    createOrganisationBankAccount: vi.fn<ApiClient['createOrganisationBankAccount']>(),
+    setOrganisationBankAccountActive:
+      vi.fn<ApiClient['setOrganisationBankAccountActive']>(),
     listGstRates: vi.fn<ApiClient['listGstRates']>().mockResolvedValue([]),
     createGstRate: vi.fn<ApiClient['createGstRate']>(),
     endDateGstRate: vi.fn<ApiClient['endDateGstRate']>(),

@@ -57,6 +57,12 @@ test('organisation picker and members workspace pass the axe scan', async ({
 
   // A Masters category opens from the rail, without a stop on Contacts first.
   await page.getByRole('link', { name: 'Masters' }).click();
+  // Masters opens on Items, the first category on the rail (the mock's
+  // order). Scanned where it lands: the canonical-item table is the one
+  // register here with a right-aligned numeric column and a badge in
+  // every row, and it would otherwise never be scanned at all.
+  await expect(page.getByText('Outdoor horn speaker 30W')).toBeVisible();
+  await expectNoAxeViolations(page, 'masters canonical items');
   await rail.getByRole('link', { name: 'Locations' }).click();
   // The category strip is a navigation, not a tablist: each category is its
   // own address and Back walks between them, so the open one says

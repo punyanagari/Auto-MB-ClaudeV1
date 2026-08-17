@@ -84,6 +84,10 @@ const TENANT_TABLES = [
   'location_masters',
   'unit_masters',
   'organisation_signatories',
+  // The canonical item catalogue and the organisation's own bank accounts
+  // (0078). Masters, so both retire by flag and hold no DELETE.
+  'canonical_items',
+  'organisation_bank_accounts',
   'extension_requests',
   'extension_request_counters',
   'approval_requests',
@@ -199,6 +203,10 @@ const DELETE_REVOKED_TABLES = [
   'location_masters',
   'unit_masters',
   'organisation_signatories',
+  // Masters retire via the active flag (0078), like their three
+  // neighbours above.
+  'canonical_items',
+  'organisation_bank_accounts',
   'extension_request_counters',
   'approval_requests',
   // A cited variation order is immutable evidence: no UPDATE and no
@@ -616,6 +624,27 @@ async function seedTenantGraph(
         organisation_id, name, designation, created_by_user_id
       )
       values (${organisationId}, ${`Signatory ${workCode}`}, 'Director', ${userId})
+    `;
+    await tx`
+      insert into canonical_items (
+        organisation_id, name, group_name, default_unit, aliases,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${`Horn speaker ${workCode}`}, 'Audio', 'Nos',
+        ${[`horn speaker ${workCode.toLowerCase()}`]}, ${userId}
+      )
+    `;
+    await tx`
+      insert into organisation_bank_accounts (
+        organisation_id, account_holder, bank_name, account_number, ifsc,
+        branch, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${`Holder ${workCode}`}, 'State Bank of India',
+        ${`5010${shaFill.repeat(8).slice(0, 8)}`.toUpperCase().slice(0, 12)},
+        'SBIN0000300', 'Andheri East', ${userId}
+      )
     `;
 
     // Milestone 6 completion/extension tables: the one-time completion

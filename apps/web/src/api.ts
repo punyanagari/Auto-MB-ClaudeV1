@@ -17,6 +17,8 @@ import type {
   Bill,
   BillListResponse,
   CancelChallanRequest,
+  CanonicalItem,
+  CanonicalItemListResponse,
   ChallanDetailResponse,
   Challan,
   ConfirmWorkRequest,
@@ -55,8 +57,11 @@ import type {
   BackfillExtensionRequest,
   BackfillExtensionResponse,
   CreateGstRateRequest,
+  CreateOrganisationBankAccountRequest,
   EndDateGstRateRequest,
   GstRateMaster,
+  OrganisationBankAccount,
+  SaveCanonicalItemRequest,
   SaveChallanRequest,
   SaveContactRequest,
   SaveStandaloneChallanRequest,
@@ -642,6 +647,38 @@ export interface ApiClient {
     id: string,
     active: boolean,
   ) => Promise<UnitMaster>;
+  /** The canonical item catalogue. Unlike the pickers above this answers
+   * a count of the schedule lines still matching nothing, which the tab
+   * prints as its warning line. */
+  readonly listCanonicalItems: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<CanonicalItemListResponse>;
+  readonly saveCanonicalItem: (
+    organisationId: string,
+    id: string | null,
+    body: SaveCanonicalItemRequest,
+  ) => Promise<CanonicalItem>;
+  readonly setCanonicalItemActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<CanonicalItem>;
+  /** The organisation's own bank accounts. The stored account number is
+   * never returned — every row carries its last four digits only. */
+  readonly listOrganisationBankAccounts: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<readonly OrganisationBankAccount[]>;
+  readonly createOrganisationBankAccount: (
+    organisationId: string,
+    body: CreateOrganisationBankAccountRequest,
+  ) => Promise<OrganisationBankAccount>;
+  readonly setOrganisationBankAccountActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<OrganisationBankAccount>;
   readonly listGstRates: (organisationId: string) => Promise<readonly GstRateMaster[]>;
   readonly createGstRate: (
     organisationId: string,
@@ -2333,6 +2370,46 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     async setUnitMasterActive(organisationId, id, active) {
       return request<UnitMaster>(
         `/api/masters/units/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listCanonicalItems(organisationId, includeRetired = false) {
+      return request<CanonicalItemListResponse>(
+        `/api/masters/canonical-items${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+    },
+    async saveCanonicalItem(organisationId, id, body) {
+      return request<CanonicalItem>(
+        id === null
+          ? '/api/masters/canonical-items'
+          : `/api/masters/canonical-items/${id}`,
+        { method: id === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setCanonicalItemActive(organisationId, id, active) {
+      return request<CanonicalItem>(
+        `/api/masters/canonical-items/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async listOrganisationBankAccounts(organisationId, includeRetired = false) {
+      const payload = await request<{ accounts: OrganisationBankAccount[] }>(
+        `/api/organisation/bank-accounts${includeRetired ? '?includeRetired=true' : ''}`,
+        { organisationId },
+      );
+      return payload.accounts;
+    },
+    async createOrganisationBankAccount(organisationId, body) {
+      return request<OrganisationBankAccount>('/api/organisation/bank-accounts', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async setOrganisationBankAccountActive(organisationId, id, active) {
+      return request<OrganisationBankAccount>(
+        `/api/organisation/bank-accounts/${id}/${active ? 'reactivate' : 'retire'}`,
         { method: 'POST', organisationId },
       );
     },

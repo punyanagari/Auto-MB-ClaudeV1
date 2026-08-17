@@ -1,16 +1,21 @@
 import {
   ApiErrorSchema,
+  CreateOrganisationBankAccountRequestSchema,
   NUMBERED_DOCUMENT_TYPES,
   NumberSeriesListResponseSchema,
   NumberSeriesSchema,
   NumberedDocumentTypeSchema,
+  OrganisationBankAccountListResponseSchema,
+  OrganisationBankAccountSchema,
   OrganisationProfileSchema,
   SaveNumberSeriesRequestSchema,
   UpdateOrganisationProfileRequestSchema,
+  UuidSchema,
   type EinvoiceApplicability,
   type TaxInvoiceLineShape,
   type NumberSeries,
   type NumberedDocumentType,
+  type OrganisationBankAccount,
   type OrganisationProfile,
   type UpdateOrganisationProfileRequest,
 } from '@auto-mb/contracts';
@@ -18,7 +23,12 @@ import { Type } from '@sinclair/typebox';
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
+import {
+  normaliseBankAccountNumber,
+  normaliseEmail,
+  normaliseGstin,
+  normaliseIfsc,
+} from '../contact-fields.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import type { ObjectStorage } from '@auto-mb/documents';
@@ -46,6 +56,103 @@ const errorResponses = {
  * derived in app.ts, and it is the value Fastify was already applying by
  * default, so nothing about the accepted sizes changes. */
 const LOGO_MAX_BYTES = 1024 * 1024;
+
+/**
+ * The only projection of `organisation_bank_accounts` in this file.
+ *
+ * `account_number` is deliberately absent and `right(account_number, 4)`
+ * stands in its place, so the full stored number has no route out of the
+ * database at all — not through a response, not through a log line, not
+ * through an audit payload. See the section header on the routes below
+ * for why nothing needs it back.
+ */
+const BANK_ACCOUNT_SELECT = `
+  select id, account_holder, bank_name, right(account_number, 4)
+           as account_number_last4,
+         ifsc, branch, active, created_at
+  from organisation_bank_accounts
+`;
+
+interface BankAccountRow {
+  id: string;
+  account_holder: string;
+  bank_name: string;
+  account_number_last4: string;
+  ifsc: string;
+  branch: string | null;
+  active: boolean;
+  created_at: Date;
+}
+
+function toBankAccount(row: BankAccountRow): OrganisationBankAccount {
+  return {
+    id: row.id,
+    accountHolder: row.account_holder,
+    bankName: row.bank_name,
+    accountNumberLast4: row.account_number_last4,
+    ifsc: row.ifsc,
+    branch: row.branch,
+    active: row.active,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+/**
+ * Retire or reactivate one bank account.
+ *
+ * Written outside the two-line registration loop below rather than inside
+ * it: retire and reactivate differ by one boolean, and a `for` loop over
+ * `[false, true]` holding the statement would read to the write-loop
+ * census (`test/query-write-loop-census.test.ts`) as a per-row write in a
+ * loop, which it is not. Lifting it out says the same thing to a reader
+ * and to the scan.
+ *
+ * Owner-only, enforced by the registrar's `role: 'owner'` on both routes
+ * rather than here, so the refusal lands before the handler.
+ */
+async function setBankAccountActive(
+  tx: TransactionSql,
+  options: {
+    readonly id: string;
+    readonly active: boolean;
+    readonly userId: string;
+    readonly organisationId: string;
+  },
+): Promise<OrganisationBankAccount> {
+  const [updated] = await tx<{ id: string }[]>`
+    update organisation_bank_accounts set active = ${options.active}
+    where id = ${options.id}
+    returning id
+  `.catch((error: unknown) => {
+    // Reactivating collides with the live-account index when the same
+    // account was added again while this one was retired.
+    if (error instanceof Error && 'code' in error && error.code === '23505') {
+      throw httpError(
+        409,
+        'BANK_ACCOUNT_EXISTS',
+        'A live account already carries this number and IFSC; retire that one first.',
+      );
+    }
+    throw error;
+  });
+  if (!updated) {
+    throw httpError(404, 'BANK_ACCOUNT_NOT_FOUND', 'No such bank account.');
+  }
+  const [row] = await tx<BankAccountRow[]>`
+    ${tx.unsafe(BANK_ACCOUNT_SELECT)} where id = ${options.id}
+  `;
+  if (!row) throw new Error('bank account vanished after update');
+  await audit(
+    tx,
+    options.organisationId,
+    options.userId,
+    `organisation.bank_account_${options.active ? 'reactivated' : 'retired'}`,
+    'organisation_bank_accounts',
+    options.id,
+    { bankName: row.bank_name, last4: row.account_number_last4 },
+  );
+  return toBankAccount(row);
+}
 
 async function requireOwner(tx: TransactionSql, userId: string): Promise<void> {
   const [membership] = await tx<{ role: string }[]>`
@@ -541,6 +648,154 @@ export function registerOrganisationRoutes(
       return reply.status(204).send();
     },
   );
+  // --- The organisation's own bank accounts (migration 0078) ---------------
+  //
+  // The accounts money arrives in, for printing on an invoice. A list
+  // rather than columns on `organisations`, because the mock's Company
+  // card is a list with an "Add account" dialog; a contact's single
+  // beneficiary is columns for the opposite reason (routes/masters.ts).
+  //
+  // THE STORED ACCOUNT NUMBER NEVER LEAVES THE DATABASE. `right(...) as
+  // account_number_last4` is the only projection of that column anywhere
+  // in this file, so there is no code path that could put the full value
+  // into a response, a log line, or an audit event. The card only ever
+  // renders the last four, and nothing edits an account — the row is
+  // added and retired — so nothing needs the whole value back.
+  //
+  // Reads are member-wide, like the profile above (an operator should be
+  // able to see which account an invoice will name); writes are
+  // owner-only, like everything else that changes the company's identity.
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/organisation/bank-accounts',
+      schema: {
+        querystring: Type.Object(
+          { includeRetired: Type.Optional(Type.Boolean()) },
+          { additionalProperties: false },
+        ),
+        response: {
+          200: OrganisationBankAccountListResponseSchema,
+          ...errorResponses,
+        },
+      },
+    },
+    async ({ request, tenant }) => {
+      const { includeRetired = false } = request.query;
+      const rows = await tenant(
+        async (tx) => tx<BankAccountRow[]>`
+          ${tx.unsafe(BANK_ACCOUNT_SELECT)}
+          where active or ${includeRetired}
+          order by created_at, id
+        `,
+      );
+      return { accounts: rows.map(toBankAccount) };
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/organisation/bank-accounts',
+      schema: {
+        body: CreateOrganisationBankAccountRequestSchema,
+        response: { 201: OrganisationBankAccountSchema, ...errorResponses },
+      },
+      // The registrar's own guard rather than this file's inline
+      // `requireOwner`, and the difference is ORDER: the registrar
+      // decides membership and role before the handler body runs, so a
+      // non-member is refused rather than told which of their field
+      // values this organisation dislikes. `test/route-inventory` checks
+      // exactly that for every tenant route.
+      role: 'owner',
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
+      const account = await tenant(async (tx) => {
+        // Normalised inside the authorised transaction, by the same
+        // normalisers a contact's beneficiary details go through
+        // (../contact-fields.js). A junk IFSC is a payment that bounces
+        // at the bank against an invoice already sent.
+        const ifsc = normaliseIfsc(body.ifsc);
+        const accountNumber = normaliseBankAccountNumber(body.accountNumber);
+        if (ifsc === null || accountNumber === null) {
+          throw new Error(
+            'bank account normalisers cannot answer null for a required field',
+          );
+        }
+        const [inserted] = await tx<{ id: string }[]>`
+          insert into organisation_bank_accounts (
+            organisation_id, account_holder, bank_name, account_number, ifsc,
+            branch, created_by_user_id
+          )
+          values (
+            ${organisationId}, ${body.accountHolder.trim()},
+            ${body.bankName.trim()}, ${accountNumber}, ${ifsc},
+            ${body.branch?.trim() ?? null}, ${user.id}
+          )
+          returning id
+        `.catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === '23505') {
+            throw httpError(
+              409,
+              'BANK_ACCOUNT_EXISTS',
+              'This account is already on the list (it may be retired — reactivate it instead).',
+            );
+          }
+          throw error;
+        });
+        if (!inserted) throw new Error('bank account insert returned no row');
+        const [row] = await tx<BankAccountRow[]>`
+          ${tx.unsafe(BANK_ACCOUNT_SELECT)} where id = ${inserted.id}
+        `;
+        if (!row) throw new Error('bank account vanished after insert');
+        // The bank and the last four only. An audit trail that records
+        // account numbers is a second place they can leak from.
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'organisation.bank_account_added',
+          'organisation_bank_accounts',
+          row.id,
+          { bankName: row.bank_name, ifsc: row.ifsc, last4: row.account_number_last4 },
+        );
+        return toBankAccount(row);
+      });
+      return reply.status(201).send(account);
+    },
+  );
+
+  // Retire and reactivate. The mock's card draws neither, because a static
+  // page has no wrong rows in it; a real one does, and an account typed
+  // wrong with no exit would be permanent — there is no DELETE grant on
+  // this table and masters retire by flag (0013). Built with the
+  // product's existing master grammar rather than new visual language,
+  // per the design contract's clause 4.
+  for (const active of [false, true]) {
+    tenantRoute(
+      {
+        method: 'POST',
+        url: `/api/organisation/bank-accounts/:id/${active ? 'reactivate' : 'retire'}`,
+        schema: {
+          params: Type.Object({ id: UuidSchema }, { additionalProperties: false }),
+          response: { 200: OrganisationBankAccountSchema, ...errorResponses },
+        },
+        role: 'owner',
+      },
+      async ({ request, user, organisationId, tenant }) =>
+        tenant(async (tx) =>
+          setBankAccountActive(tx, {
+            id: request.params.id,
+            active,
+            userId: user.id,
+            organisationId,
+          }),
+        ),
+    );
+  }
+
   // --- Number series (migration 0039) --------------------------------------
   //
   // Number formats belong to the organisation, not to us. Four documents
