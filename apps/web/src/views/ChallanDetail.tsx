@@ -16,7 +16,8 @@ import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Disclosure } from '../ui/disclosure.js';
-import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
+import { Field, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { Timeline } from './Timeline.js';
 
 interface ChallanDetailProps {
@@ -251,6 +252,7 @@ export function ChallanDetail({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
+  const [cancelling, setCancelling] = useState(false);
 
   const reload = useCallback(() => {
     setLoadError(null);
@@ -1186,36 +1188,65 @@ export function ChallanDetail({
       )}
 
       {challan.status === 'issued' && canCancel && cancelClosed === null && (
-        <Disclosure label="Cancel challan…">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void act(
-                () =>
-                  api.cancelChallan(organisationId, challan.id, { note: cancelNote }),
-                'Challan cancelled.',
-              );
+        <Actions>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={pending}
+            onClick={() => {
+              setCancelNote('');
+              setCancelling(true);
             }}
           >
-            <Field>
-              <label htmlFor="cancel-note">Cancellation note</label>
-              <input
-                id="cancel-note"
-                value={cancelNote}
-                onChange={(event) => {
-                  setCancelNote(event.target.value);
-                }}
-                required
-                minLength={3}
-              />
-            </Field>
-            <Actions>
-              <Button type="submit" disabled={pending}>
-                Cancel challan
-              </Button>
-            </Actions>
-          </form>
-        </Disclosure>
+            Cancel challan
+          </Button>
+        </Actions>
+      )}
+
+      {cancelling && (
+        /* The mock's `components/cancel-document-dialog.tsx` at
+           `a8e1fde`. Cancelling an issued challan is the one act on this
+           page that spends a number permanently, so it asks in a modal
+           and says what it costs. The cases where cancellation is closed
+           outright — evidence recorded, a correction already pending, a
+           completed Work — never reach here: `cancelClosedReason` has
+           already replaced this control with the reason above. */
+        <ConfirmDialog
+          title={`Cancel ${challan.challanNumber ?? 'this challan'}?`}
+          description="The document stays in the register and its number will never be reused. Serials recorded against it are released."
+          confirmLabel="Confirm cancellation"
+          cancelLabel="Keep document"
+          pending={pending}
+          confirmDisabled={cancelNote.trim().length < 3}
+          onCancel={() => {
+            setCancelling(false);
+          }}
+          onConfirm={() => {
+            const note = cancelNote;
+            setCancelling(false);
+            void act(
+              () => api.cancelChallan(organisationId, challan.id, { note }),
+              'Challan cancelled.',
+            );
+          }}
+        >
+          <Field>
+            <label htmlFor="cancel-note">Reason</label>
+            <input
+              id="cancel-note"
+              value={cancelNote}
+              onChange={(event) => {
+                setCancelNote(event.target.value);
+              }}
+              minLength={3}
+              autoComplete="off"
+            />
+            <Hint>
+              The reason stays on the cancelled record, which anyone reading the
+              Work&rsquo;s deliveries later will see.
+            </Hint>
+          </Field>
+        </ConfirmDialog>
       )}
     </Card>
   );

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, LockKeyhole } from 'lucide-react';
 import type {
   ChallanDetailResponse,
   Contact,
@@ -15,12 +16,14 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { EwayBillsPanel } from './EwayBillsPanel.js';
 
 /**
- * The Delivery Challan register — the movement document's own screen.
+ * The delivery tab of the Challans module — the movement document's
+ * register.
  *
  * The Delivery Challan is what accompanies goods when they move, and it
  * covers three cases that used to have only one home:
@@ -39,6 +42,12 @@ import { EwayBillsPanel } from './EwayBillsPanel.js';
  * implication: the movement column names the case outright, and the
  * standalone editor only offers manual lines because that is all a
  * standalone challan may carry.
+ *
+ * Ports the delivery half of `components/document-register.tsx` at
+ * `a8e1fde`: the register card, the number cell with its issued padlock,
+ * the Work-over-consignee identity cell, and the open-draft warning. The
+ * page header, the tab rail and the `?work=` chip that wrap it belong to
+ * `Challans.tsx`, exactly as `challans-workspace.tsx` wraps the mock's.
  */
 
 interface DeliveryChallansProps {
@@ -58,11 +67,21 @@ interface DeliveryChallansProps {
   /** The register row the hash names (`#/delivery-challans/<id>`), or null
    * for the plain register. */
   readonly openChallanId: string | null;
+  /** The mock's `?work=` deep link. When a Work is named the register
+   * reads only its movements and the module draws the filter chip; the
+   * one-open-draft rule is a per-Work rule, so the draft warning and the
+   * held New button only mean anything here. */
+  readonly workId: string | null;
   /** Push a hash so the opened record is linkable and the back button
    * works; the workspace shell owns the actual navigation. */
   readonly onOpenChallan: (challanId: string | null) => void;
   /** Opening a Work challan leaves this module for the Work's own screen. */
   readonly onOpenWorkChallan: (workId: string, challanId: string) => void;
+  /** The id of this Work's one open draft, or null when it has none.
+   * Reported upwards because the module's New-challan action lives in
+   * the page header — the mock's placement — while the rows that decide
+   * whether a draft is open are read down here. */
+  readonly onOpenDraftChange?: (draftChallanId: string | null) => void;
 }
 
 type Filter = 'all' | DeliveryChallanMovement;
@@ -183,8 +202,10 @@ export function DeliveryChallans({
   canCancel,
   canManageStatutory,
   openChallanId,
+  workId,
   onOpenChallan,
   onOpenWorkChallan,
+  onOpenDraftChange,
 }: DeliveryChallansProps) {
   const [challans, setChallans] = useState<
     readonly DeliveryChallanRegisterEntry[] | null
@@ -196,6 +217,9 @@ export function DeliveryChallans({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [detail, setDetail] = useState<ChallanDetailResponse | null>(null);
+  /** The cancel confirmation, and the reason it insists on. */
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelNote, setCancelNote] = useState('');
   /** Bumped by the failure state's retry, to re-run the load below. */
   const [loadVersion, setLoadVersion] = useState(0);
 
@@ -308,20 +332,49 @@ export function DeliveryChallans({
     };
   }, [api, organisationId, openChallanId]);
 
-  const counts = useMemo(() => {
+  /* The `?work=` deep link narrows the register to one Work. It is
+   * applied over the page the register already holds rather than pushed
+   * into the request, because `GET /api/delivery-challans` is a keyset
+   * register with no work parameter and adding one is server work this
+   * pack does not own. The movement filter beside it has always worked
+   * the same way.
+   *
+   * ponytail: a Work with more movements than one keyset page holds will
+   * show only the page's worth. The fix is a `work` filter on the
+   * register endpoint, not more client-side paging. */
+  const scoped = useMemo(() => {
     const list = challans ?? [];
-    return {
-      all: list.length,
-      loa_supply: list.filter((row) => row.movement === 'loa_supply').length,
-      work_material: list.filter((row) => row.movement === 'work_material').length,
-      standalone: list.filter((row) => row.movement === 'standalone').length,
-    };
-  }, [challans]);
+    return workId === null ? list : list.filter((row) => row.workId === workId);
+  }, [challans, workId]);
 
-  const rows = useMemo(() => {
-    const list = challans ?? [];
-    return filter === 'all' ? list : list.filter((row) => row.movement === filter);
-  }, [challans, filter]);
+  const counts = useMemo(
+    () => ({
+      all: scoped.length,
+      loa_supply: scoped.filter((row) => row.movement === 'loa_supply').length,
+      work_material: scoped.filter((row) => row.movement === 'work_material').length,
+      standalone: scoped.filter((row) => row.movement === 'standalone').length,
+    }),
+    [scoped],
+  );
+
+  const rows = useMemo(
+    () => (filter === 'all' ? scoped : scoped.filter((row) => row.movement === filter)),
+    [scoped, filter],
+  );
+
+  /* One open draft per Work is the rule the server enforces; here it is
+   * only reported, so the module can hold its New-challan action and say
+   * why (`components/document-register.tsx` at `a8e1fde`). */
+  const openDraftId = useMemo(
+    () =>
+      workId === null
+        ? null
+        : (scoped.find((row) => row.status === 'draft')?.id ?? null),
+    [scoped, workId],
+  );
+  useEffect(() => {
+    onOpenDraftChange?.(openDraftId);
+  }, [onOpenDraftChange, openDraftId]);
 
   const headerProblem = useMemo(() => {
     if (!PREFIX_PATTERN.test(prefix)) {
@@ -364,26 +417,28 @@ export function DeliveryChallans({
 
   return (
     <>
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="mb-1 text-xs font-semibold tracking-widest text-primary uppercase">
-            Movement
-          </p>
-          <h1 id="delivery-challans-title" tabIndex={-1}>
-            Delivery Challans
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Every document that accompanies goods on the move: LOA supply and
-            installation material against a Work, and standalone despatches to a
-            customer, vendor, or job worker.
-          </p>
-        </div>
-      </header>
-
-      <section
-        aria-labelledby="delivery-challans-title"
-        className="flex flex-col gap-4"
-      >
+      <section aria-label="Delivery challans" className="flex flex-col gap-4">
+        {openDraftId !== null && (
+          /* The mock's open-draft warning, verbatim in shape
+             (`components/document-register.tsx` at `a8e1fde`): a
+             warning-tinted panel at `p-3`, the icon nudged onto the
+             first line's baseline. Only one delivery-challan draft is
+             allowed per Work, so this is the register saying where the
+             held New-challan action went. */
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+          >
+            <AlertCircle
+              className="mt-0.5 size-4 shrink-0 text-warning-foreground"
+              aria-hidden="true"
+            />
+            <span>
+              <strong className="font-semibold">Open draft:</strong> its number is
+              assigned on issue. Only one delivery-challan draft is allowed per Work.
+            </span>
+          </div>
+        )}
         {loadError !== null && (
           <ErrorState onRetry={retry} retryLabel="Retry delivery challans">
             {loadError}
@@ -436,15 +491,14 @@ export function DeliveryChallans({
           (rows.length > 0 ? (
             <DataTable>
               <caption className="sr-only">
-                Delivery challans with movement, consignee, Work, date, value, and
+                Delivery challans with movement, Work and consignee, date, value, and
                 status
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Number</th>
                   <th scope="col">Movement</th>
-                  <th scope="col">Consignee</th>
-                  <th scope="col">Work</th>
+                  <th scope="col">Work / consignee</th>
                   <th scope="col">Date</th>
                   <th scope="col" className={numericCell}>
                     Value
@@ -472,12 +526,29 @@ export function DeliveryChallans({
                             onOpenChallan(row.id);
                           })}
                         >
-                          {row.challanNumber ?? 'Draft'}
+                          {row.challanNumber ?? 'Number assigned on issue'}
                         </a>
+                        {/* The mock marks an issued document with a
+                            padlock beside its number: the content is
+                            frozen, and the register says so before the
+                            record is opened. Decorative — `Issued` is
+                            spelled out in the status column. */}
+                        {row.status === 'issued' && (
+                          <LockKeyhole
+                            className="ml-2 inline size-3.5 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        )}
                       </th>
                       <td>{MOVEMENT_LABELS[row.movement]}</td>
-                      <td className={wrapCell}>{row.consigneeName}</td>
-                      <td>{row.workCode ?? '—'}</td>
+                      <td className={wrapCell}>
+                        <span className="font-mono text-xs">
+                          {row.workCode ?? 'Standalone'}
+                        </span>
+                        <span className="block text-muted-foreground">
+                          {row.consigneeName}
+                        </span>
+                      </td>
                       <td>{formatDate(row.challanDate)}</td>
                       <td className={numericCell}>{formatInr(row.totalAmount)}</td>
                       <td>
@@ -488,7 +559,7 @@ export function DeliveryChallans({
                 })}
               </tbody>
             </DataTable>
-          ) : challans.length > 0 ? (
+          ) : scoped.length > 0 ? (
             <EmptyState
               action={{
                 label: 'Show all challans',
@@ -499,6 +570,11 @@ export function DeliveryChallans({
             >
               No challans of this kind yet.
             </EmptyState>
+          ) : challans.length > 0 ? (
+            // Scoped to a Work that has no movements yet. Clearing the
+            // filter is the chip's own control, so this state names the
+            // fact and leaves the action where it already is.
+            <EmptyState>No delivery challans for this Work yet.</EmptyState>
           ) : (
             <EmptyState>
               No delivery challans yet. A challan is raised from a Work, or as a
@@ -946,19 +1022,8 @@ export function DeliveryChallans({
                   variant="destructive"
                   disabled={pending}
                   onClick={() => {
-                    const note = window.prompt(
-                      'Why is this challan being cancelled? The reason stays on the record.',
-                    );
-                    if (note === null) return;
-                    void act(async () => {
-                      const cancelled = await api.cancelChallan(
-                        organisationId,
-                        standaloneDetail.challan.id,
-                        { note },
-                      );
-                      setDetail(cancelled);
-                      await refreshList();
-                    }, 'Standalone challan cancelled.');
+                    setCancelNote('');
+                    setCancelling(true);
                   }}
                 >
                   Cancel challan
@@ -1003,6 +1068,56 @@ export function DeliveryChallans({
           </section>
         )}
       </section>
+
+      {cancelling && standaloneDetail !== null && (
+        /* The mock's `components/cancel-document-dialog.tsx` at
+           `a8e1fde`, in this build's confirmation primitive. Its two
+           facts are the ones the operator has to hear before answering:
+           the document stays in the register, and the number it holds is
+           spent forever. The reason is required because the server
+           requires it (three characters, `CancelChallanRequest`), so a
+           blank one would only buy a refused round trip. */
+        <ConfirmDialog
+          title={`Cancel ${standaloneDetail.challan.challanNumber ?? 'this challan'}?`}
+          description="The document stays in the register and its number will never be reused."
+          confirmLabel="Confirm cancellation"
+          cancelLabel="Keep document"
+          pending={pending}
+          confirmDisabled={cancelNote.trim().length < 3}
+          onCancel={() => {
+            setCancelling(false);
+          }}
+          onConfirm={() => {
+            const challanId = standaloneDetail.challan.id;
+            const note = cancelNote;
+            setCancelling(false);
+            void act(async () => {
+              const cancelled = await api.cancelChallan(organisationId, challanId, {
+                note,
+              });
+              setDetail(cancelled);
+              await refreshList();
+            }, 'Standalone challan cancelled.');
+          }}
+        >
+          <Field>
+            <label htmlFor="standalone-cancel-note">Reason</label>
+            <input
+              id="standalone-cancel-note"
+              value={cancelNote}
+              onChange={(event) => {
+                setCancelNote(event.target.value);
+              }}
+              minLength={3}
+              autoComplete="off"
+            />
+            <Hint>
+              The reason stays on the cancelled record, which anyone reading the
+              register later will see.
+            </Hint>
+          </Field>
+        </ConfirmDialog>
+      )}
     </>
   );
 }

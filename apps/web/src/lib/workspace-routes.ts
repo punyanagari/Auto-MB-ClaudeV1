@@ -5,6 +5,13 @@ import type { WorkTab } from '../views/WorkDetail.js';
  * lives here rather than in OperationsWorkspace so the hash serializer
  * and any view that wants to render a real link can name a destination
  * without importing the workspace shell. */
+/** Which of the merged Challans module's two registers is showing. The
+ * mock addresses them as `?type=delivery` and `?type=installation`
+ * (`components/challans-workspace.tsx` at `a8e1fde`); this build keeps
+ * its hash-serialised navigation, so the same two words ride as a path
+ * segment instead of a query parameter. */
+export type ChallanRegisterTab = 'delivery' | 'installation';
+
 export type WorkspaceView =
   | { name: 'dashboard' }
   | { name: 'works' }
@@ -18,11 +25,16 @@ export type WorkspaceView =
   | { name: 'issue-challan-new'; workId: string }
   | { name: 'issue-challan-edit'; workId: string; challanId: string }
   | { name: 'issue-challan'; workId: string; challanId: string }
-  /** The Delivery Challan module's own register: every movement, of all
-   * three kinds. A work challan still opens through its Work
-   * (`challan` above) — this is the way in for the two kinds that have
-   * no Work to open through. */
-  | { name: 'delivery-challans' }
+  /** The Challans module: one register with two tabs, delivery and
+   * issue, exactly as the mock draws it. Every movement of all three
+   * delivery kinds on one tab, the Work's issue challans on the other. A
+   * work challan still opens through its Work (`challan` above) — this
+   * is the way in for the two kinds that have no Work to open through.
+   *
+   * `workId` is the mock's `?work=` deep link: present, the register
+   * reads one Work and says so with a dismissible chip; absent, it reads
+   * across every Work the caller may see. */
+  | { name: 'challans'; tab: ChallanRegisterTab; workId: string | null }
   | { name: 'delivery-challan'; challanId: string }
   | { name: 'quotations' }
   | { name: 'approvals' }
@@ -95,6 +107,10 @@ function isMastersTab(value: string): value is MastersTab {
   return (MASTERS_TAB_NAMES as readonly string[]).includes(value);
 }
 
+function isChallanRegisterTab(value: string): value is ChallanRegisterTab {
+  return value === 'delivery' || value === 'installation';
+}
+
 /** Path segments that can never be record ids. `upload` shares the
  * `/works/…` prefix, so a Work id must not look like it. */
 const RESERVED_WORK_SEGMENTS = new Set(['upload', 'new']);
@@ -139,8 +155,12 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       const tab = route.mastersTab ?? 'contacts';
       return tab === 'contacts' ? '#/masters' : `#/masters/${tab}`;
     }
-    case 'delivery-challans':
-      return '#/delivery-challans';
+    case 'challans': {
+      if (view.workId !== null) return `#/challans/${view.tab}/${view.workId}`;
+      // Delivery is the tab the module opens on, so the plain address is
+      // the plain register — the same shape `?type=` gives the mock.
+      return view.tab === 'delivery' ? '#/challans' : `#/challans/${view.tab}`;
+    }
     case 'delivery-challan':
       return `#/delivery-challans/${view.challanId}`;
     case 'quotations':
@@ -186,6 +206,17 @@ export function challanHash(workId: string, challanId: string): string {
 
 export function issueChallanHash(workId: string, challanId: string): string {
   return workspaceHashOf({ view: { name: 'issue-challan', workId, challanId } });
+}
+
+/** The Challans register as a plain href: the module's own tab, and the
+ * mock's `?work=` deep link where a Work is named. The chip's clear
+ * control is the same helper with no Work — which is what makes
+ * dismissing the filter a real link rather than a state reset. */
+export function challansHash(
+  tab: ChallanRegisterTab,
+  workId: string | null = null,
+): string {
+  return workspaceHashOf({ view: { name: 'challans', tab, workId } });
 }
 
 export function mastersHash(tab?: MastersTab): string {
@@ -267,12 +298,40 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       // and keeps a hand-typed `#/search/a/b` meaningful instead of null.
       return { view: { name: 'search', query: rest.join('/') } };
     }
+    case 'challans': {
+      const [tab, workId, ...extra] = rest;
+      if (extra.length > 0) return null;
+      if (tab === undefined) {
+        return { view: { name: 'challans', tab: 'delivery', workId: null } };
+      }
+      if (!isChallanRegisterTab(tab)) return null;
+      if (workId === undefined) {
+        return { view: { name: 'challans', tab, workId: null } };
+      }
+      if (!isRecordId(workId)) return null;
+      return { view: { name: 'challans', tab, workId } };
+    }
     case 'delivery-challans': {
       const [challanId, ...extra] = rest;
-      if (challanId === undefined) return { view: { name: 'delivery-challans' } };
+      // The register moved into the merged Challans module, so the
+      // address it used to own redirects into it — the same thing the
+      // mock's `/delivery-challans` route does. An OPENED standalone
+      // challan keeps its own address: only the register moved, and a
+      // link to a record should not lose the record.
+      if (challanId === undefined) {
+        return { view: { name: 'challans', tab: 'delivery', workId: null } };
+      }
       if (!isRecordId(challanId) || extra.length > 0) return null;
       return { view: { name: 'delivery-challan', challanId } };
     }
+    // The mock's other redirect (`app/issue-challans/page.tsx`). This
+    // build never had a top-level issue-challan register, but the
+    // address is the obvious guess and landing it on the tab it names
+    // costs one line.
+    case 'issue-challans':
+      return rest.length === 0
+        ? { view: { name: 'challans', tab: 'installation', workId: null } }
+        : null;
     case 'invoices': {
       const [invoiceId, ...extra] = rest;
       if (invoiceId === undefined) return { view: { name: 'invoices' } };

@@ -258,9 +258,14 @@ describe('ChallanEditor', () => {
     fireEvent.change(quantity, { target: { value: '2.001' } });
     expect(screen.queryByText(/over the/)).toBeNull();
     fireEvent.blur(quantity);
-    const warning = screen.getByText(/over the 2\.000 remaining/);
+    // This Work does not allow excess delivery, so going over is what
+    // issue will refuse, and the mock says it in the refusing ink.
+    const warning = screen.getByText(
+      /Quantity exceeds the remaining deliverable quantity of 2\.000 Nos\./,
+    );
     expect(quantity.getAttribute('aria-describedby')).toBe(warning.id);
-    // Guidance, not a rejection: the row is not marked invalid.
+    // Guidance, not a rejection: the row is not marked invalid, and the
+    // draft below still saves.
     expect(quantity.getAttribute('aria-invalid')).toBe('false');
 
     // And the draft still saves — the server checks the balance at issue.
@@ -276,7 +281,7 @@ describe('ChallanEditor', () => {
     expect(body.items).toEqual([{ workItemId: ITEM_A, quantity: '2.001' }]);
   });
 
-  it('leaves the over-delivery flag off when the Work allows excess delivery', async () => {
+  it('calls an over-delivery an excess, not a refusal, when the Work allows one', async () => {
     const api = stubApi({
       workBalance: vi.fn().mockResolvedValue({ ...BALANCE, allowExcessDelivery: true }),
     });
@@ -295,8 +300,14 @@ describe('ChallanEditor', () => {
     const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
     fireEvent.change(quantity, { target: { value: '9' } });
     fireEvent.blur(quantity);
-    expect(screen.queryByText(/over the/)).toBeNull();
-    expect(quantity.getAttribute('aria-describedby')).toBeNull();
+    // The excess toggle lifts the DELIVERY cap, so this is a caution and
+    // never the refusal sentence its counterpart above carries.
+    const badge = screen.getByText(/Excess over the 2\.000 remaining/);
+    expect(quantity.getAttribute('aria-describedby')).toBe(badge.id);
+    expect(
+      screen.queryByText(/exceeds the remaining deliverable quantity/),
+    ).toBeNull();
+    expect(quantity.getAttribute('aria-invalid')).toBe('false');
   });
 
   it('confirms before discarding an edited challan and leaves a pristine one alone', async () => {

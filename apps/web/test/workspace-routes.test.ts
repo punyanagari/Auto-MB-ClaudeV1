@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   challanHash,
+  challansHash,
   issueChallanHash,
   mastersHash,
   parseWorkspaceHash,
@@ -42,7 +43,10 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'issue-challan-new', workId: WORK_ID } },
   { view: { name: 'issue-challan-edit', workId: WORK_ID, challanId: CHALLAN_ID } },
   { view: { name: 'issue-challan', workId: WORK_ID, challanId: CHALLAN_ID } },
-  { view: { name: 'delivery-challans' } },
+  { view: { name: 'challans', tab: 'delivery', workId: null } },
+  { view: { name: 'challans', tab: 'installation', workId: null } },
+  { view: { name: 'challans', tab: 'delivery', workId: WORK_ID } },
+  { view: { name: 'challans', tab: 'installation', workId: WORK_ID } },
   { view: { name: 'delivery-challan', challanId: CHALLAN_ID } },
   { view: { name: 'invoices' } },
   { view: { name: 'invoice', invoiceId: INVOICE_ID } },
@@ -106,6 +110,33 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('#/settings/extra')).toBeNull();
   });
 
+  /* The two registers that merged into the Challans module kept their
+     old addresses, because links to them are already out there — in
+     bookmarks, in a colleague's message, in this repository's own
+     history. They land on the tab they name rather than on the
+     Dashboard, and the workspace normalises the fragment afterwards,
+     which is the mock's redirect (`app/delivery-challans/page.tsx`,
+     `app/issue-challans/page.tsx` at a8e1fde) in a hash router. */
+  it('redirects the retired register addresses into the merged module', () => {
+    expect(parseWorkspaceHash('#/delivery-challans')).toEqual({
+      view: { name: 'challans', tab: 'delivery', workId: null },
+    });
+    expect(parseWorkspaceHash('#/issue-challans')).toEqual({
+      view: { name: 'challans', tab: 'installation', workId: null },
+    });
+    // Only the REGISTER moved. A link to a record still opens it.
+    expect(parseWorkspaceHash(`#/delivery-challans/${CHALLAN_ID}`)).toEqual({
+      view: { name: 'delivery-challan', challanId: CHALLAN_ID },
+    });
+  });
+
+  it('refuses a challan register tab or Work it does not know', () => {
+    expect(parseWorkspaceHash('#/challans/nonsense')).toBeNull();
+    expect(parseWorkspaceHash('#/challans/delivery/not-a-uuid')).toBeNull();
+    expect(parseWorkspaceHash(`#/challans/delivery/${WORK_ID}/extra`)).toBeNull();
+    expect(parseWorkspaceHash('#/issue-challans/extra')).toBeNull();
+  });
+
   it('builds the link helpers views render as hrefs', () => {
     expect(workHash(WORK_ID)).toBe(`#/works/${WORK_ID}`);
     expect(workHash(WORK_ID, 'schedules')).toBe(`#/works/${WORK_ID}/schedules`);
@@ -117,6 +148,10 @@ describe('workspace hash routes', () => {
     expect(issueChallanHash(WORK_ID, CHALLAN_ID)).toBe(
       `#/works/${WORK_ID}/issue-challans/${CHALLAN_ID}`,
     );
+    // The tab rail and the Work chip's clear control.
+    expect(challansHash('delivery')).toBe('#/challans');
+    expect(challansHash('installation')).toBe('#/challans/installation');
+    expect(challansHash('delivery', WORK_ID)).toBe(`#/challans/delivery/${WORK_ID}`);
     expect(mastersHash()).toBe('#/masters');
     expect(mastersHash('contacts')).toBe('#/masters');
     expect(mastersHash('units')).toBe('#/masters/units');
