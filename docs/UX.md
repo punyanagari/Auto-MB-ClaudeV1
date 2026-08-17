@@ -155,6 +155,34 @@ adjustment is the minimum that clears the gate, applied at token level so it
 propagates everywhere rather than being patched per screen. Ideally the owner
 then feeds the corrected value back into v0, which retires the divergence.
 
+### 6. Mobile bar: the More cell keeps `MoreHorizontal`
+
+The mock's bottom bar draws its fourth cell with `Menu`
+(`components/mobile-navigation.tsx`), the same icon its topbar uses to open the
+navigation drawer. The application draws it with `MoreHorizontal` instead.
+
+Two identical hamburgers on one screen is an ambiguity, not a style: below `lg`
+both are visible at once, and a pointer landing on either has no way to tell the
+drawer from the overflow sheet. Everything else about the cell — its label, its
+`min-h-14` target, its sheet — is the mock's. The convergence path is upstream:
+change the icon in v0 and the application follows it back, which retires this
+entry.
+
+### 7. Serial traceability renders as a data table, not the mock's Sheet
+
+The mock answers a serial hit with `components/serial-trace-panel.tsx`, a Sheet.
+The application answers it with `views/SerialTrace.tsx`, its ordinary data table,
+rendered inline under the Global Search scopes (§ `#/serials` merges into Global
+Search).
+
+The table carries more facts than the panel has room for — the Delivery Challan
+and its state, whether receipt was recorded at the far end, the installation date
+and the station the unit went in at — and those columns are the answer an
+operator came for, sortable and scannable across many serials rather than one at
+a time. The Sheet remains an option for a future polish pass: nothing in the
+chain depends on the container, so moving the same columns into the mock's Sheet
+is a presentation change whenever it is worth making.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

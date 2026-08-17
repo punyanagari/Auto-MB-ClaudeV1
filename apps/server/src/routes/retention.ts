@@ -945,6 +945,24 @@ export function registerRetentionRoutes(
       const { id: workId } = request.params;
       const { rows, summary } = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
+        // The Work has to exist, and be live, before its money is
+        // reported. Without this the register answered zeros for an
+        // unknown id and for another organisation's Work alike —
+        // indistinguishable from a Work of one's own that nobody has
+        // billed yet, which is the empty-register lie about a register.
+        //
+        // `deleted_at is null` is the merged tree's liveness predicate
+        // (migration 0071). It is defence in depth here rather than a
+        // reachable case: superseding refuses while any bill exists, so a
+        // Work carrying bills cannot be withdrawn. It is written anyway,
+        // because relying on that would be relying on a rule that lives
+        // in another module and could be relaxed there.
+        const [live] = await tx<{ id: string }[]>`
+          select id from works where id = ${workId} and deleted_at is null
+        `;
+        if (live === undefined) {
+          throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        }
         const bills = await tx<BillRow[]>`
           select id, work_id, bill_number, status, lines_snapshot,
                  total_amount::text as total_amount, mb_id, created_at,

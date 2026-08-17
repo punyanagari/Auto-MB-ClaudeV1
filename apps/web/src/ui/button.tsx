@@ -42,7 +42,7 @@ const buttonVariants = cva(
        *
        * `has-data-[icon=…]` is the mock's asymmetric padding. An icon is
        * visually lighter than a word, so a button that opens with one
-       * ("＋ Quick action") looks over-padded on the icon side at the
+       * ("⬆ Upload LOA") looks over-padded on the icon side at the
        * symmetric inset. Marking the icon `data-icon="inline-start"` pulls
        * that edge in by 2px and the button reads as evenly inset. It is
        * opt-in per icon, so nothing that does not carry the attribute

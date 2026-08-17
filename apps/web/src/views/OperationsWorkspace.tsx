@@ -319,7 +319,6 @@ export function OperationsWorkspace({
   } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-  const [headerQuickActionsOpen, setHeaderQuickActionsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [mobileRecordOpen, setMobileRecordOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
@@ -443,27 +442,23 @@ export function OperationsWorkspace({
   useEffect(() => {
     setMobileMenuOpen(false);
     setMobileMoreOpen(false);
-    setHeaderQuickActionsOpen(false);
     setAccountMenuOpen(false);
     setMobileRecordOpen(false);
   }, [view]);
 
-  /* Escape closes whichever transient menu is open and hands the keyboard
-     back to the control that opened it — the same contract the dialogs and
-     the mobile drawer already keep. The menus are exclusive by
-     construction, so one handler closes all of them.
+  /* Escape closes the account menu — the last transient menu in the
+     topbar — and hands the keyboard back to the control that opened it,
+     the same contract the dialogs and the mobile drawer already keep.
 
-     The two mobile sheets are no longer among them: they are `Sheet`s, and
+     The two mobile sheets are not among them: they are `Sheet`s, and
      `ui/dialog.tsx` already closes on Escape and restores focus to their
      trigger. Listening for the same key twice could only ever be one of
      the two handlers doing nothing. */
-  const transientMenuOpen = headerQuickActionsOpen || accountMenuOpen;
   useEffect(() => {
-    if (!transientMenuOpen) return;
+    if (!accountMenuOpen) return;
     function closeOnEscape(event: globalThis.KeyboardEvent): void {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
-      setHeaderQuickActionsOpen(false);
       setAccountMenuOpen(false);
       transientMenuTriggerRef.current?.focus();
     }
@@ -471,7 +466,7 @@ export function OperationsWorkspace({
     return () => {
       window.removeEventListener('keydown', closeOnEscape);
     };
-  }, [transientMenuOpen]);
+  }, [accountMenuOpen]);
 
   /* The mock's sidebar shortcut (`components/ui/sidebar`,
      `SIDEBAR_KEYBOARD_SHORTCUT`). It only ever changes how much of the rail
@@ -570,14 +565,9 @@ export function OperationsWorkspace({
     const activeElement =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     departureRestoreFocusRef.current =
-      mobileMenuOpen ||
-      headerQuickActionsOpen ||
-      accountMenuOpen ||
-      mobileRecordOpen ||
-      mobileMoreOpen
+      mobileMenuOpen || accountMenuOpen || mobileRecordOpen || mobileMoreOpen
         ? (transientMenuTriggerRef.current ?? activeElement)
         : activeElement;
-    setHeaderQuickActionsOpen(false);
     setAccountMenuOpen(false);
     setMobileRecordOpen(false);
     setMobileMoreOpen(false);
@@ -819,33 +809,22 @@ export function OperationsWorkspace({
           identityName={me.user.email}
           identityRole={identityRole}
           pendingApprovals={pendingApprovals}
-          canModify={canModify}
           canSwitchOrganisation={canSwitchOrganisation}
           sidebarCollapsed={sidebarCollapsed}
           mobileNavOpen={mobileMenuOpen}
-          quickActionsOpen={headerQuickActionsOpen}
           accountMenuOpen={accountMenuOpen}
           searchQuery={headerSearchQuery}
           searchInputRef={headerSearchRef}
           onToggleSidebar={toggleSidebar}
           onOpenMobileNav={(trigger) => {
             transientMenuTriggerRef.current = trigger;
-            setHeaderQuickActionsOpen(false);
             setAccountMenuOpen(false);
             setMobileRecordOpen(false);
             setMobileMoreOpen(false);
             setMobileMenuOpen(true);
           }}
-          onToggleQuickActions={(trigger) => {
-            transientMenuTriggerRef.current = trigger;
-            setAccountMenuOpen(false);
-            setMobileRecordOpen(false);
-            setMobileMoreOpen(false);
-            setHeaderQuickActionsOpen((current) => !current);
-          }}
           onToggleAccountMenu={(trigger) => {
             transientMenuTriggerRef.current = trigger;
-            setHeaderQuickActionsOpen(false);
             setMobileRecordOpen(false);
             setMobileMoreOpen(false);
             setAccountMenuOpen((current) => !current);
@@ -855,12 +834,6 @@ export function OperationsWorkspace({
             const query = headerSearchQuery.trim();
             if (query.length < 2) return;
             navigate({ name: 'search', query });
-          }}
-          onUploadLoa={() => {
-            navigate({ name: 'upload' });
-          }}
-          onOpenWorks={() => {
-            navigate({ name: 'works' });
           }}
           onOpenApprovals={() => {
             navigate({ name: 'approvals' });
@@ -1434,7 +1407,6 @@ export function OperationsWorkspace({
           aria-haspopup="dialog"
           onClick={(event) => {
             transientMenuTriggerRef.current = event.currentTarget;
-            setHeaderQuickActionsOpen(false);
             setMobileMoreOpen(false);
             setMobileRecordOpen(true);
           }}
@@ -1448,7 +1420,6 @@ export function OperationsWorkspace({
           aria-haspopup="dialog"
           onClick={(event) => {
             transientMenuTriggerRef.current = event.currentTarget;
-            setHeaderQuickActionsOpen(false);
             setMobileRecordOpen(false);
             setMobileMoreOpen(true);
           }}
