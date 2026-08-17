@@ -3,6 +3,8 @@ import {
   CancelIssueChallanRequestSchema,
   IssueChallanDetailResponseSchema,
   IssueChallanListResponseSchema,
+  IssueChallanRegisterResponseSchema,
+  KeysetQuerySchema,
   SaveIssueChallanRequestSchema,
   type IssueChallan,
   type IssueChallanDetailResponse,
@@ -13,7 +15,8 @@ import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
+import { keysetPage, sqlLimit, workScopedCursorRowId } from '../pagination.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { httpError } from '../http.js';
 import {
@@ -404,6 +407,82 @@ export function registerIssueChallanRoutes(
           `;
       });
       return { issueChallans: rows.map(toIssueChallan) };
+    },
+  );
+
+  /**
+   * The organisation-wide issue register.
+   *
+   * Its sibling above reads ONE Work, because an issue challan is
+   * numbered inside the Work that issues it. That is a numbering fact,
+   * not a reading one: the operator's question on the Challans module is
+   * "what left the store", across every Work they may see, and answering
+   * it per-Work made the tab say "choose a Work first" where the mock
+   * draws a register.
+   *
+   * Deliberately the SAME shape as `GET /api/delivery-challans` rather
+   * than a second design — work-scope decided in SQL, the cursor proven
+   * against that same predicate, the keyset running backward on
+   * (challan_date, created_at, id). The two tabs are one register with
+   * two contents, so they page identically.
+   *
+   * No `?work=` parameter here, unlike the delivery register: the module's
+   * narrowed mode already reads the per-Work route above, which is the
+   * list that Work's own screen shows.
+   */
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/issue-challans',
+      schema: {
+        querystring: KeysetQuerySchema,
+        response: { 200: IssueChallanRegisterResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, user, tenant }) => {
+      const query = request.query;
+      return tenant(async (tx) => {
+        // An 'assigned'-scoped membership sees its assigned Works' issue
+        // challans and nothing else. Decided in SQL, so the rows never
+        // leave the database.
+        const full = await hasFullWorkScope(tx, user.id);
+        const cursor = await workScopedCursorRowId(tx, 'issue_challans', query.cursor, {
+          userId: user.id,
+          full,
+        });
+        // The Work code comes from a scalar subselect rather than a join
+        // so that ISSUE_CHALLAN_COLUMNS is reused verbatim — a join would
+        // make `id`, `status` and `created_at` ambiguous and force a
+        // second, drifting copy of the column list. `work_id` is NOT NULL
+        // on this table, so the subselect always finds its Work.
+        const rows = await tx<(IssueChallanRow & { work_code: string })[]>`
+          select ${tx.unsafe(ISSUE_CHALLAN_COLUMNS)},
+                 (select w.work_code from works w
+                   where w.id = issue_challans.work_id) as work_code
+          from issue_challans
+          where (${full} or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = issue_challans.work_id
+                and wa.user_id = ${user.id}
+            ))
+            and (${cursor === null} or
+              (issue_challans.challan_date, issue_challans.created_at,
+               issue_challans.id) < (
+                select c.challan_date, c.created_at, c.id from issue_challans c
+                where c.id = ${cursor}))
+          order by issue_challans.challan_date desc,
+                   issue_challans.created_at desc, issue_challans.id desc
+          limit ${sqlLimit(query.limit)}
+        `;
+        const paged = keysetPage(rows, query.limit, (row) => row.id);
+        return {
+          nextCursor: paged.nextCursor,
+          issueChallans: paged.rows.map((row) => ({
+            ...toIssueChallan(row),
+            workCode: row.work_code,
+          })),
+        };
+      });
     },
   );
 

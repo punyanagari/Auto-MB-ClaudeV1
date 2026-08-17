@@ -158,7 +158,6 @@ export const STATE_CASES: readonly StateCase[] = [
         organisationId={ORG_ID}
         workId={WORK_ID}
         onOpenIssueChallan={noop}
-        onChooseWork={noop}
       />
     ),
     retry: /Retry issue challans/,

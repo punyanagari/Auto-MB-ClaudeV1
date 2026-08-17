@@ -61,7 +61,6 @@ interface ChallansProps {
   readonly onOpenIssueChallan: (workId: string, challanId: string) => void;
   readonly onNewWorkChallan: (workId: string, workCode: string) => void;
   readonly onNewIssueChallan: (workId: string) => void;
-  readonly onChooseWork: () => void;
 }
 
 export function Challans({
@@ -81,7 +80,6 @@ export function Challans({
   onOpenIssueChallan,
   onNewWorkChallan,
   onNewIssueChallan,
-  onChooseWork,
 }: ChallansProps) {
   /** The delivery register's answer to "does this Work already have an
    * open draft?". It decides the create action, which the mock puts up
@@ -211,7 +209,6 @@ export function Challans({
           organisationId={organisationId}
           workId={workId}
           onOpenIssueChallan={onOpenIssueChallan}
-          onChooseWork={onChooseWork}
         />
       )}
     </>

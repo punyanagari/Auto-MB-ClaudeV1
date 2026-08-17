@@ -362,6 +362,13 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             paidAt: null,
           },
         ],
+        // The Work's billing position, summed by the server — the three
+        // tiles above the list read it, and never add the list up.
+        summary: {
+          measured: '4200.00',
+          billed: '200.00',
+          unbilled: '4000.00',
+        },
       }),
     ),
   );

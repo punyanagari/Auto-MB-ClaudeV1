@@ -15,6 +15,7 @@ import type {
   ProposeCorrectionNoticeRequest,
   ProposeIssueChallanCancelReplaceRequest,
   Bill,
+  BillListResponse,
   CancelChallanRequest,
   ChallanDetailResponse,
   Challan,
@@ -32,6 +33,7 @@ import type {
   Instrument,
   IssueChallan,
   IssueChallanDetailResponse,
+  IssueChallanRegisterEntry,
   CancelIssueChallanRequest,
   SaveIssueChallanRequest,
   LoaDocument,
@@ -376,10 +378,19 @@ export interface ApiClient {
     workId: string,
   ) => Promise<readonly Challan[]>;
   /** The Delivery Challan module's register: every movement in the
-   * organisation the caller may see, of all three kinds. */
+   * organisation the caller may see, of all three kinds. `workId`
+   * narrows it to one Work — the module's `?work=` deep link, pushed into
+   * the request so the answer is that Work's movements rather than the
+   * ones that happened to be on the page. */
   readonly listDeliveryChallans: (
     organisationId: string,
+    workId?: string | null,
   ) => Promise<readonly DeliveryChallanRegisterEntry[]>;
+  /** The Challans module's issue register: every issue challan in the
+   * organisation the caller may see, with the Work each belongs to. */
+  readonly listIssueChallanRegister: (
+    organisationId: string,
+  ) => Promise<readonly IssueChallanRegisterEntry[]>;
   readonly createStandaloneChallan: (
     organisationId: string,
     body: SaveStandaloneChallanRequest,
@@ -545,10 +556,14 @@ export interface ApiClient {
     workId: string,
     body: RecordMbEntryRequest,
   ) => Promise<MbEntry>;
+  /** The Work's bills AND its billing position. The summary is served
+   * beside the list rather than derived from it: measured, billed and
+   * unbilled are money, and money is summed in SQL numeric, never in the
+   * browser (`AGENTS.md` rule 5). */
   readonly listBills: (
     organisationId: string,
     workId: string,
-  ) => Promise<readonly Bill[]>;
+  ) => Promise<BillListResponse>;
   readonly setBillStatus: (
     organisationId: string,
     billId: string,
@@ -1884,12 +1899,21 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
       return payload.challans;
     },
-    async listDeliveryChallans(organisationId) {
+    async listDeliveryChallans(organisationId, workId = null) {
       const payload = await request<{ challans: DeliveryChallanRegisterEntry[] }>(
-        '/api/delivery-challans',
+        workId === null
+          ? '/api/delivery-challans'
+          : `/api/delivery-challans?work=${encodeURIComponent(workId)}`,
         { organisationId },
       );
       return payload.challans;
+    },
+    async listIssueChallanRegister(organisationId) {
+      const payload = await request<{ issueChallans: IssueChallanRegisterEntry[] }>(
+        '/api/issue-challans',
+        { organisationId },
+      );
+      return payload.issueChallans;
     },
     async createStandaloneChallan(organisationId, body) {
       return request<ChallanDetailResponse>('/api/delivery-challans', {
@@ -2194,10 +2218,9 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async listBills(organisationId, workId) {
-      const payload = await request<{ bills: Bill[] }>(`/api/works/${workId}/bills`, {
+      return request<BillListResponse>(`/api/works/${workId}/bills`, {
         organisationId,
       });
-      return payload.bills;
     },
     async setBillStatus(organisationId, billId, body) {
       return request<Bill>(`/api/bills/${billId}/status`, {

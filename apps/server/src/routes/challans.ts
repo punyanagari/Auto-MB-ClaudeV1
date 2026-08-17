@@ -3,6 +3,7 @@ import {
   CancelChallanRequestSchema,
   ChallanDetailResponseSchema,
   ChallanListResponseSchema,
+  DeliveryChallanRegisterQuerySchema,
   DeliveryChallanRegisterResponseSchema,
   KeysetQuerySchema,
   SaveChallanRequestSchema,
@@ -1713,7 +1714,7 @@ export function registerChallanRoutes(
       method: 'GET',
       url: '/api/delivery-challans',
       schema: {
-        querystring: KeysetQuerySchema,
+        querystring: DeliveryChallanRegisterQuerySchema,
         response: { 200: DeliveryChallanRegisterResponseSchema, ...errorResponses },
       },
     },
@@ -1783,6 +1784,14 @@ export function registerChallanRoutes(
               select 1 from work_assignments wa
               where wa.work_id = dc.work_id and wa.user_id = ${user.id}
             ))
+            -- The module's ?work= deep link, narrowed here rather than
+            -- over the page the client already holds: a Work with more
+            -- movements than one page holds used to show only the page's
+            -- worth of them. It sits INSIDE the work-scope predicate, so
+            -- naming a Work the caller may not see narrows an empty set
+            -- and discloses nothing. Served by delivery_challans_work_idx
+            -- (organisation_id, work_id, status, challan_date DESC, id).
+            and (${query.work === undefined} or dc.work_id = ${query.work ?? null})
             and (${cursor === null} or
               (dc.challan_date, dc.created_at, dc.id) < (
                 select c.challan_date, c.created_at, c.id from delivery_challans c

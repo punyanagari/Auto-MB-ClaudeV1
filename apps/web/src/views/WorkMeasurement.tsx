@@ -1,4 +1,4 @@
-import type { Bill, Challan, MbEntry, WorkItem } from '@auto-mb/contracts';
+import type { BillListResponse, Challan, MbEntry, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
@@ -21,7 +21,10 @@ interface WorkMeasurementProps {
   readonly issuedChallans: readonly Challan[];
   readonly challanNumberById: ReadonlyMap<string, string | null>;
   readonly challansState: 'loading' | 'unavailable' | 'ready';
-  readonly setBills: Dispatch<SetStateAction<readonly Bill[]>>;
+  /** Applies a re-read of the Work's bills — the list AND the summary
+   * above it, which is why this takes the whole response rather than a
+   * bills array. Preparing a bill from a Measurement Book moves both. */
+  readonly setBills: (bills: BillListResponse) => void;
   readonly billsState: 'loading' | 'unavailable' | 'ready';
   readonly canRecordSiteEvidence: boolean;
   readonly canCreateDocuments: boolean;

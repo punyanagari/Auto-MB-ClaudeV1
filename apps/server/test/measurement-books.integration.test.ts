@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   Bill,
+  BillListResponse,
   ChallanDetailResponse,
   MeasurementBookDetailResponse,
 } from '@auto-mb/contracts';
@@ -999,6 +1000,103 @@ describe('bill preparation from a finalized MB', () => {
       organisationId,
     });
     expect(detail.json<MeasurementBookDetailResponse>().book.billId).toBe(bill.id);
+  });
+
+  /**
+   * The Work's billing position, served beside its bills.
+   *
+   * The Bills tab draws three tiles from these figures, and every one of
+   * them is money: summing `totalAmount` over the bills array in the
+   * browser would be JavaScript float arithmetic on decimal strings,
+   * which engineering rule 5 forbids. So the sums are made in SQL numeric
+   * and travel as exact decimal text, and this is what pins them.
+   *
+   * `measured` reads the FINALIZED books only. Work 1 has cancelled books
+   * by this point, and a cancelled book sanctioned nothing that stands —
+   * if it were counted, `unbilled` would report value the operator can
+   * never claim.
+   */
+  it('reports measured, billed and unbilled as exact decimal text', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${work1Id}/bills`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const { bills, summary } = response.json<BillListResponse>();
+
+    // The one bill prepared above, at the MB total it was prepared from.
+    expect(bills).toHaveLength(1);
+    expect(summary.billed).toBe('1000.00');
+
+    // Measured is the finalized books of this Work, and nothing else:
+    // proven against the register rather than restated, so a book
+    // finalized or cancelled by a later test moves both sides together.
+    const books = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${work1Id}/measurement-books`,
+      organisationId,
+    });
+    expect(books.statusCode, books.body).toBe(200);
+    const finalized = books
+      .json<{ books: { status: string; totalAmount: string | null }[] }>()
+      .books.filter((book) => book.status === 'finalized');
+    expect(finalized.length).toBeGreaterThan(0);
+    const [expectedMeasured] = await admin<{ total: string }[]>`
+      select sum(value::numeric)::numeric(18,2)::text as total
+      from unnest(${finalized.map((book) => book.totalAmount ?? '0')}::text[])
+        as value
+    `;
+    expect(summary.measured).toBe(expectedMeasured?.total);
+
+    // Exact decimal text on the wire, two places, both sides — and the
+    // remainder is the difference, not a rounded restatement of it.
+    for (const figure of [summary.measured, summary.billed, summary.unbilled]) {
+      expect(figure).toMatch(/^\d+\.\d{2}$/);
+    }
+    const [difference] = await admin<{ value: string }[]>`
+      select (${summary.measured}::numeric - ${summary.billed}::numeric)
+             ::numeric(18,2)::text as value
+    `;
+    expect(summary.unbilled).toBe(difference?.value);
+  });
+
+  it('carries none of this Work’s money across the tenant or the scope boundary', async () => {
+    // CROSS-TENANT. The outsider asks for this Work's id inside their own
+    // organisation, where RLS is the boundary: the summary is computed
+    // from rows their transaction cannot see, so it reads all zeros and
+    // the list is empty. The assertion is on the CONTENT rather than on a
+    // status code, because content is what a leak would show — a
+    // `billed` of 1000.00 here would be the victim's claim.
+    //
+    // 200-with-zeros, not 404, and deliberately left as it is: this route
+    // has never checked that the Work exists for a full-scope member, so
+    // an unknown id has always read as a Work with nothing recorded
+    // against it. Its sibling `GET /api/works/:id/bill-settlement` does
+    // check (and says why in as many words); tightening this one is a
+    // behaviour change on an existing route and is not this change's to
+    // make.
+    const foreign = await authed(outsider, {
+      method: 'GET',
+      url: `/api/works/${work1Id}/bills`,
+      organisationId: outsiderOrganisationId,
+    });
+    expect(foreign.statusCode, foreign.body).toBe(200);
+    expect(foreign.json<BillListResponse>()).toEqual({
+      bills: [],
+      summary: { measured: '0.00', billed: '0.00', unbilled: '0.00' },
+    });
+
+    // WORK-SCOPE, inside the tenant. An assigned-scope member without
+    // this assignment is refused the summary exactly as they are refused
+    // the list, because the two are one read behind one assertWorkAccess.
+    const unassigned = await authed(site, {
+      method: 'GET',
+      url: `/api/works/${work1Id}/bills`,
+      organisationId,
+    });
+    expect(unassigned.statusCode, unassigned.body).toBe(404);
+    expect(unassigned.json()).toMatchObject({ code: 'WORK_NOT_FOUND' });
   });
 
   it('refuses to cancel a billed MB', async () => {

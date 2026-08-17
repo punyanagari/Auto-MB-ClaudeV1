@@ -127,6 +127,14 @@ describe('WorkDetail retention', () => {
     paidAt: null,
   };
 
+  /** What the bills read serves beside the list: the Work's position,
+   * summed in SQL numeric. 4.2 Cr measured, 1.2 Cr of it claimed. */
+  const BILLING = {
+    measured: '42000000.00',
+    billed: '12000000.00',
+    unbilled: '30000000.00',
+  };
+
   function renderWorkDetail(
     api: ApiClient,
     flags: Partial<{
@@ -165,7 +173,7 @@ describe('WorkDetail retention', () => {
       listChallans: vi.fn().mockResolvedValue([ISSUED_CHALLAN]),
       listInstruments: vi.fn().mockResolvedValue([INSTRUMENT]),
       listMbEntries: vi.fn().mockResolvedValue([MB_ENTRY]),
-      listBills: vi.fn().mockResolvedValue([BILL]),
+      listBills: vi.fn().mockResolvedValue({ bills: [BILL], summary: BILLING }),
       listWorkSerials: vi.fn().mockResolvedValue([]),
       ...overrides,
     });
@@ -175,7 +183,7 @@ describe('WorkDetail retention', () => {
     const listBills = vi
       .fn()
       .mockRejectedValueOnce(new Error('Bills unavailable.'))
-      .mockResolvedValue([BILL]);
+      .mockResolvedValue({ bills: [BILL], summary: BILLING });
     const api = retentionApi({
       listBills,
     });
@@ -517,13 +525,34 @@ describe('WorkDetail retention', () => {
     expect(screen.getAllByText('A/1').length).toBeGreaterThan(1);
   });
 
+  it('draws the billing position from the server summary, never from the list', async () => {
+    const api = retentionApi();
+    renderWorkDetail(api);
+    await openWorkTab('Bills');
+
+    // Compact rupees through the shared `formatCompactInr`, which is
+    // what the mock's `formatINR(value, true)` ports to here
+    // (Auto-MB-Vercel-du app/works/[code]/page.tsx at fdfe5ef).
+    const measured = (await screen.findByText('Measured')).parentElement;
+    expect(measured?.textContent).toContain('₹4.2 Cr');
+    const billed = screen.getByText('Billed').parentElement;
+    expect(billed?.textContent).toContain('₹1.2 Cr');
+    const unbilled = screen.getByText('Unbilled').parentElement;
+    expect(unbilled?.textContent).toContain('₹3 Cr');
+
+    // The one bill on this Work totals 200.00. If the tiles were summed
+    // in the browser from the list, Billed would say that instead — which
+    // is the arithmetic AGENTS.md rule 5 forbids.
+    expect(billed?.textContent).not.toContain('200.00');
+  });
+
   it('lists bills and moves them forward; the Milestone 5 sweep button is gone', async () => {
     const setBillStatus = vi.fn().mockResolvedValue({
       ...BILL,
       status: 'submitted',
       submittedAt: '2026-08-08T11:00:00.000Z',
     });
-    const listBills = vi.fn().mockResolvedValue([BILL]);
+    const listBills = vi.fn().mockResolvedValue({ bills: [BILL], summary: BILLING });
     const api = retentionApi({ setBillStatus, listBills });
     renderWorkDetail(api);
     await openWorkTab('Bills');

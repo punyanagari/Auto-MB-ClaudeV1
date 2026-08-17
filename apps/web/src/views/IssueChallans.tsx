@@ -17,15 +17,14 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
  * card, number-with-padlock cell and dot-and-label status the delivery
  * tab uses, so the two tabs read as one register with two contents.
  *
- * It reads ONE Work, unlike its sibling. An issue challan is only ever
- * listed per Work — `GET /api/works/:id/issue-challans` is the only list
- * the server offers — so without the module's `?work=` deep link there
- * is nothing honest to show, and the tab says where the Work is chosen
- * instead of inventing a cross-Work list the server cannot answer.
- *
- * ponytail: the mock's issue tab reads across Works. Closing that gap is
- * an org-wide `GET /api/issue-challans` register endpoint with its own
- * work-scope predicate and keyset — server work this pack does not own.
+ * Two reads, one table. Without the module's `?work=` deep link it reads
+ * `GET /api/issue-challans`, the organisation-wide register, and names
+ * the Work each row belongs to the way the mock's document register does
+ * — the code stacked above the recipient in one cell. Narrowed to a
+ * Work, it reads that Work's own list (`GET /api/works/:id/issue-challans`),
+ * which is the list the Work's screen shows and the one the numbering
+ * series belongs to; the Work is named by the module's chip, so the row
+ * does not repeat it.
  */
 
 const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
@@ -34,14 +33,16 @@ const MOVEMENT_LABELS: Record<IssueChallan['movementType'], string> = {
   return: 'Return',
 };
 
+/** A row of either read. `workCode` is null in the narrowed mode, where
+ * the module's chip already names the Work. */
+type Row = IssueChallan & { readonly workCode: string | null };
+
 interface IssueChallansProps {
   readonly api: ApiClient;
   readonly organisationId: string;
   /** The Work the module's `?work=` deep link names, or null. */
   readonly workId: string | null;
   readonly onOpenIssueChallan: (workId: string, challanId: string) => void;
-  /** Sends the operator to the Works register to pick one. */
-  readonly onChooseWork: () => void;
 }
 
 export function IssueChallans({
@@ -49,24 +50,24 @@ export function IssueChallans({
   organisationId,
   workId,
   onOpenIssueChallan,
-  onChooseWork,
 }: IssueChallansProps) {
-  const [challans, setChallans] = useState<readonly IssueChallan[] | null>(null);
+  const [challans, setChallans] = useState<readonly Row[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   /** Bumped by the failure state's retry, to re-run the load below. */
   const [loadVersion, setLoadVersion] = useState(0);
 
   useEffect(() => {
-    if (workId === null) {
-      setChallans([]);
-      setLoadError(null);
-      return;
-    }
     let cancelled = false;
     setChallans(null);
     setLoadError(null);
-    api
-      .listIssueChallans(organisationId, workId)
+    (workId === null
+      ? api.listIssueChallanRegister(organisationId)
+      : api
+          .listIssueChallans(organisationId, workId)
+          .then((list): readonly Row[] =>
+            list.map((challan) => ({ ...challan, workCode: null })),
+          )
+    )
       .then((list) => {
         if (!cancelled) setChallans(list);
       })
@@ -101,20 +102,18 @@ export function IssueChallans({
 
       {loadError === null &&
         challans !== null &&
-        (workId === null ? (
-          <EmptyState action={{ label: 'Choose a Work', onClick: onChooseWork }}>
-            Issue challans are numbered inside the Work that issues them, so this
-            register reads one Work at a time.
-          </EmptyState>
-        ) : challans.length === 0 ? (
+        (challans.length === 0 ? (
           <EmptyState>
-            No issue challans for this Work yet. An issue challan records material sent
-            out to site, job work, a loan, or a return.
+            {workId === null
+              ? 'No issue challans yet. An issue challan records material sent out to site, job work, a loan, or a return.'
+              : 'No issue challans for this Work yet. An issue challan records material sent out to site, job work, a loan, or a return.'}
           </EmptyState>
         ) : (
           <DataTable>
             <caption className="sr-only">
-              Issue challans for this Work with movement, date, recipient, and status
+              {workId === null
+                ? 'Issue challans across every Work, with movement, date, recipient, and status'
+                : 'Issue challans for this Work with movement, date, recipient, and status'}
             </caption>
             <thead>
               <tr>
@@ -133,10 +132,10 @@ export function IssueChallans({
                         middle-clicked into its own tab; a left click
                         stays in-app. */}
                     <a
-                      href={issueChallanHash(workId, challan.id)}
+                      href={issueChallanHash(challan.workId, challan.id)}
                       className="font-medium text-primary underline-offset-4 hover:underline"
                       onClick={navigateOnClick(() => {
-                        onOpenIssueChallan(workId, challan.id);
+                        onOpenIssueChallan(challan.workId, challan.id);
                       })}
                     >
                       {challan.challanNumber ?? 'Number assigned on issue'}
@@ -150,7 +149,18 @@ export function IssueChallans({
                   </th>
                   <td>{MOVEMENT_LABELS[challan.movementType]}</td>
                   <td>{formatDate(challan.challanDate)}</td>
-                  <td className={wrapCell}>{challan.issuedToName}</td>
+                  {/* The mock's "Work / consignee" cell: the Work code
+                      above the recipient, mono, in the one column. Only
+                      across Works — narrowed to one, the module's chip
+                      names it and repeating it in every row is noise. */}
+                  <td className={wrapCell}>
+                    {challan.workCode !== null && (
+                      <span className="block font-mono text-xs text-muted-foreground">
+                        {challan.workCode}
+                      </span>
+                    )}
+                    {challan.issuedToName}
+                  </td>
                   <td>
                     <StatusChip status={challan.status} />
                   </td>
