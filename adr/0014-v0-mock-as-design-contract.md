@@ -84,6 +84,16 @@ The freeze is what makes "visually indistinguishable" checkable. Without a pinne
 commit, drift in the mock and drift in the application are indistinguishable from
 each other.
 
+**Pointer advance, 2026-08-17: `a8e1fde` → `fdfe5ef`.** The product's
+real-render contrast gates measured five WCAG failures in the mock's own
+palette (light `--success`, light and dark `--destructive`, dark
+`--warning-foreground`, and `--input` sharing `--border`'s value against
+WCAG 1.4.11). The fixes were made in the mock first (its pull requests #7
+and #8) per the pipeline below, and the owner merged them. The delta
+between the two commits is `app/globals.css` only — every component is
+byte-identical — so porting the delta was the token re-sync already
+shipped, and the pointer advance changes no component citation.
+
 ### 4. The v0 iteration pipeline
 
 Design changes and behaviour changes travel different routes, and neither route
