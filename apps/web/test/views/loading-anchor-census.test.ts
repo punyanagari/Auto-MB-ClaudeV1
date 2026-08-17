@@ -85,7 +85,16 @@ function enclosingReturnBlock(source: string, at: number): string | null {
 
 /** Static heading texts in a JSX span. A capture containing `{` is
  * interpolated — its rendered name carries data, which is exactly what
- * makes a heading a safe anchor — so it is dropped rather than listed. */
+ * makes a heading a safe anchor — so it is dropped rather than listed.
+ *
+ * Two shapes count as a heading. The literal `<h1>` a view writes itself,
+ * and `ui/page-header.tsx`, which renders the `<h1>` for it from a `title`
+ * prop. The second has to be read here or a view loses its census entry
+ * the moment it adopts the shared header — the heading would still be on
+ * screen, still be the thing a test awaits, and simply stop being counted,
+ * which is the failure this census exists to catch. Only the
+ * double-quoted form is static; `title={...}` is interpolated and drops
+ * out under the same rule as an interpolated `<h1>`. */
 function staticHeadingTexts(span: string): readonly string[] {
   const texts: string[] = [];
   const heading = /<h[1-6][^>]*>\s*([^<]*?)\s*<\//g;
@@ -94,6 +103,13 @@ function staticHeadingTexts(span: string): readonly string[] {
     const text = (match[1] as string).replace(/\s+/g, ' ').trim();
     if (text.length > 0 && !text.includes('{')) texts.push(text);
     match = heading.exec(span);
+  }
+  const pageHeader = /<PageHeader\b[^>]*?\stitle="([^"]*)"/g;
+  let header = pageHeader.exec(span);
+  while (header !== null) {
+    const text = (header[1] as string).replace(/\s+/g, ' ').trim();
+    if (text.length > 0) texts.push(text);
+    header = pageHeader.exec(span);
   }
   return texts;
 }

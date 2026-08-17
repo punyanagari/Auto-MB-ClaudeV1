@@ -10,9 +10,11 @@ import {
   RequestFailedError,
   type ApiClient,
 } from '../api.js';
+import { formatDate } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import { Stat } from '../ui/stat.js';
 import { DataTable } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
@@ -139,16 +141,31 @@ export function CompletionExtensions({
       {actionError !== null && <FormError>{actionError}</FormError>}
 
       {dates.currentCompletionDate !== null ? (
-        <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
-          <div>
-            <dt>Original completion date</dt>
-            <dd>{dates.originalCompletionDate}</dd>
+        /* The mock's gapless tile grid (Auto-MB-Vercel-du,
+           components/work-registers.tsx at fdfe5ef). The two dates are
+           what this panel exists to compare, so they are the metrics —
+           mono and tabular, which is what lets the eye see at a glance
+           whether the second has moved from the first. Both go through
+           `formatDate`: they arrive as date-only `YYYY-MM-DD` and used to
+           render raw. */
+        <div className="mt-3 mb-4 grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2">
+          <div className="bg-card p-4">
+            <Stat
+              label="Original completion date"
+              value={
+                dates.originalCompletionDate === null
+                  ? '—'
+                  : formatDate(dates.originalCompletionDate)
+              }
+            />
           </div>
-          <div>
-            <dt>Current completion date</dt>
-            <dd>{dates.currentCompletionDate}</dd>
+          <div className="bg-card p-4">
+            <Stat
+              label="Current completion date"
+              value={formatDate(dates.currentCompletionDate)}
+            />
           </div>
-        </dl>
+        </div>
       ) : canModify ? (
         <form
           onSubmit={(event) => {

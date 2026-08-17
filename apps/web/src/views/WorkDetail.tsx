@@ -28,7 +28,7 @@ import type {
 } from '@auto-mb/contracts';
 import { CircleAlert } from 'lucide-react';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatInr, formatTimestampDate } from '../format.js';
+import { formatDate, formatInr, formatTimestampDate } from '../format.js';
 import { cn } from '../lib/cn.js';
 import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
@@ -266,6 +266,22 @@ const DIRECTION_LABELS = {
   at_par: 'at par',
   above: 'above advertised',
 } as const;
+
+/** One cell of the Work header's figure strip: its name at the left rule,
+ * its value hard against the right one. The mock's local `Figure`
+ * (Auto-MB-Vercel-du, app/works/[code]/page.tsx at fdfe5ef), kept local
+ * here too — it is this header's layout, not a shape other screens reuse,
+ * and `ui/stat.tsx` is the shared tile for the ones that do. */
+function Figure({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="flex min-w-44 flex-1 items-baseline justify-between gap-4 border-r border-border px-4 py-3 last:border-r-0">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="m-0 font-mono text-sm font-semibold whitespace-nowrap tabular-nums">
+        {value}
+      </dd>
+    </div>
+  );
+}
 
 /** Why a Work will not close: the records still holding a claim on it, and
  * the items not yet at their sanctioned quantity. Rendered from the
@@ -1001,9 +1017,35 @@ export function WorkDetail({
   };
   return (
     <Card className="w-full" aria-labelledby="work-title">
-      <h1 id="work-title" tabIndex={-1}>
-        {work.workCode} — {work.title}
-      </h1>
+      {/* The mock's Work header (Auto-MB-Vercel-du,
+          app/works/[code]/page.tsx at fdfe5ef): an eyebrow and status
+          above a mono contract number, the name of the work beneath it,
+          and the letter that awarded it in a quiet line under that.
+          The title is a span inside the heading rather than the mock's
+          sibling paragraph — it renders identically, and it keeps the
+          code AND the name in the heading's accessible name, which is
+          what navigation announces when focus lands here. */}
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="section-label">Work contract</span>
+            <Badge variant={work.status === 'completed' ? 'success' : 'info'}>
+              {work.status}
+            </Badge>
+          </div>
+          <h1 id="work-title" tabIndex={-1} className="m-0">
+            <span className="block font-mono text-3xl font-semibold tracking-[-0.04em]">
+              {work.workCode}
+            </span>
+            <span className="mt-1 block max-w-2xl text-sm font-normal tracking-normal text-pretty text-muted-foreground">
+              {work.title}
+            </span>
+          </h1>
+          <p className="m-0 text-xs text-muted-foreground">
+            {work.letterNumber} · LOA {formatDate(work.letterDate)}
+          </p>
+        </div>
+      </div>
       {supersession !== null && (
         // Where this Work came from. The withdrawn Work is not openable —
         // every Works route filters it out — so this line is the only
@@ -1039,90 +1081,86 @@ export function WorkDetail({
           available Work information remains open.
         </ErrorState>
       )}
-      <dl className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium">
-        <div>
-          <dt>Letter</dt>
-          <dd>
-            {work.letterNumber} · {work.letterDate}
-          </dd>
-        </div>
-        <div>
-          <dt>Advertised value</dt>
-          <dd>{formatInr(work.advertisedValue)}</dd>
-        </div>
-        <div>
-          <dt>Contract value</dt>
-          <dd>{formatInr(work.contractValue)}</dd>
-        </div>
-        <div>
-          <dt>Pricing</dt>
-          <dd>
-            {work.pricingShape === 'letter_percentage' &&
+      {/* The mock's figure strip: a row of rules the reader scans across
+          rather than a stack of labelled pairs. Three figures and not the
+          mock's four — its "Supplied" and "Certified value" are computed
+          in its fixture, and the equivalents here belong to the ledger
+          and the bills sections, which own the reads that produce them. */}
+      <dl className="mt-3 mb-4 flex min-w-0 flex-wrap overflow-x-auto rounded-xl border border-border bg-card p-0">
+        <Figure label="Advertised value" value={formatInr(work.advertisedValue)} />
+        <Figure label="Contract value" value={formatInr(work.contractValue)} />
+        <Figure
+          label="Pricing"
+          value={
+            work.pricingShape === 'letter_percentage' &&
             work.letterPercentage !== null &&
             work.letterPercentageDirection !== null
               ? `${work.letterPercentage}% ${DIRECTION_LABELS[work.letterPercentageDirection]}`
-              : 'Per-schedule totals'}
-          </dd>
-        </div>
-        <div>
-          <dt>Status</dt>
-          <dd>
-            <Badge variant={work.status === 'completed' ? 'success' : 'info'}>
-              {work.status}
-            </Badge>
-          </dd>
-        </div>
-        <div>
-          <dt>Excess delivery</dt>
-          <dd>
-            {isOwner ? (
-              <label>
-                <input
-                  type="checkbox"
-                  checked={work.allowExcessDelivery ?? false}
-                  disabled={pending}
-                  onChange={(event) => {
-                    const next = event.currentTarget.checked;
-                    void act(
-                      async () => {
-                        const updated = await api.setWorkSettings(
-                          organisationId,
-                          workId,
-                          next,
-                        );
-                        setDetail((current) =>
-                          current === null
-                            ? current
-                            : {
-                                ...current,
-                                work: {
-                                  ...current.work,
-                                  allowExcessDelivery: updated.allowExcessDelivery,
-                                },
-                              },
-                        );
-                      },
-                      next
-                        ? 'Excess delivery allowed — issues may now exceed the sanctioned quantities.'
-                        : 'Excess delivery disallowed again.',
-                    );
-                  }}
-                />{' '}
-                Allow issuing beyond sanctioned quantities
-              </label>
-            ) : (
-              <span>
-                {(work.allowExcessDelivery ?? false) ? 'Allowed' : 'Not allowed'}
-              </span>
-            )}
-          </dd>
-        </div>
+              : 'Per-schedule totals'
+          }
+        />
       </dl>
 
+      {/* Not a figure: the only control in this block, and the strip above
+          is read-only. The mock has no counterpart — its Work cannot be
+          configured — so this keeps the mock's quiet label-and-control
+          row rather than inventing a panel for one checkbox. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <span className="section-label">Excess delivery</span>
+        <span>
+          {isOwner ? (
+            <label>
+              <input
+                type="checkbox"
+                checked={work.allowExcessDelivery ?? false}
+                disabled={pending}
+                onChange={(event) => {
+                  const next = event.currentTarget.checked;
+                  void act(
+                    async () => {
+                      const updated = await api.setWorkSettings(
+                        organisationId,
+                        workId,
+                        next,
+                      );
+                      setDetail((current) =>
+                        current === null
+                          ? current
+                          : {
+                              ...current,
+                              work: {
+                                ...current.work,
+                                allowExcessDelivery: updated.allowExcessDelivery,
+                              },
+                            },
+                      );
+                    },
+                    next
+                      ? 'Excess delivery allowed — issues may now exceed the sanctioned quantities.'
+                      : 'Excess delivery disallowed again.',
+                  );
+                }}
+              />{' '}
+              Allow issuing beyond sanctioned quantities
+            </label>
+          ) : (
+            <span>
+              {(work.allowExcessDelivery ?? false) ? 'Allowed' : 'Not allowed'}
+            </span>
+          )}
+        </span>
+      </div>
+
       {/* Eleven sections used to stack on one scroll. Each area now answers
-          for itself, and the counts show what is inside before it is opened. */}
+          for itself, and the counts show what is inside before it is opened.
+          The rail is the mock's work-section nav (Auto-MB-Vercel-du,
+          components/work-section-nav.tsx at fdfe5ef): a 44px underline tab
+          on a horizontally scrollable rule, weight rather than colour
+          carrying the active state. The count pill has no mock counterpart
+          — the mock's Work has no data behind it to count — so it is built
+          from the mock's own muted and primary tints. */}
       <nav
-        className="mt-4 mb-2 flex items-center gap-0.5 overflow-x-auto border-b border-border"
+        className="mt-4 mb-4 flex max-w-full items-center gap-1 overflow-x-auto border-b border-border"
         aria-label="Work sections"
       >
         {WORK_TABS.map((candidate) => {
@@ -1133,11 +1171,11 @@ export function WorkDetail({
               key={candidate}
               type="button"
               className={cn(
-                '-mb-px inline-flex items-center gap-2 border-b-2 border-transparent px-3 py-2',
+                '-mb-px inline-flex h-11 shrink-0 items-center gap-2 border-b-2 border-transparent px-3',
                 'text-sm whitespace-nowrap transition-colors',
                 current
-                  ? 'border-primary font-semibold text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
+                  ? 'border-primary font-medium text-foreground'
+                  : 'font-normal text-muted-foreground hover:text-foreground',
               )}
               aria-current={current ? 'page' : undefined}
               onClick={() => {
@@ -1500,6 +1538,16 @@ export function WorkDetail({
 
       {tab === 'bills' && (
         <>
+          {/* ponytail: no Measured/Billed/Unbilled tile row above this
+              section, though the mock draws one (Auto-MB-Vercel-du,
+              app/works/[code]/page.tsx at fdfe5ef). The mock adds those
+              four figures up in its own fixture; here they would mean
+              summing decimal money strings in the browser, which
+              AGENTS.md rule 5 and docs/UX.md principle 9 both refuse —
+              the settlement read returns positions, not work-level
+              totals. Upgrade path is a server-computed summary on the
+              bills response, and then this row is four `ui/stat.tsx`
+              tiles reading it. */}
           {/* Whether an invoice can actually be reached from here —
               asked up front, with a link per unmet prerequisite, instead
               of letting the operator discover each refusal in turn. */}

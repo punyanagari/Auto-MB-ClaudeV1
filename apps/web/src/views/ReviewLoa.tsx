@@ -23,6 +23,7 @@ import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
 import { SignaturePanel } from '../ui/signature-panel.js';
 import { Card } from '../ui/card.js';
+import { PageHeader } from '../ui/page-header.js';
 import {
   ScheduleAccordionControls,
   ScheduleSection,
@@ -939,9 +940,11 @@ export function ReviewLoa({
     return (
       <Card aria-labelledby="review-title">
         {arrivals}
-        <h1 id="review-title" tabIndex={-1}>
-          Review LOA
-        </h1>
+        <PageHeader
+          eyebrow="Contract source"
+          title="Review LOA"
+          titleId="review-title"
+        />
         <ErrorState
           retryLabel="Retry document"
           onRetry={() => {
@@ -958,9 +961,11 @@ export function ReviewLoa({
     return (
       <Card aria-labelledby="review-title">
         {arrivals}
-        <h1 id="review-title" tabIndex={-1}>
-          Review LOA
-        </h1>
+        <PageHeader
+          eyebrow="Contract source"
+          title="Review LOA"
+          titleId="review-title"
+        />
         <LoadingState label="the document" rows={6} columns={3} />
       </Card>
     );
@@ -984,9 +989,11 @@ export function ReviewLoa({
     return (
       <Card aria-labelledby="review-title">
         {arrivals}
-        <h1 id="review-title" tabIndex={-1}>
-          Review LOA
-        </h1>
+        <PageHeader
+          eyebrow="Contract source"
+          title="Review LOA"
+          titleId="review-title"
+        />
         <EmptyState action={{ label: 'Back to Works', onClick: onBack }}>
           {document.originalFilename} has been stored and is still being read. Its items
           and dates appear here once the reading finishes; open it again in a moment.
@@ -1005,9 +1012,11 @@ export function ReviewLoa({
     return (
       <Card aria-labelledby="review-title">
         {arrivals}
-        <h1 id="review-title" tabIndex={-1}>
-          Review LOA
-        </h1>
+        <PageHeader
+          eyebrow="Contract source"
+          title="Review LOA"
+          titleId="review-title"
+        />
         <FormError>
           Extraction did not produce reviewable content for {document.originalFilename}.
           Upload a clearer copy or contact support.
@@ -1037,14 +1046,12 @@ export function ReviewLoa({
   return (
     <Card className="w-full" aria-labelledby="review-title">
       {arrivals}
-      <h1 id="review-title" tabIndex={-1}>
-        Review {document.originalFilename}
-      </h1>
-      <p className="text-muted-foreground">
-        The letter is the source of truth for this Work. Values read off it are shown as
-        printed and cannot be edited here; only the values the parser could not read are
-        yours to supply. Nothing becomes a Work until you confirm.
-      </p>
+      <PageHeader
+        eyebrow="Contract source"
+        title={`Review ${document.originalFilename}`}
+        titleId="review-title"
+        description="The letter is the source of truth for this Work. Values read off it are shown as printed and cannot be edited here; only the values the parser could not read are yours to supply. Nothing becomes a Work until you confirm."
+      />
 
       {/* The rule, and the one way out of it. Placed before the review
           issues: a reviewer who disagrees with an extracted value needs to
@@ -1119,7 +1126,7 @@ export function ReviewLoa({
           replaces, and only the reviewer knows which this is. */}
       {document.letterNumberMatches.length > 0 && (
         <div
-          className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3"
+          className="my-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3"
           role="note"
           aria-labelledby="letter-number-conflict-title"
           data-testid="letter-number-conflict"
@@ -1157,7 +1164,7 @@ export function ReviewLoa({
 
       {flagged > 0 && (
         <div
-          className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3"
+          className="my-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3"
           role="note"
           aria-labelledby="flags-title"
         >

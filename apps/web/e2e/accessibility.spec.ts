@@ -745,8 +745,10 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.getByRole('button', { name: 'Works', exact: true }).click();
   await page.getByRole('link', { name: 'DCW-1' }).click();
+  // Code and name are two lines of the heading now, per the mock's Work
+  // header, so what joins them is a space rather than the old em dash.
   await expect(
-    page.getByRole('heading', { name: /DCW-1 — Supply of switchboards/ }),
+    page.getByRole('heading', { name: /DCW-1\s+Supply of switchboards/ }),
   ).toBeVisible();
   // The Work page splits its areas across tabs, so each one is opened and
   // scanned in turn rather than asserted on a single scroll.
