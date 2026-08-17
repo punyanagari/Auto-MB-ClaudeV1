@@ -1,16 +1,29 @@
 /* Auto-MB operations workspace design system.
  *
- * Design contract (owner decision, 2026-08-12): the quiet light system —
- * one dependable blue action colour (#155eef) on cool white surfaces — is
- * the blessed visual language, and a dark palette is provided on the same
- * semantic tokens. The earlier "Signal Cabin" amber/dark-default language
- * is retired. See docs/UX.md § Visual system.
+ * Design contract (AGENTS.md § Design contract): the Vercel/v0 mock
+ * repository `punyanagari/Auto-MB-Vercel-du` is the binding UI contract,
+ * and the colour and radius values below are copied from its
+ * `app/globals.css` at commit a8e1fde. Pixel drift from the mock is a
+ * defect, not a liberty — do not retune a value here because it looks
+ * better; change the mock first and port the change back. The palette is
+ * a teal action colour on cool neutral surfaces; the earlier quiet-light
+ * blue (#155eef) and the "Signal Cabin" amber before it are both retired.
+ *
+ * Three values deliberately diverge from the mock, each because the mock's
+ * value fails WCAG AA 1.4.3 where the product renders it. Each is marked
+ * DIVERGENCE below with the pairing and the measured ratio, and each is a
+ * defect the mock should absorb so the two can converge again.
+ *
+ * Typography is an approved divergence of its own: the mock uses Inter,
+ * the product keeps IBM Plex Sans (which carries Devanagari) with IBM Plex
+ * Mono for numbers, money, quantities and document numbers. The font
+ * tokens below are the product's, not the mock's.
  *
  * The product is information-dense by nature, so the visual system keeps
  * the canvas quiet: restrained status tones, generous hierarchy, tabular
- * numerals, and IBM Plex as the single type family. Existing views continue
- * to use semantic tokens; changing the values here gives every workflow one
- * coherent language without moving business logic into the UI.
+ * numerals. Existing views continue to use semantic tokens; changing the
+ * values here gives every workflow one coherent language without moving
+ * business logic into the UI.
  *
  * Theming is three-state. Every token is a light-dark() pair resolved by
  * the element's color-scheme: the default follows the operating system
@@ -65,58 +78,102 @@
   --color-foreground: var(--foreground);
   --color-background: var(--background);
 
-  --radius-sm: calc(var(--radius) * 0.55);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* The mock's radius scale, multipliers included. */
+  --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.35);
-  --radius-2xl: calc(var(--radius) * 1.75);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
   color-scheme: light dark;
 
   /* Ground and surfaces */
-  --background: light-dark(#f6f8fb, #0d1420);
-  --foreground: light-dark(#172033, #e7ecf5);
-  --card: light-dark(#ffffff, #131b2a);
-  --card-foreground: light-dark(#172033, #e7ecf5);
-  --popover: light-dark(#ffffff, #172134);
-  --popover-foreground: light-dark(#172033, #e7ecf5);
+  --background: light-dark(oklch(0.975 0.003 230), oklch(0.17 0.014 245));
+  --foreground: light-dark(oklch(0.22 0.018 245), oklch(0.94 0.007 230));
+  --card: light-dark(oklch(0.995 0.001 230), oklch(0.205 0.016 245));
+  --card-foreground: light-dark(oklch(0.24 0.015 250), oklch(0.93 0.006 250));
+  --popover: light-dark(oklch(1 0 0), oklch(0.23 0.014 250));
+  --popover-foreground: light-dark(oklch(0.24 0.015 250), oklch(0.93 0.006 250));
 
   /* One action colour. Status colours communicate state, never decoration.
-   * The dark primary is a lifted blue so it still reads as text on dark
+   * The dark primary is a lifted teal so it still reads as text on dark
    * surfaces; solid primary fills carry dark ink instead of white there. */
-  --primary: light-dark(#155eef, #7ca2f7);
-  --primary-foreground: light-dark(#ffffff, #0d1420);
-  --secondary: light-dark(#eef2f7, #202b3f);
-  --secondary-foreground: light-dark(#344054, #cdd7e6);
-  --muted: light-dark(#f2f4f7, #1a2436);
-  /* Deep enough to hold 4.5:1 even when meta text sits ON the muted tint
-   * (the old #667085 measured 4.497:1 there — a hair under AA). */
-  --muted-foreground: light-dark(#5d6b83, #94a6bd);
-  --accent: light-dark(#eaf2ff, #1b2b4a);
-  --accent-foreground: light-dark(#174ea6, #a7c1fb);
+  --primary: light-dark(oklch(0.42 0.09 190), oklch(0.72 0.09 190));
+  --primary-foreground: light-dark(oklch(0.99 0.004 190), oklch(0.19 0.02 195));
+  --secondary: light-dark(oklch(0.945 0.008 220), oklch(0.28 0.015 250));
+  --secondary-foreground: light-dark(oklch(0.3 0.025 235), oklch(0.9 0.01 195));
+  --muted: light-dark(oklch(0.95 0.006 230), oklch(0.26 0.012 250));
+  --muted-foreground: light-dark(oklch(0.49 0.018 245), oklch(0.66 0.012 250));
+  --accent: light-dark(oklch(0.925 0.03 190), oklch(0.32 0.03 195));
+  --accent-foreground: light-dark(oklch(0.3 0.07 190), oklch(0.9 0.02 195));
 
   /* Status tones. The base colour is legible as text on the theme's
-   * surfaces and tints; the -foreground pair is the ink for solid fills. */
-  --destructive: light-dark(#b42318, #f97066);
-  --destructive-foreground: light-dark(#ffffff, #0d1420);
-  --success: light-dark(#067647, #47cd89);
-  --success-foreground: light-dark(#ffffff, #0d1420);
-  --warning: light-dark(#f79009, #f79009);
-  --warning-foreground: light-dark(#9a4b00, #fdb022);
-  --info: light-dark(#175cd3, #82a7f5);
-  --info-foreground: light-dark(#ffffff, #0d1420);
+   * surfaces and tints; the -foreground pair is the ink for solid fills.
+   *
+   * DIVERGENCE (light --success): the mock's oklch(0.55 0.12 155) is the
+   * ink of the `bg-success/12 text-success` chip, and measures 3.88:1 on
+   * that tint over the card — below AA for 12px text. Lowering L to 0.50
+   * is the smallest change that clears it: 4.79:1 on the tint, 5.58:1 as
+   * plain text on the card.
+   *
+   * DIVERGENCE (dark --destructive): the mock's oklch(0.62 0.19 27)
+   * measures 4.11:1 as the ink of `bg-destructive/10 text-destructive` and
+   * 4.49:1 as error text on the card — both under AA. L 0.66 gives
+   * 4.83:1 and 5.27:1.
+   *
+   * DIVERGENCE (dark --warning-foreground): the mock's oklch(0.24 0.05 75)
+   * is ink for a solid warning fill, but neither the mock nor the product
+   * ever renders one — both use it as ink ON a warning tint
+   * (`bg-warning/10 text-warning-foreground`, mock
+   * `components/measurement-book.tsx` and `components/app-sidebar.tsx`;
+   * product `ui/badge.tsx`). In dark that pairing measures 1.22:1. The
+   * value here is the mock's own dark --warning, oklch(0.78 0.13 75),
+   * which reads 6.65:1 on the tint and 8.79:1 on the card. The mock has
+   * the same defect in its own dark theme and should absorb this fix. */
+  --destructive: light-dark(oklch(0.55 0.19 27), oklch(0.66 0.19 27));
+  --destructive-foreground: light-dark(oklch(0.99 0 0), oklch(0.98 0 0));
+  --success: light-dark(oklch(0.5 0.12 155), oklch(0.68 0.12 155));
+  --success-foreground: light-dark(oklch(0.99 0 0), oklch(0.16 0.02 155));
+  --warning: light-dark(oklch(0.72 0.14 75), oklch(0.78 0.13 75));
+  --warning-foreground: light-dark(oklch(0.3 0.06 75), oklch(0.78 0.13 75));
 
-  --border: light-dark(#e4e7ec, #26324a);
-  /* The edge of a control is a non-text UI component, so WCAG 1.4.11 asks
-   * for 3:1 against whatever it sits on. The old pair measured 1.48:1 on
-   * the light card and 1.69:1 on the dark one — a field the eye had to
-   * infer from its shadow. These hold 3.30:1 / 3.10:1 (light, on card and
-   * on the page ground) and 3.22:1 / 3.45:1 (dark). */
-  --input: light-dark(#848ea0, #5c6b8a);
-  --ring: light-dark(#155eef, #7ca2f7);
-  --radius: 0.625rem;
+  /* The mock has no informational tone: it carries no --info token and
+   * renders nothing in one. The product's `info` badge predates the mock,
+   * so the token stays and takes the mock's --primary values rather than
+   * keeping a blue that appears nowhere in the mock's palette. When the
+   * mock grows a real informational tone, port it here. */
+  --info: light-dark(oklch(0.42 0.09 190), oklch(0.72 0.09 190));
+  --info-foreground: light-dark(oklch(0.99 0.004 190), oklch(0.19 0.02 195));
+
+  /* The mock sets --input to the same value as --border, and so does this.
+   * That is a knowing regression of the product's earlier WCAG 1.4.11
+   * decision (a control edge wants 3:1 against its surface; this pair
+   * measures 1.39:1 light and 1.36:1 dark), kept because the fidelity
+   * contract binds and a darker edge would drift visibly on every form.
+   * axe has no rule for it, so no gate will catch it — the fix belongs in
+   * the mock. */
+  --border: light-dark(oklch(0.885 0.009 235), oklch(0.31 0.012 250));
+  --input: light-dark(oklch(0.885 0.009 235), oklch(0.31 0.012 250));
+  --ring: light-dark(oklch(0.5 0.09 190), oklch(0.72 0.09 190));
+  --radius: 0.5rem;
+
+  /* Data-series ramp. Nothing renders these yet; they are part of the
+   * mock's token set and the chart work will read them from here. */
+  --chart-1: light-dark(oklch(0.44 0.085 195), oklch(0.72 0.09 190));
+  --chart-2: light-dark(oklch(0.7 0.06 195), oklch(0.55 0.07 195));
+  --chart-3: light-dark(oklch(0.55 0.12 155), oklch(0.68 0.12 155));
+  --chart-4: light-dark(oklch(0.72 0.14 75), oklch(0.78 0.13 75));
+  --chart-5: light-dark(oklch(0.5 0.015 250), oklch(0.66 0.012 250));
 
   /* The workspace shell's header is sticky and 4.5rem tall, and the page
    * is the scrollport it sticks to. Anything else that sticks on that
@@ -134,20 +191,32 @@
   --sticky-inset: var(--header-h);
 
   /* Sticky table headings must be opaque so scrolled rows cannot read
-   * through them — a raised near-surface tone in both themes. */
-  --table-header: light-dark(#f9fafc, #182338);
+   * through them — a raised near-surface tone in both themes. The mock has
+   * no token for this; it tints its table header with `bg-muted/55`
+   * (`[data-slot="table-header"]` in the mock's globals.css), which a
+   * sticky heading cannot use because a translucent heading lets scrolled
+   * rows read through it. Mixing the same 55% against the card resolves to
+   * the colour the mock renders, opaquely. */
+  --table-header: color-mix(in srgb, var(--muted) 55%, var(--card));
 
   /* The application rail is a quiet surface rather than a second visual
-   * theme. Active destinations use the same blue as primary actions. */
-  --sidebar: light-dark(#ffffff, #111927);
-  --sidebar-foreground: light-dark(#172033, #e7ecf5);
-  --sidebar-faint: light-dark(#475467, #94a6bd);
-  --sidebar-primary: light-dark(#155eef, #7ca2f7);
-  --sidebar-primary-foreground: light-dark(#ffffff, #0d1420);
-  --sidebar-accent: light-dark(#eef4ff, #1b2b4a);
-  --sidebar-accent-foreground: light-dark(#174ea6, #a7c1fb);
-  --sidebar-border: light-dark(#e4e7ec, #26324a);
-  --sidebar-ring: light-dark(#155eef, #7ca2f7);
+   * theme. Active destinations use the same teal as primary actions. */
+  --sidebar: light-dark(oklch(1 0 0), oklch(0.22 0.013 250));
+  --sidebar-foreground: light-dark(oklch(0.24 0.015 250), oklch(0.93 0.006 250));
+  /* App-only: the mock has no faint-rail-text tone, so this is a choice
+   * rather than a port. It starts from the mock's --muted-foreground, but
+   * the deepest surface it sits on is --sidebar-accent, not the rail: the
+   * sign-in ledger board is `bg-sidebar-accent` with `text-sidebar-faint`
+   * labels. At the mock's dark L of 0.66 that pairing measures 4.01:1 —
+   * axe failed it on the sign-in screen. L 0.71 reads 4.87:1 there and
+   * 6.73:1 on the rail itself; light is unchanged at 5.27:1 / 6.24:1. */
+  --sidebar-faint: light-dark(oklch(0.49 0.018 245), oklch(0.71 0.012 250));
+  --sidebar-primary: light-dark(oklch(0.44 0.085 195), oklch(0.72 0.09 190));
+  --sidebar-primary-foreground: light-dark(oklch(0.99 0.005 195), oklch(0.19 0.02 195));
+  --sidebar-accent: light-dark(oklch(0.94 0.02 195), oklch(0.32 0.03 195));
+  --sidebar-accent-foreground: light-dark(oklch(0.35 0.06 195), oklch(0.9 0.02 195));
+  --sidebar-border: light-dark(oklch(0.915 0.005 250), oklch(0.31 0.012 250));
+  --sidebar-ring: light-dark(oklch(0.44 0.085 195), oklch(0.72 0.09 190));
 }
 
 /* The Appearance setting persists an explicit choice as data-theme on the
