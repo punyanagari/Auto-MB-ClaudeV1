@@ -48,6 +48,20 @@ export const BankAccountHolderSchema = Type.String({ minLength: 2, maxLength: 20
 export const BankNameSchema = Type.String({ minLength: 2, maxLength: 100 });
 export const BankBranchSchema = Type.String({ minLength: 2, maxLength: 100 });
 
+/** Five letters, four digits, one letter. Checked here as well as in the
+ * database because an unregistered vendor PAN has no GSTIN to fall back
+ * on and a typo would silently engage the 206AA floor.
+ *
+ * Either case is accepted and the route uppercases before storing, the
+ * way the GSTIN is handled: a PAN is read off a card and typed, and the
+ * database CHECK only accepts upper case, so rejecting lower case at the
+ * edge would refuse a correct value for its capitalisation. */
+export const PanSchema = Type.String({
+  pattern: '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$',
+  minLength: 10,
+  maxLength: 10,
+});
+
 export const ContactSchema = Type.Object(
   {
     id: UuidSchema,
@@ -97,6 +111,15 @@ export const ContactSchema = Type.Object(
     bankAccountType: Type.Optional(
       Type.Union([Type.String({ minLength: 2, maxLength: 50 }), Type.Null()]),
     ),
+    /** A person this organisation pays an advance or reimbursement to
+     * (migration 0080). Deliberately independent of membership: being
+     * paid is not being granted access, and a site worker with no login
+     * is still paid. */
+    isEmployee: Type.Boolean(),
+    /** The party PAN. Decides whether section 206AA floors a vendor
+     * payment at 20% (migration 0080). Backfilled from the GSTIN, whose
+     * characters 3-12 are the holder PAN. */
+    pan: Type.Union([PanSchema, Type.Null()]),
     active: Type.Boolean(),
     createdAt: Type.String({ format: 'date-time' }),
   },
@@ -143,6 +166,11 @@ export const SaveContactRequestSchema = Type.Object(
     bankIfsc: Type.Optional(IfscSchema),
     bankBranch: Type.Optional(BankBranchSchema),
     bankAccountType: Type.Optional(Type.String({ minLength: 2, maxLength: 50 })),
+    isEmployee: Type.Optional(Type.Boolean()),
+    /** Explicit null clears the PAN; omitting the field preserves what
+     * is stored. Same shape as every sibling nullable field, so an edit
+     * form that only sends what changed does not blank the rest. */
+    pan: Type.Optional(Type.Union([PanSchema, Type.Null()])),
   },
   { additionalProperties: false },
 );

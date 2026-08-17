@@ -129,6 +129,10 @@ const ALLOWED_EXTERNAL = new Map([
     'inspection-checklist-config.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work inspection clause tab for the checklist card it replicates',
   ],
+  [
+    'payment-requests-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Payments workspace for the two-register screen it replicates',
+  ],
 ]);
 
 /**
@@ -153,6 +157,7 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
     'the v0 mock’s module-scope seed data, cited where a constant here takes its value from the mock rather than inventing one',
   ],
   ['app/inspection/page.tsx', 'the v0 mock screen the Inspection workspace replicates'],
+  ['app/payments/page.tsx', 'the v0 mock screen the payments workspace replicates'],
 ]);
 
 /** Whether a reference names something deliberately outside this tree. */

@@ -17,17 +17,24 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v17: the payments workspace joins the record — employee
+ * payment requests with their per-financial-year counter, vendor
+ * invoices, and the vendor payments that carry tax deducted at source
+ * (migration 0080).
+ *
  * export-v16: the inspection lifecycle (0082) joins the package — the
  * per-item clauses, the per-Work document checklist, the calls with
  * their item coverage, and the evidence with its stored PDFs. Left out,
  * an export could not explain why a Work's despatches were refused, nor
  * hand back the certificates that permitted the ones that went.
  *
- * v15 is SKIPPED, on the same reasoning the v13 note below already sets
- * out: the payments pack claims it from a sibling branch of this wave and
- * its v15 carries a different section list. A version string identifies a
- * format, so two formats sharing one string is the failure that matters
- * and a gap is not.
+ * v15 is SKIPPED and now unclaimed. The v16 note reserved it for this
+ * payments pack, but inspection merged first and a v15 landing after v16
+ * would be a format number that went BACKWARDS — a reader comparing two
+ * exports would take the newer one for the older. So payments took v17
+ * and v15 belongs to nothing. The reasoning is the v13 note's below: a
+ * version string identifies a format, two formats sharing one string is
+ * the failure that matters, and a gap is not.
  *
  * export-v14: the company document library (0079) joins the package —
  * the credentials themselves, their version history, and the stored
@@ -58,7 +65,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v16';
+const EXPORT_FORMAT_VERSION = 'export-v17';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -141,9 +148,14 @@ interface ExportSection {
 const SECTIONS: readonly ExportSection[] = [
   {
     key: 'members',
+    /* Every grant is listed explicitly, so a new one that is not added
+       here is silently dropped from the recovery package — a restored
+       organisation would come back with the authority revoked and
+       nobody able to pay a vendor until an owner noticed. */
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
-                 can_manage_statutory_reporting, status, created_at
+                 can_manage_statutory_reporting, can_manage_payments,
+                 status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -312,6 +324,25 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'billPaymentDeductions',
     sql: `select * from bill_payment_deductions
           order by bill_payment_id, category, id`,
+  },
+  {
+    // Outbound money (0080). Payments follow their invoice and requests
+    // follow their sequence, so a diff of two exports is readable.
+    key: 'paymentRequests',
+    sql: `select * from payment_requests order by fy_label, sequence_number, id`,
+  },
+  {
+    key: 'paymentRequestCounters',
+    sql: `select * from payment_request_counters order by fy_label`,
+  },
+  {
+    key: 'vendorInvoices',
+    sql: `select * from vendor_invoices
+          order by vendor_contact_id, invoice_date, id`,
+  },
+  {
+    key: 'vendorPayments',
+    sql: `select * from vendor_payments order by vendor_invoice_id, paid_on, id`,
   },
   {
     key: 'installations',

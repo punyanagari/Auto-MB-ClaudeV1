@@ -181,8 +181,11 @@ describe('the schema at head names all three shapes', () => {
       (column) => column.type === 'money_amount' || column.type === 'quantity_amount',
     );
     // 55 before 0082, which adds inspection_clauses.inspection_quantity
-    // and inspection_call_items.quantity.
-    expect(adopted.length).toBe(57);
+    // and inspection_call_items.quantity; 0080 adds four money columns
+    // of its own (the payment-request amount, the vendor-invoice amount,
+    // and the vendor payment's gross/tds/net less the two counted as one
+    // pair) plus the TDS taxable amount.
+    expect(adopted.length).toBe(63);
   });
 
   it('types every digest column as sha256_hex', () => {

@@ -28,6 +28,10 @@ export const ME = {
       workScope: 'all',
       canIssueDocuments: true,
       canCancelDocuments: true,
+      // The payments authority (0080). Granted here so the Payments
+      // workspace renders its write controls under the axe scan — a
+      // read-only register would not exercise the buttons.
+      canManagePayments: true,
       status: 'active',
     },
   ],

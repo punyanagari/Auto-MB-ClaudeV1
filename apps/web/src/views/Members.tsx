@@ -179,6 +179,16 @@ const FEATURES = [
     authority: 'Statutory reporting authority',
     change: 'Statutory reporting authority',
   },
+  {
+    /* The payments authority (migration 0080): who may approve an
+       employee's advance or reimbursement, and who may record and pay a
+       vendor invoice. Granted on top of issue/cancel, never inherited —
+       sending money out is not the same act as issuing a document. */
+    key: 'canManagePayments',
+    heading: 'Can pay',
+    authority: 'Payments authority',
+    change: 'Payments authority',
+  },
 ] as const satisfies readonly {
   key: keyof Membership & `can${string}`;
   heading: string;

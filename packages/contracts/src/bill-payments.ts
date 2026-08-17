@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { BillStatusSchema } from './retention.js';
+import { BILL_DEDUCTION_HEADS } from './statutory.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -23,20 +24,21 @@ import {
 /**
  * The heads a railway payment is reduced by.
  *
- * Four have a statutory or contractual identity and are reclaimed,
+ * Most have a statutory or contractual identity and are reclaimed,
  * reconciled or released through a named form: GST TDS surfaces in
  * GSTR-7A, income-tax TDS on Form 26AS, a security deposit is released at
- * PAC or at the end of maintenance, and a penalty is argued individually.
- * `OTHER` is the fifth head that always turns up, and it is the only one
- * that cannot be recorded without saying what it is.
+ * PAC or at the end of maintenance, BOCW cess is reconciled against a
+ * cess return, and liquidated damages are argued under a named contract
+ * clause. `OTHER` is the head that always turns up, and it is the only
+ * one that cannot be recorded without saying what it is.
+ *
+ * The list itself lives in `packages/contracts/src/statutory.ts` with each head's provision
+ * and rate beside it, because the same facts are needed by the web half
+ * to label a field and by the server half to compute. This alias is kept
+ * so the many existing importers of `BILL_DEDUCTION_CATEGORIES` do not
+ * all have to move at once.
  */
-export const BILL_DEDUCTION_CATEGORIES = [
-  'GST_TDS',
-  'INCOME_TAX_TDS',
-  'SECURITY_DEPOSIT',
-  'PENALTY',
-  'OTHER',
-] as const;
+export const BILL_DEDUCTION_CATEGORIES = BILL_DEDUCTION_HEADS;
 export const BillDeductionCategorySchema = Type.Union(
   BILL_DEDUCTION_CATEGORIES.map((category) => Type.Literal(category)),
 );

@@ -191,6 +191,8 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     'GET /api/works/:id/measurement-books',
     'grows per Work; pack P11 owns this route this wave',
   ],
+  ['GET /api/payment-requests', 'grows per organisation — next candidate'],
+  ['GET /api/vendor-invoices', 'grows per organisation — next candidate'],
 ]);
 
 const adminUrl =
@@ -254,6 +256,7 @@ const STRING_CANDIDATES = [
   'xx',
   'ab'.repeat(32), // sha256 hex digests
   '2026-01-15T10:30:00+05:30', // ack timestamps
+  '2026-27', // financial-year labels (fy_label, the TDS return query)
 ];
 
 interface JsonSchemaLike {

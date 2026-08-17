@@ -5,6 +5,7 @@ import {
   FileBadge,
   FileText,
   FolderKanban,
+  HandCoins,
   LayoutDashboard,
   Receipt,
   ScanSearch,
@@ -25,6 +26,7 @@ export type ModuleKey =
   | 'quotations'
   | 'company-documents'
   | 'inspection'
+  | 'payments'
   | 'approvals'
   | 'search'
   | 'installations'
@@ -51,11 +53,18 @@ export interface NavGroup {
  * (`components/app-sidebar` at `a8e1fde`): an unlabelled first group,
  * then Documents, Operations and Administration.
  *
- * The mock draws modules this build has no route for — Tenders, Inspection,
- * Payments, E-Way Bills, Correspondence, Production, Inventory, Purchase
- * orders, Maintenance, Employees — and those are omitted rather than
- * rendered as dead entries. Quotations runs the other way: the mock draws
- * it under Documents in its own list, so it keeps its place here.
+ * The mock draws modules this build has no route for — Tenders, E-Way
+ * Bills, Correspondence, Production, Inventory, Purchase orders,
+ * Maintenance, Employees — and those are omitted rather than rendered as
+ * dead entries. Quotations runs the other way: the mock draws it under
+ * Documents in its own list, so it keeps its place here.
+ *
+ * Payments joined the built modules with migration 0080 and sits second
+ * in the unlabelled group after Works, which is where the mock puts it
+ * once Tenders — the one entry above it this build does not have — is
+ * dropped. The mock's own order there is Dashboard, Works, Tenders,
+ * Inspection, Payments; Inspection is built but lives under Operations
+ * here, so Payments follows Works directly.
  *
  * Company documents runs the other way again, and it is the one entry
  * here the mock does not draw in its own rail. The mock HAS the screen
@@ -80,6 +89,7 @@ export const NAVIGATION: readonly NavGroup[] = [
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { key: 'works', label: 'Works', icon: FolderKanban },
+      { key: 'payments', label: 'Payments', icon: HandCoins },
     ],
   },
   {
@@ -132,6 +142,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'company-documents' };
     case 'inspection':
       return { name: 'inspection' };
+    case 'payments':
+      return { name: 'payments', tab: 'employee' };
     case 'approvals':
       return { name: 'approvals' };
     case 'search':
@@ -173,6 +185,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'quotations':
     case 'company-documents':
     case 'inspection':
+    case 'payments':
     case 'approvals':
     case 'search':
     case 'installations':
@@ -223,6 +236,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Company documents';
     case 'inspection':
       return 'Inspection';
+    case 'payments':
+      return 'Payments';
     case 'approvals':
       return 'Approvals';
     case 'search':

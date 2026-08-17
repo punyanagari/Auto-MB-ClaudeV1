@@ -77,6 +77,16 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // it (0067): security_invoker, so their RLS is re-checked for the
   // caller and this grant adds no visibility. Read-only by construction.
   bill_settlement_positions: 'SELECT',
+  // The outbound half of the cash position (0080). No DELETE anywhere:
+  // a payment record is voided or cancelled, never removed. UPDATE is
+  // granted on all four because each has a legitimate in-place
+  // transition — a request's status, an invoice's cancellation, a
+  // payment's void, a counter's increment — and each is narrowed by its
+  // own trigger to exactly that transition.
+  payment_requests: 'SELECT, INSERT, UPDATE',
+  payment_request_counters: 'SELECT, INSERT, UPDATE',
+  vendor_invoices: 'SELECT, INSERT, UPDATE',
+  vendor_payments: 'SELECT, INSERT, UPDATE',
   mb_entries: 'SELECT, INSERT, UPDATE',
   // Master data retires via the active flag; no DELETE exists (0013).
   location_masters: 'SELECT, INSERT, UPDATE',

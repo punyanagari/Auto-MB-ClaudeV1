@@ -114,6 +114,30 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   // registers have already answered.
   bill_payments: 'receipts against a bill, which blocks',
   bill_payment_deductions: 'the breakup of a receipt against a bill, which blocks',
+  // Outbound money (0080), exempt for a different reason from the two
+  // above, and the difference is the point. `bill_payments` is exempt
+  // because a blocking register already covers it. These are exempt
+  // because they are not records of the Work at all.
+  //
+  // A Work is superseded when its letter was misread and has to be
+  // re-reviewed. What that withdraws is this organisation's claim on the
+  // RAILWAY. It does not and cannot withdraw what a vendor billed this
+  // organisation, or what an employee spent getting to site: those are
+  // obligations to third parties that survive the Work being rewritten,
+  // and refusing the supersede would not unmake them — it would only
+  // trap the correction of a misread letter behind a travel claim.
+  //
+  // Their `work_id` is nullable and is cost ATTRIBUTION, not parentage,
+  // which is the same reading that keeps them off the Work timeline
+  // (`test/audit-timeline-census.test.ts`). The successor Work is where
+  // later attribution points; the rows already written keep naming the
+  // predecessor, which is the truth about which Work the money was spent
+  // under at the time.
+  payment_requests:
+    'an employee claim attributed to a Work, not a record of the Work — an obligation to a person that a supersede does not unmake',
+  vendor_invoices:
+    'a third party’s bill against this organisation, attributed to a Work but not a record of it',
+  vendor_payments: 'a payment against a vendor invoice, which is itself exempt',
   delivery_challan_items: 'lines of a delivery challan, which blocks',
   challan_receipts: 'receipts against a delivery challan, which blocks',
   challan_item_serials: 'serials on a delivery challan line, which blocks',

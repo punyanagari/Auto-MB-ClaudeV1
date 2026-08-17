@@ -8,6 +8,14 @@ import type { WorkTab } from '../views/WorkDetail.js';
  * segment instead of a query parameter. */
 export type ChallanRegisterTab = 'delivery' | 'installation';
 
+/** Which of the Payments workspace's two registers is showing. The mock
+ * makes these local tab state (`components/payment-requests-workspace`
+ * at `fdfe5ef`); they are addresses here for the same reason the Challan
+ * registers are — a register worth opening is worth linking to, and a
+ * tab strip that is really a nav gets the keyboard behaviour for free
+ * instead of promising the tablist pattern and not implementing it. */
+export type PaymentsRegisterTab = 'employee' | 'vendors';
+
 /** The workspace's whole navigation state as a discriminated union. It
  * lives here rather than in OperationsWorkspace so the hash serializer
  * and any view that wants to render a real link can name a destination
@@ -38,6 +46,11 @@ export type WorkspaceView =
   | { name: 'delivery-challan'; challanId: string }
   | { name: 'quotations' }
   | { name: 'approvals' }
+  /** The payments workspace: employee advances and reimbursements, and
+   * the vendor liability ledger. The mock's `/payments`
+   * (`app/payments/page.tsx` at `fdfe5ef`), which its
+   * `/payment-requests` route redirects to. */
+  | { name: 'payments'; tab: PaymentsRegisterTab }
   /** The installation module's own register: every recorded installation
    * across the Works the caller may see. A record still opens through its
    * Work (`work` above, Installations tab) — this is the way in when the
@@ -123,6 +136,10 @@ function isChallanRegisterTab(value: string): value is ChallanRegisterTab {
   return value === 'delivery' || value === 'installation';
 }
 
+function isPaymentsRegisterTab(value: string): value is PaymentsRegisterTab {
+  return value === 'employee' || value === 'vendors';
+}
+
 /** Path segments that can never be record ids. `upload` shares the
  * `/works/…` prefix, so a Work id must not look like it. */
 const RESERVED_WORK_SEGMENTS = new Set(['upload', 'new']);
@@ -183,6 +200,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/quotations';
     case 'approvals':
       return '#/approvals';
+    case 'payments':
+      return view.tab === 'employee' ? '#/payments' : `#/payments/${view.tab}`;
     case 'installations':
       return view.workId === null
         ? '#/installations'
@@ -237,6 +256,11 @@ export function challansHash(
   workId: string | null = null,
 ): string {
   return workspaceHashOf({ view: { name: 'challans', tab, workId } });
+}
+
+/** The Payments workspace as a plain href, one register per address. */
+export function paymentsHash(tab: PaymentsRegisterTab = 'employee'): string {
+  return workspaceHashOf({ view: { name: 'payments', tab } });
 }
 
 export function mastersHash(tab?: MastersTab): string {
@@ -336,6 +360,17 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       }
       if (!isRecordId(workId)) return null;
       return { view: { name: 'challans', tab, workId } };
+    }
+    case 'payments': {
+      const [tab, ...extra] = rest;
+      if (extra.length > 0) return null;
+      // Employee is the register the module opens on, so the plain
+      // address is the plain register — the same shape Challans uses.
+      if (tab === undefined) {
+        return { view: { name: 'payments', tab: 'employee' } };
+      }
+      if (!isPaymentsRegisterTab(tab)) return null;
+      return { view: { name: 'payments', tab } };
     }
     case 'delivery-challans': {
       const [challanId, ...extra] = rest;

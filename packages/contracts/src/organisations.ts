@@ -51,6 +51,11 @@ export const MembershipSchema = Type.Object(
      * ON TOP of issue/cancel rather than replacing them, and defaults
      * false — it is granted, never inherited. */
     canManageStatutoryReporting: Type.Boolean(),
+    /** The payments authority (migration 0080): may approve employee
+     * payment requests and record or pay vendor invoices. Separate from
+     * issue/cancel because sending the organisation's money out is not
+     * the same act as issuing a document it is owed for. */
+    canManagePayments: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -83,6 +88,7 @@ export const AddMemberRequestSchema = Type.Object(
     canCancelDocuments: Type.Optional(Type.Boolean()),
     canApproveAmendments: Type.Optional(Type.Boolean()),
     canManageStatutoryReporting: Type.Optional(Type.Boolean()),
+    canManagePayments: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -405,6 +411,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canCancelDocuments: Type.Optional(Type.Boolean()),
     canApproveAmendments: Type.Optional(Type.Boolean()),
     canManageStatutoryReporting: Type.Optional(Type.Boolean()),
+    canManagePayments: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

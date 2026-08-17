@@ -267,6 +267,21 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     downloadExtensionDraftPreview: vi.fn<ApiClient['downloadExtensionDraftPreview']>(),
     backfillExtensionRequest: vi.fn<ApiClient['backfillExtensionRequest']>(),
     listApprovals: vi.fn<ApiClient['listApprovals']>().mockResolvedValue([]),
+    listPaymentRequests: vi
+      .fn<ApiClient['listPaymentRequests']>()
+      .mockResolvedValue({ requests: [] }),
+    createPaymentRequest: vi.fn<ApiClient['createPaymentRequest']>(),
+    decidePaymentRequest: vi.fn<ApiClient['decidePaymentRequest']>(),
+    payPaymentRequest: vi.fn<ApiClient['payPaymentRequest']>(),
+    recordAdvanceBills: vi.fn<ApiClient['recordAdvanceBills']>(),
+    listVendorInvoices: vi
+      .fn<ApiClient['listVendorInvoices']>()
+      .mockResolvedValue({ invoices: [], totalOutstanding: '0', overdueCount: 0 }),
+    recordVendorInvoice: vi.fn<ApiClient['recordVendorInvoice']>(),
+    previewVendorTds: vi.fn<ApiClient['previewVendorTds']>(),
+    recordVendorPayment: vi.fn<ApiClient['recordVendorPayment']>(),
+    voidVendorPayment: vi.fn<ApiClient['voidVendorPayment']>(),
+    cancelVendorInvoice: vi.fn<ApiClient['cancelVendorInvoice']>(),
     listWorkAmendments: vi.fn<ApiClient['listWorkAmendments']>().mockResolvedValue([]),
     proposeAmendment: vi.fn<ApiClient['proposeAmendment']>(),
     proposeAddItem: vi.fn<ApiClient['proposeAddItem']>(),
@@ -594,6 +609,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canCancelDocuments: true,
     canApproveAmendments: false,
     canManageStatutoryReporting: false,
+    canManagePayments: false,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,
@@ -763,6 +779,8 @@ export const VENDOR_CONTACT: Contact = {
   isConsignee: false,
   isVendor: true,
   isClient: false,
+  isEmployee: false,
+  pan: null,
   active: true,
   createdAt: '2026-07-01T00:00:00.000Z',
 };
@@ -833,6 +851,8 @@ export const CLIENT_CONTACT: Contact = {
   isConsignee: false,
   isVendor: false,
   isClient: true,
+  isEmployee: false,
+  pan: null,
   active: true,
   createdAt: '2026-07-01T00:00:00.000Z',
 };

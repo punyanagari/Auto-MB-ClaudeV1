@@ -84,6 +84,9 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   issue: true,
   cancel: true,
   statutory: true,
+  // Moving the organisation's money out of its bank is the single most
+  // worthwhile thing to steal this account for.
+  payments: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -93,6 +96,7 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   issue: 'can_issue_documents',
   cancel: 'can_cancel_documents',
   statutory: 'can_manage_statutory_reporting',
+  payments: 'can_manage_payments',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

@@ -298,6 +298,53 @@ describe('contacts master (unified role flags; plain creates are consignees)', (
       },
     });
     expect(deductor.statusCode, deductor.body).toBe(201);
+
+    /* The PAN (migration 0080), and the distinction that matters for a
+       partial edit: omitting the field must PRESERVE it, and only an
+       explicit null clears it. Folding both to null would make every
+       edit that touches an address quietly blank the PAN, and a vendor
+       with no PAN on record is deducted at 20% under section 206AA — so
+       the bug would be an over-deduction, not a cosmetic loss. */
+    const withPan = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: 'PAN Bearing Vendor',
+        address: 'Vendor Lane',
+        isVendor: true,
+        pan: 'abcde1234f',
+      },
+    });
+    expect(withPan.statusCode, withPan.body).toBe(201);
+    // Stored uppercase, like the GSTIN, whatever case was typed.
+    expect(withPan.json<Contact>().pan).toBe('ABCDE1234F');
+    const panContactId = withPan.json<Contact>().id;
+
+    const untouched = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${panContactId}`,
+      organisationId,
+      payload: {
+        designation: 'PAN Bearing Vendor',
+        address: 'A corrected address, with no mention of the PAN',
+      },
+    });
+    expect(untouched.statusCode, untouched.body).toBe(200);
+    expect(untouched.json<Contact>().pan).toBe('ABCDE1234F');
+
+    const cleared = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${panContactId}`,
+      organisationId,
+      payload: {
+        designation: 'PAN Bearing Vendor',
+        address: 'A corrected address, with no mention of the PAN',
+        pan: null,
+      },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json<Contact>().pan).toBeNull();
     expect(deductor.json<Contact>().gstin).toBe('27AAAGM0289C1DD');
 
     // Neither standard nor deductor-shaped: refused with the explanation.

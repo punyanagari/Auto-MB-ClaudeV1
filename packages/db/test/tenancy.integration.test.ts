@@ -74,6 +74,13 @@ const TENANT_TABLES = [
   // The payment register and its typed deduction rows (0067).
   'bill_payments',
   'bill_payment_deductions',
+  // The outbound half of the cash position (0080): employee payment
+  // requests with their per-financial-year counter, and the vendor
+  // liability ledger with its payments.
+  'payment_requests',
+  'payment_request_counters',
+  'vendor_invoices',
+  'vendor_payments',
   'mb_entries',
   'work_assignments',
   // The unified Contacts master and the Work<->consignee association
@@ -216,6 +223,13 @@ const DELETE_REVOKED_TABLES = [
   // deductions go with it (0067).
   'bill_payments',
   'bill_payment_deductions',
+  // The outbound half of the cash position (0080): employee payment
+  // requests with their per-financial-year counter, and the vendor
+  // liability ledger with its payments.
+  'payment_requests',
+  'payment_request_counters',
+  'vendor_invoices',
+  'vendor_payments',
   'mb_entries',
   // Masters retire via the active flag; the app role holds no DELETE
   // (0013; contacts follows in 0028).
@@ -892,6 +906,67 @@ async function seedTenantGraph(
       values
         (${organisationId}, ${billPayment.id}, 'GST_TDS', '1.00', null),
         (${organisationId}, ${billPayment.id}, 'SECURITY_DEPOSIT', '1.00', null)
+    `;
+
+    /* The outbound half of the cash position (0080). The beneficiary is
+       a contacts row carrying both payable roles, so one party serves
+       the employee register and the vendor ledger and the seed does not
+       need two. */
+    const [payee] = await tx<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, is_vendor, is_employee,
+        created_by_user_id
+      )
+      values (${organisationId}, ${`Payee ${workCode}`}, true, true, ${userId})
+      returning id
+    `;
+    if (!payee) throw new Error('seed payee contact insert returned no row');
+    await tx`
+      insert into payment_request_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 3)
+    `;
+    /* Two rows, because the no-context and cross-tenant assertions each
+       want at least one and the suite checks for two. Both are created
+       in a state the 0080 insert guard permits. */
+    await tx`
+      insert into payment_requests (
+        organisation_id, fy_label, sequence_number, request_number, kind,
+        work_id, beneficiary_contact_id, purpose, category, amount,
+        proof_reference, proof_filename, status, requested_by_user_id
+      )
+      values
+        (${organisationId}, '2026-27', 1, ${`PR/2026-27/001-${workCode}`},
+         'advance', ${work.id}, ${payee.id}, 'Site travel', 'travel', '100.00',
+         ${`${organisationId}/proof/a.pdf`}, 'a.pdf', 'submitted', ${userId}),
+        (${organisationId}, '2026-27', 2, ${`PR/2026-27/002-${workCode}`},
+         'reimbursement', null, ${payee.id}, 'Inspection travel', 'travel',
+         '200.00', ${`${organisationId}/proof/b.pdf`}, 'b.pdf', 'submitted',
+         ${userId})
+    `;
+    const [vendorInvoice] = await tx<{ id: string }[]>`
+      insert into vendor_invoices (
+        organisation_id, vendor_contact_id, invoice_number, invoice_date,
+        credit_days, amount, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${payee.id}, ${`VI-${workCode}`}, '2026-02-01', 30,
+        '500.00', ${userId}
+      )
+      returning id
+    `;
+    if (!vendorInvoice) throw new Error('seed vendor invoice insert returned no row');
+    await tx`
+      insert into vendor_payments (
+        organisation_id, vendor_invoice_id, paid_on, gross_amount,
+        tds_amount, net_amount, tds_section, tds_rate,
+        tds_taxable_amount, tds_taxable_basis, reference,
+        recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${vendorInvoice.id}, '2026-02-10', '100.00',
+        '2.00', '98.00', '194C', '2.00', '100.00', 'payment',
+        ${`VP-${workCode}`}, ${userId}
+      )
     `;
 
     // 0045 normalized merge provenance: a live target plus one selected

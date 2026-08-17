@@ -52,6 +52,7 @@ import { registerReceivedRailwayBillRoutes } from './routes/received-railway-bil
 import { registerBillPaymentRoutes } from './routes/bill-payments.js';
 import { registerCompanyDocumentRoutes } from './routes/company-documents.js';
 import { registerInspectionRoutes } from './routes/inspections.js';
+import { registerPaymentsWorkspaceRoutes } from './routes/payments.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -912,6 +913,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerBillPaymentRoutes(app, authInstance, database);
     registerCompanyDocumentRoutes(app, authInstance, database, storage, scanner);
     registerInspectionRoutes(app, authInstance, database, storage, scanner);
+    registerPaymentsWorkspaceRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerContractSourceRoutes(

@@ -258,6 +258,7 @@ describe('OperationsWorkspace mobile shell', () => {
     ).toEqual([
       'Dashboard',
       'Works',
+      'Payments',
       'Challans',
       'Invoices',
       'Quotations',
@@ -300,6 +301,7 @@ describe('OperationsWorkspace mobile shell', () => {
     ).toEqual([
       ['Dashboard', '#/'],
       ['Works', '#/works'],
+      ['Payments', '#/payments'],
       ['Challans', '#/challans'],
       ['Invoices', '#/invoices'],
       ['Quotations', '#/quotations'],

@@ -100,6 +100,88 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByRole('table')).toBeVisible();
   await expectNoAxeViolations(page, 'members workspace');
 
+  /* The Payments workspace (0080), both registers. Populated rather than
+     empty: an empty register scans the EmptyState and proves nothing
+     about the row, the status lamp or the action buttons, which is where
+     a contrast or target-size failure would actually be. */
+  await page.route('**/api/payment-requests', (route) =>
+    route.fulfill(
+      json({
+        requests: [
+          {
+            id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+            requestNumber: 'PR/2026-27/018',
+            kind: 'advance',
+            status: 'paid',
+            workId: null,
+            workCode: 'PL-281',
+            beneficiaryContactId: 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb',
+            beneficiaryName: 'S. Kulkarni',
+            purpose: 'Site travel and lodging for commissioning',
+            category: 'travel',
+            amount: '42500.00',
+            proofFilename: 'Travel-estimate.pdf',
+            billsDue: true,
+            billsRecordedAt: null,
+            requestedByUserId: 'user-b',
+            decidedAt: '2026-08-12T10:00:00.000Z',
+            decisionNote: null,
+            paidAt: '2026-08-12T11:00:00.000Z',
+            paidReference: 'UTR882104',
+            createdAt: '2026-08-12T09:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
+  await page.route('**/api/vendor-invoices', (route) =>
+    route.fulfill(
+      json({
+        invoices: [
+          {
+            id: 'cccccccc-1111-4111-8111-cccccccccccc',
+            vendorContactId: 'dddddddd-1111-4111-8111-dddddddddddd',
+            vendorName: 'Metro Industrial Supplies',
+            invoiceNumber: 'MIS/442/26',
+            invoiceDate: '2026-07-02',
+            creditDays: 30,
+            dueOn: '2026-08-01',
+            amount: '186400.00',
+            workId: null,
+            tdsSection: '194C',
+            tdsPayeeClass: 'other',
+            paidTotal: '0',
+            outstandingAmount: '186400.00',
+            cancelledAt: null,
+            cancelReason: null,
+            payments: [],
+            createdAt: '2026-07-02T00:00:00.000Z',
+          },
+        ],
+        totalOutstanding: '186400.00',
+        overdueCount: 1,
+      }),
+    ),
+  );
+  await page.getByRole('link', { name: 'Payments' }).click();
+  await expect(page.getByRole('heading', { name: 'Payments' })).toBeVisible();
+  await expect(page.getByText('New advances are blocked')).toBeVisible();
+  await expectNoAxeViolations(page, 'payments employee register');
+
+  /* The register strip is a navigation, not a tablist — each register is
+     its own address — so the open one carries aria-current="page", the
+     same shape the Masters category strip above is checked for. */
+  const registers = page.getByRole('navigation', { name: 'Payments registers' });
+  await registers.getByRole('link', { name: 'Vendors' }).click();
+  await expect(registers.getByRole('link', { name: 'Vendors' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(page.getByText('Metro Industrial Supplies')).toBeVisible();
+  await expectNoAxeViolations(page, 'payments vendor ledger');
+  await page.getByRole('link', { name: 'Members' }).click();
+  await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
+
   await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(page.getByLabel('Company name')).toHaveValue('Sharma Constructions');
