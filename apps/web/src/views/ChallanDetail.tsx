@@ -8,6 +8,7 @@ import type {
   Serial,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { formatInr, formatRate, formatTimestampDate, todayIso } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
 import { formatMinorUnits, parseDecimalMinorUnits } from '../loa-payload.js';
@@ -249,6 +250,10 @@ export function ChallanDetail({
   const [notices, setNotices] = useState<readonly CorrectionNotice[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Where a refusal is actually fixed, when it names another screen — the
+   * inspection gate's remedy is the Work's Inspection clause tab, and a
+   * clerk told only "not certified" has nowhere to go. */
+  const [actionWayfind, setActionWayfind] = useState<Wayfind | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
@@ -342,6 +347,7 @@ export function ChallanDetail({
   async function act(work: () => Promise<ChallanDetailResponse | null>, done: string) {
     setPending(true);
     setActionError(null);
+    setActionWayfind(null);
     setNotice(null);
     try {
       const updated = await work();
@@ -352,6 +358,9 @@ export function ChallanDetail({
         cause instanceof RequestFailedError
           ? cause.message
           : 'The action failed; nothing was changed.',
+      );
+      setActionWayfind(
+        wayfindingOf(cause, challan?.workId == null ? {} : { workId: challan.workId }),
       );
     } finally {
       setPending(false);
@@ -481,7 +490,17 @@ export function ChallanDetail({
       </DataTable>
 
       {notice !== null && <FormNotice>{notice}</FormNotice>}
-      {actionError !== null && <FormError>{actionError}</FormError>}
+      {actionError !== null && (
+        <FormError>
+          {actionError}
+          {actionWayfind !== null && (
+            <>
+              {' '}
+              <a href={actionWayfind.hash}>{actionWayfind.label}</a>
+            </>
+          )}
+        </FormError>
+      )}
 
       {/* Said beside the Issue button, because that is where the refusal
           used to arrive from: the server holds the issue until every

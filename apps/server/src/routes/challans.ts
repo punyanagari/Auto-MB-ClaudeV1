@@ -2315,6 +2315,86 @@ export function registerChallanRoutes(
           }
         }
 
+        // THE INSPECTION DISPATCH GATE (migration 0082).
+        //
+        // Placed here, immediately after the delivery ceiling and before
+        // the serial check, because it is the same kind of rule: a
+        // per-item cap on what this challan may carry, configured on the
+        // Work, evaluated once at the transition that makes the despatch
+        // real. It is the same arithmetic as the ceiling above, over a
+        // different allowance.
+        //
+        // LOCK ORDER, and why the FOR SHARE below is here. Withdrawing a
+        // certificate is what makes a passing item fail, and it is a
+        // different transaction. Without a lock the two interleave: this
+        // read sees a live call, the withdrawal commits, and the challan
+        // issues under a certificate that no longer authorises it. So the
+        // issue takes a SHARE lock on the calls it is about to rely on,
+        // after the works and work_items locks it already holds — the
+        // order works -> work_items -> inspection_calls, which is the
+        // order the clause-mapping and cancel paths take too, so no pair
+        // of them can deadlock. SHARE and not UPDATE because concurrent
+        // issues may rely on the same certificate; only a withdrawal
+        // (which takes the row FOR UPDATE) has to wait.
+        await tx`
+            select ic.id
+            from inspection_calls ic
+            where ic.status = 'closed'
+              and exists (
+                select 1
+                from inspection_call_items ici
+                join delivery_challan_items dci
+                  on dci.work_item_id = ici.work_item_id
+                join inspection_clauses c
+                  on c.work_item_id = ici.work_item_id
+                where ici.inspection_call_id = ic.id
+                  and dci.delivery_challan_id = ${id}
+                  and dci.work_item_id is not null
+                  and c.gates_dispatch
+                  and c.agency = ic.agency
+              )
+            order by ic.id
+            for share
+          `;
+
+        // The refusal itself. One SQL function
+        // (`app_private.inspection_dispatch_shortfall`, migration 0082)
+        // answers it, and the backstop trigger on this table calls the
+        // SAME function — so the sentence an operator reads and the
+        // refusal the database raises cannot disagree about the numbers.
+        //
+        // "Live" is decided against the ORGANISATION's today, not UTC's:
+        // at 04:00 IST those are different days, and the difference
+        // decides whether a lorry may leave.
+        const uninspected = await tx<
+          {
+            item_number: string;
+            agency: string;
+            despatched: string;
+            certified: string;
+          }[]
+        >`
+            select item_number, agency,
+                   despatched::text as despatched,
+                   certified::text as certified
+            from app_private.inspection_dispatch_shortfall(
+              ${id},
+              (select app_private.organisation_today(${organisationId}))
+            )
+          `;
+        if (uninspected.length > 0) {
+          throw httpError(
+            409,
+            'INSPECTION_CERTIFICATE_MISSING',
+            `These items would be despatched beyond the quantity a live inspection certificate covers: ${uninspected
+              .map(
+                (row) =>
+                  `${row.item_number} (${row.agency}: ${row.certified} certified, ${row.despatched} despatched)`,
+              )
+              .join(', ')}.`,
+          );
+        }
+
         // requires_serials enforcement. The challan's work_items rows
         // are locked FOR UPDATE (no flag predicate) so a concurrent
         // flag toggle serialises with this check in both orders: a

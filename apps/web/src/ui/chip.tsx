@@ -74,12 +74,28 @@ const STATUS_SHAPE = 'h-6 rounded-md px-2 text-[11px] font-semibold capitalize';
  * instead of losing its chip. */
 export function StatusChip({
   status,
+  tone,
   children,
   className,
   ...props
-}: Omit<React.ComponentProps<typeof Badge>, 'variant'> & { readonly status: string }) {
+}: Omit<React.ComponentProps<typeof Badge>, 'variant'> & {
+  readonly status: string;
+  /** Overrides the shared map for a status whose meaning is local.
+   *
+   * The map above is a PRODUCT vocabulary: `cancelled` means the same
+   * destructive thing on every screen that renders it. A word that does
+   * not — `closed` is a finished, successful inspection call here and
+   * would be something else entirely on a register of closed accounts —
+   * must not be added to it, because the map has no idea which screen is
+   * asking. Such a screen names its own tone here instead. */
+  readonly tone?: React.ComponentProps<typeof Badge>['variant'];
+}) {
   return (
-    <Badge variant={toneOf(status)} className={cn(STATUS_SHAPE, className)} {...props}>
+    <Badge
+      variant={tone ?? toneOf(status)}
+      className={cn(STATUS_SHAPE, className)}
+      {...props}
+    >
       <span
         aria-hidden="true"
         className="mr-1.5 size-1.5 shrink-0 rounded-full bg-current opacity-70"

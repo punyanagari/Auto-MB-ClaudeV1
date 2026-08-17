@@ -8,6 +8,8 @@ import { AccountSecurity } from '../../src/views/AccountSecurity.js';
 import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
 import { Approvals } from '../../src/views/Approvals.js';
 import { CompanyDocuments } from '../../src/views/CompanyDocuments.js';
+import { Inspection } from '../../src/views/Inspection.js';
+import { WorkInspectionClause } from '../../src/views/WorkInspectionClause.js';
 import { CompletionExtensions } from '../../src/views/CompletionExtensions.js';
 import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
 import { IssueChallans } from '../../src/views/IssueChallans.js';
@@ -393,6 +395,32 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry railway bills/,
     empty: { text: /still\s+outstanding with the railway/ },
+  },
+  {
+    view: 'Inspection.tsx',
+    name: 'the inspection workspace',
+    loads: ['listInspectionCalls'],
+    render: (api) => (
+      <Inspection api={api} organisationId={ORG_ID} canRecord canModify canCancel />
+    ),
+    retry: /Retry inspection calls/,
+    empty: { text: /No RDSO inspection call has been raised/ },
+  },
+  {
+    view: 'WorkInspectionClause.tsx',
+    name: "the Work's inspection clause",
+    loads: ['getWorkInspectionConfig'],
+    render: (api) => (
+      <WorkInspectionClause
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify
+        canGate
+      />
+    ),
+    retry: /Retry the inspection clause/,
+    empty: { text: /nothing to map for\s+inspection/ },
   },
   {
     view: 'CompanyDocuments.tsx',

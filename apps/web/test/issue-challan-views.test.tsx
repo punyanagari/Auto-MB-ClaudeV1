@@ -270,6 +270,25 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadCompanyDocumentVersion: vi.fn(),
     archiveCompanyDocument: vi.fn(),
     downloadCompanyDocumentVersion: vi.fn(),
+    getWorkInspectionConfig: vi.fn().mockResolvedValue({
+      items: [],
+      checklists: {
+        RDSO: { inherited: true, fields: [] },
+        RITES: { inherited: true, fields: [] },
+      },
+    }),
+    saveInspectionClauses: vi.fn(),
+    saveInspectionChecklist: vi.fn(),
+    listInspectionCalls: vi
+      .fn()
+      .mockResolvedValue({ calls: [], awaitingCertificate: 0, nextCursor: null }),
+    createInspectionCall: vi.fn(),
+    receiveInspectionCallLetter: vi.fn(),
+    uploadInspectionEvidence: vi.fn(),
+    uploadInspectionCertificate: vi.fn(),
+    closeInspectionCall: vi.fn(),
+    cancelInspectionCall: vi.fn(),
+    downloadInspectionDocument: vi.fn(),
     listBudgetaryQuotations: vi.fn().mockResolvedValue([]),
     createBudgetaryQuotation: vi.fn(),
     getBudgetaryQuotation: vi.fn(),

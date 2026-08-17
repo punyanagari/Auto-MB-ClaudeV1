@@ -100,6 +100,32 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
+    // The inspection lifecycle (0082): the agency's inward call letter,
+    // a checklist paper, and the certificate the dispatch gate reads.
+    // Three addresses, the same gate as every other upload here.
+    key: 'POST /api/inspection-calls/:id/call-letter',
+    sourceFile: 'routes/inspections.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query:
+      '?filename=call-letter.pdf&agencyCallNumber=RDSO/CALL/1&receivedOn=2026-01-02',
+  },
+  {
+    key: 'POST /api/inspection-call-documents/:id/file',
+    sourceFile: 'routes/inspections.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=datasheet.pdf',
+  },
+  {
+    key: 'POST /api/inspection-calls/:id/certificate',
+    sourceFile: 'routes/inspections.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query:
+      '?filename=certificate.pdf&certificateNumber=IC/1&certificateDate=2026-01-05',
+  },
+  {
     key: 'POST /api/challans/:id/signed-copy',
     sourceFile: 'routes/challans.ts',
     format: 'pdf',

@@ -30,6 +30,11 @@ export const TIMELINE_ENTITY_TYPES = [
   // Book rests on it — a trail that omitted the bill would show a
   // measurement closing with no sign of what closed it.
   'received_railway_bills',
+  // The RDSO/RITES inspection call (0082). Raising it, receiving the
+  // agency's letter, certifying and withdrawing are acts on the Work's
+  // paper trail — and a despatch this Work could not make without the
+  // certificate is unexplainable from a trail that never mentions it.
+  'inspection_calls',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

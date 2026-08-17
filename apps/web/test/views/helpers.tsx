@@ -400,6 +400,27 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     archiveCompanyDocument: vi.fn<ApiClient['archiveCompanyDocument']>(),
     downloadCompanyDocumentVersion:
       vi.fn<ApiClient['downloadCompanyDocumentVersion']>(),
+    getWorkInspectionConfig: vi
+      .fn<ApiClient['getWorkInspectionConfig']>()
+      .mockResolvedValue({
+        items: [],
+        checklists: {
+          RDSO: { inherited: true, fields: [] },
+          RITES: { inherited: true, fields: [] },
+        },
+      }),
+    saveInspectionClauses: vi.fn<ApiClient['saveInspectionClauses']>(),
+    saveInspectionChecklist: vi.fn<ApiClient['saveInspectionChecklist']>(),
+    listInspectionCalls: vi
+      .fn<ApiClient['listInspectionCalls']>()
+      .mockResolvedValue({ calls: [], awaitingCertificate: 0, nextCursor: null }),
+    createInspectionCall: vi.fn<ApiClient['createInspectionCall']>(),
+    receiveInspectionCallLetter: vi.fn<ApiClient['receiveInspectionCallLetter']>(),
+    uploadInspectionEvidence: vi.fn<ApiClient['uploadInspectionEvidence']>(),
+    uploadInspectionCertificate: vi.fn<ApiClient['uploadInspectionCertificate']>(),
+    closeInspectionCall: vi.fn<ApiClient['closeInspectionCall']>(),
+    cancelInspectionCall: vi.fn<ApiClient['cancelInspectionCall']>(),
+    downloadInspectionDocument: vi.fn<ApiClient['downloadInspectionDocument']>(),
     listBudgetaryQuotations: vi
       .fn<ApiClient['listBudgetaryQuotations']>()
       .mockResolvedValue([]),

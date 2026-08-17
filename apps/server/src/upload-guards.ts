@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from 'node:crypto';
+import type { ObjectStorage } from '@auto-mb/documents';
 import { httpError } from './http.js';
 import type { MalwareScanner } from './malware-scan.js';
 import { recordUploadScanFailure } from './metrics.js';
@@ -171,4 +173,33 @@ export function assertProductionMalwareScanning(
   if (!isNonProduction && clamav === undefined) {
     throw new MalwareScanningUnconfiguredInProductionError();
   }
+}
+
+/**
+ * Writes accepted PDF bytes under a server-generated, tenant-prefixed key.
+ *
+ * Deliberately OUTSIDE the caller's transaction, exactly as `routes/loa.ts`
+ * does it: a failure after this point leaves an orphan object under a uuid
+ * nothing points at, which is inert, where the opposite ordering leaves a
+ * row promising bytes that are not there.
+ *
+ * The returned `id` is the same uuid the key carries, so a caller that
+ * wants its row and its object to share an identity can use it and one
+ * that does not can ignore it. `area` is one lowercase word because
+ * `assertSafeObjectKey` accepts `[a-z]+` for that segment and nothing else.
+ */
+export async function storePdfUpload(
+  storage: ObjectStorage,
+  organisationId: string,
+  area: string,
+  bytes: Buffer,
+): Promise<{ id: string; objectKey: string; sha256: string }> {
+  const id = randomUUID();
+  const objectKey = `${organisationId}/${area}/${id}.pdf`;
+  await storage.put(objectKey, bytes);
+  return {
+    id,
+    objectKey,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
 }

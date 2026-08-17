@@ -161,6 +161,22 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // workflow.
   INSTALLATION_EXCEEDS_DELIVERY:
     'Issue the Delivery Challan for the balance first; installation is only ever recorded against material already delivered.',
+  INSPECTION_DOCUMENT_NOT_FOUND:
+    'Open the call on the Inspection screen and upload the paper against its checklist row; a row with nothing attached has no file to open.',
+  INSPECTION_CALL_NOT_FOUND:
+    'Open the call from the Inspection screen; a withdrawn call keeps its record, but a link can outlive the Work it named.',
+  INSPECTION_DATE_INVALID:
+    'Enter the date the paper itself carries: a call letter is dated on or after the request it answers, and a certificate on or before the day its validity ends.',
+  INSPECTION_CERTIFICATE_MISSING:
+    "Raise and close an inspection call covering the outstanding quantity on the Inspection screen, or clear the item's dispatch gate on the Work's Inspection clause tab if the contract does not require one.",
+  INSPECTION_CALL_INCOMPLETE:
+    'Upload the outstanding mandatory documents and the inspection certificate on the call before closing it.',
+  INSPECTION_CALL_STATE_INVALID:
+    'Reload the call; a call moves request → call letter received → closed, and a cancelled or closed call takes no further changes.',
+  INSPECTION_CALL_CLOSED:
+    'Raise a fresh inspection call for the material; a closed or cancelled call is a finished record and is never reopened.',
+  INSPECTION_CLAUSE_INVALID:
+    'Pick RDSO or RITES for an item whose despatch is gated — consignee inspection happens after arrival, so a certificate for it can never exist before despatch.',
   SERIAL_BEFORE_DELIVERY:
     'Record the installation on or after the delivery date shown on the challan that carried the serial.',
   CHALLAN_HAS_EVIDENCE:

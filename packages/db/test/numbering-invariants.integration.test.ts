@@ -85,6 +85,14 @@ const COUNTER_TABLES = [
   },
   { table: 'issue_challan_counters', scope: 'work', refusal: 'issue_challan_counters' },
   {
+    // The inspection call sequence (0082). Per Work, like the challan
+    // counters beside it: a cancelled call keeps its number forever, so
+    // the counter must never wind back.
+    table: 'inspection_call_counters',
+    scope: 'work',
+    refusal: 'inspection_call_counters',
+  },
+  {
     table: 'measurement_book_counters',
     scope: 'work',
     refusal: 'measurement_book_counters',

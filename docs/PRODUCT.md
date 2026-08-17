@@ -977,6 +977,121 @@ the job parked and visible rather than silently run on their behalf; an
 administrator re-requests the reading under a live user. This is ADR-0011,
 and it is why there is no service account anywhere in the product.
 
+### 5.10 Inspection gates despatch
+
+Nothing manufactured for Indian Railways moves until somebody the railway
+trusts has looked at it. RDSO and RITES inspect at the vendor's premises
+against the specification the LOA cites, the agency issues a certificate,
+and the material despatches under that certificate. An item despatched
+without one is rejected at the consignee's gate and comes back at the
+contractor's cost.
+
+The product models this in three parts.
+
+**The clause** is what the contract requires of one schedule item: which
+agency inspects it (RDSO, RITES, or the consignee), at whose premises, in
+what quantity — and whether a live certificate is required before the item
+may go on a Delivery Challan. It is configured per Work, on the Work's
+Inspection clause tab.
+
+**The checklist** is what the agency demands: a named list of papers per
+agency, each compulsory or not. It exists at two scopes — the
+organisation's default, and a Work's own override — and a Work with no
+list of its own is held to the default. That fallback is not a
+convenience: without it every newly created Work would start with an empty
+checklist, and a close gate that demands nothing is a close gate that is
+not enforced. Either way the list is **snapshot** onto every call at the
+moment the call is raised, so editing it afterwards never changes what a
+call already in progress is being held to.
+
+**The call** is one inspection, and it is also the job card. It moves
+through four states and no others:
+
+- `requested` — the placing request has gone to the agency;
+- `scheduled` — the agency's inward call letter has come back, carrying
+  the agency's own number (typed, because the series is theirs);
+- `closed` — inspected, passed, every compulsory paper on file and the
+  certificate uploaded;
+- `cancelled` — withdrawn, with a reason.
+
+A call that did not pass is cancelled with a reason and the rectified
+material is offered again under a fresh call; there is no "failed" result,
+because a numbered record that terminated badly cancels here exactly as
+every other one does. Nor is there a separate "successful" field: the
+certificate IS the result, and a second field saying the same thing is a
+field that can disagree with the document. Calls are numbered per Work (`INS/<work code>/<n>`),
+gap-free, and a cancelled number is never reused.
+
+**The interlock.** An item whose clause says so cannot be despatched
+BEYOND THE QUANTITY a live certificate covers. The comparison is
+cumulative and per item:
+
+- **despatched** is this challan's line plus every issued challan's lines
+  for the item;
+- **certified** is the sum of the coverage quantities on every live call
+  for that item **from the clause's own agency** — a RITES certificate
+  does not answer an RDSO clause;
+- **live** is a call that is `closed` (which the schema makes mean
+  inspected and certified) whose validity window has not passed, measured
+  against the **organisation's** today rather than UTC's.
+
+Existence is not enough, and that is the point: a single call for 10 units
+must not release the despatch of 500. It is the same arithmetic shape as
+the delivery ceiling, over a different allowance, and it lives in one SQL
+function that both enforcement points call — the issue route, at the same
+altitude as the ceiling and under the same row locks, and a database
+trigger on the challan's transition to `issued`.
+
+The refusal is `INSPECTION_CERTIFICATE_MISSING`. It names each item, its
+agency, and both figures, and its remedy names both ways out — certify the
+outstanding quantity, or clear the item's dispatch gate.
+
+Two other paths ask the same question before they act. The **v1 importer**
+pre-flights it per challan and reports a named skip rather than abandoning
+the batch, because a legacy challan inspected under paperwork this product
+does not hold is a fact about the old system. And a **cancel-and-replace
+correction** asks it before it cancels the original: if the replacement
+could not be issued, cancelling first would leave the Work with no live
+challan for material that has already moved.
+
+Four properties of the interlock are load-bearing:
+
+- **It is off by default and it is off retroactively.** The gate is the
+  presence of a clause row carrying the flag, and the migration that
+  introduced the model creates no clause rows. Every Work that existed
+  before it can issue exactly the challans it could issue before it.
+- **Only an owner may move it**, on the same footing as the Work's
+  excess-delivery permission: both decide what despatch is allowed to
+  ignore. Mapping an agency to an item is ordinary clerical work and is
+  open to office members.
+- **A consignee-inspected item can never gate despatch.** The consignee
+  inspects after the material arrives, so its certificate could not exist
+  beforehand; the combination is refused when it is configured rather than
+  left to block every challan raised under it.
+- **Withdrawal and lapse both re-close the gate.** Cancelling a closed
+  call — which is how a withdrawn certificate is recorded — and a
+  certificate whose validity window has passed both stop authorising
+  despatch immediately, with nothing else having to change. Challans
+  already issued keep their numbers and their snapshots: an issued
+  document records what was despatched and is not a claim that is still
+  true. The withdrawal screen enumerates the despatches that went out
+  while the certificate was live, matched by item and date and labelled
+  advisory, because revoking a certificate is only actionable if somebody
+  can be told which lorries to chase.
+- **Only the agency named by the clause counts**, and remapping a gated
+  item to another agency is therefore an owner's act too: it discards
+  every certificate the gate was counting.
+
+Call letters, routine test reports, job-card evidence and certificates are
+stored as documents of the call they belong to, through the same hardened
+upload path as every other document in the product — magic-byte check,
+malware scan, tenant-prefixed object key, recorded digest. They are **not**
+company document library entries: the library is organisation-level by
+definition and exists so that one PAN copy serves every Work, whereas an
+inspection certificate is evidence about specific items of one contract.
+A call's evidence is replaceable while the call is open and frozen the
+moment it closes.
+
 ## 6. Data conventions
 
 - Calendar dates are stored as PostgreSQL `date` and represented as `YYYY-MM-DD` in APIs.
@@ -1025,6 +1140,11 @@ The current product also includes:
   and a three-signature verdict that gates measurement closure and payment
   (§5.4);
 - vendor contacts, purchase orders, and budgetary quotations;
+- the RDSO/RITES inspection lifecycle — per-item inspection clauses, the
+  per-Work document checklist, and calls carrying their inward call letter,
+  routine tests, job-card evidence and certificate — with the dispatch
+  interlock that refuses a Delivery Challan for an item the Work has
+  configured as inspection-gated and no live certificate covers (§5.10);
 - MB-backed and direct GST invoices with configurable numbering, exact GST
   split and whole-rupee rounding, immutable supplier/buyer/ship-to snapshots,
   explicit NIC locality and forward-charge confirmation, deterministic IRP

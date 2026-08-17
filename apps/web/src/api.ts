@@ -24,6 +24,13 @@ import type {
   CompanyDocument,
   CompanyDocumentCategory,
   CompanyDocumentListResponse,
+  CancelInspectionCallRequest,
+  CreateInspectionCallRequest,
+  InspectionCall,
+  InspectionCallListResponse,
+  SaveInspectionChecklistRequest,
+  SaveInspectionClausesRequest,
+  WorkInspectionConfig,
   ConfirmWorkRequest,
   ContractSourceContext,
   ContractSourceDocumentKind,
@@ -1182,6 +1189,73 @@ export interface ApiClient {
     organisationId: string,
     versionId: string,
   ) => Promise<Blob>;
+  /** The inspection lifecycle (migration 0082). The clause config is
+   * per Work; the calls register is cross-Work and work-scope filtered by
+   * the server. Every document is a PDF body with its facts on the
+   * querystring, the shape every upload here uses. */
+  readonly getWorkInspectionConfig: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkInspectionConfig>;
+  readonly saveInspectionClauses: (
+    organisationId: string,
+    workId: string,
+    body: SaveInspectionClausesRequest,
+  ) => Promise<WorkInspectionConfig>;
+  readonly saveInspectionChecklist: (
+    organisationId: string,
+    workId: string,
+    body: SaveInspectionChecklistRequest,
+  ) => Promise<WorkInspectionConfig>;
+  readonly listInspectionCalls: (
+    organisationId: string,
+    page?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<InspectionCallListResponse>;
+  readonly createInspectionCall: (
+    organisationId: string,
+    workId: string,
+    body: CreateInspectionCallRequest,
+  ) => Promise<InspectionCall>;
+  readonly receiveInspectionCallLetter: (
+    organisationId: string,
+    callId: string,
+    file: Blob,
+    details: {
+      readonly filename: string;
+      readonly agencyCallNumber: string;
+      readonly receivedOn: string;
+    },
+  ) => Promise<InspectionCall>;
+  readonly uploadInspectionEvidence: (
+    organisationId: string,
+    documentId: string,
+    file: Blob,
+    details: { readonly filename: string },
+  ) => Promise<InspectionCall>;
+  readonly uploadInspectionCertificate: (
+    organisationId: string,
+    callId: string,
+    file: Blob,
+    details: {
+      readonly filename: string;
+      readonly certificateNumber: string;
+      readonly certificateDate: string;
+      readonly validUntil?: string;
+    },
+  ) => Promise<InspectionCall>;
+  readonly closeInspectionCall: (
+    organisationId: string,
+    callId: string,
+  ) => Promise<InspectionCall>;
+  readonly cancelInspectionCall: (
+    organisationId: string,
+    callId: string,
+    body: CancelInspectionCallRequest,
+  ) => Promise<InspectionCall>;
+  readonly downloadInspectionDocument: (
+    organisationId: string,
+    documentId: string,
+  ) => Promise<Blob>;
   /** A budgetary quotation is a priced offer OUTWARD and carries no
    * Work: draft -> issued (numbered) -> expired/converted/withdrawn via
    * the one outcome transition. */
@@ -1695,10 +1769,11 @@ async function parseError(response: Response): Promise<RequestFailedError> {
  * carry the selected organisation in the x-organisation-id header, which
  * the server re-validates against the database membership floor.
  */
-/** The company-document upload metadata as a querystring. Optional dates
- * are omitted rather than sent empty: the schema takes a real calendar
- * date or nothing, and `?expiresOn=` is neither. */
-function companyDocumentQuery(details: Record<string, string | undefined>): string {
+/** Upload metadata as a querystring. Optional values are omitted rather
+ * than sent empty: the schemas take a real value or nothing, and
+ * `?expiresOn=` is neither. Shared by the company document library and the
+ * inspection uploads, which encode their metadata the same way. */
+function uploadQuery(details: Record<string, string | undefined>): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(details)) {
     if (value !== undefined && value !== '') query.set(key, value);
@@ -1766,6 +1841,28 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     });
     if (!response.ok) throw await parseError(response);
     return (await response.json()) as CompanyDocument;
+  }
+
+  /** The same send for every inspection upload — the inward call letter,
+   * a checklist paper, the certificate — because they differ only in the
+   * facts already encoded in the path, and every one of them answers the
+   * refreshed call. */
+  async function uploadInspectionPdf(
+    path: string,
+    organisationId: string,
+    file: Blob,
+  ): Promise<InspectionCall> {
+    const response = await fetchImpl(path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/pdf',
+        'x-organisation-id': organisationId,
+      },
+      body: file,
+    });
+    if (!response.ok) throw await parseError(response);
+    return (await response.json()) as InspectionCall;
   }
 
   return {
@@ -3138,14 +3235,14 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     },
     async createCompanyDocument(organisationId, file, details) {
       return uploadCompanyDocumentPdf(
-        `/api/company-documents?${companyDocumentQuery(details)}`,
+        `/api/company-documents?${uploadQuery(details)}`,
         organisationId,
         file,
       );
     },
     async uploadCompanyDocumentVersion(organisationId, documentId, file, details) {
       return uploadCompanyDocumentPdf(
-        `/api/company-documents/${documentId}/versions?${companyDocumentQuery(details)}`,
+        `/api/company-documents/${documentId}/versions?${uploadQuery(details)}`,
         organisationId,
         file,
       );
@@ -3159,6 +3256,86 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     async downloadCompanyDocumentVersion(organisationId, versionId) {
       const response = await fetchImpl(
         `/api/company-document-versions/${versionId}/file`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async getWorkInspectionConfig(organisationId, workId) {
+      return request<WorkInspectionConfig>(`/api/works/${workId}/inspection-config`, {
+        organisationId,
+      });
+    },
+    async saveInspectionClauses(organisationId, workId, body) {
+      return request<WorkInspectionConfig>(`/api/works/${workId}/inspection-clauses`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async saveInspectionChecklist(organisationId, workId, body) {
+      return request<WorkInspectionConfig>(
+        `/api/works/${workId}/inspection-checklist`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async listInspectionCalls(organisationId, page = {}) {
+      const query = uploadQuery({
+        limit: page.limit === undefined ? undefined : String(page.limit),
+        cursor: page.cursor,
+      });
+      return request<InspectionCallListResponse>(
+        query === '' ? '/api/inspection-calls' : `/api/inspection-calls?${query}`,
+        { organisationId },
+      );
+    },
+    async createInspectionCall(organisationId, workId, body) {
+      return request<InspectionCall>(`/api/works/${workId}/inspection-calls`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async receiveInspectionCallLetter(organisationId, callId, file, details) {
+      return uploadInspectionPdf(
+        `/api/inspection-calls/${callId}/call-letter?${uploadQuery(details)}`,
+        organisationId,
+        file,
+      );
+    },
+    async uploadInspectionEvidence(organisationId, documentId, file, details) {
+      return uploadInspectionPdf(
+        `/api/inspection-call-documents/${documentId}/file?${uploadQuery(details)}`,
+        organisationId,
+        file,
+      );
+    },
+    async uploadInspectionCertificate(organisationId, callId, file, details) {
+      return uploadInspectionPdf(
+        `/api/inspection-calls/${callId}/certificate?${uploadQuery(details)}`,
+        organisationId,
+        file,
+      );
+    },
+    async closeInspectionCall(organisationId, callId) {
+      return request<InspectionCall>(`/api/inspection-calls/${callId}/close`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelInspectionCall(organisationId, callId, body) {
+      return request<InspectionCall>(`/api/inspection-calls/${callId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async downloadInspectionDocument(organisationId, documentId) {
+      const response = await fetchImpl(
+        `/api/inspection-call-documents/${documentId}/file`,
         {
           credentials: 'same-origin',
           headers: { 'x-organisation-id': organisationId },

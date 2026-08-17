@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 168;
+const TRIGGER_CENSUS = 176;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -717,5 +717,145 @@ describe('tenant migration contract', () => {
         'SET search_path = pg_catalog, public',
       );
     }
+  });
+
+  it('binds the inspection lifecycle in 0082', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0082_inspection_lifecycle.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // THE NO-RETROACTIVE-BLOCKING GUARANTEE. The dispatch gate is the
+    // ABSENCE of a clause row plus a column that defaults false, and this
+    // migration writes no clause rows at all. A backfill here would flip
+    // behaviour on live data, so its absence is asserted rather than
+    // assumed.
+    expect(sql).toContain('gates_dispatch boolean NOT NULL DEFAULT false');
+    expect(sql).not.toMatch(/INSERT INTO inspection_clauses/i);
+    expect(sql).not.toMatch(/UPDATE\s+works\s+SET/i);
+
+    // A consignee-inspected item can never gate despatch.
+    expect(sql).toContain('inspection_clauses_consignee_never_gates_check');
+    expect(sql).toMatch(/agency <> 'consignee' OR gates_dispatch = false/);
+
+    // States and agencies are CHECKed text, not enum types.
+    expect(sql).toContain(
+      "agency text NOT NULL CHECK (agency IN ('RDSO', 'RITES', 'consignee'))",
+    );
+    expect(sql).toMatch(
+      /status IN \('requested', 'scheduled', 'closed', 'cancelled'\)/,
+    );
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // THE GATE IS QUANTITATIVE. One function, summing certified coverage
+    // per item and comparing it against cumulative despatch — existence
+    // would let one call for 10 release 500. Both enforcement points call
+    // this same function, which is what stops the two drifting.
+    expect(sql).toContain('CREATE FUNCTION app_private.inspection_dispatch_shortfall(');
+    expect(sql).toMatch(/SELECT sum\(ici\.quantity\) AS certified/);
+    expect(sql).toMatch(/moved\.despatched > coalesce\(cover\.certified, 0\)/);
+    // …and it matches the clause's OWN agency and the call's own Work.
+    expect(sql).toContain('AND ic.agency = c.agency');
+    expect(sql).toContain('AND ici.work_id = c.work_id');
+
+    // Liveness and "today" are each defined once, and today is the
+    // ORGANISATION's, not UTC's.
+    expect(sql).toContain('CREATE FUNCTION app_private.organisation_today(');
+    expect(sql).toContain('CREATE FUNCTION app_private.inspection_certificate_live(');
+    expect(sql).toMatch(/\(now\(\) AT TIME ZONE o\.timezone\)::date/);
+
+    // Every trigger function pins its search_path.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(6);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+
+    // The INSERT doors are shut: a row cannot be born in a state the
+    // transitions would never have reached, and a challan cannot be
+    // inserted straight into `issued` past the gate.
+    expect(sql).toContain(
+      'CREATE TRIGGER inspection_calls_guard_transition\nBEFORE INSERT OR UPDATE ON inspection_calls',
+    );
+    expect(sql).toMatch(/an inspection call is created as requested, not as/);
+    expect(sql).toContain(
+      'CREATE TRIGGER delivery_challans_guard_inspection_gate\nBEFORE INSERT OR UPDATE ON delivery_challans',
+    );
+
+    // Guards sort alphabetically before the touch trigger, so a refused
+    // write raises before updated_at moves (the 0003 ordering note).
+    expect(
+      sql.indexOf('CREATE TRIGGER inspection_calls_guard_transition'),
+    ).toBeLessThan(sql.indexOf('CREATE TRIGGER inspection_calls_touch_updated_at'));
+
+    // Every RAISE carries a named SQLSTATE from the 23C block, so the
+    // route can map it to a code instead of surfacing a 500.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(8);
+    expect(sql.match(/USING ERRCODE = '23C0\d'/g)?.length).toBe(raises.length);
+
+    // Numbering is a counter, not max()+1 under a works lock.
+    expect(sql).toContain('CREATE TABLE inspection_call_counters');
+    expect(sql).toContain('UNIQUE (organisation_id, work_id, sequence_number)');
+
+    // Coverage rows prove item and call belong to ONE Work.
+    expect(sql).toMatch(
+      /FOREIGN KEY \(organisation_id, inspection_call_id, work_id\)\s+REFERENCES inspection_calls\(organisation_id, id, work_id\)/,
+    );
+    expect(sql).toMatch(
+      /FOREIGN KEY \(organisation_id, work_item_id, work_id\)\s+REFERENCES work_items\(organisation_id, id, work_id\)/,
+    );
+
+    // Legal dates are date-only, ordered, and the validity window is
+    // bounded so a mistyped year cannot unlock an item forever.
+    expect(sql).toContain('requested_on date NOT NULL');
+    expect(sql).toContain('inspection_calls_date_order_check');
+    expect(sql).toMatch(
+      /certificate_valid_until <= certificate_date \+ INTERVAL '5 years'/,
+    );
+
+    // The checklist has an organisation-default scope, which is what
+    // stops a new Work starting with an empty one.
+    expect(sql).toContain('inspection_checklist_fields_default_label_unique');
+
+    // No result column and no media_type: the certificate is the result,
+    // and the upload path admits one format and proves it from the bytes.
+    expect(sql).not.toMatch(/\bresult text\b/);
+    expect(sql).not.toMatch(/^\s*media_type\b/m);
+
+    // The object key carries the tenant prefix here as well as in
+    // packages/documents/src/storage.ts, and the file is all-or-nothing.
+    expect(sql).toContain('inspection_call_documents_object_key_tenant_prefix_check');
+    expect(sql).toContain('inspection_call_documents_file_shape_check');
+
+    // One inward letter and one certificate per call.
+    expect(sql).toContain('inspection_call_documents_one_call_letter');
+    expect(sql).toContain('inspection_call_documents_one_certificate');
+
+    // Every policy arrives in the ADR-0010 InitPlan shape, and every
+    // table forces RLS on its owner too.
+    for (const table of [
+      'inspection_clauses',
+      'inspection_checklist_fields',
+      'inspection_calls',
+      'inspection_call_counters',
+      'inspection_call_items',
+      'inspection_call_documents',
+    ]) {
+      expect(sql).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    }
+
+    // A call is correspondence with a government agency and a challan may
+    // rest on its certificate: it cancels with a reason and stays.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON inspection_calls TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('DELETE ON inspection_calls');
+    expect(sql).not.toContain('DELETE ON inspection_call_documents');
   });
 });

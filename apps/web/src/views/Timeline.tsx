@@ -40,6 +40,19 @@ const ACTION_LABELS: Record<string, string> = {
   'received_railway_bill.recorded': 'Railway bill recorded',
   'received_railway_bill.discarded': 'Railway bill discarded',
   'measurement_book.closed': 'Measurement closed by railway bill',
+  // The inspection lifecycle (0082). `inspection.clauses_saved` and
+  // `inspection.checklist_saved` are filed against the WORK, not the call
+  // — they are configuration of the contract, and there is no call yet to
+  // hang them on — so the Timeline's own filter lists them under Works
+  // while the six call events list under Inspection calls.
+  'inspection.clauses_saved': 'Inspection clause mapping saved',
+  'inspection.checklist_saved': 'Inspection checklist saved',
+  'inspection_call.raised': 'Inspection call raised',
+  'inspection_call.letter_received': 'Inward call letter received',
+  'inspection_call.document_attached': 'Inspection document attached',
+  'inspection_call.certificate_recorded': 'Inspection certificate recorded',
+  'inspection_call.closed': 'Inspection call closed',
+  'inspection_call.cancelled': 'Inspection certificate withdrawn',
   'bill_payment.recorded': 'Payment received',
   'bill_payment.voided': 'Payment withdrawn',
 };
@@ -96,6 +109,7 @@ const ENTITY_FILTERS = [
   { value: 'correction_notices', label: 'Correction notices' },
   { value: 'measurement_books', label: 'Measurement books' },
   { value: 'received_railway_bills', label: 'Railway bills' },
+  { value: 'inspection_calls', label: 'Inspection calls' },
   { value: 'work_items', label: 'Items' },
   { value: 'payment_matrices', label: 'Payment matrix' },
   { value: 'pac_certificates', label: 'PAC certificates' },
