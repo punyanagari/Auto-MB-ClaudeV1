@@ -180,7 +180,7 @@ const FEATURES = [
     change: 'Statutory reporting authority',
   },
   {
-    /* The payments authority (migration 0078): who may approve an
+    /* The payments authority (migration 0080): who may approve an
        employee's advance or reimbursement, and who may record and pay a
        vendor invoice. Granted on top of issue/cancel, never inherited —
        sending money out is not the same act as issuing a document. */

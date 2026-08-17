@@ -98,6 +98,8 @@ interface ContactRow {
   bank_ifsc: string | null;
   bank_branch: string | null;
   bank_account_type: string | null;
+  is_employee: boolean;
+  pan: string | null;
   active: boolean;
   created_at: Date;
 }
@@ -124,6 +126,8 @@ function toContact(row: ContactRow): Contact {
     bankIfsc: row.bank_ifsc,
     bankBranch: row.bank_branch,
     bankAccountType: row.bank_account_type,
+    isEmployee: row.is_employee,
+    pan: row.pan,
     active: row.active,
     createdAt: row.created_at.toISOString(),
   };
@@ -134,6 +138,7 @@ const CONTACT_COLUMNS = `
   state_code, locality, division_code, is_consignee, is_vendor, is_client,
   bank_account_holder, bank_name, bank_account_number, bank_ifsc, bank_branch,
   bank_account_type, active, created_at
+  is_employee, pan, active, created_at
 `;
 
 // GSTIN, email, IFSC and account-number shape all live in
@@ -550,6 +555,9 @@ export function registerMasterRoutes(
         ...(isClient ? ['client'] : []),
       ];
       const gstin = normaliseGstin(body.gstin);
+      // Uppercased like the GSTIN: an operator types a PAN either way,
+      // and the CHECK constraint only accepts upper case.
+      const pan = body.pan?.trim().toUpperCase() ?? null;
       const email = normaliseEmail(body.email);
       const bank = normaliseContactBankDetails(body);
       const locality = body.locality?.trim() ?? null;
@@ -568,6 +576,7 @@ export function registerMasterRoutes(
               is_vendor, is_client, bank_account_holder, bank_name,
               bank_account_number, bank_ifsc, bank_branch, bank_account_type,
               created_by_user_id
+              is_vendor, is_client, is_employee, pan, created_by_user_id
             )
             values (
               ${organisationId}, ${body.designation},
@@ -578,6 +587,7 @@ export function registerMasterRoutes(
               ${isConsignee}, ${isVendor}, ${isClient},
               ${bank.holder}, ${bank.bankName}, ${bank.accountNumber},
               ${bank.ifsc}, ${bank.branch}, ${bank.accountType},
+              ${body.isEmployee ?? false}, ${pan},
               ${user.id}
             )
             returning ${tx.unsafe(CONTACT_COLUMNS)}
@@ -622,6 +632,9 @@ export function registerMasterRoutes(
       const { id } = request.params;
       const body = request.body;
       const gstin = normaliseGstin(body.gstin);
+      // Uppercased like the GSTIN: an operator types a PAN either way,
+      // and the CHECK constraint only accepts upper case.
+      const pan = body.pan?.trim().toUpperCase() ?? null;
       const email = normaliseEmail(body.email);
       const bank = normaliseContactBankDetails(body);
       const locality = body.locality?.trim() ?? null;
@@ -671,6 +684,8 @@ export function registerMasterRoutes(
               bank_ifsc = ${bank.ifsc},
               bank_branch = ${bank.branch},
               bank_account_type = ${bank.accountType}
+              is_employee = coalesce(${body.isEmployee ?? null}, is_employee),
+              pan = ${pan}
           where id = ${id}
           returning ${tx.unsafe(CONTACT_COLUMNS)}
         `.catch((error: unknown) => {
@@ -772,8 +787,8 @@ export function registerMasterRoutes(
             select c.id, c.designation, c.contact_person, c.address, c.phone,
                    c.email, c.gstin, c.pincode, c.state_code, c.locality,
                    c.division_code,
-                   c.is_consignee, c.is_vendor, c.is_client, c.active,
-                   c.created_at
+                   c.is_consignee, c.is_vendor, c.is_client, c.is_employee,
+                   c.pan, c.active, c.created_at
             from work_consignees wc
             join contacts c on c.organisation_id = wc.organisation_id
               and c.id = wc.contact_id

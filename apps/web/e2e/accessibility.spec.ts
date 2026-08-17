@@ -100,7 +100,7 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByRole('table')).toBeVisible();
   await expectNoAxeViolations(page, 'members workspace');
 
-  /* The Payments workspace (0078), both registers. Populated rather than
+  /* The Payments workspace (0080), both registers. Populated rather than
      empty: an empty register scans the EmptyState and proves nothing
      about the row, the status lamp or the action buttons, which is where
      a contrast or target-size failure would actually be. */

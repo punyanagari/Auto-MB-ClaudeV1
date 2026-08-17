@@ -1,7 +1,7 @@
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '5min';
 
--- Migration 0078: the payments workspace — money going OUT.
+-- Migration 0080: the payments workspace — money going OUT.
 --
 -- Everything the product has modelled about money until now is money
 -- coming IN: a prepared bill, the railway's On-Account Bill that settles
@@ -67,6 +67,38 @@ COMMENT ON COLUMN contacts.is_employee IS
 CREATE INDEX contacts_org_employee_idx
   ON contacts (organisation_id, lower(designation))
   WHERE active AND is_employee;
+
+-- ── The payee's PAN, as a column rather than a derivation ────────────
+--
+-- Tax deducted at source needs the payee's PAN, because section 206AA
+-- floors the rate at 20% when none has been furnished. The first cut of
+-- this pack had no column and read characters 3-12 of the GSTIN, which
+-- is where a registered party's PAN genuinely lives — and that is a real
+-- over-deduction, not a cosmetic shortcut. An unregistered vendor has no
+-- GSTIN and therefore no derivable PAN, so a small labour contractor who
+-- HAS furnished a PAN on paper was deducted at 20% instead of the
+-- ordinary 1-2% under 194C. Money withheld from the vendor who can least
+-- afford it.
+--
+-- PAN presence is now one authoritative fact instead of a derivation.
+
+ALTER TABLE contacts
+  ADD COLUMN pan text CHECK (pan IS NULL OR pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$');
+
+COMMENT ON COLUMN contacts.pan IS
+  'The party''s Permanent Account Number. Decides whether section 206AA''s 20% floor applies to a vendor payment. Backfilled from the GSTIN, whose characters 3-12 are the holder''s PAN, so no deduction made before this migration changes.';
+
+-- The backfill states exactly what the route already derived, so every
+-- deduction recorded before this migration would be recomputed
+-- identically after it. The regex is checked BEFORE substring rather
+-- than after: `contacts.gstin` accepts a 15-character deductor GSTIN
+-- ending in 'D' as well as a standard one, and the middle ten of a
+-- malformed or deductor GSTIN need not be a PAN. A row that would fail
+-- the CHECK is left NULL instead of failing the migration.
+UPDATE contacts
+SET pan = substring(gstin from 3 for 10)
+WHERE gstin IS NOT NULL
+  AND substring(gstin from 3 for 10) ~ '^[A-Z]{5}[0-9]{4}[A-Z]$';
 
 -- ── The authority that gates the whole module ────────────────────────
 --

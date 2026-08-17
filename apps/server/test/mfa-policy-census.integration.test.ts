@@ -214,7 +214,7 @@ describe('MFA authority census', () => {
     expect(Object.keys(MFA_REQUIRING_AUTHORITIES).sort()).toEqual([
       'cancel',
       'issue',
-      // The payments authority (migration 0078) moves money out of the
+      // The payments authority (migration 0080) moves money out of the
       // organisation's bank, so it joins the wall rather than sitting
       // beside it.
       'payments',

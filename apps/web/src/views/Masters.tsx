@@ -549,6 +549,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     const phone = optional('phone');
     const email = optional('email');
     const gstin = optional('gstin');
+    const pan = optional('pan');
     const pincode = optional('pincode');
     const stateCode = optional('stateCode');
     const locality = optional('locality');
@@ -578,6 +579,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         ...(phone !== undefined ? { phone } : {}),
         ...(email !== undefined ? { email } : {}),
         ...(gstin !== undefined ? { gstin } : {}),
+        ...(pan !== undefined ? { pan: pan.toUpperCase() } : {}),
         ...(pincode !== undefined ? { pincode } : {}),
         ...(stateCode !== undefined ? { stateCode } : {}),
         ...(locality !== undefined ? { locality } : {}),
@@ -774,6 +776,21 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                 />
                 <p className="text-muted-foreground" id="contact-gstin-hint">
                   Railway units are TDS deductors — GSTINs ending in D are accepted.
+                </p>
+              </Field>
+              <Field>
+                <label htmlFor="contact-pan">PAN (optional)</label>
+                <input
+                  id="contact-pan"
+                  name="pan"
+                  minLength={10}
+                  maxLength={10}
+                  defaultValue={editing?.pan ?? ''}
+                  aria-describedby="contact-pan-hint"
+                />
+                <p className="text-muted-foreground" id="contact-pan-hint">
+                  Needed on a vendor: without a PAN, tax is deducted at 20% under
+                  section 206AA instead of the ordinary rate.
                 </p>
               </Field>
               <Field>

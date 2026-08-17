@@ -825,7 +825,7 @@ railway withheld, and what is still owed. The distinction is the point:
 - **other**, which is the head that always turns up and is the only one that
   cannot be recorded without saying what it is.
 
-Liquidated damages and BOCW cess were added by migration 0078. Before it,
+Liquidated damages and BOCW cess were added by migration 0080. Before it,
 the first fell into `penalty` alongside unrelated recoveries and the second
 into `other`, and neither belonged there: a head reconciled through its own
 form needs its own row, which is the same reasoning that separated GST TDS
@@ -1001,7 +1001,7 @@ and it is why there is no service account anywhere in the product.
 ### 5.9 Money going out: employee requests and the vendor ledger
 
 §5.7 is money coming in. This is the other half of the cash position, added
-by migration 0078: what the agency pays its own people and its vendors.
+by migration 0080: what the agency pays its own people and its vendors.
 
 **An employee request is an approval, not a payment.** An advance or a
 reimbursement is raised with its proof attached — the product refuses to
@@ -1045,7 +1045,13 @@ behaviours an operator should not meet for the first time in the ledger:
 - **section 206AA**, applied as a **floor** and not a substitution: where no
   PAN has been furnished, the rate is the higher of the rate in force and
   20%. Modelling it as "20% when PAN is missing" would under-deduct for any
-  section whose own rate exceeds 20%.
+  section whose own rate exceeds 20%. PAN presence is read from
+  `contacts.pan`, one authoritative column, and is **not** derived from the
+  GSTIN: an unregistered vendor has no GSTIN, so a derivation would find no
+  PAN and deduct at 20% from exactly the small labour contractor least able
+  to carry it. Migration 0080 backfills the column from the GSTIN — whose
+  characters 3–12 are the holder's PAN — so no deduction recorded before it
+  changes.
 - **the rate is snapshotted on the payment**, not looked up when the return
   is drawn. Finance Acts move rates, and a return re-derived from today's
   table would restate last quarter's deductions.
@@ -1055,7 +1061,7 @@ Q1 is April to June — for a practitioner's return-preparation utility.
 
 **Reused rather than rebuilt.** The vendor and the employee are both rows in
 `contacts`, the party master `purchase_orders.vendor_contact_id` already
-references; migration 0078 adds an `is_employee` flag beside `is_vendor`. A
+references; migration 0080 adds an `is_employee` flag beside `is_vendor`. A
 consequence worth stating: a paid site worker does **not** need a login,
 because the beneficiary is a contact and not a membership.
 

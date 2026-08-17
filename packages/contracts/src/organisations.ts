@@ -51,7 +51,7 @@ export const MembershipSchema = Type.Object(
      * ON TOP of issue/cancel rather than replacing them, and defaults
      * false — it is granted, never inherited. */
     canManageStatutoryReporting: Type.Boolean(),
-    /** The payments authority (migration 0078): may approve employee
+    /** The payments authority (migration 0080): may approve employee
      * payment requests and record or pay vendor invoices. Separate from
      * issue/cancel because sending the organisation's money out is not
      * the same act as issuing a document it is owed for. */

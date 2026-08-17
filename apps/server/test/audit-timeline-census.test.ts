@@ -78,11 +78,11 @@ const NON_TIMELINE: Record<string, string> = {
   eway_bills:
     'KNOWN GAP (pre-timeline): e-way bills hang off tax invoices, which are themselves a gap.',
   payment_request:
-    'Outbound money (0078): an employee advance or reimbursement is a claim by a PERSON, and its Work link is optional attribution rather than an event in the Work’s execution. A Work’s timeline answers what happened to the contract; who was reimbursed for travel is not that.',
+    'Outbound money (0080): an employee advance or reimbursement is a claim by a PERSON, and its Work link is optional attribution rather than an event in the Work’s execution. A Work’s timeline answers what happened to the contract; who was reimbursed for travel is not that.',
   vendor_invoice:
-    'Outbound money (0078): what a vendor billed this organisation. Organisation-level by nature — the optional Work link is cost attribution, not a contract event, on the same reasoning as payment_request above.',
+    'Outbound money (0080): what a vendor billed this organisation. Organisation-level by nature — the optional Work link is cost attribution, not a contract event, on the same reasoning as payment_request above.',
   vendor_payment:
-    'Outbound money (0078): a payment against a vendor invoice, which is itself off the timeline.',
+    'Outbound money (0080): a payment against a vendor invoice, which is itself off the timeline.',
 };
 
 /**

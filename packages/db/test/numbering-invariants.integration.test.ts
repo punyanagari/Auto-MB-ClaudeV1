@@ -64,7 +64,7 @@ const PREFIX = 'auto_mb_numbering_test_';
 const COUNTER_TABLES = [
   { table: 'bill_counters', scope: 'work', refusal: 'bill_counters' },
   {
-    // The payment-request sequence (0078), per organisation and per
+    // The payment-request sequence (0080), per organisation and per
     // financial year. Monotonic: a payment request that has been given a
     // number keeps it, so rewinding would re-issue one.
     table: 'payment_request_counters',

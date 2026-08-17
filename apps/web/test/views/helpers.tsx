@@ -779,6 +779,8 @@ export const VENDOR_CONTACT: Contact = {
   isConsignee: false,
   isVendor: true,
   isClient: false,
+  isEmployee: false,
+  pan: null,
   active: true,
   createdAt: '2026-07-01T00:00:00.000Z',
 };
@@ -849,6 +851,8 @@ export const CLIENT_CONTACT: Contact = {
   isConsignee: false,
   isVendor: false,
   isClient: true,
+  isEmployee: false,
+  pan: null,
   active: true,
   createdAt: '2026-07-01T00:00:00.000Z',
 };

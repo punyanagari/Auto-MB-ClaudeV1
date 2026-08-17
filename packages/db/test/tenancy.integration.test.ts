@@ -74,7 +74,7 @@ const TENANT_TABLES = [
   // The payment register and its typed deduction rows (0067).
   'bill_payments',
   'bill_payment_deductions',
-  // The outbound half of the cash position (0078): employee payment
+  // The outbound half of the cash position (0080): employee payment
   // requests with their per-financial-year counter, and the vendor
   // liability ledger with its payments.
   'payment_requests',
@@ -223,7 +223,7 @@ const DELETE_REVOKED_TABLES = [
   // deductions go with it (0067).
   'bill_payments',
   'bill_payment_deductions',
-  // The outbound half of the cash position (0078): employee payment
+  // The outbound half of the cash position (0080): employee payment
   // requests with their per-financial-year counter, and the vendor
   // liability ledger with its payments.
   'payment_requests',
@@ -908,7 +908,7 @@ async function seedTenantGraph(
         (${organisationId}, ${billPayment.id}, 'SECURITY_DEPOSIT', '1.00', null)
     `;
 
-    /* The outbound half of the cash position (0078). The beneficiary is
+    /* The outbound half of the cash position (0080). The beneficiary is
        a contacts row carrying both payable roles, so one party serves
        the employee register and the vendor ledger and the seed does not
        need two. */
@@ -927,7 +927,7 @@ async function seedTenantGraph(
     `;
     /* Two rows, because the no-context and cross-tenant assertions each
        want at least one and the suite checks for two. Both are created
-       in a state the 0078 insert guard permits. */
+       in a state the 0080 insert guard permits. */
     await tx`
       insert into payment_requests (
         organisation_id, fy_label, sequence_number, request_number, kind,

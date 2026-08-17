@@ -77,7 +77,7 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // it (0067): security_invoker, so their RLS is re-checked for the
   // caller and this grant adds no visibility. Read-only by construction.
   bill_settlement_positions: 'SELECT',
-  // The outbound half of the cash position (0078). No DELETE anywhere:
+  // The outbound half of the cash position (0080). No DELETE anywhere:
   // a payment record is voided or cancelled, never removed. UPDATE is
   // granted on all four because each has a legitimate in-place
   // transition — a request's status, an invoice's cancellation, a

@@ -861,18 +861,15 @@ export function registerPaymentsWorkspaceRoutes(
       };
     }
 
-    // The vendor's PAN comes from the contact master. There is no PAN
-    // column on `contacts` yet, so this reads the one place a PAN is
-    // recorded today: characters 3-12 of a GSTIN are the holder's PAN.
-    // ponytail: GSTIN-derived PAN, add a real contacts.pan column when a
-    // vendor without a GSTIN has to be paid.
+    // The vendor's PAN, read from the one column that holds it
+    // (migration 0080). It is deliberately NOT derived from the GSTIN
+    // here: an unregistered vendor has no GSTIN and would therefore look
+    // PAN-less, which floors the rate at 20% under section 206AA and
+    // over-deducts from exactly the small contractor least able to carry
+    // it. 0080 backfills the column from the GSTIN, so a registered
+    // vendor deducts at the same rate it did before.
     const [vendor] = await tx<{ pan: string | null }[]>`
-      select case
-               when c.gstin ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$'
-               then substring(c.gstin from 3 for 10)
-               else null
-             end as pan
-      from contacts c where c.id = ${invoice.vendor_contact_id}
+      select pan from contacts where id = ${invoice.vendor_contact_id}
     `;
     const pan = vendor?.pan ?? null;
 

@@ -81,7 +81,7 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // maintained timestamp.
   bill_payments: ['id', 'updated_at', 'voided_at', 'voided_by_user_id', 'void_reason'],
 
-  // An employee advance or reimbursement (0078). Everything about it may
+  // An employee advance or reimbursement (0080). Everything about it may
   // be corrected while it is a draft or a submission; what the trigger
   // freezes once it has been DECIDED is the money it authorises — the
   // amount, the kind, the beneficiary and the number. The columns below
@@ -108,7 +108,7 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'sequence_number',
   ],
 
-  // A recorded vendor payment (0078), on the same terms as bill_payments
+  // A recorded vendor payment (0080), on the same terms as bill_payments
   // above: every fact of it is frozen when written, and the void is the
   // only later act.
   vendor_payments: [

@@ -112,17 +112,26 @@ function post(url: string, payload: object, as?: string, org?: string) {
 async function seedContact(
   label: string,
   roles: { vendor?: boolean; employee?: boolean },
-  options: { gstin?: string | null; org?: string } = {},
+  options: { gstin?: string | null; pan?: string | null; org?: string } = {},
 ): Promise<string> {
   const id = randomUUID();
+  // `pan` defaults to the GSTIN-derived value, which is exactly what
+  // migration 0080's backfill writes — so a fixture that names only a
+  // GSTIN behaves like a contact that predates the column.
+  const derived =
+    options.gstin != null &&
+    /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(options.gstin)
+      ? options.gstin.slice(2, 12)
+      : null;
   await admin`
     insert into contacts (
-      id, organisation_id, designation, gstin, is_vendor, is_employee,
+      id, organisation_id, designation, gstin, pan, is_vendor, is_employee,
       created_by_user_id
     )
     values (
       ${id}, ${options.org ?? organisationId}, ${`${label} ${runId}`},
-      ${options.gstin ?? null}, ${roles.vendor ?? false},
+      ${options.gstin ?? null}, ${options.pan === undefined ? derived : options.pan},
+      ${roles.vendor ?? false},
       ${roles.employee ?? false}, ${ownerUserId}
     )
   `;
@@ -131,8 +140,8 @@ async function seedContact(
 
 /**
  * A vendor whose GSTIN carries a PAN, so section 206AA does NOT apply.
- * Characters 3-12 of a GSTIN are the holder's PAN, which is where the
- * route reads it from.
+ * Characters 3-12 of a GSTIN are the holder's PAN, which is what
+ * migration 0080 backfills `contacts.pan` from.
  */
 const PAN_BEARING_GSTIN = '27AAECN2222D1Z7';
 
@@ -185,7 +194,7 @@ beforeAll(async () => {
   ownerUserId = membership?.user_id ?? '';
   expect(ownerUserId).not.toBe('');
 
-  // The owner needs the payments authority: migration 0078 grants it to
+  // The owner needs the payments authority: migration 0080 grants it to
   // nobody, deliberately, so a test that did not grant it would be
   // testing the refusal rather than the feature.
   await admin`
@@ -438,12 +447,16 @@ describe('vendor payments and tax deducted at source', () => {
       tdsSection?: '194C' | '194J';
       payeeClass?: 'individual_huf' | 'other';
       gstin?: string | null;
+      pan?: string | null;
     } = {},
   ): Promise<{ invoiceId: string; vendorId: string }> {
     const vendorId = await seedContact(
       label,
       { vendor: true },
-      { gstin: options.gstin === undefined ? PAN_BEARING_GSTIN : options.gstin },
+      {
+        gstin: options.gstin === undefined ? PAN_BEARING_GSTIN : options.gstin,
+        ...(options.pan === undefined ? {} : { pan: options.pan }),
+      },
     );
     const created = await post('/api/vendor-invoices', {
       vendorContactId: vendorId,
@@ -601,6 +614,62 @@ describe('vendor payments and tax deducted at source', () => {
     expect(payment.panAbsent).toBe(true);
     expect(payment.vendorPan).toBeNull();
     expect(payment.tdsAmount).toBe('20000.00');
+  });
+
+  it('deducts at the ordinary rate for a vendor with a PAN but no GSTIN', async () => {
+    /* The over-deduction migration 0080 exists to fix. An unregistered
+       vendor — a small labour contractor, typically — has no GSTIN, so
+       the first cut of this pack found no PAN to derive and floored the
+       rate at 20%. It has furnished a PAN; it must be deducted at 1%. */
+    const { invoiceId } = await seedInvoice('NOGSTIN', '500000.00', {
+      tdsSection: '194C',
+      payeeClass: 'individual_huf',
+      gstin: null,
+      pan: 'ABCDE1234F',
+    });
+    const preview = await authed({
+      method: 'GET',
+      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=100000.00&paidOn=2026-08-01`,
+      organisationId,
+    });
+    const quoted = preview.json<TdsPreviewResponse>();
+    expect(quoted.panAbsentUplift).toBe(false);
+    expect(quoted.rate).toBe('1.00');
+    expect(quoted.tdsAmount).toBe('1000.00');
+
+    const paid = await post(`/api/vendor-invoices/${invoiceId}/payments`, {
+      paidOn: '2026-08-01',
+      grossAmount: '100000.00',
+    });
+    expect(paid.statusCode, paid.body).toBe(201);
+    expect(paid.json<VendorPayment>().vendorPan).toBe('ABCDE1234F');
+    expect(paid.json<VendorPayment>().panAbsent).toBe(false);
+  });
+
+  it('deducts identically for a vendor whose PAN was backfilled from its GSTIN', async () => {
+    /* The migration's backfill writes exactly what the route used to
+       derive, so a contact that predates the column must produce the
+       same rate it always did. `seedInvoice` defaults `pan` to the
+       GSTIN-derived value for precisely this reason. */
+    const { invoiceId, vendorId } = await seedInvoice('BACKFILL', '500000.00', {
+      tdsSection: '194C',
+      payeeClass: 'other',
+    });
+    const [row] = await admin<{ pan: string | null }[]>`
+      select pan from contacts where id = ${vendorId}
+    `;
+    // Characters 3-12 of 27AAECN2222D1Z7.
+    expect(row?.pan).toBe('AAECN2222D');
+
+    const preview = await authed({
+      method: 'GET',
+      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=100000.00&paidOn=2026-08-01`,
+      organisationId,
+    });
+    const quoted = preview.json<TdsPreviewResponse>();
+    expect(quoted.panAbsentUplift).toBe(false);
+    expect(quoted.rate).toBe('2.00');
+    expect(quoted.tdsAmount).toBe('2000.00');
   });
 
   it('refuses a payment that would exceed the invoice', async () => {

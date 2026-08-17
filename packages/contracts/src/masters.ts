@@ -48,6 +48,15 @@ export const BankAccountHolderSchema = Type.String({ minLength: 2, maxLength: 20
 export const BankNameSchema = Type.String({ minLength: 2, maxLength: 100 });
 export const BankBranchSchema = Type.String({ minLength: 2, maxLength: 100 });
 
+/** Five letters, four digits, one letter. Checked here as well as in the
+ * database because an unregistered vendor PAN has no GSTIN to fall back
+ * on and a typo would silently engage the 206AA floor. */
+export const PanSchema = Type.String({
+  pattern: '^[A-Z]{5}[0-9]{4}[A-Z]$',
+  minLength: 10,
+  maxLength: 10,
+});
+
 export const ContactSchema = Type.Object(
   {
     id: UuidSchema,
@@ -97,6 +106,15 @@ export const ContactSchema = Type.Object(
     bankAccountType: Type.Optional(
       Type.Union([Type.String({ minLength: 2, maxLength: 50 }), Type.Null()]),
     ),
+    /** A person this organisation pays an advance or reimbursement to
+     * (migration 0080). Deliberately independent of membership: being
+     * paid is not being granted access, and a site worker with no login
+     * is still paid. */
+    isEmployee: Type.Boolean(),
+    /** The party PAN. Decides whether section 206AA floors a vendor
+     * payment at 20% (migration 0080). Backfilled from the GSTIN, whose
+     * characters 3-12 are the holder PAN. */
+    pan: Type.Union([PanSchema, Type.Null()]),
     active: Type.Boolean(),
     createdAt: Type.String({ format: 'date-time' }),
   },
@@ -143,6 +161,9 @@ export const SaveContactRequestSchema = Type.Object(
     bankIfsc: Type.Optional(IfscSchema),
     bankBranch: Type.Optional(BankBranchSchema),
     bankAccountType: Type.Optional(Type.String({ minLength: 2, maxLength: 50 })),
+    isEmployee: Type.Optional(Type.Boolean()),
+    /** Accepted in any case; stored uppercase, like the GSTIN. */
+    pan: Type.Optional(PanSchema),
   },
   { additionalProperties: false },
 );

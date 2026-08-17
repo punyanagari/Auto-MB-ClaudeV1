@@ -114,7 +114,7 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   // registers have already answered.
   bill_payments: 'receipts against a bill, which blocks',
   bill_payment_deductions: 'the breakup of a receipt against a bill, which blocks',
-  // Outbound money (0078), exempt for a different reason from the two
+  // Outbound money (0080), exempt for a different reason from the two
   // above, and the difference is the point. `bill_payments` is exempt
   // because a blocking register already covers it. These are exempt
   // because they are not records of the Work at all.
