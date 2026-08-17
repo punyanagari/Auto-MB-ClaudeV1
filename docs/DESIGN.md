@@ -14,7 +14,7 @@ the mock wins and this document is wrong.
 |                            |                                              |
 | -------------------------- | -------------------------------------------- |
 | Repository                 | `github.com/punyanagari/Auto-MB-Vercel-du`   |
-| Freeze commit              | `a8e1fde`                                    |
+| Freeze commit              | `fdfe5ef`                                    |
 | Local clone at that commit | `C:\Users\agast\Downloads\Auto-MB-Vercel-du` |
 | Live render                | `https://satyakosh.vercel.app`               |
 | Design source              | `app/globals.css`, `components/**`           |
@@ -34,7 +34,7 @@ is the only record of what "current" means.
 replicates, by path in the frozen clone.** For example:
 
 > Ports `app/challans/page.tsx` + `components/challans-workspace.tsx` +
-> `components/document-register.tsx` at `a8e1fde`.
+> `components/document-register.tsx` at `fdfe5ef`.
 
 Applies to new screens, altered screens, and new components. For an additive
 screen the mock does not cover (`docs/UX.md` § Approved divergences 4), cite the
@@ -64,7 +64,7 @@ needs a token, not a conditional.
 
 ### Palette
 
-Verbatim from `app/globals.css` at `a8e1fde`. Light is the `:root` column, dark is
+Verbatim from `app/globals.css` at `fdfe5ef`. Light is the `:root` column, dark is
 the `.dark` column.
 
 | Token                          | Light                    | Dark                     |
@@ -83,14 +83,14 @@ the `.dark` column.
 | `--muted-foreground`           | `oklch(0.49 0.018 245)`  | `oklch(0.66 0.012 250)`  |
 | `--accent`                     | `oklch(0.925 0.03 190)`  | `oklch(0.32 0.03 195)`   |
 | `--accent-foreground`          | `oklch(0.3 0.07 190)`    | `oklch(0.9 0.02 195)`    |
-| `--destructive`                | `oklch(0.55 0.19 27)`    | `oklch(0.62 0.19 27)`    |
+| `--destructive`                | `oklch(0.52 0.19 27)`    | `oklch(0.69 0.19 27)`    |
 | `--destructive-foreground`     | `oklch(0.99 0 0)`        | `oklch(0.98 0 0)`        |
-| `--success`                    | `oklch(0.55 0.12 155)`   | `oklch(0.68 0.12 155)`   |
+| `--success`                    | `oklch(0.5 0.12 155)`    | `oklch(0.68 0.12 155)`   |
 | `--success-foreground`         | `oklch(0.99 0 0)`        | `oklch(0.16 0.02 155)`   |
 | `--warning`                    | `oklch(0.72 0.14 75)`    | `oklch(0.78 0.13 75)`    |
-| `--warning-foreground`         | `oklch(0.3 0.06 75)`     | `oklch(0.24 0.05 75)`    |
+| `--warning-foreground`         | `oklch(0.3 0.06 75)`     | `oklch(0.78 0.13 75)`    |
 | `--border`                     | `oklch(0.885 0.009 235)` | `oklch(0.31 0.012 250)`  |
-| `--input`                      | `oklch(0.885 0.009 235)` | `oklch(0.31 0.012 250)`  |
+| `--input`                      | `oklch(0.64 0.009 235)`  | `oklch(0.52 0.012 250)`  |
 | `--ring`                       | `oklch(0.5 0.09 190)`    | `oklch(0.72 0.09 190)`   |
 | `--chart-1`                    | `oklch(0.44 0.085 195)`  | `oklch(0.72 0.09 190)`   |
 | `--chart-2`                    | `oklch(0.7 0.06 195)`    | `oklch(0.55 0.07 195)`   |
@@ -279,7 +279,7 @@ Four tint families, and only four:
 | Primary     | `bg-primary/10 text-primary border-primary/20`             | Issued, sent, checked, replied — an outward legal act           |
 | Neutral     | `bg-muted text-muted-foreground` (no border tint)          | Inert: draft, completed, ordered, returned, released, discarded |
 
-Statuses mapped at `a8e1fde`:
+Statuses mapped at `fdfe5ef`:
 
 - **Success** — `active`, `paid`, `approved`, `accepted`, `confirmed`, `passed`,
   `received`
