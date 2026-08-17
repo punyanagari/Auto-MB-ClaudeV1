@@ -44,6 +44,7 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Modal } from '../ui/dialog.js';
+import { Sheet } from '../ui/sheet.js';
 import type { MastersTab } from './Masters.js';
 import type { WorkTab } from './WorkDetail.js';
 
@@ -217,6 +218,17 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: 'Viewer',
 };
 
+/** One cell of the mock's bottom bar (`components/mobile-navigation` at
+ * fdfe5ef): a 56px touch target, its icon over an 11px label, sharing the
+ * bar's width equally with its siblings. */
+const MOBILE_BAR_CELL =
+  'flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium';
+
+/** One row of either bottom sheet. The mock's own list item: an outline
+ * button at 48px, label-first, with the icon inset by the button ladder's
+ * `data-icon` rule. */
+const MOBILE_SHEET_ROW = 'h-12 justify-start';
+
 function storedSidebarCollapsed(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
@@ -356,6 +368,16 @@ export function OperationsWorkspace({
     view.name === 'work' || view.name === 'challan' || view.name === 'issue-challan'
       ? view.workId
       : null;
+  /* The Record sheet's subtitle. It was two paragraphs inside the panel;
+     as a sheet it is the description the dialog is `aria-describedby`, so
+     the reason there are no record buttons is announced with the sheet
+     rather than found by reading it. */
+  const recordSheetDescription =
+    recordWorkId !== null && canRecordEvidence
+      ? 'Record site evidence against the open Work.'
+      : canRecordEvidence
+        ? 'Choose a Work before recording site evidence.'
+        : 'Your access is read-only; choose a Work to view its records.';
 
   const refreshPendingApprovals = useCallback(() => {
     api
@@ -427,10 +449,14 @@ export function OperationsWorkspace({
 
   /* Escape closes whichever transient menu is open and hands the keyboard
      back to the control that opened it — the same contract the dialogs and
-     the mobile drawer already keep. The four menus are exclusive by
-     construction, so one handler closes all of them. */
-  const transientMenuOpen =
-    headerQuickActionsOpen || accountMenuOpen || mobileRecordOpen || mobileMoreOpen;
+     the mobile drawer already keep. The menus are exclusive by
+     construction, so one handler closes all of them.
+
+     The two mobile sheets are no longer among them: they are `Sheet`s, and
+     `ui/dialog.tsx` already closes on Escape and restores focus to their
+     trigger. Listening for the same key twice could only ever be one of
+     the two handlers doing nothing. */
+  const transientMenuOpen = headerQuickActionsOpen || accountMenuOpen;
   useEffect(() => {
     if (!transientMenuOpen) return;
     function closeOnEscape(event: globalThis.KeyboardEvent): void {
@@ -438,8 +464,6 @@ export function OperationsWorkspace({
       event.preventDefault();
       setHeaderQuickActionsOpen(false);
       setAccountMenuOpen(false);
-      setMobileRecordOpen(false);
-      setMobileMoreOpen(false);
       transientMenuTriggerRef.current?.focus();
     }
     window.addEventListener('keydown', closeOnEscape);
@@ -1348,17 +1372,25 @@ export function OperationsWorkspace({
       )}
 
       <nav
-        /* The mock's bar (`components/mobile-navigation`): four cells on
-           a translucent, blurred background that clears the home indicator.
-           The cells themselves keep the application's raised Record control
-           until the mobile pack redraws them. */
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-background/95 px-2 py-1.5 pb-[calc(env(safe-area-inset-bottom)+0.375rem)] backdrop-blur lg:hidden print:hidden"
+        /* The mock's bar (`components/mobile-navigation` at fdfe5ef): four
+           equal cells on a translucent, blurred background that clears the
+           home indicator. The raised Record button this build carried is
+           gone — the mock draws Record as a cell like any other, and the
+           ring-and-shadow it needed to float above the bar is exactly the
+           bespoke shadow the mock does not use.
+
+           The More cell keeps `MoreHorizontal` where the mock uses `Menu`:
+           this shell has a navigation drawer the mock has no equivalent
+           for, and its topbar trigger is already the hamburger. Two
+           identical icons opening two different surfaces on one screen is
+           a worse reading of the mock than one substituted glyph. */
+        className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden print:hidden"
         aria-label="Mobile navigation"
         inert={mobileMenuOpen || pendingDeparture !== null}
       >
         <button
           type="button"
-          className={`flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium ${
+          className={`${MOBILE_BAR_CELL} ${
             activeModule === 'dashboard' ? 'text-primary' : 'text-muted-foreground'
           }`}
           onClick={() => {
@@ -1370,7 +1402,7 @@ export function OperationsWorkspace({
         </button>
         <button
           type="button"
-          className={`flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium ${
+          className={`${MOBILE_BAR_CELL} ${
             activeModule === 'works' ? 'text-primary' : 'text-muted-foreground'
           }`}
           onClick={() => {
@@ -1380,34 +1412,32 @@ export function OperationsWorkspace({
           <FolderKanban className="size-5" aria-hidden="true" />
           Works
         </button>
+        {/* Both sheet triggers drop `aria-expanded`/`aria-controls`: what
+            they open is now a modal dialog that names itself, traps focus
+            and restores it, not a disclosure sitting in the page. */}
         <button
           type="button"
-          className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium text-primary"
-          aria-label={mobileRecordOpen ? 'Close record actions' : 'Open record actions'}
-          aria-expanded={mobileRecordOpen}
-          aria-controls="mobile-record-actions"
+          className={`${MOBILE_BAR_CELL} text-muted-foreground`}
+          aria-haspopup="dialog"
           onClick={(event) => {
             transientMenuTriggerRef.current = event.currentTarget;
             setHeaderQuickActionsOpen(false);
             setMobileMoreOpen(false);
-            setMobileRecordOpen((current) => !current);
+            setMobileRecordOpen(true);
           }}
         >
-          <span className="-mt-5 inline-flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg ring-4 ring-background">
-            <Plus className="size-5" aria-hidden="true" />
-          </span>
+          <Plus className="size-5" aria-hidden="true" />
           Record
         </button>
         <button
           type="button"
-          className="flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 text-xs font-medium text-muted-foreground"
-          aria-expanded={mobileMoreOpen}
-          aria-controls="mobile-more-destinations"
+          className={`${MOBILE_BAR_CELL} text-muted-foreground`}
+          aria-haspopup="dialog"
           onClick={(event) => {
             transientMenuTriggerRef.current = event.currentTarget;
             setHeaderQuickActionsOpen(false);
             setMobileRecordOpen(false);
-            setMobileMoreOpen((current) => !current);
+            setMobileMoreOpen(true);
           }}
         >
           <MoreHorizontal className="size-5" aria-hidden="true" />
@@ -1415,123 +1445,124 @@ export function OperationsWorkspace({
         </button>
       </nav>
 
+      {/* Both bottom sheets are the mock's own (`components/mobile-navigation`
+          at fdfe5ef): its `Sheet` on `side="bottom"`, so they rise from the
+          bottom edge with a `rounded-t-2xl` top and the home-indicator inset
+          the primitive already carries, instead of floating as a card above
+          the bar. Their rows are the mock's outline buttons. */}
       {mobileRecordOpen && (
-        <div
-          id="mobile-record-actions"
-          className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-3 shadow-2xl lg:hidden print:hidden"
-          role="group"
-          aria-label="Record actions"
+        <Sheet
+          side="bottom"
+          title="Record field activity"
+          description={recordSheetDescription}
+          onClose={() => {
+            setMobileRecordOpen(false);
+          }}
         >
-          {recordWorkId !== null && canRecordEvidence ? (
-            <>
-              <p className="px-2 pb-2 text-xs text-muted-foreground">
-                Record site evidence against the open Work.
-              </p>
-              {/* Two buttons, not one "Delivery evidence": the two records
-                  now live on different tabs, and a site user tapping Record
-                  on a phone means one of them specifically.
+          <div className="grid gap-2 pb-4">
+            {recordWorkId !== null && canRecordEvidence && (
+              <>
+                {/* Two buttons, not one "Delivery evidence": the two records
+                    now live on different tabs, and a site user tapping Record
+                    on a phone means one of them specifically.
 
-                  Drafting a challan is a Work modification, which a site
-                  membership does not carry — so the button is not offered
-                  to one, the way Upload LOA is not. Offering it would open
-                  a tab whose only action is absent, which is the dead end
-                  this sheet exists to avoid; the two records it CAN make
-                  are still one tap each. */}
-              {canModify && (
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
+                    Drafting a challan is a Work modification, which a site
+                    membership does not carry — so the button is not offered
+                    to one, the way Upload LOA is not. Offering it would open
+                    a tab whose only action is absent, which is the dead end
+                    this sheet exists to avoid; the two records it CAN make
+                    are still one tap each. */}
+                {canModify && (
+                  <Button
+                    variant="outline"
+                    className={MOBILE_SHEET_ROW}
+                    onClick={() => {
+                      openRecordTab(recordWorkId, 'deliveries');
+                    }}
+                  >
+                    <Truck data-icon="inline-start" aria-hidden="true" />
+                    Delivery challan
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className={MOBILE_SHEET_ROW}
                   onClick={() => {
-                    openRecordTab(recordWorkId, 'deliveries');
+                    openRecordTab(recordWorkId, 'installations');
                   }}
                 >
-                  <Truck className="size-4 text-primary" aria-hidden="true" />
-                  Delivery challan
-                </button>
-              )}
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                onClick={() => {
-                  openRecordTab(recordWorkId, 'installations');
-                }}
-              >
-                <Wrench className="size-4 text-primary" aria-hidden="true" />
-                Installation
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                onClick={() => {
-                  openRecordTab(recordWorkId, 'measurement');
-                }}
-              >
-                <FileText className="size-4 text-primary" aria-hidden="true" />
-                Measurements
-              </button>
-            </>
-          ) : (
-            <p className="px-2 pb-2 text-xs text-muted-foreground">
-              {canRecordEvidence
-                ? 'Choose a Work before recording site evidence.'
-                : 'Your access is read-only; choose a Work to view its records.'}
-            </p>
-          )}
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-            onClick={() => {
-              navigate({ name: 'works' });
-            }}
-          >
-            <Search className="size-4 text-primary" aria-hidden="true" />
-            Open Works
-          </button>
-        </div>
+                  <Wrench data-icon="inline-start" aria-hidden="true" />
+                  Installation
+                </Button>
+                <Button
+                  variant="outline"
+                  className={MOBILE_SHEET_ROW}
+                  onClick={() => {
+                    openRecordTab(recordWorkId, 'measurement');
+                  }}
+                >
+                  <FileText data-icon="inline-start" aria-hidden="true" />
+                  Measurements
+                </Button>
+              </>
+            )}
+            <Button
+              variant="outline"
+              className={MOBILE_SHEET_ROW}
+              onClick={() => {
+                navigate({ name: 'works' });
+              }}
+            >
+              <Search data-icon="inline-start" aria-hidden="true" />
+              Open Works
+            </Button>
+          </div>
+        </Sheet>
       )}
 
       {mobileMoreOpen && (
-        /* Its two sibling sheets carry an id, a role and a name; this one
-           carried none, so the trigger's aria-expanded described nothing a
-           screen reader could go to. */
-        <div
-          id="mobile-more-destinations"
-          className="fixed inset-x-3 bottom-20 z-50 rounded-2xl border border-border bg-card p-2 shadow-2xl lg:hidden print:hidden"
-          role="group"
-          aria-label="More destinations"
+        <Sheet
+          side="bottom"
+          title="More modules"
+          description="Open another Auto-MB module."
+          onClose={() => {
+            setMobileMoreOpen(false);
+          }}
         >
-          {MOBILE_MORE_ITEMS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                onClick={() => {
-                  openModule(item.key);
-                }}
-              >
-                <Icon className="size-4 text-primary" aria-hidden="true" />
-                {item.label}
-                {item.key === 'approvals' && pendingApprovals > 0 && (
-                  <Badge className="ml-auto" variant="destructive">
-                    {pendingApprovals}
-                  </Badge>
-                )}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/5"
-            onClick={() => {
-              requestDeparture(onSignOut);
-            }}
-          >
-            <LogOut className="size-4" aria-hidden="true" />
-            Sign out
-          </button>
-        </div>
+          <div className="grid gap-2 pb-4">
+            {MOBILE_MORE_ITEMS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.key}
+                  variant="outline"
+                  className={MOBILE_SHEET_ROW}
+                  onClick={() => {
+                    openModule(item.key);
+                  }}
+                >
+                  <Icon data-icon="inline-start" aria-hidden="true" />
+                  {item.label}
+                  {item.key === 'approvals' && pendingApprovals > 0 && (
+                    <Badge className="ml-auto" variant="destructive">
+                      {pendingApprovals}
+                    </Badge>
+                  )}
+                </Button>
+              );
+            })}
+            <Button
+              variant="destructive"
+              className={MOBILE_SHEET_ROW}
+              onClick={() => {
+                requestDeparture(onSignOut);
+              }}
+            >
+              <LogOut data-icon="inline-start" aria-hidden="true" />
+              Sign out
+            </Button>
+          </div>
+        </Sheet>
       )}
 
       {pendingDeparture !== null && (

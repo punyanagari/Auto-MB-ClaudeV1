@@ -178,27 +178,35 @@ describe('OperationsWorkspace mobile shell', () => {
     return { api, ...result };
   }
 
+  /* The bottom bar's cells are named by the label under their icon, so the
+     query is scoped to the bar: "Record" and "More" are ordinary words that
+     a register or a menu is free to use too. */
+  const barCell = (name: string) =>
+    within(screen.getByRole('navigation', { name: 'Mobile navigation' })).getByRole(
+      'button',
+      { name },
+    );
+  /** The Record cell's sheet, which is a dialog named by its own heading. */
+  const recordSheet = () =>
+    screen.queryByRole('dialog', { name: 'Record field activity' });
+
   it('keeps header quick actions separate from mobile Record actions', async () => {
     renderWorkspace();
     await screen.findByRole('heading', { name: 'Dashboard' });
     const headerTrigger = screen.getByRole('button', {
       name: 'Open quick actions',
     });
-    const recordTrigger = screen.getByRole('button', {
-      name: 'Open record actions',
-    });
 
-    fireEvent.click(recordTrigger);
-    expect(screen.getByRole('group', { name: 'Record actions' })).toBeTruthy();
+    fireEvent.click(barCell('Record'));
+    expect(recordSheet()).toBeTruthy();
     expect(
       screen.getByText('Choose a Work before recording site evidence.'),
     ).toBeTruthy();
     expect(headerTrigger.getAttribute('aria-expanded')).toBe('false');
 
     fireEvent.click(headerTrigger);
-    expect(screen.queryByRole('group', { name: 'Record actions' })).toBeNull();
+    expect(recordSheet()).toBeNull();
     expect(screen.getByRole('group', { name: 'Quick actions' })).toBeTruthy();
-    expect(recordTrigger.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('traps focus in the mobile drawer, closes on Escape, and restores focus', async () => {
@@ -361,11 +369,11 @@ describe('OperationsWorkspace mobile shell', () => {
   it('routes Record through Works when no Work is selected', async () => {
     renderWorkspace();
     await screen.findByRole('heading', { name: 'Dashboard' });
-    fireEvent.click(screen.getByRole('button', { name: 'Open record actions' }));
+    fireEvent.click(barCell('Record'));
     fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
 
     expect(await screen.findByRole('heading', { name: 'Works' })).toBeTruthy();
-    expect(screen.queryByRole('group', { name: 'Record actions' })).toBeNull();
+    expect(recordSheet()).toBeNull();
   });
 
   it('reaches the installation register from the Operations rail', async () => {
@@ -431,7 +439,7 @@ describe('OperationsWorkspace mobile shell', () => {
 
       // One "Delivery evidence" button used to serve both records. They are
       // two tabs now, and a site user tapping Record means one of them.
-      fireEvent.click(screen.getByRole('button', { name: 'Open record actions' }));
+      fireEvent.click(barCell('Record'));
       expect(screen.getByRole('button', { name: 'Delivery challan' })).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Installation' }));
 
@@ -490,7 +498,7 @@ describe('OperationsWorkspace mobile shell', () => {
 
       fireEvent.click(await screen.findByRole('link', { name: 'DCW-1' }));
       await screen.findByRole('navigation', { name: 'Work sections' });
-      fireEvent.click(screen.getByRole('button', { name: 'Open record actions' }));
+      fireEvent.click(barCell('Record'));
 
       expect(screen.queryByRole('button', { name: 'Delivery challan' })).toBeNull();
       // The two it can make are still one tap each.
@@ -575,7 +583,7 @@ describe('OperationsWorkspace mobile shell', () => {
           .value,
       ).toBe('1');
 
-      const recordTrigger = screen.getByRole('button', { name: 'Open record actions' });
+      const recordTrigger = barCell('Record');
       fireEvent.click(recordTrigger);
       fireEvent.click(screen.getByRole('button', { name: 'Open Works' }));
       fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
