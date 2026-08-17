@@ -164,7 +164,8 @@
   --chart-4: light-dark(oklch(0.72 0.14 75), oklch(0.78 0.13 75));
   --chart-5: light-dark(oklch(0.5 0.015 250), oklch(0.66 0.012 250));
 
-  /* The workspace shell's header is sticky and 4.5rem tall, and the page
+  /* The workspace shell's header is sticky and 4rem tall — the mock's
+   * `h-16` topbar (`components/app-topbar.tsx`) — and the page
    * is the scrollport it sticks to. Anything else that sticks on that
    * scrollport offsets by this, and anything that owns a scrollport of its
    * own reserves it, or it parks underneath the header for exactly the
@@ -175,7 +176,7 @@
    * `--sticky-inset` is what a scrollport-owning element reserves above
    * itself. It is the header alone by default; a schedule section raises
    * it on its panel so the ledgers inside also clear the summary row. */
-  --header-h: 4.5rem;
+  --header-h: 4rem;
   --schedule-summary-h: 2.75rem;
   --sticky-inset: var(--header-h);
 

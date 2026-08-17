@@ -298,15 +298,21 @@ code lives; **New** means the port creates it.
 
 ### Shell
 
-| Mock                               | Application                    | Notes                                                                                    |
-| ---------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
-| `components/app-shell.tsx`         | `apps/web/src/App.tsx` shell   | Sidebar + topbar + `max-w-[1440px]` main + mobile bar                                    |
-| `components/app-sidebar.tsx`       | New `ui/sidebar.tsx`           | Collapsible-icon rail, four groups, footer action + identity. Next `Link` → hash anchors |
-| `components/app-topbar.tsx`        | New `ui/topbar.tsx`            | Sticky h-16, org/section label, search control, notifications, account menu              |
-| `components/mobile-navigation.tsx` | New `ui/mobile-nav.tsx`        | 4-cell bar + Record/More sheets; app adds the task flows behind them                     |
-| `components/work-section-nav.tsx`  | `views/WorkDetail.tsx`         | Underline tab rail; `?section=` becomes the hash section                                 |
-| `components/ui/sidebar.tsx`        | Absorbed into `ui/sidebar.tsx` | Port the visual contract, not the Base UI provider stack                                 |
-| `components/appearance-toggle.tsx` | `views/AppearanceSettings.tsx` | Retarget from `next-themes` to `data-theme`                                              |
+| Mock                               | Application                     | Notes                                                                       |
+| ---------------------------------- | ------------------------------- | --------------------------------------------------------------------------- |
+| `components/app-shell.tsx`         | `views/OperationsWorkspace.tsx` | Sidebar + topbar + `max-w-[1440px]` main + mobile bar                       |
+| `components/app-sidebar.tsx`       | `shell/AppSidebar.tsx`          | Collapsible-icon rail, four groups, footer action + identity                |
+| `components/app-topbar.tsx`        | `shell/AppTopbar.tsx`           | Sticky h-16, org/section label, search control, notifications, account menu |
+| `components/mobile-navigation.tsx` | `views/OperationsWorkspace.tsx` | 4-cell bar + Record/More sheets; app adds the task flows behind them        |
+| `components/work-section-nav.tsx`  | `views/WorkDetail.tsx`          | Underline tab rail; `?section=` becomes the hash section                    |
+| `components/ui/sidebar.tsx`        | `shell/SidebarNav.tsx`          | Port the visual contract, not the Base UI provider stack                    |
+| `components/appearance-toggle.tsx` | `views/AppearanceSettings.tsx`  | Retarget from `next-themes` to `data-theme`                                 |
+
+The shell lives in `apps/web/src/shell/` rather than under `ui/`: `ui/` holds
+primitives a screen composes, and these three are the frame those screens are
+composed _into_. `shell/navigation.ts` is the single list of modules, groups
+and icons — the rail, the mobile More sheet and the page title all read it, so
+adding a module is one edit.
 
 ### Content primitives
 
