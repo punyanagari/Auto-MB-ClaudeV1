@@ -9,12 +9,11 @@
  * a teal action colour on cool neutral surfaces; the earlier quiet-light
  * blue (#155eef) and the "Signal Cabin" amber before it are both retired.
  *
- * One value deliberately diverges from the mock (dark --destructive),
- * because the mock's value fails WCAG AA 1.4.3 where the product renders
- * it. It is marked DIVERGENCE below with the pairing and the measured
- * ratio, and it is a defect the mock should absorb so the two converge
- * again — as the mock already absorbed this product's four earlier
- * contrast fixes at commit 984856b.
+ * No colour value diverges from the mock: the five WCAG contrast fixes
+ * this product measured (light --success, light and dark --destructive,
+ * dark --warning-foreground, the --input/--border split) were all
+ * absorbed upstream (mock PRs #7 and #8; mock main fdfe5ef). If a gate
+ * ever fails a verbatim pair again, fix the mock first and port back.
  *
  * Typography is an approved divergence of its own: the mock uses Inter,
  * the product keeps IBM Plex Sans (which carries Devanagari) with IBM Plex
@@ -126,12 +125,12 @@
    * 0.52 and dark --warning-foreground = dark --warning are verbatim mock
    * values again.
    *
-   * DIVERGENCE (dark --destructive): the mock's oklch(0.66 0.19 27)
-   * (already lifted once from 0.62 for the card) measures 4.24:1 by axe
-   * as the ink of `bg-destructive/10 text-destructive` inside a dialog,
-   * whose surface is the lighter dark --popover. L 0.69 clears it with
-   * margin (~4.7:1 on the popover tint, 5.92:1 as text on the card).
-   * Reported upstream so the palettes can converge again. */
+   * Dark --destructive was lifted twice for the same rule: 0.62 -> 0.66
+   * as ink on the card's tint, then 0.66 -> 0.69 when the dialog restyle
+   * put destructive buttons on the lighter dark --popover (axe measured
+   * 4.24:1 there; 0.69 reads ~4.7:1 on that tint, 5.92:1 as card text).
+   * The mock absorbed both lifts (its PRs #7 and #8, main at fdfe5ef),
+   * so every colour below is a verbatim mock value. */
   --destructive: light-dark(oklch(0.52 0.19 27), oklch(0.69 0.19 27));
   --destructive-foreground: light-dark(oklch(0.99 0 0), oklch(0.98 0 0));
   --success: light-dark(oklch(0.5 0.12 155), oklch(0.68 0.12 155));
