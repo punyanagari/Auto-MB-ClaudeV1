@@ -1063,29 +1063,32 @@ describe('bill preparation from a finalized MB', () => {
 
   it('carries none of this Work’s money across the tenant or the scope boundary', async () => {
     // CROSS-TENANT. The outsider asks for this Work's id inside their own
-    // organisation, where RLS is the boundary: the summary is computed
-    // from rows their transaction cannot see, so it reads all zeros and
-    // the list is empty. The assertion is on the CONTENT rather than on a
-    // status code, because content is what a leak would show — a
-    // `billed` of 1000.00 here would be the victim's claim.
-    //
-    // 200-with-zeros, not 404, and deliberately left as it is: this route
-    // has never checked that the Work exists for a full-scope member, so
-    // an unknown id has always read as a Work with nothing recorded
-    // against it. Its sibling `GET /api/works/:id/bill-settlement` does
-    // check (and says why in as many words); tightening this one is a
-    // behaviour change on an existing route and is not this change's to
-    // make.
+    // organisation, where RLS is the boundary: the Work is not visible to
+    // their transaction, so the liveness check refuses before any money is
+    // summed. This used to answer 200-with-zeros — indistinguishable from
+    // a Work of one's own that nobody has billed yet — which the owner
+    // ruled on (2026-08-18) in favour of the sibling's answer. The refusal
+    // is what a leak would have to get past; nothing of this Work's money
+    // is on the wire either way.
     const foreign = await authed(outsider, {
       method: 'GET',
       url: `/api/works/${work1Id}/bills`,
       organisationId: outsiderOrganisationId,
     });
-    expect(foreign.statusCode, foreign.body).toBe(200);
-    expect(foreign.json<BillListResponse>()).toEqual({
-      bills: [],
-      summary: { measured: '0.00', billed: '0.00', unbilled: '0.00' },
+    expect(foreign.statusCode, foreign.body).toBe(404);
+    expect(foreign.json()).toMatchObject({ code: 'WORK_NOT_FOUND' });
+
+    // UNKNOWN ID, full scope. The same refusal for a Work that exists
+    // nowhere: an id nobody awarded is not a Work with nothing billed
+    // against it, which is the asymmetry with
+    // `GET /api/works/:id/bill-settlement` the owner closed.
+    const unknown = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${randomUUID()}/bills`,
+      organisationId,
     });
+    expect(unknown.statusCode, unknown.body).toBe(404);
+    expect(unknown.json()).toMatchObject({ code: 'WORK_NOT_FOUND' });
 
     // WORK-SCOPE, inside the tenant. An assigned-scope member without
     // this assignment is refused the summary exactly as they are refused

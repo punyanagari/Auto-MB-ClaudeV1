@@ -2,15 +2,11 @@ import type { RefObject } from 'react';
 import {
   ArrowLeftRight,
   Bell,
-  ChevronDown,
-  FolderKanban,
   LogOut,
   Menu,
   PanelLeft,
-  Plus,
   Search,
   Settings as SettingsIcon,
-  Upload,
 } from 'lucide-react';
 import { Button } from '../ui/button.js';
 import {
@@ -30,22 +26,17 @@ export interface AppTopbarProps {
   readonly identityName: string;
   readonly identityRole: string;
   readonly pendingApprovals: number;
-  readonly canModify: boolean;
   readonly canSwitchOrganisation: boolean;
   readonly sidebarCollapsed: boolean;
   readonly mobileNavOpen: boolean;
-  readonly quickActionsOpen: boolean;
   readonly accountMenuOpen: boolean;
   readonly searchQuery: string;
   readonly searchInputRef: RefObject<HTMLInputElement | null>;
   readonly onToggleSidebar: () => void;
   readonly onOpenMobileNav: (trigger: HTMLElement) => void;
-  readonly onToggleQuickActions: (trigger: HTMLElement) => void;
   readonly onToggleAccountMenu: (trigger: HTMLElement) => void;
   readonly onSearchQueryChange: (value: string) => void;
   readonly onSearch: () => void;
-  readonly onUploadLoa: () => void;
-  readonly onOpenWorks: () => void;
   readonly onOpenApprovals: () => void;
   readonly onOpenSettings: () => void;
   readonly onSwitchOrganisation: () => void;
@@ -71,22 +62,17 @@ export function AppTopbar({
   identityName,
   identityRole,
   pendingApprovals,
-  canModify,
   canSwitchOrganisation,
   sidebarCollapsed,
   mobileNavOpen,
-  quickActionsOpen,
   accountMenuOpen,
   searchQuery,
   searchInputRef,
   onToggleSidebar,
   onOpenMobileNav,
-  onToggleQuickActions,
   onToggleAccountMenu,
   onSearchQueryChange,
   onSearch,
-  onUploadLoa,
-  onOpenWorks,
   onOpenApprovals,
   onOpenSettings,
   onSwitchOrganisation,
@@ -168,69 +154,6 @@ export function AppTopbar({
             /
           </kbd>
         </form>
-
-        <div className="relative">
-          <Button
-            size="sm"
-            aria-label={quickActionsOpen ? 'Close quick actions' : 'Open quick actions'}
-            aria-expanded={quickActionsOpen}
-            aria-controls="header-quick-actions"
-            onClick={(event) => {
-              onToggleQuickActions(event.currentTarget);
-            }}
-          >
-            {/* The mock's asymmetric icon padding: an icon opening a
-                labelled button is lighter than a word, so the edge beside
-                it comes in 2px and the control reads as evenly inset. */}
-            <Plus data-icon="inline-start" aria-hidden="true" />
-            <span className="hidden sm:inline">Quick action</span>
-            <ChevronDown
-              data-icon="inline-end"
-              className="hidden size-3.5 sm:block"
-              aria-hidden="true"
-            />
-          </Button>
-          {quickActionsOpen && (
-            <DropdownMenuContent
-              id="header-quick-actions"
-              className="w-64"
-              role="group"
-              aria-label="Quick actions"
-            >
-              {canModify && (
-                <DropdownMenuItem onClick={onUploadLoa}>
-                  <Upload className="text-primary" aria-hidden="true" />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-semibold">Upload LOA</span>
-                    <span className="block text-xs text-muted-foreground">
-                      Start a new awarded Work
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={onOpenWorks}>
-                <FolderKanban className="text-primary" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-xs font-semibold">Open Works</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Find a contract or document
-                  </span>
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onOpenApprovals}>
-                <Bell className="text-primary" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-xs font-semibold">Approval queue</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {pendingApprovals > 0
-                      ? `${String(pendingApprovals)} decisions waiting`
-                      : 'No pending decisions'}
-                  </span>
-                </span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          )}
-        </div>
 
         {/* The mock puts a tooltip on this control and nothing else in the
             topbar. The count is already the button's accessible name, so

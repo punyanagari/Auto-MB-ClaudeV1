@@ -190,23 +190,21 @@ describe('OperationsWorkspace mobile shell', () => {
   const recordSheet = () =>
     screen.queryByRole('dialog', { name: 'Record field activity' });
 
-  it('keeps header quick actions separate from mobile Record actions', async () => {
+  /* The topbar's "Quick action" menu is gone (owner decision, 2026-08-18):
+     Upload LOA lives in the sidebar footer and its other two destinations
+     were rail entries, so the menu was a third way to reach places already
+     one click away. Pinned as an absence so it does not drift back. */
+  it('offers mobile Record actions with no competing header menu', async () => {
     renderWorkspace();
     await screen.findByRole('heading', { name: 'Dashboard' });
-    const headerTrigger = screen.getByRole('button', {
-      name: 'Open quick actions',
-    });
+    expect(screen.queryByRole('button', { name: 'Open quick actions' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Quick actions' })).toBeNull();
 
     fireEvent.click(barCell('Record'));
     expect(recordSheet()).toBeTruthy();
     expect(
       screen.getByText('Choose a Work before recording site evidence.'),
     ).toBeTruthy();
-    expect(headerTrigger.getAttribute('aria-expanded')).toBe('false');
-
-    fireEvent.click(headerTrigger);
-    expect(recordSheet()).toBeNull();
-    expect(screen.getByRole('group', { name: 'Quick actions' })).toBeTruthy();
   });
 
   it('traps focus in the mobile drawer, closes on Escape, and restores focus', async () => {

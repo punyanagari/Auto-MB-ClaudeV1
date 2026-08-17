@@ -242,6 +242,13 @@ over non-cancelled records for the item — computed nowhere else.
   when it does. The excess-delivery permission is not involved in either
   direction: it lifts the delivery ceiling only, and it never reached this
   rule when this rule was a ceiling.
+- **The delivered floor binds serial-tracked items only** (owner
+  confirmation, 2026-08-18): a non-serial item may be installed beyond
+  what its issued Delivery Challans delivered — pre-existing behaviour,
+  deliberate because a `PURE_INSTALLATION` item is never delivered at all
+  and a blanket delivered cap would make the whole category
+  un-installable, and pinned by `apps/server/test/installations.integration.test.ts`
+  so it reads as a decision rather than a gap.
 - **Pending variation is a derived fact, not a status somebody sets.** It
   is true exactly while the item's installed total stands above
   `effective_quantity ?? awarded_quantity`, recomputed by the database on

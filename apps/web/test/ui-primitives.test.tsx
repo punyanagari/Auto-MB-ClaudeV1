@@ -45,7 +45,7 @@ describe('the button ladder', () => {
     render(
       <Button>
         <svg data-icon="inline-start" />
-        Quick action
+        Upload LOA
       </Button>,
     );
     /* The padding is a `has-` selector on the button, so what the test can
