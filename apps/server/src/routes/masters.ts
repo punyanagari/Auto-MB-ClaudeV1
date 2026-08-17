@@ -1,4 +1,6 @@
 import {
+  CanonicalItemListResponseSchema,
+  CanonicalItemSchema,
   ContactListResponseSchema,
   ContactSchema,
   CreateGstRateRequestSchema,
@@ -8,6 +10,7 @@ import {
   LinkWorkConsigneeRequestSchema,
   LocationMasterListResponseSchema,
   LocationMasterSchema,
+  SaveCanonicalItemRequestSchema,
   SaveContactRequestSchema,
   SaveLocationMasterRequestSchema,
   SaveSignatoryRequestSchema,
@@ -17,6 +20,7 @@ import {
   UnitMasterListResponseSchema,
   UnitMasterSchema,
   WorkConsigneeListResponseSchema,
+  type CanonicalItem,
   type Contact,
   type GstRateMaster,
   type LocationMaster,
@@ -29,7 +33,13 @@ import { Type, type TSchema } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
-import { normaliseEmail, normaliseGstin } from '../contact-fields.js';
+import {
+  assertBankDetailsComplete,
+  normaliseBankAccountNumber,
+  normaliseEmail,
+  normaliseGstin,
+  normaliseIfsc,
+} from '../contact-fields.js';
 import { httpError } from '../http.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -82,6 +92,12 @@ interface ContactRow {
   is_consignee: boolean;
   is_vendor: boolean;
   is_client: boolean;
+  bank_account_holder: string | null;
+  bank_name: string | null;
+  bank_account_number: string | null;
+  bank_ifsc: string | null;
+  bank_branch: string | null;
+  bank_account_type: string | null;
   active: boolean;
   created_at: Date;
 }
@@ -102,6 +118,12 @@ function toContact(row: ContactRow): Contact {
     isConsignee: row.is_consignee,
     isVendor: row.is_vendor,
     isClient: row.is_client,
+    bankAccountHolder: row.bank_account_holder,
+    bankName: row.bank_name,
+    bankAccountNumber: row.bank_account_number,
+    bankIfsc: row.bank_ifsc,
+    bankBranch: row.bank_branch,
+    bankAccountType: row.bank_account_type,
     active: row.active,
     createdAt: row.created_at.toISOString(),
   };
@@ -109,14 +131,54 @@ function toContact(row: ContactRow): Contact {
 
 const CONTACT_COLUMNS = `
   id, designation, contact_person, address, phone, email, gstin, pincode,
-  state_code, locality, division_code, is_consignee, is_vendor, is_client, active,
-  created_at
+  state_code, locality, division_code, is_consignee, is_vendor, is_client,
+  bank_account_holder, bank_name, bank_account_number, bank_ifsc, bank_branch,
+  bank_account_type, active, created_at
 `;
 
-// GSTIN and email shape live in ../contact-fields.js: the organisation
-// profile writes the same two fields for the contractor itself and must
-// prove them identically (its values are printed on every generated
-// document), so the pair is shared rather than duplicated.
+// GSTIN, email, IFSC and account-number shape all live in
+// ../contact-fields.js: the organisation profile writes the same fields
+// for the contractor itself and must prove them identically (its values
+// are printed on every generated document, and its bank accounts are the
+// ones money arrives in), so the set is shared rather than duplicated.
+
+/**
+ * The bank beneficiary block of a contact save, normalised and proved
+ * before any transaction opens (migration 0078).
+ *
+ * Written once because create and full-update both take
+ * `SaveContactRequestSchema` and both must answer the same way. The
+ * completeness rule is asserted here rather than left to the database so
+ * the operator gets the sentence rather than a constraint name; 0078's
+ * `contacts_bank_details_shape_check` refuses the same partial row
+ * against a writer that never came this way.
+ *
+ * These values are never audited and never logged. `contact.created` and
+ * `contact.updated` record the designation and the roles, and the audit
+ * payload below deliberately does not gain an account number.
+ */
+function normaliseContactBankDetails(body: {
+  readonly bankAccountHolder?: string;
+  readonly bankName?: string;
+  readonly bankAccountNumber?: string;
+  readonly bankIfsc?: string;
+  readonly bankBranch?: string;
+  readonly bankAccountType?: string;
+}) {
+  const holder = body.bankAccountHolder?.trim() ?? null;
+  const bankName = body.bankName?.trim() ?? null;
+  const accountNumber = normaliseBankAccountNumber(body.bankAccountNumber);
+  const ifsc = normaliseIfsc(body.bankIfsc);
+  assertBankDetailsComplete({ holder, bankName, accountNumber, ifsc });
+  return {
+    holder,
+    bankName,
+    accountNumber,
+    ifsc,
+    branch: body.bankBranch?.trim() ?? null,
+    accountType: body.bankAccountType?.trim() ?? null,
+  };
+}
 
 /** Legacy rule R16: bill-paying authorities (Sr.DFM / DFM / ADFM) and
  * awarding authorities (Sr.DSTE) are NEVER consignees. The designation is
@@ -143,6 +205,98 @@ function assertNotAuthorityDesignation(designation: string): void {
       'Bill-paying authorities (Sr.DFM/DFM/ADFM) and awarding authorities (Sr.DSTE) are never consignees (rule R16); record the consignee named on the document instead.',
     );
   }
+}
+
+// --- Canonical items (migration 0078) ---------------------------------------
+
+interface CanonicalItemRow {
+  id: string;
+  name: string;
+  group_name: string;
+  make: string | null;
+  model: string | null;
+  default_unit: string;
+  aliases: string[];
+  mapped_line_count: number;
+  active: boolean;
+  created_at: Date;
+}
+
+const CANONICAL_ITEM_COLUMNS = `
+  id, name, group_name, make, model, default_unit, aliases, active, created_at
+`;
+
+function toCanonicalItem(row: CanonicalItemRow): CanonicalItem {
+  return {
+    id: row.id,
+    name: row.name,
+    groupName: row.group_name,
+    make: row.make,
+    model: row.model,
+    defaultUnit: row.default_unit,
+    aliases: row.aliases,
+    mappedLineCount: row.mapped_line_count,
+    active: row.active,
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+/**
+ * Aliases are MATCH KEYS, not display text, so they are stored the way
+ * they are compared: trimmed, lowercased, de-duplicated, blanks dropped.
+ * Storing "42U Rack" and "42u rack" as two aliases would be two rows of
+ * the same key, and the count query lowercases both sides anyway — so
+ * normalising on write keeps the stored array honest about how many
+ * distinct wordings this item actually claims.
+ *
+ * Migration 0078's CHECKs refuse a NULL or empty element independently.
+ */
+function normaliseAliases(raw: readonly string[] | undefined): string[] {
+  if (raw === undefined) return [];
+  return [
+    ...new Set(
+      raw
+        .map((alias) => alias.trim().toLowerCase())
+        .filter((alias) => alias.length > 0),
+    ),
+  ];
+}
+
+/**
+ * One canonical item with its derived mapped-line count.
+ *
+ * Every write path re-reads through here instead of using RETURNING,
+ * because the count is not a stored column and RETURNING cannot produce
+ * one. Writing it once also means the mapping rule — a live schedule
+ * line whose normalised description equals this item's name or one of
+ * its aliases — is stated in exactly two places in this file (here and
+ * the list query), not once per endpoint.
+ */
+async function loadCanonicalItem(
+  tx: TransactionSql,
+  id: string,
+): Promise<CanonicalItemRow | undefined> {
+  const [row] = await tx<CanonicalItemRow[]>`
+    with line_keys as (
+      select lower(btrim(coalesce(effective_description, description))) as key,
+             count(*)::int as lines
+      from work_items_live
+      group by 1
+    )
+    select ${tx.unsafe(CANONICAL_ITEM_COLUMNS)},
+           coalesce((
+             select sum(k.lines)
+             from line_keys k
+             where k.key = lower(btrim(item.name))
+                or exists (
+                  select 1 from unnest(item.aliases) alias
+                  where lower(btrim(alias)) = k.key
+                )
+           ), 0)::int as mapped_line_count
+    from canonical_items item
+    where item.id = ${id}
+  `;
+  return row;
 }
 
 // --- Location masters -------------------------------------------------------
@@ -397,6 +551,7 @@ export function registerMasterRoutes(
       ];
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
+      const bank = normaliseContactBankDetails(body);
       const locality = body.locality?.trim() ?? null;
       if (body.locality !== undefined && body.locality.trim().length < 2) {
         throw httpError(
@@ -410,7 +565,9 @@ export function registerMasterRoutes(
             insert into contacts (
               organisation_id, designation, contact_person, address, phone,
               email, gstin, pincode, state_code, locality, division_code, is_consignee,
-              is_vendor, is_client, created_by_user_id
+              is_vendor, is_client, bank_account_holder, bank_name,
+              bank_account_number, bank_ifsc, bank_branch, bank_account_type,
+              created_by_user_id
             )
             values (
               ${organisationId}, ${body.designation},
@@ -419,6 +576,8 @@ export function registerMasterRoutes(
               ${body.pincode ?? null}, ${body.stateCode ?? null}, ${locality},
               ${body.divisionCode ?? null},
               ${isConsignee}, ${isVendor}, ${isClient},
+              ${bank.holder}, ${bank.bankName}, ${bank.accountNumber},
+              ${bank.ifsc}, ${bank.branch}, ${bank.accountType},
               ${user.id}
             )
             returning ${tx.unsafe(CONTACT_COLUMNS)}
@@ -464,6 +623,7 @@ export function registerMasterRoutes(
       const body = request.body;
       const gstin = normaliseGstin(body.gstin);
       const email = normaliseEmail(body.email);
+      const bank = normaliseContactBankDetails(body);
       const locality = body.locality?.trim() ?? null;
       if (body.locality !== undefined && body.locality.trim().length < 2) {
         throw httpError(
@@ -499,7 +659,18 @@ export function registerMasterRoutes(
               locality = ${locality},
               division_code = ${body.divisionCode ?? null},
               is_vendor = coalesce(${body.isVendor ?? null}, is_vendor),
-              is_client = coalesce(${body.isClient ?? null}, is_client)
+              is_client = coalesce(${body.isClient ?? null}, is_client),
+              -- Profile text, so an omitted field CLEARS, exactly as the
+              -- address and phone above do. That is what lets an operator
+              -- remove a beneficiary that changed banks, and it is why the
+              -- web form round-trips the stored values rather than being
+              -- handed a masked number it could only blank.
+              bank_account_holder = ${bank.holder},
+              bank_name = ${bank.bankName},
+              bank_account_number = ${bank.accountNumber},
+              bank_ifsc = ${bank.ifsc},
+              bank_branch = ${bank.branch},
+              bank_account_type = ${bank.accountType}
           where id = ${id}
           returning ${tx.unsafe(CONTACT_COLUMNS)}
         `.catch((error: unknown) => {
@@ -991,6 +1162,232 @@ export function registerMasterRoutes(
     },
     map: toUnit,
     responseSchema: UnitMasterSchema,
+  });
+
+  // --- Canonical items (migration 0078) -------------------------------------
+  //
+  // Not a picker, unlike every other master in this file: nothing selects
+  // a canonical item into a document. It is the organisation's statement
+  // that three differently worded schedule lines across three Works name
+  // one product, so those lines can be searched and compared.
+  //
+  // THE MAPPING IS DERIVED, NOT STORED. A live schedule line counts
+  // against a canonical item when its description equals that item's name
+  // or one of its aliases, compared lowercased and trimmed. Migration
+  // 0078 records why there is no `work_items.canonical_item_id`: there is
+  // no mapping control in the design to write one, so the column would
+  // have no writer and every count it fed would read zero.
+  //
+  // The ceiling of that choice, stated so nobody mistakes it for
+  // cleverness: matching is EXACT on the normalised string. A line that
+  // differs by a comma stays unmapped until somebody adds its wording as
+  // an alias, and the unmapped count above the table is what tells them
+  // to. Fuzzy matching (trigram, then embeddings) is the upgrade path and
+  // belongs behind a review step — an item catalogue that silently
+  // claims lines it guessed at is worse than one that admits the gap.
+  //
+  // Cost, also deliberate: the two queries below group every live work
+  // item of the tenant and test each distinct description against each
+  // canonical item. That is O(distinct descriptions x items) per read of
+  // one administration screen, inside one organisation, and it needs no
+  // maintenance anywhere. If a tenant ever makes it slow, the answer is a
+  // materialised key table keyed on the same normalised string, not a
+  // stored foreign key.
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/masters/canonical-items',
+      schema: {
+        querystring: ListQuerySchema,
+        response: { 200: CanonicalItemListResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, tenant }) => {
+      const { includeRetired = false } = request.query;
+      return tenant(async (tx) => {
+        const rows = await tx<CanonicalItemRow[]>`
+          with line_keys as (
+            select lower(btrim(coalesce(effective_description, description))) as key,
+                   count(*)::int as lines
+            from work_items_live
+            group by 1
+          )
+          select item.id, item.name, item.group_name, item.make, item.model,
+                 item.default_unit, item.aliases, item.active, item.created_at,
+                 coalesce((
+                   select sum(k.lines)
+                   from line_keys k
+                   where k.key = lower(btrim(item.name))
+                      or exists (
+                        select 1 from unnest(item.aliases) alias
+                        where lower(btrim(alias)) = k.key
+                      )
+                 ), 0)::int as mapped_line_count
+          from canonical_items item
+          where item.active or ${includeRetired}
+          order by lower(btrim(item.group_name)), lower(btrim(item.name))
+        `;
+        // Counted against ACTIVE items only: a retired canonical item is
+        // no longer the organisation's answer for those lines, so the
+        // lines it used to cover are unmapped again and the warning
+        // should say so.
+        const [totals] = await tx<{ unmapped: number }[]>`
+          with line_keys as (
+            select lower(btrim(coalesce(effective_description, description))) as key,
+                   count(*)::int as lines
+            from work_items_live
+            group by 1
+          )
+          select coalesce(sum(k.lines), 0)::int as unmapped
+          from line_keys k
+          where not exists (
+            select 1 from canonical_items item
+            where item.active
+              and (
+                lower(btrim(item.name)) = k.key
+                or exists (
+                  select 1 from unnest(item.aliases) alias
+                  where lower(btrim(alias)) = k.key
+                )
+              )
+          )
+        `;
+        return {
+          items: rows.map(toCanonicalItem),
+          unmappedLineCount: totals?.unmapped ?? 0,
+        };
+      });
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/masters/canonical-items',
+      schema: {
+        body: SaveCanonicalItemRequestSchema,
+        response: { 201: CanonicalItemSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
+      const aliases = normaliseAliases(body.aliases);
+      const item = await tenant(async (tx) => {
+        const [inserted] = await tx<{ id: string }[]>`
+            insert into canonical_items (
+              organisation_id, name, group_name, make, model, default_unit,
+              aliases, created_by_user_id
+            )
+            values (
+              ${organisationId}, ${body.name}, ${body.groupName},
+              ${body.make ?? null}, ${body.model ?? null}, ${body.defaultUnit},
+              ${aliases}, ${user.id}
+            )
+            returning id
+          `.catch((error: unknown) => {
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'CANONICAL_ITEM_EXISTS',
+              'A canonical item with this name already exists (it may be retired — reactivate it instead). Two items claiming one wording would both count the same schedule lines.',
+            );
+          }
+          throw error;
+        });
+        if (!inserted) throw new Error('canonical item insert returned no row');
+        const row = await loadCanonicalItem(tx, inserted.id);
+        if (!row) throw new Error('canonical item vanished after insert');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'canonical_item.created',
+          'canonical_items',
+          row.id,
+          { name: body.name, groupName: body.groupName, aliases: aliases.length },
+        );
+        return toCanonicalItem(row);
+      });
+      return reply.status(201).send(item);
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'PUT',
+      url: '/api/masters/canonical-items/:id',
+      schema: {
+        params: IdParamsSchema,
+        body: SaveCanonicalItemRequestSchema,
+        response: { 200: CanonicalItemSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const body = request.body;
+      const aliases = normaliseAliases(body.aliases);
+      return tenant(async (tx) => {
+        const [updated] = await tx<{ id: string }[]>`
+          update canonical_items
+          set name = ${body.name}, group_name = ${body.groupName},
+              make = ${body.make ?? null}, model = ${body.model ?? null},
+              default_unit = ${body.defaultUnit}, aliases = ${aliases}
+          where id = ${id}
+          returning id
+        `.catch((error: unknown) => {
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'CANONICAL_ITEM_EXISTS',
+              'Another canonical item already carries this name.',
+            );
+          }
+          throw error;
+        });
+        if (!updated) {
+          throw httpError(404, 'CANONICAL_ITEM_NOT_FOUND', 'No such canonical item.');
+        }
+        // Re-read rather than RETURNING: the edit that just landed was
+        // probably an alias, and an alias IS the mapping, so the count
+        // the operator sees next has to be the one the new wordings
+        // produce.
+        const row = await loadCanonicalItem(tx, updated.id);
+        if (!row) throw new Error('canonical item vanished after update');
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'canonical_item.updated',
+          'canonical_items',
+          id,
+          { name: body.name, groupName: body.groupName, aliases: aliases.length },
+        );
+        return toCanonicalItem(row);
+      });
+    },
+  );
+
+  registerActiveToggle<CanonicalItemRow, CanonicalItem>({
+    path: '/api/masters/canonical-items',
+    entity: 'canonical_item',
+    entityType: 'canonical_items',
+    notFoundCode: 'CANONICAL_ITEM_NOT_FOUND',
+    notFoundMessage: 'No such canonical item.',
+    update: async (tx, id, active) => {
+      const [updated] = await tx<{ id: string }[]>`
+        update canonical_items set active = ${active}
+        where id = ${id}
+        returning id
+      `;
+      return updated === undefined
+        ? undefined
+        : await loadCanonicalItem(tx, updated.id);
+    },
+    map: toCanonicalItem,
+    responseSchema: CanonicalItemSchema,
   });
 
   // --- Organisation signatories ---------------------------------------------

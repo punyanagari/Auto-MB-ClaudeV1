@@ -253,6 +253,7 @@ function initialsOf(email: string): string {
 }
 
 const MASTERS_CATEGORIES: readonly { key: MastersTab; label: string }[] = [
+  { key: 'items', label: 'Items' },
   { key: 'contacts', label: 'Contacts' },
   { key: 'locations', label: 'Locations' },
   { key: 'units', label: 'Units' },
@@ -289,8 +290,12 @@ export function OperationsWorkspace({
       ? initialRoute.view.workId
       : null,
   );
+  // Items, matching the rail's first category and the bare `#/masters`
+  // address (`lib/workspace-routes.ts`). The Masters view keeps the same
+  // default for its own uncontrolled use; here the workspace owns the
+  // state because the module rail opens a category directly.
   const [mastersTab, setMastersTab] = useState<MastersTab>(
-    initialRoute.mastersTab ?? 'contacts',
+    initialRoute.mastersTab ?? 'items',
   );
   /**
    * Whether the payment setup has been offered on the current screen and

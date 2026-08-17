@@ -101,6 +101,14 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ['GET /api/masters/units', 'unit master, seeded from a canonical list'],
   ['GET /api/masters/signatories', "the agency's own signing officers"],
   ['GET /api/masters/gst-rates', 'the notified GST rate slabs'],
+  [
+    'GET /api/masters/canonical-items',
+    "the agency's catalogue of the products behind its schedule lines, curated by hand",
+  ],
+  [
+    'GET /api/organisation/bank-accounts',
+    'the accounts one legal entity owns; a contractor has a handful',
+  ],
   ['GET /api/organisation/number-series', 'four configurable document types'],
   ['GET /api/organisations/current/members', 'staff headcount'],
 

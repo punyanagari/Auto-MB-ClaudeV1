@@ -1766,3 +1766,521 @@ describe('GST rate master (finding 19)', () => {
     expect(response.json()).toMatchObject({ code: 'GST_RATE_NOT_FOUND' });
   });
 });
+
+describe('contact bank beneficiary details (migration 0078)', () => {
+  const VALID = {
+    bankAccountHolder: 'Metro Industrial Supplies',
+    bankName: 'State Bank of India',
+    bankAccountNumber: '20199473820',
+    bankIfsc: 'sbin0000300',
+    bankBranch: 'Andheri East',
+    bankAccountType: 'Current',
+  };
+
+  it('stores a beneficiary, uppercasing the IFSC and returning it in full', async () => {
+    const created = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: { designation: `Bank Vendor ${runId}`, isVendor: true, ...VALID },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    // Returned in full, unlike the organisation's own accounts: this is
+    // an edit form's record, and a masked number could not be
+    // round-tripped through a full-replace update without wiping it.
+    expect(created.json<Contact>()).toMatchObject({
+      bankAccountHolder: 'Metro Industrial Supplies',
+      bankName: 'State Bank of India',
+      bankAccountNumber: '20199473820',
+      bankIfsc: 'SBIN0000300',
+      bankBranch: 'Andheri East',
+      bankAccountType: 'Current',
+    });
+  });
+
+  it('strips the spaces and hyphens a passbook prints', async () => {
+    const created = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: `Spaced Account ${runId}`,
+        isVendor: true,
+        ...VALID,
+        bankAccountNumber: '5010 2981-2476',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json<Contact>().bankAccountNumber).toBe('501029812476');
+  });
+
+  it('refuses an IFSC that is not one, and says what the shape is', async () => {
+    const response = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      // Eleven characters with a letter where the reserved zero belongs:
+      // it passes the contract schema's length, so this proves the
+      // handler's structural check rather than the schema.
+      payload: { designation: `Bad IFSC ${runId}`, ...VALID, bankIfsc: 'SBINX000300' },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'IFSC_INVALID' });
+  });
+
+  it('refuses an account number that is a note rather than a number', async () => {
+    for (const bankAccountNumber of ['n/a', '------', 'ASK RAMESH']) {
+      const response = await authed(clerk, {
+        method: 'POST',
+        url: '/api/masters/contacts',
+        organisationId,
+        payload: { designation: `Junk ${runId}`, ...VALID, bankAccountNumber },
+      });
+      expect(response.statusCode, `${bankAccountNumber}: ${response.body}`).toBe(400);
+    }
+  });
+
+  it('refuses a partial beneficiary: the four payable fields travel together', async () => {
+    const response = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: `Partial ${runId}`,
+        bankAccountNumber: '20199473820',
+        bankIfsc: 'SBIN0000300',
+        // No holder and no bank name: not a beneficiary anyone can pay.
+      },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'BANK_DETAILS_INCOMPLETE' });
+  });
+
+  it('holds the completeness rule at the database too, for a writer that skips the route', async () => {
+    await expect(
+      admin`
+        insert into contacts (
+          organisation_id, designation, is_consignee, created_by_user_id,
+          bank_account_number, bank_ifsc
+        )
+        values (
+          ${organisationId}, ${`Direct SQL ${runId}`}, true, ${ownerUserId},
+          '20199473820', 'SBIN0000300'
+        )
+      `,
+    ).rejects.toThrow(/contacts_bank_details_shape_check/);
+  });
+
+  it('clears a beneficiary when the update omits it, and never audits the number', async () => {
+    const created = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: { designation: `Clearing ${runId}`, isVendor: true, ...VALID },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json<Contact>().id;
+
+    const cleared = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${id}`,
+      organisationId,
+      payload: { designation: `Clearing ${runId}` },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json<Contact>()).toMatchObject({
+      bankAccountHolder: null,
+      bankName: null,
+      bankAccountNumber: null,
+      bankIfsc: null,
+    });
+
+    // The trail records that a contact changed, never what its account
+    // number was — a trail carrying one would be a second place it could
+    // leak from.
+    const events = await admin<{ details: unknown }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${id}
+    `;
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      expect(JSON.stringify(event.details)).not.toContain('20199473820');
+    }
+  });
+});
+
+describe('canonical items (migration 0078)', () => {
+  let canonicalId: string;
+
+  it('counts the schedule lines an item covers, by name and by alias', async () => {
+    const before = await authed(viewer, {
+      method: 'GET',
+      url: '/api/masters/canonical-items',
+      organisationId,
+    });
+    expect(before.statusCode, before.body).toBe(200);
+    const unmappedBefore = before.json<{ unmappedLineCount: number }>()
+      .unmappedLineCount;
+    // The fixture Work carries one line described 'Point machine'.
+    expect(unmappedBefore).toBeGreaterThanOrEqual(1);
+
+    const created = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/canonical-items',
+      organisationId,
+      payload: {
+        name: 'Electric point machine',
+        groupName: 'Signalling',
+        make: 'Siemens',
+        defaultUnit: 'Nos',
+        // Cased and padded on the way in, and one repeat: aliases are
+        // match keys, so they normalise rather than store as typed.
+        aliases: ['  POINT Machine  ', 'point machine'],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const item = created.json<{
+      id: string;
+      aliases: string[];
+      mappedLineCount: number;
+    }>();
+    canonicalId = item.id;
+    expect(item.aliases).toEqual(['point machine']);
+    // Derived, so the count is right the moment the alias exists —
+    // nothing had to be assigned to anything.
+    expect(item.mappedLineCount).toBe(1);
+
+    const after = await authed(viewer, {
+      method: 'GET',
+      url: '/api/masters/canonical-items',
+      organisationId,
+    });
+    const listed = after.json<{
+      items: { id: string; mappedLineCount: number }[];
+      unmappedLineCount: number;
+    }>();
+    expect(listed.items.find((row) => row.id === canonicalId)?.mappedLineCount).toBe(1);
+    expect(listed.unmappedLineCount).toBe(unmappedBefore - 1);
+  });
+
+  it('recomputes the count when an edit removes the alias that mapped a line', async () => {
+    const updated = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/masters/canonical-items/${canonicalId}`,
+      organisationId,
+      payload: {
+        name: 'Electric point machine',
+        groupName: 'Signalling',
+        defaultUnit: 'Nos',
+        aliases: ['thickweb switch'],
+      },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    expect(updated.json<{ mappedLineCount: number }>().mappedLineCount).toBe(0);
+
+    const restored = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/masters/canonical-items/${canonicalId}`,
+      organisationId,
+      payload: {
+        name: 'Electric point machine',
+        groupName: 'Signalling',
+        defaultUnit: 'Nos',
+        aliases: ['point machine'],
+      },
+    });
+    expect(restored.json<{ mappedLineCount: number }>().mappedLineCount).toBe(1);
+  });
+
+  it('refuses a second item claiming the same wording, case-insensitively', async () => {
+    const response = await authed(clerk, {
+      method: 'POST',
+      url: '/api/masters/canonical-items',
+      organisationId,
+      payload: {
+        name: '  electric POINT machine ',
+        groupName: 'Signalling',
+        defaultUnit: 'Nos',
+      },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'CANONICAL_ITEM_EXISTS' });
+  });
+
+  it('returns a retired item’s lines to the unmapped queue, and blocks viewer writes', async () => {
+    const denied = await authed(viewer, {
+      method: 'POST',
+      url: '/api/masters/canonical-items',
+      organisationId,
+      payload: { name: `Viewer item ${runId}`, groupName: 'Xx', defaultUnit: 'Nos' },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const retired = await authed(clerk, {
+      method: 'POST',
+      url: `/api/masters/canonical-items/${canonicalId}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+    expect(retired.json<{ active: boolean }>().active).toBe(false);
+
+    // A retired item is no longer the organisation's answer for those
+    // lines, so the warning has to count them again.
+    const listed = await authed(viewer, {
+      method: 'GET',
+      url: '/api/masters/canonical-items?includeRetired=true',
+      organisationId,
+    });
+    const payload = listed.json<{
+      items: { id: string; active: boolean }[];
+      unmappedLineCount: number;
+    }>();
+    expect(payload.items.find((row) => row.id === canonicalId)?.active).toBe(false);
+    expect(payload.unmappedLineCount).toBeGreaterThanOrEqual(1);
+
+    const back = await authed(clerk, {
+      method: 'POST',
+      url: `/api/masters/canonical-items/${canonicalId}/reactivate`,
+      organisationId,
+    });
+    expect(back.statusCode, back.body).toBe(200);
+    expect(back.json<{ mappedLineCount: number }>().mappedLineCount).toBe(1);
+  });
+
+  it("counts only the bound tenant's schedule lines, never another's", async () => {
+    // The foreign organisation has no Works, so an identically worded
+    // item there maps nothing: the count is computed inside the tenant
+    // binding and cannot reach across it.
+    const foreign = await authed(foreignOwner, {
+      method: 'POST',
+      url: '/api/masters/canonical-items',
+      organisationId: foreignOrganisationId,
+      payload: {
+        name: 'Electric point machine',
+        groupName: 'Signalling',
+        defaultUnit: 'Nos',
+        aliases: ['point machine'],
+      },
+    });
+    expect(foreign.statusCode, foreign.body).toBe(201);
+    expect(foreign.json<{ mappedLineCount: number }>().mappedLineCount).toBe(0);
+    const foreignId = foreign.json<{ id: string }>().id;
+
+    // Neither tenant reaches the other's row: an id from across the
+    // boundary answers exactly as an unknown one does.
+    const reached = await authed(clerk, {
+      method: 'PUT',
+      url: `/api/masters/canonical-items/${foreignId}`,
+      organisationId,
+      payload: { name: 'Stolen', groupName: 'Xx', defaultUnit: 'Nos' },
+    });
+    expect(reached.statusCode).toBe(404);
+    expect(reached.json()).toMatchObject({ code: 'CANONICAL_ITEM_NOT_FOUND' });
+
+    const listedHere = await authed(owner, {
+      method: 'GET',
+      url: '/api/masters/canonical-items?includeRetired=true',
+      organisationId,
+    });
+    expect(
+      listedHere.json<{ items: { id: string }[] }>().items.map((row) => row.id),
+    ).not.toContain(foreignId);
+  });
+
+  it('has no hard-delete path: even the application role cannot DELETE', async () => {
+    const appPool = createDatabasePool({
+      url: appUrl,
+      max: 1,
+      applicationName: 'auto-mb-masters-canonical-delete',
+    });
+    try {
+      await expect(appPool`delete from canonical_items`).rejects.toThrow(
+        /permission denied/i,
+      );
+    } finally {
+      await appPool.end();
+    }
+  });
+});
+
+describe("the organisation's own bank accounts (migration 0078)", () => {
+  let accountId: string;
+
+  it('adds an account for the owner and answers only its last four digits', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisation/bank-accounts',
+      organisationId,
+      payload: {
+        accountHolder: 'Masters Constructions',
+        bankName: 'HDFC Bank',
+        accountNumber: '50100298124761',
+        ifsc: 'hdfc0001245',
+        branch: 'Andheri East',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const account = created.json<Record<string, unknown>>();
+    accountId = account['id'] as string;
+    expect(account).toMatchObject({
+      accountHolder: 'Masters Constructions',
+      bankName: 'HDFC Bank',
+      accountNumberLast4: '4761',
+      ifsc: 'HDFC0001245',
+      branch: 'Andheri East',
+      active: true,
+    });
+    expect(created.body).not.toContain('50100298124761');
+
+    // Stored in full, though: an invoice that prints bank details needs
+    // the real number and reads the column server-side.
+    const [stored] = await admin<{ account_number: string }[]>`
+      select account_number from organisation_bank_accounts where id = ${accountId}
+    `;
+    expect(stored?.account_number).toBe('50100298124761');
+  });
+
+  it('lets any member read the list and refuses a non-owner write', async () => {
+    const listed = await authed(viewer, {
+      method: 'GET',
+      url: '/api/organisation/bank-accounts',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    expect(
+      listed.json<{ accounts: { id: string }[] }>().accounts.map((row) => row.id),
+    ).toContain(accountId);
+    expect(listed.body).not.toContain('50100298124761');
+
+    // Office writes master data everywhere else in this file; the
+    // company's own identity is owner-only, like the profile it sits in.
+    const denied = await authed(clerk, {
+      method: 'POST',
+      url: '/api/organisation/bank-accounts',
+      organisationId,
+      payload: {
+        accountHolder: 'Clerk Attempt',
+        bankName: 'HDFC Bank',
+        accountNumber: '50100298124762',
+        ifsc: 'HDFC0001245',
+      },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'OWNER_REQUIRED' });
+  });
+
+  it('proves the same IFSC and account shapes the contacts master proves', async () => {
+    for (const [field, fields] of [
+      ['ifsc', { ifsc: 'HDFCX001245', accountNumber: '50100298124763' }],
+      ['accountNumber', { ifsc: 'HDFC0001245', accountNumber: 'n/a' }],
+    ] as const) {
+      const response = await authed(owner, {
+        method: 'POST',
+        url: '/api/organisation/bank-accounts',
+        organisationId,
+        payload: {
+          accountHolder: 'Masters Constructions',
+          bankName: 'HDFC Bank',
+          ...fields,
+        },
+      });
+      expect(response.statusCode, `${field}: ${response.body}`).toBe(400);
+    }
+  });
+
+  it('refuses the same live account twice, and lets a retired one come back', async () => {
+    const duplicate = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisation/bank-accounts',
+      organisationId,
+      payload: {
+        accountHolder: 'Masters Constructions',
+        bankName: 'HDFC Bank',
+        accountNumber: '50100298124761',
+        ifsc: 'HDFC0001245',
+      },
+    });
+    expect(duplicate.statusCode, duplicate.body).toBe(409);
+    expect(duplicate.json()).toMatchObject({ code: 'BANK_ACCOUNT_EXISTS' });
+
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: `/api/organisation/bank-accounts/${accountId}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+    expect(retired.json<{ active: boolean }>().active).toBe(false);
+
+    // The live-account index is partial, so the account may be added
+    // again once the wrong row is out of the way.
+    const readded = await authed(owner, {
+      method: 'POST',
+      url: '/api/organisation/bank-accounts',
+      organisationId,
+      payload: {
+        accountHolder: 'Masters Constructions',
+        bankName: 'HDFC Bank',
+        accountNumber: '50100298124761',
+        ifsc: 'HDFC0001245',
+      },
+    });
+    expect(readded.statusCode, readded.body).toBe(201);
+
+    // And reactivating the retired row now collides with the live one
+    // rather than producing two accounts carrying one number.
+    const collides = await authed(owner, {
+      method: 'POST',
+      url: `/api/organisation/bank-accounts/${accountId}/reactivate`,
+      organisationId,
+    });
+    expect(collides.statusCode, collides.body).toBe(409);
+    expect(collides.json()).toMatchObject({ code: 'BANK_ACCOUNT_EXISTS' });
+  });
+
+  it("answers 404 for another tenant's account and never lists it", async () => {
+    const foreign = await authed(foreignOwner, {
+      method: 'POST',
+      url: '/api/organisation/bank-accounts',
+      organisationId: foreignOrganisationId,
+      payload: {
+        accountHolder: 'Foreign Constructions',
+        bankName: 'ICICI Bank',
+        accountNumber: '034201009876',
+        ifsc: 'ICIC0000342',
+      },
+    });
+    expect(foreign.statusCode, foreign.body).toBe(201);
+    const foreignId = foreign.json<{ id: string }>().id;
+
+    const reached = await authed(owner, {
+      method: 'POST',
+      url: `/api/organisation/bank-accounts/${foreignId}/retire`,
+      organisationId,
+    });
+    expect(reached.statusCode).toBe(404);
+    expect(reached.json()).toMatchObject({ code: 'BANK_ACCOUNT_NOT_FOUND' });
+
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: '/api/organisation/bank-accounts?includeRetired=true',
+      organisationId,
+    });
+    expect(
+      listed.json<{ accounts: { id: string }[] }>().accounts.map((row) => row.id),
+    ).not.toContain(foreignId);
+  });
+
+  it('audits the addition without recording the account number', async () => {
+    const events = await admin<{ action: string; details: unknown }[]>`
+      select action, details from audit_events
+      where organisation_id = ${organisationId}
+        and entity_type = 'organisation_bank_accounts'
+    `;
+    expect(events.map((event) => event.action)).toContain(
+      'organisation.bank_account_added',
+    );
+    for (const event of events) {
+      expect(JSON.stringify(event.details)).not.toContain('50100298124761');
+    }
+  });
+});

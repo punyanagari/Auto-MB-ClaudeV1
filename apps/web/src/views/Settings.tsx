@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type {
   EinvoiceApplicability,
   NumberSeries,
   NumberedDocumentType,
+  OrganisationBankAccount,
   OrganisationProfile,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { formValue, RequestFailedError } from '../api.js';
 import { formatDate } from '../format.js';
+import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Field, FieldRow, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
@@ -38,6 +40,231 @@ interface SettingsProps {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly isOwner: boolean;
+}
+
+/**
+ * The organisation's own bank accounts — the second card of the mock's
+ * Company tab (`components/company-bank-accounts` at fdfe5ef).
+ *
+ * The account number is never held here: the server returns its last four
+ * characters and nothing else, which is exactly what the mock renders
+ * (`•••• 8842`). There is therefore no edit control and none is missing —
+ * an account is added and, when it is wrong or closed, retired.
+ *
+ * The Primary badge is DERIVED, on the oldest live account, and there is
+ * no column behind it. Nothing in the product chooses an account yet — no
+ * template prints bank details — so a stored flag would be configuration
+ * with no reader and no way to set it (the mock draws the badge and no
+ * control for it either).
+ *
+ * ponytail: primary = oldest live account. When something has to choose
+ * an account, that becomes a real column with a control beside it.
+ */
+function CompanyBankAccounts({ api, organisationId, isOwner }: SettingsProps) {
+  const [accounts, setAccounts] = useState<readonly OrganisationBankAccount[] | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = () => {
+    api
+      .listOrganisationBankAccounts(organisationId)
+      .then((rows) => {
+        setAccounts(rows);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The bank accounts could not be loaded.',
+        );
+      });
+  };
+  useEffect(reload, [api, organisationId]);
+
+  async function add(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const branch = formValue(data, 'branch').trim();
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.createOrganisationBankAccount(organisationId, {
+        accountHolder: formValue(data, 'accountHolder').trim(),
+        bankName: formValue(data, 'bankName').trim(),
+        accountNumber: formValue(data, 'accountNumber').trim(),
+        ifsc: formValue(data, 'ifsc').trim(),
+        ...(branch.length > 0 ? { branch } : {}),
+      });
+      setNotice('Bank account added.');
+      form.reset();
+      reload();
+    } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The bank account could not be added.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retire(account: OrganisationBankAccount) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.setOrganisationBankAccountActive(organisationId, account.id, false);
+      setNotice(`${account.bankName} account retired.`);
+      reload();
+    } catch (cause) {
+      setError(
+        cause instanceof RequestFailedError
+          ? cause.message
+          : 'The change could not be saved.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base leading-snug font-medium">Company bank accounts</h2>
+          <p className="text-sm text-muted-foreground">
+            Organisation-owned accounts printed on invoices and used for incoming
+            payments. Only the last four digits are ever shown back.
+          </p>
+        </div>
+      </CardHeader>
+      {accounts === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading bank accounts…
+        </p>
+      ) : accounts.length === 0 ? (
+        <p className="my-3 text-[13px] text-muted-foreground">
+          No bank account recorded. An invoice that asks the railway to pay has nowhere
+          to tell it to pay to.{' '}
+          {isOwner
+            ? 'The "Add a bank account" form below is open and ready.'
+            : 'An organisation owner adds the first one.'}
+        </p>
+      ) : (
+        <ul className="my-3 flex list-none flex-col gap-3 p-0">
+          {accounts.map((account, index) => (
+            <li
+              key={account.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4"
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{account.bankName}</span>
+                  {index === 0 && <Badge variant="info">Primary</Badge>}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {account.accountHolder}
+                  {account.branch !== null && ` · ${account.branch}`}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right font-mono text-sm">
+                  <div>•••• {account.accountNumberLast4}</div>
+                  <div className="text-muted-foreground">{account.ifsc}</div>
+                </div>
+                {isOwner && (
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void retire(account)}
+                  >
+                    Retire
+                  </Button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {isOwner && accounts !== null && (
+        <Disclosure label="Add a bank account" startOpen={accounts.length === 0}>
+          <form onSubmit={(event) => void add(event)}>
+            <FieldRow>
+              <Field>
+                <label htmlFor="company-bank-holder">Account holder</label>
+                <input
+                  id="company-bank-holder"
+                  name="accountHolder"
+                  required
+                  minLength={2}
+                  maxLength={200}
+                />
+              </Field>
+              <Field>
+                <label htmlFor="company-bank-name">Bank name</label>
+                <input
+                  id="company-bank-name"
+                  name="bankName"
+                  required
+                  minLength={2}
+                  maxLength={100}
+                />
+              </Field>
+            </FieldRow>
+            <FieldRow>
+              <Field>
+                <label htmlFor="company-bank-account">Account number</label>
+                <input
+                  id="company-bank-account"
+                  name="accountNumber"
+                  className="font-mono"
+                  required
+                  maxLength={24}
+                  aria-describedby="company-bank-account-hint"
+                />
+                <p className="text-muted-foreground" id="company-bank-account-hint">
+                  Stored, never shown back — only its last four digits are.
+                </p>
+              </Field>
+              <Field>
+                <label htmlFor="company-bank-ifsc">IFSC code</label>
+                <input
+                  id="company-bank-ifsc"
+                  name="ifsc"
+                  className="font-mono"
+                  required
+                  minLength={11}
+                  maxLength={11}
+                />
+              </Field>
+              <Field>
+                <label htmlFor="company-bank-branch">Branch (optional)</label>
+                <input
+                  id="company-bank-branch"
+                  name="branch"
+                  minLength={2}
+                  maxLength={100}
+                />
+              </Field>
+            </FieldRow>
+            <Actions>
+              <Button type="submit" disabled={busy}>
+                Save account
+              </Button>
+            </Actions>
+          </form>
+        </Disclosure>
+      )}
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
+    </Card>
+  );
 }
 
 /** Organisation settings: the company profile and logo that appear on
@@ -608,6 +835,12 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
           </dl>
         )}
       </Card>
+
+      <CompanyBankAccounts
+        api={api}
+        organisationId={organisationId}
+        isOwner={isOwner}
+      />
 
       <Card>
         <CardHeader>

@@ -82,6 +82,13 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   location_masters: 'SELECT, INSERT, UPDATE',
   unit_masters: 'SELECT, INSERT, UPDATE',
   organisation_signatories: 'SELECT, INSERT, UPDATE',
+  // The canonical item catalogue (0078): a master like the three above,
+  // so it retires by flag and holds no DELETE. Its link to work_items is
+  // derived from the aliases rather than stored, so nothing here cascades.
+  canonical_items: 'SELECT, INSERT, UPDATE',
+  // The organisation's own bank accounts (0078). Same master posture; the
+  // route never projects the stored account number.
+  organisation_bank_accounts: 'SELECT, INSERT, UPDATE',
   // The unified Contacts master (0028): retire-not-delete like every
   // master. consignee_masters is a compatibility VIEW over contacts since
   // 0028 (security_invoker, so base grants and RLS are re-checked for the

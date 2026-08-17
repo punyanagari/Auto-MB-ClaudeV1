@@ -6,6 +6,7 @@ import { PaymentMatrix } from '../../src/views/PaymentMatrix.js';
 import { SerialTrace } from '../../src/views/SerialTrace.js';
 import {
   openForm,
+  openMastersCategory,
   submitButton,
   stubApi,
   ORG_ID,
@@ -193,6 +194,7 @@ describe('Masters', () => {
     });
     const { Masters } = await import('../../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
+    openMastersCategory('Contacts');
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
     await openForm('New contact');
@@ -232,6 +234,7 @@ describe('Masters', () => {
     });
     const { Masters } = await import('../../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
+    openMastersCategory('Contacts');
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
     await openForm('New contact');
@@ -262,6 +265,7 @@ describe('Masters', () => {
     });
     const { Masters } = await import('../../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
+    openMastersCategory('Contacts');
 
     expect(await screen.findByText('M/s Kay Traders')).toBeTruthy();
     expect(screen.getByText('consignee')).toBeTruthy();
@@ -279,6 +283,7 @@ describe('Masters', () => {
     });
     const { Masters } = await import('../../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
+    openMastersCategory('Contacts');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
     await screen.findByRole('heading', { name: 'Edit M/s Kay Traders' });
@@ -316,6 +321,7 @@ describe('Masters', () => {
     });
     const { Masters } = await import('../../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify />);
+    openMastersCategory('Contacts');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Retire' }));
     await waitFor(() => {
@@ -337,6 +343,7 @@ describe('Masters', () => {
     });
     const { Masters } = await import('../../src/views/Masters.js');
     render(<Masters api={api} organisationId={ORG_ID} canModify={false} />);
+    openMastersCategory('Contacts');
 
     expect(await screen.findByText('Sr. DEE (G) NR')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retire' })).toBeNull();
@@ -369,6 +376,277 @@ describe('Masters', () => {
     ).toBe('page');
     expect(await screen.findByText('Numbers')).toBeTruthy();
     expect(listUnitMasters).toHaveBeenCalledWith(ORG_ID, false);
+  });
+
+  // --- Canonical items (migration 0078) ------------------------------------
+
+  const CANONICAL_ITEM = {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    name: 'Outdoor horn speaker 30W',
+    groupName: 'Audio',
+    make: 'Ahuja',
+    model: 'UHC-30 XT',
+    defaultUnit: 'Nos',
+    aliases: ['horn speaker', '30 watt speaker'],
+    mappedLineCount: 7,
+    active: true,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+
+  it('opens on Items and shows each item with its derived mapped-line count', async () => {
+    const listCanonicalItems = vi
+      .fn()
+      .mockResolvedValue({ items: [CANONICAL_ITEM], unmappedLineCount: 4 });
+    const { Masters } = await import('../../src/views/Masters.js');
+    render(
+      <Masters
+        api={stubApi({ listCanonicalItems })}
+        organisationId={ORG_ID}
+        canModify
+      />,
+    );
+
+    // Items leads the rail and is what the page opens on, matching the
+    // mock — no click needed to get here.
+    const categories = await screen.findByRole('navigation', {
+      name: 'Master data categories',
+    });
+    expect(
+      within(categories)
+        .getByRole('button', { name: 'Items' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
+
+    expect(await screen.findByText('Outdoor horn speaker 30W')).toBeTruthy();
+    expect(screen.getByText('Ahuja · UHC-30 XT')).toBeTruthy();
+    expect(screen.getByText('horn speaker, 30 watt speaker')).toBeTruthy();
+    expect(screen.getByText('7')).toBeTruthy();
+    // The unmapped count is the operator's queue, not an error.
+    expect(screen.getByText(/4 schedule lines still need mapping/)).toBeTruthy();
+    expect(listCanonicalItems).toHaveBeenCalledWith(ORG_ID, false);
+  });
+
+  it('sends aliases one per line, because a wording can contain a comma', async () => {
+    const saveCanonicalItem = vi.fn().mockResolvedValue(CANONICAL_ITEM);
+    const { Masters } = await import('../../src/views/Masters.js');
+    render(
+      <Masters
+        api={stubApi({
+          listCanonicalItems: vi
+            .fn()
+            .mockResolvedValue({ items: [CANONICAL_ITEM], unmappedLineCount: 4 }),
+          saveCanonicalItem,
+        })}
+        organisationId={ORG_ID}
+        canModify
+      />,
+    );
+
+    expect(await screen.findByText('Outdoor horn speaker 30W')).toBeTruthy();
+    await openForm('New item');
+    fireEvent.change(screen.getByLabelText('Canonical item name'), {
+      target: { value: '3-core PVC power cable' },
+    });
+    fireEvent.change(screen.getByLabelText('Group'), {
+      target: { value: 'Power & cabling' },
+    });
+    fireEvent.change(screen.getByLabelText('Default unit'), {
+      target: { value: 'Metre' },
+    });
+    fireEvent.change(screen.getByLabelText('Aliases (one per line)'), {
+      target: { value: 'power cable\ncable, 3 core, PVC\n' },
+    });
+    fireEvent.click(submitButton('Add item'));
+
+    await waitFor(() => {
+      expect(saveCanonicalItem).toHaveBeenCalledWith(ORG_ID, null, {
+        name: '3-core PVC power cable',
+        groupName: 'Power & cabling',
+        defaultUnit: 'Metre',
+        // The comma inside the second wording survives: splitting on
+        // commas would have shredded the very description this field
+        // exists to record.
+        aliases: ['power cable', 'cable, 3 core, PVC'],
+      });
+    });
+    expect(await screen.findByRole('status')).toBeTruthy();
+  });
+
+  it('round-trips a contact bank beneficiary through the form', async () => {
+    const beneficiary = {
+      ...CONSIGNEE,
+      id: '77777777-7777-4777-8777-777777777777',
+      designation: 'Metro Industrial Supplies',
+      isConsignee: false,
+      isVendor: true,
+      bankAccountHolder: 'Metro Industrial Supplies',
+      bankName: 'State Bank of India',
+      bankAccountNumber: '20199473820',
+      bankIfsc: 'SBIN0000300',
+      bankBranch: 'Andheri East',
+      bankAccountType: 'Current',
+    };
+    const saveContact = vi.fn().mockResolvedValue(beneficiary);
+    const { Masters } = await import('../../src/views/Masters.js');
+    render(
+      <Masters
+        api={stubApi({
+          listContacts: vi.fn().mockResolvedValue([beneficiary]),
+          saveContact,
+        })}
+        organisationId={ORG_ID}
+        canModify
+      />,
+    );
+    openMastersCategory('Contacts');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    // Prefilled in full, which is why the contact endpoint returns the
+    // stored number rather than masking it: this form is a full replace,
+    // and a masked value would save back as a wiped one.
+    expect(screen.getByLabelText<HTMLInputElement>('Account number').value).toBe(
+      '20199473820',
+    );
+    expect(screen.getByLabelText<HTMLInputElement>('IFSC code').value).toBe(
+      'SBIN0000300',
+    );
+
+    fireEvent.change(screen.getByLabelText('Branch (optional)'), {
+      target: { value: 'Bandra Kurla' },
+    });
+    fireEvent.click(submitButton('Save changes'));
+
+    await waitFor(() => {
+      expect(saveContact).toHaveBeenCalledWith(ORG_ID, beneficiary.id, {
+        designation: 'Metro Industrial Supplies',
+        address: 'Delhi Division, New Delhi',
+        phone: '011-23385678',
+        bankAccountHolder: 'Metro Industrial Supplies',
+        bankName: 'State Bank of India',
+        bankAccountNumber: '20199473820',
+        bankIfsc: 'SBIN0000300',
+        bankBranch: 'Bandra Kurla',
+        bankAccountType: 'Current',
+      });
+    });
+  });
+});
+
+describe('Settings: company bank accounts', () => {
+  const PROFILE = {
+    id: ORG_ID,
+    name: 'Sharma Constructions',
+    slug: 'sharma',
+    address: null,
+    gstin: null,
+    stateCode: null,
+    contactPhone: null,
+    contactEmail: null,
+    hasLogo: false,
+  };
+  const ACCOUNT = {
+    id: '88888888-8888-4888-8888-888888888888',
+    accountHolder: 'Sharma Constructions',
+    bankName: 'HDFC Bank',
+    accountNumberLast4: '8842',
+    ifsc: 'HDFC0000182',
+    branch: 'Andheri East',
+    active: true,
+    createdAt: '2026-08-08T00:00:00.000Z',
+  };
+
+  /** Every test here needs the profile fetch to resolve before the bank
+   * card is reachable, so the stub carries it and each test adds only the
+   * bank-account behaviour it is about. */
+  function bankApi(overrides: Partial<ApiClient>): ApiClient {
+    return stubApi({
+      organisationProfile: vi.fn().mockResolvedValue(PROFILE),
+      ...overrides,
+    });
+  }
+
+  it('shows the masked account and badges the oldest live one as primary', async () => {
+    const second = {
+      ...ACCOUNT,
+      id: '99999999-9999-4999-8999-999999999999',
+      bankName: 'ICICI Bank',
+      accountNumberLast4: '1396',
+      ifsc: 'ICIC0000274',
+    };
+    const { Settings } = await import('../../src/views/Settings.js');
+    render(
+      <Settings
+        api={bankApi({
+          listOrganisationBankAccounts: vi.fn().mockResolvedValue([ACCOUNT, second]),
+        })}
+        organisationId={ORG_ID}
+        isOwner
+      />,
+    );
+
+    expect(await screen.findByText('•••• 8842')).toBeTruthy();
+    expect(screen.getByText('•••• 1396')).toBeTruthy();
+    // Derived, not stored: the badge sits on the oldest live account and
+    // nothing in the product chooses one yet.
+    const badges = screen.getAllByText('Primary');
+    expect(badges).toHaveLength(1);
+  });
+
+  it('adds an account and never asks the reader to trust a full number', async () => {
+    const createOrganisationBankAccount = vi.fn().mockResolvedValue(ACCOUNT);
+    const { Settings } = await import('../../src/views/Settings.js');
+    render(
+      <Settings
+        api={bankApi({
+          listOrganisationBankAccounts: vi.fn().mockResolvedValue([]),
+          createOrganisationBankAccount,
+        })}
+        organisationId={ORG_ID}
+        isOwner
+      />,
+    );
+
+    // The empty state opens the form: an invoice asking the railway to
+    // pay has nowhere to tell it to pay to until this list exists.
+    fireEvent.change(await screen.findByLabelText('Account holder'), {
+      target: { value: 'Sharma Constructions' },
+    });
+    fireEvent.change(screen.getByLabelText('Bank name'), {
+      target: { value: 'HDFC Bank' },
+    });
+    fireEvent.change(screen.getByLabelText('Account number'), {
+      target: { value: '50100298128842' },
+    });
+    fireEvent.change(screen.getByLabelText('IFSC code'), {
+      target: { value: 'HDFC0000182' },
+    });
+    fireEvent.click(submitButton('Save account'));
+
+    await waitFor(() => {
+      expect(createOrganisationBankAccount).toHaveBeenCalledWith(ORG_ID, {
+        accountHolder: 'Sharma Constructions',
+        bankName: 'HDFC Bank',
+        accountNumber: '50100298128842',
+        ifsc: 'HDFC0000182',
+      });
+    });
+  });
+
+  it('hides the add and retire controls from a non-owner', async () => {
+    const { Settings } = await import('../../src/views/Settings.js');
+    render(
+      <Settings
+        api={bankApi({
+          listOrganisationBankAccounts: vi.fn().mockResolvedValue([ACCOUNT]),
+        })}
+        organisationId={ORG_ID}
+        isOwner={false}
+      />,
+    );
+
+    expect(await screen.findByText('•••• 8842')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add a bank account' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retire' })).toBeNull();
   });
 });
 

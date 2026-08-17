@@ -56,6 +56,9 @@ const NON_TIMELINE: Record<string, string> = {
   location_masters: 'Organisation-level master data.',
   gst_rates: 'Organisation-level master data (notified rate history).',
   organisation_signatories: 'Organisation-level master data.',
+  canonical_items: 'Organisation-level master data (the item catalogue).',
+  organisation_bank_accounts:
+    'Organisation-level: the company’s own accounts, not anything a Work did.',
   document_number_series: 'Organisation-level numbering configuration.',
   import_batches: 'The v1 import CLI’s own batch bookkeeping, org-level.',
   loa_documents:

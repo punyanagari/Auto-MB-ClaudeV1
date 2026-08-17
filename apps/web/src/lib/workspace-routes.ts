@@ -155,8 +155,12 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
     case 'issue-challan-edit':
       return `#/works/${view.workId}/issue-challans/${view.challanId}/edit`;
     case 'masters': {
-      const tab = route.mastersTab ?? 'contacts';
-      return tab === 'contacts' ? '#/masters' : `#/masters/${tab}`;
+      // Items is the category the bare address opens, because it is the
+      // first tab on the rail (the mock's order, `app/masters/page` at
+      // fdfe5ef). Every other category, Contacts included, is its own
+      // address.
+      const tab = route.mastersTab ?? 'items';
+      return tab === 'items' ? '#/masters' : `#/masters/${tab}`;
     }
     case 'challans': {
       if (view.workId !== null) return `#/challans/${view.tab}/${view.workId}`;

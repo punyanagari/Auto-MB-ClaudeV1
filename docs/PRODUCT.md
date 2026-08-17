@@ -1046,7 +1046,33 @@ The current product also includes:
   labelled unverified, and a printable summary that states on its face that the
   NIC portal document is the statutory original;
 - optional contract-source PDFs accepted only after tender-number and
-  name-of-work identity checks match their parent LOA.
+  name-of-work identity checks match their parent LOA;
+- a canonical item catalogue: the organisation's own statement that
+  differently worded schedule lines across different Works name one product,
+  so those lines can be searched and compared. It is the one master that is
+  not a picker — nothing selects a canonical item into a document. Its link
+  to schedule lines is DERIVED rather than stored: a live line counts against
+  an item when its description equals that item's name or one of its aliases,
+  compared lowercased and trimmed, so the counts move on their own as Works
+  arrive and nothing has to be assigned. Matching is exact on the normalised
+  string, so a line that differs by a comma stays unmapped until somebody adds
+  its wording; the count of still-unmapped lines is shown above the list and
+  is the operator's queue. Retiring an item returns the lines it covered to
+  that queue. Items retire by flag like every master and are never deleted;
+- bank details in the two places money is named. A contact carries ONE
+  payment beneficiary inline on its own record — account holder, bank,
+  account number, IFSC, and optionally branch and account type — and the
+  first four are stored together or not at all, because a partial set is not
+  something anyone can be paid as. The organisation separately keeps a LIST
+  of the accounts it owns, for printing on invoices and receiving payment;
+  those are owner-only to change, retire by flag, and cannot be added twice
+  while live. Account numbers and IFSCs are shape-checked at the route and
+  again by database CHECK on both tables, and are never written to an audit
+  event or a log. The organisation's own account numbers are stored but never
+  returned by the API — every read answers the last four characters only —
+  while a contact's are returned in full because that record is edited
+  through a form that must round-trip them. Both travel in the organisation
+  data export, which is the contractor's own portability snapshot.
 
 When Whitebooks is configured, IRP transport is direct but never unattended.
 Unknown registration results become lookup-only and are never blindly

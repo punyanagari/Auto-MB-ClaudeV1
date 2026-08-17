@@ -22,6 +22,32 @@ import { DateOnlySchema, GstRateSchema, UuidSchema } from './primitives.js';
  * ending in 'D') is validated server-side so the error can explain it. */
 export const GstinSchema = Type.String({ minLength: 15, maxLength: 15 });
 
+// --- Bank beneficiary details (migration 0078) ------------------------------
+//
+// Shared by the two writers that record a bank account: a contact's
+// payment-beneficiary details (below) and the organisation's own accounts
+// (organisations.ts). Both are proved by the same normalisers in
+// apps/server/src/contact-fields.ts and the same CHECKs in migration 0078,
+// so the two surfaces cannot drift into disagreeing about what an account
+// number is.
+
+/** RBI IFSC: four letters naming the bank, a reserved '0', six
+ * alphanumerics naming the branch. Accepted in any case; stored upper. */
+export const IfscSchema = Type.String({ minLength: 11, maxLength: 11 });
+
+/** Six to eighteen alphanumerics, uppercased, at least one a digit.
+ * Wider than the NPCI 9-to-18 digit range on purpose — cooperative and
+ * older district banks issue shorter and occasionally alphanumeric
+ * numbers, and refusing a real account is a worse failure than accepting
+ * an unlikely-looking one; the digit clause is what stops that width
+ * admitting prose. The exact shape is proved server-side so the refusal
+ * can say why. */
+export const BankAccountNumberSchema = Type.String({ minLength: 6, maxLength: 18 });
+
+export const BankAccountHolderSchema = Type.String({ minLength: 2, maxLength: 200 });
+export const BankNameSchema = Type.String({ minLength: 2, maxLength: 100 });
+export const BankBranchSchema = Type.String({ minLength: 2, maxLength: 100 });
+
 export const ContactSchema = Type.Object(
   {
     id: UuidSchema,
@@ -47,6 +73,30 @@ export const ContactSchema = Type.Object(
     isVendor: Type.Boolean(),
     /** Tax invoices name client contacts as the buyer (legacy §5.8). */
     isClient: Type.Boolean(),
+    /** Where a payment to this contact goes (migration 0078). The four
+     * payable fields travel together — holder, bank, number and IFSC are
+     * all present or all null, because a partial set is not a beneficiary
+     * anyone can be paid as. Branch and account type are decoration on a
+     * payment advice and stay independently optional.
+     *
+     * Returned in full rather than masked, unlike the organisation's own
+     * accounts: this is an EDIT form's record, and a masked number cannot
+     * be round-tripped through a full-replace update without wiping the
+     * value it stands for. Optional on the wire so a reader that predates
+     * migration 0078 omits them rather than reporting nulls it never
+     * stored. */
+    bankAccountHolder: Type.Optional(
+      Type.Union([BankAccountHolderSchema, Type.Null()]),
+    ),
+    bankName: Type.Optional(Type.Union([BankNameSchema, Type.Null()])),
+    bankAccountNumber: Type.Optional(
+      Type.Union([BankAccountNumberSchema, Type.Null()]),
+    ),
+    bankIfsc: Type.Optional(Type.Union([IfscSchema, Type.Null()])),
+    bankBranch: Type.Optional(Type.Union([BankBranchSchema, Type.Null()])),
+    bankAccountType: Type.Optional(
+      Type.Union([Type.String({ minLength: 2, maxLength: 50 }), Type.Null()]),
+    ),
     active: Type.Boolean(),
     createdAt: Type.String({ format: 'date-time' }),
   },
@@ -82,6 +132,17 @@ export const SaveContactRequestSchema = Type.Object(
     divisionCode: Type.Optional(Type.String({ pattern: '^[0-9]{2,5}$' })),
     isVendor: Type.Optional(Type.Boolean()),
     isClient: Type.Optional(Type.Boolean()),
+    /** Bank beneficiary details (migration 0078). Profile text, so these
+     * follow the rule the rest of this body follows and NOT the role
+     * flags': an omitted field stores NULL. The four payable fields are
+     * refused unless they arrive together. IFSC is accepted in any case
+     * and stored upper, like the GSTIN above. */
+    bankAccountHolder: Type.Optional(BankAccountHolderSchema),
+    bankName: Type.Optional(BankNameSchema),
+    bankAccountNumber: Type.Optional(BankAccountNumberSchema),
+    bankIfsc: Type.Optional(IfscSchema),
+    bankBranch: Type.Optional(BankBranchSchema),
+    bankAccountType: Type.Optional(Type.String({ minLength: 2, maxLength: 50 })),
   },
   { additionalProperties: false },
 );
@@ -256,3 +317,73 @@ export const SignatoryListResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 export type SignatoryListResponse = Static<typeof SignatoryListResponseSchema>;
+
+// --- Canonical items (migration 0078) ---------------------------------------
+//
+// The organisation's catalogue of the products behind its differently
+// worded schedule lines: three Works can each spell one horn speaker
+// differently, and this is where somebody says they are the same thing.
+//
+// Unlike every other master here, this one is not a picker. Nothing
+// selects a canonical item into a document; it exists so schedule lines
+// can be searched and compared across Works. Its link to `work_items` is
+// DERIVED rather than stored — a line is mapped when its description
+// equals this item's name or one of its aliases, lowercased and trimmed —
+// so `mappedLineCount` is computed per read and no writer maintains it.
+// Migration 0078 records why there is no `canonical_item_id` column.
+
+export const CanonicalItemSchema = Type.Object(
+  {
+    id: UuidSchema,
+    name: Type.String({ minLength: 2, maxLength: 200 }),
+    /** A label rendered as a badge, not a foreign key. The distinct
+     * values across an organisation's items are its group list. */
+    groupName: Type.String({ minLength: 2, maxLength: 100 }),
+    make: Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()]),
+    model: Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()]),
+    /** A suggestion for a form default, not a value documents are
+     * validated against — so free text rather than a unit master id. */
+    defaultUnit: Type.String({ minLength: 1, maxLength: 20 }),
+    /** The other wordings that mean this item. Stored trimmed and
+     * lowercased: they are matched, not displayed as typed. */
+    aliases: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+      maxItems: 50,
+    }),
+    /** Live schedule lines across every Work whose description matches
+     * this item's name or one of its aliases. Computed per read. */
+    mappedLineCount: Type.Integer({ minimum: 0 }),
+    active: Type.Boolean(),
+    createdAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+export type CanonicalItem = Static<typeof CanonicalItemSchema>;
+
+export const SaveCanonicalItemRequestSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 2, maxLength: 200 }),
+    groupName: Type.String({ minLength: 2, maxLength: 100 }),
+    make: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+    model: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+    defaultUnit: Type.String({ minLength: 1, maxLength: 20 }),
+    /** Trimmed, lowercased and de-duplicated server-side; blanks drop. */
+    aliases: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type SaveCanonicalItemRequest = Static<typeof SaveCanonicalItemRequestSchema>;
+
+export const CanonicalItemListResponseSchema = Type.Object(
+  {
+    items: Type.Array(CanonicalItemSchema),
+    /** Live schedule lines that no ACTIVE canonical item claims — the
+     * warning line the Items tab prints above the table. Counted from the
+     * same normalised descriptions the mapping uses, so the two numbers
+     * cannot disagree about what a line is. */
+    unmappedLineCount: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type CanonicalItemListResponse = Static<typeof CanonicalItemListResponseSchema>;

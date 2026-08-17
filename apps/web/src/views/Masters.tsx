@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import type {
+  CanonicalItem,
   Contact,
   GstRateMaster,
   LocationKind,
@@ -23,7 +24,7 @@ import { DateField } from '../ui/date-field.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FieldRow, FormError, FormNotice, Hint } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
-import { DataTable, wrapCell } from '../ui/table.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 
 interface MastersProps {
   readonly api: ApiClient;
@@ -41,9 +42,13 @@ interface MastersProps {
 
 export type { MastersTab };
 
-type MastersTab = 'contacts' | 'locations' | 'units' | 'signatories' | 'gst-rates';
+type MastersTab =
+  'items' | 'contacts' | 'locations' | 'units' | 'signatories' | 'gst-rates';
 
+/** The mock's order, Items first (`app/masters/page` at fdfe5ef), which
+ * also makes it the category `#/masters` opens on. */
 const TABS: readonly { key: MastersTab; label: string }[] = [
+  { key: 'items', label: 'Items' },
   { key: 'contacts', label: 'Contacts' },
   { key: 'locations', label: 'Locations' },
   { key: 'units', label: 'Units' },
@@ -207,6 +212,306 @@ function MasterForm({
   );
 }
 
+/**
+ * The canonical item catalogue.
+ *
+ * The one tab here that is not a picker: nothing selects a canonical item
+ * into a document. It answers "which of our schedule lines, across every
+ * Work, are the same product worded differently" — and the aliases are
+ * how it answers, because the mapping is derived from them rather than
+ * stored (migration 0078).
+ *
+ * That is why the warning line above the table matters more than it looks:
+ * an unmapped count is not an error, it is the operator's queue. Every
+ * line it counts is one whose wording no item claims yet, and the fix is
+ * always the same — add that wording as an alias of the item it belongs
+ * to.
+ */
+function ItemsTab({ api, organisationId, canModify }: MastersProps) {
+  const [includeRetired, setIncludeRetired] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [editing, setEditing] = useState<CanonicalItem | null>(null);
+  const [unmapped, setUnmapped] = useState(0);
+
+  const load = useCallback(
+    async (retired: boolean) => {
+      const payload = await api.listCanonicalItems(organisationId, retired);
+      setUnmapped(payload.unmappedLineCount);
+      return payload.items;
+    },
+    [api, organisationId],
+  );
+  const { rows, reload } = useMasterList(load, includeRetired, setError);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const optional = (name: string): string | undefined => {
+      const value = formValue(data, name).trim();
+      return value.length === 0 ? undefined : value;
+    };
+    // One wording per line is the whole editing model here: an alias is a
+    // sentence somebody read off a tender, and commas appear inside those
+    // sentences ("cable, 3 core, PVC"), so splitting on them would shred
+    // the very wordings this field exists to record.
+    const aliases = formValue(data, 'aliases')
+      .split('\n')
+      .map((alias) => alias.trim())
+      .filter((alias) => alias.length > 0);
+    const make = optional('make');
+    const model = optional('model');
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.saveCanonicalItem(organisationId, editing?.id ?? null, {
+        name: formValue(data, 'name').trim(),
+        groupName: formValue(data, 'groupName').trim(),
+        defaultUnit: formValue(data, 'defaultUnit').trim(),
+        ...(make !== undefined ? { make } : {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(aliases.length > 0 ? { aliases } : {}),
+      });
+      setNotice(editing === null ? 'Canonical item added.' : 'Canonical item updated.');
+      setEditing(null);
+      form.reset();
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The canonical item could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function setActive(row: CanonicalItem, active: boolean) {
+    setPending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.setCanonicalItemActive(organisationId, row.id, active);
+      setNotice(
+        active
+          ? `${row.name} reactivated.`
+          : `${row.name} retired — its schedule lines count as unmapped again.`,
+      );
+      reload();
+    } catch (cause) {
+      setError(errorMessage(cause, 'The change could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <MasterIntro
+        filter={
+          <RetiredFilter
+            id="canonical-items-retired"
+            includeRetired={includeRetired}
+            onChange={setIncludeRetired}
+          />
+        }
+      >
+        Canonical items group differently worded tender lines so they can be searched
+        and compared across Works. A line counts against an item when its description
+        matches the item&rsquo;s name or one of its aliases.
+      </MasterIntro>
+      {rows !== null && rows.length > 0 && (
+        <p className="mb-3 text-[13px] text-warning-foreground">
+          {unmapped === 0
+            ? 'Every schedule line is mapped to a canonical item.'
+            : `${unmapped.toString()} schedule line${unmapped === 1 ? '' : 's'} still need${unmapped === 1 ? 's' : ''} mapping — add the wording each one uses as an alias.`}
+        </p>
+      )}
+      {rows === null ? (
+        <p className="text-muted-foreground" role="status">
+          Loading canonical items…
+        </p>
+      ) : rows.length === 0 ? (
+        <EmptyMaster
+          purpose="No canonical items yet. Until this list exists, the same product bought under three Works is three unrelated descriptions — nothing can compare their rates or total what was installed of it."
+          action="New item"
+          canModify={canModify}
+        />
+      ) : (
+        <DataTable>
+          <caption className="sr-only">
+            Canonical items with their group, aliases, unit, and the number of schedule
+            lines each covers
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Canonical item</th>
+              <th scope="col">Group</th>
+              <th scope="col">Aliases</th>
+              <th scope="col">Unit</th>
+              <th className="text-right" scope="col">
+                Mapped lines
+              </th>
+              <th scope="col">Status</th>
+              {canModify && <th scope="col">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row">
+                  <span className="flex flex-col gap-0.5">
+                    <span>{row.name}</span>
+                    {row.make !== null && (
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {row.model === null ? row.make : `${row.make} · ${row.model}`}
+                      </span>
+                    )}
+                  </span>
+                </th>
+                <td>
+                  <Badge variant="neutral">{row.groupName}</Badge>
+                </td>
+                <td className={wrapCell}>
+                  {row.aliases.length === 0 ? '—' : row.aliases.join(', ')}
+                </td>
+                <td>{row.defaultUnit}</td>
+                <td className={numericCell}>{row.mappedLineCount}</td>
+                <td>
+                  <StatusChip active={row.active} />
+                </td>
+                {canModify && (
+                  <td>
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => {
+                        setEditing(row);
+                      }}
+                    >
+                      Edit
+                    </Button>{' '}
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => void setActive(row, !row.active)}
+                    >
+                      {row.active ? 'Retire' : 'Reactivate'}
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+
+      {canModify && rows !== null && (
+        <MasterForm
+          label="New item"
+          editingTitle={editing === null ? null : `Edit ${editing.name}`}
+          startOpen={rows.length === 0}
+        >
+          <form key={editing?.id ?? 'new'} onSubmit={(event) => void save(event)}>
+            <FieldRow>
+              <Field>
+                <label htmlFor="canonical-item-name">Canonical item name</label>
+                <input
+                  id="canonical-item-name"
+                  name="name"
+                  required
+                  minLength={2}
+                  maxLength={200}
+                  defaultValue={editing?.name ?? ''}
+                />
+              </Field>
+              <Field>
+                <label htmlFor="canonical-item-group">Group</label>
+                <input
+                  id="canonical-item-group"
+                  name="groupName"
+                  required
+                  minLength={2}
+                  maxLength={100}
+                  defaultValue={editing?.groupName ?? ''}
+                  aria-describedby="canonical-item-group-hint"
+                />
+                <p className="text-muted-foreground" id="canonical-item-group-hint">
+                  A label, not a list to maintain — reuse the wording of an existing
+                  group to file this item beside it.
+                </p>
+              </Field>
+              <Field>
+                <label htmlFor="canonical-item-unit">Default unit</label>
+                <input
+                  id="canonical-item-unit"
+                  name="defaultUnit"
+                  required
+                  minLength={1}
+                  maxLength={20}
+                  defaultValue={editing?.defaultUnit ?? ''}
+                />
+              </Field>
+            </FieldRow>
+            <FieldRow>
+              <Field>
+                <label htmlFor="canonical-item-make">Make (optional)</label>
+                <input
+                  id="canonical-item-make"
+                  name="make"
+                  maxLength={100}
+                  defaultValue={editing?.make ?? ''}
+                />
+              </Field>
+              <Field>
+                <label htmlFor="canonical-item-model">Model (optional)</label>
+                <input
+                  id="canonical-item-model"
+                  name="model"
+                  maxLength={100}
+                  defaultValue={editing?.model ?? ''}
+                />
+              </Field>
+            </FieldRow>
+            <Field>
+              <label htmlFor="canonical-item-aliases">Aliases (one per line)</label>
+              <textarea
+                id="canonical-item-aliases"
+                name="aliases"
+                rows={3}
+                defaultValue={editing?.aliases.join('\n') ?? ''}
+              />
+              <Hint>
+                Every other wording your tenders use for this item. This is what maps
+                schedule lines to it, so paste the descriptions as the letters print
+                them — one per line, matched exactly apart from case and spacing.
+              </Hint>
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={pending}>
+                {editing === null ? 'Add item' : 'Save changes'}
+              </Button>
+              {editing !== null && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditing(null);
+                  }}
+                >
+                  Cancel edit
+                </Button>
+              )}
+            </Actions>
+          </form>
+        </MasterForm>
+      )}
+
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {error !== null && <FormError>{error}</FormError>}
+    </>
+  );
+}
+
 function ContactsTab({ api, organisationId, canModify }: MastersProps) {
   const [includeRetired, setIncludeRetired] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,6 +553,15 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     const stateCode = optional('stateCode');
     const locality = optional('locality');
     const divisionCode = optional('divisionCode');
+    // Bank details are profile text like the address above: an emptied
+    // field travels as omitted, which the server stores as NULL. That is
+    // how a beneficiary is cleared when a vendor changes banks.
+    const bankAccountHolder = optional('bankAccountHolder');
+    const bankName = optional('bankName');
+    const bankAccountNumber = optional('bankAccountNumber');
+    const bankIfsc = optional('bankIfsc');
+    const bankBranch = optional('bankBranch');
+    const bankAccountType = optional('bankAccountType');
     // Role flags are membership, not profile text: an omitted flag leaves
     // the stored value unchanged, so only a CHANGED box travels — an
     // untouched form still sends exactly what it always sent.
@@ -268,6 +582,12 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         ...(stateCode !== undefined ? { stateCode } : {}),
         ...(locality !== undefined ? { locality } : {}),
         ...(divisionCode !== undefined ? { divisionCode } : {}),
+        ...(bankAccountHolder !== undefined ? { bankAccountHolder } : {}),
+        ...(bankName !== undefined ? { bankName } : {}),
+        ...(bankAccountNumber !== undefined ? { bankAccountNumber } : {}),
+        ...(bankIfsc !== undefined ? { bankIfsc } : {}),
+        ...(bankBranch !== undefined ? { bankBranch } : {}),
+        ...(bankAccountType !== undefined ? { bankAccountType } : {}),
         ...(roleVendor !== wasVendor ? { isVendor: roleVendor } : {}),
         ...(roleClient !== wasClient ? { isClient: roleClient } : {}),
       });
@@ -568,6 +888,89 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                 contact with neither role is a consignee for railway document flows —
                 fixed at creation.
               </p>
+            </fieldset>
+            {/* The mock's "Bank details" block (`components/contact-form-dialog`
+             * at fdfe5ef): a divider, a heading, its caption, then the six
+             * fields. Rendered as a fieldset with the heading as its legend
+             * rather than a bare `h3`, because the group is what the six
+             * inputs belong to and a screen reader should hear that when it
+             * reaches them. */}
+            <fieldset className="my-3 border-t border-border pt-4">
+              <legend className="text-[13px] font-medium">Bank details</legend>
+              <p className="mb-3 text-[13px] text-muted-foreground">
+                Used when this contact is selected as a payment beneficiary. Holder,
+                bank, account number and IFSC go together — fill all four or leave all
+                four blank.
+              </p>
+              <FieldRow>
+                <Field>
+                  <label htmlFor="contact-account-holder">Account holder name</label>
+                  <input
+                    id="contact-account-holder"
+                    name="bankAccountHolder"
+                    minLength={2}
+                    maxLength={200}
+                    defaultValue={editing?.bankAccountHolder ?? ''}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="contact-bank-name">Bank name</label>
+                  <input
+                    id="contact-bank-name"
+                    name="bankName"
+                    minLength={2}
+                    maxLength={100}
+                    defaultValue={editing?.bankName ?? ''}
+                  />
+                </Field>
+              </FieldRow>
+              <FieldRow>
+                <Field>
+                  <label htmlFor="contact-account-number">Account number</label>
+                  <input
+                    id="contact-account-number"
+                    name="bankAccountNumber"
+                    className="font-mono"
+                    maxLength={24}
+                    defaultValue={editing?.bankAccountNumber ?? ''}
+                    aria-describedby="contact-account-number-hint"
+                  />
+                  <p className="text-muted-foreground" id="contact-account-number-hint">
+                    As printed on the passbook. Spaces and hyphens are removed.
+                  </p>
+                </Field>
+                <Field>
+                  <label htmlFor="contact-ifsc">IFSC code</label>
+                  <input
+                    id="contact-ifsc"
+                    name="bankIfsc"
+                    className="font-mono"
+                    minLength={11}
+                    maxLength={11}
+                    defaultValue={editing?.bankIfsc ?? ''}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="contact-branch">Branch (optional)</label>
+                  <input
+                    id="contact-branch"
+                    name="bankBranch"
+                    minLength={2}
+                    maxLength={100}
+                    defaultValue={editing?.bankBranch ?? ''}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="contact-account-type">Account type (optional)</label>
+                  <input
+                    id="contact-account-type"
+                    name="bankAccountType"
+                    minLength={2}
+                    maxLength={50}
+                    defaultValue={editing?.bankAccountType ?? ''}
+                  />
+                </Field>
+              </FieldRow>
             </fieldset>
             <Actions>
               <Button type="submit" disabled={pending}>
@@ -1324,7 +1727,7 @@ export function Masters({
   tab: controlledTab,
   onTabChange,
 }: MastersProps) {
-  const [ownTab, setOwnTab] = useState<MastersTab>('contacts');
+  const [ownTab, setOwnTab] = useState<MastersTab>('items');
   const tab = controlledTab ?? ownTab;
   const setTab = onTabChange ?? setOwnTab;
 
@@ -1398,6 +1801,9 @@ export function Masters({
         </nav>
       </div>
       <Card>
+        {tab === 'items' && (
+          <ItemsTab api={api} organisationId={organisationId} canModify={canModify} />
+        )}
         {tab === 'contacts' && (
           <ContactsTab
             api={api}

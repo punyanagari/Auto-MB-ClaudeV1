@@ -290,6 +290,48 @@ export async function mockWorkspace(
   await page.route('**/api/masters/locations*', (route) =>
     route.fulfill(json({ locations })),
   );
+  // Populated rather than empty (migration 0078): an empty Items tab
+  // renders the EmptyMaster sentence and its open form, which is a
+  // different set of nodes from the table the axe scan is there to check.
+  await page.route('**/api/masters/canonical-items*', (route) =>
+    route.fulfill(
+      json({
+        items: [
+          {
+            id: '5c0a4f2e-1d3b-4a6c-8e91-6f2b9c7d4e10',
+            name: 'Outdoor horn speaker 30W',
+            groupName: 'Audio',
+            make: 'Ahuja',
+            model: 'UHC-30 XT',
+            defaultUnit: 'Nos',
+            aliases: ['horn speaker', '30 watt speaker'],
+            mappedLineCount: 7,
+            active: true,
+            createdAt: '2026-08-08T00:00:00.000Z',
+          },
+        ],
+        unmappedLineCount: 4,
+      }),
+    ),
+  );
+  await page.route('**/api/organisation/bank-accounts*', (route) =>
+    route.fulfill(
+      json({
+        accounts: [
+          {
+            id: '9b1e7c34-8a52-4d0f-b6c7-2e5a1f8d3049',
+            accountHolder: 'Sharma Constructions',
+            bankName: 'HDFC Bank',
+            accountNumberLast4: '8842',
+            ifsc: 'HDFC0000182',
+            branch: 'Andheri East',
+            active: true,
+            createdAt: '2026-08-08T00:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
   await page.route('**/api/organisation/number-series', (route) =>
     route.fulfill(json({ series: [] })),
   );

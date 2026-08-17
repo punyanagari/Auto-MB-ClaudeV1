@@ -67,9 +67,7 @@ describe('workspace hash routes', () => {
       if (parsed === null) continue;
       expect(parsed.view, hash).toEqual(route.view);
       expect(parsed.workTab ?? 'overview', hash).toBe(route.workTab ?? 'overview');
-      expect(parsed.mastersTab ?? 'contacts', hash).toBe(
-        route.mastersTab ?? 'contacts',
-      );
+      expect(parsed.mastersTab ?? 'items', hash).toBe(route.mastersTab ?? 'items');
       // The canonical form is a fixed point: serializing the parse gives
       // the same hash back.
       expect(workspaceHashOf(parsed)).toBe(hash);
@@ -177,8 +175,11 @@ describe('workspace hash routes', () => {
     expect(challansHash('delivery')).toBe('#/challans');
     expect(challansHash('installation')).toBe('#/challans/installation');
     expect(challansHash('delivery', WORK_ID)).toBe(`#/challans/delivery/${WORK_ID}`);
+    // Items leads the rail, so it is the category the bare address opens
+    // and Contacts is an address of its own.
     expect(mastersHash()).toBe('#/masters');
-    expect(mastersHash('contacts')).toBe('#/masters');
+    expect(mastersHash('items')).toBe('#/masters');
+    expect(mastersHash('contacts')).toBe('#/masters/contacts');
     expect(mastersHash('units')).toBe('#/masters/units');
   });
 });
