@@ -1,4 +1,3 @@
-import { createHash, randomUUID } from 'node:crypto';
 import {
   CompanyDocumentListResponseSchema,
   CompanyDocumentSchema,
@@ -22,12 +21,14 @@ import {
   assertNotMalware,
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
+  storePdfUpload,
 } from '../upload-guards.js';
 import {
   audit,
   errorResponses,
   EXPIRY_WARNING_DAYS,
   IdParamsSchema,
+  requireTrimmed,
   upstreamErrorResponses,
 } from './shared.js';
 
@@ -311,7 +312,7 @@ export function registerCompanyDocumentRoutes(
       });
       await assertNotMalware(scanner, bytes);
 
-      const stored = await putVersionBytes(storage, organisationId, bytes);
+      const stored = await storePdfUpload(storage, organisationId, STORAGE_AREA, bytes);
 
       const created = await tenant(async (tx) => {
         let documentId: string;
@@ -334,7 +335,7 @@ export function registerCompanyDocumentRoutes(
         await insertVersion(tx, {
           organisationId,
           documentId,
-          versionId: stored.versionId,
+          versionId: stored.id,
           versionNumber: 1,
           objectKey: stored.objectKey,
           filename,
@@ -389,7 +390,7 @@ export function registerCompanyDocumentRoutes(
       });
       await assertNotMalware(scanner, bytes);
 
-      const stored = await putVersionBytes(storage, organisationId, bytes);
+      const stored = await storePdfUpload(storage, organisationId, STORAGE_AREA, bytes);
 
       const updated = await tenant(async (tx) => {
         // The row lock is what serialises two renewals uploaded in the
@@ -409,7 +410,7 @@ export function registerCompanyDocumentRoutes(
           await insertVersion(tx, {
             organisationId,
             documentId: id,
-            versionId: stored.versionId,
+            versionId: stored.id,
             versionNumber,
             objectKey: stored.objectKey,
             filename,
@@ -569,11 +570,6 @@ const FILENAME_REFUSAL = 'The uploaded file needs a name.';
  * storage, so a caller who typed a space into the filename gets an
  * unexplained server error and leaves an orphan object behind.
  */
-function requireTrimmed(value: string, refusal: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) throw httpError(400, 'FIELD_TOO_SHORT', refusal);
-  return trimmed;
-}
 
 /** The validity window has to open before it closes. Checked here as well
  * as by the CHECK constraint in 0079 so the operator gets a sentence
@@ -628,28 +624,6 @@ async function loadLiveDocument(
     );
   }
   return { id: row.id, title: row.title };
-}
-
-/** Writes the bytes under a server-generated key and hands back the id
- * the row will carry, so the object and its row are the same uuid.
- *
- * Deliberately OUTSIDE the transaction, exactly as `routes/loa.ts` does
- * it: a failure after this point leaves an orphan object under a uuid
- * nothing points at, which is inert, where the opposite ordering would
- * leave a row promising bytes that are not there. */
-async function putVersionBytes(
-  storage: ObjectStorage,
-  organisationId: string,
-  bytes: Buffer,
-): Promise<{ versionId: string; objectKey: string; sha256: string }> {
-  const versionId = randomUUID();
-  const objectKey = `${organisationId}/${STORAGE_AREA}/${versionId}.pdf`;
-  await storage.put(objectKey, bytes);
-  return {
-    versionId,
-    objectKey,
-    sha256: createHash('sha256').update(bytes).digest('hex'),
-  };
 }
 
 interface VersionInsert {

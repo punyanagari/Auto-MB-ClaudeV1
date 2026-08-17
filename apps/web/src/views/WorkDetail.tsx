@@ -53,6 +53,7 @@ import { WorkInstruments } from './WorkInstruments.js';
 import { WorkBills } from './WorkBills.js';
 import { WorkIssueChallans } from './WorkIssueChallans.js';
 import { WorkAmendments } from './WorkAmendments.js';
+import { WorkInspectionClause } from './WorkInspectionClause.js';
 import { WorkSchedules } from './WorkSchedules.js';
 import { WorkMeasurement } from './WorkMeasurement.js';
 import { WorkBillingReadiness } from './WorkBillingReadiness.js';
@@ -110,6 +111,11 @@ export const WORK_TABS = [
   'issues',
   'measurement',
   'bills',
+  // Ninth, where the mock's own section rail puts it
+  // (`components/work-section-nav.tsx` at fdfe5ef) — after the money and
+  // before the instruments, not beside Installations where it first
+  // landed.
+  'inspection',
   'instruments',
   'amendments',
   'timeline',
@@ -122,6 +128,10 @@ const WORK_TAB_LABELS: Record<WorkTab, string> = {
   schedules: 'Schedules & items',
   deliveries: 'Deliveries',
   installations: 'Installations',
+  // The mock's own label for this section
+  // (`components/work-section-nav.tsx` at fdfe5ef), which names the
+  // contract clause rather than the activity.
+  inspection: 'Inspection clause',
   procurement: 'Procurement',
   issues: 'Issues',
   measurement: 'Measurement',
@@ -1013,6 +1023,11 @@ export function WorkDetail({
       installationCounts === null
         ? null
         : installationCounts.recorded + installationCounts.cancelled,
+    // No badge: the Work read carries no inspection count, and the tab
+    // loads its own configuration. A number here would have to come from
+    // a read the page does not do, and a fabricated zero beside a mapped
+    // clause is worse than no number at all.
+    inspection: null,
     procurement:
       relatedStateForTab('procurement') === 'ready'
         ? (purchaseOrders?.length ?? 0)
@@ -1668,6 +1683,20 @@ export function WorkDetail({
             onInvoicesKnown={setTaxInvoiceCount}
           />
         </>
+      )}
+
+      {/* Inspection is deliberately outside `RELATED_BY_TAB`, for the reason
+          Installations is: the tab loads its own configuration when it is
+          opened, so the Work page holds no pending read to gate it on and
+          no failure of its own to report. */}
+      {tab === 'inspection' && (
+        <WorkInspectionClause
+          api={api}
+          organisationId={organisationId}
+          workId={workId}
+          canModify={canModify}
+          canGate={isOwner}
+        />
       )}
 
       {tab === 'instruments' && (

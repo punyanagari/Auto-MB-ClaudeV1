@@ -113,6 +113,22 @@ const ALLOWED_EXTERNAL = new Map([
     'company-document-library.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the company document library for the two-card grid and bordered credential rows it replicates',
   ],
+  [
+    'app-sidebar.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the rail census for the module grouping it replicates',
+  ],
+  [
+    'inspection-lifecycle-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Inspection workspace and by migration 0082 for the job-card anatomy they replicate',
+  ],
+  [
+    'work-inspection-mapping.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work inspection clause tab for the mapping table it replicates',
+  ],
+  [
+    'inspection-checklist-config.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work inspection clause tab for the checklist card it replicates',
+  ],
 ]);
 
 /**
@@ -132,6 +148,11 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
     'app/tenders/company-documents/page.tsx',
     'the v0 mock screen the company document library replicates',
   ],
+  [
+    'lib/data.ts',
+    'the v0 mock’s module-scope seed data, cited where a constant here takes its value from the mock rather than inventing one',
+  ],
+  ['app/inspection/page.tsx', 'the v0 mock screen the Inspection workspace replicates'],
 ]);
 
 /** Whether a reference names something deliberately outside this tree. */

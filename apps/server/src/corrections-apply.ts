@@ -224,6 +224,33 @@ export async function applyChallanCancelReplace(
   }
   await assertChallanDate(tx, challan.work_id, proposed.replacement.challanDate);
 
+  // THE INSPECTION GATE, CHECKED BEFORE ANYTHING IS CANCELLED (0082).
+  //
+  // Cancel-and-replace is two acts in one transaction, and the second is
+  // an issue. If the replacement could not be issued — because a
+  // certificate lapsed or was withdrawn between filing and approval — then
+  // cancelling the original first would leave the Work with NO live
+  // challan for material that has already moved, which is strictly worse
+  // than refusing the correction. So the gate is asked here, against the
+  // original's own lines, and the correction stays pending with a remedy
+  // naming the certificate.
+  const uncertified = await tx<{ item_number: string; agency: string }[]>`
+    select item_number, agency
+    from app_private.inspection_dispatch_shortfall(
+      ${challan.id},
+      (select app_private.organisation_today(${organisationId}))
+    )
+  `;
+  if (uncertified.length > 0) {
+    throw httpError(
+      409,
+      'INSPECTION_CERTIFICATE_MISSING',
+      `The replacement cannot be issued: a live inspection certificate no longer covers ${uncertified
+        .map((row) => `${row.item_number} (${row.agency})`)
+        .join(', ')}. The original challan is left untouched.`,
+    );
+  }
+
   // Cancel the original with the human reason plus the approval
   // reference. The 0008 trigger re-proves the evidence-free invariant at
   // the database.

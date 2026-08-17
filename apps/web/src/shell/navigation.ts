@@ -1,6 +1,7 @@
 import {
   CircleCheckBig,
   Database,
+  ClipboardCheck,
   FileBadge,
   FileText,
   FolderKanban,
@@ -23,6 +24,7 @@ export type ModuleKey =
   | 'invoices'
   | 'quotations'
   | 'company-documents'
+  | 'inspection'
   | 'approvals'
   | 'search'
   | 'installations'
@@ -93,6 +95,7 @@ export const NAVIGATION: readonly NavGroup[] = [
     label: 'Operations',
     items: [
       { key: 'installations', label: 'Installations', icon: Wrench },
+      { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
       { key: 'search', label: 'Global search', icon: ScanSearch },
     ],
   },
@@ -127,6 +130,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'quotations' };
     case 'company-documents':
       return { name: 'company-documents' };
+    case 'inspection':
+      return { name: 'inspection' };
     case 'approvals':
       return { name: 'approvals' };
     case 'search':
@@ -167,6 +172,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'invoices':
     case 'quotations':
     case 'company-documents':
+    case 'inspection':
     case 'approvals':
     case 'search':
     case 'installations':
@@ -215,6 +221,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Quotations';
     case 'company-documents':
       return 'Company documents';
+    case 'inspection':
+      return 'Inspection';
     case 'approvals':
       return 'Approvals';
     case 'search':

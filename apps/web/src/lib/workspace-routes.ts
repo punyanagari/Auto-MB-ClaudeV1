@@ -62,6 +62,10 @@ export type WorkspaceView =
    * belong to no Work (migration 0079). One register, no record page —
    * a credential is its rows, and the versions live inside the row. */
   | { name: 'company-documents' }
+  /** The Inspection workspace: RDSO and RITES calls across every Work the
+   * caller reaches (migration 0082). One register, no record page — a call
+   * is its card, and its documents live inside the card. */
+  | { name: 'inspection' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -93,6 +97,7 @@ export const WORK_TAB_NAMES = [
   'issues',
   'measurement',
   'bills',
+  'inspection',
   'instruments',
   'amendments',
   'timeline',
@@ -195,6 +200,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
         : `#/search/${encodeURIComponent(view.query)}`;
     case 'company-documents':
       return '#/company-documents';
+    case 'inspection':
+      return '#/inspection';
     case 'members':
       return '#/members';
     case 'settings':
@@ -376,6 +383,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'quotations':
     case 'approvals':
     case 'company-documents':
+    case 'inspection':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;

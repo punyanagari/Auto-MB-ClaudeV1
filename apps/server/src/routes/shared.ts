@@ -1,4 +1,5 @@
 import { ApiErrorSchema } from '@auto-mb/contracts';
+import { httpError } from '../http.js';
 import { Type } from '@sinclair/typebox';
 import type { TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
@@ -63,4 +64,21 @@ export async function audit(
       ${jsonb(tx, details)}
     )
   `;
+}
+
+/**
+ * A trust-boundary string, trimmed, refusing one that is only whitespace.
+ *
+ * `minLength: 1` in a schema admits a string of spaces, and the CHECK
+ * constraints that back these columns refuse an untrimmed or blank value.
+ * Without this the refusal arrives as SQLSTATE 23514 — a 500 rather than a
+ * 400, and on an upload route one raised AFTER the bytes have been written
+ * to object storage, so the caller gets an unexplained server error and
+ * leaves an orphan object behind. Call it BEFORE the malware scan, which
+ * is the expensive step no ill-formed request should reach.
+ */
+export function requireTrimmed(value: string, refusal: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) throw httpError(400, 'FIELD_TOO_SHORT', refusal);
+  return trimmed;
 }

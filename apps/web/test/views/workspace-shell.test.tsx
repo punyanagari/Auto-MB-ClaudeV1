@@ -267,6 +267,10 @@ describe('OperationsWorkspace mobile shell', () => {
       // where the mock groups document registers.
       'Company documents',
       'Installations',
+      // The mock's own rail carries Inspection in its main list
+      // (`components/app-sidebar.tsx` at fdfe5ef); it sits under
+      // Operations here, beside the other shop-floor registers.
+      'Inspection',
       'Global search',
       'Approvals',
       'Masters',
@@ -301,6 +305,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Quotations', '#/quotations'],
       ['Company documents', '#/company-documents'],
       ['Installations', '#/installations'],
+      ['Inspection', '#/inspection'],
       ['Global search', '#/search'],
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],

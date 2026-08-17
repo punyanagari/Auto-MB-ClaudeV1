@@ -114,6 +114,9 @@ const CompanyDocuments = lazy(() =>
     default: module.CompanyDocuments,
   })),
 );
+const Inspection = lazy(() =>
+  import('./Inspection.js').then((module) => ({ default: module.Inspection })),
+);
 const ReviewLoa = lazy(() =>
   import('./ReviewLoa.js').then((module) => ({ default: module.ReviewLoa })),
 );
@@ -1045,6 +1048,16 @@ export function OperationsWorkspace({
                 api={api}
                 organisationId={organisation.id}
                 canModify={canModify}
+              />
+            )}
+
+            {view.name === 'inspection' && (
+              <Inspection
+                api={api}
+                organisationId={organisation.id}
+                canRecord={canRecordEvidence}
+                canModify={canModify}
+                canCancel={canCancel}
               />
             )}
 

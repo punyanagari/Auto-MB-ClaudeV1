@@ -17,6 +17,18 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v16: the inspection lifecycle (0082) joins the package — the
+ * per-item clauses, the per-Work document checklist, the calls with
+ * their item coverage, and the evidence with its stored PDFs. Left out,
+ * an export could not explain why a Work's despatches were refused, nor
+ * hand back the certificates that permitted the ones that went.
+ *
+ * v15 is SKIPPED, on the same reasoning the v13 note below already sets
+ * out: the payments pack claims it from a sibling branch of this wave and
+ * its v15 carries a different section list. A version string identifies a
+ * format, so two formats sharing one string is the failure that matters
+ * and a gap is not.
+ *
  * export-v14: the company document library (0079) joins the package —
  * the credentials themselves, their version history, and the stored
  * PDFs in the manifest. Left out, a data-portability export would hand
@@ -46,7 +58,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v14';
+const EXPORT_FORMAT_VERSION = 'export-v16';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -72,6 +84,7 @@ type ManifestBucket =
   | 'correction-notice'
   | 'pac-certificate'
   | 'company-document'
+  | 'inspection'
   | 'issue-challan'
   | 'extension'
   | 'measurement-book'
@@ -87,6 +100,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'correction-notice',
   'pac-certificate',
   'company-document',
+  'inspection',
   'issue-challan',
   'extension',
   'measurement-book',
@@ -463,6 +477,53 @@ const SECTIONS: readonly ExportSection[] = [
           sha256: row.sha256 ?? null,
         },
       ],
+    },
+  },
+  {
+    // The inspection lifecycle (0082). The clause is what makes a
+    // despatch refusable, so an export without it could not explain the
+    // Work's own history; the call documents carry stored bytes and
+    // travel in the manifest for the same reason the credential PDFs do.
+    key: 'inspectionClauses',
+    sql: `select * from inspection_clauses order by work_id, work_item_id`,
+  },
+  {
+    key: 'inspectionChecklistFields',
+    sql: `select * from inspection_checklist_fields
+          order by work_id, agency, position, id`,
+  },
+  {
+    key: 'inspectionCallCounters',
+    sql: `select * from inspection_call_counters order by work_id`,
+  },
+  {
+    key: 'inspectionCalls',
+    sql: `select * from inspection_calls order by work_id, sequence_number`,
+  },
+  {
+    key: 'inspectionCallItems',
+    sql: `select * from inspection_call_items
+          order by inspection_call_id, work_item_id`,
+  },
+  {
+    key: 'inspectionCallDocuments',
+    sql: `select * from inspection_call_documents
+          order by inspection_call_id, position, id`,
+    manifest: {
+      bucket: 'inspection',
+      // An empty checklist row carries no bytes yet — it is a demand
+      // outstanding — so it contributes no manifest entry rather than an
+      // entry pointing at nothing.
+      entries: (row) =>
+        row.object_key === null
+          ? []
+          : [
+              {
+                kind: 'inspection-call-document',
+                objectKey: row.object_key,
+                sha256: row.sha256 ?? null,
+              },
+            ],
     },
   },
   {

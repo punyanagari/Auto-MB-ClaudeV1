@@ -143,6 +143,15 @@ const TENANT_TABLES = [
   // credentials and the versioned files behind them (0079).
   'company_documents',
   'company_document_versions',
+  // The inspection lifecycle: the contract clause per item, the agency's
+  // document checklist, and the calls, their coverage and their evidence
+  // (0082).
+  'inspection_clauses',
+  'inspection_checklist_fields',
+  'inspection_calls',
+  'inspection_call_counters',
+  'inspection_call_items',
+  'inspection_call_documents',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -179,7 +188,11 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     table !== 'bill_payment_deductions' &&
     // A company document version is evidence: append-only for the
     // application role and refused by trigger anyway (0079).
-    table !== 'company_document_versions',
+    table !== 'company_document_versions' &&
+    // Coverage of an inspection call is settled before the agency comes;
+    // the 0082 guard refuses an UPDATE-shaped change to it, and the
+    // application role holds no UPDATE on the table at all.
+    table !== 'inspection_call_items',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -260,6 +273,15 @@ const DELETE_REVOKED_TABLES = [
   // it has to stay explicable -- and its versions are evidence (0079).
   'company_documents',
   'company_document_versions',
+  // An inspection call is correspondence with a government agency and a
+  // challan may have been issued on its certificate: it cancels with a
+  // reason and stays. Its documents record what the call was held to,
+  // even the demands it never met (0082).
+  'inspection_calls',
+  'inspection_call_documents',
+  // A counter records what a series reached; resetting it would reissue a
+  // number a cancelled call still holds (0082).
+  'inspection_call_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -302,6 +324,13 @@ const DELETE_ALLOWED_TABLES = [
   // by trigger (0024).
   'measurement_books',
   'mb_sources',
+  // Inspection configuration is configuration: clearing an item's agency
+  // or dropping a demanded document is how an operator says the contract
+  // does not ask for it, and the coverage of a call that has not yet gone
+  // to the agency is still being decided (0082).
+  'inspection_clauses',
+  'inspection_checklist_fields',
+  'inspection_call_items',
 ] as const satisfies readonly TenantTable[];
 
 /** organisations carries the tenant id in `id`; every other table in
@@ -1181,6 +1210,62 @@ async function seedTenantGraph(
         ${`${organisationId}/orgdoc/${companyDocument.id}.pdf`},
         'gst-registration.pdf', ${'f'.repeat(64)}, 'application/pdf', 4096,
         '2026-04-01', '2027-03-31', ${userId}
+      )
+    `;
+
+    // The inspection lifecycle (0082): one clause that gates despatch,
+    // one checklist demand, and one call in its first state covering the
+    // item, with its checklist snapshot. Seeded `requested` on purpose —
+    // it is the state in which coverage may still be deleted, which is
+    // what the DELETE-allowed sweep exercises.
+    await tx`
+      insert into inspection_clauses (
+        organisation_id, work_id, work_item_id, agency, vendor_premises,
+        gates_dispatch, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${workItem.id}, 'RDSO',
+        'RailTech Components', true, ${userId}
+      )
+    `;
+    await tx`
+      insert into inspection_checklist_fields (
+        organisation_id, work_id, agency, label, mandatory, position
+      )
+      values (
+        ${organisationId}, ${work.id}, 'RDSO', 'Routine Test Report', true, 0
+      )
+    `;
+    await tx`
+      insert into inspection_call_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 2)
+    `;
+    const [inspectionCall] = await tx<{ id: string }[]>`
+      insert into inspection_calls (
+        organisation_id, work_id, sequence_number, agency, requested_on,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, 1, 'RDSO', '2026-01-05', ${userId}
+      )
+      returning id
+    `;
+    if (!inspectionCall) throw new Error('seed inspection call returned no row');
+    await tx`
+      insert into inspection_call_items (
+        organisation_id, inspection_call_id, work_id, work_item_id, quantity
+      )
+      values (
+        ${organisationId}, ${inspectionCall.id}, ${work.id}, ${workItem.id}, 5
+      )
+    `;
+    await tx`
+      insert into inspection_call_documents (
+        organisation_id, inspection_call_id, kind, label, mandatory, position
+      )
+      values (
+        ${organisationId}, ${inspectionCall.id}, 'evidence',
+        'Routine Test Report', true, 1
       )
     `;
 

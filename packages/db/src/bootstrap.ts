@@ -193,6 +193,16 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // the importer itself runs as the administrator role (0025).
   import_batches: 'SELECT, INSERT',
   import_records: 'SELECT, INSERT',
+  // The inspection lifecycle (0082). Configuration deletes; the call and
+  // its evidence do not — a challan may have been issued on the strength
+  // of the certificate, so a call cancels with a reason and stays, and
+  // the demands it was held to survive even when they were never met.
+  inspection_clauses: 'SELECT, INSERT, UPDATE, DELETE',
+  inspection_checklist_fields: 'SELECT, INSERT, UPDATE, DELETE',
+  inspection_calls: 'SELECT, INSERT, UPDATE',
+  inspection_call_counters: 'SELECT, INSERT, UPDATE',
+  inspection_call_items: 'SELECT, INSERT, DELETE',
+  inspection_call_documents: 'SELECT, INSERT, UPDATE',
   // Better Auth owns these shapes (0004).
   auth_users: 'SELECT, INSERT, UPDATE, DELETE',
   auth_sessions: 'SELECT, INSERT, UPDATE, DELETE',

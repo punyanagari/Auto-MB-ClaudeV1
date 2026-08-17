@@ -180,7 +180,9 @@ describe('the schema at head names all three shapes', () => {
     const adopted = columns.filter(
       (column) => column.type === 'money_amount' || column.type === 'quantity_amount',
     );
-    expect(adopted.length).toBe(55);
+    // 55 before 0082, which adds inspection_clauses.inspection_quantity
+    // and inspection_call_items.quantity.
+    expect(adopted.length).toBe(57);
   });
 
   it('types every digest column as sha256_hex', () => {
@@ -196,8 +198,9 @@ describe('the schema at head names all three shapes', () => {
     // 22 before 0076, which adds eway_bills.rendered_sha256 plus the
     // render ledger's source_sha256 and pdf_sha256; 26 after 0079, whose
     // company_document_versions.sha256 is the digest of a stored
-    // credential PDF and adopts the domain from the start.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(26);
+    // credential PDF and adopts the domain from the start; 27 after 0082,
+    // which adds the inspection document's.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(27);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

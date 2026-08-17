@@ -29,6 +29,17 @@ export function wayfindingOf(
             label: 'Open the payment matrix',
             hash: workHash(context.workId, 'schedules'),
           };
+    // Challan issue: the item is gated on an inspection certificate that
+    // does not cover the despatch. Both remedies live on the Work's
+    // Inspection clause tab — certify more, or clear the gate — and the
+    // tab links on to the Inspection workspace from there.
+    case 'INSPECTION_CERTIFICATE_MISSING':
+      return context.workId === undefined
+        ? { label: 'Open Inspection', hash: '#/inspection' }
+        : {
+            label: 'Open the inspection clause',
+            hash: workHash(context.workId, 'inspection'),
+          };
     // Invoice submit: seller facts live on the organisation profile.
     case 'ORG_STATE_REQUIRED':
     case 'ORG_GSTIN_REQUIRED':

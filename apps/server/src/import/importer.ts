@@ -1,4 +1,10 @@
 import { randomUUID } from 'node:crypto';
+
+/** A v1 challan whose material the inspection clause gates and no live
+ * certificate covers (migration 0082). Its own class so the exception
+ * handler can name the reason in the report instead of filing it as an
+ * anonymous database guard. */
+class InspectionGateSkip extends Error {}
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { CHALLAN_TEMPLATE_VERSION, type ChallanSnapshot } from '../challan-html.js';
 import { seedDefaultGstRates } from '../gst-rates.js';
@@ -1829,6 +1835,31 @@ async function importOneChallan(
           })),
           totalAmount: total?.amount ?? '0.00',
         };
+        // THE INSPECTION GATE, PRE-FLIGHTED (0082). The trigger on
+        // `delivery_challans` would refuse this UPDATE anyway, and the
+        // catch below would report it as an anonymous `database-guard`.
+        // Asking first turns that into a report line that names the item
+        // and the agency, which is the difference between an import a
+        // migrator can act on and one they have to reverse-engineer.
+        //
+        // Skip-and-report, never batch abort: a v1 challan whose material
+        // was inspected under paperwork this product does not hold is a
+        // fact about the old system, not a reason to abandon the other
+        // nine hundred.
+        const uncertified = await sp<{ item_number: string; agency: string }[]>`
+          select item_number, agency
+          from app_private.inspection_dispatch_shortfall(
+            ${targetId},
+            (select app_private.organisation_today(${organisationId}))
+          )
+        `;
+        if (uncertified.length > 0) {
+          throw new InspectionGateSkip(
+            `no live inspection certificate covers ${uncertified
+              .map((row) => `${row.item_number} (${row.agency})`)
+              .join(', ')}`,
+          );
+        }
         await sp`
           update delivery_challans
           set status = 'issued', challan_number = ${challan.challanNo},
@@ -1864,7 +1895,14 @@ async function importOneChallan(
       );
     });
   } catch (error) {
-    run.except('delivery_challan', challan.id, 'database-guard', guardMessage(error));
+    run.except(
+      'delivery_challan',
+      challan.id,
+      error instanceof InspectionGateSkip
+        ? 'inspection-certificate-missing'
+        : 'database-guard',
+      error instanceof InspectionGateSkip ? error.message : guardMessage(error),
+    );
     // The surviving lines (and their tokens, every plan kind) were
     // counted in source but nothing imported; the individually excepted
     // lines were already booked at their own exception sites.

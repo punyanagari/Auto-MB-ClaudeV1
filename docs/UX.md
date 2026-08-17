@@ -210,6 +210,35 @@ belongs in v0, where that one screen adopts `StatusBadge` like every other
 register. When it does, the port drops to a byte-for-byte replication and this
 entry retires.
 
+### 7. Inspection screen — PROPOSED, owner ruling pending
+
+**Status: PROPOSED, not approved.** Every entry below is a visual
+departure this pack shipped because the behaviour behind the mock's
+control does not exist, or because the control would have to lie. None of
+them is an implementation liberty and none should be read as settled: they
+are listed here so the owner can rule on each, and the convergence path
+for all of them is the same — change the mock in v0, then the divergence
+retires.
+
+Category: this is § 4 territory (screens and behaviour the mock does not
+cover) applied to a screen the mock DOES draw, which is why each entry
+names what the mock shows and what stands in its place.
+
+| #   | The mock draws                                                                    | The application ships                                                              | Why                                                                                                                                                                                                    |
+| --- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 7a  | A "Source" column on the checklist config: Generate / Upload / Generate-or-Upload | No column; every paper is an upload                                                | Nothing in this product generates a datasheet or an undertaking. The mock's Generate button fakes a filename. A control offering an action with no implementation behind it is worse than its absence. |
+| 7b  | `DscSigningGate` around the call letter and the routine test report               | No signing gate                                                                    | Outbound signing is ADR-0012's hybrid model and is not procured.                                                                                                                                       |
+| 7c  | An "Inspection result" select (Pending / Successful)                              | No control; uploading the certificate records the pass                             | The certificate is the agency's own statement that it accepted the material. A second field saying so can disagree with the document.                                                                  |
+| 7d  | An items card listing candidate items across works, with the call raised inline   | The card is absent; calls are raised from the Work's Inspection clause tab         | The mock's list is module-scope seed data. Here the items, their agency mapping and their lot sizes live on the Work, which is where the mock's own "Open Inspection" button already links from.       |
+| 7e  | Stat cards labelled from the mock's seed vocabulary                               | Relabelled: "Request issued", "Awaiting inspection", "Items blocked from despatch" | The third counts a fact the mock has no model for — items the dispatch gate would refuse today.                                                                                                        |
+| 7f  | An agency `TabsList`                                                              | The same pills as a `role="group"` of `aria-pressed` toggles                       | It filters the list in place rather than swapping panels, and `test/a11y-invariants` refuses a `role="tablist"` without the roving-tabindex pattern to match.                                          |
+
+Two additions on the Work's Inspection clause tab belong to the same
+ruling: a **"Gates despatch" column**, which the mock has no despatch to
+gate and which is the point of the pack; and a **"Save as organisation
+default"** action beside "Save for this Work", which is how a new Work
+inherits a checklist instead of starting with an empty one.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

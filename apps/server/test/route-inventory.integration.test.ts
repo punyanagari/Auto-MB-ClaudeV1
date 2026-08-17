@@ -118,6 +118,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
 
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],
+  [
+    'GET /api/inspection-calls/:id',
+    'ONE inspection call, read by its own id. It carries arrays — the items it covers and the papers it is held to — which is what brings it into this census, but both are bounded by the call itself and neither is a register',
+  ],
   ['GET /api/works/:id/payment-matrix', 'at most one row per payment matrix category'],
   ['GET /api/works/:id/completion-readiness', 'blockers, one per unfinished item'],
   ['GET /api/works/:id/consignees', 'the consignees linked to one Work'],
