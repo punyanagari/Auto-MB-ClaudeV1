@@ -256,6 +256,7 @@ const STRING_CANDIDATES = [
   'xx',
   'ab'.repeat(32), // sha256 hex digests
   '2026-01-15T10:30:00+05:30', // ack timestamps
+  '2026-27', // financial-year labels (fy_label, the TDS return query)
 ];
 
 interface JsonSchemaLike {
