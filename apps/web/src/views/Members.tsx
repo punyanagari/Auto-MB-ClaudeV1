@@ -3,10 +3,10 @@ import type { Membership, MembershipRole, Work } from '@auto-mb/contracts';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
-import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
+import { PageHeader } from '../ui/page-header.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
 interface MembersProps {
@@ -79,28 +79,112 @@ function AssignmentsEditor({
     return <LoadingState label="the Work assignments" rows={2} />;
   }
   if (works.length === 0) {
-    return <p className="text-muted-foreground">No Works exist yet.</p>;
+    return <p className="text-sm text-muted-foreground">No Works exist yet.</p>;
   }
   return (
-    <ul className="my-2 flex list-none flex-col gap-1 p-0 [&_label]:flex [&_label]:items-center [&_label]:gap-2 [&_label]:text-sm">
+    <ul className="my-2 flex list-none flex-col gap-1.5 p-0">
       {works.map((work) => (
         <li key={work.id}>
-          <label>
+          <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
+              className="mt-0.5 size-4 shrink-0 accent-primary"
               disabled={busy}
               checked={assigned.includes(work.id)}
               onChange={(event) => {
                 void toggle(work.id, event.currentTarget.checked);
               }}
-            />{' '}
-            {work.workCode} <span className="text-muted-foreground">{work.title}</span>
+            />
+            {/* The mock renders an assigned Work as a mono code chip
+             * (`app/members/page` at fdfe5ef); here the chip is the
+             * control's own label, with the title behind it so the
+             * operator picks by name rather than by code alone. */}
+            <span className="min-w-0">
+              <span className="font-mono text-xs">{work.workCode}</span>{' '}
+              <span className="text-muted-foreground">{work.title}</span>
+            </span>
           </label>
         </li>
       ))}
     </ul>
   );
 }
+
+/** A member, as the mock draws identity: a 36px monogram beside the name
+ * over a quieter second line (`app/members/page` at fdfe5ef). The
+ * mock has a display name and an email; the membership record carries
+ * neither, only the account id, so the id takes the name line in mono
+ * and the monogram is cut from it. */
+function MemberIdentity({
+  label,
+  userId,
+}: {
+  readonly label: string;
+  readonly userId: string;
+}) {
+  const initials = (
+    userId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) || '??'
+  ).toUpperCase();
+  return (
+    <span className="flex min-w-0 items-center gap-3">
+      <span
+        aria-hidden="true"
+        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground"
+      >
+        {initials}
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-medium">{label}</span>
+        <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+          {userId}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+/** The four feature grants the matrix carries, in the order the columns
+ * read. Each is a boolean on the membership record; the server is the
+ * authority and this is the one place an owner changes them.
+ *
+ * `docs/UX.md` § Approved divergences 3: the mock's Owner/Editor/Viewer
+ * collapse is rejected, and the matrix renders the real feature set
+ * rather than the mock's six representative columns. */
+const FEATURES = [
+  {
+    key: 'canIssueDocuments',
+    heading: 'Can issue',
+    authority: 'Issue authority',
+    change: 'Issue authority',
+  },
+  {
+    key: 'canCancelDocuments',
+    heading: 'Can cancel',
+    authority: 'Cancel authority',
+    change: 'Cancel authority',
+  },
+  {
+    key: 'canApproveAmendments',
+    heading: 'Can approve',
+    authority: 'Amendment approval authority',
+    change: 'Amendment approval authority',
+  },
+  {
+    /* The compliance authority (migration 0061): who may register,
+       reconcile or cancel documents at the IRP and the NIC E-way Bill
+       portal, and who may record what those portals answered. It is
+       granted on top of issue/cancel, never inherited from them. */
+    key: 'canManageStatutoryReporting',
+    heading: 'Can report statutory',
+    authority: 'Statutory reporting authority',
+    change: 'Statutory reporting authority',
+  },
+] as const satisfies readonly {
+  key: keyof Membership & `can${string}`;
+  heading: string;
+  authority: string;
+  change: string;
+}[];
 
 export function Members({ api, organisationId, currentUserId }: MembersProps) {
   const [members, setMembers] = useState<readonly Membership[] | null>(null);
@@ -193,24 +277,36 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
     }
   }
 
+  const header = (
+    <PageHeader
+      eyebrow="Administration"
+      title="Members"
+      description="Grant document and statutory authority per feature, and restrict members to their assigned Works."
+    />
+  );
+
   if (loadError !== null) {
     return (
-      <Card aria-labelledby="members-title">
-        <h1 id="members-title" tabIndex={-1}>
-          Members
-        </h1>
+      <>
+        {header}
         <ErrorState onRetry={retry} retryLabel="Retry members">
           {loadError}
         </ErrorState>
-      </Card>
+      </>
     );
   }
 
   return (
-    <Card aria-labelledby="members-title">
-      <h1 id="members-title" tabIndex={-1}>
-        Members
-      </h1>
+    <>
+      {header}
+      {/* The mock's standing info note (`app/members/page` at
+       * fdfe5ef), carrying the rule the matrix runs on. */}
+      <div className="mb-4 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+        A member whose work access is{' '}
+        <strong className="font-medium text-foreground">Assigned</strong> sees only the
+        Works listed under their name. Every column below is a separate grant: authority
+        is given per feature, never inherited from a role.
+      </div>
 
       {members === null ? (
         <LoadingState label="the members" rows={4} columns={4} />
@@ -222,13 +318,16 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
           </caption>
           <thead>
             <tr>
-              <th scope="col">User</th>
+              <th scope="col">Member</th>
               <th scope="col">Role</th>
-              <th scope="col">Work scope</th>
-              <th scope="col">Can issue</th>
-              <th scope="col">Can cancel</th>
-              <th scope="col">Can approve</th>
-              <th scope="col">Can report statutory</th>
+              <th scope="col">Work access</th>
+              {/* The mock centres the feature columns over their boxes and
+               * lets the heading be the only label the box has. */}
+              {FEATURES.map((feature) => (
+                <th key={feature.key} scope="col" className="text-center!">
+                  {feature.heading}
+                </th>
+              ))}
               <th scope="col">Two-factor</th>
               <th scope="col">Status</th>
             </tr>
@@ -236,33 +335,46 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
           <tbody>
             {members.map((member) => {
               const label = member.userId === currentUserId ? 'You' : member.userId;
+              const twoFactor = (
+                /* Enrolment before authority: an unenrolled member who is
+                   granted issue/cancel/approve walls themselves out of the
+                   workspace until they enrol (finding 36). */
+                <StatusChip status={member.twoFactorEnabled ? 'active' : 'review'}>
+                  {member.twoFactorEnabled ? 'Enrolled' : 'Not enrolled'}
+                </StatusChip>
+              );
               if (!isOwner) {
                 return (
                   <tr key={member.userId}>
-                    <th scope="row">{label}</th>
+                    <th scope="row" className={wrapCell}>
+                      <MemberIdentity label={label} userId={member.userId} />
+                    </th>
                     <td>{ROLE_LABELS[member.role]}</td>
                     <td>{member.workScope === 'all' ? 'All Works' : 'Assigned'}</td>
-                    <td>{member.canIssueDocuments ? 'Yes' : 'No'}</td>
-                    <td>{member.canCancelDocuments ? 'Yes' : 'No'}</td>
-                    <td>{member.canApproveAmendments ? 'Yes' : 'No'}</td>
-                    <td>{member.canManageStatutoryReporting ? 'Yes' : 'No'}</td>
+                    {FEATURES.map((feature) => (
+                      <td key={feature.key} className="text-center!">
+                        {member[feature.key] ? 'Yes' : 'No'}
+                      </td>
+                    ))}
+                    <td>{twoFactor}</td>
                     <td>
                       <StatusChip
-                        status={member.twoFactorEnabled ? 'active' : 'review'}
+                        status={member.status === 'active' ? 'active' : 'failed'}
                       >
-                        {member.twoFactorEnabled ? 'Enrolled' : 'Not enrolled'}
+                        {member.status}
                       </StatusChip>
                     </td>
-                    <td>{member.status}</td>
                   </tr>
                 );
               }
               return (
                 <tr key={member.userId}>
                   <th scope="row" className={wrapCell}>
-                    {label}
-                    <details className="flex flex-wrap items-center gap-2">
-                      <summary>Assignments</summary>
+                    <MemberIdentity label={label} userId={member.userId} />
+                    <details className="mt-1.5 text-sm font-normal">
+                      <summary className="cursor-pointer text-muted-foreground">
+                        Assignments
+                      </summary>
                       <AssignmentsEditor
                         api={api}
                         organisationId={organisationId}
@@ -310,104 +422,52 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                       <option value="assigned">Assigned</option>
                     </select>
                   </td>
+                  {FEATURES.map((feature) => (
+                    <td key={feature.key} className="text-center!">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary"
+                        aria-label={`${feature.authority} of ${label}`}
+                        checked={member[feature.key]}
+                        disabled={pending}
+                        onChange={(event) => {
+                          void change(
+                            member.userId,
+                            { [feature.key]: event.currentTarget.checked },
+                            `${feature.change} updated for ${label}.`,
+                          );
+                        }}
+                      />
+                    </td>
+                  ))}
+                  <td>{twoFactor}</td>
                   <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`Issue authority of ${label}`}
-                      checked={member.canIssueDocuments}
-                      disabled={pending}
-                      onChange={(event) => {
-                        void change(
-                          member.userId,
-                          { canIssueDocuments: event.currentTarget.checked },
-                          `Issue authority updated for ${label}.`,
-                        );
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`Cancel authority of ${label}`}
-                      checked={member.canCancelDocuments}
-                      disabled={pending}
-                      onChange={(event) => {
-                        void change(
-                          member.userId,
-                          { canCancelDocuments: event.currentTarget.checked },
-                          `Cancel authority updated for ${label}.`,
-                        );
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`Amendment approval authority of ${label}`}
-                      checked={member.canApproveAmendments}
-                      disabled={pending}
-                      onChange={(event) => {
-                        void change(
-                          member.userId,
-                          { canApproveAmendments: event.currentTarget.checked },
-                          `Amendment approval authority updated for ${label}.`,
-                        );
-                      }}
-                    />
-                  </td>
-                  <td>
-                    {/* The compliance authority (migration 0061): who may
-                        register, reconcile or cancel documents at the IRP
-                        and the NIC E-way Bill portal, and who may record
-                        what those portals answered. It is granted on top
-                        of issue/cancel, never inherited from them. */}
-                    <input
-                      type="checkbox"
-                      aria-label={`Statutory reporting authority of ${label}`}
-                      checked={member.canManageStatutoryReporting}
-                      disabled={pending}
-                      onChange={(event) => {
-                        void change(
-                          member.userId,
-                          {
-                            canManageStatutoryReporting: event.currentTarget.checked,
-                          },
-                          `Statutory reporting authority updated for ${label}.`,
-                        );
-                      }}
-                    />
-                  </td>
-                  <td>
-                    {/* Enrolment before authority: an unenrolled member who
-                        is granted issue/cancel/approve walls themselves out
-                        of the workspace until they enrol (finding 36). */}
-                    <StatusChip status={member.twoFactorEnabled ? 'active' : 'review'}>
-                      {member.twoFactorEnabled ? 'Enrolled' : 'Not enrolled'}
-                    </StatusChip>
-                  </td>
-                  <td>
-                    <StatusChip
-                      status={member.status === 'active' ? 'active' : 'failed'}
-                    >
-                      {member.status}
-                    </StatusChip>{' '}
-                    <Button
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => {
-                        void change(
-                          member.userId,
-                          {
-                            status: member.status === 'active' ? 'disabled' : 'active',
-                          },
-                          member.status === 'active'
-                            ? `${label} disabled — access ends immediately.`
-                            : `${label} re-enabled.`,
-                        );
-                      }}
-                    >
-                      {member.status === 'active' ? 'Disable' : 'Enable'}
-                    </Button>
+                    <span className="flex items-center gap-2">
+                      <StatusChip
+                        status={member.status === 'active' ? 'active' : 'failed'}
+                      >
+                        {member.status}
+                      </StatusChip>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => {
+                          void change(
+                            member.userId,
+                            {
+                              status:
+                                member.status === 'active' ? 'disabled' : 'active',
+                            },
+                            member.status === 'active'
+                              ? `${label} disabled — access ends immediately.`
+                              : `${label} re-enabled.`,
+                          );
+                        }}
+                      >
+                        {member.status === 'active' ? 'Disable' : 'Enable'}
+                      </Button>
+                    </span>
                   </td>
                 </tr>
               );
@@ -421,7 +481,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
 
       {isOwner && (
         <Disclosure label="New member">
-          <p className="text-muted-foreground">
+          <p className="max-w-2xl text-sm text-pretty text-muted-foreground">
             The person must already have an Auto-MB account; add them by their account
             email. Site members record delivery evidence; set their scope to Assigned
             and pick their Works under Assignments.
@@ -457,6 +517,6 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
           </form>
         </Disclosure>
       )}
-    </Card>
+    </>
   );
 }
