@@ -31,7 +31,7 @@ export const PaymentRequestKindSchema = Type.Union(
 export type PaymentRequestKind = Static<typeof PaymentRequestKindSchema>;
 
 /**
- * Draft is private to the requester; submitted is waiting on a decision;
+ * Submitted is waiting on a decision;
  * approved is authorised but unpaid; paid means the money left.
  *
  * `settled` is the one that is not obvious. A reimbursement arrives with
@@ -41,7 +41,6 @@ export type PaymentRequestKind = Static<typeof PaymentRequestKindSchema>;
  * before new advances" gate reads.
  */
 export const PAYMENT_REQUEST_STATUSES = [
-  'draft',
   'submitted',
   'approved',
   'rejected',
@@ -102,10 +101,19 @@ export const CreatePaymentRequestSchema = Type.Object(
     purpose: nonBlankString({ minLength: 3, maxLength: 500 }),
     category: PaymentRequestCategorySchema,
     amount: PositiveMoneyStringSchema,
-    /** The uploaded proof. Required to submit, which is why the create
-     * endpoint takes it: the mock has no way to submit without one
-     * ("Every expense requires proof before it can be submitted"). */
-    proofObjectKey: nonBlankString({ minLength: 2, maxLength: 400 }),
+    /**
+     * What the claim rests on — the estimate, quotation or bill, named.
+     * Required, because the mock has no way to submit without proof
+     * ("Every expense requires proof before it can be submitted").
+     *
+     * ponytail: a typed REFERENCE, not an upload. The column is named
+     * for what it holds rather than pretending to be an object key: a
+     * stored key with no upload behind it and no route to fetch it is a
+     * proof that cannot be produced, which is worse than an honest
+     * reference. Route it through `consumeUpload` and add a serve route
+     * when the proof has to survive an audit rather than jog a memory.
+     */
+    proofReference: nonBlankString({ minLength: 2, maxLength: 400 }),
     proofFilename: nonBlankString({ minLength: 2, maxLength: 255 }),
   },
   { additionalProperties: false },
@@ -140,11 +148,11 @@ export type RecordAdvanceBills = Static<typeof RecordAdvanceBillsSchema>;
 
 export const PaymentRequestListResponseSchema = Type.Object(
   {
+    /* No separate blocked-beneficiary list: every request carries
+       `billsDue`, so the set of beneficiaries who cannot draw another
+       advance is `requests.filter(r => r.billsDue)` and a second field
+       is a second thing that can disagree with the first. */
     requests: Type.Array(PaymentRequestSchema),
-    /** Beneficiaries who cannot be given a new advance until their last
-     * one is closed. Sent with the list so the form can disable itself
-     * without a second round trip. */
-    beneficiariesWithBillsDue: Type.Array(UuidSchema),
   },
   { additionalProperties: false },
 );
@@ -167,6 +175,15 @@ export const VendorPaymentSchema = Type.Object(
     tdsRate: Type.Union([Type.String(), Type.Null()]),
     panAbsent: Type.Boolean(),
     vendorPan: Type.Union([Type.String(), Type.Null()]),
+    /** What the rate was applied to, and why. Null when nothing was
+     * withheld. Snapshotted so a 26Q line whose tax exceeds its own
+     * rate x gross explains itself. */
+    tdsTaxableAmount: Type.Union([NonNegativeMoneyStringSchema, Type.Null()]),
+    tdsTaxableBasis: Type.Union([
+      Type.Literal('payment'),
+      Type.Literal('aggregate_catch_up'),
+      Type.Null(),
+    ]),
     reference: Type.Union([Type.String(), Type.Null()]),
     remarks: Type.Union([Type.String(), Type.Null()]),
     voidedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
@@ -283,6 +300,19 @@ export type VendorLedgerResponse = Static<typeof VendorLedgerResponseSchema>;
  * that crosses it mid-payment, and the section 206AA uplift for a
  * missing PAN.
  */
+/** Asking what would be deducted. A POST body rather than a query
+ * string: the amount is a rupee figure about a named vendor, and a URL
+ * is the one place request logs, proxies and browser history all keep
+ * (AGENTS.md rule 11). */
+export const PreviewVendorTdsSchema = Type.Object(
+  {
+    grossAmount: PositiveMoneyStringSchema,
+    paidOn: DateOnlySchema,
+  },
+  { additionalProperties: false },
+);
+export type PreviewVendorTds = Static<typeof PreviewVendorTdsSchema>;
+
 export const TdsPreviewResponseSchema = Type.Object(
   {
     section: Type.Union([TdsSectionSchema, Type.Null()]),
@@ -292,6 +322,15 @@ export const TdsPreviewResponseSchema = Type.Object(
     netAmount: NonNegativeMoneyStringSchema,
     deductible: Type.Boolean(),
     panAbsentUplift: Type.Boolean(),
+    /** What the rate is applied to. Equal to the gross except on the
+     * payment that carries the year over its annual threshold, which
+     * owes tax on every earlier untaxed payment as well. */
+    taxableAmount: NonNegativeMoneyStringSchema,
+    taxableBasis: Type.Union([
+      Type.Literal('payment'),
+      Type.Literal('aggregate_catch_up'),
+      Type.Literal('none'),
+    ]),
     thresholdBasis: Type.Union([
       Type.Literal('single_payment'),
       Type.Literal('annual_aggregate'),

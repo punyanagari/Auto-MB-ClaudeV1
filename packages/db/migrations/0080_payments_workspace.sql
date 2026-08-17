@@ -176,11 +176,15 @@ CREATE TABLE payment_requests (
 
   -- The mock refuses to submit without proof, and so does this. Both
   -- columns move together or neither is set.
-  proof_object_key text,
+  proof_reference text,
   proof_filename text,
 
-  status text NOT NULL DEFAULT 'draft' CHECK (status IN (
-    'draft', 'submitted', 'approved', 'rejected', 'paid', 'settled'
+  -- No 'draft': the create route only ever writes 'submitted', because
+  -- proof is required to raise a request at all and a request nobody has
+  -- been asked to decide is not a record worth keeping. A status the
+  -- product cannot reach is a branch every reader has to rule out.
+  status text NOT NULL DEFAULT 'submitted' CHECK (status IN (
+    'submitted', 'approved', 'rejected', 'paid', 'settled'
   )),
 
   -- The advance gate. An advance is not finished when it is paid, it is
@@ -211,18 +215,19 @@ CREATE TABLE payment_requests (
   FOREIGN KEY (organisation_id, work_id) REFERENCES works(organisation_id, id),
 
   CONSTRAINT payment_requests_proof_shape_check CHECK (
-    (proof_object_key IS NULL AND proof_filename IS NULL)
-    OR (proof_object_key IS NOT NULL AND proof_filename IS NOT NULL)
+    (proof_reference IS NULL AND proof_filename IS NULL)
+    OR (proof_reference IS NOT NULL AND proof_filename IS NOT NULL)
   ),
-  -- Proof is required to leave draft, which is the mock's rule ("Every
-  -- expense requires proof before it can be submitted").
-  CONSTRAINT payment_requests_submitted_needs_proof_check CHECK (
-    status = 'draft' OR proof_object_key IS NOT NULL
+  -- Proof is the mock's rule ("Every expense requires proof before it
+  -- can be submitted") and, with no draft state, it holds on every row
+  -- rather than on all but one.
+  CONSTRAINT payment_requests_needs_proof_check CHECK (
+    proof_reference IS NOT NULL
   ),
   CONSTRAINT payment_requests_decision_shape_check CHECK (
-    (status IN ('draft', 'submitted')
+    (status = 'submitted'
       AND decided_by_user_id IS NULL AND decided_at IS NULL)
-    OR (status NOT IN ('draft', 'submitted')
+    OR (status <> 'submitted'
       AND decided_by_user_id IS NOT NULL AND decided_at IS NOT NULL)
   ),
   -- A refusal must say why. Approval need not: the amount and the proof
@@ -379,6 +384,23 @@ CREATE TABLE vendor_payments (
     vendor_pan IS NULL OR vendor_pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$'
   ),
 
+  -- WHAT THE RATE WAS APPLIED TO, and why it was not simply the gross.
+  --
+  -- Below the annual threshold nothing is withheld; the payment that
+  -- carries the financial-year aggregate over it owes tax on the whole
+  -- aggregate, including the earlier payments that went out untaxed. So
+  -- that one payment's TDS is larger than its own rate x gross, and a
+  -- 26Q line that cannot explain the discrepancy is a line somebody has
+  -- to reconstruct from the whole year's ledger years later. Both
+  -- columns are snapshotted so the line explains itself.
+  tds_taxable_amount money_amount CHECK (
+    tds_taxable_amount IS NULL OR tds_taxable_amount >= 0
+  ),
+  tds_taxable_basis text CHECK (
+    tds_taxable_basis IS NULL
+    OR tds_taxable_basis IN ('payment', 'aggregate_catch_up')
+  ),
+
   reference text CHECK (
     reference IS NULL
     OR (btrim(reference) = reference AND length(reference) BETWEEN 1 AND 100)
@@ -405,8 +427,10 @@ CREATE TABLE vendor_payments (
   -- A withheld amount without the section and rate that produced it
   -- cannot be reported on a return, so it may not be recorded at all.
   CONSTRAINT vendor_payments_tds_shape_check CHECK (
-    (tds_amount = 0 AND tds_section IS NULL AND tds_rate IS NULL)
-    OR (tds_amount > 0 AND tds_section IS NOT NULL AND tds_rate IS NOT NULL)
+    (tds_amount = 0 AND tds_section IS NULL AND tds_rate IS NULL
+      AND tds_taxable_amount IS NULL AND tds_taxable_basis IS NULL)
+    OR (tds_amount > 0 AND tds_section IS NOT NULL AND tds_rate IS NOT NULL
+      AND tds_taxable_amount IS NOT NULL AND tds_taxable_basis IS NOT NULL)
   ),
   CONSTRAINT vendor_payments_pan_absent_shape_check CHECK (
     NOT pan_absent OR vendor_pan IS NULL
@@ -489,13 +513,13 @@ BEGIN
            NEW.gross_amount, NEW.tds_amount, NEW.net_amount,
            NEW.tds_section, NEW.tds_rate, NEW.pan_absent, NEW.vendor_pan,
            NEW.reference, NEW.remarks, NEW.recorded_by_user_id,
-           NEW.created_at)
+           NEW.created_at, NEW.tds_taxable_amount, NEW.tds_taxable_basis)
        IS DISTINCT FROM
        ROW(OLD.organisation_id, OLD.vendor_invoice_id, OLD.paid_on,
            OLD.gross_amount, OLD.tds_amount, OLD.net_amount,
            OLD.tds_section, OLD.tds_rate, OLD.pan_absent, OLD.vendor_pan,
            OLD.reference, OLD.remarks, OLD.recorded_by_user_id,
-           OLD.created_at)
+           OLD.created_at, OLD.tds_taxable_amount, OLD.tds_taxable_basis)
     THEN
       RAISE EXCEPTION 'A recorded vendor payment is immutable; void it and record a correct one.'
         USING ERRCODE = '23B04';
@@ -548,17 +572,16 @@ SET search_path = pg_catalog, public
 AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    IF NEW.status <> 'draft' AND NEW.status <> 'submitted' THEN
-      RAISE EXCEPTION 'A payment request is created as a draft or a submission, not as %.', NEW.status
+    IF NEW.status <> 'submitted' THEN
+      RAISE EXCEPTION 'A payment request is created as a submission, not as %.', NEW.status
         USING ERRCODE = '23B12';
     END IF;
     RETURN NEW;
   END IF;
 
-  -- Never editable at any stage, not even in draft: who owns the row,
-  -- who raised it, and when. Frozen separately from the money below
-  -- because these are true from the first write rather than from the
-  -- decision.
+  -- Never editable: who owns the row, who raised it, and when. Frozen
+  -- separately from the money below because these are true from the
+  -- first write rather than from the decision.
   IF ROW(NEW.organisation_id, NEW.requested_by_user_id, NEW.created_at)
      IS DISTINCT FROM
      ROW(OLD.organisation_id, OLD.requested_by_user_id, OLD.created_at)
@@ -567,10 +590,24 @@ BEGIN
       USING ERRCODE = '23B11';
   END IF;
 
+  -- MAKER-CHECKER, held in the database as well as in the route.
+  --
+  -- The whole reason an approval step exists is that somebody other than
+  -- the claimant agrees to the money. The route refuses a self-decision
+  -- with a sentence; this refuses it as a rule, so a second caller, a
+  -- future endpoint or a hand-run UPDATE cannot quietly approve its own
+  -- claim. Recurring finding 2 again: security twice, money twice.
+  IF NEW.decided_by_user_id IS NOT NULL
+     AND NEW.decided_by_user_id = OLD.requested_by_user_id
+  THEN
+    RAISE EXCEPTION 'A payment request is decided by somebody other than the person who raised it.'
+      USING ERRCODE = '23B13';
+  END IF;
+
   -- The approved amount is the thing being protected. Everything about
-  -- a request may be corrected while it is a draft; once it has been
-  -- decided, the money it authorises is frozen.
-  IF OLD.status NOT IN ('draft', 'submitted') THEN
+  -- a request may be corrected while it is still a submission; once it
+  -- has been decided, the money it authorises is frozen.
+  IF OLD.status <> 'submitted' THEN
     IF NEW.amount IS DISTINCT FROM OLD.amount
        OR NEW.beneficiary_contact_id IS DISTINCT FROM OLD.beneficiary_contact_id
        OR NEW.kind IS DISTINCT FROM OLD.kind
@@ -591,9 +628,24 @@ BEGIN
       USING ERRCODE = '23B12';
   END IF;
 
-  -- Paying is the irreversible step, so it may only follow an approval.
-  IF NEW.status IN ('paid', 'settled') AND OLD.status NOT IN ('approved', 'paid', 'settled') THEN
-    RAISE EXCEPTION 'A payment request must be approved before it is paid.'
+  -- Deciding happens once. A second approval of an already-approved
+  -- request is the two-approvers race, and it would overwrite who
+  -- decided and when.
+  IF OLD.status <> 'submitted' AND NEW.status IN ('approved', 'rejected') THEN
+    RAISE EXCEPTION 'This payment request has already been decided.'
+      USING ERRCODE = '23B12';
+  END IF;
+
+  -- Paying happens once, and only after an approval. `paid -> paid` and
+  -- `settled -> paid` are the double-pay race: a retried request that
+  -- found the row already paid must not move the money a second time or
+  -- rewrite the bank reference of the payment that did.
+  IF NEW.status = 'paid' AND OLD.status <> 'approved' THEN
+    RAISE EXCEPTION 'Only an approved payment request can be paid; this one is %.', OLD.status
+      USING ERRCODE = '23B12';
+  END IF;
+  IF NEW.status = 'settled' AND OLD.status NOT IN ('approved', 'paid') THEN
+    RAISE EXCEPTION 'A payment request must be approved before it is settled.'
       USING ERRCODE = '23B12';
   END IF;
 
@@ -665,6 +717,28 @@ ALTER TABLE bill_payment_deductions
 
 COMMENT ON COLUMN bill_payment_deductions.category IS
   'GST_TDS (CGST s.51), INCOME_TAX_TDS (s.194C), SECURITY_DEPOSIT (retention), LIQUIDATED_DAMAGES (contractual delay recovery), BOCW_CESS (s.3 of the BOCW Welfare Cess Act 1996), PENALTY (any other imposed recovery), or OTHER — which requires a description. Rates and citations live in packages/contracts/src/statutory.ts.';
+
+-- ── updated_at, maintained rather than remembered ────────────────────
+--
+-- The shared helper 23 migrations already use. Without it every UPDATE
+-- has to remember 'updated_at = now()', and the one that forgets leaves
+-- a row whose timestamp lies about when it last moved.
+
+CREATE TRIGGER payment_requests_touch_updated_at
+  BEFORE UPDATE ON payment_requests
+  FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
+
+CREATE TRIGGER payment_request_counters_touch_updated_at
+  BEFORE UPDATE ON payment_request_counters
+  FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
+
+CREATE TRIGGER vendor_invoices_touch_updated_at
+  BEFORE UPDATE ON vendor_invoices
+  FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
+
+CREATE TRIGGER vendor_payments_touch_updated_at
+  BEFORE UPDATE ON vendor_payments
+  FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
 
 -- ── Row-level security ───────────────────────────────────────────────
 

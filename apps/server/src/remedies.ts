@@ -226,6 +226,14 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the register: this receipt has already been withdrawn, and the amount it carried is outstanding again.',
   VENDOR_INVOICE_NOT_FOUND:
     'Reload the vendor ledger: the invoice was cancelled or belongs to another organisation, so record it again if it is genuinely outstanding.',
+  VENDOR_PAYMENT_EXCEEDS_INVOICE:
+    'Reload the vendor ledger and pay at most what the invoice still shows outstanding; record the rest against the invoice it actually belongs to.',
+  VENDOR_PAYMENT_TDS_EXCEEDS_GROSS:
+    'Pay at least the tax that falls due, or record the earlier untaxed payments of this financial year against their own deduction first.',
+  PAYMENT_REQUEST_STATE_CONFLICT:
+    'Reload the register: somebody else approved, paid or closed this request while you were looking at it.',
+  PAYMENT_REQUEST_FROZEN:
+    'Reject this request and raise a new one for the corrected amount; what an approver agreed to does not change underneath them.',
   BILL_ALREADY_PAID:
     'Record the correction as a receipt or a deduction against a later bill, the way a billed Measurement Book is corrected on a subsequent one, because the register of a paid bill is closed in both directions.',
   RAILWAY_BILL_EXTRACTION_FAILED:

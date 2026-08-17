@@ -148,9 +148,14 @@ interface ExportSection {
 const SECTIONS: readonly ExportSection[] = [
   {
     key: 'members',
+    /* Every grant is listed explicitly, so a new one that is not added
+       here is silently dropped from the recovery package — a restored
+       organisation would come back with the authority revoked and
+       nobody able to pay a vendor until an owner noticed. */
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
-                 can_manage_statutory_reporting, status, created_at
+                 can_manage_statutory_reporting, can_manage_payments,
+                 status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,

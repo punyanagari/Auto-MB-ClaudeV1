@@ -932,7 +932,7 @@ async function seedTenantGraph(
       insert into payment_requests (
         organisation_id, fy_label, sequence_number, request_number, kind,
         work_id, beneficiary_contact_id, purpose, category, amount,
-        proof_object_key, proof_filename, status, requested_by_user_id
+        proof_reference, proof_filename, status, requested_by_user_id
       )
       values
         (${organisationId}, '2026-27', 1, ${`PR/2026-27/001-${workCode}`},
@@ -940,7 +940,7 @@ async function seedTenantGraph(
          ${`${organisationId}/proof/a.pdf`}, 'a.pdf', 'submitted', ${userId}),
         (${organisationId}, '2026-27', 2, ${`PR/2026-27/002-${workCode}`},
          'reimbursement', null, ${payee.id}, 'Inspection travel', 'travel',
-         '200.00', ${`${organisationId}/proof/b.pdf`}, 'b.pdf', 'draft',
+         '200.00', ${`${organisationId}/proof/b.pdf`}, 'b.pdf', 'submitted',
          ${userId})
     `;
     const [vendorInvoice] = await tx<{ id: string }[]>`
@@ -958,12 +958,14 @@ async function seedTenantGraph(
     await tx`
       insert into vendor_payments (
         organisation_id, vendor_invoice_id, paid_on, gross_amount,
-        tds_amount, net_amount, tds_section, tds_rate, reference,
+        tds_amount, net_amount, tds_section, tds_rate,
+        tds_taxable_amount, tds_taxable_basis, reference,
         recorded_by_user_id
       )
       values (
         ${organisationId}, ${vendorInvoice.id}, '2026-02-10', '100.00',
-        '2.00', '98.00', '194C', '2.00', ${`VP-${workCode}`}, ${userId}
+        '2.00', '98.00', '194C', '2.00', '100.00', 'payment',
+        ${`VP-${workCode}`}, ${userId}
       )
     `;
 

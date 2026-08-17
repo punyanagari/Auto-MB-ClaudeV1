@@ -33,12 +33,26 @@ function thrownCodes(): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();
   for (const file of sourceFiles(SOURCE_ROOT)) {
     const text = readFileSync(file, 'utf8');
-    const pattern = /httpError\(\s*\d{3}\s*,\s*'([A-Z0-9_]+)'/g;
-    let match = pattern.exec(text);
-    while (match !== null) {
-      const code = match[1] as string;
-      counts.set(code, (counts.get(code) ?? 0) + 1);
-      match = pattern.exec(text);
+    const patterns = [
+      // The ordinary throw, with the code written at the call site.
+      /httpError\(\s*\d{3}\s*,\s*'([A-Z0-9_]+)'/g,
+      /* The table-driven throw. A module that maps its database's
+       * SQLSTATEs to named refusals (`bill-payments.ts`, `payments.ts`)
+       * throws `httpError(409, refusal[0], refusal[1])`, so the code is
+       * a variable at the call site and the literal only appears in the
+       * table. Those codes ARE thrown — a trigger firing is exactly when
+       * an operator meets them — and counting only the call site left
+       * the census blind to a whole idiom, which is how a remedy for a
+       * live code looked stale. */
+      /^\s*'[0-9A-Z]{5}':\s*\[\s*'([A-Z0-9_]+)'/gm,
+    ];
+    for (const pattern of patterns) {
+      let match = pattern.exec(text);
+      while (match !== null) {
+        const code = match[1] as string;
+        counts.set(code, (counts.get(code) ?? 0) + 1);
+        match = pattern.exec(text);
+      }
     }
   }
   return counts;

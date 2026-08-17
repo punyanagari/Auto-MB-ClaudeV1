@@ -5,6 +5,7 @@ import {
   PayPaymentRequestSchema,
   PaymentRequestListResponseSchema,
   PaymentRequestSchema,
+  PreviewVendorTdsSchema,
   RecordAdvanceBillsSchema,
   RecordVendorInvoiceSchema,
   RecordVendorPaymentSchema,
@@ -17,6 +18,7 @@ import {
   compareDecimalStrings,
   resolveTdsRate,
   tdsSectionRule,
+  type ErrorCode,
   type PaymentRequest,
   type TdsQuarter,
   type VendorInvoice,
@@ -26,6 +28,7 @@ import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
+import { financialYearLabel } from '../financial-year.js';
 import { httpError } from '../http.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -166,6 +169,8 @@ interface VendorPaymentRow {
   tds_rate: string | null;
   pan_absent: boolean;
   vendor_pan: string | null;
+  tds_taxable_amount: string | null;
+  tds_taxable_basis: VendorPayment['tdsTaxableBasis'];
   reference: string | null;
   remarks: string | null;
   voided_at: Date | null;
@@ -184,6 +189,8 @@ function toVendorPayment(row: VendorPaymentRow): VendorPayment {
     tdsRate: row.tds_rate,
     panAbsent: row.pan_absent,
     vendorPan: row.vendor_pan,
+    tdsTaxableAmount: row.tds_taxable_amount,
+    tdsTaxableBasis: row.tds_taxable_basis,
     reference: row.reference,
     remarks: row.remarks,
     voidedAt: row.voided_at?.toISOString() ?? null,
@@ -196,7 +203,8 @@ const VENDOR_PAYMENT_COLUMNS = `
   id, vendor_invoice_id, paid_on::text as paid_on,
   gross_amount::text as gross_amount, tds_amount::text as tds_amount,
   net_amount::text as net_amount, tds_section, tds_rate::text as tds_rate,
-  pan_absent, vendor_pan, reference, remarks, voided_at, void_reason,
+  pan_absent, vendor_pan, tds_taxable_amount::text as tds_taxable_amount,
+  tds_taxable_basis, reference, remarks, voided_at, void_reason,
   created_at
 `;
 
@@ -227,20 +235,13 @@ function toVendorInvoice(
 
 // ── Financial year ───────────────────────────────────────────────────
 
-/**
- * The Indian financial year a date falls in, as `2026-27`.
- *
- * April to March, so January to March belong to the year that started in
- * the previous April. Derived from the date-only string by slicing
- * rather than by constructing a `Date`: these are legal date-only values
- * and AGENTS.md rule 6 forbids round-tripping them through a timezone.
- */
-export function financialYearOf(dateOnly: string): string {
-  const year = Number(dateOnly.slice(0, 4));
-  const month = Number(dateOnly.slice(5, 7));
-  const start = month >= 4 ? year : year - 1;
-  return `${String(start)}-${String((start + 1) % 100).padStart(2, '0')}`;
-}
+/* The financial-year label comes from `../financial-year.js`. This module
+ * had its own copy; `financial-year.ts`'s own header explains why there
+ * must be exactly one — the statutory adapter hashes that string into an
+ * IRN, so a second implementation drifting by a character would not
+ * produce a slightly wrong label, it would refuse legitimate government
+ * evidence. A payments module is no exception to a rule written that
+ * emphatically. */
 
 /** The first and last date of a financial-year quarter, inclusive. Q1 is
  * April to June, because the income-tax year starts in April. */
@@ -281,19 +282,106 @@ function csvRow(cells: readonly (string | null)[]): string {
   return cells.map(csvCell).join(',');
 }
 
+// ── The database's refusals, restated as this module's own ───────────
+
+/**
+ * Every rule migration 0080 enforces by trigger, mapped from its
+ * SQLSTATE to a named 409.
+ *
+ * The routes check each of these before they write, so a trigger only
+ * wins the race when a concurrent caller took the remaining balance, or
+ * decided the request, between the check and the write — which is
+ * exactly what the triggers exist for. Without this map that race
+ * surfaces as a 500 and an operator is told "the server broke" when the
+ * truth is "somebody else got there first".
+ *
+ * Matched on SQLSTATE, never on the text of the RAISE, for the reason
+ * `bill-payments.ts` gives: a reworded message must not be able to turn
+ * a 409 back into a 500, and a substring match is a coupling nothing
+ * checks. Migration 0080 gives each rule its own class-23 code so this
+ * table can exist.
+ */
+const DATABASE_REFUSALS: Readonly<Record<string, readonly [ErrorCode, string]>> = {
+  '23B01': [
+    'VENDOR_PAYMENT_EXCEEDS_INVOICE',
+    'Another payment against this invoice was recorded first, and this one would now exceed what is outstanding.',
+  ],
+  '23B02': [
+    'VENDOR_INVOICE_CANCELLED',
+    'This invoice was cancelled while the payment was being recorded.',
+  ],
+  '23B03': [
+    'VENDOR_INVOICE_NOT_FOUND',
+    'The vendor invoice this payment names is not visible to this transaction.',
+  ],
+  '23B04': [
+    'VENDOR_PAYMENT_ALREADY_VOID',
+    'This payment was voided while the change was being recorded.',
+  ],
+  '23B11': [
+    'PAYMENT_REQUEST_FROZEN',
+    'A decided payment request cannot have its amount, kind, beneficiary or number changed.',
+  ],
+  '23B12': [
+    'PAYMENT_REQUEST_STATE_CONFLICT',
+    'Somebody else moved this payment request first; reload the register to see where it stands.',
+  ],
+  '23B13': [
+    'PAYMENT_REQUEST_SELF_DECISION',
+    'A payment request is decided by somebody other than the person who raised it.',
+  ],
+};
+
+function rethrowWriteRefusal(error: unknown): never {
+  const code =
+    error !== null && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : '';
+  const refusal = DATABASE_REFUSALS[code];
+  if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
+  throw error;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
+/**
+ * One payment request, optionally locked for the transaction.
+ *
+ * `lock` is not optional decoration on the mutating paths. Read a
+ * request, decide it is approved, and UPDATE it to paid, and two
+ * concurrent callers both read `approved` and both pay — the classic
+ * double-pay. `FOR UPDATE` makes the second wait for the first to
+ * commit, at which point it reads `paid` and refuses.
+ *
+ * The lock names `payment_requests` explicitly (`FOR UPDATE OF r`)
+ * because the statement joins `contacts` and `works`: an unqualified
+ * `FOR UPDATE` would lock a contact row and a Work row too, which is
+ * both wider than needed and a deadlock waiting for a caller that takes
+ * them in the other order.
+ */
 async function loadPaymentRequest(
   tx: TransactionSql,
   id: string,
+  options: { readonly lock?: boolean } = {},
 ): Promise<PaymentRequestRow> {
-  const [row] = await tx<PaymentRequestRow[]>`
-    select ${tx.unsafe(PAYMENT_REQUEST_COLUMNS)}
-    from payment_requests r
-    join contacts c on c.id = r.beneficiary_contact_id
-    left join works w on w.id = r.work_id
-    where r.id = ${id}
-  `;
+  const rows =
+    options.lock === true
+      ? await tx<PaymentRequestRow[]>`
+        select ${tx.unsafe(PAYMENT_REQUEST_COLUMNS)}
+        from payment_requests r
+        join contacts c on c.id = r.beneficiary_contact_id
+        left join works w on w.id = r.work_id
+        where r.id = ${id}
+        for no key update of r
+      `
+      : await tx<PaymentRequestRow[]>`
+        select ${tx.unsafe(PAYMENT_REQUEST_COLUMNS)}
+        from payment_requests r
+        join contacts c on c.id = r.beneficiary_contact_id
+        left join works w on w.id = r.work_id
+        where r.id = ${id}
+      `;
+  const [row] = rows;
   if (row === undefined) {
     throw httpError(404, 'PAYMENT_REQUEST_NOT_FOUND', 'No such payment request.');
   }
@@ -355,16 +443,7 @@ export function registerPaymentsWorkspaceRoutes(
                 )
           order by r.created_at desc, r.id
         `;
-        const blocked = await tx<{ beneficiary_contact_id: string }[]>`
-          select distinct beneficiary_contact_id
-          from payment_requests
-          where kind = 'advance' and status = 'paid'
-            and bills_recorded_at is null
-        `;
-        return {
-          requests: rows.map(toPaymentRequest),
-          beneficiariesWithBillsDue: blocked.map((row) => row.beneficiary_contact_id),
-        };
+        return { requests: rows.map(toPaymentRequest) };
       }),
   );
 
@@ -427,11 +506,27 @@ export function registerPaymentsWorkspaceRoutes(
           }
         }
 
+        // The financial year a request is numbered in comes from the
+        // ORGANISATION's own timezone, the way a challan date does
+        // (`assertChallanDate`). `new Date().toISOString()` is UTC, so
+        // on the evening of 31 March in India it would number the
+        // request into the year that had already ended — a gap in one
+        // series and a stray number in the next.
+        const [clock] = await tx<{ today: string }[]>`
+          select (now() at time zone o.timezone)::date::text as today
+          from organisations o where o.id = ${organisationId}
+        `;
+        if (clock === undefined) {
+          throw httpError(
+            500,
+            'PAYMENT_REQUEST_NUMBER_FAILED',
+            'The organisation clock could not be read.',
+          );
+        }
         // The counter is upserted and incremented in one statement, so
         // two concurrent requests serialise on the counter row rather
         // than both reading the same next value.
-        const today = new Date().toISOString().slice(0, 10);
-        const financialYear = financialYearOf(today);
+        const financialYear = financialYearLabel(clock.today);
         const [counter] = await tx<{ next_value: number }[]>`
           insert into payment_request_counters (
             organisation_id, fy_label, next_value
@@ -459,7 +554,7 @@ export function registerPaymentsWorkspaceRoutes(
           insert into payment_requests (
             organisation_id, fy_label, sequence_number, request_number,
             kind, work_id, beneficiary_contact_id, beneficiary_snapshot,
-            purpose, category, amount, proof_object_key, proof_filename,
+            purpose, category, amount, proof_reference, proof_filename,
             status, requested_by_user_id
           )
           select ${organisationId}, ${financialYear}, ${sequence},
@@ -471,7 +566,7 @@ export function registerPaymentsWorkspaceRoutes(
                    'address', c.address
                  ),
                  ${body.purpose}, ${body.category}, ${body.amount}::money_amount,
-                 ${body.proofObjectKey}, ${body.proofFilename},
+                 ${body.proofReference}, ${body.proofFilename},
                  'submitted', ${user.id}
           from contacts c where c.id = ${body.beneficiaryContactId}
           returning id
@@ -524,7 +619,7 @@ export function registerPaymentsWorkspaceRoutes(
         );
       }
       return tenant(async (tx) => {
-        const existing = await loadPaymentRequest(tx, id);
+        const existing = await loadPaymentRequest(tx, id, { lock: true });
         await assertRequestScope(tx, user.id, existing.work_id);
         if (existing.status !== 'submitted') {
           throw httpError(
@@ -544,13 +639,25 @@ export function registerPaymentsWorkspaceRoutes(
           );
         }
         const status = body.decision === 'approve' ? 'approved' : 'rejected';
-        await tx`
+        // The UPDATE re-states the status it expects. Between the locked
+        // read and here nothing can move the row — that is what the lock
+        // is for — but stating it makes the statement correct on its own,
+        // and `returning` proves it matched rather than silently
+        // updating nothing.
+        const decided = await tx`
           update payment_requests
           set status = ${status}, decided_by_user_id = ${user.id},
-              decided_at = now(), decision_note = ${body.note ?? null},
-              updated_at = now()
-          where id = ${id}
-        `;
+              decided_at = now(), decision_note = ${body.note ?? null}
+          where id = ${id} and status = 'submitted'
+          returning id
+        `.catch(rethrowWriteRefusal);
+        if (decided.count === 0) {
+          throw httpError(
+            409,
+            'PAYMENT_REQUEST_NOT_PENDING',
+            `${existing.request_number} was decided by somebody else first.`,
+          );
+        }
         await audit(
           tx,
           organisationId,
@@ -582,7 +689,7 @@ export function registerPaymentsWorkspaceRoutes(
       const { id } = request.params;
       const body = request.body;
       return tenant(async (tx) => {
-        const existing = await loadPaymentRequest(tx, id);
+        const existing = await loadPaymentRequest(tx, id, { lock: true });
         await assertRequestScope(tx, user.id, existing.work_id);
         if (existing.status !== 'approved') {
           throw httpError(
@@ -596,15 +703,26 @@ export function registerPaymentsWorkspaceRoutes(
         // until the final bills are recorded — which is exactly what
         // blocks the next advance.
         const settlesImmediately = existing.kind === 'reimbursement';
-        await tx`
+        // `and status = 'approved'` is the double-pay guard: a retried
+        // request that finds the row already paid matches no row and is
+        // told so, instead of moving the money twice or overwriting the
+        // bank reference of the payment that did.
+        const paid = await tx`
           update payment_requests
           set status = ${settlesImmediately ? 'settled' : 'paid'},
               paid_at = ${body.paidOn}::date,
               paid_reference = ${body.reference},
-              bills_recorded_at = ${settlesImmediately ? tx`now()` : null},
-              updated_at = now()
-          where id = ${id}
-        `;
+              bills_recorded_at = ${settlesImmediately ? tx`now()` : null}
+          where id = ${id} and status = 'approved'
+          returning id
+        `.catch(rethrowWriteRefusal);
+        if (paid.count === 0) {
+          throw httpError(
+            409,
+            'PAYMENT_REQUEST_NOT_APPROVED',
+            `${existing.request_number} was already paid by somebody else.`,
+          );
+        }
         await audit(
           tx,
           organisationId,
@@ -635,7 +753,7 @@ export function registerPaymentsWorkspaceRoutes(
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       return tenant(async (tx) => {
-        const existing = await loadPaymentRequest(tx, id);
+        const existing = await loadPaymentRequest(tx, id, { lock: true });
         await assertRequestScope(tx, user.id, existing.work_id);
         if (existing.kind !== 'advance' || existing.status !== 'paid') {
           throw httpError(
@@ -644,13 +762,20 @@ export function registerPaymentsWorkspaceRoutes(
             `${existing.request_number} is not a paid advance awaiting its final bills.`,
           );
         }
-        await tx`
+        const closed = await tx`
           update payment_requests
           set bills_recorded_at = now(), status = 'settled',
-              decision_note = coalesce(${request.body.note ?? null}, decision_note),
-              updated_at = now()
-          where id = ${id}
-        `;
+              decision_note = coalesce(${request.body.note ?? null}, decision_note)
+          where id = ${id} and status = 'paid' and bills_recorded_at is null
+          returning id
+        `.catch(rethrowWriteRefusal);
+        if (closed.count === 0) {
+          throw httpError(
+            409,
+            'ADVANCE_NOT_OPEN',
+            `${existing.request_number} was closed by somebody else first.`,
+          );
+        }
         await audit(
           tx,
           organisationId,
@@ -844,6 +969,8 @@ export function registerPaymentsWorkspaceRoutes(
     panAbsentUplift: boolean;
     thresholdBasis: 'single_payment' | 'annual_aggregate' | 'none';
     financialYearPaidBefore: string;
+    taxableAmount: string;
+    taxableBasis: 'payment' | 'aggregate_catch_up' | 'none';
     pan: string | null;
     citation: string | null;
   }> {
@@ -856,6 +983,8 @@ export function registerPaymentsWorkspaceRoutes(
         panAbsentUplift: false,
         thresholdBasis: 'none',
         financialYearPaidBefore: '0',
+        taxableAmount: '0.00',
+        taxableBasis: 'none',
         pan: null,
         citation: null,
       };
@@ -868,19 +997,41 @@ export function registerPaymentsWorkspaceRoutes(
     // over-deducts from exactly the small contractor least able to carry
     // it. 0080 backfills the column from the GSTIN, so a registered
     // vendor deducts at the same rate it did before.
+    // THE PER-VENDOR LOCK, and why the aggregate is worthless without
+    // it.
+    //
+    // The threshold is measured over everything paid to this payee this
+    // financial year, so two payments to one vendor recorded at the same
+    // moment both read the same "before" total, both conclude the
+    // threshold is uncrossed, and both withhold nothing — a shortfall
+    // the deductor is personally liable for. `FOR UPDATE` on the
+    // CONTACT row is the serialization point because the contact is what
+    // the aggregate is keyed by; the invoice is not, since one vendor
+    // may be paid against several. Concurrent payments to DIFFERENT
+    // vendors take different locks and do not contend.
+    //
+    // `lock` is only read for its side effect. Taken before the sum, in
+    // the same transaction as the insert, which is what makes the read
+    // and the write one atomic decision (AGENTS.md rule 9).
     const [vendor] = await tx<{ pan: string | null }[]>`
-      select pan from contacts where id = ${invoice.vendor_contact_id}
+      select pan from contacts
+      where id = ${invoice.vendor_contact_id}
+      for update
     `;
     const pan = vendor?.pan ?? null;
 
     // Everything already paid to THIS VENDOR in the same financial
     // year, across all its invoices — the threshold is per payee, not
-    // per invoice. Summed by PostgreSQL.
-    const financialYear = financialYearOf(paidOn);
+    // per invoice — and how much of that was already taxed. The second
+    // figure is what stops the catch-up from taxing a payment twice:
+    // one that crossed its own single-payment threshold earlier has
+    // already had tax withheld on it.
+    const financialYear = financialYearLabel(paidOn);
     const yearStart = `${financialYear.slice(0, 4)}-04-01`;
     const yearEnd = `${String(Number(financialYear.slice(0, 4)) + 1)}-03-31`;
-    const [prior] = await tx<{ paid_before: string }[]>`
-      select coalesce(sum(p.gross_amount), 0)::text as paid_before
+    const [prior] = await tx<{ paid_before: string; taxed_before: string }[]>`
+      select coalesce(sum(p.gross_amount), 0)::text as paid_before,
+             coalesce(sum(p.tds_taxable_amount), 0)::text as taxed_before
       from vendor_payments p
       join vendor_invoices i on i.id = p.vendor_invoice_id
       where i.vendor_contact_id = ${invoice.vendor_contact_id}
@@ -888,6 +1039,7 @@ export function registerPaymentsWorkspaceRoutes(
         and p.paid_on between ${yearStart}::date and ${yearEnd}::date
     `;
     const paidBefore = prior?.paid_before ?? '0';
+    const taxedBefore = prior?.taxed_before ?? '0';
 
     const verdict = resolveTdsRate({
       section: invoice.tds_section,
@@ -895,6 +1047,7 @@ export function registerPaymentsWorkspaceRoutes(
       panOnRecord: pan !== null,
       paymentAmount: grossAmount,
       financialYearPaidBefore: paidBefore,
+      financialYearTaxedBefore: taxedBefore,
     });
 
     return {
@@ -905,30 +1058,40 @@ export function registerPaymentsWorkspaceRoutes(
       panAbsentUplift: verdict.panAbsentUplift,
       thresholdBasis: verdict.thresholdBasis,
       financialYearPaidBefore: paidBefore,
+      taxableAmount: verdict.taxableAmount,
+      taxableBasis: verdict.taxableBasis,
       pan,
       citation: tdsSectionRule(invoice.tds_section).provision.citation,
     };
   }
 
+  /**
+   * What the server would deduct on a proposed payment.
+   *
+   * A POST despite being a read, and gated exactly like the write it
+   * previews. Both are deliberate. The amount is a rupee figure about a
+   * named vendor, and a GET puts it in the URL, which is the one place
+   * request logs, proxies and browser history all keep — rule 11 says
+   * bodies stay out of logs, and the way to honour that for a parameter
+   * is to make it a body. The authority and the work-scope check match
+   * the payment endpoint because the answer discloses a vendor's
+   * financial-year running total, which is not less sensitive for being
+   * hypothetical.
+   */
   tenantRoute(
     {
-      method: 'GET',
+      method: 'POST',
       url: '/api/vendor-invoices/:id/tds-preview',
       schema: {
         params: IdParamsSchema,
-        querystring: Type.Object(
-          {
-            grossAmount: Type.String(),
-            paidOn: Type.String({ format: 'date' }),
-          },
-          { additionalProperties: false },
-        ),
+        body: PreviewVendorTdsSchema,
         response: { 200: TdsPreviewResponseSchema, ...errorResponses },
       },
+      authority: 'payments',
     },
-    async ({ request, tenant }) => {
+    async ({ request, user, tenant }) => {
       const { id } = request.params;
-      const { grossAmount, paidOn } = request.query;
+      const { grossAmount, paidOn } = request.body;
       return tenant(async (tx) => {
         const [invoice] = await tx<VendorInvoiceRow[]>`
           select ${tx.unsafe(VENDOR_INVOICE_COLUMNS)}
@@ -940,15 +1103,18 @@ export function registerPaymentsWorkspaceRoutes(
         if (invoice === undefined) {
           throw httpError(404, 'VENDOR_INVOICE_NOT_FOUND', 'No such vendor invoice.');
         }
+        if (invoice.work_id !== null) {
+          await assertWorkAccess(tx, user.id, invoice.work_id);
+        }
         const verdict = await tdsVerdictFor(tx, invoice, grossAmount, paidOn);
         // The rupee split is PostgreSQL's, not JavaScript's, and it is
         // rounded once by the money_amount domain.
         const [split] = await tx<{ tds: string; net: string }[]>`
           select
-            (${grossAmount}::numeric * ${verdict.rate}::numeric / 100)::money_amount::text
+            (${verdict.taxableAmount}::numeric * ${verdict.rate}::numeric / 100)::money_amount::text
               as tds,
             (${grossAmount}::numeric
-              - (${grossAmount}::numeric * ${verdict.rate}::numeric / 100)::money_amount
+              - (${verdict.taxableAmount}::numeric * ${verdict.rate}::numeric / 100)::money_amount
             )::money_amount::text as net
         `;
         return {
@@ -959,6 +1125,8 @@ export function registerPaymentsWorkspaceRoutes(
           netAmount: verdict.deductible ? (split?.net ?? grossAmount) : grossAmount,
           deductible: verdict.deductible,
           panAbsentUplift: verdict.panAbsentUplift,
+          taxableAmount: verdict.taxableAmount,
+          taxableBasis: verdict.taxableBasis,
           thresholdBasis: verdict.thresholdBasis,
           financialYearPaidBefore: verdict.financialYearPaidBefore,
           provisionCitation: verdict.citation,
@@ -1003,18 +1171,35 @@ export function registerPaymentsWorkspaceRoutes(
           await assertWorkAccess(tx, user.id, invoice.work_id);
         }
 
+        // The ceiling, refused by name before the insert. The trigger
+        // holds it too and is the authority under concurrency; this is
+        // the sentence an operator can act on, instead of a SQLSTATE
+        // reaching them as "the request could not be completed".
+        if (compareDecimalStrings(body.grossAmount, invoice.outstanding_amount) > 0) {
+          throw httpError(
+            409,
+            'VENDOR_PAYMENT_EXCEEDS_INVOICE',
+            `Paying ${body.grossAmount} would exceed ${invoice.invoice_number}: ${invoice.outstanding_amount} is outstanding of ${invoice.amount}.`,
+            { field: 'grossAmount' },
+          );
+        }
+
         const verdict = await tdsVerdictFor(tx, invoice, body.grossAmount, body.paidOn);
         const rate = verdict.deductible ? verdict.rate : '0.00';
 
         // The three figures, split by PostgreSQL and rounded once by the
-        // money_amount domain. The net is derived by SUBTRACTION rather
-        // than by a second multiplication, so gross = tds + net holds
-        // exactly and the row can never fail its own CHECK by a paisa.
+        // money_amount domain. The rate multiplies the TAXABLE amount,
+        // which is the gross except on the payment that carries the year
+        // over its annual threshold — that one owes tax on every earlier
+        // untaxed payment too, so its TDS legitimately exceeds its own
+        // rate x gross. The net is derived by SUBTRACTION from the
+        // gross, so gross = tds + net holds exactly whichever base was
+        // used and the row can never fail its own CHECK by a paisa.
         const [split] = await tx<{ tds: string; net: string }[]>`
           select t.tds::text as tds,
                  (${body.grossAmount}::money_amount - t.tds)::money_amount::text as net
           from (
-            select (${body.grossAmount}::numeric * ${rate}::numeric / 100)::money_amount
+            select (${verdict.taxableAmount}::numeric * ${rate}::numeric / 100)::money_amount
               as tds
           ) t
         `;
@@ -1023,6 +1208,22 @@ export function registerPaymentsWorkspaceRoutes(
             500,
             'VENDOR_PAYMENT_SPLIT_FAILED',
             'The payment split did not compute.',
+          );
+        }
+        // A catch-up can owe more tax than the payment in hand: crossing
+        // ₹30,000 under 194J on a ₹100 payment owes 10% of the whole
+        // aggregate. There is no honest way to withhold more than is
+        // being paid — `net_amount >= 0` says so and the deductor cannot
+        // take money that is not moving — so this is refused rather than
+        // silently capped. Capping would under-withhold AND record a
+        // taxable amount the withholding does not cover, which is a
+        // wrong return on top of a shortfall.
+        if (compareDecimalStrings(split.tds, body.grossAmount) > 0) {
+          throw httpError(
+            409,
+            'VENDOR_PAYMENT_TDS_EXCEEDS_GROSS',
+            `This payment carries the year past the ${verdict.section ?? ''} threshold, so tax of ${split.tds} falls due on the whole financial-year aggregate — more than the ${body.grossAmount} being paid. Pay at least the tax, or record the earlier payments' tax separately.`,
+            { field: 'grossAmount' },
           );
         }
         // Whether anything was actually withheld, read off the SQL
@@ -1038,7 +1239,8 @@ export function registerPaymentsWorkspaceRoutes(
           insert into vendor_payments (
             organisation_id, vendor_invoice_id, paid_on, gross_amount,
             tds_amount, net_amount, tds_section, tds_rate, pan_absent,
-            vendor_pan, reference, remarks, recorded_by_user_id
+            vendor_pan, tds_taxable_amount, tds_taxable_basis,
+            reference, remarks, recorded_by_user_id
           )
           values (
             ${organisationId}, ${id}, ${body.paidOn}::date,
@@ -1047,11 +1249,13 @@ export function registerPaymentsWorkspaceRoutes(
             ${withheld ? invoice.tds_section : null},
             ${withheld ? rate : null}::numeric(5,2),
             ${verdict.panAbsentUplift}, ${verdict.pan},
+            ${withheld ? verdict.taxableAmount : null}::money_amount,
+            ${withheld ? verdict.taxableBasis : null},
             ${body.reference ?? null}, ${body.remarks ?? null},
             ${user.id}
           )
           returning id
-        `;
+        `.catch(rethrowWriteRefusal);
         if (row === undefined) {
           throw httpError(
             500,

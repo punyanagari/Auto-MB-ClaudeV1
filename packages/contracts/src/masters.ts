@@ -50,9 +50,14 @@ export const BankBranchSchema = Type.String({ minLength: 2, maxLength: 100 });
 
 /** Five letters, four digits, one letter. Checked here as well as in the
  * database because an unregistered vendor PAN has no GSTIN to fall back
- * on and a typo would silently engage the 206AA floor. */
+ * on and a typo would silently engage the 206AA floor.
+ *
+ * Either case is accepted and the route uppercases before storing, the
+ * way the GSTIN is handled: a PAN is read off a card and typed, and the
+ * database CHECK only accepts upper case, so rejecting lower case at the
+ * edge would refuse a correct value for its capitalisation. */
 export const PanSchema = Type.String({
-  pattern: '^[A-Z]{5}[0-9]{4}[A-Z]$',
+  pattern: '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$',
   minLength: 10,
   maxLength: 10,
 });
@@ -162,8 +167,10 @@ export const SaveContactRequestSchema = Type.Object(
     bankBranch: Type.Optional(BankBranchSchema),
     bankAccountType: Type.Optional(Type.String({ minLength: 2, maxLength: 50 })),
     isEmployee: Type.Optional(Type.Boolean()),
-    /** Accepted in any case; stored uppercase, like the GSTIN. */
-    pan: Type.Optional(PanSchema),
+    /** Explicit null clears the PAN; omitting the field preserves what
+     * is stored. Same shape as every sibling nullable field, so an edit
+     * form that only sends what changed does not blank the rest. */
+    pan: Type.Optional(Type.Union([PanSchema, Type.Null()])),
   },
   { additionalProperties: false },
 );

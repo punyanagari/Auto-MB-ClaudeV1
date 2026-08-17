@@ -64,6 +64,7 @@ describe('TDS rate resolution', () => {
     payeeClass: 'other',
     panOnRecord: true,
     financialYearPaidBefore: '0',
+    financialYearTaxedBefore: '0',
   } as const;
 
   it('deducts nothing below both thresholds', () => {
@@ -73,25 +74,98 @@ describe('TDS rate resolution', () => {
     expect(verdict.thresholdBasis).toBe('none');
   });
 
-  it('deducts once a single payment reaches the single-payment threshold', () => {
-    const verdict = resolveTdsRate({ ...base, paymentAmount: '30000.00' });
-    expect(verdict.deductible).toBe(true);
-    expect(verdict.thresholdBasis).toBe('single_payment');
-    expect(verdict.rate).toBe('2.00');
+  it('deducts nothing AT the single-payment threshold, only above it', () => {
+    // s.194C(5) is written as "does not exceed": ₹30,000 exactly is
+    // still exempt. The boundary an operator meets on a round-numbered
+    // invoice, and the difference between reading the Act and
+    // paraphrasing it.
+    const at = resolveTdsRate({ ...base, paymentAmount: '30000.00' });
+    expect(at.deductible).toBe(false);
+    expect(at.thresholdBasis).toBe('none');
+
+    const above = resolveTdsRate({ ...base, paymentAmount: '30000.01' });
+    expect(above.deductible).toBe(true);
+    expect(above.thresholdBasis).toBe('single_payment');
+    expect(above.rate).toBe('2.00');
   });
 
-  it('deducts on the payment that carries the year aggregate over the line', () => {
-    // 95,000 already paid, 6,000 now: the aggregate INCLUDING this
-    // payment crosses ₹1,00,000, so this payment is itself deductible.
-    // Testing the prior total alone would let the crossing payment
-    // through untaxed.
+  it('deducts nothing AT the annual threshold, only above it', () => {
+    const at = resolveTdsRate({
+      ...base,
+      paymentAmount: '50000.00',
+      financialYearPaidBefore: '50000.00',
+    });
+    // The aggregate is exactly ₹1,00,000, and neither payment on its own
+    // exceeds ₹30,000... but 50,000 does, so the single-payment trigger
+    // fires. Test the annual boundary with payments that stay under it.
+    expect(at.thresholdBasis).toBe('single_payment');
+
+    const belowBoth = resolveTdsRate({
+      ...base,
+      paymentAmount: '20000.00',
+      financialYearPaidBefore: '80000.00',
+    });
+    expect(belowBoth.deductible).toBe(false);
+    expect(belowBoth.thresholdBasis).toBe('none');
+
+    const over = resolveTdsRate({
+      ...base,
+      paymentAmount: '20000.01',
+      financialYearPaidBefore: '80000.00',
+    });
+    expect(over.deductible).toBe(true);
+    expect(over.thresholdBasis).toBe('annual_aggregate');
+  });
+
+  it('taxes the WHOLE aggregate on the payment that crosses the annual line', () => {
+    /* Five payments of ₹25,000 under 194C. The first four are each
+       under the single-payment threshold and keep the year under
+       ₹1,00,000, so nothing is withheld. The fifth takes the year to
+       ₹1,25,000, and tax then falls due on the whole ₹1,25,000 — not on
+       the ₹25,000 in hand. Withholding 2% of 25,000 would leave the
+       deductor short by 2% of 1,00,000. */
+    for (const paidBefore of ['0', '25000.00', '50000.00']) {
+      const early = resolveTdsRate({
+        ...base,
+        paymentAmount: '25000.00',
+        financialYearPaidBefore: paidBefore,
+      });
+      expect(early.deductible, `paid before ${paidBefore}`).toBe(false);
+    }
+
+    const crossing = resolveTdsRate({
+      ...base,
+      paymentAmount: '25000.00',
+      financialYearPaidBefore: '100000.00',
+    });
+    expect(crossing.deductible).toBe(true);
+    expect(crossing.thresholdBasis).toBe('annual_aggregate');
+    expect(crossing.taxableBasis).toBe('aggregate_catch_up');
+    expect(crossing.taxableAmount).toBe('125000.00');
+
+    // And every payment after it carries only itself.
+    const after = resolveTdsRate({
+      ...base,
+      paymentAmount: '25000.00',
+      financialYearPaidBefore: '125000.00',
+    });
+    expect(after.taxableBasis).toBe('payment');
+    expect(after.taxableAmount).toBe('25000.00');
+  });
+
+  it('does not tax twice what a single-payment trigger already taxed', () => {
+    /* ₹40,000 went out first and was taxed on its own trigger; ₹70,000
+       follows and carries the year over ₹1,00,000. The catch-up owes tax
+       on the untaxed part only — 1,10,000 less the 40,000 already taxed
+       — or the first payment pays twice. */
     const verdict = resolveTdsRate({
       ...base,
-      paymentAmount: '6000.00',
-      financialYearPaidBefore: '95000.00',
+      paymentAmount: '70000.00',
+      financialYearPaidBefore: '40000.00',
+      financialYearTaxedBefore: '40000.00',
     });
-    expect(verdict.deductible).toBe(true);
-    expect(verdict.thresholdBasis).toBe('annual_aggregate');
+    expect(verdict.taxableBasis).toBe('aggregate_catch_up');
+    expect(verdict.taxableAmount).toBe('70000.00');
   });
 
   it('charges the individual/HUF rate to an individual payee', () => {
@@ -140,6 +214,7 @@ describe('TDS rate resolution', () => {
       panOnRecord: true,
       paymentAmount: '29000.00',
       financialYearPaidBefore: '0',
+      financialYearTaxedBefore: '0',
     });
     expect(verdict.deductible).toBe(false);
   });

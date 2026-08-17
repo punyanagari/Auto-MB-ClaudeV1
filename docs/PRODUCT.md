@@ -1004,11 +1004,20 @@ and it is why there is no service account anywhere in the product.
 by migration 0080: what the agency pays its own people and its vendors.
 
 **An employee request is an approval, not a payment.** An advance or a
-reimbursement is raised with its proof attached — the product refuses to
-accept one without it — and moves `submitted → approved → paid`. It is
-decided by somebody other than the person who raised it; that refusal is
-the whole reason the flow exists rather than being a form that writes a
-payment directly.
+reimbursement is raised naming the proof it rests on — the product refuses
+to accept one without it — and moves `submitted → approved → paid`. There
+is no draft: a request nobody has been asked to decide is not a record
+worth keeping, and a status the product cannot reach is a branch every
+reader has to rule out.
+
+**Maker-checker, held twice.** A request is decided by somebody other than
+the person who raised it. The route refuses a self-decision with a
+sentence and the trigger refuses it as a rule, so a second endpoint or a
+hand-run UPDATE cannot quietly approve its own claim. Deciding and paying
+each happen once: the UPDATE names the status it expects and checks that
+it matched, so a retried request that finds the row already paid is told
+so rather than moving the money twice or overwriting the reference of the
+payment that did.
 
 **An advance is not finished when it is paid.** A reimbursement arrives with
 its bills, so paying it settles it in the same act. An advance is paid
@@ -1037,11 +1046,29 @@ deduction, and it would also let a caller choose its own rate. The rate
 decision reads `packages/contracts/src/statutory.ts` and honours three
 behaviours an operator should not meet for the first time in the ledger:
 
-- **thresholds**, tested per payee and per financial year. 194C triggers on
-  either a single payment reaching its threshold or the year's aggregate
-  reaching the annual one; 194J has no single-payment trigger. The aggregate
-  is tested _including_ the payment being made, because the payment that
-  crosses the line is itself deductible.
+- **thresholds, crossed strictly ABOVE and never AT.** Sections 194C(5) and
+  194J are written as "does not exceed", so a payment of exactly ₹30,000 is
+  not deductible and ₹30,000.01 is. 194C triggers on either a single payment
+  exceeding its threshold or the year's aggregate exceeding the annual one;
+  194J has no single-payment trigger. The aggregate is tested _including_
+  the payment being made, because the payment that crosses the line is
+  itself deductible.
+- **the crossing payment carries the whole year.** Below the annual
+  threshold nothing is withheld; the moment the aggregate exceeds it, tax
+  falls due on the aggregate — including the earlier payments that went out
+  untaxed — and the deductor recovers it from the payment in hand. Five
+  payments of ₹25,000 under 194C withhold nothing on the first four and tax
+  ₹1,25,000 on the fifth. What was already taxed on its own single-payment
+  trigger is subtracted out, so nothing is taxed twice, and the taxable
+  amount and its basis are **snapshotted on the payment** — a 26Q line whose
+  tax exceeds its own rate × gross has to be able to explain itself. Where
+  the catch-up would exceed the payment in hand it is refused rather than
+  capped: there is no honest way to withhold money that is not moving.
+- **serialised per payee.** The financial-year aggregate is read under a
+  lock on the vendor's contact row, in the same transaction as the insert.
+  Without it two simultaneous payments to one vendor both read the same
+  stale total, both believe the year is under the threshold, and the
+  shortfall is the deductor's to pay.
 - **section 206AA**, applied as a **floor** and not a substitution: where no
   PAN has been furnished, the rate is the higher of the rate in force and
   20%. Modelling it as "20% when PAN is missing" would under-deduct for any
@@ -1201,7 +1228,6 @@ definition and exists so that one PAN copy serves every Work, whereas an
 inspection certificate is evidence about specific items of one contract.
 A call's evidence is replaceable while the call is open and frozen the
 moment it closes.
-
 
 ## 6. Data conventions
 

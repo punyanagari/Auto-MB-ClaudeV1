@@ -97,6 +97,15 @@ function authed(options: InjectOptions & { organisationId?: string; as?: string 
   });
 }
 
+/** The TDS preview is a POST: the amount is a rupee figure about a
+ * named vendor and a query string is the one place logs keep it. */
+function previewTds(invoiceId: string, grossAmount: string, paidOn: string) {
+  return post(`/api/vendor-invoices/${invoiceId}/tds-preview`, {
+    grossAmount,
+    paidOn,
+  });
+}
+
 function post(url: string, payload: object, as?: string, org?: string) {
   return authed({
     method: 'POST',
@@ -264,7 +273,7 @@ describe('employee advances and reimbursements', () => {
         purpose: 'Inspection travel expenses',
         category: 'travel',
         amount: '18760.00',
-        proofObjectKey: `${organisationId}/proof/${randomUUID()}.pdf`,
+        proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
         proofFilename: 'Expense-bills.pdf',
       },
       clerkCookie,
@@ -302,7 +311,7 @@ describe('employee advances and reimbursements', () => {
         purpose: 'Own claim',
         category: 'general',
         amount: '100.00',
-        proofObjectKey: `${organisationId}/proof/${randomUUID()}.pdf`,
+        proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
         proofFilename: 'own.pdf',
       },
       // Raised by the OWNER, who also holds the payments authority.
@@ -329,7 +338,7 @@ describe('employee advances and reimbursements', () => {
         purpose: 'Unsupported claim',
         category: 'general',
         amount: '500.00',
-        proofObjectKey: `${organisationId}/proof/${randomUUID()}.pdf`,
+        proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
         proofFilename: 'claim.pdf',
       },
       clerkCookie,
@@ -363,7 +372,7 @@ describe('employee advances and reimbursements', () => {
           purpose: 'Site travel and lodging',
           category: 'travel',
           amount: '42500.00',
-          proofObjectKey: `${organisationId}/proof/${randomUUID()}.pdf`,
+          proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
           proofFilename: 'Travel-estimate.pdf',
         },
         clerkCookie,
@@ -397,6 +406,73 @@ describe('employee advances and reimbursements', () => {
     expect(second.statusCode, second.body).toBe(201);
   });
 
+  it('pays once however many times the request is retried', async () => {
+    const employee = await seedContact('DoublePay', { employee: true });
+    const created = await post(
+      '/api/payment-requests',
+      {
+        kind: 'reimbursement',
+        beneficiaryContactId: employee,
+        purpose: 'Retried by an impatient browser',
+        category: 'travel',
+        amount: '5000.00',
+        proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
+        proofFilename: 'retry.pdf',
+      },
+      clerkCookie,
+    );
+    const id = created.json<PaymentRequest>().id;
+    await post(`/api/payment-requests/${id}/decision`, { decision: 'approve' });
+
+    const first = await post(`/api/payment-requests/${id}/payment`, {
+      reference: 'UTR-ONCE',
+      paidOn: '2026-08-14',
+    });
+    expect(first.statusCode, first.body).toBe(200);
+
+    // The retry must not move the money again, and must not overwrite
+    // the reference of the payment that did.
+    const retry = await post(`/api/payment-requests/${id}/payment`, {
+      reference: 'UTR-TWICE',
+      paidOn: '2026-08-15',
+    });
+    expect(retry.statusCode).toBe(409);
+    const [row] = await admin<{ paid_reference: string }[]>`
+      select paid_reference from payment_requests where id = ${id}
+    `;
+    expect(row?.paid_reference).toBe('UTR-ONCE');
+  });
+
+  it('lets only the first of two approvers decide', async () => {
+    const employee = await seedContact('TwoApprovers', { employee: true });
+    const created = await post(
+      '/api/payment-requests',
+      {
+        kind: 'reimbursement',
+        beneficiaryContactId: employee,
+        purpose: 'Decided twice',
+        category: 'general',
+        amount: '900.00',
+        proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
+        proofFilename: 'twice.pdf',
+      },
+      clerkCookie,
+    );
+    const id = created.json<PaymentRequest>().id;
+
+    const approve = await post(`/api/payment-requests/${id}/decision`, {
+      decision: 'approve',
+    });
+    expect(approve.statusCode, approve.body).toBe(200);
+
+    const reject = await post(`/api/payment-requests/${id}/decision`, {
+      decision: 'reject',
+      note: 'Changed my mind after approving.',
+    });
+    expect(reject.statusCode).toBe(409);
+    expect(reject.json<{ code: string }>().code).toBe('PAYMENT_REQUEST_NOT_PENDING');
+  });
+
   it('refuses the payments authority to a member who was not granted it', async () => {
     const employee = await seedContact('Ungranted', { employee: true });
     const created = await post(
@@ -407,7 +483,7 @@ describe('employee advances and reimbursements', () => {
         purpose: 'Anything',
         category: 'general',
         amount: '100.00',
-        proofObjectKey: `${organisationId}/proof/${randomUUID()}.pdf`,
+        proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
         proofFilename: 'x.pdf',
       },
       clerkCookie,
@@ -429,7 +505,7 @@ describe('employee advances and reimbursements', () => {
       purpose: 'Not payable',
       category: 'general',
       amount: '100.00',
-      proofObjectKey: `${organisationId}/proof/${randomUUID()}.pdf`,
+      proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
       proofFilename: 'x.pdf',
     });
     expect(created.statusCode).toBe(400);
@@ -498,11 +574,7 @@ describe('vendor payments and tax deducted at source', () => {
       payeeClass: 'other',
     });
 
-    const preview = await authed({
-      method: 'GET',
-      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=100000.00&paidOn=2026-08-01`,
-      organisationId,
-    });
+    const preview = await previewTds(invoiceId, '100000.00', '2026-08-01');
     expect(preview.statusCode, preview.body).toBe(200);
     const quoted = preview.json<TdsPreviewResponse>();
     expect(quoted.deductible).toBe(true);
@@ -545,11 +617,7 @@ describe('vendor payments and tax deducted at source', () => {
       tdsSection: '194C',
       payeeClass: 'other',
     });
-    const preview = await authed({
-      method: 'GET',
-      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=5000.00&paidOn=2026-08-01`,
-      organisationId,
-    });
+    const preview = await previewTds(invoiceId, '5000.00', '2026-08-01');
     const quoted = preview.json<TdsPreviewResponse>();
     expect(quoted.deductible).toBe(false);
     expect(quoted.thresholdBasis).toBe('none');
@@ -569,22 +637,24 @@ describe('vendor payments and tax deducted at source', () => {
     expect(payment.tdsSection).toBeNull();
   });
 
-  it('crosses the single-payment threshold on the payment that reaches it', async () => {
+  it('crosses the single-payment threshold strictly above it, not at it', async () => {
     const { invoiceId } = await seedInvoice('SINGLE', '100000.00', {
       tdsSection: '194C',
       payeeClass: 'individual_huf',
     });
-    const preview = await authed({
-      method: 'GET',
-      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=30000.00&paidOn=2026-08-01`,
-      organisationId,
-    });
-    const quoted = preview.json<TdsPreviewResponse>();
+    // s.194C(5) says "does not exceed": ₹30,000 exactly is still exempt.
+    const at = await previewTds(invoiceId, '30000.00', '2026-08-01');
+    expect(at.json<TdsPreviewResponse>().deductible).toBe(false);
+    expect(at.json<TdsPreviewResponse>().tdsAmount).toBe('0.00');
+
+    const above = await previewTds(invoiceId, '30000.01', '2026-08-01');
+    const quoted = above.json<TdsPreviewResponse>();
     expect(quoted.deductible).toBe(true);
     expect(quoted.thresholdBasis).toBe('single_payment');
     // 1% for an individual/HUF payee, not the 2% a company pays.
     expect(quoted.rate).toBe('1.00');
     expect(quoted.tdsAmount).toBe('300.00');
+    expect(quoted.taxableBasis).toBe('payment');
   });
 
   it('applies the section 206AA floor when the vendor has furnished no PAN', async () => {
@@ -593,11 +663,7 @@ describe('vendor payments and tax deducted at source', () => {
       payeeClass: 'other',
       gstin: null,
     });
-    const preview = await authed({
-      method: 'GET',
-      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=100000.00&paidOn=2026-08-01`,
-      organisationId,
-    });
+    const preview = await previewTds(invoiceId, '100000.00', '2026-08-01');
     const quoted = preview.json<TdsPreviewResponse>();
     expect(quoted.panAbsentUplift).toBe(true);
     // The higher of the rate in force and 20% — a floor, not a swap.
@@ -627,11 +693,7 @@ describe('vendor payments and tax deducted at source', () => {
       gstin: null,
       pan: 'ABCDE1234F',
     });
-    const preview = await authed({
-      method: 'GET',
-      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=100000.00&paidOn=2026-08-01`,
-      organisationId,
-    });
+    const preview = await previewTds(invoiceId, '100000.00', '2026-08-01');
     const quoted = preview.json<TdsPreviewResponse>();
     expect(quoted.panAbsentUplift).toBe(false);
     expect(quoted.rate).toBe('1.00');
@@ -661,18 +723,14 @@ describe('vendor payments and tax deducted at source', () => {
     // Characters 3-12 of 27AAECN2222D1Z7.
     expect(row?.pan).toBe('AAECN2222D');
 
-    const preview = await authed({
-      method: 'GET',
-      url: `/api/vendor-invoices/${invoiceId}/tds-preview?grossAmount=100000.00&paidOn=2026-08-01`,
-      organisationId,
-    });
+    const preview = await previewTds(invoiceId, '100000.00', '2026-08-01');
     const quoted = preview.json<TdsPreviewResponse>();
     expect(quoted.panAbsentUplift).toBe(false);
     expect(quoted.rate).toBe('2.00');
     expect(quoted.tdsAmount).toBe('2000.00');
   });
 
-  it('refuses a payment that would exceed the invoice', async () => {
+  it('refuses a payment that would exceed the invoice, by name', async () => {
     const { invoiceId } = await seedInvoice('CEILING', '10000.00');
     const first = await post(`/api/vendor-invoices/${invoiceId}/payments`, {
       paidOn: '2026-08-01',
@@ -683,9 +741,132 @@ describe('vendor payments and tax deducted at source', () => {
       paidOn: '2026-08-02',
       grossAmount: '5000.00',
     });
-    // Refused by the database trigger as well as the route: money is
-    // enforced twice.
-    expect(over.statusCode).toBeGreaterThanOrEqual(400);
+    // The route's own check, so the operator gets a sentence naming the
+    // outstanding figure rather than a SQLSTATE. The trigger holds the
+    // same rule and is the authority under concurrency.
+    expect(over.statusCode).toBe(409);
+    expect(over.json<{ code: string }>().code).toBe('VENDOR_PAYMENT_EXCEEDS_INVOICE');
+    expect(over.json<{ message: string }>().message).toContain('4000.00');
+  });
+
+  it('serialises the financial-year aggregate across simultaneous payments', async () => {
+    /* AGENTS.md rule 9, and the test is built so that it FAILS without
+       the per-vendor lock rather than merely passing with it.
+     *
+     * The year is walked to ₹90,000 first. Then two payments of ₹20,000
+     * are issued together. Each is under the ₹30,000 single-payment
+     * threshold, so neither triggers on its own; together they carry the
+     * year to ₹1,30,000, past the ₹1,00,000 annual line.
+     *
+     * With the lock, exactly ONE of them is the crossing payment and
+     * carries the catch-up on the whole aggregate; the other sees the
+     * year already over and carries only itself. Without the lock both
+     * read `paid_before = 90,000`, both believe they are the crossing
+     * payment, and the vendor is taxed twice on the same ₹1,10,000. */
+    const vendorId = await seedContact(
+      'RACE',
+      { vendor: true },
+      { gstin: PAN_BEARING_GSTIN },
+    );
+    const invoiceFor = async (label: string, amount: string): Promise<string> => {
+      const created = await post('/api/vendor-invoices', {
+        vendorContactId: vendorId,
+        invoiceNumber: `RACE-${label}/${runId}`,
+        invoiceDate: '2026-07-02',
+        creditDays: 30,
+        amount,
+        tdsSection: '194C',
+        tdsPayeeClass: 'other',
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      return created.json<VendorInvoice>().id;
+    };
+
+    // ₹90,000 in three untaxed instalments, each under the single
+    // threshold and the year still under the annual one.
+    const warmup = await invoiceFor('WARM', '90000.00');
+    for (const instalment of ['30000.00', '30000.00', '30000.00']) {
+      const paid = await post(`/api/vendor-invoices/${warmup}/payments`, {
+        paidOn: '2026-08-01',
+        grossAmount: instalment,
+      });
+      expect(paid.statusCode, paid.body).toBe(201);
+      expect(paid.json<VendorPayment>().tdsAmount).toBe('0.00');
+    }
+
+    const raceA = await invoiceFor('A', '20000.00');
+    const raceB = await invoiceFor('B', '20000.00');
+    const results = await Promise.all(
+      [raceA, raceB].map((invoiceId) =>
+        post(`/api/vendor-invoices/${invoiceId}/payments`, {
+          paidOn: '2026-08-02',
+          grossAmount: '20000.00',
+        }),
+      ),
+    );
+    for (const result of results) {
+      expect(result.statusCode, result.body).toBe(201);
+    }
+    const payments = results.map((result) => result.json<VendorPayment>());
+
+    // Exactly one catch-up. Two would mean both read the same stale
+    // total, which is the bug the lock exists to prevent.
+    const catchUps = payments.filter(
+      (payment) => payment.tdsTaxableBasis === 'aggregate_catch_up',
+    );
+    expect(catchUps).toHaveLength(1);
+    // It caught up the whole untaxed year: 90,000 + its own 20,000.
+    expect(catchUps[0]?.tdsTaxableAmount).toBe('110000.00');
+
+    const followers = payments.filter(
+      (payment) => payment.tdsTaxableBasis === 'payment',
+    );
+    expect(followers).toHaveLength(1);
+    expect(followers[0]?.tdsTaxableAmount).toBe('20000.00');
+  });
+
+  it('refuses a catch-up that would withhold more than the payment', async () => {
+    /* 194J has no single-payment trigger and a ₹30,000 annual one, so a
+       small payment can cross the year and owe 10% of the whole
+       aggregate — more than itself. There is no honest way to withhold
+       money that is not moving, so it is refused rather than capped. */
+    const vendorId = await seedContact(
+      'TINY',
+      { vendor: true },
+      { gstin: PAN_BEARING_GSTIN },
+    );
+    const invoiceFor = async (label: string, amount: string): Promise<string> => {
+      const created = await post('/api/vendor-invoices', {
+        vendorContactId: vendorId,
+        invoiceNumber: `TINY-${label}/${runId}`,
+        invoiceDate: '2026-07-02',
+        creditDays: 30,
+        amount,
+        tdsSection: '194J',
+        tdsPayeeClass: 'other',
+      });
+      expect(created.statusCode, created.body).toBe(201);
+      return created.json<VendorInvoice>().id;
+    };
+
+    const warmup = await invoiceFor('WARM', '30000.00');
+    const under = await post(`/api/vendor-invoices/${warmup}/payments`, {
+      paidOn: '2026-08-01',
+      grossAmount: '30000.00',
+    });
+    expect(under.statusCode, under.body).toBe(201);
+    expect(under.json<VendorPayment>().tdsAmount).toBe('0.00');
+
+    const crossing = await invoiceFor('CROSS', '100.00');
+    const refused = await post(`/api/vendor-invoices/${crossing}/payments`, {
+      paidOn: '2026-08-02',
+      grossAmount: '100.00',
+    });
+    // 10% of 30,100 is 3,010, and only 100 is being paid.
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'VENDOR_PAYMENT_TDS_EXCEEDS_GROSS',
+    );
   });
 
   it('releases the invoice when a payment is voided', async () => {
@@ -777,7 +958,7 @@ describe('cross-tenant denial', () => {
       purpose: 'Private to this organisation',
       category: 'general',
       amount: '1234.00',
-      proofObjectKey: `${organisationId}/proof/${randomUUID()}.pdf`,
+      proofReference: `${organisationId}/proof/${randomUUID()}.pdf`,
       proofFilename: 'private.pdf',
     });
     const vendorId = await seedContact('HiddenVendor', { vendor: true });

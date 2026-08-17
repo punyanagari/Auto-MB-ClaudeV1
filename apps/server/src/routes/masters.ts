@@ -137,8 +137,7 @@ const CONTACT_COLUMNS = `
   id, designation, contact_person, address, phone, email, gstin, pincode,
   state_code, locality, division_code, is_consignee, is_vendor, is_client,
   bank_account_holder, bank_name, bank_account_number, bank_ifsc, bank_branch,
-  bank_account_type, active, created_at
-  is_employee, pan, active, created_at
+  bank_account_type, is_employee, pan, active, created_at
 `;
 
 // GSTIN, email, IFSC and account-number shape all live in
@@ -555,9 +554,15 @@ export function registerMasterRoutes(
         ...(isClient ? ['client'] : []),
       ];
       const gstin = normaliseGstin(body.gstin);
-      // Uppercased like the GSTIN: an operator types a PAN either way,
-      // and the CHECK constraint only accepts upper case.
-      const pan = body.pan?.trim().toUpperCase() ?? null;
+      // Uppercased like the GSTIN: an operator types a PAN either way
+      // and the CHECK constraint only accepts upper case, so the
+      // normalisation is real rather than decorative.
+      //
+      // `undefined` and `null` are kept apart on purpose: omitting the
+      // field preserves what is stored, sending null clears it. Folding
+      // both to null would make every partial edit blank the PAN.
+      const pan =
+        body.pan === undefined ? undefined : (body.pan?.trim().toUpperCase() ?? null);
       const email = normaliseEmail(body.email);
       const bank = normaliseContactBankDetails(body);
       const locality = body.locality?.trim() ?? null;
@@ -575,8 +580,7 @@ export function registerMasterRoutes(
               email, gstin, pincode, state_code, locality, division_code, is_consignee,
               is_vendor, is_client, bank_account_holder, bank_name,
               bank_account_number, bank_ifsc, bank_branch, bank_account_type,
-              created_by_user_id
-              is_vendor, is_client, is_employee, pan, created_by_user_id
+              is_employee, pan, created_by_user_id
             )
             values (
               ${organisationId}, ${body.designation},
@@ -587,7 +591,7 @@ export function registerMasterRoutes(
               ${isConsignee}, ${isVendor}, ${isClient},
               ${bank.holder}, ${bank.bankName}, ${bank.accountNumber},
               ${bank.ifsc}, ${bank.branch}, ${bank.accountType},
-              ${body.isEmployee ?? false}, ${pan},
+              ${body.isEmployee ?? false}, ${pan ?? null},
               ${user.id}
             )
             returning ${tx.unsafe(CONTACT_COLUMNS)}
@@ -632,9 +636,15 @@ export function registerMasterRoutes(
       const { id } = request.params;
       const body = request.body;
       const gstin = normaliseGstin(body.gstin);
-      // Uppercased like the GSTIN: an operator types a PAN either way,
-      // and the CHECK constraint only accepts upper case.
-      const pan = body.pan?.trim().toUpperCase() ?? null;
+      // Uppercased like the GSTIN: an operator types a PAN either way
+      // and the CHECK constraint only accepts upper case, so the
+      // normalisation is real rather than decorative.
+      //
+      // `undefined` and `null` are kept apart on purpose: omitting the
+      // field preserves what is stored, sending null clears it. Folding
+      // both to null would make every partial edit blank the PAN.
+      const pan =
+        body.pan === undefined ? undefined : (body.pan?.trim().toUpperCase() ?? null);
       const email = normaliseEmail(body.email);
       const bank = normaliseContactBankDetails(body);
       const locality = body.locality?.trim() ?? null;
@@ -683,9 +693,9 @@ export function registerMasterRoutes(
               bank_account_number = ${bank.accountNumber},
               bank_ifsc = ${bank.ifsc},
               bank_branch = ${bank.branch},
-              bank_account_type = ${bank.accountType}
+              bank_account_type = ${bank.accountType},
               is_employee = coalesce(${body.isEmployee ?? null}, is_employee),
-              pan = ${pan}
+              pan = case when ${pan === undefined} then pan else ${pan ?? null} end
           where id = ${id}
           returning ${tx.unsafe(CONTACT_COLUMNS)}
         `.catch((error: unknown) => {

@@ -22,6 +22,7 @@ import type {
   PaymentRequestListResponse,
   RecordAdvanceBills,
   RecordVendorInvoice,
+  PreviewVendorTds,
   RecordVendorPayment,
   TdsPreviewResponse,
   VendorInvoice,
@@ -822,8 +823,7 @@ export interface ApiClient {
   readonly previewVendorTds: (
     organisationId: string,
     invoiceId: string,
-    grossAmount: string,
-    paidOn: string,
+    body: PreviewVendorTds,
   ) => Promise<TdsPreviewResponse>;
   readonly recordVendorPayment: (
     organisationId: string,
@@ -2751,11 +2751,13 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
-    async previewVendorTds(organisationId, invoiceId, grossAmount, paidOn) {
-      const query = new URLSearchParams({ grossAmount, paidOn }).toString();
+    async previewVendorTds(organisationId, invoiceId, body) {
+      // POST for a read: the amount is a rupee figure about a named
+      // vendor, and a query string is the one place logs and history
+      // both keep it.
       return request<TdsPreviewResponse>(
-        `/api/vendor-invoices/${invoiceId}/tds-preview?${query}`,
-        { organisationId },
+        `/api/vendor-invoices/${invoiceId}/tds-preview`,
+        { method: 'POST', body, organisationId },
       );
     },
     async recordVendorPayment(organisationId, invoiceId, body) {

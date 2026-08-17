@@ -199,9 +199,20 @@ export interface BillDeductionHeadRule {
   readonly reconciledThrough: string;
   /** `null` for the heads that are contractual rather than statutory. */
   readonly provision: StatutoryProvision | null;
-  /** The notified rate, where the head has one. Contractual heads and
-   * `OTHER` do not. */
-  readonly rate: string | null;
+  /**
+   * The contract value above which the head applies at all, where the
+   * provision sets one. Only GST TDS does: section 51 engages a deductor
+   * once the contract's taxable value exceeds ₹2,50,000.
+   *
+   * Typed rather than left in the provision prose because it is a rule
+   * an operator acts on — "should this bill have GST TDS on it at all" —
+   * and `statutoryVerificationChecklist()` only sees typed fields. The
+   * RATES of these heads are deliberately NOT typed here: the railway
+   * computes them and the operator copies the figure off the payment
+   * advice, so a rate on this side would be a number the product asserts
+   * and never uses. They stay described in `provision.effect`.
+   */
+  readonly contractValueThreshold: string | null;
 }
 
 /**
@@ -218,7 +229,7 @@ export const BILL_DEDUCTION_HEAD_RULES: readonly BillDeductionHeadRule[] = [
       effect:
         'A notified deductor, which includes a Government department, deducts 2% (1% CGST + 1% SGST, or 2% IGST) from payment on a contract whose taxable value exceeds ₹2,50,000.',
     },
-    rate: '2.00',
+    contractValueThreshold: '250000.00',
   },
   {
     head: 'INCOME_TAX_TDS',
@@ -230,21 +241,21 @@ export const BILL_DEDUCTION_HEAD_RULES: readonly BillDeductionHeadRule[] = [
       effect:
         'The railway deducts tax at source on payment to the agency as a contractor. The rate follows the agency’s own payee class.',
     },
-    rate: null,
+    contractValueThreshold: null,
   },
   {
     head: 'SECURITY_DEPOSIT',
     label: 'Retention / SD',
     reconciledThrough: 'Release at PAC or end of maintenance',
     provision: null,
-    rate: null,
+    contractValueThreshold: null,
   },
   {
     head: 'LIQUIDATED_DAMAGES',
     label: 'Liquidated damages',
     reconciledThrough: 'Contract clause — argued per bill',
     provision: null,
-    rate: null,
+    contractValueThreshold: null,
   },
   {
     head: 'BOCW_CESS',
@@ -256,21 +267,21 @@ export const BILL_DEDUCTION_HEAD_RULES: readonly BillDeductionHeadRule[] = [
       effect:
         'A cess of 1% of the cost of construction is levied and is deducted at source by the authority approving the works.',
     },
-    rate: '1.00',
+    contractValueThreshold: null,
   },
   {
     head: 'PENALTY',
     label: 'Penalty',
     reconciledThrough: 'Argued individually',
     provision: null,
-    rate: null,
+    contractValueThreshold: null,
   },
   {
     head: 'OTHER',
     label: 'Other',
     reconciledThrough: 'Named in the description, which is required',
     provision: null,
-    rate: null,
+    contractValueThreshold: null,
   },
 ];
 
@@ -334,6 +345,28 @@ export function compareDecimalStrings(left: string, right: string): number {
   return leftPaddedFraction < rightPaddedFraction ? -1 : 1;
 }
 
+/** Subtraction of two non-negative decimal strings, exact, floored at
+ * zero. Deliberately NOT exported and deliberately not named
+ * `subtractDecimalStrings`: `apps/web/src/format.ts` exports a function of
+ * that name with different semantics — signed, and rounded to three
+ * places for display — and two different subtractions sharing one name
+ * across the barrel is how the wrong one gets imported. This one exists
+ * only to work out how much of a financial-year aggregate has not yet
+ * been taxed. */
+function untaxedRemainder(left: string, right: string): string {
+  if (compareDecimalStrings(left, right) <= 0) return '0.00';
+  const [leftWhole = '0', leftFraction = ''] = left.split('.');
+  const [rightWhole = '0', rightFraction = ''] = right.split('.');
+  const fractionWidth = Math.max(leftFraction.length, rightFraction.length);
+  const scaled = (whole: string, fraction: string): bigint =>
+    BigInt(whole + fraction.padEnd(fractionWidth, '0'));
+  const total = scaled(leftWhole, leftFraction) - scaled(rightWhole, rightFraction);
+  if (fractionWidth === 0) return total.toString();
+  const digits = total.toString().padStart(fractionWidth + 1, '0');
+  const cut = digits.length - fractionWidth;
+  return `${digits.slice(0, cut)}.${digits.slice(cut)}`;
+}
+
 export interface TdsRateQuery {
   readonly section: TdsSection;
   readonly payeeClass: TdsPayeeClass;
@@ -346,7 +379,17 @@ export interface TdsRateQuery {
    * year, BEFORE this payment, as an exact decimal string. Summed in
    * SQL by the caller — the browser never adds money. */
   readonly financialYearPaidBefore: string;
+  /** How much of `financialYearPaidBefore` was ALREADY subjected to TDS.
+   * Only the untaxed remainder is caught up when the annual threshold is
+   * crossed; without this a payment that was taxed on its own single-
+   * payment trigger would be taxed a second time by the catch-up. */
+  readonly financialYearTaxedBefore: string;
 }
+
+/** What the rate is applied to. `payment` is the ordinary case;
+ * `aggregate_catch_up` is the crossing payment, which carries the tax of
+ * every earlier untaxed payment in the year as well as its own. */
+export type TdsTaxableBasis = 'payment' | 'aggregate_catch_up' | 'none';
 
 export interface TdsRateVerdict {
   /** The rate to apply, as an exact decimal string. `'0.00'` when no
@@ -362,19 +405,37 @@ export interface TdsRateVerdict {
   /** The ordinary rate before the 206AA floor, so a screen can show what
    * furnishing a PAN would save. */
   readonly ordinaryRate: string;
+  /** The amount the rate multiplies. Equal to `paymentAmount` except on
+   * the payment that first carries the year over its annual threshold,
+   * where it is the untaxed part of the whole aggregate. */
+  readonly taxableAmount: string;
+  /** Why `taxableAmount` is what it is. Snapshotted onto the payment row
+   * so a 26Q line whose tax exceeds its own rate × gross explains
+   * itself years later. */
+  readonly taxableBasis: TdsTaxableBasis;
 }
 
 /**
- * Decides whether TDS is due on one vendor payment and at what rate.
+ * Decides whether TDS is due on one vendor payment, at what rate, and on
+ * what amount.
  *
- * Threshold logic follows the sections rather than a simplification of
- * them: 194C is due when EITHER a single payment reaches its
- * single-payment threshold OR the financial-year aggregate INCLUDING
- * this payment reaches the annual one; 194J has no single-payment
- * trigger, only the annual aggregate. The aggregate is tested inclusive
- * of the payment being made, because the payment that crosses the
- * threshold is itself deductible — testing the prior total alone would
- * let the crossing payment through untaxed.
+ * THRESHOLDS ARE STRICTLY ABOVE, NOT AT. Sections 194C(5) and 194J are
+ * written as "does not exceed", so a payment of exactly ₹30,000 is not
+ * deductible and ₹30,000.01 is. The `>` here is the whole difference
+ * between reading the Act and paraphrasing it, and it is the boundary an
+ * operator meets on a round-numbered invoice.
+ *
+ * THE CROSSING PAYMENT CARRIES THE WHOLE YEAR. Below the annual
+ * threshold nothing is withheld; the moment the financial-year aggregate
+ * exceeds it, tax is due on the aggregate — including the earlier
+ * payments that went out untaxed — and the deductor recovers it from the
+ * payment in hand. So the crossing payment's taxable amount is the
+ * aggregate, not itself. Five payments of ₹25,000 under 194C withhold
+ * nothing on the first four and tax ₹1,25,000 on the fifth.
+ *
+ * `financialYearTaxedBefore` keeps that catch-up from double-taxing: a
+ * payment already taxed on its own single-payment trigger is subtracted
+ * out, so only the genuinely untaxed remainder is caught up.
  *
  * This returns a verdict; it does not compute the tax amount. Rate ×
  * amount is money arithmetic and belongs in SQL numeric, not here.
@@ -383,15 +444,19 @@ export function resolveTdsRate(query: TdsRateQuery): TdsRateVerdict {
   const rule = tdsSectionRule(query.section);
   const ordinaryRate = rule.rates[query.payeeClass];
 
+  // Strictly above: "does not exceed" means the threshold itself is
+  // still exempt.
   const singleTriggered =
     rule.singlePaymentThreshold !== null &&
-    compareDecimalStrings(query.paymentAmount, rule.singlePaymentThreshold) >= 0;
+    compareDecimalStrings(query.paymentAmount, rule.singlePaymentThreshold) > 0;
 
   const aggregate = addDecimalStrings(
     query.financialYearPaidBefore,
     query.paymentAmount,
   );
-  const annualTriggered = compareDecimalStrings(aggregate, rule.annualThreshold) >= 0;
+  const annualTriggered = compareDecimalStrings(aggregate, rule.annualThreshold) > 0;
+  const alreadyOver =
+    compareDecimalStrings(query.financialYearPaidBefore, rule.annualThreshold) > 0;
 
   const thresholdBasis = singleTriggered
     ? 'single_payment'
@@ -406,8 +471,19 @@ export function resolveTdsRate(query: TdsRateQuery): TdsRateVerdict {
       panAbsentUplift: false,
       thresholdBasis,
       ordinaryRate,
+      taxableAmount: '0.00',
+      taxableBasis: 'none',
     };
   }
+
+  // The catch-up arm: the year crosses its annual threshold on THIS
+  // payment, so everything paid this year that has not yet been taxed
+  // becomes taxable now. Once the year is already over the threshold,
+  // each later payment carries only itself.
+  const catchingUp = annualTriggered && !alreadyOver;
+  const taxableAmount = catchingUp
+    ? untaxedRemainder(aggregate, query.financialYearTaxedBefore)
+    : query.paymentAmount;
 
   // Section 206AA as a floor, not a substitution: the higher of the rate
   // in force and 20%.
@@ -421,6 +497,8 @@ export function resolveTdsRate(query: TdsRateQuery): TdsRateVerdict {
     panAbsentUplift: upliftApplies,
     thresholdBasis,
     ordinaryRate,
+    taxableAmount,
+    taxableBasis: catchingUp ? 'aggregate_catch_up' : 'payment',
   };
 }
 
@@ -500,10 +578,10 @@ export function statutoryVerificationChecklist(): readonly StatutoryVerification
   });
 
   for (const rule of BILL_DEDUCTION_HEAD_RULES) {
-    if (rule.rate === null || rule.provision === null) continue;
+    if (rule.contractValueThreshold === null || rule.provision === null) continue;
     items.push({
-      value: `${rule.rate}%`,
-      meaning: `${rule.label} deducted from a railway payment`,
+      value: `₹${rule.contractValueThreshold}`,
+      meaning: `Contract value above which ${rule.label} applies at all`,
       provision: rule.provision,
     });
   }

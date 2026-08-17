@@ -102,7 +102,7 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'beneficiary_snapshot',
     'purpose',
     'category',
-    'proof_object_key',
+    'proof_reference',
     'proof_filename',
     'fy_label',
     'sequence_number',

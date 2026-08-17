@@ -523,10 +523,12 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
    * asked for (the create-time rule in masters.ts). */
   const [roleVendor, setRoleVendor] = useState(false);
   const [roleClient, setRoleClient] = useState(false);
+  const [roleEmployee, setRoleEmployee] = useState(false);
 
   const startEditing = (row: Contact | null) => {
     setEditing(row);
     setRoleVendor(row?.isVendor ?? false);
+    setRoleEmployee(row?.isEmployee ?? false);
     setRoleClient(row?.isClient ?? false);
   };
 
@@ -568,6 +570,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     // untouched form still sends exactly what it always sent.
     const wasVendor = editing?.isVendor ?? false;
     const wasClient = editing?.isClient ?? false;
+    const wasEmployee = editing?.isEmployee ?? false;
     setPending(true);
     setError(null);
     setNotice(null);
@@ -592,6 +595,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         ...(bankAccountType !== undefined ? { bankAccountType } : {}),
         ...(roleVendor !== wasVendor ? { isVendor: roleVendor } : {}),
         ...(roleClient !== wasClient ? { isClient: roleClient } : {}),
+        ...(roleEmployee !== wasEmployee ? { isEmployee: roleEmployee } : {}),
       });
       setNotice(editing === null ? 'Contact added.' : 'Contact updated.');
       startEditing(null);
@@ -899,11 +903,24 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
                   }}
                 />{' '}
                 Client
+              </label>{' '}
+              <label htmlFor="contact-role-employee">
+                <input
+                  id="contact-role-employee"
+                  type="checkbox"
+                  checked={roleEmployee}
+                  onChange={(event) => {
+                    setRoleEmployee(event.currentTarget.checked);
+                  }}
+                />{' '}
+                Employee
               </label>
               <p className="text-muted-foreground">
                 Vendors take purchase orders; clients buy under tax invoices. A new
                 contact with neither role is a consignee for railway document flows —
-                fixed at creation.
+                fixed at creation. Employees take advances and reimbursements in the
+                Payments workspace, which refuses a beneficiary carrying neither the
+                employee nor the vendor role.
               </p>
             </fieldset>
             {/* The mock's "Bank details" block (`components/contact-form-dialog`

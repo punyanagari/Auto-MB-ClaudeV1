@@ -131,7 +131,6 @@ test('organisation picker and members workspace pass the axe scan', async ({
             createdAt: '2026-08-12T09:00:00.000Z',
           },
         ],
-        beneficiariesWithBillsDue: ['bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb'],
       }),
     ),
   );

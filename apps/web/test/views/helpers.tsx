@@ -269,7 +269,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listApprovals: vi.fn<ApiClient['listApprovals']>().mockResolvedValue([]),
     listPaymentRequests: vi
       .fn<ApiClient['listPaymentRequests']>()
-      .mockResolvedValue({ requests: [], beneficiariesWithBillsDue: [] }),
+      .mockResolvedValue({ requests: [] }),
     createPaymentRequest: vi.fn<ApiClient['createPaymentRequest']>(),
     decidePaymentRequest: vi.fn<ApiClient['decidePaymentRequest']>(),
     payPaymentRequest: vi.fn<ApiClient['payPaymentRequest']>(),

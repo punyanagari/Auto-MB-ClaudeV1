@@ -39,15 +39,19 @@ function decimalThousandths(value: string): bigint {
   return negative ? -magnitude : magnitude;
 }
 
-/** Exact ordering for API decimal strings. Sorting must not use Number or
- * lexical comparison because authoritative values may exceed safe integer
- * precision and strings such as "9.00" sort after "100.00". */
-export function compareDecimalStrings(left: string, right: string): number {
-  const leftValue = decimalThousandths(left);
-  const rightValue = decimalThousandths(right);
-  if (leftValue === rightValue) return 0;
-  return leftValue < rightValue ? -1 : 1;
-}
+/**
+ * Exact ordering for API decimal strings, re-exported from the one
+ * implementation.
+ *
+ * There were two. This module's own compared through
+ * `decimalThousandths`, which truncates at three places, so it called
+ * `0.0001` and `0` equal; the contracts one compares digit by digit at
+ * full precision. Two comparators that disagree about anything are one
+ * comparator and a bug, and the exact one wins — nothing sorting money
+ * or quantities wants a silent truncation. The re-export keeps every
+ * existing `from '../format.js'` import working.
+ */
+export { compareDecimalStrings } from '@auto-mb/contracts';
 
 /**
  * `left − right` for two API decimal strings, exactly, as a decimal
@@ -107,6 +111,23 @@ const viewerInstantFormat = new Intl.DateTimeFormat('en-GB', {
 const isoDayFormat = new Intl.DateTimeFormat('en-CA');
 
 /** "2026-08-08" → "08 Aug 2026"; anything unparseable passes through. */
+/**
+ * Today, as the `YYYY-MM-DD` an `<input type="date">` wants.
+ *
+ * Built from the LOCAL calendar parts, not from `toISOString()`. An
+ * operator in India filling a form at 9pm is on tomorrow's date in UTC,
+ * so a UTC default silently pre-fills the wrong day — and for a payment
+ * date that is the difference between two financial years at the end of
+ * March. The server re-derives its own "today" from the organisation's
+ * timezone; this only has to stop the FORM from starting out wrong.
+ */
+export function todayISO(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${String(now.getFullYear())}-${month}-${day}`;
+}
+
 export function formatDate(isoDate: string): string {
   const parsed = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return isoDate;
