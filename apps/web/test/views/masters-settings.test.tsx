@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { describe, expect, it, vi } from 'vitest';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { PaymentMatrix } from '../../src/views/PaymentMatrix.js';
-import { SerialLookup } from '../../src/views/SerialLookup.js';
+import { SerialTrace } from '../../src/views/SerialTrace.js';
 import {
   openForm,
   submitButton,
@@ -372,7 +372,7 @@ describe('Masters', () => {
   });
 });
 
-describe('SerialLookup', () => {
+describe('SerialTrace', () => {
   const MATCH = {
     id: '99999999-9999-4999-8999-999999999999',
     serialNumber: 'SB-2026-014',
@@ -394,11 +394,13 @@ describe('SerialLookup', () => {
       onOpenWork: (workId: string) => void;
       onOpenChallan: (workId: string, challanId: string) => void;
     }> = {},
+    query = 'sb-2026',
   ) {
     return render(
-      <SerialLookup
+      <SerialTrace
         api={api}
         organisationId={ORG_ID}
+        query={query}
         onOpenWork={handlers.onOpenWork ?? vi.fn()}
         onOpenChallan={handlers.onOpenChallan ?? vi.fn()}
       />,
@@ -412,11 +414,6 @@ describe('SerialLookup', () => {
     const onOpenWork = vi.fn();
     const onOpenChallan = vi.fn();
     renderLookup(stubApi({ searchSerials }), { onOpenWork, onOpenChallan });
-
-    fireEvent.change(screen.getByLabelText('Serial number'), {
-      target: { value: 'sb-2026' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await waitFor(() => {
       expect(searchSerials).toHaveBeenCalledWith(ORG_ID, 'sb-2026');
@@ -437,46 +434,34 @@ describe('SerialLookup', () => {
     expect(onOpenChallan).toHaveBeenCalledWith(WORK_ID, CHALLAN_ID);
   });
 
-  it('rejects queries shorter than 2 characters without calling the API', async () => {
+  it('asks nothing of the API below the two-character floor', () => {
     const searchSerials = vi.fn();
-    renderLookup(stubApi({ searchSerials }));
+    const { container } = renderLookup(stubApi({ searchSerials }), {}, 'x');
 
-    fireEvent.change(screen.getByLabelText('Serial number'), {
-      target: { value: 'x' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-
-    expect(await screen.findByRole('alert')).toHaveProperty(
-      'textContent',
-      'Enter at least 2 characters of the serial number.',
-    );
+    // Search owns the floor and its message; the chain simply has nothing
+    // to show for a query that cannot be run.
+    expect(container.textContent).toBe('');
     expect(searchSerials).not.toHaveBeenCalled();
   });
 
-  it('reports truncation and the empty state', async () => {
-    const searchSerials = vi
-      .fn()
-      .mockResolvedValueOnce({
-        matches: Array.from({ length: 50 }, (_, index) => ({
-          ...MATCH,
-          id: `99999999-9999-4999-8999-${String(index).padStart(12, '0')}`,
-          serialNumber: `SB-${String(index)}`,
-        })),
-        truncated: true,
-      })
-      .mockResolvedValueOnce({ matches: [], truncated: false });
-    renderLookup(stubApi({ searchSerials }));
-
-    fireEvent.change(screen.getByLabelText('Serial number'), {
-      target: { value: 'SB' },
+  it('reports truncation', async () => {
+    const searchSerials = vi.fn().mockResolvedValue({
+      matches: Array.from({ length: 50 }, (_, index) => ({
+        ...MATCH,
+        id: `99999999-9999-4999-8999-${String(index).padStart(12, '0')}`,
+        serialNumber: `SB-${String(index)}`,
+      })),
+      truncated: true,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    renderLookup(stubApi({ searchSerials }), {}, 'SB');
+
     expect(await screen.findByText(/Showing the first 50 matches/)).toBeTruthy();
+  });
 
-    fireEvent.change(screen.getByLabelText('Serial number'), {
-      target: { value: 'ZZ-NONE' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+  it('says so when nothing matches', async () => {
+    const searchSerials = vi.fn().mockResolvedValue({ matches: [], truncated: false });
+    renderLookup(stubApi({ searchSerials }), {}, 'ZZ-NONE');
+
     expect(await screen.findByText(/No serial matches/)).toBeTruthy();
   });
 });

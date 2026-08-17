@@ -49,6 +49,30 @@ export function compareDecimalStrings(left: string, right: string): number {
   return leftValue < rightValue ? -1 : 1;
 }
 
+/**
+ * `left − right` for two API decimal strings, exactly, as a decimal
+ * string with three places.
+ *
+ * Explanatory arithmetic only — a balance shown beside a field so the
+ * operator can see what is left before they type. Authoritative
+ * quantities are still the server's: the record route revalidates every
+ * one of them and refuses what does not add up, and nothing computed
+ * here is ever submitted.
+ *
+ * Exact all the same, through the same thousandths BigInt the ordering
+ * above uses. `Number("10.001") - Number("3.000")` is a float, and a
+ * balance that renders as 6.999999999999999 beside a field is worse than
+ * no balance at all.
+ */
+export function subtractDecimalStrings(left: string, right: string): string {
+  const difference = decimalThousandths(left) - decimalThousandths(right);
+  const negative = difference < 0n;
+  const magnitude = negative ? -difference : difference;
+  const whole = magnitude / 1000n;
+  const fraction = (magnitude % 1000n).toString().padStart(3, '0');
+  return `${negative ? '-' : ''}${whole.toString()}.${fraction}`;
+}
+
 /* Date formatters, constructed once.
  *
  * `toLocaleDateString(locale, options)` and `toLocaleString` build a fresh

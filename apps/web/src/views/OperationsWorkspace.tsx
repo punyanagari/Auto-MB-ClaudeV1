@@ -112,9 +112,6 @@ const ReviewLoa = lazy(() =>
 const SearchView = lazy(() =>
   import('./Search.js').then((module) => ({ default: module.Search })),
 );
-const SerialLookup = lazy(() =>
-  import('./SerialLookup.js').then((module) => ({ default: module.SerialLookup })),
-);
 const AccountSecurity = lazy(() =>
   import('./AccountSecurity.js').then((module) => ({
     default: module.AccountSecurity,
@@ -1201,28 +1198,19 @@ export function OperationsWorkspace({
               />
             )}
 
-            {view.name === 'serials' && (
-              <SerialLookup
-                api={api}
-                organisationId={organisation.id}
-                onOpenWork={(workId) => {
-                  navigate({ name: 'work', workId });
-                }}
-                onOpenChallan={(workId, challanId) => {
-                  navigate({ name: 'challan', workId, workCode: '', challanId });
-                }}
-              />
-            )}
-
             {view.name === 'installations' && (
               <InstallationsRegister
                 api={api}
                 organisationId={organisation.id}
+                workId={view.workId}
                 onOpenWork={(workId) => {
                   navigate({ name: 'work', workId }, { workTab: 'installations' });
                 }}
                 onOpenWorks={() => {
                   navigate({ name: 'works' });
+                }}
+                onClearWorkFilter={() => {
+                  navigate({ name: 'installations', workId: null });
                 }}
               />
             )}
@@ -1266,9 +1254,6 @@ export function OperationsWorkspace({
                 }}
                 onOpenIssueChallan={(workId, challanId) => {
                   navigate({ name: 'issue-challan', workId, challanId });
-                }}
-                onOpenSerials={() => {
-                  navigate({ name: 'serials' });
                 }}
                 onOpenQuotations={() => {
                   navigate({ name: 'quotations' });

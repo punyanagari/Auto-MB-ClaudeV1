@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { InstallationRegisterEntry } from '@auto-mb/contracts';
 import { InstallationsRegister } from '../../src/views/InstallationsRegister.js';
-import { ORG_ID, WORK_ID, stubApi } from './helpers.js';
+import { ORG_ID, WORK_ID, challanWork, stubApi } from './helpers.js';
 
 /* The register answers the question the per-Work list cannot: what went
  * in, where, and when — across Works. So the row has to carry its Work's
@@ -47,9 +47,13 @@ function page(
   return { installations, nextCursor };
 }
 
-function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}) {
+function renderRegister(
+  overrides: Parameters<typeof stubApi>[0] = {},
+  workId: string | null = null,
+) {
   const onOpenWork = vi.fn();
   const onOpenWorks = vi.fn();
+  const onClearWorkFilter = vi.fn();
   const api = stubApi({
     listInstallations: vi.fn().mockResolvedValue(page([RECORDED, CANCELLED])),
     ...overrides,
@@ -58,11 +62,13 @@ function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}) {
     <InstallationsRegister
       api={api}
       organisationId={ORG_ID}
+      workId={workId}
       onOpenWork={onOpenWork}
       onOpenWorks={onOpenWorks}
+      onClearWorkFilter={onClearWorkFilter}
     />,
   );
-  return { api, onOpenWork, onOpenWorks };
+  return { api, onOpenWork, onOpenWorks, onClearWorkFilter };
 }
 
 describe('the installation register', () => {
@@ -158,6 +164,105 @@ describe('the installation register', () => {
       limit: 100,
       installedFrom: '2026-08-01',
       installedTo: '2026-08-02',
+    });
+  });
+
+  /* The mock's `?work=` deep link. The narrowed reading is a different
+     read, not a filter over the paged register — see the note on the
+     component. */
+  describe('narrowed to one Work', () => {
+    const RECORD = {
+      id: '5f1c9a52-0000-4000-8000-00000000a003',
+      workId: WORK_ID,
+      workItemId: '5f1c9a52-0000-4000-8000-00000000b001',
+      itemNumber: 'A/1',
+      quantity: '2.500',
+      installedOn: '2026-08-09',
+      locationId: '5f1c9a52-0000-4000-8000-00000000d001',
+      locationName: 'Nashik Road station',
+      remarks: null,
+      status: 'recorded' as const,
+      cancellationNote: null,
+      serials: [
+        {
+          serialId: '5f1c9a52-0000-4000-8000-00000000e001',
+          serialNumber: 'SN-1',
+          challanNumber: 'DC/1',
+        },
+      ],
+      createdAt: '2026-08-09T00:00:00.000Z',
+      cancelledAt: null,
+      pendingVariation: false,
+    };
+
+    function renderNarrowed() {
+      const listInstallations = vi.fn();
+      const listWorkInstallations = vi.fn().mockResolvedValue({
+        installations: [RECORD],
+        itemSummaries: [],
+        nextCursor: null,
+      });
+      return {
+        listInstallations,
+        listWorkInstallations,
+        ...renderRegister(
+          {
+            listWorkInstallations,
+            listInstallations,
+            // The chip's label: a cold deep link has nothing else to
+            // read the Work's code and title off.
+            getWork: vi.fn().mockResolvedValue(challanWork()),
+          },
+          WORK_ID,
+        ),
+      };
+    }
+
+    it('reads the Work’s own records and names it in a dismissible chip', async () => {
+      const { listInstallations, listWorkInstallations, onClearWorkFilter } =
+        renderNarrowed();
+
+      const clear = await screen.findByRole('button', {
+        name: /Clear the DCW-1 filter/,
+      });
+      expect(listWorkInstallations).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+      // The cross-Work register is deliberately not read, and its date
+      // window is not offered: both belong to the unnarrowed question.
+      expect(listInstallations).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText('Installed on or after')).toBeNull();
+
+      expect(screen.getByText('Nashik Road station')).toBeTruthy();
+      // The serial COUNT, derived from the record's own serial list.
+      expect(screen.getByText('1')).toBeTruthy();
+      // The Work's title reads twice on purpose — once naming the filter,
+      // once on the row's own link into the Work.
+      expect(screen.getAllByText('Supply of switchboards')).toHaveLength(2);
+
+      fireEvent.click(clear);
+      expect(onClearWorkFilter).toHaveBeenCalled();
+    });
+
+    it('offers the whole register when the Work has no records', async () => {
+      const { onClearWorkFilter } = renderRegister(
+        {
+          getWork: vi.fn().mockResolvedValue(challanWork()),
+          listWorkInstallations: vi.fn().mockResolvedValue({
+            installations: [],
+            itemSummaries: [],
+            nextCursor: null,
+          }),
+        },
+        WORK_ID,
+      );
+
+      const out = await screen.findByRole('button', {
+        name: 'Read the whole register',
+      });
+      expect(
+        screen.getByText(/No installations have been recorded against this Work/),
+      ).toBeTruthy();
+      fireEvent.click(out);
+      expect(onClearWorkFilter).toHaveBeenCalled();
     });
   });
 });

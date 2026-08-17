@@ -21,6 +21,7 @@ import { PaymentMatrix } from '../../src/views/PaymentMatrix.js';
 import { Quotations } from '../../src/views/Quotations.js';
 import { ReviewLoa } from '../../src/views/ReviewLoa.js';
 import { Search } from '../../src/views/Search.js';
+import { SerialTrace } from '../../src/views/SerialTrace.js';
 import { Settings } from '../../src/views/Settings.js';
 import { Timeline } from '../../src/views/Timeline.js';
 import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
@@ -213,8 +214,10 @@ export const STATE_CASES: readonly StateCase[] = [
       <InstallationsRegister
         api={api}
         organisationId={ORG_ID}
+        workId={null}
         onOpenWork={noop}
         onOpenWorks={noop}
+        onClearWorkFilter={noop}
       />
     ),
     retry: /Retry installations/,
@@ -454,12 +457,32 @@ export const STATE_CASES: readonly StateCase[] = [
         onOpenWork={noop}
         onOpenChallan={noop}
         onOpenIssueChallan={noop}
-        onOpenSerials={noop}
         onOpenQuotations={noop}
       />
     ),
     retry: /Try again/,
     empty: { text: /Nothing in the registers matches/ },
+  },
+  {
+    /* The serial traceability chain, now a scope of Global Search rather
+       than a screen of its own (`docs/UX.md` § `#/serials` merges into
+       Global Search). It reads on mount from the query Search hands it,
+       so it answers to the same three-state contract every register does
+       — the merge moved the entry point, not the bar. */
+    view: 'SerialTrace.tsx',
+    name: 'the serial chain',
+    loads: ['searchSerials'],
+    render: (api) => (
+      <SerialTrace
+        api={api}
+        organisationId={ORG_ID}
+        query="SB-2026-014"
+        onOpenWork={noop}
+        onOpenChallan={noop}
+      />
+    ),
+    retry: /Retry serial search/,
+    empty: { text: /No serial matches/ },
   },
   {
     view: 'Settings.tsx',

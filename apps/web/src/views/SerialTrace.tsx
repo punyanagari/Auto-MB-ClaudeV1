@@ -1,54 +1,76 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SerialSearchResponse } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { RequestFailedError, type ApiClient } from '../api.js';
 import { challanHash, navigateOnClick, workHash } from '../lib/workspace-routes.js';
-import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
-import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
-import { Field, Actions, FormError } from '../ui/form.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
-interface SerialLookupProps {
+interface SerialTraceProps {
   readonly api: ApiClient;
   readonly organisationId: string;
+  /** The Global Search query, already trimmed by the caller. The chain
+   * reads it rather than owning a box of its own: the entry point moved
+   * into Search, so there is one query on the screen and this is a view
+   * of it. */
+  readonly query: string;
   readonly onOpenWork: (workId: string) => void;
   readonly onOpenChallan: (workId: string, challanId: string) => void;
 }
 
-/** Organisation-wide serial number lookup: paste (part of) a serial from
- * a field report and land on the Work and challan it shipped under.
- * Assigned-scope members only see serials of their own Works — the
- * server applies the same filter as the Works list. */
-export function SerialLookup({
+/**
+ * The traceability chain a serial number opens: which Work and item it
+ * belongs to, the Delivery Challan it shipped under and that challan's
+ * state, whether receipt was recorded at the far end, and whether the
+ * unit is installed — with the date and the station it went in at.
+ *
+ * The chain is unchanged by the merge of `#/serials` into Global Search
+ * (`docs/UX.md` § `#/serials` merges into Global Search): "merging the
+ * entry point does not merge the answer". What moved is where the query
+ * is typed. Everything an operator could read from the standalone Serial
+ * Lookup is read here, from the same `searchSerials` call, with the same
+ * work-scope filter applied by the server — assigned-scope members see
+ * serials of their own Works only.
+ *
+ * Rendered by `views/Search.tsx` under the "Installations & serials"
+ * scope, and by "Everything".
+ */
+export function SerialTrace({
   api,
   organisationId,
+  query,
   onOpenWork,
   onOpenChallan,
-}: SerialLookupProps) {
+}: SerialTraceProps) {
   const [result, setResult] = useState<SerialSearchResponse | null>(null);
-  const [query, setQuery] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** The serial the failed search asked for. Retrying the SAME search is
-   * the point, and the box may have been edited since, so the attempt is
-   * remembered rather than re-read from the form. */
-  const [failedQuery, setFailedQuery] = useState<string | null>(null);
+  /** Bumped by Retry. Re-running the SAME query is the point, so the
+   * attempt cannot be carried by the route — navigating to an identical
+   * hash would change nothing and the button would be dead. */
+  const [attempt, setAttempt] = useState(0);
 
-  function runSearch(q: string): void {
+  useEffect(() => {
+    if (query.length < 2) {
+      setResult(null);
+      setError(null);
+      setPending(false);
+      return;
+    }
+    let cancelled = false;
     setPending(true);
     setError(null);
-    setFailedQuery(null);
     api
-      .searchSerials(organisationId, q)
+      .searchSerials(organisationId, query)
       .then((found) => {
-        setResult(found);
-        setQuery(q);
+        if (!cancelled) setResult(found);
       })
       .catch((cause: unknown) => {
+        if (cancelled) return;
         setResult(null);
-        setQuery(null);
-        setFailedQuery(q);
+        // A failed lookup must never render as "no such serial": an empty
+        // pool and an unreachable one are different facts about a unit
+        // someone is standing next to.
         setError(
           cause instanceof RequestFailedError
             ? cause.message
@@ -56,84 +78,48 @@ export function SerialLookup({
         );
       })
       .finally(() => {
-        setPending(false);
+        if (!cancelled) setPending(false);
       });
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, query, attempt]);
+
+  if (query.length < 2) return null;
 
   return (
-    <Card className="w-full" aria-labelledby="serial-lookup-title">
-      <h1 id="serial-lookup-title" tabIndex={-1}>
-        Serial Lookup
-      </h1>
-      <p className="text-muted-foreground">
-        Find where a serial number was delivered: its Work, challan, receipt, and
-        installation state.
-      </p>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          const q = formValue(data, 'serial-query').trim();
-          if (q.length < 2) {
-            setError('Enter at least 2 characters of the serial number.');
-            setFailedQuery(null);
-            setResult(null);
-            setQuery(null);
-            return;
-          }
-          runSearch(q);
-        }}
-      >
-        <Field>
-          <label htmlFor="serial-query">Serial number</label>
-          <input
-            id="serial-query"
-            name="serial-query"
-            maxLength={100}
-            placeholder="e.g. SB-2026-014"
-            autoComplete="off"
-          />
-        </Field>
-        <Actions>
-          <Button type="submit" disabled={pending}>
-            Search
-          </Button>
-        </Actions>
-      </form>
-
-      {error !== null &&
-        (failedQuery === null ? (
-          // A too-short query is the operator's own input, corrected in
-          // the box above; there is nothing to re-run.
-          <FormError>{error}</FormError>
-        ) : (
-          <ErrorState
-            retryLabel="Retry search"
-            onRetry={() => {
-              runSearch(failedQuery);
-            }}
-          >
-            {error}
-          </ErrorState>
-        ))}
+    <>
+      {error !== null && (
+        <ErrorState
+          retryLabel="Retry serial search"
+          onRetry={() => {
+            setAttempt((current) => current + 1);
+          }}
+        >
+          {error}
+        </ErrorState>
+      )}
 
       {pending && (
         <LoadingState label="the serial search results" rows={3} columns={4} />
       )}
 
-      {!pending && result !== null && result.matches.length === 0 && (
+      {!pending && error === null && result !== null && result.matches.length === 0 && (
         <EmptyState>No serial matches “{query}”.</EmptyState>
       )}
 
-      {result !== null && result.matches.length > 0 && (
+      {!pending && error === null && result !== null && result.matches.length > 0 && (
         <>
-          <p className="text-muted-foreground" role="status">
+          <p className="text-sm text-muted-foreground" role="status">
             {result.truncated
-              ? `Showing the first ${String(result.matches.length)} matches for “${query ?? ''}”; refine the search to narrow them down.`
-              : `${String(result.matches.length)} ${result.matches.length === 1 ? 'match' : 'matches'} for “${query ?? ''}”.`}
+              ? `Showing the first ${String(result.matches.length)} matches for “${query}”; refine the search to narrow them down.`
+              : `${String(result.matches.length)} ${result.matches.length === 1 ? 'match' : 'matches'} for “${query}”.`}
           </p>
           <DataTable>
-            <caption className="sr-only">Serial numbers matching the search</caption>
+            <caption className="sr-only">
+              Serial numbers matching the search, with their Work, Delivery Challan,
+              receipt and installation state
+            </caption>
             <thead>
               <tr>
                 <th scope="col">Serial</th>
@@ -147,7 +133,9 @@ export function SerialLookup({
             <tbody>
               {result.matches.map((match) => (
                 <tr key={match.id}>
-                  <th scope="row">{match.serialNumber}</th>
+                  <th scope="row" className="font-mono">
+                    {match.serialNumber}
+                  </th>
                   <td className={wrapCell}>
                     {/* Real links so a hit can be middle-clicked into
                         its own tab; a left click stays in-app. */}
@@ -201,6 +189,6 @@ export function SerialLookup({
           </DataTable>
         </>
       )}
-    </Card>
+    </>
   );
 }

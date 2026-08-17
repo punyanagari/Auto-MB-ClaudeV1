@@ -38,12 +38,15 @@ export type WorkspaceView =
   | { name: 'delivery-challan'; challanId: string }
   | { name: 'quotations' }
   | { name: 'approvals' }
-  | { name: 'serials' }
   /** The installation module's own register: every recorded installation
    * across the Works the caller may see. A record still opens through its
    * Work (`work` above, Installations tab) — this is the way in when the
-   * question is about a date or a location rather than a contract. */
-  | { name: 'installations' }
+   * question is about a date or a location rather than a contract.
+   *
+   * `workId` is the mock's `?work=` deep link (`components/document-register`
+   * at fdfe5ef): present, the register reads one Work and says so with a
+   * dismissible chip; absent, it reads across every Work in reach. */
+  | { name: 'installations'; workId: string | null }
   /** The tax-invoice module's own register: every invoice the caller may
    * see, work-backed and direct alike. A DIRECT invoice — raised against
    * a private customer, so belonging to no Work — has no Work to open
@@ -167,10 +170,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/quotations';
     case 'approvals':
       return '#/approvals';
-    case 'serials':
-      return '#/serials';
     case 'installations':
-      return '#/installations';
+      return view.workId === null
+        ? '#/installations'
+        : `#/installations/${view.workId}`;
     case 'invoices':
       return '#/invoices';
     case 'invoice':
@@ -227,8 +230,14 @@ export function mastersHash(tab?: MastersTab): string {
 }
 
 export const SETTINGS_HASH = '#/settings';
-export const SERIALS_HASH = '#/serials';
 export const QUOTATIONS_HASH = '#/quotations';
+
+/** `#/installations`, or the register narrowed to one Work. */
+export function installationsHash(workId?: string): string {
+  return workspaceHashOf({
+    view: { name: 'installations', workId: workId ?? null },
+  });
+}
 
 /** Click handler for a real `<a href="#/…">`: a plain left click stays
  * in-app through the given handler (synchronous state navigation, and
@@ -338,10 +347,24 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (!isRecordId(invoiceId) || extra.length > 0) return null;
       return { view: { name: 'invoice', invoiceId } };
     }
+    /* The retired standalone serial-lookup destination (`docs/UX.md`
+       § `#/serials` merges into Global Search). Old links, bookmarks and
+       anything still holding the fragment land on Search rather than on
+       the Dashboard: the serial chain is still reachable, one scope in,
+       so the honest answer to `#/serials` is the screen that now holds
+       it. Serialising never produces this fragment again. */
+    case 'serials':
+      return rest.length === 0 ? { view: { name: 'search', query: '' } } : null;
+    case 'installations': {
+      const [workId, ...extra] = rest;
+      if (workId === undefined) {
+        return { view: { name: 'installations', workId: null } };
+      }
+      if (!isRecordId(workId) || extra.length > 0) return null;
+      return { view: { name: 'installations', workId } };
+    }
     case 'quotations':
     case 'approvals':
-    case 'serials':
-    case 'installations':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;

@@ -204,16 +204,16 @@ describe('Installations', () => {
     renderInstallations(api);
 
     await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('Work item'), {
+    fireEvent.change(screen.getByLabelText('1. Work item'), {
       target: { value: ITEM_PLAIN },
     });
-    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
       target: { value: '2.500' },
     });
-    fireEvent.change(screen.getByLabelText('Installed on'), {
+    fireEvent.change(screen.getByLabelText('3. Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.change(screen.getByLabelText('Location'), {
+    fireEvent.change(screen.getByLabelText('4. Location'), {
       target: { value: LOCATION_ID },
     });
     fireEvent.click(submitButton('Record installation'));
@@ -238,10 +238,10 @@ describe('Installations', () => {
     renderInstallations(api);
 
     await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
       target: { value: '1' },
     });
-    fireEvent.change(screen.getByLabelText('Installed on'), {
+    fireEvent.change(screen.getByLabelText('3. Installed on'), {
       target: { value: '2026-08-05' },
     });
     fireEvent.click(submitButton('Record installation'));
@@ -257,7 +257,7 @@ describe('Installations', () => {
     renderInstallations(api);
 
     await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('Work item'), {
+    fireEvent.change(screen.getByLabelText('1. Work item'), {
       target: { value: ITEM_SERIAL },
     });
     // The pool offers only delivered-but-uninstalled serials of the item.
@@ -265,13 +265,13 @@ describe('Installations', () => {
     expect(screen.getByLabelText(/SN-002/)).toBeTruthy();
     expect(screen.queryByLabelText(/SN-003/)).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
       target: { value: '2' },
     });
-    fireEvent.change(screen.getByLabelText('Installed on'), {
+    fireEvent.change(screen.getByLabelText('3. Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.change(screen.getByLabelText('Location'), {
+    fireEvent.change(screen.getByLabelText('4. Location'), {
       target: { value: '__new__' },
     });
     fireEvent.change(screen.getByLabelText('New location name'), {
@@ -336,10 +336,10 @@ describe('Installations', () => {
     renderInstallations(api);
 
     await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
       target: { value: '99' },
     });
-    fireEvent.change(screen.getByLabelText('Installed on'), {
+    fireEvent.change(screen.getByLabelText('3. Installed on'), {
       target: { value: '2026-08-05' },
     });
     fireEvent.click(submitButton('Record installation'));
@@ -364,7 +364,7 @@ describe('Installations', () => {
 
     // …and again beside the item picker once the form is open on it.
     await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('Work item'), {
+    fireEvent.change(screen.getByLabelText('1. Work item'), {
       target: { value: ITEM_PLAIN },
     });
     expect(screen.getAllByText('Above LOA — variation pending')).toHaveLength(2);
@@ -387,16 +387,16 @@ describe('Installations', () => {
 
     await openForm('New installation');
     expect(screen.queryByText('Above LOA — variation pending')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Work item'), {
+    fireEvent.change(screen.getByLabelText('1. Work item'), {
       target: { value: ITEM_PLAIN },
     });
-    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
       target: { value: '12.000' },
     });
-    fireEvent.change(screen.getByLabelText('Installed on'), {
+    fireEvent.change(screen.getByLabelText('3. Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.change(screen.getByLabelText('Location'), {
+    fireEvent.change(screen.getByLabelText('4. Location'), {
       target: { value: LOCATION_ID },
     });
     fireEvent.click(submitButton('Record installation'));

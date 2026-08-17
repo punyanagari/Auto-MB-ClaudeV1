@@ -5,7 +5,6 @@ import {
   FolderKanban,
   LayoutDashboard,
   Receipt,
-  ScanBarcode,
   ScanSearch,
   Settings as SettingsIcon,
   Truck,
@@ -24,7 +23,6 @@ export type ModuleKey =
   | 'quotations'
   | 'approvals'
   | 'search'
-  | 'serials'
   | 'installations'
   | 'masters'
   | 'members'
@@ -52,10 +50,12 @@ export interface NavGroup {
  * The mock draws modules this build has no route for — Tenders, Inspection,
  * Payments, E-Way Bills, Correspondence, Production, Inventory, Purchase
  * orders, Maintenance, Employees — and those are omitted rather than
- * rendered as dead entries. Two destinations run the other way: Serial
- * Lookup has no mock entry (`docs/UX.md` merges it into Global Search in a
- * later phase) and Quotations is drawn under Documents in the mock's own
- * list, so both keep their place here in the mock's grammar.
+ * rendered as dead entries. Quotations runs the other way: the mock draws
+ * it under Documents in its own list, so it keeps its place here.
+ *
+ * Serial Lookup has no entry because it no longer has a destination
+ * (`docs/UX.md` § `#/serials` merges into Global Search): serials are one
+ * scope inside Search, and the chain a serial opens is unchanged.
  *
  * Bills is deliberately absent: `docs/UX.md` § Bills is a Work section
  * settles it as a Work workspace section, and it is reached from there.
@@ -80,8 +80,7 @@ export const NAVIGATION: readonly NavGroup[] = [
     label: 'Operations',
     items: [
       { key: 'installations', label: 'Installations', icon: Wrench },
-      { key: 'serials', label: 'Serial Lookup', icon: ScanBarcode },
-      { key: 'search', label: 'Search', icon: ScanSearch },
+      { key: 'search', label: 'Global search', icon: ScanSearch },
     ],
   },
   {
@@ -117,10 +116,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'approvals' };
     case 'search':
       return { name: 'search', query: '' };
-    case 'serials':
-      return { name: 'serials' };
     case 'installations':
-      return { name: 'installations' };
+      return { name: 'installations', workId: null };
     case 'masters':
       return { name: 'masters' };
     case 'members':
@@ -144,7 +141,6 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'quotations':
     case 'approvals':
     case 'search':
-    case 'serials':
     case 'installations':
     case 'masters':
     case 'members':
@@ -192,9 +188,7 @@ export function pageTitleOf(view: WorkspaceView): string {
     case 'approvals':
       return 'Approvals';
     case 'search':
-      return 'Search';
-    case 'serials':
-      return 'Serial Lookup';
+      return 'Global search';
     case 'installations':
       return 'Installations';
     case 'masters':

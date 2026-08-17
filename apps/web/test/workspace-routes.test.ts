@@ -52,8 +52,8 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'invoice', invoiceId: INVOICE_ID } },
   { view: { name: 'quotations' } },
   { view: { name: 'approvals' } },
-  { view: { name: 'serials' } },
-  { view: { name: 'installations' } },
+  { view: { name: 'installations', workId: null } },
+  { view: { name: 'installations', workId: WORK_ID } },
   { view: { name: 'members' } },
   { view: { name: 'settings' } },
 ];
@@ -90,6 +90,31 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('')).toEqual({ view: { name: 'dashboard' } });
     expect(parseWorkspaceHash('#')).toEqual({ view: { name: 'dashboard' } });
     expect(parseWorkspaceHash('#/')).toEqual({ view: { name: 'dashboard' } });
+  });
+
+  it('redirects the retired serial-lookup fragment into Global Search', () => {
+    // `#/serials` no longer has a destination (`docs/UX.md` § `#/serials`
+    // merges into Global Search), but bookmarks and old links still hold
+    // it. They land on the screen that now carries the serial chain
+    // rather than on the Dashboard.
+    expect(parseWorkspaceHash('#/serials')).toEqual({
+      view: { name: 'search', query: '' },
+    });
+    expect(parseWorkspaceHash('#/serials/extra')).toBeNull();
+    // Nothing serialises back to it: the fragment is an entrance only.
+    for (const route of EVERY_VIEW_KIND) {
+      expect(workspaceHashOf(route)).not.toBe('#/serials');
+    }
+  });
+
+  it('carries the installation register’s ?work= deep link', () => {
+    expect(parseWorkspaceHash('#/installations')).toEqual({
+      view: { name: 'installations', workId: null },
+    });
+    expect(parseWorkspaceHash(`#/installations/${WORK_ID}`)).toEqual({
+      view: { name: 'installations', workId: WORK_ID },
+    });
+    expect(parseWorkspaceHash('#/installations/not-a-uuid')).toBeNull();
   });
 
   it('rejects unknown, malformed and stale fragments instead of guessing', () => {

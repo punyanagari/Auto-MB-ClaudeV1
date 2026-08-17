@@ -7,10 +7,11 @@ import type {
   LocationMaster,
   RecordInstallationRequest,
   Serial,
+  WorkBalanceItem,
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatDate, todayIso } from '../format.js';
+import { formatDate, subtractDecimalStrings, todayIso } from '../format.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
@@ -48,6 +49,49 @@ function countsOf(data: InstallationListResponse): InstallationCounts {
     recorded: data.installations.filter((one) => one.status === 'recorded').length,
     cancelled: data.installations.filter((one) => one.status === 'cancelled').length,
   };
+}
+
+/**
+ * The mock's delivered-balance line, under the quantity field
+ * (`components/installation-capture-flow`, its quantity field at fdfe5ef): what the
+ * contract sanctions, what has actually arrived, what is already in, and
+ * the balance still standing on site to install.
+ *
+ * Three of the four figures are the server's own decimal strings,
+ * rendered verbatim. The fourth — what is delivered but not yet in — has
+ * no server field of its own, so it is `subtractDecimalStrings`, which is
+ * exact BigInt arithmetic rather than `Number`: a balance rendering as
+ * 6.999999999999999 beside a quantity field is worse than none.
+ *
+ * Note this is NOT the server's `remainingQuantity`, which is the
+ * DELIVERY balance (sanctioned less delivered). The question here is what
+ * is standing on site to install, which is a different subtraction and a
+ * different number.
+ *
+ * Explanatory only. The record route revalidates every quantity and
+ * refuses what does not add up, so a failed balance read hides the line
+ * rather than blocking recording.
+ */
+function DeliveredBalance({
+  balance,
+  installed,
+}: {
+  readonly balance: WorkBalanceItem;
+  readonly installed: string;
+}) {
+  const sanctioned = balance.effectiveQuantity ?? balance.awardedQuantity;
+  return (
+    <p className="text-xs leading-relaxed text-muted-foreground">
+      <span className="font-mono tabular-nums">LOA {sanctioned}</span> ·{' '}
+      <span className="font-mono tabular-nums">
+        Delivered {balance.deliveredQuantity}
+      </span>{' '}
+      · <span className="font-mono tabular-nums">Installed {installed}</span> ·{' '}
+      <strong className="font-mono text-foreground tabular-nums">
+        Delivered balance {subtractDecimalStrings(balance.deliveredQuantity, installed)}
+      </strong>
+    </p>
+  );
 }
 
 const LOCATION_KINDS: readonly { value: LocationKind; label: string }[] = [
@@ -93,6 +137,10 @@ export function Installations({
   const [pending, setPending] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>('');
   const [locationChoice, setLocationChoice] = useState<string>(NEW_LOCATION);
+  /** Per-item delivered quantities, for the mock's balance line. A
+   * courtesy read: it explains the field, it does not gate it, so a
+   * failure hides the line and leaves recording alone. */
+  const [balances, setBalances] = useState<readonly WorkBalanceItem[]>([]);
   /** Bumped by the failure state's retry, to re-run the load below. */
   const [loadVersion, setLoadVersion] = useState(0);
 
@@ -150,6 +198,27 @@ export function Installations({
       cancelled = true;
     };
   }, [api, locationsLoadVersion, organisationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBalances([]);
+    if (!canRecordEvidence) return;
+    api
+      .workBalance(organisationId, workId)
+      .then((loaded) => {
+        if (!cancelled) setBalances(loaded.items);
+      })
+      .catch(() => {
+        // Deliberately silent: the balance line is explanatory, and the
+        // panel already carries a failure state for the records and one
+        // for the locations. A third alert for a courtesy figure would
+        // report a problem the operator cannot act on and does not have.
+        if (!cancelled) setBalances([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, workId, canRecordEvidence, loadVersion]);
 
   const act = useCallback(async (work: () => Promise<void>, done: string) => {
     setPending(true);
@@ -218,6 +287,7 @@ export function Installations({
   const variationPending = (workItemId: string): boolean =>
     recentVariations[workItemId] ??
     workItems.find((item) => item.id === workItemId)?.pendingVariation === true;
+  const activeBalance = balances.find((item) => item.workItemId === activeItemId);
   // The delivered-but-uninstalled pool of the picked item: serials whose
   // challan is issued and whose unit is not currently installed anywhere.
   const serialPool = serials.filter(
@@ -443,113 +513,141 @@ export function Installations({
                 }, 'Installation recorded.');
               }}
             >
-              <Field>
-                <label htmlFor="inst-item">Work item</label>
-                <select
-                  id="inst-item"
-                  name="inst-item"
-                  required
-                  value={activeItemId}
-                  onChange={(event) => {
-                    setSelectedItemId(event.currentTarget.value);
-                  }}
-                >
-                  {selectableItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.itemNumber} —{' '}
-                      {item.effectiveDescription ?? item.description}
-                    </option>
-                  ))}
-                </select>
-                {activeItem?.pendingVariation === true && <VariationChip />}
-              </Field>
-              <Field>
-                <label htmlFor="inst-quantity">Quantity installed</label>
-                <input
-                  id="inst-quantity"
-                  name="inst-quantity"
-                  inputMode="decimal"
-                  required
-                />
-              </Field>
-              <Field>
-                <label htmlFor="inst-date">Installed on</label>
-                <input
-                  id="inst-date"
-                  name="inst-date"
-                  type="date"
-                  required
-                  defaultValue={todayIso()}
-                />
-              </Field>
-              <Field>
-                <label htmlFor="inst-location">Location</label>
-                <select
-                  id="inst-location"
-                  name="inst-location"
-                  value={locationChoice}
-                  onChange={(event) => {
-                    setLocationChoice(event.currentTarget.value);
-                  }}
-                >
-                  {locations.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name}
-                    </option>
-                  ))}
-                  <option value={NEW_LOCATION}>+ Add a new location</option>
-                </select>
-              </Field>
-              {locationChoice === NEW_LOCATION && (
-                <>
-                  <Field>
-                    <label htmlFor="inst-location-name">New location name</label>
-                    <input
-                      id="inst-location-name"
-                      name="inst-location-name"
-                      required
-                      minLength={2}
-                      maxLength={200}
+              {/* The mock's numbered capture flow
+                  (`components/installation-capture-flow` at fdfe5ef):
+                  a dense two-column grid on desktop and one column on a
+                  phone, which is where this is used, with the
+                  delivered-balance line under the quantity field and the
+                  variation chip beside the item.
+
+                  Five steps rather than the mock's six: the mock's step 1
+                  picks the Work, and this flow already runs inside one.
+                  Renumbering is the honest port — copying the mock's
+                  digits onto a different step set would number the
+                  quantity field 2 with no 1 above it. The app's real
+                  location master, inline location creation and delivered
+                  serial pool stand where the mock's fake station list
+                  and serial literals did. */}
+              <div className="grid gap-x-6 sm:grid-cols-2">
+                <Field>
+                  <label htmlFor="inst-item">1. Work item</label>
+                  <select
+                    id="inst-item"
+                    name="inst-item"
+                    required
+                    value={activeItemId}
+                    onChange={(event) => {
+                      setSelectedItemId(event.currentTarget.value);
+                    }}
+                  >
+                    {selectableItems.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.itemNumber} —{' '}
+                        {item.effectiveDescription ?? item.description}
+                      </option>
+                    ))}
+                  </select>
+                  {activeItem?.pendingVariation === true && <VariationChip />}
+                </Field>
+                <Field>
+                  <label htmlFor="inst-quantity">2. Quantity installed</label>
+                  <input
+                    id="inst-quantity"
+                    name="inst-quantity"
+                    inputMode="decimal"
+                    required
+                  />
+                  {activeBalance !== undefined && (
+                    <DeliveredBalance
+                      balance={activeBalance}
+                      installed={activeItem?.installedQuantity ?? '0.000'}
                     />
-                  </Field>
-                  <Field>
-                    <label htmlFor="inst-location-kind">New location kind</label>
-                    <select id="inst-location-kind" name="inst-location-kind">
-                      {LOCATION_KINDS.map((kind) => (
-                        <option key={kind.value} value={kind.value}>
-                          {kind.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </>
-              )}
-              <Field>
-                <label htmlFor="inst-remarks">Remarks (optional)</label>
-                <input id="inst-remarks" name="inst-remarks" maxLength={1000} />
-              </Field>
+                  )}
+                </Field>
+                <Field>
+                  <label htmlFor="inst-date">3. Installed on</label>
+                  <input
+                    id="inst-date"
+                    name="inst-date"
+                    type="date"
+                    required
+                    defaultValue={todayIso()}
+                  />
+                </Field>
+                <Field>
+                  <label htmlFor="inst-location">4. Location</label>
+                  <select
+                    id="inst-location"
+                    name="inst-location"
+                    value={locationChoice}
+                    onChange={(event) => {
+                      setLocationChoice(event.currentTarget.value);
+                    }}
+                  >
+                    {locations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name}
+                      </option>
+                    ))}
+                    <option value={NEW_LOCATION}>+ Add a new location</option>
+                  </select>
+                </Field>
+                {locationChoice === NEW_LOCATION && (
+                  <>
+                    <Field>
+                      <label htmlFor="inst-location-name">New location name</label>
+                      <input
+                        id="inst-location-name"
+                        name="inst-location-name"
+                        required
+                        minLength={2}
+                        maxLength={200}
+                      />
+                    </Field>
+                    <Field>
+                      <label htmlFor="inst-location-kind">New location kind</label>
+                      <select id="inst-location-kind" name="inst-location-kind">
+                        {LOCATION_KINDS.map((kind) => (
+                          <option key={kind.value} value={kind.value}>
+                            {kind.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </>
+                )}
+                <Field>
+                  <label htmlFor="inst-remarks">Remarks (optional)</label>
+                  <input id="inst-remarks" name="inst-remarks" maxLength={1000} />
+                </Field>
+              </div>
               {activeItem?.requiresSerials === true && (
                 <fieldset>
                   <legend>
-                    Serials to install — one per unit, from the delivered pool of{' '}
+                    5. Serials to install — one per unit, from the delivered pool of{' '}
                     {activeItem.itemNumber}
                   </legend>
                   {serialPool.length > 0 ? (
-                    serialPool.map((serial) => (
-                      <label
-                        key={serial.id}
-                        className="my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium"
-                      >
-                        <input type="checkbox" name="inst-serials" value={serial.id} />{' '}
-                        {serial.serialNumber}
-                        <span className="text-muted-foreground">
-                          {' '}
-                          · {serial.challanNumber ?? 'challan'}
-                        </span>
-                      </label>
-                    ))
+                    <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border border-border p-3 sm:grid-cols-2">
+                      {serialPool.map((serial) => (
+                        <label
+                          key={serial.id}
+                          className="flex cursor-pointer items-center gap-3 rounded-md p-2 text-sm hover:bg-accent"
+                        >
+                          <input
+                            type="checkbox"
+                            name="inst-serials"
+                            value={serial.id}
+                          />
+                          <span className="font-mono">{serial.serialNumber}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {serial.challanNumber ?? 'challan'}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
                   ) : (
-                    <p className="text-muted-foreground">
+                    <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
                       No delivered, uninstalled serials for this item — issue a Delivery
                       Challan with serials first.
                     </p>

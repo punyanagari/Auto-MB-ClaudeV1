@@ -171,7 +171,7 @@ describe('record search', () => {
     // it caught this file too — passing locally every time, and failing in
     // CI once another test file changed the scheduling.
     expect(await screen.findByRole('region', { name: 'Works' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Search' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Global search' })).toBeTruthy();
     expect(search).toHaveBeenCalledWith(ORG_ID, 'PL270');
     // The query is part of the route, so the result set is linkable and
     // Back returns to it.
@@ -202,12 +202,68 @@ describe('record search', () => {
     expect(window.location.hash).toBe(`#/works/${WORK_ID}`);
   });
 
-  it('sends the operator to the serial module rather than duplicating it', async () => {
-    renderWorkspaceAt('#/search/PL270', {
+  /* The serials merge (docs/UX.md § `#/serials` merges into Global
+     Search). Two halves, and the second is the one that matters: the
+     entry point moved, the answer did not. */
+  it('lands the retired #/serials fragment on Global search', async () => {
+    renderWorkspaceAt('#/serials', {
       search: vi.fn().mockResolvedValue(searchResponse()),
     });
-    const link = await screen.findByRole('link', { name: 'open Serial Lookup' });
-    expect(link.getAttribute('href')).toBe('#/serials');
+
+    // Anchored on the scope control rather than on the heading: Search
+    // renders its <h1> while a query is in flight, so awaiting the
+    // heading resolves against the loading state (§2.7, and the
+    // loading-anchor census holds this file to it).
+    expect(await screen.findByLabelText('Search inside')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Global search' })).toBeTruthy();
+    // No module of its own is left to reach.
+    expect(screen.queryByRole('heading', { name: 'Serial Lookup' })).toBeNull();
+  });
+
+  it('opens a serial’s whole traceability chain from the results', async () => {
+    const searchSerials = vi.fn().mockResolvedValue({
+      truncated: false,
+      matches: [
+        {
+          id: '99999999-9999-4999-8999-999999999999',
+          serialNumber: 'SB-2026-014',
+          workId: WORK_ID,
+          workCode: 'PL270-CRB',
+          workTitle: 'Signalling gear, CR Bhusawal',
+          itemDescription: 'Main switchboard',
+          challanId: CHALLAN_ID,
+          challanNumber: 'PL270/DC/004',
+          challanDate: '2026-08-08',
+          challanStatus: 'issued' as const,
+          receiptRecorded: true,
+          installedOn: '2026-08-12',
+          installationLocation: 'Borivali',
+        },
+      ],
+    });
+    renderWorkspaceAt('#/search/SB-2026-014', {
+      search: vi
+        .fn()
+        .mockResolvedValue({ query: 'SB-2026-014', returned: 0, groups: [] }),
+      searchSerials,
+    });
+
+    const chain = await screen.findByRole('region', {
+      name: /Serial numbers matching the search/,
+    });
+    expect(searchSerials).toHaveBeenCalledWith(ORG_ID, 'SB-2026-014');
+    // Every link of the chain the standalone lookup carried: the Work,
+    // the Delivery Challan and its state, receipt, and where and when
+    // the unit went in.
+    expect(within(chain).getByText('SB-2026-014')).toBeTruthy();
+    expect(
+      within(chain).getByRole('link', { name: 'PL270-CRB' }).getAttribute('href'),
+    ).toBe(`#/works/${WORK_ID}`);
+    expect(
+      within(chain).getByRole('link', { name: 'PL270/DC/004' }).getAttribute('href'),
+    ).toBe(`#/works/${WORK_ID}/challans/${CHALLAN_ID}`);
+    expect(within(chain).getByText('received')).toBeTruthy();
+    expect(within(chain).getByText(/installed 2026-08-12 at Borivali/)).toBeTruthy();
   });
 
   it('shows an error and a retry when the search fails, never an empty result', async () => {

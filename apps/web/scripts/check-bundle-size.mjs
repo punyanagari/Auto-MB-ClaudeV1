@@ -87,7 +87,6 @@ const LAZY_VIEWS = [
   'Quotations',
   'ReviewLoa',
   'Search',
-  'SerialLookup',
   'Settings',
   'UploadLoa',
   'WorkDetail',

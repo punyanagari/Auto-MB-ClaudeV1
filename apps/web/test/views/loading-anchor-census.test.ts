@@ -315,7 +315,7 @@ describe('loading-anchor census', () => {
     // that stops seeing these has broken, whatever else it finds.
     for (const name of [
       'Settings', // masters-settings, the first bite
-      'Search', // search.test on P14, the second
+      'Global search', // search.test on P14, the second
       'Dashboard', // workspace-shell, fixed in the sweep
       'Works',
       'Installations', // site-evidence, fixed in the sweep
