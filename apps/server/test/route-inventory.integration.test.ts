@@ -83,6 +83,13 @@ const UNBOUND_ROUTES = new Set([
  * the Work's completion facts) are outside it. The dashboard is a real
  * unbounded read and pack P11 owns that route this wave; it is recorded
  * here rather than left to be rediscovered.
+ *
+ * `GET /api/works/:id/bills` joined them when it gained `summary`, the
+ * Work's billing position: the response now names a thing beside its
+ * array, so the shape rule reads it as a detail and it left this map. Its
+ * `bills` array is still unbounded and still grows per Work — recorded
+ * here, in the same breath as the dashboard, so the removal is a fact
+ * this file states rather than one it lost.
  */
 const UNPAGINATED_LISTS = new Map<string, string>([
   // --- Bounded by the organisation's configuration ------------------------
@@ -164,7 +171,6 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ['GET /api/works/:id/purchase-orders', 'grows per Work — next candidate'],
   ['GET /api/works/:id/correction-notices', 'grows per Work — next candidate'],
   ['GET /api/works/:id/pac-certificates', 'grows per Work — next candidate'],
-  ['GET /api/works/:id/bills', 'grows per Work — next candidate'],
   [
     'GET /api/works/:id/measurement-books',
     'grows per Work; pack P11 owns this route this wave',

@@ -9,6 +9,8 @@ import {
 import type {
   ApprovalRequest,
   Bill,
+  BillListResponse,
+  BillSummary,
   Challan,
   CorrectionNotice,
   Instrument,
@@ -28,13 +30,19 @@ import type {
 } from '@auto-mb/contracts';
 import { CircleAlert } from 'lucide-react';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
-import { formatDate, formatInr, formatTimestampDate } from '../format.js';
+import {
+  formatCompactInr,
+  formatDate,
+  formatInr,
+  formatTimestampDate,
+} from '../format.js';
 import { cn } from '../lib/cn.js';
 import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
+import { Stat } from '../ui/stat.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
@@ -386,6 +394,17 @@ export function WorkDetail({
   const [instruments, setInstruments] = useState<readonly Instrument[]>([]);
   const [mbEntries, setMbEntries] = useState<readonly MbEntry[]>([]);
   const [bills, setBills] = useState<readonly Bill[]>([]);
+  /** The Work's billing position, as the server summed it. Null until the
+   * bills read lands (or when it failed), which is what the tile row above
+   * the Bills tab waits on. */
+  const [billSummary, setBillSummary] = useState<BillSummary | null>(null);
+  /** One read answers both: the list the tab shows and the three figures
+   * above it. Split here so `WorkBills` keeps its plain array setter for
+   * the local status move, which changes no total. */
+  const applyBills = useCallback((response: BillListResponse) => {
+    setBills(response.bills);
+    setBillSummary(response.summary);
+  }, []);
   const [serials, setSerials] = useState<readonly Serial[]>([]);
   /** The Installations tab's tally, for its badge and its summary tiles.
    *
@@ -462,6 +481,7 @@ export function WorkDetail({
     setInstruments([]);
     setMbEntries([]);
     setBills([]);
+    setBillSummary(null);
     setSerials([]);
     setInstallationCounts(null);
     setMeasurementBookCount(null);
@@ -542,7 +562,7 @@ export function WorkDetail({
       api.listMbEntries(organisationId, workId),
       setMbEntries,
     );
-    loadRelated(RELATED.bills, api.listBills(organisationId, workId), setBills);
+    loadRelated(RELATED.bills, api.listBills(organisationId, workId), applyBills);
     loadRelated(
       RELATED.serials,
       api.listWorkSerials(organisationId, workId),
@@ -625,7 +645,7 @@ export function WorkDetail({
         relatedGenerationRef.current += 1;
       }
     };
-  }, [api, organisationId, workId, loadVersion, canModify]);
+  }, [api, organisationId, workId, loadVersion, canModify, applyBills]);
 
   /** Re-reads eligibility after the Work's own state moves — filing a
    * supersede request has to hide the form that filed it rather than
@@ -704,7 +724,7 @@ export function WorkDetail({
       );
     }
     if (labels.has(RELATED.bills)) {
-      retryRelated(RELATED.bills, api.listBills(organisationId, workId), setBills);
+      retryRelated(RELATED.bills, api.listBills(organisationId, workId), applyBills);
     }
     if (labels.has(RELATED.serials)) {
       retryRelated(
@@ -1524,7 +1544,7 @@ export function WorkDetail({
           issuedChallans={issuedChallans}
           challanNumberById={challanNumberById}
           challansState={relatedStateFor([RELATED.challans])}
-          setBills={setBills}
+          setBills={applyBills}
           billsState={relatedStateFor([RELATED.bills])}
           canRecordSiteEvidence={canRecordSiteEvidence}
           canCreateDocuments={canCreateDocuments}
@@ -1538,16 +1558,51 @@ export function WorkDetail({
 
       {tab === 'bills' && (
         <>
-          {/* ponytail: no Measured/Billed/Unbilled tile row above this
-              section, though the mock draws one (Auto-MB-Vercel-du,
-              app/works/[code]/page.tsx at fdfe5ef). The mock adds those
-              four figures up in its own fixture; here they would mean
-              summing decimal money strings in the browser, which
-              AGENTS.md rule 5 and docs/UX.md principle 9 both refuse —
-              the settlement read returns positions, not work-level
-              totals. Upgrade path is a server-computed summary on the
-              bills response, and then this row is four `ui/stat.tsx`
-              tiles reading it. */}
+          {/* The mock's tile row (Auto-MB-Vercel-du,
+              app/works/[code]/page.tsx at fdfe5ef): its own grid, its own
+              `.data-surface` tiles, its own hints. The mock adds these
+              figures up in its fixture; here they are summed in SQL
+              numeric and arrive on the bills read, because money is never
+              added up in the browser (AGENTS.md rule 5, docs/UX.md
+              principle 9).
+
+              The mock's fourth tile, unbillable exposure, is deliberately
+              not here: this build already reports that figure where it is
+              actionable — on the Measurement Book it would be billed
+              through (`MeasurementBooks.tsx`, `unbillableVariationExposure`)
+              — and a second copy on the Work would be the same warning
+              twice. The grid keeps the mock's four columns regardless,
+              which is what the mock itself renders whenever exposure is
+              zero.
+
+              No loading or failure branch of its own: both belong to the
+              bills read, and the gate below already tells that story
+              once. */}
+          {billSummary !== null && (
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="data-surface bg-card p-4">
+                <Stat
+                  label="Measured"
+                  value={formatCompactInr(billSummary.measured)}
+                  hint="Sanctioned and ready for billing"
+                />
+              </div>
+              <div className="data-surface bg-card p-4">
+                <Stat
+                  label="Billed"
+                  value={formatCompactInr(billSummary.billed)}
+                  hint={`${String(bills.length)} railway bills`}
+                />
+              </div>
+              <div className="data-surface bg-card p-4">
+                <Stat
+                  label="Unbilled"
+                  value={formatCompactInr(billSummary.unbilled)}
+                  hint="Sanctioned value not yet claimed"
+                />
+              </div>
+            </div>
+          )}
           {/* Whether an invoice can actually be reached from here —
               asked up front, with a link per unmet prerequisite, instead
               of letting the operator discover each refusal in turn. */}

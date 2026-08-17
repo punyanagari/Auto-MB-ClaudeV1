@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { GstinSchema } from './masters.js';
-import { NextCursorSchema } from './pagination.js';
+import { NextCursorSchema, withKeysetQuery } from './pagination.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -342,6 +342,36 @@ export const DeliveryChallanRegisterEntrySchema = Type.Object(
 );
 export type DeliveryChallanRegisterEntry = Static<
   typeof DeliveryChallanRegisterEntrySchema
+>;
+
+/** The register's query: one optional Work, plus the two keyset
+ * parameters.
+ *
+ * `work` is the module's `?work=` deep link pushed into the request. It
+ * was applied client-side over the loaded page at first, which was only
+ * ever right for a Work whose movements fit in one page; narrowing in SQL
+ * makes the page a page OF that Work. A Work the caller may not see
+ * matches nothing — the work-scope predicate below is unchanged and still
+ * decides what exists, so a guessed id answers an empty register rather
+ * than a refusal that would confirm it.
+ *
+ * Pattern rather than `format: 'uuid'`, for the reason `pagination.ts`
+ * states about cursors: the check must not depend on which formats the
+ * serving ajv instance happens to have registered. */
+export const DeliveryChallanRegisterQuerySchema = withKeysetQuery(
+  Type.Object(
+    {
+      work: Type.Optional(
+        Type.String({
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type DeliveryChallanRegisterQuery = Static<
+  typeof DeliveryChallanRegisterQuerySchema
 >;
 
 /** The organisation-wide movement register, newest challan date first.

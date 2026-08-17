@@ -234,15 +234,15 @@ export function DeliveryChallans({
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
 
   const refreshList = useCallback(async () => {
-    setChallans(await api.listDeliveryChallans(organisationId));
-  }, [api, organisationId]);
+    setChallans(await api.listDeliveryChallans(organisationId, workId));
+  }, [api, organisationId, workId]);
 
   useEffect(() => {
     let cancelled = false;
     setChallans(null);
     setLoadError(null);
     Promise.all([
-      api.listDeliveryChallans(organisationId),
+      api.listDeliveryChallans(organisationId, workId),
       // The consignee picker must never block the register: a caller who
       // may read challans but not contacts still gets the list.
       api.listContacts(organisationId).catch((): readonly Contact[] => []),
@@ -263,7 +263,7 @@ export function DeliveryChallans({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, workId, loadVersion]);
 
   function retry(): void {
     setLoadVersion((current) => current + 1);
@@ -332,20 +332,13 @@ export function DeliveryChallans({
     };
   }, [api, organisationId, openChallanId]);
 
-  /* The `?work=` deep link narrows the register to one Work. It is
-   * applied over the page the register already holds rather than pushed
-   * into the request, because `GET /api/delivery-challans` is a keyset
-   * register with no work parameter and adding one is server work this
-   * pack does not own. The movement filter beside it has always worked
-   * the same way.
-   *
-   * ponytail: a Work with more movements than one keyset page holds will
-   * show only the page's worth. The fix is a `work` filter on the
-   * register endpoint, not more client-side paging. */
-  const scoped = useMemo(() => {
-    const list = challans ?? [];
-    return workId === null ? list : list.filter((row) => row.workId === workId);
-  }, [challans, workId]);
+  /* The `?work=` deep link is a request parameter, not a filter over the
+   * page: `GET /api/delivery-challans?work=` narrows in SQL, so the
+   * register reads THAT Work's movements rather than whichever of them
+   * happened to land on the loaded page. The movement filter below stays
+   * client-side, and correctly so — it partitions the rows already read
+   * and its counts describe exactly those rows. */
+  const scoped = challans ?? [];
 
   const counts = useMemo(
     () => ({

@@ -1044,9 +1044,6 @@ export function OperationsWorkspace({
                 onNewIssueChallan={(workId) => {
                   navigate({ name: 'issue-challan-new', workId });
                 }}
-                onChooseWork={() => {
-                  navigate({ name: 'works' });
-                }}
               />
             )}
 

@@ -245,6 +245,24 @@ beforeAll(async () => {
         ${`SER-${String(index).padStart(3, '0')}`}
       )
     `;
+    // Issue challans share one challan_date for the same reason the
+    // delivery ones do: the register's leading sort key is that date, so
+    // a keyset leaning on it alone would stall or repeat here. Issued in
+    // place rather than through the route — this fixture is about the
+    // keyset, not the numbering.
+    await admin`
+      insert into issue_challans (
+        organisation_id, work_id, challan_date, prefix, movement_type,
+        issued_to_name, status, challan_number, sequence_number,
+        issued_snapshot, created_by_user_id, issued_by_user_id, issued_at
+      )
+      values (
+        ${organisationId}, ${workId}, '2026-08-05', ${`PGIC${String(index)}`},
+        'issue', 'Site team', 'issued',
+        ${`PGIC-${codeSuffix}-${String(index)}`}, ${index + 1},
+        ${jsonb(admin, { lines: [] })}, ${ownerUserId}, ${ownerUserId}, now()
+      )
+    `;
     await admin`
       insert into mb_entries (
         organisation_id, work_id, work_item_id, measured_quantity,
@@ -361,6 +379,11 @@ const REGISTERS = [
     name: 'the tenant-wide installation register',
     url: () => '/api/installations',
     key: 'installations',
+  },
+  {
+    name: 'the organisation-wide issue-challan register',
+    url: () => '/api/issue-challans',
+    key: 'issueChallans',
   },
   {
     name: 'the organisation-wide tax-invoice register',

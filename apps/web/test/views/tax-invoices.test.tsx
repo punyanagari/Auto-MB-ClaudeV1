@@ -26,6 +26,7 @@ import {
   taxInvoice,
   SUBMITTED_INVOICE,
   ewayBill,
+  NO_BILLING,
 } from './helpers.js';
 
 describe('WorkDetail tax invoices', () => {
@@ -878,7 +879,9 @@ describe('WorkBills line rendering', () => {
   it('renders the MB-snapshot line rows, not just headers and total', async () => {
     const api = stubApi({
       getWork: vi.fn().mockResolvedValue(challanWork()),
-      listBills: vi.fn().mockResolvedValue([MB_SHAPE_BILL]),
+      listBills: vi
+        .fn()
+        .mockResolvedValue({ bills: [MB_SHAPE_BILL], summary: NO_BILLING }),
     });
     render(
       <WorkDetail

@@ -943,17 +943,59 @@ export function registerRetentionRoutes(
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await tenant(async (tx) => {
+      const { rows, summary } = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
-        return tx<BillRow[]>`
+        const bills = await tx<BillRow[]>`
           select id, work_id, bill_number, status, lines_snapshot,
                  total_amount::text as total_amount, mb_id, created_at,
                  submitted_at, paid_at
           from bills where work_id = ${workId}
           order by bill_number desc
         `;
+        // The Work's billing position, added up where the money lives.
+        // The screen above this list draws three tiles from it, and a
+        // browser summing `totalAmount` over the array beside it would be
+        // doing float arithmetic on decimal strings — the thing
+        // engineering rule 5 forbids, on the figures an operator reads
+        // as their claim.
+        //
+        // `measured` reads the finalized Measurement Books rather than
+        // recomputing anything: `total_amount` on a finalized book is the
+        // sum of its line-rounded line totals, written once at finalize
+        // and never recomputed (migration 0024), so this exposes the MB
+        // computation layer's own answer instead of a second opinion
+        // about it. Cancelled books are excluded — a cancelled book
+        // sanctioned nothing that stands — and drafts carry no total at
+        // all. `billed` needs no status filter: a bill is prepared,
+        // submitted, then paid, and every one of those is claimed.
+        const [totals] = await tx<
+          { measured: string; billed: string; unbilled: string }[]
+        >`
+          with measured as (
+            select coalesce(sum(mb.total_amount), 0)::numeric(18,2) as total
+            from measurement_books mb
+            where mb.work_id = ${workId} and mb.status = 'finalized'
+          ),
+          billed as (
+            select coalesce(sum(b.total_amount), 0)::numeric(18,2) as total
+            from bills b where b.work_id = ${workId}
+          )
+          select measured.total::text as measured,
+                 billed.total::text as billed,
+                 -- Floored at zero for the same reason the mock floors it
+                 -- (Auto-MB-Vercel-du app/works/[code]/page.tsx at
+                 -- fdfe5ef): a bill can only be prepared from a finalized
+                 -- book, so a negative remainder is not reachable, and
+                 -- reporting one as a negative claim would be worse than
+                 -- reporting nothing left to claim.
+                 greatest(measured.total - billed.total, 0)
+                   ::numeric(18,2)::text as unbilled
+          from measured, billed
+        `;
+        if (!totals) throw new Error('bill summary returned no row');
+        return { rows: bills, summary: totals };
       });
-      return { bills: rows.map(toBill) };
+      return { bills: rows.map(toBill), summary };
     },
   );
 

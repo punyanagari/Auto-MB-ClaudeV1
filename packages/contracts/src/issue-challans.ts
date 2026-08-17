@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { NextCursorSchema } from './pagination.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -131,6 +132,34 @@ export const IssueChallanListResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 export type IssueChallanListResponse = Static<typeof IssueChallanListResponseSchema>;
+
+/** A register row: the challan exactly as its own Work lists it, plus the
+ * Work code — the only thing a cross-Work reader needs that a per-Work
+ * reader already knows. Composed from `IssueChallanSchema` rather than
+ * restated, so the two lists can never drift apart. */
+export const IssueChallanRegisterEntrySchema = Type.Composite(
+  [IssueChallanSchema, Type.Object({ workCode: Type.String() })],
+  { additionalProperties: false },
+);
+export type IssueChallanRegisterEntry = Static<typeof IssueChallanRegisterEntrySchema>;
+
+/** Every issue challan in the organisation the caller may see, newest
+ * challan date first — the same ordering and the same keyset contract the
+ * delivery register answers on (`DeliveryChallanRegisterResponseSchema`),
+ * because the two are one register with two contents.
+ *
+ * `nextCursor` pages the list; see `pagination.ts`. An unpaginated request
+ * (no `limit`) gets the whole register and a null cursor. */
+export const IssueChallanRegisterResponseSchema = Type.Object(
+  {
+    issueChallans: Type.Array(IssueChallanRegisterEntrySchema),
+    nextCursor: NextCursorSchema,
+  },
+  { additionalProperties: false },
+);
+export type IssueChallanRegisterResponse = Static<
+  typeof IssueChallanRegisterResponseSchema
+>;
 
 export const IssueChallanDetailResponseSchema = Type.Object(
   {

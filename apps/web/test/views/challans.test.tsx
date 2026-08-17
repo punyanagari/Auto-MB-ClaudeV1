@@ -62,6 +62,9 @@ function renderChallans(props: Partial<Parameters<typeof Challans>[0]> = {}) {
     listDeliveryChallans: vi.fn().mockResolvedValue([DRAFT_FOR_WORK]),
     listContacts: vi.fn().mockResolvedValue([]),
     listIssueChallans: vi.fn().mockResolvedValue([ISSUED_ISSUE_CHALLAN]),
+    listIssueChallanRegister: vi
+      .fn()
+      .mockResolvedValue([{ ...ISSUED_ISSUE_CHALLAN, workCode: 'RE-2026-01' }]),
   });
   render(
     <Challans
@@ -81,7 +84,6 @@ function renderChallans(props: Partial<Parameters<typeof Challans>[0]> = {}) {
       onOpenIssueChallan={vi.fn()}
       onNewWorkChallan={onNewWorkChallan}
       onNewIssueChallan={vi.fn()}
-      onChooseWork={vi.fn()}
       {...props}
     />,
   );
@@ -134,16 +136,27 @@ describe('the Challans module', () => {
     ).toBeDefined();
   });
 
-  it('reads one Work on the issue tab, and says so when none is named', async () => {
+  it('reads the issue tab across Works when none is named, and says which', async () => {
     const { api } = renderChallans({ tab: 'installation' });
-    expect(
-      await screen.findByText(/this register reads one Work at a time/),
-    ).toBeDefined();
+    const row = await screen.findByRole('link', { name: 'IC/1' });
+    expect(row.getAttribute('href')).toBe(
+      `#/works/${WORK_ID}/issue-challans/${ISSUE_CHALLAN_ID}`,
+    );
+    // The organisation-wide register, not the per-Work list — and the
+    // row names the Work it belongs to, which the narrowed mode leaves
+    // to the module's chip.
+    expect(api.listIssueChallanRegister).toHaveBeenCalledWith(ORG_ID);
     expect(api.listIssueChallans).not.toHaveBeenCalled();
+    expect(screen.getByText('RE-2026-01')).toBeDefined();
   });
 
   it('lists the named Work’s issue challans', async () => {
-    renderChallans({ tab: 'installation', workId: WORK_ID, workCode: 'RE-2026-01' });
+    const { api } = renderChallans({
+      tab: 'installation',
+      workId: WORK_ID,
+      workCode: 'RE-2026-01',
+    });
+    expect(api.listIssueChallanRegister).not.toHaveBeenCalled();
     const row = await screen.findByRole('link', { name: 'IC/1' });
     expect(row.getAttribute('href')).toBe(
       `#/works/${WORK_ID}/issue-challans/${ISSUE_CHALLAN_ID}`,

@@ -94,6 +94,24 @@ function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}, props = {
 }
 
 describe('the Delivery Challan register', () => {
+  it('asks the server for one Work rather than filtering the loaded page', async () => {
+    // The `?work=` deep link is a request parameter: a Work with more
+    // movements than one keyset page holds used to show only the page's
+    // worth of them, because the narrowing happened after the read.
+    const { api } = renderRegister(
+      { listDeliveryChallans: vi.fn().mockResolvedValue([LOA_SUPPLY]) },
+      { workId: WORK_ID },
+    );
+    await screen.findByRole('link', { name: 'DC/1' });
+    expect(api.listDeliveryChallans).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+  });
+
+  it('reads the whole register when no Work is named', async () => {
+    const { api } = renderRegister();
+    await screen.findByRole('link', { name: 'DC/1' });
+    expect(api.listDeliveryChallans).toHaveBeenCalledWith(ORG_ID, null);
+  });
+
   it('names which of the three movements each row is', async () => {
     renderRegister();
     const supply = await screen.findByRole('row', { name: /DC\/1/ });

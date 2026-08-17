@@ -246,8 +246,32 @@ export const BillSchema = Type.Object(
 );
 export type Bill = Static<typeof BillSchema>;
 
+/** The Work's billing position in three figures, summed in SQL numeric.
+ *
+ * The screen that draws these draws them as money, and money is never
+ * added up in the browser (engineering rule 5): a client that summed
+ * `totalAmount` over a bills array would be doing float arithmetic on
+ * decimal strings, and the figure it produced would be a different
+ * number from the one every server-side total reports.
+ *
+ * - `measured` is what the finalized Measurement Books of this Work
+ *   sanctioned. Cancelled books are excluded; a cancelled book measured
+ *   nothing that stands.
+ * - `billed` is what has been claimed from them. A bill is prepared from
+ *   exactly one finalized book, so this can never exceed `measured`.
+ * - `unbilled` is the difference — sanctioned value not yet claimed. */
+export const BillSummarySchema = Type.Object(
+  {
+    measured: DecimalStringSchema,
+    billed: DecimalStringSchema,
+    unbilled: DecimalStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type BillSummary = Static<typeof BillSummarySchema>;
+
 export const BillListResponseSchema = Type.Object(
-  { bills: Type.Array(BillSchema) },
+  { bills: Type.Array(BillSchema), summary: BillSummarySchema },
   { additionalProperties: false },
 );
 export type BillListResponse = Static<typeof BillListResponseSchema>;

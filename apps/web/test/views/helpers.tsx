@@ -45,6 +45,14 @@ export function submitButton(label: string): HTMLElement {
   return button;
 }
 
+/** A Work that has measured and billed nothing — the summary the bills
+ * read serves beside an empty list. */
+export const NO_BILLING = {
+  measured: '0.00',
+  billed: '0.00',
+  unbilled: '0.00',
+} as const;
+
 export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     me: vi.fn<ApiClient['me']>().mockResolvedValue(null),
@@ -132,6 +140,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadSignedCopy: vi.fn<ApiClient['uploadSignedCopy']>(),
     downloadChallanPdf: vi.fn<ApiClient['downloadChallanPdf']>(),
     listIssueChallans: vi.fn<ApiClient['listIssueChallans']>().mockResolvedValue([]),
+    listIssueChallanRegister: vi
+      .fn<ApiClient['listIssueChallanRegister']>()
+      .mockResolvedValue([]),
     getIssueChallan: vi.fn<ApiClient['getIssueChallan']>(),
     createIssueChallan: vi.fn<ApiClient['createIssueChallan']>(),
     updateIssueChallan: vi.fn<ApiClient['updateIssueChallan']>(),
@@ -184,7 +195,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     updateInstrument: vi.fn<ApiClient['updateInstrument']>(),
     listMbEntries: vi.fn<ApiClient['listMbEntries']>().mockResolvedValue([]),
     recordMbEntry: vi.fn<ApiClient['recordMbEntry']>(),
-    listBills: vi.fn<ApiClient['listBills']>().mockResolvedValue([]),
+    listBills: vi
+      .fn<ApiClient['listBills']>()
+      .mockResolvedValue({ bills: [], summary: NO_BILLING }),
     setBillStatus: vi.fn<ApiClient['setBillStatus']>(),
     workTimeline: vi
       .fn<ApiClient['workTimeline']>()

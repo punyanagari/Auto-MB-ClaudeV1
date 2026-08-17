@@ -13,6 +13,7 @@ import type {
   SaveIssueChallanRequest,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../src/api.js';
+import { NO_BILLING } from './views/helpers.js';
 import { IssueChallanDetail } from '../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../src/views/IssueChallanEditor.js';
 import { WorkDetail } from '../src/views/WorkDetail.js';
@@ -101,6 +102,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadSignedCopy: vi.fn(),
     downloadChallanPdf: vi.fn(),
     listIssueChallans: vi.fn().mockResolvedValue([]),
+    listIssueChallanRegister: vi.fn().mockResolvedValue([]),
     getIssueChallan: vi.fn(),
     createIssueChallan: vi.fn(),
     updateIssueChallan: vi.fn(),
@@ -126,7 +128,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     updateInstrument: vi.fn(),
     listMbEntries: vi.fn().mockResolvedValue([]),
     recordMbEntry: vi.fn(),
-    listBills: vi.fn().mockResolvedValue([]),
+    listBills: vi.fn().mockResolvedValue({ bills: [], summary: NO_BILLING }),
     setBillStatus: vi.fn(),
     workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     entityTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),

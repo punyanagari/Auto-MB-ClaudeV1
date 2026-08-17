@@ -882,6 +882,62 @@ describe('the register and its permission gate', () => {
     expect(standalone?.consigneeName).toContain('Modern Rail Systems');
   });
 
+  /**
+   * `?work=` is the module's deep link, and it narrows the REGISTER, not
+   * the page. Filtering client-side over the loaded page — which is what
+   * the screen did before this parameter existed — showed a Work only as
+   * many of its movements as happened to land on that page.
+   */
+  it('narrows to one Work, inside the work-scope predicate rather than beside it', async () => {
+    const narrowed = await authed(owner, {
+      method: 'GET',
+      url: `/api/delivery-challans?work=${workId}`,
+      organisationId,
+    });
+    expect(narrowed.statusCode, narrowed.body).toBe(200);
+    const rows = narrowed.json<{ challans: DeliveryChallanRegisterEntry[] }>().challans;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.workId === workId)).toBe(true);
+    // The standalone challans the unnarrowed register carries are gone —
+    // they belong to no Work, so no Work names them.
+    expect(rows.some((row) => row.movement === 'standalone')).toBe(false);
+
+    // It narrows the register itself, so the page it answers with is a
+    // page OF that Work rather than the register's page filtered after
+    // the fact. With limit=1 the cursor still walks this Work only.
+    const firstPage = await authed(owner, {
+      method: 'GET',
+      url: `/api/delivery-challans?work=${workId}&limit=1`,
+      organisationId,
+    });
+    expect(firstPage.statusCode, firstPage.body).toBe(200);
+    const page = firstPage.json<{
+      challans: DeliveryChallanRegisterEntry[];
+      nextCursor: string | null;
+    }>();
+    expect(page.challans).toHaveLength(1);
+    expect(page.challans[0]?.workId).toBe(workId);
+
+    // A Work of another organisation matches nothing rather than
+    // refusing: the work-scope predicate above still decides what exists,
+    // so a guessed id cannot be used to confirm one.
+    const foreign = await authed(owner, {
+      method: 'GET',
+      url: `/api/delivery-challans?work=${randomUUID()}`,
+      organisationId,
+    });
+    expect(foreign.statusCode, foreign.body).toBe(200);
+    expect(foreign.json<{ challans: unknown[] }>().challans).toEqual([]);
+
+    // And a value that is not a uuid is a schema refusal, not a query.
+    const malformed = await authed(owner, {
+      method: 'GET',
+      url: '/api/delivery-challans?work=not-a-uuid',
+      organisationId,
+    });
+    expect(malformed.statusCode, malformed.body).toBe(400);
+  });
+
   it('hides standalone challans from a member without organisation-wide reach', async () => {
     // The scoped member is an office writer WITH issue and cancel
     // authority, assigned to the fixture Work — so they see its challans.

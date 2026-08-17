@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   IssueChallanDetailResponse,
+  IssueChallanRegisterResponse,
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
@@ -789,6 +790,119 @@ describe('Issue Challan lifecycle', () => {
       select status from issue_challans where id = ${firstChallanId}
     `;
     expect(untouched?.status).toBe('issued');
+  });
+});
+
+/**
+ * The organisation-wide register (`GET /api/issue-challans`).
+ *
+ * Its per-Work sibling is the list a Work's own screen shows; this is the
+ * one the Challans module opens on, so what has to hold here is the two
+ * boundaries a cross-Work read crosses that a per-Work read never does:
+ * the tenant, and work-scope. Both are decided in SQL, so the proofs are
+ * about which rows come back rather than which status code does.
+ */
+describe('the organisation-wide issue register', () => {
+  it('lists every Work the caller may see, naming the Work each row is on', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/issue-challans',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json<IssueChallanRegisterResponse>();
+    expect(body.issueChallans.length).toBeGreaterThan(0);
+    expect(body.nextCursor).toBeNull();
+    // Every row carries the code of the Work that issued it — the one
+    // fact a cross-Work reader needs and a per-Work reader already has.
+    expect(body.issueChallans.every((row) => row.workCode === workCode)).toBe(true);
+    expect(body.issueChallans.every((row) => row.workId === workId)).toBe(true);
+
+    // It is the same set the Work's own list answers with, so the two
+    // registers can never disagree about what exists.
+    const perWork = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/issue-challans`,
+      organisationId,
+    });
+    expect(perWork.statusCode, perWork.body).toBe(200);
+    expect(new Set(body.issueChallans.map((row) => row.id))).toEqual(
+      new Set(
+        perWork
+          .json<{ issueChallans: { id: string }[] }>()
+          .issueChallans.map((row) => row.id),
+      ),
+    );
+  });
+
+  it('answers a stranger with their own empty register, never with these rows', async () => {
+    // The victim organisation refuses at the membership floor.
+    const asVictimOrg = await authed(stranger, {
+      method: 'GET',
+      url: '/api/issue-challans',
+      organisationId,
+    });
+    expect(asVictimOrg.statusCode, asVictimOrg.body).toBe(403);
+    expect(asVictimOrg.json()).toMatchObject({ code: 'NOT_A_MEMBER' });
+
+    // Inside their own, RLS leaves nothing to read.
+    const asOwnOrg = await authed(stranger, {
+      method: 'GET',
+      url: '/api/issue-challans',
+      organisationId: strangerOrganisationId,
+    });
+    expect(asOwnOrg.statusCode, asOwnOrg.body).toBe(200);
+    expect(asOwnOrg.json()).toEqual({ issueChallans: [], nextCursor: null });
+  });
+
+  /**
+   * Work-scope is the register's own predicate, not something inherited
+   * from a Work in the path — there is no Work in the path. An
+   * 'assigned'-scoped member reads their assignments and nothing else,
+   * and a predicate that were accidentally always-true would hand them
+   * the whole organisation without any status code changing.
+   */
+  it('shows an assigned-scope member only the Works they are assigned', async () => {
+    const [viewerUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${viewerEmail}
+    `;
+    if (!viewerUser) throw new Error('viewer user missing');
+    await admin`
+      update organisation_memberships set work_scope = 'assigned'
+      where organisation_id = ${organisationId} and user_id = ${viewerUser.id}
+    `;
+    try {
+      const unassigned = await authed(viewer, {
+        method: 'GET',
+        url: '/api/issue-challans',
+        organisationId,
+      });
+      expect(unassigned.statusCode, unassigned.body).toBe(200);
+      expect(unassigned.json<IssueChallanRegisterResponse>().issueChallans).toEqual([]);
+
+      await admin`
+        insert into work_assignments (organisation_id, work_id, user_id, created_by_user_id)
+        values (${organisationId}, ${workId}, ${viewerUser.id}, ${ownerUserId})
+      `;
+      const assigned = await authed(viewer, {
+        method: 'GET',
+        url: '/api/issue-challans',
+        organisationId,
+      });
+      expect(assigned.statusCode, assigned.body).toBe(200);
+      expect(
+        assigned.json<IssueChallanRegisterResponse>().issueChallans.length,
+      ).toBeGreaterThan(0);
+    } finally {
+      await admin`
+        delete from work_assignments
+        where organisation_id = ${organisationId} and user_id = ${viewerUser.id}
+      `;
+      await admin`
+        update organisation_memberships set work_scope = 'all'
+        where organisation_id = ${organisationId} and user_id = ${viewerUser.id}
+      `;
+    }
   });
 });
 
