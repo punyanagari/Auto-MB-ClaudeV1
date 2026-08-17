@@ -272,7 +272,10 @@ reductions, which on an excess-delivery Work refused the exact remedy
 R5 prescribes. Exit suites pin the atomic decision claim under a real
 simultaneous double-decide, the audit-shape equivalence of the
 one-party and two-party approval flows, the excess-delivery toggle
-lifting the delivery ceiling but never the installation ceiling, the
+lifting the delivery ceiling and never reaching installation at all
+(the installation ceiling it did not reach was itself lifted later, by
+migration 0077 — the exit suite now pins the toggle's irrelevance to
+installation rather than a ceiling that no longer exists), the
 absence of an in-place installation edit, and the Issue Challan
 counter's independence from the Delivery Challan counter on the same
 Work.

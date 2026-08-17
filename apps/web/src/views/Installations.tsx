@@ -11,6 +11,7 @@ import type {
 } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, todayIso } from '../format.js';
+import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -31,6 +32,15 @@ interface InstallationsProps {
    * rather than from this list. Called on every load and after every
    * record or cancel, so the badge tracks the panel without a reload. */
   readonly onCountsChanged?: (counts: InstallationCounts) => void;
+}
+
+/** The item owes a railway variation order: more is installed than the
+ * contract sanctions. Replicates the mock's chip on the recording flow
+ * (Auto-MB-Vercel-du, components/installation-capture-flow.tsx at
+ * a8e1fde) — same words, same warning tone, and it reads the flag the
+ * server derives rather than comparing quantities in the browser. */
+function VariationChip() {
+  return <Badge variant="warning">Above LOA — variation pending</Badge>;
 }
 
 function countsOf(data: InstallationListResponse): InstallationCounts {
@@ -75,6 +85,11 @@ export function Installations({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Per work item, the variation answer the server gave on the last
+   * record or cancel this panel performed. See `variationPending`. */
+  const [recentVariations, setRecentVariations] = useState<
+    Readonly<Record<string, boolean>>
+  >({});
   const [pending, setPending] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>('');
   const [locationChoice, setLocationChoice] = useState<string>(NEW_LOCATION);
@@ -193,6 +208,16 @@ export function Installations({
   const activeItemId =
     selectedItemId !== '' ? selectedItemId : (selectableItems[0]?.id ?? '');
   const activeItem = selectableItems.find((item) => item.id === activeItemId);
+  /** Whether the item owes a variation order, straight from the flag the
+   * database derives — the client never compares the quantities itself.
+   *
+   * A recording or a cancellation can move the flag, and the Work items
+   * this panel is handed are the ones the Work page last loaded, so the
+   * server's own answer on the record it just returned wins over them
+   * until the page reloads. */
+  const variationPending = (workItemId: string): boolean =>
+    recentVariations[workItemId] ??
+    workItems.find((item) => item.id === workItemId)?.pendingVariation === true;
   // The delivered-but-uninstalled pool of the picked item: serials whose
   // challan is issued and whose unit is not currently installed anywhere.
   const serialPool = serials.filter(
@@ -206,9 +231,11 @@ export function Installations({
     <>
       <h2>Installations</h2>
       <p className="text-muted-foreground">
-        Quantity actually installed at site, by item and location. Per item the total
-        can never exceed the sanctioned LOA quantity; serial-tracked items also need one
-        delivered serial per installed unit.
+        Quantity actually installed at site, by item and location. Site progress is
+        recorded as it happened: anything above the sanctioned LOA quantity is recorded
+        too and routed to variation, and it stays out of measurement and billing until
+        the variation order is approved. Serial-tracked items need one delivered serial
+        per installed unit.
       </p>
       {actionError !== null && <FormError>{actionError}</FormError>}
       {notice !== null && (
@@ -244,7 +271,15 @@ export function Installations({
         <tbody>
           {data.itemSummaries.map((summary) => (
             <tr key={summary.workItemId}>
-              <th scope="row">{summary.itemNumber}</th>
+              <th scope="row">
+                {summary.itemNumber}
+                {variationPending(summary.workItemId) && (
+                  <>
+                    {' '}
+                    <VariationChip />
+                  </>
+                )}
+              </th>
               <td className={numericCell}>{summary.installedQuantity}</td>
             </tr>
           ))}
@@ -301,11 +336,15 @@ export function Installations({
                             `cancel-note-${installation.id}`,
                           ).trim();
                           void act(async () => {
-                            await api.cancelWorkInstallation(
+                            const cancelled = await api.cancelWorkInstallation(
                               organisationId,
                               installation.id,
                               note,
                             );
+                            setRecentVariations((current) => ({
+                              ...current,
+                              [cancelled.workItemId]: cancelled.pendingVariation,
+                            }));
                             await refresh();
                           }, 'Installation record cancelled; its serials are back in the pool.');
                         }}
@@ -380,6 +419,10 @@ export function Installations({
                     workId,
                     body,
                   );
+                  setRecentVariations((current) => ({
+                    ...current,
+                    [recorded.workItemId]: recorded.pendingVariation,
+                  }));
                   const [evidenceRefresh, locationsRefresh] = await Promise.allSettled([
                     refresh(),
                     api.listLocationMasters(organisationId),
@@ -418,6 +461,7 @@ export function Installations({
                     </option>
                   ))}
                 </select>
+                {activeItem?.pendingVariation === true && <VariationChip />}
               </Field>
               <Field>
                 <label htmlFor="inst-quantity">Quantity installed</label>

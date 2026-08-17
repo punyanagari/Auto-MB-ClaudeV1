@@ -187,6 +187,7 @@ export interface ItemInputRow {
   prior_final_bill: string;
   cumulative_delivered: string;
   cumulative_installed: string;
+  sanctioned_quantity: string;
 }
 
 /**
@@ -219,7 +220,9 @@ export const ITEM_INPUTS_SQL = `
   with items as (
     select wi.id, wi.item_number, wi.description, wi.unit_code,
            wi.payment_category,
-           coalesce(wi.effective_unit_rate, wi.effective_rate) as effective_rate
+           coalesce(wi.effective_unit_rate, wi.effective_rate) as effective_rate,
+           coalesce(wi.effective_quantity, wi.awarded_quantity)
+             as sanctioned_quantity
     from work_items wi
     where wi.work_id = $1 and wi.deleted_at is null
   ),
@@ -290,7 +293,8 @@ export const ITEM_INPUTS_SQL = `
          coalesce(p.pac, 0)::numeric(18,3)::text as prior_pac,
          coalesce(p.final_bill, 0)::numeric(18,3)::text as prior_final_bill,
          coalesce(dv.total, 0)::numeric(18,3)::text as cumulative_delivered,
-         coalesce(ins.total, 0)::numeric(18,3)::text as cumulative_installed
+         coalesce(ins.total, 0)::numeric(18,3)::text as cumulative_installed,
+         it.sanctioned_quantity::text as sanctioned_quantity
   from items it
   left join delta_supplied ds on ds.work_item_id = it.id
   left join delta_installed di on di.work_item_id = it.id
@@ -337,6 +341,10 @@ export async function loadItemInputs(
     priorFinalBill: row.prior_final_bill,
     cumulativeDelivered: row.cumulative_delivered,
     cumulativeInstalled: row.cumulative_installed,
+    // The billing ceiling every stage measured on physical work clamps
+    // at (migration 0077). Selected from the `items` CTE, which already
+    // scans work_items — no extra descent for it.
+    sanctionedQuantity: row.sanctioned_quantity,
     // Not loaded here — see `loadAmcCertified`. '0' is the correct value
     // for every item this statement can be asked about that is not an
     // AMC item on a final MB, which is the overwhelming majority, and
@@ -531,6 +539,46 @@ export async function readStoredLines(
 
 /** Detail assembly: drafts COMPUTE the preview from live state;
  * finalized/cancelled MBs read their immutable lines. */
+/**
+ * What the Work has built and cannot bill: SUM over its over-installed
+ * items of (installed - sanctioned) x accepted rate. The counterpart of
+ * `clampToSanctioned` — the clamp decides what a book bills, and this
+ * says in money what the clamp left outside every book.
+ *
+ * A CURRENT fact about the Work, not a snapshot of the book, which is
+ * why it is read the same way for a draft and for a finalized book: the
+ * question it answers is "how much of what we have built is still
+ * waiting on a variation order", and the answer moves when the variation
+ * lands, not when a book is numbered.
+ *
+ * Exact SQL numeric, rounded per item and then summed (R13), against the
+ * accepted rate — the same rate the lines are priced at. Items the
+ * database has not flagged are skipped before the aggregate runs, so on
+ * the overwhelming majority of Works this reads no installation rows at
+ * all.
+ */
+async function readUnbillableVariationExposure(
+  tx: TransactionSql,
+  workId: string,
+): Promise<string> {
+  const [row] = await tx<{ exposure: string }[]>`
+    select coalesce(sum(round(
+             (installed.total
+               - coalesce(wi.effective_quantity, wi.awarded_quantity))
+             * coalesce(wi.effective_unit_rate, wi.effective_rate), 2)), 0)
+           ::numeric(18,2)::text as exposure
+    from work_items wi
+    cross join lateral (
+      select coalesce(sum(i.quantity), 0)::numeric(18,3) as total
+      from installations i
+      where i.work_item_id = wi.id and i.status = 'recorded'
+    ) installed
+    where wi.work_id = ${workId} and wi.deleted_at is null
+      and wi.pending_variation
+  `;
+  return row?.exposure ?? '0.00';
+}
+
 export async function readDetail(
   tx: TransactionSql,
   bookId: string,
@@ -540,6 +588,10 @@ export async function readDetail(
     throw httpError(404, 'MEASUREMENT_BOOK_NOT_FOUND', 'No such Measurement Book.');
   }
   const sources = await readSources(tx, bookId);
+  const unbillableVariationExposure = await readUnbillableVariationExposure(
+    tx,
+    book.work_id,
+  );
   if (book.status === 'draft') {
     const computation = await computeForBook(tx, book);
     return {
@@ -548,6 +600,7 @@ export async function readDetail(
       lines: computation.lines.map(toLine),
       warnings: [...computation.unresolved],
       previewTotal: computation.totalAmount,
+      unbillableVariationExposure,
     };
   }
   return {
@@ -556,6 +609,7 @@ export async function readDetail(
     lines: await readStoredLines(tx, bookId),
     warnings: [],
     previewTotal: book.total_amount,
+    unbillableVariationExposure,
   };
 }
 

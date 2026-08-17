@@ -156,6 +156,14 @@ interface UnfinishedRow {
  * removed item owes nothing). An item amended to quantity 0 — the
  * omission case — is satisfied by delivering and installing nothing.
  *
+ * ONE DIMENSION IS MEASURED ON EVERY ITEM WHATEVER ITS REQUIREMENT: the
+ * installed quantity, when it stands ABOVE the baseline. Migration 0077
+ * lets site install past the sanctioned quantity on any item, and a
+ * requirement says which dimension an item must finish on — it does not
+ * license the others to run over. Without this arm a SUPPLY item that
+ * was over-installed would close a Work while its variation order was
+ * still outstanding, because its requirement only looks at delivery.
+ *
  * The requirement per payment category (spec §8 / the settled matrix):
  *   SUPPLY, SPARE_SUPPLY        -> fully delivered
  *   PURE_INSTALLATION           -> fully installed
@@ -215,8 +223,15 @@ async function unfinishedItems(
                measured.requirement in ('delivery', 'delivery_and_installation')
                and measured.delivered_quantity > measured.required_quantity
              ) or (
-               measured.requirement in ('installation', 'delivery_and_installation')
-               and measured.installed_quantity > measured.required_quantity
+               -- NOT gated on the requirement, unlike its neighbours.
+               -- Since migration 0077 an item can hold more installed
+               -- than the contract sanctions whatever its payment
+               -- category, and a SUPPLY item that site over-installed is
+               -- over-executed even though its requirement measures
+               -- delivery. Gating this arm the way the others are gated
+               -- would let such a Work close with an unsanctioned
+               -- variation outstanding.
+               measured.installed_quantity > measured.required_quantity
              ) or (
                measured.requirement = 'service'
                and measured.certified_quantity > measured.required_quantity
@@ -281,6 +296,14 @@ async function unfinishedItems(
     ) or (
       measured.requirement = 'service'
       and measured.certified_quantity <> measured.required_quantity
+    ) or (
+      -- The over-installed arm, on EVERY requirement (migration 0077).
+      -- A requirement decides which dimension an item must FINISH on; it
+      -- does not license the other dimensions to run over the sanction.
+      -- Strictly greater-than, not <>: a supply item with nothing
+      -- installed is not unfinished for that reason, and one that is
+      -- part-installed on the way to full delivery is not either.
+      measured.installed_quantity > measured.required_quantity
     )
     order by measured.item_number
   `;

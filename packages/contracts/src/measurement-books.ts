@@ -240,6 +240,16 @@ export const MeasurementBookDetailResponseSchema = Type.Object(
     /** Draft preview of the would-be total (line-rounded then summed);
      * equals book.totalAmount once finalized. */
     previewTotal: Type.Union([DecimalStringSchema, Type.Null()]),
+    /** The Work's UNBILLABLE VARIATION EXPOSURE: money value of what is
+     * installed above the sanctioned quantity and therefore excluded
+     * from every Measurement Book until a variation order raises the
+     * sanction (migration 0077). '0.00' when nothing is over-installed.
+     *
+     * A current fact about the Work, not a snapshot of this book — it
+     * reads the same on a draft and on a finalized book, and it falls to
+     * zero when the variation lands. The lines above are already
+     * clamped; this is what the clamp left out, stated in rupees. */
+    unbillableVariationExposure: DecimalStringSchema,
   },
   { additionalProperties: false },
 );

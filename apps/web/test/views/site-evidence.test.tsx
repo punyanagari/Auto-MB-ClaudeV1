@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { WorkItem } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { Installations } from '../../src/views/Installations.js';
 import { MeasurementBooks } from '../../src/views/MeasurementBooks.js';
@@ -17,7 +18,7 @@ describe('Installations', () => {
   const CHALLAN = '77777777-1111-4111-8111-777777777777';
   const CHALLAN_ITEM = '77777777-2222-4222-8222-777777777777';
 
-  const WORK_ITEMS = [
+  const WORK_ITEMS: readonly WorkItem[] = [
     {
       id: ITEM_PLAIN,
       scheduleId: '77777777-7777-4777-8777-777777777777',
@@ -135,7 +136,10 @@ describe('Installations', () => {
 
   function renderInstallations(
     api: ApiClient,
-    options: Partial<{ canRecordEvidence: boolean }> = {},
+    options: Partial<{
+      canRecordEvidence: boolean;
+      workItems: readonly WorkItem[];
+    }> = {},
   ) {
     return render(
       <Installations
@@ -143,7 +147,7 @@ describe('Installations', () => {
         organisationId={ORG_ID}
         workId={WORK_ID}
         canRecordEvidence={options.canRecordEvidence ?? true}
-        workItems={WORK_ITEMS}
+        workItems={options.workItems ?? WORK_ITEMS}
         serials={SERIALS}
         onSerialsChanged={vi.fn()}
       />,
@@ -342,6 +346,64 @@ describe('Installations', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('exceed the delivered quantity');
+  });
+
+  it('flags an over-installed item as owing a variation, on the row and in the form', async () => {
+    // Replicates the mock's chip (Auto-MB-Vercel-du,
+    // components/installation-capture-flow.tsx at a8e1fde): same words,
+    // same warning tone. The flag is the server's — the browser never
+    // compares the quantities itself.
+    renderInstallations(installationsApi(), {
+      workItems: WORK_ITEMS.map((item) =>
+        item.id === ITEM_PLAIN ? { ...item, pendingVariation: true } : item,
+      ),
+    });
+
+    await screen.findByRole('button', { name: 'New installation' });
+    expect(screen.getAllByText('Above LOA — variation pending')).toHaveLength(1);
+
+    // …and again beside the item picker once the form is open on it.
+    await openForm('New installation');
+    fireEvent.change(screen.getByLabelText('Work item'), {
+      target: { value: ITEM_PLAIN },
+    });
+    expect(screen.getAllByText('Above LOA — variation pending')).toHaveLength(2);
+  });
+
+  it('raises the chip from the recording response, before the Work reloads', async () => {
+    // The Work items this panel is handed are the ones the Work page last
+    // loaded, so the recording that CREATES the variation would otherwise
+    // leave the operator looking at a screen that does not know yet.
+    const recordWorkInstallation = vi.fn().mockResolvedValue({
+      ...RECORDED,
+      workItemId: ITEM_PLAIN,
+      itemNumber: 'A/1',
+      quantity: '12.000',
+      serials: [],
+      locationId: LOCATION_ID,
+      pendingVariation: true,
+    });
+    renderInstallations(installationsApi({ recordWorkInstallation }));
+
+    await openForm('New installation');
+    expect(screen.queryByText('Above LOA — variation pending')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Work item'), {
+      target: { value: ITEM_PLAIN },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity installed'), {
+      target: { value: '12.000' },
+    });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Location'), {
+      target: { value: LOCATION_ID },
+    });
+    fireEvent.click(submitButton('Record installation'));
+
+    expect(
+      (await screen.findAllByText('Above LOA — variation pending')).length,
+    ).toBeGreaterThan(0);
   });
 
   it('hides recording and cancellation from read-only members', async () => {

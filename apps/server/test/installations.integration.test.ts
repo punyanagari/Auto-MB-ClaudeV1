@@ -651,6 +651,46 @@ describe('installation past the sanctioned quantity (R5, owner decision 2026-08-
   // fit alone and together do not — is proved at the database, where the
   // proof can park one writer on the row lock and watch it wake:
   // packages/db/test/quantity-ceilings.integration.test.ts.
+
+  it('leaves a non-serial item installable beyond what was delivered, as before 0077', async () => {
+    // A DECISION, pinned so it is a decision rather than a gap. The
+    // delivered floor (R5's second half) has only ever applied to
+    // serial-tracked items — Milestone 7 reads "supply-type" through
+    // requires_serials, and the recording route says so in its own
+    // comment. 0077 did not touch it, and it must not be widened here on
+    // the way past: a PURE_INSTALLATION item is never delivered at all,
+    // so a blanket delivered cap would make the whole category
+    // un-installable. The real refinement is the payment-category one
+    // that comment names, which is its own change with its own fixtures.
+    //
+    // Item A is delivered 5 and not serial-tracked, so installing past
+    // the delivery is accepted; what stops it running away is the
+    // variation flag, not a refusal.
+    const beyondDelivered = await record(site, {
+      workItemId: itemAId,
+      quantity: '4.000',
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+    });
+    expect(beyondDelivered.statusCode, beyondDelivered.body).toBe(201);
+    const list = await listInstallations();
+    // 4.000 from the earlier blocks plus this 4.000, against 5 delivered.
+    expect(summaryOf(list, itemAId)).toBe('8.000');
+    const [delivered] = await admin<{ total: string }[]>`
+      select coalesce(sum(dci.quantity), 0)::text as total
+      from delivery_challan_items dci
+      join delivery_challans dc on dc.id = dci.delivery_challan_id
+      where dci.work_item_id = ${itemAId} and dc.status = 'issued'
+    `;
+    expect(delivered?.total).toBe('5.000');
+    // Sanctioned 10, installed 8.000 — inside the sanction, so no
+    // variation either. The two rules are independent.
+    expect(await pendingVariation(itemAId)).toBe(false);
+
+    // The serial-tracked half of R5 is untouched and still refuses with
+    // INSTALLATION_EXCEEDS_DELIVERY — proved on item C by "caps
+    // serialised items at the delivered quantity" further down this file.
+  });
 });
 
 describe('serial attachment (R6)', () => {

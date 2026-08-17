@@ -253,21 +253,38 @@ over non-cancelled records for the item — computed nowhere else.
   below what is already installed, which is what keeps a measured excess
   from being paperwork'd away.
 - **What the lifted cap does not lift.** Measuring more than the contract
-  sanctions is honest; invoicing it is not. A Measurement Book still bills
-  no more installed quantity than the sanctioned figure, so the excess
-  waits outside the money until the variation lands — while everything up
-  to the sanctioned quantity bills normally, and the contractor is not
-  held out of what the contract already owes. Completion is unmoved too: a
-  Work closes only at exact equality, so an over-installed item is as
-  unfinished as a short one and no Work closes on the strength of
-  unsanctioned work.
+  sanctions is honest; invoicing it is not. Billing therefore **clamps**
+  rather than refuses: every Measurement Book stage measured on work
+  physically done — installation, certification, and the final-bill base
+  that reads them — bills `min(measured, sanctioned)` over the item's
+  lifetime, and the remainder is simply never billed. Everything up to the
+  sanctioned quantity bills normally, so the contractor is not held out of
+  what the contract already owes; the excess waits, unbilled, until a
+  variation raises the sanction, at which point the room reopens and the
+  next book bills it with no correction entry. Nothing is refused, which
+  is deliberate — see the final-book rule below. Completion is unmoved
+  too: a Work closes only at exact equality, so an over-installed item is
+  as unfinished as a short one, on **any** payment category, and no Work
+  closes on the strength of unsanctioned work.
+- **The final book closes over an unprocessed variation** (owner ruling,
+  2026-08-17: "Final MB can be done even if excess installation variation
+  is not processed — sometimes we have to work free for the Railways").
+  Refusing to bill the excess must never become refusing to close the
+  contract, so the final Measurement Book finalizes with the excess
+  clamped out — and finalizes even when the clamp leaves it with nothing
+  to bill at all, which is the one case where an empty book is accepted.
+  The unbilled quantity does not disappear from the record: the
+  installation records still say what was built, and the Work's
+  **unbillable variation exposure** — the money value of everything
+  installed above sanction — is reported on the Measurement Book screen
+  until the variation order clears it.
 - Records are never edited. A record cancels with a note, keeps its
   history, and releases its serials back to the delivered-but-uninstalled
   pool.
 - **Two homes, one record.** Recording and the full record — its serials,
   its remarks, its cancellation — live on the Work, because a record is
-  capped by that Work's sanctioned quantity and drawn from that Work's
-  delivered serials. Alongside them, a tenant-wide register lists every
+  measured against that Work's sanctioned quantity and drawn from that
+  Work's delivered serials. Alongside them, a tenant-wide register lists every
   record across Works, newest first, with its Work, item, quantity, date,
   location, serial count and status. Site supervision asks "what went in
   this week, and where" far more often than it asks about one contract,
@@ -541,10 +558,14 @@ and three rules follow.
   total.** Every other item is capped at what was installed, because a
   certificate accepts work that exists. An AMC item has no installation
   at all, so that ceiling would be zero; its ceiling is the sanctioned
-  quantity instead. (Installation itself no longer carries that ceiling —
-  see "Installation records" — but certification still does: a certificate
-  accepts what the contract sanctions, and an unsanctioned excess is
-  certified once its variation order is applied.)
+  quantity instead. Every other item keeps the installed ceiling, and
+  since migration 0077 that ceiling is no longer bounded by the sanction:
+  a certificate attests work that physically exists, so the railway may
+  certify an over-installed item in full. Only the AMC arm is bounded by
+  the sanctioned quantity, because a maintenance year cannot be
+  over-served the way a span can be over-built. Certifying above the
+  sanction costs nothing, because the billing clamp above prices the
+  certification stage at the sanctioned quantity too.
 - **An AMC matrix row bills only on the certification and final-bill
   stages.** Its supply and installation stage deltas are permanently
   zero, so contract value parked on either could never be billed.
@@ -985,13 +1006,13 @@ The current product also includes:
   warranty certificates, instruments, and PAC certificates;
 - record, on-account, and final Measurement Books with category payment
   matrices, stage-wise billing, immutable snapshots, and generated documents.
-  Billing caps at the sanctioned quantity: a book whose lifetime billed
-  installation for an item would pass `effective_quantity ?? awarded_quantity`
-  is refused, which is how an unsanctioned excess stays measured but unpaid
-  until its variation order is applied (see "Installation records"). A final
-  book, which must sweep every open source, therefore cannot be finalized at
-  all while an excess stands — closing the payment cycle over it would strand
-  the variation forever;
+  Billing clamps at the sanctioned quantity: every stage measured on physical
+  work bills `min(measured, effective_quantity ?? awarded_quantity)` over the
+  item's lifetime, so an unsanctioned excess stays measured but unpaid until
+  its variation order is applied, and no book — the final one included — is
+  ever blocked by one (see "Installation records"). The clamp lives in the
+  computation core, so the draft preview, the draft PDF and the finalized
+  snapshot are the same numbers;
 - the railway's own received On-Account Bill, linked to the Measurement Book
   it settles by measurement sequence, with every fact extracted from the PDF
   and a three-signature verdict that gates measurement closure and payment

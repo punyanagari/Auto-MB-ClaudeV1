@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 162;
+const TRIGGER_CENSUS = 163;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -139,11 +139,19 @@ describe('tenant migration contract', () => {
     expect(sql).toContain(
       'ADD COLUMN pending_variation boolean NOT NULL DEFAULT false',
     );
+    // ONE definition of "over-installed": both triggers and the backfill
+    // read the same function, so the three cannot drift apart. It is
+    // called by name from inside trigger bodies, which resolves under the
+    // invoking role, so the grant has to be real rather than assumed.
+    expect(sql).toContain('CREATE FUNCTION app_private.work_item_over_installed(');
+    expect(sql).toContain(
+      'GRANT EXECUTE ON FUNCTION\n      app_private.work_item_over_installed(uuid, uuid, numeric) TO auto_mb_app;',
+    );
+    expect([...sql.matchAll(/sum\(i\.quantity\)/g)]).toHaveLength(1);
     // Both halves of the derivation: the item side overwrites whatever a
     // writer supplied, and the installation side locks the item row before
     // it reads the sum, so two concurrent recordings cannot both conclude
     // they fit.
-    expect(sql).toContain('CREATE TRIGGER work_items_pending_variation_sync');
     expect(sql).toContain('NEW.pending_variation :=');
     expect(sql).toContain('CREATE TRIGGER installations_pending_variation_sync');
     const installationSync = sql.slice(
@@ -151,13 +159,38 @@ describe('tenant migration contract', () => {
       sql.indexOf('CREATE TRIGGER installations_pending_variation_sync'),
     );
     expect(installationSync).toContain('FOR UPDATE');
+    // Both work_items triggers are WHEN-gated, and that is the point of
+    // them being two. Ungated, every write of a work item — the bulk
+    // insert of an LOA confirmation, a payment-category sweep — would run
+    // the installations aggregate for an answer that cannot have changed.
+    expect(sql).toMatch(
+      /CREATE TRIGGER work_items_pending_variation_insert\nBEFORE INSERT ON work_items\nFOR EACH ROW WHEN \(NEW\.pending_variation\)/,
+    );
+    expect(sql).toMatch(
+      /CREATE TRIGGER work_items_pending_variation_sync\nBEFORE UPDATE ON work_items\nFOR EACH ROW WHEN \(/,
+    );
+    expect(sql).toContain(
+      'OLD.effective_quantity IS DISTINCT FROM NEW.effective_quantity',
+    );
+    expect(sql).toContain(
+      'OLD.pending_variation IS DISTINCT FROM NEW.pending_variation',
+    );
     // Neither trigger may consult the excess-delivery toggle: that lifts
     // the delivery cap and has never had anything to say about
     // installation.
     expect(sql).not.toContain('allow_excess_delivery');
-    // A database restored from before 0046 can hold an over-installed item,
-    // so the flag is backfilled rather than assumed false.
-    expect(sql).toContain('SET pending_variation = true');
+    // A database restored from before 0046 can hold an over-installed
+    // item, so the flag is backfilled — driven from the INSTALLATIONS
+    // side, because the ADD COLUMN above holds ACCESS EXCLUSIVE on
+    // work_items and an item with no installation cannot be
+    // over-installed.
+    expect(sql).toMatch(
+      /UPDATE work_items item\nSET pending_variation = app_private\.work_item_over_installed\(/,
+    );
+    expect(sql).toMatch(/WHERE EXISTS \(\n {2}SELECT 1 FROM installations i/);
+    // No index on the flag: nothing filters on it at scale, and the
+    // per-Work reads that show it already have work_items_work_idx.
+    expect(sql).not.toContain('CREATE INDEX');
   });
 
   it('binds the delivery and installation quantity ceilings in 0046', async () => {

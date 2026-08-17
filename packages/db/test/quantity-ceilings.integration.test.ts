@@ -451,8 +451,8 @@ describe('database quantity ceilings', () => {
 
   it('refuses a hand-set variation flag no measurement supports', async () => {
     // The column is DERIVED. A direct writer that asserts it is corrected
-    // in place rather than believed — the trigger recomputes on every
-    // work_items write, in both directions.
+    // in place rather than believed — the trigger recomputes whenever the
+    // flag or either quantity column is written, in both directions.
     const seed = await seedWork(pool, '10.000');
     await pool`
       update work_items set pending_variation = true where id = ${seed.workItemId}
@@ -463,6 +463,51 @@ describe('database quantity ceilings', () => {
     await pool`
       update work_items set pending_variation = false where id = ${seed.workItemId}
     `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
+
+    // …and an item cannot be BORN flagged either. The insert gate fires
+    // only on this one shape, so ordinary item inserts — the bulk one an
+    // LOA confirmation makes — take the column default and pay nothing.
+    const [born] = await pool<{ id: string; pending_variation: boolean }[]>`
+      insert into work_items (
+        organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, pending_variation
+      )
+      values (
+        ${seed.organisationId}, ${seed.workId}, ${seed.scheduleId}, 'I-BORN',
+        'Born-flagged item', 'Nos', '5.000', '100.00', true
+      )
+      returning id, pending_variation
+    `;
+    expect(born?.pending_variation).toBe(false);
+  });
+
+  it('leaves the flag alone on a work_items write that cannot move it', async () => {
+    // The WHEN gate, from the outside: an item write that touches neither
+    // quantity nor the flag must not recompute anything. Proved by making
+    // the aggregate LIE — an over-installed item whose flag is already
+    // true stays true after an unrelated column changes, and (the half
+    // that would fail without the gate) `updated_at` is the only thing
+    // the unrelated write moves.
+    const seed = await seedWork(pool, '10.000');
+    await recordInstallation(pool, seed, '4.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+
+    await pool`
+      update work_items set description = 'Renamed, nothing else'
+      where id = ${seed.workItemId}
+    `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+
+    // And the gate opens for the write that CAN move it: the same item,
+    // amended below what is installed... which the 0030 floor refuses, so
+    // the move that opens it is the lawful one — down to exactly four.
+    await pool`
+      update work_items set effective_quantity = '4.000'
+      where id = ${seed.workItemId}
+    `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+    await recordInstallation(pool, seed, '1.000');
     expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
   });
 

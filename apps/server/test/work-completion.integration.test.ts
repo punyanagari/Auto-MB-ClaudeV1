@@ -727,6 +727,110 @@ describe('the R8 completion predicate', () => {
     );
     expect(completed.statusCode, completed.body).toBe(200);
   });
+
+  it('refuses completion on an over-installed SUPPLY item, whose requirement is delivery', async () => {
+    // The escape a requirement-gated excess arm leaves open. A SUPPLY
+    // item finishes on DELIVERY, so a predicate that only measures the
+    // installed dimension when the requirement names it would let this
+    // Work close: delivered equals sanctioned exactly, and the six units
+    // installed against a sanctioned five would go unremarked. They are
+    // an unprocessed variation, and the Work stays open until it is
+    // sanctioned — on every payment category, not only the installing
+    // ones.
+    const supplyWorkId = randomUUID();
+    const supplyScheduleId = randomUUID();
+    const supplyItemId = randomUUID();
+    const supplyCode = `WCV2${runId.slice(0, 4).toUpperCase()}`;
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${supplyWorkId}, ${organisationId}, ${supplyCode},
+        ${`wc-supply-variation-${runId}`}, '2025-06-01',
+        'Supply-side variation fixture work', 200.00, 180.00, 'per_schedule',
+        ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${supplyScheduleId}, ${organisationId}, ${supplyWorkId}, 'A', 'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values
+        (${supplyItemId}, ${organisationId}, ${supplyWorkId}, ${supplyScheduleId},
+         'S/1', 'Prefabricated cable trough', 'Nos', 5.000, 100.00, 'SUPPLY')
+    `;
+
+    // Delivered exactly the sanctioned five: the requirement is met.
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${supplyWorkId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-04',
+        prefix: `${supplyCode}-DC`,
+        consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+        items: [{ workItemId: supplyItemId, quantity: '5' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${draft.json<ChallanDetailResponse>().challan.id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    // Site then installs six of them.
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${supplyWorkId}/installations`,
+      organisationId,
+      payload: {
+        workItemId: supplyItemId,
+        quantity: '6.000',
+        installedOn: '2026-08-05',
+        newLocation: { name: `Supply variation site ${runId}`, kind: 'station' },
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+
+    const refusedSupply = await complete(
+      owner,
+      'Attempting closure with a supply item installed over its sanction.',
+      supplyWorkId,
+    );
+    expect(refusedSupply.statusCode, refusedSupply.body).toBe(409);
+    expect(refusedSupply.json()).toMatchObject({ code: 'WORK_NOT_FULLY_EXECUTED' });
+    expect(unfinishedBy(refusedSupply).get('S/1')).toMatchObject({
+      direction: 'excess',
+      // Still a delivery requirement — the item did not change category,
+      // the predicate simply stopped ignoring the other dimension.
+      requirement: 'delivery',
+      requiredQuantity: '5.000',
+      deliveredQuantity: '5.000',
+      installedQuantity: '6.000',
+    });
+
+    // Sanctioning the sixth closes it. (Delivery has to come up to match
+    // too — the requirement is still delivery — which is exactly the
+    // paperwork a variation order authorises.)
+    await admin`
+      update work_items set effective_quantity = 6.000 where id = ${supplyItemId}
+    `;
+    const stillShort = await complete(owner, 'Not yet.', supplyWorkId);
+    expect(stillShort.statusCode).toBe(409);
+    expect(unfinishedBy(stillShort).get('S/1')).toMatchObject({
+      direction: 'short',
+      deliveredQuantity: '5.000',
+    });
+  });
 });
 
 describe('clean-state refusals, each named', () => {

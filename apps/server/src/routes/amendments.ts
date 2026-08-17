@@ -351,8 +351,19 @@ export async function applyApproval(
       // install beyond the sanctioned quantity, which flags the item as
       // pending variation, and the increase applied here is exactly the
       // variation order that clears it (the flag is recomputed by the
-      // work_items trigger as this UPDATE lands). Certified can still
-      // never exceed the current ceiling, so R18 is unaffected.
+      // work_items trigger as this UPDATE lands).
+      //
+      // CERTIFIED can now exceed the sanctioned quantity too, and that
+      // is a decision rather than an oversight. A non-AMC acceptance
+      // certificate attests work that physically exists, so `routes/
+      // pac.ts` caps it at the INSTALLED total — which 0077 unbound —
+      // while an AMC item, which is never installed, stays capped at the
+      // sanctioned quantity by its own arm of that check. Letting the
+      // railway certify what it accepted, then billing only what it
+      // sanctioned, is the same shape as the installation rule itself;
+      // the money is protected by the billing clamp in mb-compute.ts,
+      // not by refusing the certificate. R18 (certified <= installed) is
+      // unaffected either way.
       //
       // The reduction floor is deliberately UNCHANGED by 0077: an item
       // that is over-installed cannot be amended down to hide the

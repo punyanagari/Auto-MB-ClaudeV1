@@ -80,6 +80,13 @@ export const InstallationSchema = Type.Object(
     serials: Type.Array(InstallationSerialSchema),
     createdAt: Type.String({ format: 'date-time' }),
     cancelledAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /** The ITEM's state, not this record's: true while the item holds
+     * more installed than the contract sanctions and so owes a railway
+     * variation order (migration 0077). Carried on the record because
+     * the recording screen is where an operator finds out they have just
+     * gone past the sanction — and because a cancellation that clears
+     * the variation should say so on the record that cleared it. */
+    pendingVariation: Type.Boolean(),
   },
   { additionalProperties: false },
 );
