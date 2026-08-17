@@ -1,7 +1,8 @@
 import type { ReactElement } from 'react';
 import { cn } from '../lib/cn.js';
+import { navigateOnClick } from '../lib/workspace-routes.js';
 import { Tooltip } from '../ui/tooltip.js';
-import { NAVIGATION, type ModuleKey } from './navigation.js';
+import { moduleHash, NAVIGATION, type ModuleKey } from './navigation.js';
 
 /** A collapsed destination is an icon with an `sr-only` label: named for a
  * screen reader, unlabelled for an eye. The mock's bubble puts the word
@@ -28,6 +29,9 @@ function withRailLabel(
  * than in one invented here. */
 export interface NavSubItem {
   readonly label: string;
+  /** The fragment this destination lives at, so the row is a real link.
+   * `open` still runs the in-app move on a plain click. */
+  readonly href: string;
   readonly open: () => void;
   readonly current: boolean;
 }
@@ -90,8 +94,8 @@ export function SidebarNav({
                   {withRailLabel(
                     collapsed,
                     item.label,
-                    <button
-                      type="button"
+                    <a
+                      href={moduleHash(item.key)}
                       className={cn(
                         'flex w-full items-center gap-2 overflow-hidden rounded-lg text-left text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring [&>span:last-child]:truncate',
                         collapsed ? 'size-8 justify-center p-2' : 'h-9 p-2',
@@ -105,16 +109,16 @@ export function SidebarNav({
                        alongside aria-expanded, so it never points at an id
                        that no module will ever render. */
                       aria-controls={children.length > 0 ? submenuId : undefined}
-                      onClick={() => {
+                      onClick={navigateOnClick(() => {
                         onOpenModule(item.key);
                         onSelected?.();
-                      }}
+                      })}
                     >
                       <Icon className="size-4 shrink-0" aria-hidden="true" />
                       <span className={collapsed ? 'sr-only' : 'min-w-0 flex-1'}>
                         {item.label}
                       </span>
-                    </button>,
+                    </a>,
                   )}
                   {showBadge && !collapsed && (
                     <span className="pointer-events-none absolute top-1.5 right-1 flex h-5 min-w-5 items-center justify-center rounded-md bg-warning/15 px-1 font-mono text-xs font-medium text-warning-foreground tabular-nums">
@@ -129,8 +133,8 @@ export function SidebarNav({
                     >
                       {children.map((child) => (
                         <li key={child.label}>
-                          <button
-                            type="button"
+                          <a
+                            href={child.href}
                             className={cn(
                               'flex h-7 w-full min-w-0 -translate-x-px items-center overflow-hidden rounded-md px-2 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
                               child.current
@@ -138,13 +142,13 @@ export function SidebarNav({
                                 : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                             )}
                             aria-current={child.current ? 'page' : undefined}
-                            onClick={() => {
+                            onClick={navigateOnClick(() => {
                               child.open();
                               onSelected?.();
-                            }}
+                            })}
                           >
                             <span className="truncate">{child.label}</span>
-                          </button>
+                          </a>
                         </li>
                       ))}
                     </ul>

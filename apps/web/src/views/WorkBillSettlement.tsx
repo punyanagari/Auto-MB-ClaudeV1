@@ -9,6 +9,7 @@ import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FieldError, FieldRow, Hint } from '../ui/form.js';
+import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
@@ -221,30 +222,41 @@ export function WorkBillSettlement({
                 Record the On-Account Bill on the Measurement tab first.
               </p>
             ) : (
-              <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-                <dt className="text-muted-foreground">
-                  Railway bill {position.railwayBillNumber}
-                </dt>
-                <dd className="m-0 tabular-nums">
-                  {formatInr(position.railwayBillAmount)}
-                  {position.railwayBillDate !== null &&
-                    ` dated ${formatDate(position.railwayBillDate)}`}
-                </dd>
-                <dt className="text-muted-foreground">Received</dt>
-                <dd className="m-0 tabular-nums">
-                  {formatInr(position.receivedTotal)}
-                </dd>
-                <dt className="text-muted-foreground">Deducted</dt>
-                <dd className="m-0 tabular-nums">
-                  {formatInr(position.deductionTotal)}
-                </dd>
-                <dt className="text-muted-foreground">Outstanding</dt>
-                <dd className="m-0 font-medium tabular-nums">
-                  {position.outstandingAmount === null
-                    ? '—'
-                    : formatInr(position.outstandingAmount)}
-                </dd>
-              </dl>
+              /* The mock's own bill-settlement row (`app/works/[code]/page`
+                 at fdfe5ef): a grid of `Stat` tiles rather than a two-column
+                 definition list, so the figures read as an instrument
+                 panel and their digits line up in columns. Four tiles where
+                 the mock draws three — outstanding is the figure this
+                 screen exists for and it is not derivable by eye from the
+                 other three.
+
+                 Every value is the server's exact decimal string through
+                 `formatInr`; nothing here is rounded to the mock's compact
+                 crore form, because these are the numbers an operator takes
+                 to the railway. */
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Stat
+                  label={
+                    position.railwayBillNumber === null
+                      ? 'Railway bill'
+                      : `Railway bill ${position.railwayBillNumber}`
+                  }
+                  value={formatInr(position.railwayBillAmount)}
+                  {...(position.railwayBillDate === null
+                    ? {}
+                    : { hint: `Dated ${formatDate(position.railwayBillDate)}` })}
+                />
+                <Stat label="Received" value={formatInr(position.receivedTotal)} />
+                <Stat label="Deducted" value={formatInr(position.deductionTotal)} />
+                <Stat
+                  label="Outstanding"
+                  value={
+                    position.outstandingAmount === null
+                      ? '—'
+                      : formatInr(position.outstandingAmount)
+                  }
+                />
+              </div>
             )}
 
             {position.payments.length > 0 && (

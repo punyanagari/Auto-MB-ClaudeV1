@@ -102,7 +102,11 @@ describe('outstanding with the railway', () => {
     // arrived, ₹30,000 was kept, and ₹5,00,000 — not ₹5,30,000 — is what
     // the operator chases. A register that showed one net figure would
     // report this bill as short by its own statutory deductions forever.
-    expect(screen.getByText(/₹10,00,000\.00 dated 11 May 2026/)).toBeTruthy();
+    // The claimed figure and the date it was claimed on are now a tile and
+    // its hint rather than one run of text, so they are read separately.
+    expect(screen.getByText('Railway bill CR/BBY/S&T/2026/0009/B1')).toBeTruthy();
+    expect(screen.getByText('₹10,00,000.00')).toBeTruthy();
+    expect(screen.getByText('Dated 11 May 2026')).toBeTruthy();
     expect(screen.getByText('₹30,000.00')).toBeTruthy();
     // Twice each, and deliberately so: the position states the total and
     // the receipt row states its own share of it.

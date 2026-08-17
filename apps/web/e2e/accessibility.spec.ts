@@ -46,18 +46,18 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeVisible();
   await expectNoAxeViolations(page, 'dashboard');
 
-  await page.getByRole('button', { name: 'Works', exact: true }).click();
+  await page.getByRole('link', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
   // The rail names a module's parts only while that module is open, so
   // Works shows its own and nothing else shows theirs.
   const rail = page.getByRole('navigation', { name: 'Modules' });
-  await expect(rail.getByRole('button', { name: 'All Works' })).toBeVisible();
-  await expect(rail.getByRole('button', { name: 'Contacts' })).toHaveCount(0);
+  await expect(rail.getByRole('link', { name: 'All Works' })).toBeVisible();
+  await expect(rail.getByRole('link', { name: 'Contacts' })).toHaveCount(0);
   await expectNoAxeViolations(page, 'works list');
 
   // A Masters category opens from the rail, without a stop on Contacts first.
-  await page.getByRole('button', { name: 'Masters' }).click();
-  await rail.getByRole('button', { name: 'Locations' }).click();
+  await page.getByRole('link', { name: 'Masters' }).click();
+  await rail.getByRole('link', { name: 'Locations' }).click();
   // The category strip is a navigation, not a tablist: each category is its
   // own address and Back walks between them, so the open one says
   // aria-current="page" the way the Work workspace's sections do.
@@ -66,15 +66,15 @@ test('organisation picker and members workspace pass the axe scan', async ({
       .getByRole('navigation', { name: 'Master data categories' })
       .getByRole('button', { name: 'Locations' }),
   ).toHaveAttribute('aria-current', 'page');
-  await expect(rail.getByRole('button', { name: 'All Works' })).toHaveCount(0);
+  await expect(rail.getByRole('link', { name: 'All Works' })).toHaveCount(0);
   await expectNoAxeViolations(page, 'masters locations from the rail');
 
-  await page.getByRole('button', { name: 'Members' }).click();
+  await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();
   await expectNoAxeViolations(page, 'members workspace');
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('link', { name: 'Settings' }).click();
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(page.getByLabel('Company name')).toHaveValue('Sharma Constructions');
   await expectNoAxeViolations(page, 'settings');
@@ -91,7 +91,7 @@ test('organisation picker and members workspace pass the axe scan', async ({
   const toggle = page.getByRole('button', { name: 'Toggle sidebar' });
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rail.getByRole('button', { name: 'Works', exact: true })).toBeVisible();
+  await expect(rail.getByRole('link', { name: 'Works', exact: true })).toBeVisible();
   await expectNoAxeViolations(page, 'collapsed rail');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -102,7 +102,7 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await page.getByRole('button', { name: 'Works', exact: true }).click();
+  await page.getByRole('link', { name: 'Works', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Works' })).toBeVisible();
 
   await page.getByRole('main').getByRole('button', { name: 'Upload LOA' }).click();
@@ -743,7 +743,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await page.getByRole('button', { name: 'Works', exact: true }).click();
+  await page.getByRole('link', { name: 'Works', exact: true }).click();
   await page.getByRole('link', { name: 'DCW-1' }).click();
   // Code and name are two lines of the heading now, per the mock's Work
   // header, so what joins them is a space rather than the old em dash.
@@ -869,7 +869,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
      already mounted on this page. */
   await page
     .getByRole('navigation', { name: 'Modules' })
-    .getByRole('button', { name: 'Installations' })
+    .getByRole('link', { name: 'Installations' })
     .click();
   // The editor is still dirty from the line above, so the shell asks
   // before it lets go.
@@ -886,7 +886,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
      editor's disclosure present. */
   await page
     .getByRole('navigation', { name: 'Modules' })
-    .getByRole('button', { name: 'Invoices' })
+    .getByRole('link', { name: 'Invoices' })
     .click();
   await expect(page.getByRole('link', { name: 'TI/2026-27/001' })).toBeVisible();
   await expect(page.getByText('Deccan Switchgear Pvt Ltd')).toBeVisible();
@@ -947,7 +947,7 @@ test('the workspace keeps the tenant header on every scoped request', async ({
 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await page.getByRole('button', { name: 'Works', exact: true }).click();
+  await page.getByRole('link', { name: 'Works', exact: true }).click();
   await expect(page.getByText(/No Works yet/)).toBeVisible();
 
   expect(scopedHeaders.length).toBeGreaterThanOrEqual(4);
@@ -972,8 +972,8 @@ test.describe('mobile shell', () => {
     const bar = page.getByRole('navigation', { name: 'Mobile navigation' });
     const record = bar.getByRole('button', { name: 'Record', exact: true });
     const more = bar.getByRole('button', { name: 'More', exact: true });
-    await expect(bar.getByRole('button', { name: 'Home', exact: true })).toBeVisible();
-    await expect(bar.getByRole('button', { name: 'Works', exact: true })).toBeVisible();
+    await expect(bar.getByRole('link', { name: 'Home', exact: true })).toBeVisible();
+    await expect(bar.getByRole('link', { name: 'Works', exact: true })).toBeVisible();
     await expect(record).toBeVisible();
     await expect(more).toBeVisible();
     // The mock's `min-h-14` touch target, on the cell that used to be a
