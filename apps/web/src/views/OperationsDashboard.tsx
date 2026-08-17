@@ -472,7 +472,7 @@ export function OperationsDashboard({
     (alert) => alert.severity === 'danger',
   ).length;
 
-  /* The mock's stat row (`app/page.tsx`): a `.data-surface` panel split by
+  /* The mock's stat row (`app/page`): a `.data-surface` panel split by
      hairline gaps into equal cells, each one a `Stat` — the 11px uppercase
      label, the mono tabular figure, the qualifier beneath. The retired
      tiles carried a coloured icon chip and a lift-on-hover; the mock has
@@ -569,7 +569,7 @@ export function OperationsDashboard({
         ))}
       </section>
 
-      {/* The mock's two-column body (`app/page.tsx`): the Works panel on
+      {/* The mock's two-column body (`app/page`): the Works panel on
           the left at three columns of five, what needs a decision on the
           right at two. The retired third panel — a conic-gradient donut of
           the delivery percentage over two value chips — is gone rather
@@ -577,7 +577,7 @@ export function OperationsDashboard({
           it carried is already in the stat row above it (delivered value
           with its percentage, billed value, contract value). */}
       <section className="grid gap-5 lg:grid-cols-5">
-        <Card className="p-0 lg:col-span-3">
+        <Card className="min-w-0 p-0 lg:col-span-3">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
               <h2 className="m-0 text-base">Work portfolio</h2>
@@ -608,11 +608,15 @@ export function OperationsDashboard({
                   in the same grammar as every other ledger in the product:
                   sticky 11px uppercase heading, hairline rules, mono
                   tabular figures right-aligned. It replaces a hand-rolled
-                  table that had invented its own padding and heading
-                  styles. `scroll={false}` — the panel is short by
-                  construction (eight rows) and a scrollport inside a card
-                  inside a dashboard is one box too many. */}
-              <DataTable scroll={false}>
+                  table that had invented its own padding, heading styles
+                  and hover.
+
+                  Its scrollport is left on. Five columns of Work code,
+                  progress bar and three money figures do not fit a
+                  320px phone, and without a box of its own the table
+                  pushes the whole dashboard sideways —
+                  `e2e/responsive.spec.ts` measures exactly that. */}
+              <DataTable>
                 <caption className="sr-only">
                   Work execution and billing progress
                 </caption>
@@ -683,7 +687,7 @@ export function OperationsDashboard({
           )}
         </Card>
 
-        <Card className="p-0 lg:col-span-2">
+        <Card className="min-w-0 p-0 lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
               <h2 className="m-0 text-base">Needs attention</h2>

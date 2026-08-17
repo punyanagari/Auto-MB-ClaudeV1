@@ -1,7 +1,9 @@
 import type { InstallationCounts, Serial, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import type { ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
+import { installationsHash } from '../lib/workspace-routes.js';
 import { StatusChip } from '../ui/chip.js';
 import { FormError } from '../ui/form.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -55,6 +57,19 @@ export function WorkInstallations({
         onSerialsChanged={setSerials}
         {...(onCountsChanged === undefined ? {} : { onCountsChanged })}
       />
+
+      {/* The other end of the register's `?work=` deep link. The register
+          reads across Works and is where a date window lives, so a
+          supervisor who has just recorded here and wants the same records
+          beside another Work's has one link rather than a module hop and
+          a re-filter. A plain anchor: the register is a destination, and
+          a middle click should open it in its own tab. */}
+      <p className="text-sm">
+        <a href={installationsHash(workId)} className="inline-flex items-center gap-1">
+          Open these records in the installation register
+          <ArrowUpRight className="size-3.5" aria-hidden="true" />
+        </a>
+      </p>
 
       <h2>Serial trace</h2>
       {serialsState === 'loading' ? (

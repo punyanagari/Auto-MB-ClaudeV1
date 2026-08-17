@@ -47,7 +47,7 @@ const GROUP_LABELS: Readonly<Record<SearchResultKind, string>> = {
 
 /**
  * What the search reads across, in the frozen mock's own vocabulary
- * (`lib/search.ts` and `app/search/page.tsx` at fdfe5ef).
+ * (`lib/search` and `app/search/page` at fdfe5ef).
  *
  * The mock offers nine scopes; this build offers the seven it has
  * registers for. Correspondence and Contacts are omitted rather than
@@ -248,7 +248,7 @@ export function Search({
       />
       {/* The mock's search card: one bordered surface holding the box and
           the scope, with the results as plain sections beneath it rather
-          than nested inside it (`app/search/page.tsx`). */}
+          than nested inside it (`app/search/page`). */}
       <Card className="w-full border-primary/20">
         <form
           role="search"

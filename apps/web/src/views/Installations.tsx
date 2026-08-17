@@ -53,7 +53,7 @@ function countsOf(data: InstallationListResponse): InstallationCounts {
 
 /**
  * The mock's delivered-balance line, under the quantity field
- * (`components/installation-capture-flow.tsx:50` at fdfe5ef): what the
+ * (`components/installation-capture-flow`, its quantity field at fdfe5ef): what the
  * contract sanctions, what has actually arrived, what is already in, and
  * the balance still standing on site to install.
  *
@@ -514,7 +514,7 @@ export function Installations({
               }}
             >
               {/* The mock's numbered capture flow
-                  (`components/installation-capture-flow.tsx` at fdfe5ef):
+                  (`components/installation-capture-flow` at fdfe5ef):
                   a dense two-column grid on desktop and one column on a
                   phone, which is where this is used, with the
                   delivered-balance line under the quantity field and the

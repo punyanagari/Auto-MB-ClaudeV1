@@ -31,7 +31,7 @@ import { WorkLink } from '../ui/work-link.js';
  * register reports what was recorded, not only what still stands.
  *
  * Two readings, one screen (the mock's `?work=` deep link,
- * `components/document-register.tsx` at fdfe5ef):
+ * `components/document-register` at fdfe5ef):
  *
  * - **Across Works** — the register endpoint, paged, narrowed by a date
  *   window. "This week, this division" is a date range and nothing else,
