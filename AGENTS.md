@@ -33,6 +33,26 @@ Read in this order:
 11. Request logs never include bodies, passwords, tokens, LOA contents, or personal documents.
 12. No production credentials or customer data in agent workspaces.
 
+## Design contract
+
+The Vercel mock repository (`punyanagari/Auto-MB-Vercel-du`, authored in
+v0) is the binding UI/UX contract for the redesigned application. Design
+iteration happens in v0 and lands in that repository; this application
+replicates the mock, never the other way around.
+
+1. No change may alter any UI/UX element — layout, navigation, screen
+   structure, components, tokens, colors, spacing, typography, or
+   interaction patterns — unless the mock has been updated in Vercel
+   first and the change replicates the updated mock. Pull requests for
+   such changes must cite the mock commit they replicate.
+2. Purely textual changes (copy, labels, messages, error text) are the
+   only UI changes allowed to land app-first without a mock update.
+3. Screens that exist in both the mock and the application must remain
+   visually indistinguishable; pixel drift is a defect, not a liberty.
+4. Behaviour the mock cannot express (validation, real data, server
+   rules) is built inside the mock's visual grammar using its existing
+   components, without inventing new visual language.
+
 ## Change workflow
 
 For each material change:
