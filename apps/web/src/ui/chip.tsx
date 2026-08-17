@@ -24,9 +24,19 @@ const CHIP_TONES = {
   // translating one word into another at each call site.
   recorded: 'success',
   approved: 'success',
+  // A company document whose newest version is inside its validity
+  // window with room to spare (migration 0078).
+  valid: 'success',
 
   review: 'warning',
   prepared: 'warning',
+  // A company document whose newest version lapses inside the warning
+  // window (migration 0078). `docs/DESIGN.md` § Status badge semantics
+  // puts `expiring` in the warning family; `expired` below is already
+  // destructive, and a document with no expiry at all sends `none`,
+  // which stays unmapped and reads neutral — "outside the question" is
+  // not "currently good".
+  expiring: 'warning',
   processing: 'warning',
   // A manually-recorded IRP registration: real evidence, no provider
   // verification — caution, not success (migration 0053).

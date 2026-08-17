@@ -602,4 +602,82 @@ describe('tenant migration contract', () => {
     );
     expect(renderInsertGuard).not.toContain('SECURITY DEFINER');
   });
+
+  it('binds the company document library in 0078', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0078_company_document_library.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // Categories are a CHECK on text, deliberately, so a sixth bucket is
+    // one ordinary statement rather than an enum-type change.
+    expect(sql).toMatch(
+      /category text NOT NULL CHECK \(category IN \(\s*'statutory',\s*'financial',\s*'eligibility',\s*'certification',\s*'company'\s*\)\)/,
+    );
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // One live credential per name, case-folded. Two rows both called
+    // "GST Registration" is the mistake this catches; a renewal belongs
+    // on the existing row as a new version.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX company_documents_live_title_unique\s+ON company_documents \(organisation_id, lower\(title\)\)\s+WHERE archived_at IS NULL;/,
+    );
+
+    // Version numbers are unique within their credential, which is what
+    // makes two renewals uploaded in the same second safe even if the
+    // route's row lock were somehow not taken.
+    expect(sql).toContain(
+      'UNIQUE (organisation_id, company_document_id, version_number)',
+    );
+
+    // Legal dates are date-only (engineering rule 6) and the window has
+    // to open before it closes.
+    expect(sql).toContain('valid_from date');
+    expect(sql).toContain('expires_on date');
+    expect(sql).toContain('company_document_versions_validity_order_check');
+    expect(sql).toMatch(
+      /valid_from IS NULL OR expires_on IS NULL OR expires_on >= valid_from/,
+    );
+
+    // The stored object key carries the tenant prefix here as well as in
+    // packages/documents/src/storage.ts. Two layers, because a path is a
+    // filesystem escape.
+    expect(sql).toContain(
+      'company_document_versions_object_key_tenant_prefix_check',
+    );
+    expect(sql).toMatch(
+      /CHECK \(object_key LIKE organisation_id::text \|\| '\/%'\)/,
+    );
+    expect(sql).toContain("CHECK (media_type = 'application/pdf')");
+
+    // Both policies arrive in the ADR-0010 InitPlan shape.
+    for (const table of ['company_documents', 'company_document_versions']) {
+      expect(sql).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+    }
+
+    // Evidence never leaves and is never rewritten: no DELETE anywhere,
+    // and no UPDATE on the versions.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON company_documents TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT ON company_document_versions TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('DELETE ON company_document');
+
+    // The trigger says the same thing to a writer that reached the table
+    // some other way, and refuses to hang new evidence off an archived
+    // credential.
+    expect(sql).toContain(
+      'a company document version is immutable; upload a new version instead',
+    );
+    expect(sql).toContain('is archived and takes no new versions');
+    expect(sql).toContain(
+      'CREATE TRIGGER company_document_versions_append_only_guard\nBEFORE INSERT OR UPDATE ON company_document_versions',
+    );
+  });
 });

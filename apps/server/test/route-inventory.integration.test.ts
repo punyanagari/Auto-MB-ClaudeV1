@@ -111,6 +111,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ],
   ['GET /api/organisation/number-series', 'four configurable document types'],
   ['GET /api/organisations/current/members', 'staff headcount'],
+  [
+    'GET /api/company-documents',
+    'the credentials an agency is asked for: one row per statutory registration, financial statement, eligibility or certification paper it holds. Tens of rows, and the register reads all of them at once because "what is expiring" is a question about the whole library',
+  ],
 
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],

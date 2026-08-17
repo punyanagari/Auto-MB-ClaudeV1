@@ -7,6 +7,7 @@ import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { AccountSecurity } from '../../src/views/AccountSecurity.js';
 import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
 import { Approvals } from '../../src/views/Approvals.js';
+import { CompanyDocuments } from '../../src/views/CompanyDocuments.js';
 import { CompletionExtensions } from '../../src/views/CompletionExtensions.js';
 import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
 import { IssueChallans } from '../../src/views/IssueChallans.js';
@@ -392,6 +393,16 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry railway bills/,
     empty: { text: /still\s+outstanding with the railway/ },
+  },
+  {
+    view: 'CompanyDocuments.tsx',
+    name: 'the company document library',
+    loads: ['listCompanyDocuments'],
+    render: (api) => (
+      <CompanyDocuments api={api} organisationId={ORG_ID} canModify />
+    ),
+    retry: /Retry company documents/,
+    empty: { text: /Nothing in the library yet/ },
   },
   {
     view: 'Quotations.tsx',

@@ -139,6 +139,10 @@ const TENANT_TABLES = [
   'gst_rates',
   // Standalone Delivery Challan numbering, per financial year (0056).
   'standalone_challan_counters',
+  // The company document library: reusable organisation-level
+  // credentials and the versioned files behind them (0078).
+  'company_documents',
+  'company_document_versions',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -172,7 +176,10 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // A deduction is corrected by voiding its whole payment advice, so
     // the application role has no UPDATE and the 0067 guard refuses one
     // anyway.
-    table !== 'bill_payment_deductions',
+    table !== 'bill_payment_deductions' &&
+    // A company document version is evidence: append-only for the
+    // application role and refused by trigger anyway (0078).
+    table !== 'company_document_versions',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -249,6 +256,10 @@ const DELETE_REVOKED_TABLES = [
   'standalone_challan_counters',
   // The GST rate master retires rows by end-dating; no DELETE (0048).
   'gst_rates',
+  // A company credential is archived, never deleted -- a bid that cited
+  // it has to stay explicable -- and its versions are evidence (0078).
+  'company_documents',
+  'company_document_versions',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -1142,6 +1153,34 @@ async function seedTenantGraph(
         ${organisationId}, ${renderedEwayBill.id}, 1, 'ewb-v1', ${'d'.repeat(64)},
         ${`${organisationId}/ewb/${renderedEwayBill.id}-seed.pdf`},
         ${'e'.repeat(64)}, ${userId}
+      )
+    `;
+
+    // One company credential and one version of it (0078). It hangs off
+    // no Work at all — that is the point of the library — so it is
+    // seeded from the organisation alone.
+    const [companyDocument] = await tx<{ id: string }[]>`
+      insert into company_documents (
+        organisation_id, title, category, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${`GST registration ${workCode}`}, 'statutory',
+        ${userId}
+      )
+      returning id
+    `;
+    if (!companyDocument) throw new Error('seed company document returned no row');
+    await tx`
+      insert into company_document_versions (
+        organisation_id, company_document_id, version_number, object_key,
+        original_filename, sha256, media_type, size_bytes, valid_from,
+        expires_on, uploaded_by_user_id
+      )
+      values (
+        ${organisationId}, ${companyDocument.id}, 1,
+        ${`${organisationId}/orgdoc/${companyDocument.id}.pdf`},
+        'gst-registration.pdf', ${'f'.repeat(64)}, 'application/pdf', 4096,
+        '2026-04-01', '2027-03-31', ${userId}
       )
     `;
 

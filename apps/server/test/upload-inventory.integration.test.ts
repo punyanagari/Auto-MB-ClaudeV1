@@ -82,6 +82,24 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
+    // The company document library (0078): a credential and its first
+    // version arrive together, and a renewal appends to the credential
+    // it renews. Two addresses, one handler, the same gate as every
+    // other upload here.
+    key: 'POST /api/company-documents',
+    sourceFile: 'routes/company-documents.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?title=Inventory&category=statutory&filename=inventory.pdf',
+  },
+  {
+    key: 'POST /api/company-documents/:id/versions',
+    sourceFile: 'routes/company-documents.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=inventory.pdf',
+  },
+  {
     key: 'POST /api/challans/:id/signed-copy',
     sourceFile: 'routes/challans.ts',
     format: 'pdf',
