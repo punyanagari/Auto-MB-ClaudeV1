@@ -122,16 +122,20 @@ describe('the Delivery Challan register', () => {
     expect(supply.getAttribute('href')).toBe(
       `#/works/${WORK_ID}/challans/${WORK_CHALLAN_ID}`,
     );
-    expect(screen.getByRole('link', { name: 'Number assigned on issue' }).getAttribute('href')).toBe(
-      `#/delivery-challans/${STANDALONE_ID}`,
-    );
+    expect(
+      screen
+        .getByRole('link', { name: 'Number assigned on issue' })
+        .getAttribute('href'),
+    ).toBe(`#/delivery-challans/${STANDALONE_ID}`);
   });
 
   it('filters to one movement at a time', async () => {
     renderRegister();
     fireEvent.click(await screen.findByRole('button', { name: /^Standalone/ }));
     expect(screen.queryByRole('link', { name: 'DC/1' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Number assigned on issue' })).toBeDefined();
+    expect(
+      screen.getByRole('link', { name: 'Number assigned on issue' }),
+    ).toBeDefined();
   });
 
   it('drafts a standalone challan from a contacts-master consignee', async () => {

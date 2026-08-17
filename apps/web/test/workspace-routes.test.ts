@@ -115,8 +115,8 @@ describe('workspace hash routes', () => {
      bookmarks, in a colleague's message, in this repository's own
      history. They land on the tab they name rather than on the
      Dashboard, and the workspace normalises the fragment afterwards,
-     which is the mock's redirect (`app/delivery-challans/page.tsx`,
-     `app/issue-challans/page.tsx` at a8e1fde) in a hash router. */
+     which is the mock's redirect (`app/delivery-challans/page`,
+     `app/issue-challans/page` at a8e1fde) in a hash router. */
   it('redirects the retired register addresses into the merged module', () => {
     expect(parseWorkspaceHash('#/delivery-challans')).toEqual({
       view: { name: 'challans', tab: 'delivery', workId: null },

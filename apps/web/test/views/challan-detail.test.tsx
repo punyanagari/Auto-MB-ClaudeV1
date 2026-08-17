@@ -98,9 +98,7 @@ describe('ChallanDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
     // The dialog says what cancelling costs before it asks for a reason,
     // and holds its own confirm until one is given.
-    expect(
-      screen.getByText(/its number will never be reused/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/its number will never be reused/i)).toBeTruthy();
     const confirm = screen.getByRole('button', { name: 'Confirm cancellation' });
     expect(confirm.hasAttribute('disabled')).toBe(true);
     fireEvent.change(screen.getByLabelText('Reason'), {

@@ -9,14 +9,16 @@ import {
 } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
+import { PageHeader } from '../ui/page-header.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { DeliveryChallans } from './DeliveryChallans.js';
 import { IssueChallans } from './IssueChallans.js';
 
 /**
  * Challans: one register, two tabs.
  *
- * Ports `components/challans-workspace.tsx` and the header half of
- * `components/document-register.tsx` at `a8e1fde`. The mock addresses
+ * Ports `components/challans-workspace` and the header half of
+ * `components/document-register` at `a8e1fde`. The mock addresses
  * the two tabs as `?type=delivery` and `?type=installation` and narrows
  * either of them with `?work=`; this build carries the same three facts
  * in its hash (`#/challans/<tab>/<workId>`), and the addresses the two
@@ -94,39 +96,27 @@ export function Challans({
 
   return (
     <>
-      {/* ponytail: the mock's `PageHeader` (`components/shared.tsx`)
-          lands as `ui/page-header.tsx` in the primitives pack. Its
-          anatomy — eyebrow, title, description, action — is reproduced
-          here so the swap is a deletion, not a redesign. The `h1` keeps
-          `tabIndex={-1}` either way: `ViewFocus` moves focus onto it on
-          every navigation. */}
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-            Documents
-          </span>
-          <h1
-            id="challans-title"
-            tabIndex={-1}
-            className="text-2xl font-semibold tracking-[-0.025em] text-balance md:text-3xl"
-          >
-            Challans
-          </h1>
-          <p className="max-w-2xl text-sm leading-6 text-muted-foreground text-pretty">
-            Create and control outward delivery and issue challans from one
-            register. An issued challan is locked, and the number it holds is never
-            reused.
-          </p>
-        </div>
-        {creating && (
-          <div className="flex shrink-0 items-center gap-2">
-            {tab === 'delivery' ? (
-              /* ponytail: the mock wraps the held button in a Tooltip
-                 (`components/document-register.tsx`), and Tooltip belongs
-                 to the primitives pack — swap this for it when it lands.
-                 Nothing is unexplained meanwhile: the register below
-                 carries the same sentence in its open-draft panel, which
-                 is where the mock puts the long form of it too. */
+      <PageHeader
+        eyebrow="Documents"
+        title="Challans"
+        titleId="challans-title"
+        description="Create and control outward delivery and issue challans from one register. An issued challan is locked, and the number it holds is never reused."
+        action={
+          !creating ? undefined : tab === 'delivery' ? (
+            /* The mock holds this button and explains it in a tooltip
+               (`components/document-register`). The bubble is
+               `aria-hidden` by that primitive's naming rule, and it can
+               be: the register's own open-draft panel below carries the
+               same sentence as a live region, so the explanation is
+               announced whether or not the pointer ever finds the
+               button. */
+            <Tooltip
+              content={
+                draftHeld
+                  ? 'Finish or discard the open draft for this Work first.'
+                  : 'Draft a delivery challan against this Work.'
+              }
+            >
               <Button
                 disabled={draftHeld}
                 onClick={() => {
@@ -135,18 +125,18 @@ export function Challans({
               >
                 New delivery challan
               </Button>
-            ) : (
-              <Button
-                onClick={() => {
-                  onNewIssueChallan(workId);
-                }}
-              >
-                New issue challan
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+            </Tooltip>
+          ) : (
+            <Button
+              onClick={() => {
+                onNewIssueChallan(workId);
+              }}
+            >
+              New issue challan
+            </Button>
+          )
+        }
+      />
 
       {/* The mock's `TabsList`: a bordered card rail at `p-1` holding two
           `rounded-md` triggers. They are real anchors here rather than

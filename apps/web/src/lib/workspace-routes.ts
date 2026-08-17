@@ -1,17 +1,17 @@
 import type { MastersTab } from '../views/Masters.js';
 import type { WorkTab } from '../views/WorkDetail.js';
 
+/** Which of the merged Challans module's two registers is showing. The
+ * mock addresses them as `?type=delivery` and `?type=installation`
+ * (`components/challans-workspace` at `a8e1fde`); this build keeps its
+ * hash-serialised navigation, so the same two words ride as a path
+ * segment instead of a query parameter. */
+export type ChallanRegisterTab = 'delivery' | 'installation';
+
 /** The workspace's whole navigation state as a discriminated union. It
  * lives here rather than in OperationsWorkspace so the hash serializer
  * and any view that wants to render a real link can name a destination
  * without importing the workspace shell. */
-/** Which of the merged Challans module's two registers is showing. The
- * mock addresses them as `?type=delivery` and `?type=installation`
- * (`components/challans-workspace.tsx` at `a8e1fde`); this build keeps
- * its hash-serialised navigation, so the same two words ride as a path
- * segment instead of a query parameter. */
-export type ChallanRegisterTab = 'delivery' | 'installation';
-
 export type WorkspaceView =
   | { name: 'dashboard' }
   | { name: 'works' }
@@ -324,7 +324,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (!isRecordId(challanId) || extra.length > 0) return null;
       return { view: { name: 'delivery-challan', challanId } };
     }
-    // The mock's other redirect (`app/issue-challans/page.tsx`). This
+    // The mock's other redirect (`app/issue-challans/page`). This
     // build never had a top-level issue-challan register, but the
     // address is the obvious guess and landing it on the tab it names
     // costs one line.

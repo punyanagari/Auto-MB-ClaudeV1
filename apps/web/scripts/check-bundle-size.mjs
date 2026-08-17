@@ -70,7 +70,12 @@ const LAZY_VIEWS = [
   'Approvals',
   'ChallanDetail',
   'ChallanEditor',
-  'DeliveryChallans',
+  // The Challans module. Its two registers — DeliveryChallans and
+  // IssueChallans — are static imports of this one view rather than
+  // lazy views of their own: they are the two tabs of a single screen,
+  // and splitting a tab rail across two network round trips would make
+  // switching tabs slower than the register it switches to.
+  'Challans',
   'InstallationsRegister',
   'InvoicesRegister',
   'IssueChallanDetail',

@@ -304,9 +304,7 @@ describe('ChallanEditor', () => {
     // never the refusal sentence its counterpart above carries.
     const badge = screen.getByText(/Excess over the 2\.000 remaining/);
     expect(quantity.getAttribute('aria-describedby')).toBe(badge.id);
-    expect(
-      screen.queryByText(/exceeds the remaining deliverable quantity/),
-    ).toBeNull();
+    expect(screen.queryByText(/exceeds the remaining deliverable quantity/)).toBeNull();
     expect(quantity.getAttribute('aria-invalid')).toBe('false');
   });
 

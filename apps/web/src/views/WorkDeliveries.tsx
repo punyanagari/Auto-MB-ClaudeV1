@@ -99,7 +99,7 @@ export function WorkDeliveries({
           Installations tab
         </a>
         . Every movement of this Work, beside every other Work&rsquo;s, is in the{' '}
-        {/* The mock's `?work=` deep link (`components/document-register.tsx`
+        {/* The mock's `?work=` deep link (`components/document-register`
             at a8e1fde): the register opens already narrowed to this Work
             and says so with a chip that clears back to the whole
             register. A plain anchor, so it middle-clicks like any other

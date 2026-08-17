@@ -249,7 +249,7 @@ const ItemRow = memo(function ItemRow({
           <FieldError id={`${quantityField}-error`}>{error}</FieldError>
         )}
         {/* The mock's two excess rows, in its two inks
-            (`app/delivery-challans/new/page.tsx` at `a8e1fde`). Going
+            (`app/delivery-challans/new/page` at `a8e1fde`). Going
             over the remaining balance is a caution when the Work allows
             excess delivery and a refusal when it does not, and the
             difference is the whole point of that toggle — one badge for

@@ -1204,7 +1204,7 @@ export function ChallanDetail({
       )}
 
       {cancelling && (
-        /* The mock's `components/cancel-document-dialog.tsx` at
+        /* The mock's `components/cancel-document-dialog` at
            `a8e1fde`. Cancelling an issued challan is the one act on this
            page that spends a number permanently, so it asks in a modal
            and says what it costs. The cases where cancellation is closed

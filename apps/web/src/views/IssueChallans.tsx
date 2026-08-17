@@ -12,7 +12,7 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
  * The issue tab of the Challans module — material leaving the store for
  * a site, a team, a job worker, or coming back.
  *
- * Ports the issue half of `components/document-register.tsx` at
+ * Ports the issue half of `components/document-register` at
  * `a8e1fde` (the mock's `?type=installation` tab): the same register
  * card, number-with-padlock cell and dot-and-label status the delivery
  * tab uses, so the two tabs read as one register with two contents.
@@ -108,8 +108,8 @@ export function IssueChallans({
           </EmptyState>
         ) : challans.length === 0 ? (
           <EmptyState>
-            No issue challans for this Work yet. An issue challan records material
-            sent out to site, job work, a loan, or a return.
+            No issue challans for this Work yet. An issue challan records material sent
+            out to site, job work, a loan, or a return.
           </EmptyState>
         ) : (
           <DataTable>

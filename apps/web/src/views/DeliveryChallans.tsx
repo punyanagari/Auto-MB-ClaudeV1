@@ -43,11 +43,11 @@ import { EwayBillsPanel } from './EwayBillsPanel.js';
  * standalone editor only offers manual lines because that is all a
  * standalone challan may carry.
  *
- * Ports the delivery half of `components/document-register.tsx` at
+ * Ports the delivery half of `components/document-register` at
  * `a8e1fde`: the register card, the number cell with its issued padlock,
  * the Work-over-consignee identity cell, and the open-draft warning. The
  * page header, the tab rail and the `?work=` chip that wrap it belong to
- * `Challans.tsx`, exactly as `challans-workspace.tsx` wraps the mock's.
+ * `Challans.tsx`, exactly as `challans-workspace` wraps the mock's.
  */
 
 interface DeliveryChallansProps {
@@ -364,7 +364,7 @@ export function DeliveryChallans({
 
   /* One open draft per Work is the rule the server enforces; here it is
    * only reported, so the module can hold its New-challan action and say
-   * why (`components/document-register.tsx` at `a8e1fde`). */
+   * why (`components/document-register` at `a8e1fde`). */
   const openDraftId = useMemo(
     () =>
       workId === null
@@ -420,7 +420,7 @@ export function DeliveryChallans({
       <section aria-label="Delivery challans" className="flex flex-col gap-4">
         {openDraftId !== null && (
           /* The mock's open-draft warning, verbatim in shape
-             (`components/document-register.tsx` at `a8e1fde`): a
+             (`components/document-register` at `a8e1fde`): a
              warning-tinted panel at `p-3`, the icon nudged onto the
              first line's baseline. Only one delivery-challan draft is
              allowed per Work, so this is the register saying where the
@@ -1070,7 +1070,7 @@ export function DeliveryChallans({
       </section>
 
       {cancelling && standaloneDetail !== null && (
-        /* The mock's `components/cancel-document-dialog.tsx` at
+        /* The mock's `components/cancel-document-dialog` at
            `a8e1fde`, in this build's confirmation primitive. Its two
            facts are the ones the operator has to hear before answering:
            the document stays in the register, and the number it holds is
