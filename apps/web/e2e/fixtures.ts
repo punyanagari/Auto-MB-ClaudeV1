@@ -379,8 +379,9 @@ const THEMES = ['light', 'dark'] as const;
  * lines. The shared Button carries `transition-all` and the rail items
  * carry `transition-colors`, both 150ms, so for six frames after a theme
  * flip the page is showing interpolations between the two palettes:
- * ink that is on its way from white to #0d1420 over a fill that is on
- * its way from #155eef to #7ca2f7. Those in-between pairs belong to
+ * ink on its way from oklch(0.99 0.004 190) to oklch(0.19 0.02 195) over
+ * a fill on its way from oklch(0.42 0.09 190) to oklch(0.72 0.09 190),
+ * the light and dark --primary pair. Those in-between pairs belong to
  * neither theme and are not what the contract is about, but axe will
  * happily measure them and report a serious violation with a colour pair
  * that appears nowhere in globals.css — which is exactly the disputed
