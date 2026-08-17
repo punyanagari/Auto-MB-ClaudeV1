@@ -126,7 +126,7 @@
     "apps/web/test/views/signature-panel.test.tsx": 10,
     "apps/web/test/views/site-evidence.test.tsx": 31,
     "apps/web/test/views/state-coverage-inventory.test.ts": 6,
-    "apps/web/test/views/state-coverage.test.tsx": 6,
+    "apps/web/test/views/state-coverage.test.tsx": 4,
     "apps/web/test/views/tax-invoices.test.tsx": 23,
     "apps/web/test/views/work-bill-settlement.test.tsx": 8,
     "apps/web/test/views/work-detail.test.tsx": 37,
