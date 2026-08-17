@@ -53,6 +53,7 @@ import { registerBillPaymentRoutes } from './routes/bill-payments.js';
 import { registerCompanyDocumentRoutes } from './routes/company-documents.js';
 import { registerInspectionRoutes } from './routes/inspections.js';
 import { registerPaymentsWorkspaceRoutes } from './routes/payments.js';
+import { registerTenderRoutes } from './routes/tenders.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -914,6 +915,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerCompanyDocumentRoutes(app, authInstance, database, storage, scanner);
     registerInspectionRoutes(app, authInstance, database, storage, scanner);
     registerPaymentsWorkspaceRoutes(app, authInstance, database);
+    registerTenderRoutes(app, authInstance, database, storage, scanner);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerContractSourceRoutes(

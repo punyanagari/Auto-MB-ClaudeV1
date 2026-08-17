@@ -154,6 +154,24 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   eway_bill_renders: 'render history of an e-way bill, which blocks',
   statutory_provider_operations:
     'portal evidence for an invoice, credit note or e-way bill, each of which blocks',
+  // The tender pipeline (0083), and the clearest case the transitive
+  // census exists to catch: none of these four is a child of `works` at
+  // all. They reach it through `tenders.award_loa_document_id`, which
+  // points at the LETTER — and `loa_documents` is itself exempt, so a
+  // direct-children census would never have seen them.
+  //
+  // They are exempt because superseding is exactly what a tender wants to
+  // happen. The withdrawal releases the letter back into review; the
+  // tender still points at that letter, its awarded Work reads null again
+  // because `loa_documents.confirmed_work_id` was cleared, and the
+  // successor Work confirmed from the same letter reappears there without
+  // anyone touching the tender. Blocking on a tender would mean a letter
+  // read wrongly could never be re-read once its tender was recorded —
+  // the deadlock this feature exists to open.
+  tenders: 'the pre-award record; the award letter it points at is released, not lost',
+  tender_notices: 'the NIT a tender was read from, which does not block',
+  tender_checklist_items: 'lines of a tender bid package, which does not block',
+  tender_status_events: 'the trail of a tender, which does not block',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

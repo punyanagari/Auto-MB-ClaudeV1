@@ -43,6 +43,29 @@ export function isWriterRole(membership: MembershipRow | undefined): boolean {
   return membership?.role === 'owner' || membership?.role === 'office';
 }
 
+/**
+ * The one company-document category that is not open to every member
+ * (owner decision, 2026-08-18; migration 0079's library).
+ *
+ * Balance sheets, turnover certificates and bank solvency letters state
+ * what the company is worth and who it banks with. Every other bucket is
+ * a document the agency hands to strangers on request — a GST
+ * registration number is printed on its invoices — but this one is
+ * commercially sensitive, and site staff and viewers have no work that
+ * needs it. The gate is the writer role, the same one that governs
+ * writing the library: the people who file the financials are the people
+ * who may read them.
+ *
+ * It lives HERE rather than in `routes/company-documents.ts` because it
+ * is no longer one route's rule. Migration 0083's bid checklist points
+ * at these credentials, so a tender read can expose by the back door
+ * exactly what the library read refuses at the front — the credential's
+ * name, its version, its expiry — and a rule enforced in one of two
+ * readers is a rule with a hole in it. Every reader of a company
+ * credential imports this and `isWriterRole` together.
+ */
+export const RESTRICTED_CREDENTIAL_CATEGORY = 'financial';
+
 /** Drafting/uploading/confirming mutates Works — owner/office only. */
 export async function requireWriterRole(
   tx: TransactionSql,

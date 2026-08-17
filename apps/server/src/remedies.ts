@@ -70,6 +70,18 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Pick the contact again from Masters, Contacts — a contact removed or renamed there is no longer selectable by its old id.',
   DOCUMENT_NOT_FOUND:
     'Open the LOA document from the Works register, under documents awaiting review.',
+  COMPANY_DOCUMENT_NOT_FOUND:
+    'Pick the credential again from Company documents; one archived or renamed there is no longer reachable by its old id.',
+  TENDER_NOT_FOUND:
+    'Open the tender from the Tenders register; one confirmed on another branch of the pipeline is reached from there.',
+  TENDER_STATUS_CONFLICT:
+    'Check where the bid actually stands on the tender before recording the next step; the trail runs one way and awarded and lost are final.',
+  TENDER_CHECKLIST_LOCKED:
+    'Reopen nothing — a submitted bid keeps the checklist that went out; record what changed as a step on the tender instead.',
+  TENDER_NOTICE_NOT_FOUND:
+    'Upload the notice again from Tenders, Upload NIT; a notice already confirmed is reached through the tender it became.',
+  FIELD_TOO_SHORT:
+    'Fill the named field in and submit again; a value of nothing but spaces is not a value.',
   // Crossed the coverage bar when P12 collapsed three spellings of "that
   // letter was discarded" into one code — which is the dedupe paying for
   // itself: one refusal now earns one reviewed sentence.

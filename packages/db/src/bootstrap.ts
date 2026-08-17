@@ -196,6 +196,16 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // lock row upserts (INSERT ... ON CONFLICT UPDATE) and clears by DELETE.
   rate_limit_attempts: 'SELECT, INSERT, DELETE',
   account_lockout_locks: 'SELECT, INSERT, UPDATE, DELETE',
+  // The tender pipeline (0083). A tender is updated for its status trail
+  // and its award link and never deleted; the notice is evidence whose
+  // one mutable column is the confirmation link; the trail is
+  // append-only. The checklist alone takes DELETE: a line is draft
+  // working material while the bid is being assembled (AGENTS.md rule 8),
+  // and the route refuses it from submission onwards.
+  tenders: 'SELECT, INSERT, UPDATE',
+  tender_notices: 'SELECT, INSERT, UPDATE',
+  tender_checklist_items: 'SELECT, INSERT, UPDATE, DELETE',
+  tender_status_events: 'SELECT, INSERT',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

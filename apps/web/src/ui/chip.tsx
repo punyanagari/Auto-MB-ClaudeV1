@@ -14,6 +14,9 @@ const CHIP_TONES = {
   submitted: 'info',
   pending: 'info',
 
+  // A tender that was won (0083). The LOA follows, and the Work follows
+  // that.
+  awarded: 'success',
   confirmed: 'success',
   completed: 'success',
   paid: 'success',
@@ -27,6 +30,10 @@ const CHIP_TONES = {
   // A company document whose newest version is inside its validity
   // window with room to spare (migration 0079).
   valid: 'success',
+
+  // A tender whose technical bid has been opened: the result is with
+  // the railway and nobody here can do anything about it (0083).
+  opened: 'warning',
 
   review: 'warning',
   prepared: 'warning',
@@ -45,6 +52,9 @@ const CHIP_TONES = {
   // failure, but no longer the live document either.
   superseded: 'warning',
 
+  // A tender that was not won, or was not pursued (0083). Not a system
+  // failure, but the end of that pipeline either way.
+  lost: 'destructive',
   failed: 'destructive',
   cancelled: 'destructive',
   expired: 'destructive',

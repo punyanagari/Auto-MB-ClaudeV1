@@ -149,6 +149,21 @@ const ALLOWED_EXTERNAL = new Map([
  */
 const ALLOWED_EXTERNAL_PATHS = new Map([
   [
+    'tender-dashboard.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the tender register for the stat cards, search row and Upcoming/Expired tab pair it replicates',
+  ],
+  [
+    'nit-intake.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the NIT intake screen for the numbered two-card upload-then-review grid it replicates',
+  ],
+  [
+    'tender-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the tender workspace for the summary card, section rail and bid-checklist rows it replicates',
+  ],
+  ['app/tenders/page.tsx', 'the v0 mock screen the tender register replicates'],
+  ['app/tenders/new/page.tsx', 'the v0 mock screen the NIT intake replicates'],
+  ['app/tenders/[id]/page.tsx', 'the v0 mock screen the tender workspace replicates'],
+  [
     'app/tenders/company-documents/page.tsx',
     'the v0 mock screen the company document library replicates',
   ],

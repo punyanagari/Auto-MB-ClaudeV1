@@ -115,6 +115,20 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     'GET /api/company-documents',
     'the credentials an agency is asked for: one row per statutory registration, financial statement, eligibility or certification paper it holds. Tens of rows, and the register reads all of them at once because "what is expiring" is a question about the whole library',
   ],
+  [
+    'GET /api/tenders',
+    'the tenders an agency is bidding for: a handful open at any time, and the register reads all of them at once because "what closes this week" and "what is still blocked" are questions about the whole pipeline',
+  ],
+  [
+    // A detail response, and it reads as a list only because the one
+    // object beside its arrays — the award — is nullable, so its schema
+    // is an anyOf rather than a `type: "object"` the rule above can see.
+    // Its two arrays are the tender's own parts: the bid checklist (one
+    // line per document the tender demands) and the status trail (at most
+    // one row per transition, of which there are four).
+    'GET /api/tenders/:id',
+    "one tender's own checklist and status trail, both bounded by the tender",
+  ],
 
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],
@@ -257,6 +271,7 @@ const STRING_CANDIDATES = [
   'ab'.repeat(32), // sha256 hex digests
   '2026-01-15T10:30:00+05:30', // ack timestamps
   '2026-27', // financial-year labels (fy_label, the TDS return query)
+  '2026-01-15T10:30', // organisation-local wall clocks (a tender's closing moment)
 ];
 
 interface JsonSchemaLike {

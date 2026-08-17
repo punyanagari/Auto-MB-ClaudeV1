@@ -27,6 +27,9 @@ Read in this order:
 4. The application DB role must not be superuser, table owner, or `BYPASSRLS`.
 5. Money uses decimal/numeric values; never JavaScript floating-point arithmetic for authoritative totals.
 6. Legal dates are date-only `YYYY-MM-DD` values; do not timezone-round-trip them.
+   The one exception is a deadline that states a time of day, where the time is
+   what decides the outcome — see migration `0083_tenders.sql` § NUMBERING and
+   `bid_closes_at` for the reasoning and the timezone binding it uses instead.
 7. Issued documents are immutable snapshots. Master-data edits never rewrite history.
 8. Drafts may be deleted. Issued records cancel with a reason and retain their number forever.
 9. Number assignment and quantity validation must remain correct under concurrency.

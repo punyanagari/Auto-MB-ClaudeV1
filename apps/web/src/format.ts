@@ -155,6 +155,23 @@ export function formatTimestamp(iso: string): string {
   return viewerInstantFormat.format(parsed);
 }
 
+/** An organisation-local wall clock ("2026-09-18T15:00") → "18 Sep 2026,
+ * 15:00".
+ *
+ * Deliberately pure string work, with no `Date` in the path at all. The
+ * server already resolved this moment against `organisations.timezone`,
+ * so it is the time the tender document PRINTS. Parsing it back into a
+ * Date would re-interpret it in the viewer's zone and shift a 15:00
+ * deadline for anyone whose laptop disagrees with the organisation —
+ * which is the exact class of defect engineering rule 6 exists to stop,
+ * applied to a moment instead of a date. */
+export function formatLocalDateTime(local: string): string {
+  const day = local.slice(0, 10);
+  const time = local.slice(11, 16);
+  if (time.length !== 5) return formatDate(day);
+  return `${formatDate(day)}, ${time}`;
+}
+
 /** Rupee display for RATES, which carry up to six fraction digits
  * (numeric(18,6)): at least the conventional two decimals, trailing
  * zeros beyond them trimmed — ₹100.00, ₹0.8517, ₹3.175636. */

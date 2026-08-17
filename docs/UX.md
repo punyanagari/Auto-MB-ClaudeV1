@@ -210,7 +210,7 @@ belongs in v0, where that one screen adopts `StatusBadge` like every other
 register. When it does, the port drops to a byte-for-byte replication and this
 entry retires.
 
-### 7. Inspection screen — PROPOSED, owner ruling pending
+### 9. Inspection screen — PROPOSED, owner ruling pending
 
 **Status: PROPOSED, not approved.** Every entry below is a visual
 departure this pack shipped because the behaviour behind the mock's
@@ -238,6 +238,28 @@ ruling: a **"Gates despatch" column**, which the mock has no despatch to
 gate and which is the point of the pack; and a **"Save as organisation
 default"** action beside "Save for this Work", which is how a new Work
 inherits a checklist instead of starting with an empty one.
+
+### 10. Tender screens — PROPOSED, owner ruling pending
+
+**Status: PROPOSED, not approved.** Same footing as § 9 above, and the same
+convergence path: change the mock in v0 and each entry retires.
+
+The screens themselves are ported (`app/tenders/page.tsx`,
+`app/tenders/new`, `app/tenders/[id]` at `fdfe5ef`). What is listed here is
+behaviour inside them that the mock implements as a `useState` fiction. The
+test applied throughout: would replicating the pixel make the product claim
+something untrue? A disabled control that says why is a port; a control that
+appears to file a document with a government portal and does not is not.
+
+| #   | The mock draws                                                   | The application ships                                                      | Why                                                                                                                                                                                                                                        |
+| --- | ---------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 10a | A "Railway documents" tab in the tender workspace's section rail | Three sections, not four; the tab is absent                                | It is a per-tender file store. The product has the Work's documents and the company document library, and a third place to keep files is a third place to look for one. Nothing behind the mock's tab stores anything.                     |
+| 10b | Checklist source modes: Generate / Reusable / Upload             | A line attaches a company document library credential, or stays unanswered | Generate has nothing to generate — no declaration or undertaking template exists — and Upload is the per-tender store of 10a. Reusable is the mode with a server behind it, and it is the one the pack is for.                             |
+| 10c | A "Run upload simulation" button on the iREPS panel              | A recorded iREPS step, and copy saying the portal cannot be driven         | iREPS has no interface a program may use: it is worked by a human with a CAPTCHA, an OTP and a local DSC. A button that appears to submit a bid has told an operator something false about a legal deadline. This is the entry with teeth. |
+
+All three are built from the mock's own components — its cards, its rows,
+its status badge, its readiness panel — so the grammar is unchanged even
+where the behaviour is.
 
 ## Settled information architecture
 

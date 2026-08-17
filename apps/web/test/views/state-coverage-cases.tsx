@@ -27,6 +27,8 @@ import { ReviewLoa } from '../../src/views/ReviewLoa.js';
 import { Search } from '../../src/views/Search.js';
 import { SerialTrace } from '../../src/views/SerialTrace.js';
 import { Settings } from '../../src/views/Settings.js';
+import { Tenders } from '../../src/views/Tenders.js';
+import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
 import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
@@ -40,6 +42,7 @@ import {
   ORG_ID,
   DOC_ID,
   REVIEW_DOCUMENT,
+  TENDER_ID,
   WORK_ID,
 } from './helpers.js';
 
@@ -468,6 +471,45 @@ export const STATE_CASES: readonly StateCase[] = [
     empty: { text: /Nothing in the library yet/ },
   },
   {
+    view: 'Tenders.tsx',
+    name: 'the tender register',
+    loads: ['listTenders'],
+    render: (api) => (
+      <Tenders
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onOpenTender={noop}
+        onUploadNotice={noop}
+      />
+    ),
+    retry: /Retry tenders/,
+    empty: { text: /Upload an NIT to create the first tender/ },
+  },
+  {
+    view: 'TenderWorkspace.tsx',
+    name: 'one tender and its bid package',
+    loads: ['getTender'],
+    render: (api) => (
+      <TenderWorkspace
+        api={api}
+        organisationId={ORG_ID}
+        tenderId={TENDER_ID}
+        canModify
+        onOpenWork={noop}
+        onUploadAwardLetter={noop}
+      />
+    ),
+    retry: /Retry tender/,
+    // The workspace opens on Overview, and a tender always has one. The
+    // checklist's own empty state lives a section in, behind a click,
+    // which is not a mount state.
+    empty: {
+      notApplicable:
+        'A tender workspace always shows one tender; the checklist empty state is a section behind a click, not a mount state.',
+    },
+  },
+  {
     view: 'Quotations.tsx',
     name: 'the quotations register',
     loads: ['listBudgetaryQuotations'],
@@ -765,4 +807,12 @@ export const EXEMPT_VIEWS: Readonly<Record<string, string>> = {
   // form rather than to a failure.
   'WorkPurchaseOrders.tsx':
     'WorkDetail owns the purchase-order load, its failure state and its retry',
+  // The upload screen's only mount load is the award-conversion context
+  // panel (migration 0079): when the LOA intake was reached from an
+  // awarded tender it reads that tender to show its facts. Deliberately
+  // silent — the panel is a cross-check for the operator, not a gate, and
+  // a failure to read it must not stop the letter being uploaded. There
+  // is nothing to retry because nothing was prevented.
+  'UploadLoa.tsx':
+    'its only mount load is the optional tender context panel, whose failure prevents nothing',
 };

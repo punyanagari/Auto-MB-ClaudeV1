@@ -13,7 +13,11 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { ObjectStorage } from '@auto-mb/documents';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
-import { isWriterRole, membershipOf } from '../authz.js';
+import {
+  isWriterRole,
+  membershipOf,
+  RESTRICTED_CREDENTIAL_CATEGORY,
+} from '../authz.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -77,23 +81,6 @@ import {
  * accepts `[a-z]+` only, which is why it is one word and not
  * `company-documents`. */
 const STORAGE_AREA = 'orgdoc';
-
-/**
- * The one category that is not open to every member (owner decision,
- * 2026-08-18).
- *
- * Balance sheets, turnover certificates and bank solvency letters state
- * what the company is worth and who it banks with. Every other bucket in
- * the library is a document the agency hands to strangers on request — a
- * GST registration number is printed on its invoices — but this one is
- * commercially sensitive, and site staff and viewers have no work that
- * needs it.
- *
- * The gate is the writer role, the same one that governs writing here,
- * rather than a new grant: the people who file the financials are the
- * people who may read them.
- */
-const RESTRICTED_CATEGORY = 'financial';
 
 interface DocumentRow {
   id: string;
@@ -165,7 +152,9 @@ async function readLibrary(
   // version read joins back through it, so a hidden credential's versions
   // are hidden with it rather than by a second, separately-maintained
   // predicate.
-  const visible = includeRestricted ? tx`true` : tx`category <> ${RESTRICTED_CATEGORY}`;
+  const visible = includeRestricted
+    ? tx`true`
+    : tx`category <> ${RESTRICTED_CREDENTIAL_CATEGORY}`;
   const documents = await tx<DocumentRow[]>`
     select id, title, category, archived_at, created_at
     from company_documents
@@ -528,7 +517,7 @@ export function registerCompanyDocumentRoutes(
         // can act on; pretending it is missing sends them looking for a
         // document their colleague can see.
         if (
-          row.category === RESTRICTED_CATEGORY &&
+          row.category === RESTRICTED_CREDENTIAL_CATEGORY &&
           !isWriterRole(await membershipOf(tx, user.id))
         ) {
           throw httpError(

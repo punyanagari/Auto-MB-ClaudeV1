@@ -46,6 +46,12 @@ import type {
   SaveInspectionChecklistRequest,
   SaveInspectionClausesRequest,
   WorkInspectionConfig,
+  AddTenderChecklistItemRequest,
+  ConfirmTenderRequest,
+  TenderDetail,
+  TenderListResponse,
+  TenderNotice,
+  UpdateTenderStatusRequest,
   ConfirmWorkRequest,
   ContractSourceContext,
   ContractSourceDocumentKind,
@@ -1216,6 +1222,60 @@ export interface ApiClient {
     organisationId: string,
     purchaseOrderId: string,
   ) => Promise<void>;
+  /** The tender pipeline (migration 0083): pre-award, so none of these
+   * take a workId either. The NIT upload PROPOSES; `confirmTenderNotice`
+   * is the only call that writes an authoritative tender, and it sends
+   * the values the reviewer accepted rather than the ones the machine
+   * read. */
+  readonly uploadTenderNotice: (
+    organisationId: string,
+    file: Blob,
+    filename: string,
+  ) => Promise<TenderNotice>;
+  readonly downloadTenderNotice: (
+    organisationId: string,
+    noticeId: string,
+  ) => Promise<Blob>;
+  readonly confirmTenderNotice: (
+    organisationId: string,
+    noticeId: string,
+    body: ConfirmTenderRequest,
+  ) => Promise<TenderDetail>;
+  readonly listTenders: (organisationId: string) => Promise<TenderListResponse>;
+  readonly getTender: (
+    organisationId: string,
+    tenderId: string,
+  ) => Promise<TenderDetail>;
+  readonly updateTenderStatus: (
+    organisationId: string,
+    tenderId: string,
+    body: UpdateTenderStatusRequest,
+  ) => Promise<TenderDetail>;
+  readonly addTenderChecklistItem: (
+    organisationId: string,
+    tenderId: string,
+    body: AddTenderChecklistItemRequest,
+  ) => Promise<TenderDetail>;
+  readonly attachTenderChecklistDocument: (
+    organisationId: string,
+    tenderId: string,
+    itemId: string,
+    companyDocumentId: string | null,
+  ) => Promise<TenderDetail>;
+  readonly removeTenderChecklistItem: (
+    organisationId: string,
+    tenderId: string,
+    itemId: string,
+  ) => Promise<TenderDetail>;
+  /** Records the Letter of Acceptance an awarded tender produced. Called
+   * by the LOA upload screen when it was reached from a tender, which is
+   * what makes the award conversion a deep link into the existing intake
+   * rather than a second way to create a Work. */
+  readonly linkTenderAwardLetter: (
+    organisationId: string,
+    tenderId: string,
+    loaDocumentId: string,
+  ) => Promise<TenderDetail>;
   /** The company document library: organisation-level credentials that
    * belong to no Work, so none of these take a workId. `validFrom` and
    * `expiresOn` are date-only `YYYY-MM-DD` strings and ride the
@@ -3365,6 +3425,81 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       await request(`/api/purchase-orders/${purchaseOrderId}`, {
         method: 'DELETE',
         organisationId,
+      });
+    },
+    async uploadTenderNotice(organisationId, file, filename) {
+      const response = await fetchImpl(
+        `/api/tender-notices?filename=${encodeURIComponent(filename)}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as TenderNotice;
+    },
+    async downloadTenderNotice(organisationId, noticeId) {
+      const response = await fetchImpl(`/api/tender-notices/${noticeId}/file`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async confirmTenderNotice(organisationId, noticeId, body) {
+      return request<TenderDetail>(`/api/tender-notices/${noticeId}/confirm`, {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async listTenders(organisationId) {
+      return request<TenderListResponse>('/api/tenders', { organisationId });
+    },
+    async getTender(organisationId, tenderId) {
+      return request<TenderDetail>(`/api/tenders/${tenderId}`, { organisationId });
+    },
+    async updateTenderStatus(organisationId, tenderId, body) {
+      return request<TenderDetail>(`/api/tenders/${tenderId}/status`, {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async addTenderChecklistItem(organisationId, tenderId, body) {
+      return request<TenderDetail>(`/api/tenders/${tenderId}/checklist`, {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async attachTenderChecklistDocument(
+      organisationId,
+      tenderId,
+      itemId,
+      companyDocumentId,
+    ) {
+      return request<TenderDetail>(
+        `/api/tenders/${tenderId}/checklist/${itemId}/document`,
+        { method: 'POST', organisationId, body: { companyDocumentId } },
+      );
+    },
+    async removeTenderChecklistItem(organisationId, tenderId, itemId) {
+      return request<TenderDetail>(`/api/tenders/${tenderId}/checklist/${itemId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async linkTenderAwardLetter(organisationId, tenderId, loaDocumentId) {
+      return request<TenderDetail>(`/api/tenders/${tenderId}/award-letter`, {
+        method: 'POST',
+        organisationId,
+        body: { loaDocumentId },
       });
     },
     async listCompanyDocuments(organisationId) {

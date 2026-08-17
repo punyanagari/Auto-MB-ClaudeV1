@@ -1,8 +1,8 @@
 import { ApiErrorSchema } from '@auto-mb/contracts';
-import { httpError } from '../http.js';
 import { Type } from '@sinclair/typebox';
 import type { TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
+import { httpError } from '../http.js';
 
 /** The error envelope every tenant-scoped route can answer: schema and
  * field refusals (400), a missing session (401), the membership and
@@ -41,6 +41,14 @@ export const IdParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+/** The optional twin: absent stays absent, and a value of nothing but
+ * spaces is absent too rather than a blank string in the column. */
+export function optionalTrimmed(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}
 
 /** One audit row, written inside the caller's tenant transaction. The
  * entity type is the table the event is about; routes that carry

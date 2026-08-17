@@ -17,6 +17,19 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v18: the tender pipeline (0083) joins the package — the tenders
+ * themselves, the notices they were read from with their stored PDFs, the
+ * bid checklists and the status trails. A pre-award record is the only
+ * evidence of why an agency bid for a contract, or did not; an export that
+ * carried the Works and not the tenders would hand back the outcomes with
+ * none of the deciding.
+ *
+ * This pack coded v17 while the merge order still had it landing ahead of
+ * payments. The order flipped, payments merged with v17, and a second v17
+ * would be two formats behind one string — the failure the v13 note below
+ * says is the one that matters. So the tender format is v18, and the
+ * skipped v15 stays skipped.
+ *
  * export-v17: the payments workspace joins the record — employee
  * payment requests with their per-financial-year counter, vendor
  * invoices, and the vendor payments that carry tax deducted at source
@@ -65,7 +78,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v17';
+const EXPORT_FORMAT_VERSION = 'export-v18';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -92,6 +105,7 @@ type ManifestBucket =
   | 'pac-certificate'
   | 'company-document'
   | 'inspection'
+  | 'tender-notice'
   | 'issue-challan'
   | 'extension'
   | 'measurement-book'
@@ -108,6 +122,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'pac-certificate',
   'company-document',
   'inspection',
+  'tender-notice',
   'issue-challan',
   'extension',
   'measurement-book',
@@ -556,6 +571,37 @@ const SECTIONS: readonly ExportSection[] = [
               },
             ],
     },
+  },
+  {
+    // The tender pipeline (0083). Organisation-level like the library
+    // above it, and ordered by closing moment so the export reads the way
+    // the register does. The children follow their parent so a restore
+    // sees the tender before the lines that hang off it.
+    key: 'tenders',
+    sql: `select * from tenders order by bid_closes_at, id`,
+  },
+  {
+    key: 'tenderNotices',
+    sql: `select * from tender_notices order by created_at, id`,
+    jsonbColumns: ['extraction_payload'],
+    manifest: {
+      bucket: 'tender-notice',
+      entries: (row) => [
+        {
+          kind: 'tender-notice',
+          objectKey: row.object_key,
+          sha256: row.sha256 ?? null,
+        },
+      ],
+    },
+  },
+  {
+    key: 'tenderChecklistItems',
+    sql: `select * from tender_checklist_items order by tender_id, created_at, id`,
+  },
+  {
+    key: 'tenderStatusEvents',
+    sql: `select * from tender_status_events order by tender_id, occurred_at, id`,
   },
   {
     key: 'purchaseOrders',

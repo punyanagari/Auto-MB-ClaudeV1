@@ -258,14 +258,15 @@ describe('OperationsWorkspace mobile shell', () => {
     ).toEqual([
       'Dashboard',
       'Works',
+      'Tenders',
       'Payments',
       'Challans',
       'Invoices',
       'Quotations',
       // The mock HAS this screen (`app/tenders/company-documents`) but
-      // reaches it from its Tenders dashboard, which this build omits;
-      // it therefore carries a rail entry of its own, under Documents
-      // where the mock groups document registers.
+      // reaches it only from a toolbar button on its Tenders dashboard;
+      // it carries a rail entry of its own here, under Documents where
+      // the mock groups document registers.
       'Company documents',
       'Installations',
       // The mock's own rail carries Inspection in its main list
@@ -301,6 +302,7 @@ describe('OperationsWorkspace mobile shell', () => {
     ).toEqual([
       ['Dashboard', '#/'],
       ['Works', '#/works'],
+      ['Tenders', '#/tenders'],
       ['Payments', '#/payments'],
       ['Challans', '#/challans'],
       ['Invoices', '#/invoices'],

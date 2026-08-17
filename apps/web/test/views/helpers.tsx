@@ -436,6 +436,16 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     closeInspectionCall: vi.fn<ApiClient['closeInspectionCall']>(),
     cancelInspectionCall: vi.fn<ApiClient['cancelInspectionCall']>(),
     downloadInspectionDocument: vi.fn<ApiClient['downloadInspectionDocument']>(),
+    uploadTenderNotice: vi.fn<ApiClient['uploadTenderNotice']>(),
+    downloadTenderNotice: vi.fn<ApiClient['downloadTenderNotice']>(),
+    confirmTenderNotice: vi.fn<ApiClient['confirmTenderNotice']>(),
+    listTenders: vi.fn<ApiClient['listTenders']>().mockResolvedValue({ tenders: [] }),
+    getTender: vi.fn<ApiClient['getTender']>(),
+    updateTenderStatus: vi.fn<ApiClient['updateTenderStatus']>(),
+    addTenderChecklistItem: vi.fn<ApiClient['addTenderChecklistItem']>(),
+    attachTenderChecklistDocument: vi.fn<ApiClient['attachTenderChecklistDocument']>(),
+    removeTenderChecklistItem: vi.fn<ApiClient['removeTenderChecklistItem']>(),
+    linkTenderAwardLetter: vi.fn<ApiClient['linkTenderAwardLetter']>(),
     listBudgetaryQuotations: vi
       .fn<ApiClient['listBudgetaryQuotations']>()
       .mockResolvedValue([]),
@@ -523,6 +533,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
 export const ORG_ID = '11111111-1111-4111-8111-111111111111';
 export const DOC_ID = '22222222-2222-4222-8222-222222222222';
 export const WORK_ID = '33333333-3333-4333-8333-333333333333';
+export const TENDER_ID = '44444444-4444-4444-8444-444444444444';
 
 export const REVIEW_PAYLOAD = {
   sourceText: 'RAW LETTER TEXT',

@@ -95,6 +95,37 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByLabel(/Effective from/).first()).toBeVisible();
   await expectNoAxeViolations(page, 'company document renewal form');
 
+  /* The tender pipeline. Scanned twice: the register, where the status
+     chip and the days-left badge are the only colour on a word, and the
+     opened tender's bid checklist, where all four validity readings are on
+     screen at once — no expiry, valid at close, lapsing soon after,
+     expired by close. Those four are read against the tender's own closing
+     date rather than against today, and each is a dot beside a label,
+     which is what keeps them off the colour-only path in both themes. */
+  await page.getByRole('link', { name: 'Tenders' }).click();
+  await expect(page.getByRole('heading', { name: 'Tenders' })).toBeVisible();
+  await expect(page.getByText('1 blocking')).toBeVisible();
+  await expectNoAxeViolations(page, 'tender register');
+
+  await page.getByRole('link', { name: /WR-MMCT-S&T-34\/2026/ }).click();
+  await expect(page.getByRole('heading', { name: 'Tender workspace' })).toBeVisible();
+  await page.getByRole('button', { name: 'Bid checklist' }).click();
+  for (const label of [
+    'No expiry',
+    'Valid at close',
+    'Lapses soon after',
+    'Expired by close',
+  ]) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'tender bid checklist');
+
+  // The iREPS panel: a warning-tinted badge and a disabled primary action
+  // beside the reason it is disabled, both of which have to hold contrast.
+  await page.getByRole('button', { name: 'iREPS submission' }).click();
+  await expect(page.getByText('Tracking only')).toBeVisible();
+  await expectNoAxeViolations(page, 'tender iREPS submission panel');
+
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();

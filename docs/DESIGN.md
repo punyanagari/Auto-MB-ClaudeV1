@@ -282,13 +282,26 @@ Four tint families, and only four:
 Statuses mapped at `fdfe5ef`:
 
 - **Success** — `active`, `paid`, `approved`, `accepted`, `confirmed`, `passed`,
-  `received`, `valid`
+  `received`, `valid`, `awarded`
 - **Warning** — `on-hold`, `pending`, `needs-review`, `recording`, `partial`,
-  `expiring`
-- **Destructive** — `cancelled`, `rejected`, `declined`, `expired`
-- **Primary** — `issued`, `sent`, `checked`, `replied`
+  `expiring`, `opened`
+- **Destructive** — `cancelled`, `rejected`, `declined`, `expired`, `lost`
+- **Primary** — `issued`, `sent`, `checked`, `replied`, `submitted`
 - **Neutral** — `draft`, `completed`, `ordered`, `returned`, `released`,
-  `discarded`, `archived`
+  `discarded`, `archived`, `drafted`
+
+`submitted`, `opened`, `awarded`, `lost` and `drafted` are the tender pipeline's
+(migration 0083). Four of the five follow the families above without argument: a
+bid uploaded to iREPS is an outward act (primary), one whose technical bid has
+been opened is waiting on somebody else (warning), won is success and not-won is
+destructive.
+
+`drafted` is **neutral, deliberately**, and it is recorded here so it is not
+"fixed" later. It is the same reading `draft` already has one line above — a bid
+being assembled is inert, not in progress and not good news — and mapping it to
+warning would put an amber lamp on every tender the moment it is created, which
+is the state most tenders are in most of the time. A chip that is always lit
+says nothing.
 
 `valid` and `archived` are the application's, added for the company document
 library (owner decision 2026-08-18, `docs/UX.md` § Approved divergences 8).
@@ -383,9 +396,15 @@ adding a module is one edit.
 
 Next.js App Router and `next/font`; `next-themes`; `lib/data.ts` and every
 module-scope literal; `sonner`; `@vercel/analytics`; the mock's HR, production,
-inventory, maintenance and tender-bidding modules where the application has no
-corresponding server capability yet. Their **visual grammar** is available to
-reuse; their code is not.
+inventory and maintenance modules where the application has no corresponding
+server capability yet. Their **visual grammar** is available to reuse; their
+code is not.
+
+The tender-bidding module left that list with migration 0083, which gave it a
+server. Its screens are ported (`app/tenders/page.tsx`, `app/tenders/new`,
+`app/tenders/[id]`); the parts of them the mock fakes — a per-tender document
+store, a declaration generator, an upload "simulation" — are not, and
+`docs/UX.md` § Approved divergences 4 records each one.
 
 Icons are Lucide, matching the mock's imports. No second icon set, no emoji.
 

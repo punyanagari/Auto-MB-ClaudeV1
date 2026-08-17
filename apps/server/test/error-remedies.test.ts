@@ -145,7 +145,12 @@ describe('refusal remedies', () => {
       // since P12 the vocabulary is typechecked, so this can no longer be
       // an invented string, and picking a real unremedied code is a
       // truer test anyway.
-      const unremedied = 'FIELD_TOO_SHORT';
+      //
+      // Was FIELD_TOO_SHORT until 0083 gave it a fourth throw site and
+      // the coverage bar above earned it a remedy. Any code the two
+      // assertions in this file agree is uncovered will do; this one is
+      // thrown once, which is why it has none.
+      const unremedied = 'ALREADY_A_MEMBER';
       expect(remedyFor(unremedied)).toBeUndefined();
       app.post('/test-unremedied', () => {
         throw httpError(400, unremedied, 'Refused.');

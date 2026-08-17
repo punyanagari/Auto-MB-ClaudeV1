@@ -5,6 +5,7 @@ import {
   FileBadge,
   FileText,
   FolderKanban,
+  Gavel,
   HandCoins,
   LayoutDashboard,
   Receipt,
@@ -21,6 +22,7 @@ import { workspaceHashOf, type WorkspaceView } from '../lib/workspace-routes.js'
 export type ModuleKey =
   | 'dashboard'
   | 'works'
+  | 'tenders'
   | 'challans'
   | 'invoices'
   | 'quotations'
@@ -53,28 +55,29 @@ export interface NavGroup {
  * (`components/app-sidebar` at `a8e1fde`): an unlabelled first group,
  * then Documents, Operations and Administration.
  *
- * The mock draws modules this build has no route for — Tenders, E-Way
- * Bills, Correspondence, Production, Inventory, Purchase orders,
- * Maintenance, Employees — and those are omitted rather than rendered as
- * dead entries. Quotations runs the other way: the mock draws it under
- * Documents in its own list, so it keeps its place here.
+ * The mock draws modules this build has no route for — E-Way Bills,
+ * Correspondence, Production, Inventory, Purchase orders, Maintenance,
+ * Employees — and those are omitted rather than rendered as dead entries.
+ * Quotations runs the other way: the mock draws it under Documents in its
+ * own list, so it keeps its place here.
  *
- * Payments joined the built modules with migration 0080 and sits second
- * in the unlabelled group after Works, which is where the mock puts it
- * once Tenders — the one entry above it this build does not have — is
- * dropped. The mock's own order there is Dashboard, Works, Tenders,
- * Inspection, Payments; Inspection is built but lives under Operations
- * here, so Payments follows Works directly.
+ * The unlabelled first group is now Dashboard, Works, Tenders, Payments.
+ * The mock's own order there is Dashboard, Works, Tenders, Inspection,
+ * Payments: Tenders (migration 0083) and Payments (0080) take the places
+ * the mock gives them, and Inspection (0082) is built but lives under
+ * Operations in this build, so Payments follows Tenders directly. All
+ * three were on the omitted list until this wave; none is now.
  *
  * Company documents runs the other way again, and it is the one entry
  * here the mock does not draw in its own rail. The mock HAS the screen
  * (`app/tenders/company-documents/page.tsx` at fdfe5ef) but reaches it
- * from a toolbar button on its Tenders dashboard — and Tenders is one of
- * the modules omitted above, so replicating the placement exactly would
- * leave the screen with no way in at all. It sits under Documents, which
- * is where the mock's own rail groups document registers. Flagged to the
- * owner in the pull request: if the mock later grows a rail entry of its
- * own for it, this follows the mock.
+ * only from a toolbar button on its Tenders dashboard, which makes a
+ * reusable credential look like a tender accessory when it is
+ * organisation master data every module wants. It sits under Documents,
+ * which is where the mock's own rail groups document registers, and the
+ * Tenders register does not repeat the button. Flagged to the owner in
+ * the pull request: if the mock later grows a rail entry of its own for
+ * it, this follows the mock.
  *
  * Serial Lookup has no entry because it no longer has a destination
  * (`docs/UX.md` § `#/serials` merges into Global Search): serials are one
@@ -89,6 +92,7 @@ export const NAVIGATION: readonly NavGroup[] = [
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { key: 'works', label: 'Works', icon: FolderKanban },
+      { key: 'tenders', label: 'Tenders', icon: Gavel },
       { key: 'payments', label: 'Payments', icon: HandCoins },
     ],
   },
@@ -132,6 +136,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'dashboard' };
     case 'works':
       return { name: 'works' };
+    case 'tenders':
+      return { name: 'tenders' };
     case 'challans':
       return { name: 'challans', tab: 'delivery', workId: null };
     case 'invoices':
@@ -179,6 +185,9 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
       return 'challans';
     case 'invoice':
       return 'invoices';
+    case 'tender':
+    case 'tender-new':
+      return 'tenders';
     case 'dashboard':
     case 'challans':
     case 'invoices':
@@ -186,6 +195,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'company-documents':
     case 'inspection':
     case 'payments':
+    case 'tenders':
     case 'approvals':
     case 'search':
     case 'installations':
@@ -238,6 +248,12 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Inspection';
     case 'payments':
       return 'Payments';
+    case 'tenders':
+      return 'Tenders';
+    case 'tender-new':
+      return 'Upload tender NIT';
+    case 'tender':
+      return 'Tender workspace';
     case 'approvals':
       return 'Approvals';
     case 'search':

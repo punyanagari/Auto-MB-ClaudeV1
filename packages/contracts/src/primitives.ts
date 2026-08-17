@@ -19,8 +19,13 @@ const FEBRUARY = '02-(?:0[1-9]|1\\d|2[0-8])';
 const LEAP_YEAR =
   '(?:[1-9]\\d(?:0[48]|[2468][048]|[13579][26])|(?:[2468][048]|[13579][26])00)';
 
+/** The date half, unanchored, so a schema that carries a date INSIDE a
+ * longer shape — a wall-clock moment, say — reuses this rather than
+ * re-deriving a looser one and admitting 31 February. */
+export const DATE_ONLY_PATTERN = `(?:${YEAR}-(?:${THIRTY_ONE_DAY_MONTH}|${THIRTY_DAY_MONTH}|${FEBRUARY})|${LEAP_YEAR}-02-29)`;
+
 export const DateOnlySchema = Type.String({
-  pattern: `^(?:${YEAR}-(?:${THIRTY_ONE_DAY_MONTH}|${THIRTY_DAY_MONTH}|${FEBRUARY})|${LEAP_YEAR}-02-29)$`,
+  pattern: `^${DATE_ONLY_PATTERN}$`,
   description: 'Calendar date with no time or timezone.',
 });
 export type DateOnly = Static<typeof DateOnlySchema>;

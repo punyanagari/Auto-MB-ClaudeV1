@@ -62,6 +62,10 @@ const NON_TIMELINE: Record<string, string> = {
   document_number_series: 'Organisation-level numbering configuration.',
   company_documents:
     'Organisation-level master data (0079): a reusable credential belongs to the company, not to any Work, so it has no Work timeline to join.',
+  tenders:
+    'Organisation-level (0083): a tender is pre-award, so there is no Work to hang it on — the Work is what winning it produces. Its own trail is tender_status_events, read on the tender.',
+  tender_notices:
+    'Organisation-level (0083): the NIT arrives months before any Work exists.',
   import_batches: 'The v1 import CLI’s own batch bookkeeping, org-level.',
   loa_documents:
     'KNOWN GAP (pre-timeline): contract-source uploads are Work-linked but never joined the timeline.',
