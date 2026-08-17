@@ -78,6 +78,23 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await expect(page.getByLabel('Company name')).toHaveValue('Sharma Constructions');
   await expectNoAxeViolations(page, 'settings');
+
+  /* The shell's own two transient surfaces, scanned in both themes because
+     nothing else opens them: the account menu, and the icon-only rail the
+     mock's sidebar trigger collapses to. A rail whose labels are visually
+     gone still has to name every destination. */
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  await expect(page.getByRole('group', { name: 'Account' })).toBeVisible();
+  await expectNoAxeViolations(page, 'account menu');
+  await page.keyboard.press('Escape');
+
+  const toggle = page.getByRole('button', { name: 'Toggle sidebar' });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(rail.getByRole('button', { name: 'Works', exact: true })).toBeVisible();
+  await expectNoAxeViolations(page, 'collapsed rail');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
 
 test('LOA upload and review screens pass the axe scan', async ({ page }) => {
@@ -111,6 +128,16 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
 });
 
 test('work detail and challan editor pass the axe scan', async ({ page }) => {
+  /* By far the heaviest spec in the suite: twelve `expectNoAxeViolations`
+     calls, each a full axe run in both themes, across the Work workspace's
+     seven sections, a challan, its editor, a confirmation and two registers
+     — twenty-four scans behind one test. Measured at 30.5s on the tree
+     before this pack and 30.6s after it, either side of Playwright's 30s
+     default, so it is budgeted rather than left to flake on whichever
+     machine is a second slower. Splitting it would mean re-mounting the
+     same forty-route fixture three times over, which costs more than it
+     saves. */
+  test.slow();
   const WORK_ID = '33333333-3333-4333-8333-333333333333';
   const ITEM_ID = '55555555-5555-4555-8555-555555555555';
   const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';

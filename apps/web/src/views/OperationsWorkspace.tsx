@@ -5,30 +5,20 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type RefObject,
 } from 'react';
 import type { Organisation, Work } from '@auto-mb/contracts';
 import {
   ArrowLeftRight,
-  Bell,
-  BriefcaseBusiness,
-  Building2,
-  CheckCircle,
-  ChevronDown,
-  Database,
   FileText,
-  Truck,
-  LayoutDashboard,
+  FolderKanban,
+  Home,
   LogOut,
-  Menu,
   MoreHorizontal,
   Plus,
-  ReceiptText,
-  ScanBarcode,
   Search,
-  Settings as SettingsIcon,
-  Upload,
-  Users,
+  Truck,
   Wrench,
   X,
 } from 'lucide-react';
@@ -40,6 +30,16 @@ import {
   type WorkspaceRoute,
   type WorkspaceView,
 } from '../lib/workspace-routes.js';
+import { AppSidebar } from '../shell/AppSidebar.js';
+import { AppTopbar } from '../shell/AppTopbar.js';
+import { SidebarNav, type NavSubItem } from '../shell/SidebarNav.js';
+import {
+  activeModuleOf,
+  defaultViewOf,
+  MOBILE_MORE_ITEMS,
+  pageTitleOf,
+  type ModuleKey,
+} from '../shell/navigation.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
@@ -196,73 +196,52 @@ interface PendingDeparture {
   readonly action: () => void;
 }
 
-type ModuleKey =
-  | 'dashboard'
-  | 'works'
-  | 'delivery-challans'
-  | 'invoices'
-  | 'quotations'
-  | 'approvals'
-  | 'search'
-  | 'serials'
-  | 'installations'
-  | 'masters'
-  | 'members'
-  | 'settings';
+/** Whether the rail is the mock's icon-only rail rather than its full
+ * 16rem width. The mock keeps this in a cookie; the application has no
+ * cookie of its own to reuse, so the choice rides in localStorage — it is a
+ * display preference, carries no authority, and a browser that refuses
+ * storage simply opens expanded every time. */
+const SIDEBAR_COLLAPSED_KEY = 'auto-mb.sidebar-collapsed';
 
-const NAVIGATION = [
-  {
-    label: 'Workspace',
-    items: [
-      { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
-      { key: 'works' as const, label: 'Works', icon: BriefcaseBusiness },
-    ],
-  },
-  {
-    label: 'Documents',
-    items: [
-      {
-        key: 'delivery-challans' as const,
-        label: 'Delivery Challans',
-        icon: Truck,
-      },
-      { key: 'invoices' as const, label: 'Invoices', icon: ReceiptText },
-      { key: 'quotations' as const, label: 'Quotations', icon: FileText },
-      { key: 'approvals' as const, label: 'Approvals', icon: CheckCircle },
-    ],
-  },
-  {
-    label: 'Operations',
-    items: [
-      { key: 'search' as const, label: 'Search', icon: Search },
-      { key: 'serials' as const, label: 'Serial Lookup', icon: ScanBarcode },
-      { key: 'installations' as const, label: 'Installations', icon: Wrench },
-      { key: 'masters' as const, label: 'Masters', icon: Database },
-    ],
-  },
-  {
-    label: 'Administration',
-    items: [
-      { key: 'members' as const, label: 'Members', icon: Users },
-      { key: 'settings' as const, label: 'Settings', icon: SettingsIcon },
-    ],
-  },
-] as const;
+/** The rail's element id, so the topbar's toggle can name what it expands. */
+const SIDEBAR_ID = 'app-sidebar';
 
-const MOBILE_MORE_ITEMS = [
-  { key: 'delivery-challans', label: 'Delivery Challans', icon: Truck },
-  { key: 'invoices', label: 'Invoices', icon: ReceiptText },
-  { key: 'quotations', label: 'Quotations', icon: FileText },
-  { key: 'approvals', label: 'Approvals', icon: CheckCircle },
-  // The header's search box is desktop-only, so the mobile shell reaches
-  // the same view from here.
-  { key: 'search', label: 'Search', icon: Search },
-  { key: 'serials', label: 'Serial Lookup', icon: ScanBarcode },
-  { key: 'installations', label: 'Installations', icon: Wrench },
-  { key: 'masters', label: 'Masters', icon: Database },
-  { key: 'members', label: 'Members', icon: Users },
-  { key: 'settings', label: 'Settings', icon: SettingsIcon },
-] as const;
+/** How the identity block and the account menu describe the membership.
+ * The application has a per-feature permission matrix rather than the
+ * mock's "Administrator" job title, so the honest label is the membership
+ * role behind that matrix. */
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  office: 'Office',
+  site: 'Site',
+  viewer: 'Viewer',
+};
+
+function storedSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function rememberSidebarCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? 'true' : 'false');
+  } catch {
+    // A preference the browser will not store is still honoured for this
+    // session; nothing here is security-sensitive.
+  }
+}
+
+/** The initials the topbar avatar and the rail identity block show. The
+ * account has no display name yet, so the address is the only name there
+ * is. */
+function initialsOf(email: string): string {
+  const [local] = email.split('@');
+  const letters = (local ?? email).replace(/[^a-zA-Z]/g, '');
+  return (letters.slice(0, 2) || email.slice(0, 2)).toUpperCase();
+}
 
 const MASTERS_CATEGORIES: readonly { key: MastersTab; label: string }[] = [
   { key: 'contacts', label: 'Contacts' },
@@ -271,111 +250,6 @@ const MASTERS_CATEGORIES: readonly { key: MastersTab; label: string }[] = [
   { key: 'signatories', label: 'Signatories' },
   { key: 'gst-rates', label: 'GST rates' },
 ];
-
-function defaultViewOf(key: ModuleKey): WorkspaceView {
-  switch (key) {
-    case 'dashboard':
-      return { name: 'dashboard' };
-    case 'works':
-      return { name: 'works' };
-    case 'delivery-challans':
-      return { name: 'delivery-challans' };
-    case 'invoices':
-      return { name: 'invoices' };
-    case 'quotations':
-      return { name: 'quotations' };
-    case 'approvals':
-      return { name: 'approvals' };
-    case 'search':
-      return { name: 'search', query: '' };
-    case 'serials':
-      return { name: 'serials' };
-    case 'installations':
-      return { name: 'installations' };
-    case 'masters':
-      return { name: 'masters' };
-    case 'members':
-      return { name: 'members' };
-    case 'settings':
-      return { name: 'settings' };
-  }
-}
-
-function activeModuleOf(view: WorkspaceView): ModuleKey {
-  switch (view.name) {
-    // Both of the module's views light the same nav lamp: the register
-    // and an opened record are one place.
-    case 'delivery-challan':
-      return 'delivery-challans';
-    case 'invoice':
-      return 'invoices';
-    case 'dashboard':
-    case 'delivery-challans':
-    case 'invoices':
-    case 'quotations':
-    case 'approvals':
-    case 'search':
-    case 'serials':
-    case 'installations':
-    case 'masters':
-    case 'members':
-    case 'settings':
-      return view.name;
-    default:
-      return 'works';
-  }
-}
-
-function pageTitleOf(view: WorkspaceView): string {
-  switch (view.name) {
-    case 'dashboard':
-      return 'Dashboard';
-    case 'works':
-      return 'Works';
-    case 'upload':
-      return 'Upload LOA';
-    case 'review':
-      return 'Review LOA';
-    case 'work':
-      return 'Work workspace';
-    case 'challan-new':
-      return 'New Delivery Challan';
-    case 'challan-edit':
-      return 'Edit Delivery Challan';
-    case 'challan':
-      return 'Delivery Challan';
-    case 'issue-challan-new':
-      return 'New Issue Challan';
-    case 'issue-challan-edit':
-      return 'Edit Issue Challan';
-    case 'issue-challan':
-      return 'Issue Challan';
-    case 'delivery-challans':
-      return 'Delivery Challans';
-    case 'delivery-challan':
-      return 'Delivery Challan';
-    case 'invoices':
-      return 'Invoices';
-    case 'invoice':
-      return 'Tax invoice';
-    case 'quotations':
-      return 'Quotations';
-    case 'approvals':
-      return 'Approvals';
-    case 'search':
-      return 'Search';
-    case 'serials':
-      return 'Serial Lookup';
-    case 'installations':
-      return 'Installations';
-    case 'masters':
-      return 'Masters';
-    case 'members':
-      return 'Members';
-    case 'settings':
-      return 'Settings';
-  }
-}
 
 export function OperationsWorkspace({
   api,
@@ -437,7 +311,9 @@ export function OperationsWorkspace({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [headerQuickActionsOpen, setHeaderQuickActionsOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [mobileRecordOpen, setMobileRecordOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(storedSidebarCollapsed);
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingDeparture, setPendingDeparture] = useState<PendingDeparture | null>(
     null,
@@ -467,6 +343,10 @@ export function OperationsWorkspace({
   const canManageStatutory = membership?.canManageStatutoryReporting ?? false;
   const isOwner = membership?.role === 'owner';
   const canSwitchOrganisation = organisations.length > 1;
+  const identityRole =
+    membership === undefined
+      ? 'No active membership'
+      : (ROLE_LABELS[membership.role] ?? membership.role);
   const activeModule = activeModuleOf(view);
   /* The screen names the tab, and the tenant names it after that: an
      operator working two organisations keeps a tab open for each, and
@@ -541,8 +421,57 @@ export function OperationsWorkspace({
     setMobileMenuOpen(false);
     setMobileMoreOpen(false);
     setHeaderQuickActionsOpen(false);
+    setAccountMenuOpen(false);
     setMobileRecordOpen(false);
   }, [view]);
+
+  /* Escape closes whichever transient menu is open and hands the keyboard
+     back to the control that opened it — the same contract the dialogs and
+     the mobile drawer already keep. The four menus are exclusive by
+     construction, so one handler closes all of them. */
+  const transientMenuOpen =
+    headerQuickActionsOpen || accountMenuOpen || mobileRecordOpen || mobileMoreOpen;
+  useEffect(() => {
+    if (!transientMenuOpen) return;
+    function closeOnEscape(event: globalThis.KeyboardEvent): void {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      setHeaderQuickActionsOpen(false);
+      setAccountMenuOpen(false);
+      setMobileRecordOpen(false);
+      setMobileMoreOpen(false);
+      transientMenuTriggerRef.current?.focus();
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [transientMenuOpen]);
+
+  /* The mock's sidebar shortcut (`components/ui/sidebar`,
+     `SIDEBAR_KEYBOARD_SHORTCUT`). It only ever changes how much of the rail
+     is drawn, so unlike `/` it needs no typing guard: the chord is not a
+     character anyone is trying to enter into a field. */
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((collapsed) => {
+      rememberSidebarCollapsed(!collapsed);
+      return !collapsed;
+    });
+  }, []);
+
+  useEffect(() => {
+    function toggleOnChord(event: globalThis.KeyboardEvent): void {
+      if (event.key.toLowerCase() !== 'b') return;
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.altKey || event.defaultPrevented) return;
+      event.preventDefault();
+      toggleSidebar();
+    }
+    window.addEventListener('keydown', toggleOnChord);
+    return () => {
+      window.removeEventListener('keydown', toggleOnChord);
+    };
+  }, [toggleSidebar]);
 
   /**
    * The global `/` shortcut.
@@ -616,10 +545,15 @@ export function OperationsWorkspace({
     const activeElement =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     departureRestoreFocusRef.current =
-      mobileMenuOpen || headerQuickActionsOpen || mobileRecordOpen || mobileMoreOpen
+      mobileMenuOpen ||
+      headerQuickActionsOpen ||
+      accountMenuOpen ||
+      mobileRecordOpen ||
+      mobileMoreOpen
         ? (transientMenuTriggerRef.current ?? activeElement)
         : activeElement;
     setHeaderQuickActionsOpen(false);
+    setAccountMenuOpen(false);
     setMobileRecordOpen(false);
     setMobileMoreOpen(false);
     setMobileMenuOpen(false);
@@ -764,16 +698,7 @@ export function OperationsWorkspace({
     navigate({ name: 'work', workId }, { workTab: tab });
   }
 
-  const subItems: Partial<
-    Record<
-      ModuleKey,
-      readonly {
-        readonly label: string;
-        readonly open: () => void;
-        readonly current: boolean;
-      }[]
-    >
-  > = {
+  const subItems: Partial<Record<ModuleKey, readonly NavSubItem[]>> = {
     works: [
       {
         label: 'All Works',
@@ -807,93 +732,16 @@ export function OperationsWorkspace({
     navigate(defaultViewOf(key));
   }
 
-  /* `scope` prefixes the submenu ids. The rail and the drawer render the
-     same navigation at the same time — the desktop aside is hidden by CSS,
-     not unmounted — so one id per module would be two elements with the
-     same id whenever the drawer is open. */
-  function renderNavigation(closeAfterSelection = false, scope = 'rail') {
-    return (
-      <>
-        {NAVIGATION.map((group) => (
-          <div key={group.label} className="mb-5 last:mb-0">
-            <p className="mb-2 px-3 text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-              {group.label}
-            </p>
-            <div className="flex flex-col gap-1">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const current = activeModule === item.key;
-                const children = subItems[item.key] ?? [];
-                const submenuId = `${scope}-submenu-${item.key}`;
-                return (
-                  <div key={item.key}>
-                    <button
-                      type="button"
-                      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors ${
-                        current
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-foreground/75 hover:bg-muted hover:text-foreground'
-                      }`}
-                      aria-current={current ? 'page' : undefined}
-                      aria-expanded={children.length > 0 ? current : undefined}
-                      /* Names the list the state refers to. Present only
-                         alongside aria-expanded, so it never points at an
-                         id that no module will ever render. */
-                      aria-controls={children.length > 0 ? submenuId : undefined}
-                      onClick={() => {
-                        openModule(item.key);
-                        if (closeAfterSelection) setMobileMenuOpen(false);
-                      }}
-                    >
-                      <Icon className="size-[18px] shrink-0" aria-hidden="true" />
-                      <span className="min-w-0 flex-1">{item.label}</span>
-                      {item.key === 'approvals' && pendingApprovals > 0 && (
-                        <Badge
-                          variant="destructive"
-                          aria-label={`${String(pendingApprovals)} pending approvals`}
-                        >
-                          {pendingApprovals}
-                        </Badge>
-                      )}
-                    </button>
-                    {current && children.length > 0 && (
-                      <ul
-                        id={submenuId}
-                        className="my-1 ml-6 flex list-none flex-col gap-0.5 border-l border-border pl-3"
-                      >
-                        {children.map((child) => (
-                          <li key={child.label}>
-                            <button
-                              type="button"
-                              className={`w-full rounded-lg px-3 py-1.5 text-left text-xs transition-colors ${
-                                child.current
-                                  ? 'bg-primary/5 font-semibold text-primary'
-                                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                              }`}
-                              aria-current={child.current ? 'page' : undefined}
-                              onClick={() => {
-                                child.open();
-                                if (closeAfterSelection) setMobileMenuOpen(false);
-                              }}
-                            >
-                              {child.label}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-background lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]">
+    /* The mock's shell: a 16rem rail that narrows to a 3rem icon rail, and
+       a content column beside it (`components/app-shell`,
+       `components/ui/sidebar` — `SIDEBAR_WIDTH`, `SIDEBAR_WIDTH_ICON`).
+       The width rides on a custom property so the transition is the grid's
+       and the rail itself stays a plain sticky column. */
+    <div
+      className="min-h-screen bg-background lg:grid lg:grid-cols-[var(--rail-w)_minmax(0,1fr)] lg:transition-[grid-template-columns] lg:duration-200 lg:ease-linear"
+      style={{ '--rail-w': sidebarCollapsed ? '3rem' : '16rem' } as CSSProperties}
+    >
       {/* The first thing the keyboard reaches, so the twenty-odd rail and
           header controls are one keystroke rather than twenty.
           `preventDefault` is not decoration: the workspace's address IS the
@@ -912,298 +760,93 @@ export function OperationsWorkspace({
       >
         Skip to main content
       </a>
-      <aside
-        className="sticky top-0 hidden h-screen flex-col border-r border-border bg-card lg:flex print:hidden"
+      <AppSidebar
+        id={SIDEBAR_ID}
+        organisationName={organisation.name}
+        identityInitials={initialsOf(me.user.email)}
+        identityName={me.user.email}
+        identityRole={identityRole}
+        activeModule={activeModule}
+        pendingApprovals={pendingApprovals}
+        subItems={subItems}
+        collapsed={sidebarCollapsed}
+        canModify={canModify}
+        canSwitchOrganisation={canSwitchOrganisation}
         inert={mobileMenuOpen || pendingDeparture !== null}
-      >
-        <div className="flex h-[4.5rem] items-center gap-3 border-b border-border px-5">
-          <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <Building2 className="size-5" aria-hidden="true" />
-          </span>
-          <span className="min-w-0">
-            <strong className="block text-base tracking-tight">Auto-MB</strong>
-            <span className="block truncate text-xs text-muted-foreground">
-              Contract operations
-            </span>
-          </span>
-        </div>
-
-        <nav
-          className="scrollbar-thin flex-1 overflow-y-auto px-3 py-5"
-          aria-label="Modules"
-        >
-          {renderNavigation()}
-        </nav>
-
-        <div className="border-t border-border p-3">
-          <div className="mb-3 rounded-xl border border-primary/10 bg-primary/[0.035] p-3">
-            <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
-              Quick actions
-            </p>
-            <div className="mt-2 flex flex-col gap-1">
-              {canModify && (
-                <button
-                  type="button"
-                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-card"
-                  onClick={() => {
-                    navigate({ name: 'upload' });
-                  }}
-                >
-                  <Upload className="size-3.5 text-primary" aria-hidden="true" />
-                  Upload a new LOA
-                </button>
-              )}
-              <button
-                type="button"
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-card"
-                onClick={() => {
-                  navigate({ name: 'works' });
-                }}
-              >
-                <Search className="size-3.5 text-primary" aria-hidden="true" />
-                Find a Work
-              </button>
-              <button
-                type="button"
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-card"
-                onClick={() => {
-                  navigate({ name: 'approvals' });
-                }}
-              >
-                <CheckCircle className="size-3.5 text-primary" aria-hidden="true" />
-                Open approval queue
-              </button>
-            </div>
-          </div>
-
-          {canSwitchOrganisation ? (
-            <button
-              type="button"
-              className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted"
-              onClick={() => {
-                requestDeparture(onSwitchOrganisation);
-              }}
-            >
-              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent font-semibold text-accent-foreground">
-                {organisation.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1">
-                <strong className="block truncate text-xs">{organisation.name}</strong>
-                <span className="block truncate text-xs text-muted-foreground">
-                  Switch organisation
-                </span>
-              </span>
-              <ArrowLeftRight
-                className="size-4 text-muted-foreground"
-                aria-hidden="true"
-              />
-            </button>
-          ) : (
-            <div className="flex w-full items-center gap-3 rounded-xl border border-border bg-background/70 p-3">
-              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent font-semibold text-accent-foreground">
-                {organisation.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1">
-                <strong className="block truncate text-xs">{organisation.name}</strong>
-                <span className="block truncate text-xs text-muted-foreground">
-                  Current organisation
-                </span>
-              </span>
-            </div>
-          )}
-        </div>
-      </aside>
+        onOpenModule={openModule}
+        onUploadLoa={() => {
+          navigate({ name: 'upload' });
+        }}
+        onSwitchOrganisation={() => {
+          requestDeparture(onSwitchOrganisation);
+        }}
+      />
 
       <div className="min-w-0" inert={mobileMenuOpen || pendingDeparture !== null}>
-        <header className="sticky top-0 z-30 flex h-[4.5rem] items-center gap-3 border-b border-border bg-card/95 px-4 backdrop-blur lg:px-7 print:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            aria-label="Open navigation"
-            aria-expanded={mobileMenuOpen}
-            aria-controls="mobile-navigation-dialog"
-            aria-haspopup="dialog"
-            onClick={(event) => {
-              transientMenuTriggerRef.current = event.currentTarget;
-              setHeaderQuickActionsOpen(false);
-              setMobileRecordOpen(false);
-              setMobileMoreOpen(false);
-              setMobileMenuOpen(true);
-            }}
-          >
-            <Menu aria-hidden="true" />
-          </Button>
-
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-muted-foreground">
-              {organisation.name}
-            </p>
-            <p className="truncate text-sm font-semibold">{pageTitleOf(view)}</p>
-          </div>
-
-          {/* A real search box, not a button that went to the Works
-              register: the label promised records and now delivers them.
-              `/` focuses it from anywhere in the workspace. */}
-          <form
-            role="search"
-            className="hidden min-w-56 max-w-md flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 py-2 text-xs text-muted-foreground transition-colors focus-within:border-primary/60 hover:border-primary/35 md:flex"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const query = headerSearchQuery.trim();
-              if (query.length < 2) return;
-              navigate({ name: 'search', query });
-            }}
-          >
-            <Search className="size-4 shrink-0" aria-hidden="true" />
-            <input
-              ref={headerSearchRef}
-              type="search"
-              name="header-search"
-              aria-label="Search Works and records"
-              placeholder="Search Works and records"
-              maxLength={120}
-              autoComplete="off"
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs outline-none"
-              value={headerSearchQuery}
-              onChange={(event) => {
-                setHeaderSearchQuery(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                // Escape gives the keyboard back without submitting, the
-                // same way Escape closes the mobile navigation.
-                if (event.key === 'Escape') event.currentTarget.blur();
-              }}
-            />
-            <kbd
-              aria-hidden="true"
-              className="ml-auto shrink-0 rounded border border-border bg-card px-1.5 py-0.5 font-mono text-xs"
-            >
-              /
-            </kbd>
-          </form>
-
-          <div className="relative">
-            <Button
-              size="sm"
-              aria-label={
-                headerQuickActionsOpen ? 'Close quick actions' : 'Open quick actions'
-              }
-              aria-expanded={headerQuickActionsOpen}
-              aria-controls="header-quick-actions"
-              onClick={(event) => {
-                transientMenuTriggerRef.current = event.currentTarget;
-                setMobileRecordOpen(false);
-                setMobileMoreOpen(false);
-                setHeaderQuickActionsOpen((current) => !current);
-              }}
-            >
-              <Plus aria-hidden="true" />
-              <span className="hidden sm:inline">Quick action</span>
-              <ChevronDown className="hidden size-3.5 sm:block" aria-hidden="true" />
-            </Button>
-            {headerQuickActionsOpen && (
-              <div
-                id="header-quick-actions"
-                className="absolute top-[calc(100%+0.5rem)] right-0 z-40 w-64 rounded-2xl border border-border bg-card p-2 shadow-xl"
-                role="group"
-                aria-label="Quick actions"
-              >
-                {canModify && (
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                    onClick={() => {
-                      navigate({ name: 'upload' });
-                    }}
-                  >
-                    <Upload className="size-4 text-primary" aria-hidden="true" />
-                    <span>
-                      <strong className="block text-xs">Upload LOA</strong>
-                      <span className="text-xs text-muted-foreground">
-                        Start a new awarded Work
-                      </span>
-                    </span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                  onClick={() => {
-                    navigate({ name: 'works' });
-                  }}
-                >
-                  <BriefcaseBusiness
-                    className="size-4 text-primary"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <strong className="block text-xs">Open Works</strong>
-                    <span className="text-xs text-muted-foreground">
-                      Find a contract or document
-                    </span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-muted"
-                  onClick={() => {
-                    navigate({ name: 'approvals' });
-                  }}
-                >
-                  <CheckCircle className="size-4 text-primary" aria-hidden="true" />
-                  <span>
-                    <strong className="block text-xs">Approval queue</strong>
-                    <span className="text-xs text-muted-foreground">
-                      {pendingApprovals > 0
-                        ? `${String(pendingApprovals)} decisions waiting`
-                        : 'No pending decisions'}
-                    </span>
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={
-              pendingApprovals > 0
-                ? `${String(pendingApprovals)} pending approvals`
-                : 'No pending approvals'
-            }
-            onClick={() => {
-              navigate({ name: 'approvals' });
-            }}
-          >
-            <span className="relative">
-              <Bell aria-hidden="true" />
-              {pendingApprovals > 0 && (
-                <span className="absolute -top-1 -right-1 size-2 rounded-full bg-destructive ring-2 ring-card" />
-              )}
-            </span>
-          </Button>
-
-          <div className="hidden items-center gap-2 border-l border-border pl-3 xl:flex">
-            <span className="inline-flex size-8 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
-              {me.user.email.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="max-w-48 truncate text-xs text-muted-foreground">
-              {me.user.email}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Sign out"
-              onClick={() => {
-                requestDeparture(onSignOut);
-              }}
-            >
-              <LogOut aria-hidden="true" />
-            </Button>
-          </div>
-        </header>
+        <AppTopbar
+          sidebarId={SIDEBAR_ID}
+          organisationName={organisation.name}
+          sectionTitle={pageTitleOf(view)}
+          identityInitials={initialsOf(me.user.email)}
+          identityName={me.user.email}
+          identityRole={identityRole}
+          pendingApprovals={pendingApprovals}
+          canModify={canModify}
+          canSwitchOrganisation={canSwitchOrganisation}
+          sidebarCollapsed={sidebarCollapsed}
+          mobileNavOpen={mobileMenuOpen}
+          quickActionsOpen={headerQuickActionsOpen}
+          accountMenuOpen={accountMenuOpen}
+          searchQuery={headerSearchQuery}
+          searchInputRef={headerSearchRef}
+          onToggleSidebar={toggleSidebar}
+          onOpenMobileNav={(trigger) => {
+            transientMenuTriggerRef.current = trigger;
+            setHeaderQuickActionsOpen(false);
+            setAccountMenuOpen(false);
+            setMobileRecordOpen(false);
+            setMobileMoreOpen(false);
+            setMobileMenuOpen(true);
+          }}
+          onToggleQuickActions={(trigger) => {
+            transientMenuTriggerRef.current = trigger;
+            setAccountMenuOpen(false);
+            setMobileRecordOpen(false);
+            setMobileMoreOpen(false);
+            setHeaderQuickActionsOpen((current) => !current);
+          }}
+          onToggleAccountMenu={(trigger) => {
+            transientMenuTriggerRef.current = trigger;
+            setHeaderQuickActionsOpen(false);
+            setMobileRecordOpen(false);
+            setMobileMoreOpen(false);
+            setAccountMenuOpen((current) => !current);
+          }}
+          onSearchQueryChange={setHeaderSearchQuery}
+          onSearch={() => {
+            const query = headerSearchQuery.trim();
+            if (query.length < 2) return;
+            navigate({ name: 'search', query });
+          }}
+          onUploadLoa={() => {
+            navigate({ name: 'upload' });
+          }}
+          onOpenWorks={() => {
+            navigate({ name: 'works' });
+          }}
+          onOpenApprovals={() => {
+            navigate({ name: 'approvals' });
+          }}
+          onOpenSettings={() => {
+            navigate({ name: 'settings' });
+          }}
+          onSwitchOrganisation={() => {
+            requestDeparture(onSwitchOrganisation);
+          }}
+          onSignOut={() => {
+            requestDeparture(onSignOut);
+          }}
+        />
 
         <main
           id="main-content"
@@ -1222,7 +865,11 @@ export function OperationsWorkspace({
            * still cannot fit is that view's own scroll container to
            * provide, which is what `ui/table.tsx` does for every register.
            * Measured at 320px by `e2e/responsive.spec.ts`. */
-          className="mx-auto flex w-full max-w-[100rem] flex-col gap-5 px-4 py-5 pb-24 outline-none sm:px-6 lg:px-8 lg:py-7 lg:pb-10 [&>*]:min-w-0"
+          /* The mock's content column: centred at 1440px with its four-step
+             inset (`components/app-shell`). `gap-5` is the application's
+             own — several screens mount two or three independent sections
+             into this column and rely on it to space them. */
+          className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-6 pb-24 outline-none sm:px-6 md:px-8 md:py-8 lg:px-10 lg:pb-8 [&>*]:min-w-0"
         >
           <Suspense fallback={<ViewSkeleton />}>
             {/* Restores the heading focus the outer effect cannot take
@@ -1632,17 +1279,27 @@ export function OperationsWorkspace({
           }}
           overlayClassName="z-50 p-0 lg:hidden"
           backdropClassName="bg-foreground/25"
-          className="absolute inset-y-0 left-0 flex w-[min(20rem,88vw)] max-w-none flex-col rounded-none border-0 border-r border-border p-0 shadow-2xl"
+          className="absolute inset-y-0 left-0 flex w-[min(20rem,88vw)] max-w-none flex-col rounded-none border-0 bg-sidebar p-0 text-sidebar-foreground shadow-2xl"
         >
-          <div className="flex h-[4.5rem] items-center gap-3 border-b border-border px-4">
-            <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Building2 className="size-5" aria-hidden="true" />
+          <div className="flex items-center gap-3 p-3">
+            <span className="flex h-11 min-w-0 flex-1 items-center gap-3 rounded-xl border border-border bg-card px-2.5 shadow-sm">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary font-mono text-xs font-bold text-primary-foreground">
+                MB
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm font-semibold tracking-tight">
+                  Auto-MB
+                </span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  {organisation.name}
+                </span>
+              </span>
             </span>
-            <strong className="flex-1">Auto-MB</strong>
             <Button
               ref={mobileMenuCloseRef}
               variant="ghost"
               size="icon"
+              className="size-8 shrink-0"
               aria-label="Close menu"
               onClick={() => {
                 setMobileMenuOpen(false);
@@ -1651,10 +1308,19 @@ export function OperationsWorkspace({
               <X aria-hidden="true" />
             </Button>
           </div>
-          <nav className="scrollbar-thin flex-1 overflow-y-auto px-3 py-5">
-            {renderNavigation(true, 'drawer')}
+          <nav className="scrollbar-thin flex-1 overflow-y-auto px-1">
+            <SidebarNav
+              activeModule={activeModule}
+              pendingApprovals={pendingApprovals}
+              subItems={subItems}
+              onOpenModule={openModule}
+              onSelected={() => {
+                setMobileMenuOpen(false);
+              }}
+              scope="drawer"
+            />
           </nav>
-          <div className="border-t border-border p-3">
+          <div className="border-t border-sidebar-border p-3">
             {canSwitchOrganisation && (
               <Button
                 variant="outline"
@@ -1682,7 +1348,11 @@ export function OperationsWorkspace({
       )}
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card/95 px-2 py-1.5 backdrop-blur lg:hidden print:hidden"
+        /* The mock's bar (`components/mobile-navigation`): four cells on
+           a translucent, blurred background that clears the home indicator.
+           The cells themselves keep the application's raised Record control
+           until the mobile pack redraws them. */
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-background/95 px-2 py-1.5 pb-[calc(env(safe-area-inset-bottom)+0.375rem)] backdrop-blur lg:hidden print:hidden"
         aria-label="Mobile navigation"
         inert={mobileMenuOpen || pendingDeparture !== null}
       >
@@ -1695,7 +1365,7 @@ export function OperationsWorkspace({
             navigate({ name: 'dashboard' });
           }}
         >
-          <LayoutDashboard className="size-5" aria-hidden="true" />
+          <Home className="size-5" aria-hidden="true" />
           Home
         </button>
         <button
@@ -1707,7 +1377,7 @@ export function OperationsWorkspace({
             navigate({ name: 'works' });
           }}
         >
-          <BriefcaseBusiness className="size-5" aria-hidden="true" />
+          <FolderKanban className="size-5" aria-hidden="true" />
           Works
         </button>
         <button

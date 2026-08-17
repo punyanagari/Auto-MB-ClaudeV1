@@ -238,6 +238,107 @@ describe('OperationsWorkspace mobile shell', () => {
     expect(document.title).toBe('Works · Sharma Constructions · Auto-MB');
   });
 
+  it('groups the rail the way the mock does', async () => {
+    renderWorkspace();
+    const rail = await screen.findByRole('navigation', { name: 'Modules' });
+    // The mock's four groups, with the first one unlabelled. Every entry the
+    // mock draws that this build has no route for is omitted rather than
+    // rendered dead, and the two the mock does not draw keep their place.
+    expect(
+      within(rail)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Dashboard',
+      'Works',
+      'Delivery Challans',
+      'Invoices',
+      'Quotations',
+      'Installations',
+      'Serial Lookup',
+      'Search',
+      'Approvals',
+      'Masters',
+      'Members',
+      'Settings',
+    ]);
+    for (const heading of ['Documents', 'Operations', 'Administration']) {
+      expect(within(rail).getByText(heading)).toBeTruthy();
+    }
+    // Bills is a Work section, not a module (docs/UX.md).
+    expect(within(rail).queryByRole('button', { name: 'Bills' })).toBeNull();
+  });
+
+  it('collapses the rail to icons and remembers the choice', async () => {
+    localStorage.removeItem('auto-mb.sidebar-collapsed');
+    const first = renderWorkspace();
+    const rail = await screen.findByRole('navigation', { name: 'Modules' });
+    const toggle = screen.getByRole('button', { name: 'Toggle sidebar' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // Collapsed is a visual state, not a reachability one: every destination
+    // still answers to its name.
+    expect(within(rail).getByRole('button', { name: 'Works' })).toBeTruthy();
+    expect(localStorage.getItem('auto-mb.sidebar-collapsed')).toBe('true');
+
+    first.unmount();
+    renderWorkspace();
+    expect(
+      (await screen.findByRole('button', { name: 'Toggle sidebar' })).getAttribute(
+        'aria-expanded',
+      ),
+    ).toBe('false');
+    localStorage.removeItem('auto-mb.sidebar-collapsed');
+  });
+
+  it('signs out from the topbar account menu and closes it on Escape', async () => {
+    const onSignOut = vi.fn();
+    render(
+      <OperationsWorkspace
+        api={stubApi({
+          dashboard: vi.fn().mockResolvedValue({
+            totals: {
+              works: 0,
+              contractValue: '0.00',
+              deliveredValue: '0.00',
+              billedValue: '0.00',
+              openDrafts: 0,
+              loaAwaitingReview: 0,
+            },
+            alerts: [],
+            works: [],
+          }),
+        })}
+        me={{
+          user: { id: 'user-a', email: 'owner@example.test' },
+          memberships: [membership({})],
+          twoFactorEnabled: true,
+          mfaRequired: true,
+          mfaEnforced: false,
+        }}
+        organisation={organisation}
+        organisations={[organisation]}
+        onSwitchOrganisation={vi.fn()}
+        onOrganisationCreated={vi.fn()}
+        onSignOut={onSignOut}
+      />,
+    );
+
+    const trigger = await screen.findByRole('button', { name: 'Account menu' });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('group', { name: 'Account' })).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('group', { name: 'Account' })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    const menu = screen.getByRole('group', { name: 'Account' });
+    fireEvent.click(within(menu).getByRole('button', { name: 'Sign out' }));
+    expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
   it('offers a skip link that reaches main without disturbing the address', async () => {
     const { container } = renderWorkspace();
     await screen.findByRole('heading', { name: 'Dashboard' });

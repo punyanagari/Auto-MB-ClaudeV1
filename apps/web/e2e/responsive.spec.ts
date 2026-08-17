@@ -91,7 +91,7 @@ async function boxOf(locator: Locator) {
 /* The three lengths `globals.css` reserves above a ledger's own
  * scrollport, restated here so the guard can say what it expects rather
  * than recompute the rule it is checking. */
-const HEADER_PX = 72;
+const HEADER_PX = 64;
 const SCHEDULE_SUMMARY_PX = 44;
 const PAGE_INSET_PX = 32;
 
