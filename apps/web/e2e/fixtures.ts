@@ -255,8 +255,14 @@ export function workBalance(count: number) {
  * tint is on screen at once: a credential with no expiry, one comfortably
  * valid, one inside the sixty-day window, one lapsed, one archived, and a
  * two-version history behind the renewed one. */
+/** The window the fixture's own `expiryStatus` values are derived from.
+ * Named once and read by `expiryStatusOf` below, so the fixture cannot
+ * claim a sixty-day window in the payload while colouring its rows
+ * against some other number written inline. */
+const FIXTURE_EXPIRY_WARNING_DAYS = 60;
+
 const COMPANY_DOCUMENT_LIBRARY = {
-  expiryWarningDays: 60,
+  expiryWarningDays: FIXTURE_EXPIRY_WARNING_DAYS,
   documents: [
     companyDocument('Bank solvency letter', 'financial', {
       expiresOn: '2026-08-30',
@@ -317,12 +323,13 @@ function companyDocument(
 }
 
 /** The reading the server's SQL would produce, against the same fixed
- * date the rest of these fixtures use. */
+ * date the rest of these fixtures use and the same window the payload
+ * above declares. */
 function expiryStatusOf(expiresOn: string | null): string {
   if (expiresOn === null) return 'none';
   const days = daysUntil(expiresOn);
   if (days < 0) return 'expired';
-  return days <= 60 ? 'expiring' : 'valid';
+  return days <= FIXTURE_EXPIRY_WARNING_DAYS ? 'expiring' : 'valid';
 }
 
 function daysUntil(expiresOn: string): number {

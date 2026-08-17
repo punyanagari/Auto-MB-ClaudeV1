@@ -14,6 +14,7 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { ObjectStorage } from '@auto-mb/documents';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
+import { isWriterRole, membershipOf } from '../authz.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -31,7 +32,7 @@ import {
 } from './shared.js';
 
 /**
- * The company document library (migration 0078).
+ * The company document library (migration 0079).
  *
  * Organisation-level credentials — GST registration, PAN, an ISO
  * certificate, a bank solvency letter, a completion certificate from a
@@ -44,9 +45,9 @@ import {
  * code:
  *
  *   1. **No Work.** The library is organisation-level by definition, so
- *      there is no `assertWorkAccess` and no work-scope predicate. A
- *      member of the organisation sees the whole library; the isolation
- *      is RLS on `organisation_id` and nothing else is needed.
+ *      there is no `assertWorkAccess` and no work-scope predicate. The
+ *      isolation is RLS on `organisation_id`, plus the one category rule
+ *      below; nothing else is needed.
  *   2. **No issue lifecycle.** These are copies of documents somebody
  *      else issued. There is no number to reserve, no cancellation that
  *      retains one, and no signature verdict — the machinery that
@@ -75,6 +76,23 @@ import {
  * accepts `[a-z]+` only, which is why it is one word and not
  * `company-documents`. */
 const STORAGE_AREA = 'orgdoc';
+
+/**
+ * The one category that is not open to every member (owner decision,
+ * 2026-08-18).
+ *
+ * Balance sheets, turnover certificates and bank solvency letters state
+ * what the company is worth and who it banks with. Every other bucket in
+ * the library is a document the agency hands to strangers on request — a
+ * GST registration number is printed on its invoices — but this one is
+ * commercially sensitive, and site staff and viewers have no work that
+ * needs it.
+ *
+ * The gate is the writer role, the same one that governs writing here,
+ * rather than a new grant: the people who file the financials are the
+ * people who may read them.
+ */
+const RESTRICTED_CATEGORY = 'financial';
 
 interface DocumentRow {
   id: string;
@@ -114,8 +132,11 @@ function toVersion(row: VersionRow): CompanyDocumentVersion {
 }
 
 /**
- * Every credential of the bound organisation with its whole version
- * history, newest version first.
+ * Credentials of the bound organisation with their whole version
+ * history, newest version first. `documentId` narrows both statements to
+ * one credential, which is what every mutation wants for its read-back —
+ * those run inside the parent's row lock, and a whole-library scan under
+ * a lock is a scan every other writer waits behind.
  *
  * The expiry reading is computed in SQL rather than in TypeScript on
  * purpose: `current_date` is the database's date, which is the same date
@@ -123,13 +144,35 @@ function toVersion(row: VersionRow): CompanyDocumentVersion {
  * and a Node process in another region need not be. Date arithmetic on a
  * `date` column also cannot drift into a timezone round-trip, which
  * engineering rule 6 forbids for exactly this kind of legal date.
+ *
+ * ponytail: the list endpoint returns every version of every credential.
+ * That is tens of rows against tens of rows and the register renders the
+ * history inline from it, so one round trip beats a request per expanded
+ * row. If a library ever grows past a few hundred versions, return the
+ * newest version here and fetch the rest per credential on demand — the
+ * response shape already isolates that change to `versions`.
  */
-async function readLibrary(tx: TransactionSql): Promise<CompanyDocument[]> {
+async function readLibrary(
+  tx: TransactionSql,
+  options: { readonly documentId?: string; readonly includeRestricted: boolean },
+): Promise<CompanyDocument[]> {
+  const { documentId, includeRestricted } = options;
+  // The category rule is enforced in the WHERE clause of the credential
+  // read, not by filtering the result: a non-writer's request never
+  // selects a financial row, so there is one code path and no risk of an
+  // unfiltered array escaping through a branch somebody adds later. The
+  // version read joins back through it, so a hidden credential's versions
+  // are hidden with it rather than by a second, separately-maintained
+  // predicate.
+  const visible = includeRestricted ? tx`true` : tx`category <> ${RESTRICTED_CATEGORY}`;
   const documents = await tx<DocumentRow[]>`
     select id, title, category, archived_at, created_at
     from company_documents
-    -- Live credentials before retired ones, alphabetical within each:
-    -- the register's order, and the index in 0078 is built for it.
+    where ${documentId === undefined ? tx`true` : tx`id = ${documentId}`}
+      and ${visible}
+    -- Live credentials before retired ones, alphabetical within each.
+    -- Deliberately unindexed: see 0079 for why a library of tens of rows
+    -- sorts in memory instead.
     order by (archived_at is not null), lower(title)
   `;
   if (documents.length === 0) return [];
@@ -155,6 +198,7 @@ async function readLibrary(tx: TransactionSql): Promise<CompanyDocument[]> {
       uploaded_by_user_id,
       created_at
     from company_document_versions
+    where company_document_id in ${tx(documents.map((document) => document.id))}
     order by company_document_id, version_number desc
   `;
 
@@ -187,22 +231,24 @@ async function readLibrary(tx: TransactionSql): Promise<CompanyDocument[]> {
   });
 }
 
+/** The read-back after a mutation. Every caller runs under `role:
+ * 'writer'`, which is also the role the restricted category answers to,
+ * so a writer never gets a 404 for a credential they just wrote. */
 async function readOne(
   tx: TransactionSql,
   documentId: string,
 ): Promise<CompanyDocument> {
-  const library = await readLibrary(tx);
-  const found = library.find((document) => document.id === documentId);
+  const [found] = await readLibrary(tx, { documentId, includeRestricted: true });
   if (found === undefined) {
     throw httpError(404, 'COMPANY_DOCUMENT_NOT_FOUND', 'No such company document.');
   }
   return found;
 }
 
-/** PostgreSQL's unique-violation SQLSTATE, which is how a concurrent
- * create of the same title arrives: the partial unique index in 0078 is
- * the arbiter, not a read-then-write check that two writers can both
- * pass. */
+/** PostgreSQL's unique-violation SQLSTATE, which is how a lost race
+ * arrives on both write paths: the partial unique index on the title and
+ * the per-credential version-number unique in 0079 are the arbiters, not
+ * a read-then-write check that two writers can both pass. */
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === '23505';
 }
@@ -224,9 +270,11 @@ export function registerCompanyDocumentRoutes(
         response: { 200: CompanyDocumentListResponseSchema, ...errorResponses },
       },
     },
-    async ({ tenant }) =>
+    async ({ user, tenant }) =>
       tenant(async (tx) => ({
-        documents: await readLibrary(tx),
+        documents: await readLibrary(tx, {
+          includeRestricted: isWriterRole(await membershipOf(tx, user.id)),
+        }),
         expiryWarningDays: EXPIRY_WARNING_DAYS,
       })),
   );
@@ -248,14 +296,8 @@ export function registerCompanyDocumentRoutes(
         format: 'pdf',
         description: 'the company document',
       });
-      // The schema's `minLength: 1` admits a string of spaces, and the
-      // 0078 CHECK refuses an untrimmed title, so the trim happens here
-      // and an empty result is refused in words rather than as a
-      // constraint name.
-      const trimmedTitle = title.trim();
-      if (trimmedTitle.length === 0) {
-        throw httpError(400, 'FIELD_TOO_SHORT', 'Give the company document a name.');
-      }
+      const trimmedTitle = requireTrimmed(title, 'Give the company document a name.');
+      const filename = requireTrimmed(request.query.filename, FILENAME_REFUSAL);
       assertValidityOrder(validFrom, expiresOn);
 
       // Authorisation and the name check BEFORE the expensive scan: an
@@ -295,7 +337,7 @@ export function registerCompanyDocumentRoutes(
           versionId: stored.versionId,
           versionNumber: 1,
           objectKey: stored.objectKey,
-          filename: request.query.filename,
+          filename,
           sha256: stored.sha256,
           sizeBytes: bytes.length,
           validFrom,
@@ -336,6 +378,7 @@ export function registerCompanyDocumentRoutes(
         format: 'pdf',
         description: 'the renewed company document',
       });
+      const filename = requireTrimmed(request.query.filename, FILENAME_REFUSAL);
       assertValidityOrder(validFrom, expiresOn);
 
       // Same ordering as the create above, and for the same reason: prove
@@ -362,19 +405,35 @@ export function registerCompanyDocumentRoutes(
           where company_document_id = ${id}
         `;
         const versionNumber = Number(highest?.next_number ?? 1);
-        await insertVersion(tx, {
-          organisationId,
-          documentId: id,
-          versionId: stored.versionId,
-          versionNumber,
-          objectKey: stored.objectKey,
-          filename: request.query.filename,
-          sha256: stored.sha256,
-          sizeBytes: bytes.length,
-          validFrom,
-          expiresOn,
-          userId: user.id,
-        });
+        try {
+          await insertVersion(tx, {
+            organisationId,
+            documentId: id,
+            versionId: stored.versionId,
+            versionNumber,
+            objectKey: stored.objectKey,
+            filename,
+            sha256: stored.sha256,
+            sizeBytes: bytes.length,
+            validFrom,
+            expiresOn,
+            userId: user.id,
+          });
+        } catch (error) {
+          // The layer above says the constraint catches a lost race; this
+          // is the layer that stops the caller learning about it as a 500.
+          // Unreachable while the row lock holds, which is exactly why it
+          // has to be here — the claim that the constraint is a real
+          // second layer is only true if losing to it produces an answer.
+          if (isUniqueViolation(error)) {
+            throw httpError(
+              409,
+              'COMPANY_DOCUMENT_VERSION_CONFLICT',
+              'Another renewal of this document was stored at the same moment. Try the upload again.',
+            );
+          }
+          throw error;
+        }
         await audit(
           tx,
           organisationId,
@@ -437,19 +496,44 @@ export function registerCompanyDocumentRoutes(
         response: { 200: Type.Any(), ...errorResponses },
       },
     },
-    async ({ request, reply, tenant }) => {
+    async ({ request, reply, user, tenant }) => {
       const { id } = request.params;
       const version = await tenant(async (tx) => {
-        const [row] = await tx<{ object_key: string; original_filename: string }[]>`
-          select object_key, original_filename
-          from company_document_versions
-          where id = ${id}
+        const [row] = await tx<
+          {
+            object_key: string;
+            original_filename: string;
+            category: CompanyDocumentCategory;
+          }[]
+        >`
+          select v.object_key, v.original_filename, d.category
+          from company_document_versions v
+          join company_documents d on d.id = v.company_document_id
+          where v.id = ${id}
         `;
         if (!row) {
           throw httpError(
             404,
             'COMPANY_DOCUMENT_VERSION_NOT_FOUND',
             'No such company document version.',
+          );
+        }
+        // 403, not 404 — and the difference is deliberate. A 404 is the
+        // right answer for another TENANT's version, where the row's very
+        // existence is theirs to keep; this caller is a member of the
+        // organisation that owns the file, so the credential is not a
+        // secret from them, only its contents are. Telling them the file
+        // exists and that their role does not reach it is a refusal they
+        // can act on; pretending it is missing sends them looking for a
+        // document their colleague can see.
+        if (
+          row.category === RESTRICTED_CATEGORY &&
+          !isWriterRole(await membershipOf(tx, user.id))
+        ) {
+          throw httpError(
+            403,
+            'ROLE_FORBIDDEN',
+            'Financial documents are readable by owner or office members only.',
           );
         }
         return row;
@@ -473,8 +557,26 @@ function titleTakenError(title: string): Error {
   );
 }
 
+const FILENAME_REFUSAL = 'The uploaded file needs a name.';
+
+/**
+ * A querystring field the schema bounded but did not trim.
+ *
+ * `minLength: 1` admits a string of spaces, and 0079 refuses both an
+ * untrimmed title and a blank filename with CHECK constraints. Without
+ * this the refusal arrives as SQLSTATE 23514 — a 500 rather than a 400,
+ * and one raised AFTER the bytes have already been written to object
+ * storage, so a caller who typed a space into the filename gets an
+ * unexplained server error and leaves an orphan object behind.
+ */
+function requireTrimmed(value: string, refusal: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) throw httpError(400, 'FIELD_TOO_SHORT', refusal);
+  return trimmed;
+}
+
 /** The validity window has to open before it closes. Checked here as well
- * as by the CHECK constraint in 0078 so the operator gets a sentence
+ * as by the CHECK constraint in 0079 so the operator gets a sentence
  * rather than a constraint name. */
 function assertValidityOrder(
   validFrom: string | undefined,

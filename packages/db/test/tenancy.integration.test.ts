@@ -140,7 +140,7 @@ const TENANT_TABLES = [
   // Standalone Delivery Challan numbering, per financial year (0056).
   'standalone_challan_counters',
   // The company document library: reusable organisation-level
-  // credentials and the versioned files behind them (0078).
+  // credentials and the versioned files behind them (0079).
   'company_documents',
   'company_document_versions',
 ] as const;
@@ -178,7 +178,7 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // anyway.
     table !== 'bill_payment_deductions' &&
     // A company document version is evidence: append-only for the
-    // application role and refused by trigger anyway (0078).
+    // application role and refused by trigger anyway (0079).
     table !== 'company_document_versions',
 );
 
@@ -257,7 +257,7 @@ const DELETE_REVOKED_TABLES = [
   // The GST rate master retires rows by end-dating; no DELETE (0048).
   'gst_rates',
   // A company credential is archived, never deleted -- a bid that cited
-  // it has to stay explicable -- and its versions are evidence (0078).
+  // it has to stay explicable -- and its versions are evidence (0079).
   'company_documents',
   'company_document_versions',
 ] as const satisfies readonly TenantTable[];
@@ -1156,7 +1156,7 @@ async function seedTenantGraph(
       )
     `;
 
-    // One company credential and one version of it (0078). It hangs off
+    // One company credential and one version of it (0079). It hangs off
     // no Work at all — that is the point of the library — so it is
     // seeded from the organisation alone.
     const [companyDocument] = await tx<{ id: string }[]>`

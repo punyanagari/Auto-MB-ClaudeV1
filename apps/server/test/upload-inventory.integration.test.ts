@@ -82,7 +82,7 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
-    // The company document library (0078): a credential and its first
+    // The company document library (0079): a credential and its first
     // version arrive together, and a renewal appends to the credential
     // it renews. Two addresses, one handler, the same gate as every
     // other upload here.

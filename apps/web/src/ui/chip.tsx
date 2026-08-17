@@ -25,13 +25,13 @@ const CHIP_TONES = {
   recorded: 'success',
   approved: 'success',
   // A company document whose newest version is inside its validity
-  // window with room to spare (migration 0078).
+  // window with room to spare (migration 0079).
   valid: 'success',
 
   review: 'warning',
   prepared: 'warning',
   // A company document whose newest version lapses inside the warning
-  // window (migration 0078). `docs/DESIGN.md` § Status badge semantics
+  // window (migration 0079). `docs/DESIGN.md` § Status badge semantics
   // puts `expiring` in the warning family; `expired` below is already
   // destructive, and a document with no expiry at all sends `none`,
   // which stays unmapped and reads neutral — "outside the question" is

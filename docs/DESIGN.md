@@ -282,13 +282,24 @@ Four tint families, and only four:
 Statuses mapped at `fdfe5ef`:
 
 - **Success** — `active`, `paid`, `approved`, `accepted`, `confirmed`, `passed`,
-  `received`
+  `received`, `valid`
 - **Warning** — `on-hold`, `pending`, `needs-review`, `recording`, `partial`,
   `expiring`
-- **Destructive** — `cancelled`, `rejected`, `declined`
+- **Destructive** — `cancelled`, `rejected`, `declined`, `expired`
 - **Primary** — `issued`, `sent`, `checked`, `replied`
 - **Neutral** — `draft`, `completed`, `ordered`, `returned`, `released`,
-  `discarded`
+  `discarded`, `archived`
+
+`valid` and `archived` are the application's, added for the company document
+library (owner decision 2026-08-18, `docs/UX.md` § Approved divergences 8).
+They are the derived-validity vocabulary of a credential: `valid` inside its
+window, `expiring` inside the sixty-day warning, `expired` past it, and a
+fourth reading — `none`, for a document that never expires — deliberately left
+**unmapped** so it renders neutral. "Outside the question" is not "currently
+good", and colouring a PAN card green would say the wrong thing.
+
+`archived` is neutral for the same reason `completed` is: a retired credential
+is finished, not currently bad.
 
 `completed` being neutral rather than green is deliberate: a completed Work is
 finished, not currently good. Do not "fix" it.
@@ -365,6 +376,7 @@ adding a module is one edit.
 | `components/installations-workspace.tsx`    | `views/InstallationsRegister.tsx`                                     |                                                                                         |
 | `components/gst-invoice-composer.tsx`       | `views/work-tax-invoices/*`                                           |                                                                                         |
 | `components/company-bank-accounts.tsx`      | `views/Settings.tsx` → Company                                        | Where the Masters bank tab goes                                                         |
+| `components/company-document-library.tsx`   | `views/CompanyDocuments.tsx`                                          | Two-card `.75fr/1.25fr` grid; bordered credential rows; status chip is the shared one   |
 | `components/signature-approval-inbox.tsx`   | `views/Approvals.tsx`                                                 |                                                                                         |
 
 ### Not ported

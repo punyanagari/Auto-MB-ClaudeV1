@@ -1,7 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { DateOnlySchema, UuidSchema } from './primitives.js';
 
-// --- The company document library (migration 0078) -------------------------
+// --- The company document library (migration 0079) -------------------------
 //
 // Reusable organisation-level credentials — GST registration, PAN, an ISO
 // certificate, a bank solvency letter, a completion certificate — uploaded

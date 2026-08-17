@@ -38,6 +38,7 @@ import { auditDiff } from '../audit-diff.js';
 import {
   assertWorkAccess,
   hasFullWorkScope,
+  isWriterRole,
   membershipOf,
   requireWriterRole,
 } from '../authz.js';
@@ -831,7 +832,7 @@ export function registerLoaRoutes(
         // (and their extraction payloads) are the writers' workspace
         // (external re-audit).
         const membership = await membershipOf(tx, user.id);
-        const writer = membership?.role === 'owner' || membership?.role === 'office';
+        const writer = isWriterRole(membership);
         if (writer) {
           // Discarded documents leave the working list by default; the
           // row itself is retention material and stays readable to the
@@ -894,7 +895,7 @@ export function registerLoaRoutes(
         // Same visibility rule as the list; the denial is 404 so a
         // guessed identifier does not confirm the document exists.
         const membership = await membershipOf(tx, user.id);
-        const writer = membership?.role === 'owner' || membership?.role === 'office';
+        const writer = isWriterRole(membership);
         if (!writer) {
           let visible = false;
           if (membership !== undefined && found.confirmed_work_id !== null) {

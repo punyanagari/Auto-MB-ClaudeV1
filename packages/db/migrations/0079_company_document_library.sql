@@ -1,7 +1,7 @@
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '5min';
 
--- Migration 0078: the company document library.
+-- Migration 0079: the company document library.
 --
 -- Every document this product models so far belongs to a Work: the LOA
 -- that awarded it, the challans that move goods against it, the bills
@@ -120,10 +120,13 @@ CREATE UNIQUE INDEX company_documents_live_title_unique
   ON company_documents (organisation_id, lower(title))
   WHERE archived_at IS NULL;
 
--- The register's own order: the whole library of one organisation, live
--- rows before retired ones, alphabetical within each.
-CREATE INDEX company_documents_register_idx
-  ON company_documents (organisation_id, archived_at NULLS FIRST, lower(title));
+-- No index for the register's own ordering, deliberately. It reads one
+-- organisation's whole library — tens of rows, an agency does not hold
+-- hundreds of statutory certificates — and sorting that in memory is
+-- free. `UNIQUE (organisation_id, id)` above already gives the tenant
+-- predicate and the organisations foreign key a leading index; a second
+-- one matching `ORDER BY (archived_at IS NOT NULL), lower(title)` would
+-- be write cost bought for a sort that never appears in a plan.
 
 ALTER TABLE company_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE company_documents FORCE ROW LEVEL SECURITY;
@@ -136,13 +139,60 @@ CREATE POLICY company_documents_tenant_policy ON company_documents
   USING (organisation_id = (SELECT app_private.current_organisation_id()))
   WITH CHECK (organisation_id = (SELECT app_private.current_organisation_id()));
 
--- UPDATE is for archiving and for renaming a credential; DELETE is not
--- granted at all.
+-- UPDATE exists for exactly one act today — archiving — and the guard
+-- below narrows it to that. There is no DELETE at all. (A rename route
+-- would use the same grant, and the `title` column is deliberately left
+-- editable for it, but no route writes one yet: do not read this grant
+-- as evidence that renaming is implemented.)
 GRANT SELECT, INSERT, UPDATE ON company_documents TO auto_mb_app;
 
 CREATE TRIGGER company_documents_touch_updated_at
 BEFORE UPDATE ON company_documents
 FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
+
+-- What an UPDATE on a credential may not do, said in the database rather
+-- than only in the route that happens to be the sole writer today. Two
+-- facts are frozen and one transition is one-way.
+--
+-- `search_path` is pinned for the same reason 0067 and 0077 pin theirs:
+-- a trigger function resolves its own identifiers, and leaving that to
+-- the caller's search_path is how a shadowing object in a writable
+-- schema turns a guard into whatever it wants.
+CREATE FUNCTION app_private.guard_company_document_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  -- Provenance is a fact about an act that already happened, and the
+  -- tenant is not a property anything may edit: re-pointing
+  -- `organisation_id` would move a credential and every version behind it
+  -- into another organisation in one statement, which RLS cannot catch
+  -- because the row passes the policy on the way out and on the way in.
+  IF ROW(NEW.organisation_id, NEW.created_at, NEW.created_by_user_id)
+     IS DISTINCT FROM ROW(OLD.organisation_id, OLD.created_at, OLD.created_by_user_id)
+  THEN
+    RAISE EXCEPTION 'a company document''s tenant and provenance are immutable';
+  END IF;
+
+  -- Archiving releases the name (the partial unique index above stops
+  -- counting the row), so un-archiving could collide with a credential
+  -- added in the meantime and would resurrect a row two bids disagree
+  -- about. The way back is to add the credential again, which is what
+  -- releasing the name is for.
+  IF OLD.archived_at IS NOT NULL AND NEW.archived_at IS NULL THEN
+    RAISE EXCEPTION
+      'an archived company document cannot be un-archived; add it to the library again'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER company_documents_update_guard
+BEFORE UPDATE ON company_documents
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_company_document_update();
 
 -- ---------------------------------------------------------------------
 -- 2. The versions: the files, and what each one is valid for.
@@ -183,9 +233,18 @@ CREATE TABLE company_document_versions (
   uploaded_by_user_id text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
 
-  UNIQUE (organisation_id, id),
+  -- One constraint, doing two jobs: it is what makes concurrent renewals
+  -- safe, and it leads with `organisation_id` so the organisations
+  -- foreign key and the tenant predicate both have their index.
+  --
+  -- Two constraints that sibling tables carry are deliberately absent.
+  -- There is no tenant-composite key on the id, because nothing
+  -- references this table and that pattern exists only to give a child's
+  -- foreign key something tenant-scoped to point at. And there is no
+  -- per-tenant uniqueness on the object key, because the global unique
+  -- index below is strictly stronger and the tenant prefix inside the
+  -- key is a CHECK rather than a hope.
   UNIQUE (organisation_id, company_document_id, version_number),
-  UNIQUE (organisation_id, object_key),
 
   FOREIGN KEY (organisation_id, company_document_id)
     REFERENCES company_documents(organisation_id, id),
@@ -228,6 +287,7 @@ GRANT SELECT, INSERT ON company_document_versions TO auto_mb_app;
 CREATE FUNCTION app_private.guard_company_document_version()
 RETURNS trigger
 LANGUAGE plpgsql
+SET search_path = pg_catalog, public
 AS $$
 DECLARE
   parent_archived_at timestamptz;
@@ -239,10 +299,20 @@ BEGIN
   -- A retired credential takes no new evidence. Without this a version
   -- could be appended to a row the library no longer shows, which is a
   -- file nobody can find again.
+  --
+  -- FOR SHARE, not a bare read. This claims to be the second layer under
+  -- the route's own check, and a plain SELECT is not one: under READ
+  -- COMMITTED it would see the parent as it stood when this statement
+  -- began, so an archive committing between the read and this INSERT
+  -- would be invisible and the version would land on a retired
+  -- credential anyway. The share lock makes the two orderings the only
+  -- two possible — either the archive waits for this insert, or this
+  -- insert sees it and refuses.
   SELECT archived_at INTO parent_archived_at
   FROM company_documents
   WHERE id = NEW.company_document_id
-    AND organisation_id = NEW.organisation_id;
+    AND organisation_id = NEW.organisation_id
+  FOR SHARE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION

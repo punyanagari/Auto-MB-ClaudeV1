@@ -116,7 +116,7 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // attached to the wrong Measurement Book, and there is no DELETE
   // because a settlement document does not leave.
   received_railway_bills: 'SELECT, INSERT, UPDATE',
-  // The company document library (0078). The credential takes UPDATE for
+  // The company document library (0079). The credential takes UPDATE for
   // archiving and renaming and no DELETE, because a bid that cited it has
   // to stay explicable; its versions are stored evidence, so they are
   // append-only — no UPDATE, no DELETE, and a trigger that says the same.

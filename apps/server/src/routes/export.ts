@@ -442,7 +442,7 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select * from organisation_bank_accounts order by created_at, id`,
   },
   {
-    // The company document library (0078). Organisation-level master
+    // The company document library (0079). Organisation-level master
     // data like the rows above it, and the only one of them with stored
     // bytes — the credential PDFs travel in the manifest so an export
     // taken for a data-portability request carries the certificates and

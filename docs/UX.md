@@ -183,6 +183,33 @@ a time. The Sheet remains an option for a future polish pass: nothing in the
 chain depends on the container, so moving the same columns into the mock's Sheet
 is a presentation change whenever it is worth making.
 
+### 8. The status chip is the product's, where a mock screen reaches past it
+
+Owner decision, 2026-08-18.
+
+`docs/DESIGN.md` § Status badge semantics makes one shape the whole product's
+vocabulary for record state: a 24px `rounded-md` outline chip, 11px semibold,
+preceded by a dot that inherits the ink. The mock's own `components/shared`
+`StatusBadge` is that shape, and every register it draws uses it — except that
+`components/company-document-library.tsx` reaches past it for a raw
+`Badge variant="destructive"` reading "Expired".
+
+The application renders the shared chip there instead. The reason is not
+tidiness: the dot-plus-label is what keeps record state off the colour-only
+path (WCAG 1.4.1), and it is what the dual-theme axe gate checks. A single
+screen opting out of the product's status grammar is the mock being
+inconsistent with itself, so the divergence follows the mock's rule rather
+than the mock's pixel.
+
+Two status keys are added to the chip's tone map for it — `valid` (success)
+and `archived` (neutral, by being deliberately unmapped) — alongside
+`expiring`, which the mock's own `statusStyles` already carries.
+
+**Convergence path.** This is the divergence that should not survive: the fix
+belongs in v0, where that one screen adopts `StatusBadge` like every other
+register. When it does, the port drops to a byte-for-byte replication and this
+entry retires.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
@@ -288,6 +315,26 @@ The application applies that same machine and the same visual states to
 editing and legal issue stay visually and semantically separate; an issued
 document is read-only until an amendment is approved; a cancelled number is
 retained forever and never reused.
+
+### The company document library sits under Documents
+
+Owner decision, 2026-08-18. Permanent — not a placeholder pending a Tenders
+module.
+
+The mock has the screen
+(`app/tenders/company-documents/page.tsx`,
+`components/company-document-library.tsx`) but no rail entry for it: it is
+reached from a toolbar button on the Tenders dashboard. Tenders is one of the
+modules `shell/navigation.ts` omits for having no route in this build, so
+replicating that placement exactly would leave a screen the mock covers with
+no way into it.
+
+It therefore carries a rail entry of its own, in the **Documents** group after
+Quotations, with the Lucide `FileBadge` icon — Documents being where the mock's
+own rail groups document registers. If a Tenders module lands later the library
+stays where it is; a bid checklist links into it rather than absorbing it,
+because the library is organisation-level and tendering is one of four
+consumers.
 
 ### ⌘K command palette: planned, Phase 4
 
@@ -594,7 +641,8 @@ Inspection · Payments · Challans (delivery and issue tabs) · Delivery-challan
 editor · Issue-challan editor · Invoices · E-Way Bills · Quotations ·
 Correspondence · Production · Inventory · Purchase orders · Installations ·
 Maintenance · Global search · Employees · Approvals · Masters · Members ·
-Settings · Sign in · Onboarding · Mobile bottom bar and sheets
+Settings · Sign in · Onboarding · Company document library · Mobile bottom bar
+and sheets
 
 Screens the application adds, built in the mock's grammar (§ Approved divergences
 4):

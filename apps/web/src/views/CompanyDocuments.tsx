@@ -71,6 +71,16 @@ const EXPIRY_LABELS: Record<CompanyDocumentExpiryStatus, string> = {
   expired: 'Expired',
 };
 
+/** The server's `order by (archived_at is not null), lower(title)`, in
+ * TypeScript. Kept beside the register it sorts so the two orderings are
+ * one decision written twice rather than two decisions that drift. */
+function compareCredentials(left: CompanyDocument, right: CompanyDocument): number {
+  const retired = Number(left.archivedAt !== null) - Number(right.archivedAt !== null);
+  return retired !== 0
+    ? retired
+    : left.title.toLocaleLowerCase().localeCompare(right.title.toLocaleLowerCase());
+}
+
 interface CompanyDocumentsProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -85,7 +95,12 @@ export function CompanyDocuments({
   canModify,
 }: CompanyDocumentsProps) {
   const [documents, setDocuments] = useState<readonly CompanyDocument[] | null>(null);
-  const [warningDays, setWarningDays] = useState(60);
+  /** The server's own window, and null until it has said what it is. A
+   * default here would be a second opinion about a number only the server
+   * holds: the sentence is omitted for the one render before the response
+   * lands rather than stating a window that might not be the one the
+   * chips were computed against. */
+  const [warningDays, setWarningDays] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -117,6 +132,8 @@ export function CompanyDocuments({
     };
   }, [api, organisationId, loadVersion]);
 
+  /** A MUTATION: it changes the library, so it owns the pending flag that
+   * disables every other control, and it says what changed. */
   const act = useCallback(
     async (work: () => Promise<readonly CompanyDocument[]>, done: string) => {
       setPending(true);
@@ -138,18 +155,46 @@ export function CompanyDocuments({
     [],
   );
 
+  /** Opening a stored PDF is a READ, and deliberately not routed through
+   * `act`: it changes nothing, so it must not disable the form and every
+   * other button while it downloads, and "Document opened in a new tab"
+   * is not news worth a success notice. Only its failure is worth saying,
+   * and it says it in the same place the mutations do. */
+  const openDocument = useCallback(
+    (versionId: string): void => {
+      setActionError(null);
+      void openPdf(() =>
+        api.downloadCompanyDocumentVersion(organisationId, versionId),
+      ).catch((cause: unknown) => {
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The document could not be opened.',
+        );
+      });
+    },
+    [api, organisationId],
+  );
+
   /** Every mutation answers the credential it changed, so the register
-   * replaces that one row instead of re-reading the whole library. */
+   * replaces that one row instead of re-reading the whole library — and
+   * then re-sorts by the SERVER'S key, not by title alone.
+   *
+   * The two have to agree or the row moves on reload. The server orders
+   * `(archived_at is not null), lower(title)`, so archiving a credential
+   * sends it to the bottom of the list; sorting here on title alone left
+   * it where it was until the next fetch, and an inserted credential
+   * landed above the archived block instead of at the end of the live
+   * one. */
   const withReplaced = useCallback(
     (updated: CompanyDocument): readonly CompanyDocument[] => {
       const current = documents ?? [];
-      return current.some((credential) => credential.id === updated.id)
+      const replaced = current.some((credential) => credential.id === updated.id)
         ? current.map((credential) =>
             credential.id === updated.id ? updated : credential,
           )
-        : [...current, updated].sort((left, right) =>
-            left.title.localeCompare(right.title),
-          );
+        : [...current, updated];
+      return [...replaced].sort(compareCredentials);
     },
     [documents],
   );
@@ -158,7 +203,15 @@ export function CompanyDocuments({
     <PageHeader
       title="Company documents"
       titleId="company-documents-title"
-      description={`Upload a credential once, keep every version, and see what lapses within ${String(warningDays)} days. Statutory registrations, financial statements, eligibility and certification papers — reused wherever they are demanded.`}
+      description={
+        <>
+          Upload a credential once and keep every version.
+          {warningDays !== null &&
+            ` Anything lapsing within ${String(warningDays)} days is flagged.`}{' '}
+          Statutory registrations, financial statements, eligibility and certification
+          papers — reused wherever they are demanded.
+        </>
+      }
     />
   );
 
@@ -223,17 +276,9 @@ export function CompanyDocuments({
                     credential={credential}
                     canModify={canModify}
                     pending={pending}
-                    onOpen={(version) =>
-                      void act(async () => {
-                        await openPdf(() =>
-                          api.downloadCompanyDocumentVersion(
-                            organisationId,
-                            version.id,
-                          ),
-                        );
-                        return documents;
-                      }, 'Document opened in a new tab.')
-                    }
+                    onOpen={(version) => {
+                      openDocument(version.id);
+                    }}
                     onUploadVersion={(file, details) =>
                       void act(
                         async () =>
@@ -554,7 +599,6 @@ function DocumentRow({
                     <Button
                       variant="ghost"
                       size="xs"
-                      disabled={pending}
                       onClick={() => {
                         onOpen(version);
                       }}
@@ -575,12 +619,15 @@ function DocumentRow({
           </Disclosure>
         )}
       </div>
+      {/* The Open buttons here and in the history above are not gated on
+          `pending`: opening a stored PDF changes nothing, so a renewal
+          uploading in another row is no reason to stop somebody reading
+          this one. Archive is, because it is a mutation. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         {current !== undefined && (
           <Button
             variant="outline"
             size="sm"
-            disabled={pending}
             onClick={() => {
               onOpen(current);
             }}

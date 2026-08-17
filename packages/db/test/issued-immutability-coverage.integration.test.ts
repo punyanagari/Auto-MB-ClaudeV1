@@ -89,6 +89,19 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // nothing but the maintained timestamp is outside the freeze.
   budgetary_quotations: ['updated_at'],
 
+  // A reusable company credential (0079). Its provenance is frozen; the
+  // name and category stay editable so a mis-typed credential can be
+  // corrected without discarding its version history, and archiving is
+  // the one lifecycle act — one-way, which the same guard enforces.
+  company_documents: [
+    'id',
+    'updated_at',
+    'title',
+    'category',
+    'archived_at',
+    'archived_by_user_id',
+  ],
+
   correction_notices: [
     'id',
     'updated_at',

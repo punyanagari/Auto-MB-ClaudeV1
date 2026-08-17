@@ -1188,12 +1188,26 @@ were re-scanned whenever nobody could find it.
 
 The library is where they live now. It is organisation-level by definition —
 the point of it is that one PAN copy serves every Work — so nothing in it is
-work-scoped and no work-scope predicate applies to it. Reading it is open to
-any member of the organisation; adding, renewing and archiving are
-owner/office work, the same gate the rest of the organisation's master data
-carries. It deliberately does not take a new membership authority: issue,
-cancel and statutory are authorities over documents the organisation puts
-its name to, and filing a copy of one's own PAN card is not that act.
+work-scoped and no work-scope predicate applies to it.
+
+**Who may see what.** Adding, renewing and archiving are owner/office work,
+the same gate the rest of the organisation's master data carries. Reading is
+open to any member with one exception: **financial** documents — balance
+sheets, turnover certificates, bank solvency letters — are readable by
+owner/office only. Every other bucket holds something the agency hands to
+strangers on request; its GST registration number is printed on its own
+invoices. What the company is worth and who it banks with is not that, and
+site staff and viewers have no work that needs it. A non-writer's library
+simply does not contain those rows — the category is filtered in SQL rather
+than removed from a result — and a non-writer who reaches a financial
+version's bytes by id is refused with a 403 rather than a 404: they belong to
+the organisation that owns the file, so its existence is not the secret, only
+its contents are.
+
+The gate is the writer role rather than a new membership authority. Issue,
+cancel and statutory are authorities over documents the organisation puts its
+name to, and filing a copy of one's own PAN card is not that act; the people
+who file the financials are the people who may read them.
 
 **A credential and its versions.** A library row is the NAME — a title and
 one of five categories (statutory, financial, eligibility, certification,
@@ -1222,7 +1236,9 @@ that is what superseding it was for.
 archived. The row and every version survive and stay downloadable, because a
 bid that already cited the credential must remain explicable; the name it
 held is released, so the credential can be re-added if it comes back. An
-archived credential accepts no new versions.
+archived credential accepts no new versions, and archiving is one-way —
+un-archiving would resurrect a row while the name it freed may already
+belong to a credential added since, so the way back is to add it again.
 
 The stored PDFs go through the same gate as every other upload in the
 product — magic bytes rather than the declared content type, a fail-closed

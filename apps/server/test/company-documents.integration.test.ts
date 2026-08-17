@@ -1,11 +1,15 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
-import type { CompanyDocument, CompanyDocumentListResponse } from '@auto-mb/contracts';
+import {
+  COMPANY_DOCUMENT_CATEGORIES,
+  type CompanyDocument,
+  type CompanyDocumentListResponse,
+} from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import {
   assertNoForeignKeyOrphans,
@@ -16,9 +20,10 @@ import {
 } from '@auto-mb/db';
 import { assertSafeObjectKey } from '@auto-mb/documents';
 import { buildApp } from '../src/app.js';
+import { EXPIRY_WARNING_DAYS } from '../src/routes/shared.js';
 
 /**
- * The company document library (migration 0078).
+ * The company document library (migration 0079).
  *
  * What is proved here, in the order the module's own risks run:
  *
@@ -30,7 +35,8 @@ import { buildApp } from '../src/app.js';
  *      purely from where `current_date` falls, with nothing stored;
  *   4. archive — retiring a credential keeps its versions, refuses new
  *      ones, and frees the name;
- *   5. the walls — role for writes, and RLS for the other organisation.
+ *   5. the walls — role for writes, the restricted financial category for
+ *      reads, and RLS for the other organisation.
  */
 
 const adminUrl =
@@ -70,13 +76,20 @@ function pdfBytes(): Buffer {
   );
 }
 
-/** `YYYY-MM-DD`, `days` from today. The expiry assertions have to be
- * relative: a hard-coded date is a test that starts failing on a
- * Tuesday in some future year. */
+/**
+ * `YYYY-MM-DD`, `days` from the DATABASE's today.
+ *
+ * Relative, because a hard-coded date is a test that starts failing on a
+ * Tuesday in some future year. Anchored on `current_date` read from the
+ * server rather than on `new Date()`, because those are two clocks in two
+ * timezones and the route derives expiry from the first one: run this
+ * from IST between midnight and 05:30 and a UTC-derived "400 days away"
+ * is 399 days away to the database. Measured — that is exactly how this
+ * failed once — and a CI runner on UTC would never have reproduced it.
+ */
+let serverToday: number;
 function isoDaysFromToday(days: number): string {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
+  return new Date(serverToday + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 let admin: Sql;
@@ -125,6 +138,13 @@ async function authed(
 
 function query(details: Record<string, string>): string {
   return new URLSearchParams(details).toString();
+}
+
+/** Files actually written under the storage root. A refusal that has
+ * already spent a `storage.put` shows up here even when it answers 4xx. */
+async function storedObjectCount(): Promise<number> {
+  const entries = await readdir(storageDir, { recursive: true, withFileTypes: true });
+  return entries.filter((entry) => entry.isFile()).length;
 }
 
 async function upload(
@@ -179,6 +199,12 @@ beforeAll(async () => {
   await admin`select 1 as ready`;
   await ensureClusterRoles(admin, appPassword);
   await runMigrations(admin, migrationsDirectory);
+
+  const [today] = await admin<{ today: string }[]>`
+    select current_date::text as today
+  `;
+  serverToday = Date.parse(`${today?.today ?? ''}T00:00:00.000Z`);
+  expect(Number.isNaN(serverToday)).toBe(false);
 
   storageDir = await mkdtemp(path.join(os.tmpdir(), 'auto-mb-cdoc-objects-'));
   app = await buildApp({
@@ -295,7 +321,7 @@ describe('uploading a company credential', () => {
       })}`,
       organisationId,
       headers: { 'content-type': 'application/pdf' },
-      payload: Buffer.from('MZ  this is a Windows executable'),
+      payload: Buffer.from('MZ\x90\x00 this is a Windows executable'),
     });
     expect(response.statusCode, response.body).toBe(400);
     expect(response.json<{ code: string }>().code).toBe('NOT_A_PDF');
@@ -306,6 +332,50 @@ describe('uploading a company credential', () => {
       where organisation_id = ${organisationId} and title = 'Not a PDF at all'
     `;
     expect(count?.n).toBe('0');
+  });
+
+  it('refuses a whitespace-only filename without storing anything', async () => {
+    // The querystring schema's minLength admits a string of spaces, and
+    // 0079's CHECK refuses one. Without the trim in the route the refusal
+    // arrives as SQLSTATE 23514 — a 500, raised AFTER the bytes are in
+    // object storage, so the caller gets an unexplained server error and
+    // an orphan object is left behind.
+    const before = await storedObjectCount();
+    for (const attempt of [
+      upload(office, {
+        title: 'Blank filename on create',
+        category: 'statutory',
+        filename: '   ',
+      }),
+      (async () => {
+        const created = await upload(office, {
+          title: 'Blank filename on renewal',
+          category: 'statutory',
+          filename: 'first.pdf',
+        });
+        expect(created.statusCode, created.body).toBe(201);
+        return uploadVersion(office, created.json<CompanyDocument>().id, {
+          filename: ' ',
+        });
+      })(),
+    ]) {
+      const response = await attempt;
+      expect(response.statusCode, response.body).toBe(400);
+      expect(response.json<{ code: string }>().code).toBe('FIELD_TOO_SHORT');
+    }
+    // One object for the legitimate first.pdf above, and nothing from
+    // either refusal.
+    expect(await storedObjectCount()).toBe(before + 1);
+  });
+
+  it('refuses a whitespace-only title', async () => {
+    const response = await upload(office, {
+      title: '   ',
+      category: 'statutory',
+      filename: 'nameless.pdf',
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('FIELD_TOO_SHORT');
   });
 
   it('refuses an expiry that falls before the document takes effect', async () => {
@@ -454,6 +524,43 @@ describe('derived expiry', () => {
     expect(names).toContain('expires_on');
     expect(names).not.toContain('expiry_status');
   });
+
+  it('puts each edge of the window on the side the SQL says', async () => {
+    // The four dates where the derivation changes its mind. The SQL is
+    // `expires_on < current_date` for expired and `<= current_date + 60`
+    // for expiring, so today itself is EXPIRING (a certificate is valid
+    // through its last day, not until the morning of it) and day 60 is
+    // the last expiring day.
+    //
+    // Day 0 is also the case that breaks first if anyone re-derives
+    // "today" in JavaScript: `new Date().toISOString()` is a UTC round
+    // trip of a wall clock, and run from IST between midnight and 05:30
+    // it names YESTERDAY — so a document expiring today would be read as
+    // expired. That is the trap AGENTS.md rule 6 exists to forbid, it is
+    // how this suite failed once, and a CI runner on UTC would never
+    // reproduce it. `serverToday` comes from `select current_date`, and
+    // this case is what holds it there.
+    const edges = [
+      { days: -1, status: 'expired' },
+      { days: 0, status: 'expiring' },
+      { days: EXPIRY_WARNING_DAYS, status: 'expiring' },
+      { days: EXPIRY_WARNING_DAYS + 1, status: 'valid' },
+    ] as const;
+
+    for (const edge of edges) {
+      const label = `Window edge ${String(edge.days)}`;
+      const response = await upload(office, {
+        title: label,
+        category: 'certification',
+        filename: 'edge.pdf',
+        expiresOn: isoDaysFromToday(edge.days),
+      });
+      expect(response.statusCode, response.body).toBe(201);
+      const created = response.json<CompanyDocument>();
+      expect(created.expiryStatus, label).toBe(edge.status);
+      expect(created.expiresInDays, label).toBe(edge.days);
+    }
+  });
 });
 
 describe('archiving', () => {
@@ -510,13 +617,42 @@ describe('archiving', () => {
     expect(response.statusCode, response.body).toBe(404);
     expect(response.json<{ code: string }>().code).toBe('COMPANY_DOCUMENT_NOT_FOUND');
   });
+
+  it('refuses to un-archive, or to rewrite provenance, from the owner pool', async () => {
+    // No route does either; the guard is what makes that a property of
+    // the schema rather than of the one writer that exists today. Driven
+    // from the owner pool, which holds the UPDATE privilege the
+    // application role's grant also carries, so the trigger is what is
+    // being measured.
+    const [row] = await admin<{ id: string }[]>`
+      select id from company_documents
+      where organisation_id = ${organisationId} and archived_at is not null
+      limit 1
+    `;
+    const archivedId = row?.id ?? '';
+    expect(archivedId).not.toBe('');
+
+    await expect(
+      admin`update company_documents set archived_at = null where id = ${archivedId}`,
+    ).rejects.toThrow(/cannot be un-archived/);
+
+    await expect(
+      admin`
+        update company_documents set created_by_user_id = 'someone-else'
+        where id = ${archivedId}
+      `,
+    ).rejects.toThrow(/tenant and provenance are immutable/);
+  });
 });
 
 describe('the walls', () => {
   it('lets a viewer read and download but not upload or archive', async () => {
     const list = await library(viewer);
     expect(list.documents.length).toBeGreaterThan(0);
-    const versionId = list.documents[0]?.versions[0]?.id ?? '';
+    const nonFinancial = list.documents.find(
+      (document) => document.versions.length > 0,
+    );
+    const versionId = nonFinancial?.versions[0]?.id ?? '';
     const download = await authed(viewer, {
       method: 'GET',
       url: `/api/company-document-versions/${versionId}/file`,
@@ -539,6 +675,78 @@ describe('the walls', () => {
     });
     expect(archive403.statusCode, archive403.body).toBe(403);
     expect(archive403.json<{ code: string }>().code).toBe('ROLE_FORBIDDEN');
+  });
+
+  it('keeps financial documents out of a non-writer’s reach entirely', async () => {
+    // Owner decision, 2026-08-18: balance sheets, turnover certificates
+    // and bank solvency letters are readable by owner/office only. Every
+    // other category stays open to any member.
+    const created = await upload(office, {
+      title: 'Audited balance sheet 2025-26',
+      category: 'financial',
+      filename: 'balance-sheet.pdf',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const financial = created.json<CompanyDocument>();
+    const financialVersionId = financial.versions[0]?.id ?? '';
+
+    // A writer sees it, and can read the bytes.
+    const writerList = await library(office);
+    expect(writerList.documents.some((row) => row.id === financial.id)).toBe(true);
+    const writerDownload = await authed(office, {
+      method: 'GET',
+      url: `/api/company-document-versions/${financialVersionId}/file`,
+      organisationId,
+    });
+    expect(writerDownload.statusCode, writerDownload.body).toBe(200);
+
+    // A viewer's list omits it — filtered in SQL, so its versions never
+    // load either and no id leaks for them to try.
+    const viewerList = await library(viewer);
+    expect(viewerList.documents.some((row) => row.id === financial.id)).toBe(false);
+    expect(viewerList.documents.every((row) => row.category !== 'financial')).toBe(
+      true,
+    );
+    // ...and the rest of the library is still there, so the filter is a
+    // filter rather than an outage.
+    expect(viewerList.documents.length).toBeGreaterThan(0);
+    expect(
+      viewerList.documents.length,
+      'the viewer should see every non-financial credential the writer sees',
+    ).toBe(writerList.documents.filter((row) => row.category !== 'financial').length);
+
+    // A viewer who learned the id anyway is refused 403, not 404: they
+    // belong to the organisation that owns the file, so its existence is
+    // not the secret — the bytes are, and a refusal they can act on beats
+    // a lie that sends them looking.
+    const viewerDownload = await authed(viewer, {
+      method: 'GET',
+      url: `/api/company-document-versions/${financialVersionId}/file`,
+      organisationId,
+    });
+    expect(viewerDownload.statusCode, viewerDownload.body).toBe(403);
+    expect(viewerDownload.json<{ code: string }>().code).toBe('ROLE_FORBIDDEN');
+  });
+
+  it('declares exactly the categories the schema admits', async () => {
+    // The census the migration-contract test cannot run: `packages/db`
+    // does not depend on `packages/contracts`, so the comparison between
+    // the CHECK constraint and COMPANY_DOCUMENT_CATEGORIES lives here,
+    // where both are in reach — and it reads the LIVE constraint rather
+    // than the migration's text.
+    const [constraint] = await admin<{ definition: string }[]>`
+      select pg_get_constraintdef(c.oid) as definition
+      from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+      where t.relname = 'company_documents'
+        and c.contype = 'c'
+        and pg_get_constraintdef(c.oid) like '%category%'
+    `;
+    const definition = constraint?.definition ?? '';
+    const admitted = [...definition.matchAll(/'([a-z]+)'::text/g)]
+      .map((match) => match[1])
+      .sort();
+    expect(admitted).toEqual([...COMPANY_DOCUMENT_CATEGORIES].sort());
   });
 
   it('shows one organisation nothing of the other', async () => {

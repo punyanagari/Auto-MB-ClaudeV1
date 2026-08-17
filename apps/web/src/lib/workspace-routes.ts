@@ -59,7 +59,7 @@ export type WorkspaceView =
    * durability finding 28 gave every other view. */
   | { name: 'search'; query: string }
   /** The company document library: organisation-level credentials that
-   * belong to no Work (migration 0078). One register, no record page —
+   * belong to no Work (migration 0079). One register, no record page —
    * a credential is its rows, and the versions live inside the row. */
   | { name: 'company-documents' }
   | { name: 'members' }

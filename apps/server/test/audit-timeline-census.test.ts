@@ -61,7 +61,7 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level: the company’s own accounts, not anything a Work did.',
   document_number_series: 'Organisation-level numbering configuration.',
   company_documents:
-    'Organisation-level master data (0078): a reusable credential belongs to the company, not to any Work, so it has no Work timeline to join.',
+    'Organisation-level master data (0079): a reusable credential belongs to the company, not to any Work, so it has no Work timeline to join.',
   import_batches: 'The v1 import CLI’s own batch bookkeeping, org-level.',
   loa_documents:
     'KNOWN GAP (pre-timeline): contract-source uploads are Work-linked but never joined the timeline.',
