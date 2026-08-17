@@ -84,6 +84,7 @@ function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}, props = {
       canCancel
       canManageStatutory
       openChallanId={null}
+      workId={null}
       onOpenChallan={onOpenChallan}
       onOpenWorkChallan={onOpenWorkChallan}
       {...props}
@@ -100,9 +101,10 @@ describe('the Delivery Challan register', () => {
     expect(within(supply).getByText('RE-2026-01')).toBeDefined();
 
     const standalone = screen.getByRole('row', { name: /Modern Rail Systems/ });
-    expect(within(standalone).getByText('Standalone')).toBeDefined();
-    // No Work, and the column says so rather than sitting blank.
-    expect(within(standalone).getByText('—')).toBeDefined();
+    // The movement column, and the identity cell's own first line: a
+    // standalone challan belongs to no Work, and both say so rather than
+    // sitting blank.
+    expect(within(standalone).getAllByText('Standalone').length).toBe(2);
   });
 
   it('sends a work challan to its Work and a standalone one to this module', async () => {
@@ -110,7 +112,7 @@ describe('the Delivery Challan register', () => {
     fireEvent.click(await screen.findByRole('link', { name: 'DC/1' }));
     expect(onOpenWorkChallan).toHaveBeenCalledWith(WORK_ID, WORK_CHALLAN_ID);
 
-    fireEvent.click(screen.getByRole('link', { name: 'Draft' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Number assigned on issue' }));
     expect(onOpenChallan).toHaveBeenCalledWith(STANDALONE_ID);
   });
 
@@ -120,16 +122,20 @@ describe('the Delivery Challan register', () => {
     expect(supply.getAttribute('href')).toBe(
       `#/works/${WORK_ID}/challans/${WORK_CHALLAN_ID}`,
     );
-    expect(screen.getByRole('link', { name: 'Draft' }).getAttribute('href')).toBe(
-      `#/delivery-challans/${STANDALONE_ID}`,
-    );
+    expect(
+      screen
+        .getByRole('link', { name: 'Number assigned on issue' })
+        .getAttribute('href'),
+    ).toBe(`#/delivery-challans/${STANDALONE_ID}`);
   });
 
   it('filters to one movement at a time', async () => {
     renderRegister();
     fireEvent.click(await screen.findByRole('button', { name: /^Standalone/ }));
     expect(screen.queryByRole('link', { name: 'DC/1' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Draft' })).toBeDefined();
+    expect(
+      screen.getByRole('link', { name: 'Number assigned on issue' }),
+    ).toBeDefined();
   });
 
   it('drafts a standalone challan from a contacts-master consignee', async () => {

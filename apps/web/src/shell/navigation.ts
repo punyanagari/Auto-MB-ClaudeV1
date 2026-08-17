@@ -19,7 +19,7 @@ import type { WorkspaceView } from '../lib/workspace-routes.js';
 export type ModuleKey =
   | 'dashboard'
   | 'works'
-  | 'delivery-challans'
+  | 'challans'
   | 'invoices'
   | 'quotations'
   | 'approvals'
@@ -71,7 +71,7 @@ export const NAVIGATION: readonly NavGroup[] = [
   {
     label: 'Documents',
     items: [
-      { key: 'delivery-challans', label: 'Delivery Challans', icon: Truck },
+      { key: 'challans', label: 'Challans', icon: Truck },
       { key: 'invoices', label: 'Invoices', icon: Receipt },
       { key: 'quotations', label: 'Quotations', icon: FileText },
     ],
@@ -107,8 +107,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'dashboard' };
     case 'works':
       return { name: 'works' };
-    case 'delivery-challans':
-      return { name: 'delivery-challans' };
+    case 'challans':
+      return { name: 'challans', tab: 'delivery', workId: null };
     case 'invoices':
       return { name: 'invoices' };
     case 'quotations':
@@ -135,11 +135,11 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     // Both of the module's views light the same nav lamp: the register
     // and an opened record are one place.
     case 'delivery-challan':
-      return 'delivery-challans';
+      return 'challans';
     case 'invoice':
       return 'invoices';
     case 'dashboard':
-    case 'delivery-challans':
+    case 'challans':
     case 'invoices':
     case 'quotations':
     case 'approvals':
@@ -179,8 +179,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Edit Issue Challan';
     case 'issue-challan':
       return 'Issue Challan';
-    case 'delivery-challans':
-      return 'Delivery Challans';
+    case 'challans':
+      return 'Challans';
     case 'delivery-challan':
       return 'Delivery Challan';
     case 'invoices':

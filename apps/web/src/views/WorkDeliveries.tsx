@@ -3,7 +3,12 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
-import { challanHash, navigateOnClick, workHash } from '../lib/workspace-routes.js';
+import {
+  challanHash,
+  challansHash,
+  navigateOnClick,
+  workHash,
+} from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { CardHeader } from '../ui/card.js';
@@ -93,7 +98,13 @@ export function WorkDeliveries({
         >
           Installations tab
         </a>
-        .
+        . Every movement of this Work, beside every other Work&rsquo;s, is in the{' '}
+        {/* The mock's `?work=` deep link (`components/document-register`
+            at a8e1fde): the register opens already narrowed to this Work
+            and says so with a chip that clears back to the whole
+            register. A plain anchor, so it middle-clicks like any other
+            row link here. */}
+        <a href={challansHash('delivery', workId)}>Challans register</a>.
       </p>
       {challansState === 'unavailable' ? (
         <FormError>

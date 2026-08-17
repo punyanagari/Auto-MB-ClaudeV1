@@ -251,7 +251,7 @@ describe('OperationsWorkspace mobile shell', () => {
     ).toEqual([
       'Dashboard',
       'Works',
-      'Delivery Challans',
+      'Challans',
       'Invoices',
       'Quotations',
       'Installations',

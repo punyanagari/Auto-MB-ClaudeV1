@@ -10,7 +10,7 @@ import type {
 import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
-import { StatusChip } from '../ui/chip.js';
+import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, ActionBar, FormError, FieldError, Hint } from '../ui/form.js';
@@ -233,10 +233,10 @@ const ItemRow = memo(function ItemRow({
             onQuantityChange(item.workItemId, event.target.value);
           }}
           onBlur={() => {
-            // Guidance only, and only where an excess would actually be
-            // refused: the draft stays saveable, and the server does the
-            // authoritative comparison when the challan is issued.
-            if (allowExcessDelivery) return;
+            // Guidance only: the draft stays saveable either way, and
+            // the server does the authoritative comparison when the
+            // challan is issued. What the excess toggle changes is what
+            // going over MEANS, not whether it is worth saying.
             onQuantityBlur(item.workItemId, item.remainingQuantity, quantity);
           }}
           aria-invalid={error !== undefined}
@@ -248,11 +248,23 @@ const ItemRow = memo(function ItemRow({
         {error !== undefined && (
           <FieldError id={`${quantityField}-error`}>{error}</FieldError>
         )}
-        {over && (
-          <StatusChip status="review" id={`${quantityField}-over`}>
-            over the {item.remainingQuantity} remaining
-          </StatusChip>
-        )}
+        {/* The mock's two excess rows, in its two inks
+            (`app/delivery-challans/new/page` at `a8e1fde`). Going
+            over the remaining balance is a caution when the Work allows
+            excess delivery and a refusal when it does not, and the
+            difference is the whole point of that toggle — one badge for
+            each is what stops the composer implying the cap is soft. */}
+        {over &&
+          (allowExcessDelivery ? (
+            <Badge variant="warning" id={`${quantityField}-over`}>
+              Excess over the {item.remainingQuantity} remaining
+            </Badge>
+          ) : (
+            <FieldError id={`${quantityField}-over`}>
+              Quantity exceeds the remaining deliverable quantity of{' '}
+              {item.remainingQuantity} {item.unitCode}.
+            </FieldError>
+          ))}
       </td>
       {offersPoLines && (
         <td>

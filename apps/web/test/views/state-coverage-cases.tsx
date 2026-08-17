@@ -9,6 +9,7 @@ import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
 import { Approvals } from '../../src/views/Approvals.js';
 import { CompletionExtensions } from '../../src/views/CompletionExtensions.js';
 import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
+import { IssueChallans } from '../../src/views/IssueChallans.js';
 import { Installations } from '../../src/views/Installations.js';
 import { InstallationsRegister } from '../../src/views/InstallationsRegister.js';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
@@ -138,12 +139,29 @@ export const STATE_CASES: readonly StateCase[] = [
         canCancel
         canManageStatutory
         openChallanId={null}
+        workId={null}
         onOpenChallan={noop}
         onOpenWorkChallan={noop}
       />
     ),
     retry: /Retry delivery challans/,
     empty: { text: /No delivery challans yet/ },
+  },
+  {
+    view: 'IssueChallans.tsx',
+    name: 'the issue challan register',
+    loads: ['listIssueChallans'],
+    render: (api) => (
+      <IssueChallans
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        onOpenIssueChallan={noop}
+        onChooseWork={noop}
+      />
+    ),
+    retry: /Retry issue challans/,
+    empty: { text: /No issue challans for this Work yet/ },
   },
   {
     view: 'Installations.tsx',

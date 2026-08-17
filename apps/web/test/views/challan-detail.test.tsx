@@ -95,11 +95,16 @@ describe('ChallanDetail', () => {
     await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
     expect(screen.queryByRole('button', { name: 'Issue challan' })).toBeNull();
 
-    await openForm('Cancel challan…');
-    fireEvent.change(screen.getByLabelText('Cancellation note'), {
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel challan' }));
+    // The dialog says what cancelling costs before it asks for a reason,
+    // and holds its own confirm until one is given.
+    expect(screen.getByText(/its number will never be reused/i)).toBeTruthy();
+    const confirm = screen.getByRole('button', { name: 'Confirm cancellation' });
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'Wrong consignee.' },
     });
-    fireEvent.click(submitButton('Cancel challan'));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm cancellation' }));
     await waitFor(() => {
       expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
         note: 'Wrong consignee.',
@@ -622,11 +627,11 @@ describe('ChallanDetail cancel surface', () => {
     });
     renderIssued(api);
 
-    await openForm('Cancel challan…');
-    fireEvent.change(screen.getByLabelText('Cancellation note'), {
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel challan' }));
+    fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'Wrong consignee.' },
     });
-    fireEvent.click(submitButton('Cancel challan'));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm cancellation' }));
     await waitFor(() => {
       expect(cancelChallan).toHaveBeenCalledWith(ORG_ID, CHALLAN_ID, {
         note: 'Wrong consignee.',

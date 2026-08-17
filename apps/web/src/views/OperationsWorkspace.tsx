@@ -69,10 +69,8 @@ const ChallanDetail = lazy(() =>
 const ChallanEditor = lazy(() =>
   import('./ChallanEditor.js').then((module) => ({ default: module.ChallanEditor })),
 );
-const DeliveryChallans = lazy(() =>
-  import('./DeliveryChallans.js').then((module) => ({
-    default: module.DeliveryChallans,
-  })),
+const Challans = lazy(() =>
+  import('./Challans.js').then((module) => ({ default: module.Challans })),
 );
 const InstallationsRegister = lazy(() =>
   import('./InstallationsRegister.js').then((module) => ({
@@ -374,14 +372,18 @@ export function OperationsWorkspace({
 
   // The Work behind any challan screen: its status closes create/record
   // surfaces, and its code fills the editor's prefix when the view was
-  // restored from a hash (which carries no work code).
+  // restored from a hash (which carries no work code). The Challans
+  // register joins the list for the second reason only — its `?work=`
+  // chip names the Work by its code, and the hash carries the id.
   const openedChallanWorkId =
     view.name === 'challan' ||
     view.name === 'issue-challan' ||
     view.name === 'challan-new' ||
     view.name === 'challan-edit'
       ? view.workId
-      : null;
+      : view.name === 'challans'
+        ? view.workId
+        : null;
   useEffect(() => {
     if (openedChallanWorkId === null) return;
     let cancelled = false;
@@ -982,25 +984,42 @@ export function OperationsWorkspace({
               />
             )}
 
-            {(view.name === 'delivery-challans' ||
-              view.name === 'delivery-challan') && (
-              <DeliveryChallans
+            {(view.name === 'challans' || view.name === 'delivery-challan') && (
+              <Challans
                 api={api}
                 organisationId={organisation.id}
                 canModify={canModify}
                 canIssue={canIssue}
                 canCancel={canCancel}
                 canManageStatutory={canManageStatutory}
+                tab={view.name === 'challans' ? view.tab : 'delivery'}
+                workId={view.name === 'challans' ? view.workId : null}
+                workCode={challanWorkCode}
                 openChallanId={view.name === 'delivery-challan' ? view.challanId : null}
+                onOpenRegister={(tab, workId) => {
+                  navigate({ name: 'challans', tab, workId });
+                }}
                 onOpenChallan={(challanId) => {
                   navigate(
                     challanId === null
-                      ? { name: 'delivery-challans' }
+                      ? { name: 'challans', tab: 'delivery', workId: null }
                       : { name: 'delivery-challan', challanId },
                   );
                 }}
                 onOpenWorkChallan={(workId, challanId) => {
                   navigate({ name: 'challan', workId, workCode: '', challanId });
+                }}
+                onOpenIssueChallan={(workId, challanId) => {
+                  navigate({ name: 'issue-challan', workId, challanId });
+                }}
+                onNewWorkChallan={(workId, workCode) => {
+                  navigate({ name: 'challan-new', workId, workCode });
+                }}
+                onNewIssueChallan={(workId) => {
+                  navigate({ name: 'issue-challan-new', workId });
+                }}
+                onChooseWork={() => {
+                  navigate({ name: 'works' });
                 }}
               />
             )}
