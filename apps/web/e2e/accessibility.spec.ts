@@ -953,3 +953,65 @@ test('the workspace keeps the tenant header on every scoped request', async ({
   expect(scopedHeaders.length).toBeGreaterThanOrEqual(4);
   expect(scopedHeaders.every((header) => header === ORG.id)).toBe(true);
 });
+
+/* The bottom bar and its two sheets exist only below `lg`, so the suite's
+   desk width had never seen them and the two mobile projects only run the
+   responsive spec. This block is the axe coverage they were missing: the
+   sheets are scanned OPEN, in both themes, at the narrowest viewport the
+   product claims to support. */
+test.describe('mobile shell', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  test('the bottom bar and both sheets pass the axe scan and keep the keyboard', async ({
+    page,
+  }) => {
+    await mockWorkspace(page);
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+    const bar = page.getByRole('navigation', { name: 'Mobile navigation' });
+    const record = bar.getByRole('button', { name: 'Record', exact: true });
+    const more = bar.getByRole('button', { name: 'More', exact: true });
+    await expect(bar.getByRole('button', { name: 'Home', exact: true })).toBeVisible();
+    await expect(bar.getByRole('button', { name: 'Works', exact: true })).toBeVisible();
+    await expect(record).toBeVisible();
+    await expect(more).toBeVisible();
+    // The mock's `min-h-14` touch target, on the cell that used to be a
+    // raised button floating out of the bar.
+    const cell = await record.boundingBox();
+    expect(cell?.height ?? 0).toBeGreaterThanOrEqual(56);
+    await expectNoAxeViolations(page, 'mobile bottom bar');
+
+    await record.click();
+    const recordSheet = page.getByRole('dialog', { name: 'Record field activity' });
+    await expect(recordSheet).toBeVisible();
+    // No Work is open, so the sheet says why it offers no record buttons
+    // and still leaves the way to one.
+    await expect(
+      recordSheet.getByText('Choose a Work before recording site evidence.'),
+    ).toBeVisible();
+    await expect(recordSheet.getByRole('button', { name: 'Open Works' })).toBeVisible();
+    // Focus moved into the sheet rather than staying on a covered control.
+    await expect(recordSheet.getByRole('button', { name: 'Close' })).toBeFocused();
+    await expectNoAxeViolations(page, 'mobile record sheet');
+    await page.keyboard.press('Escape');
+    await expect(recordSheet).toBeHidden();
+    await expect(record).toBeFocused();
+
+    await more.click();
+    const moreSheet = page.getByRole('dialog', { name: 'More modules' });
+    await expect(moreSheet).toBeVisible();
+    await expect(moreSheet.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    await expectNoAxeViolations(page, 'mobile more sheet');
+    await page.keyboard.press('Escape');
+    await expect(moreSheet).toBeHidden();
+    await expect(more).toBeFocused();
+
+    // And the destinations behind it still open, from the keyboard.
+    await more.press('Enter');
+    await expect(moreSheet).toBeVisible();
+    await moreSheet.getByRole('button', { name: 'Settings' }).click();
+    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(moreSheet).toBeHidden();
+  });
+});
