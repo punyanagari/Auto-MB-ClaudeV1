@@ -173,8 +173,11 @@ export function WorkBillSettlement({
   }
 
   return (
+    /* `.data-surface`, the mock's shared panel wrapper (docs/DESIGN.md
+       § Component-layer conventions, ported from the mock at a8e1fde),
+       rather than the outlined box this screen used to draw for itself. */
     <section
-      className="mt-4 flex flex-col gap-3 rounded-xl border border-border p-4"
+      className="data-surface mt-4 flex flex-col gap-3 p-4"
       aria-labelledby="bill-settlement-heading"
     >
       <h3 id="bill-settlement-heading" className="m-0 text-sm font-medium">

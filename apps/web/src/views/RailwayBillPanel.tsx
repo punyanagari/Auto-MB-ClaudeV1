@@ -109,7 +109,12 @@ export function RailwayBillPanel({
   );
 
   return (
-    <section className="mt-4 flex flex-col gap-3 rounded-xl border border-border p-4">
+    /* The mock's panel wrapper, not a second hand-rolled copy of it:
+       `.data-surface` is the card treatment every register and detail
+       surface shares (docs/DESIGN.md § Component-layer conventions, ported
+       from the mock at a8e1fde), which is what stops this panel reading as
+       a plain outlined box beside the Measurement Book it belongs to. */
+    <section className="data-surface mt-4 flex flex-col gap-3 p-4">
       <h4 className="m-0 text-sm font-medium">Railway bill</h4>
 
       {book.closedAt !== null && (
