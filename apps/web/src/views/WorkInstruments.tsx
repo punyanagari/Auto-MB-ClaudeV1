@@ -10,6 +10,7 @@ import { formValue, type ApiClient } from '../api.js';
 import { formatInr } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import { Stat } from '../ui/stat.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
@@ -50,33 +51,39 @@ export function WorkInstruments({
     <>
       <h2>Contract instruments</h2>
       {typeof work.pbgRequiredAmount === 'string' ? (
-        <dl
-          className="mt-3 mb-4 flex flex-wrap gap-x-8 gap-y-4 p-0 [&>div]:min-w-32 [&_dt]:mb-0.5 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-[0.025em] [&_dt]:text-muted-foreground [&_dt]:uppercase [&_dd]:m-0 [&_dd]:text-sm [&_dd]:font-medium"
-          aria-label="PBG requirement from the letter"
-        >
-          <div>
-            <dt>PBG required by the letter</dt>
-            <dd>{formatInr(work.pbgRequiredAmount)}</dd>
-          </div>
-          <div>
-            <dt>Submission window</dt>
-            <dd>
-              {work.pbgSubmissionDays !== null
-                ? `${String(work.pbgSubmissionDays)} days from the letter date`
-                : '—'}
-              {work.pbgExtensionDays !== null &&
-                ` (+${String(work.pbgExtensionDays)} days extension)`}
-            </dd>
-          </div>
-          <div>
-            <dt>Penal interest</dt>
-            <dd>
-              {work.pbgPenalInterestPercent !== null
-                ? `${work.pbgPenalInterestPercent}% p.a.`
-                : '—'}
-            </dd>
-          </div>
-        </dl>
+        /* The mock's instrument tile (Auto-MB-Vercel-du,
+           components/work-registers.tsx at fdfe5ef): one figure carrying
+           the metric, and the terms that qualify it in a bordered footer
+           of small labelled facts underneath. The amount is the only
+           thing here that is a number, so it is the only thing that gets
+           `.metric-value`; the window and the interest stay labelled
+           pairs rather than becoming mono figures reading prose. */
+        <section className="data-surface mt-3 mb-4 p-4" aria-label="PBG requirement">
+          <Stat
+            label="PBG required by the letter"
+            value={formatInr(work.pbgRequiredAmount)}
+          />
+          <dl className="m-0 mt-3 flex flex-col gap-2 border-t border-border p-0 pt-3 text-xs">
+            <div className="flex flex-wrap justify-between gap-x-4 gap-y-0.5">
+              <dt className="text-muted-foreground">Submission window</dt>
+              <dd className="m-0 font-medium">
+                {work.pbgSubmissionDays !== null
+                  ? `${String(work.pbgSubmissionDays)} days from the letter date`
+                  : '—'}
+                {work.pbgExtensionDays !== null &&
+                  ` (+${String(work.pbgExtensionDays)} days extension)`}
+              </dd>
+            </div>
+            <div className="flex flex-wrap justify-between gap-x-4 gap-y-0.5">
+              <dt className="text-muted-foreground">Penal interest</dt>
+              <dd className="m-0 font-medium">
+                {work.pbgPenalInterestPercent !== null
+                  ? `${work.pbgPenalInterestPercent}% p.a.`
+                  : '—'}
+              </dd>
+            </div>
+          </dl>
+        </section>
       ) : (
         <p className="text-muted-foreground">
           The letter records no Performance Bank Guarantee requirement.

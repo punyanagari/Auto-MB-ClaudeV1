@@ -98,6 +98,10 @@ const ALLOWED_EXTERNAL = new Map([
     'work-section-nav.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work page for the section rail it replicates',
   ],
+  [
+    'work-registers.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the instruments and completion panels for the metric tile and gapless tile grid they replicate',
+  ],
 ]);
 
 /**
