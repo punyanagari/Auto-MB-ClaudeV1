@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import type { InstallationRegisterEntry } from '@auto-mb/contracts';
 import { formValue, RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
@@ -28,12 +29,22 @@ import { WorkLink } from '../ui/work-link.js';
  * Cancelled records are listed with their status rather than hidden: the
  * register reports what was recorded, not only what still stands.
  *
- * The list is paged and the window is a date range, for the same reason:
- * "this week" is the question, and a division that has been running for
- * two years has more installation records than any screen should ask for
- * in one request. The two date inputs are the only filter — a Work's own
- * records are read on the Work, and a status filter would offer to hide
- * exactly what the register exists to keep visible.
+ * Two readings, one screen (the mock's `?work=` deep link,
+ * `components/document-register.tsx` at fdfe5ef):
+ *
+ * - **Across Works** — the register endpoint, paged, narrowed by a date
+ *   window. "This week, this division" is a date range and nothing else,
+ *   which is why the window is the only filter the register query carries.
+ * - **One Work** — the Work's own installation read, the same one its
+ *   Installations tab makes, named by a dismissible chip whose clear
+ *   control returns to the register. The date window is not offered here:
+ *   it exists to bound a cross-Work list, and a single Work's records are
+ *   already bounded by the Work.
+ *
+ * The narrowed reading deliberately does NOT filter the register's pages
+ * in the browser. A Work whose last installation predates the current page
+ * would render as "no records" under a chip naming it, which is a quieter
+ * kind of wrong than a second read.
  */
 
 /** One request's worth of rows. Large enough that the common answer — a
@@ -43,21 +54,36 @@ const PAGE_SIZE = 100;
 interface InstallationsRegisterProps {
   readonly api: ApiClient;
   readonly organisationId: string;
+  /** The `?work=` deep link. Null reads across every Work in reach. */
+  readonly workId: string | null;
   /** Opens a Work at its Installations tab; the workspace shell owns the
    * actual navigation so the dirty-editor guard still applies. */
   readonly onOpenWork: (workId: string) => void;
   readonly onOpenWorks: () => void;
+  /** The filter chip's clear control: back to the unfiltered register. */
+  readonly onClearWorkFilter: () => void;
+}
+
+/** What the narrowed reading is a reading OF. Held beside the rows so the
+ * chip can name the Work on a cold load — a bookmarked or refreshed deep
+ * link has nothing else to read the code off. */
+interface WorkFilter {
+  readonly workCode: string;
+  readonly workTitle: string;
 }
 
 export function InstallationsRegister({
   api,
   organisationId,
+  workId,
   onOpenWork,
   onOpenWorks,
+  onClearWorkFilter,
 }: InstallationsRegisterProps) {
   const [installations, setInstallations] = useState<
     readonly InstallationRegisterEntry[] | null
   >(null);
+  const [workFilter, setWorkFilter] = useState<WorkFilter | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -85,26 +111,68 @@ export function InstallationsRegister({
   useEffect(() => {
     let cancelled = false;
     setInstallations(null);
+    setWorkFilter(null);
     setNextCursor(null);
     setLoadError(null);
-    fetchPage()
-      .then((page) => {
+
+    if (workId === null) {
+      fetchPage()
+        .then((page) => {
+          if (cancelled) return;
+          setInstallations(page.installations);
+          setNextCursor(page.nextCursor);
+        })
+        .catch((cause: unknown) => {
+          if (cancelled) return;
+          setLoadError(
+            cause instanceof RequestFailedError
+              ? cause.message
+              : 'The installation records could not be loaded.',
+          );
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    /* One failure state, because these are not independent reads: a chip
+       with no Work to name and rows with no chip over them are each half
+       of the narrowed reading, and neither is worth rendering alone. */
+    Promise.all([
+      api.getWork(organisationId, workId),
+      api.listWorkInstallations(organisationId, workId),
+    ])
+      .then(([detail, records]) => {
         if (cancelled) return;
-        setInstallations(page.installations);
-        setNextCursor(page.nextCursor);
+        setWorkFilter({ workCode: detail.work.workCode, workTitle: detail.work.title });
+        setInstallations(
+          records.installations.map((record) => ({
+            id: record.id,
+            workId: detail.work.id,
+            workCode: detail.work.workCode,
+            workTitle: detail.work.title,
+            workItemId: record.workItemId,
+            itemNumber: record.itemNumber,
+            quantity: record.quantity,
+            installedOn: record.installedOn,
+            locationName: record.locationName,
+            serialCount: record.serials.length,
+            status: record.status,
+          })),
+        );
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
           cause instanceof RequestFailedError
             ? cause.message
-            : 'The installation records could not be loaded.',
+            : 'This Work’s installation records could not be loaded.',
         );
       });
     return () => {
       cancelled = true;
     };
-  }, [fetchPage, loadVersion]);
+  }, [api, organisationId, workId, fetchPage, loadVersion]);
 
   function retry(): void {
     setLoadVersion((current) => current + 1);
@@ -129,6 +197,7 @@ export function InstallationsRegister({
     }
   }
 
+  const narrowed = workId !== null;
   const filtered = dateWindow.from !== '' || dateWindow.to !== '';
 
   return (
@@ -136,7 +205,7 @@ export function InstallationsRegister({
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="mb-1 text-xs font-semibold tracking-widest text-primary uppercase">
-            Site
+            Operations
           </p>
           <h1 id="installations-title" tabIndex={-1}>
             Installations
@@ -150,33 +219,61 @@ export function InstallationsRegister({
       </header>
 
       <section aria-labelledby="installations-title" className="flex flex-col gap-4">
-        <form
-          className="flex flex-wrap items-end gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            setDateWindow({
-              from: formValue(data, 'installed-from'),
-              to: formValue(data, 'installed-to'),
-            });
-          }}
-        >
-          <DateField
-            id="installed-from"
-            name="installed-from"
-            label="Installed on or after"
-            fieldClassName="my-0"
-          />
-          <DateField
-            id="installed-to"
-            name="installed-to"
-            label="Installed on or before"
-            fieldClassName="my-0"
-          />
-          <Button type="submit" variant="outline">
-            Apply dates
-          </Button>
-        </form>
+        {/* The mock's `?work=` chip: it names the Work the register has
+            been narrowed to, and its clear control is the way back to the
+            whole register. Rendered from the Work's own record rather than
+            from the rows, so a cold deep link still names it. */}
+        {narrowed && workFilter !== null && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Filtered to</span>
+            <span className="inline-flex items-center gap-2 rounded-md border border-primary/20 bg-primary/10 py-0.5 pr-1 pl-2 text-[13px] text-primary">
+              <span className="font-mono font-semibold">{workFilter.workCode}</span>
+              <span className="max-w-64 truncate text-primary/80">
+                {workFilter.workTitle}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClearWorkFilter}
+                aria-label={`Clear the ${workFilter.workCode} filter and read the whole register`}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            </span>
+          </div>
+        )}
+
+        {/* The window bounds a cross-Work list. A single Work's records are
+            bounded by the Work, so the form is not offered there. */}
+        {!narrowed && (
+          <form
+            className="flex flex-wrap items-end gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              setDateWindow({
+                from: formValue(data, 'installed-from'),
+                to: formValue(data, 'installed-to'),
+              });
+            }}
+          >
+            <DateField
+              id="installed-from"
+              name="installed-from"
+              label="Installed on or after"
+              fieldClassName="my-0"
+            />
+            <DateField
+              id="installed-to"
+              name="installed-to"
+              label="Installed on or before"
+              fieldClassName="my-0"
+            />
+            <Button type="submit" variant="outline">
+              Apply dates
+            </Button>
+          </form>
+        )}
 
         {loadError !== null && (
           <ErrorState onRetry={retry} retryLabel="Retry installations">
@@ -252,6 +349,16 @@ export function InstallationsRegister({
                 </div>
               )}
             </>
+          ) : narrowed ? (
+            <EmptyState
+              action={{
+                label: 'Read the whole register',
+                onClick: onClearWorkFilter,
+              }}
+            >
+              No installations have been recorded against this Work. Recording happens
+              on the Work&rsquo;s own Installations tab.
+            </EmptyState>
           ) : filtered ? (
             <EmptyState>
               No installations were recorded in these dates. Widen the window, or clear

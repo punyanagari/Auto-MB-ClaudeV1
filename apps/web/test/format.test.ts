@@ -3,6 +3,7 @@ import {
   compareDecimalStrings,
   formatDate,
   formatTimestampDate,
+  subtractDecimalStrings,
 } from '../src/format.js';
 
 describe('compareDecimalStrings', () => {
@@ -25,6 +26,28 @@ describe('compareDecimalStrings', () => {
       '9007199254740993.001',
     ]);
     expect(compareDecimalStrings('1.0', '1.000')).toBe(0);
+  });
+});
+
+describe('subtractDecimalStrings', () => {
+  it('subtracts exactly, at three places, in both directions', () => {
+    expect(subtractDecimalStrings('10.000', '3.000')).toBe('7.000');
+    expect(subtractDecimalStrings('10.001', '3.000')).toBe('7.001');
+    // Ragged inputs: the API sends '5' and '5.00' for the same quantity.
+    expect(subtractDecimalStrings('5', '1.5')).toBe('3.500');
+    expect(subtractDecimalStrings('1.000', '1.000')).toBe('0.000');
+    // Over-installation is real (migration 0077), so the balance goes
+    // negative rather than clamping and hiding it.
+    expect(subtractDecimalStrings('3.000', '4.250')).toBe('-1.250');
+  });
+
+  it('stays exact past the float-safe range', () => {
+    // The whole reason this is BigInt: Number cannot hold these, and a
+    // quantity field that renders 6.999999999999999 is worse than none.
+    expect(
+      subtractDecimalStrings('9007199254740993.001', '9007199254740993.000'),
+    ).toBe('0.001');
+    expect(subtractDecimalStrings('0.300', '0.100')).toBe('0.200');
   });
 });
 

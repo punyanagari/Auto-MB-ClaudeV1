@@ -243,7 +243,8 @@ describe('OperationsWorkspace mobile shell', () => {
     const rail = await screen.findByRole('navigation', { name: 'Modules' });
     // The mock's four groups, with the first one unlabelled. Every entry the
     // mock draws that this build has no route for is omitted rather than
-    // rendered dead, and the two the mock does not draw keep their place.
+    // rendered dead, and Quotations — which the mock draws and this build
+    // has — keeps its place.
     expect(
       within(rail)
         .getAllByRole('listitem')
@@ -255,13 +256,15 @@ describe('OperationsWorkspace mobile shell', () => {
       'Invoices',
       'Quotations',
       'Installations',
-      'Serial Lookup',
-      'Search',
+      'Global search',
       'Approvals',
       'Masters',
       'Members',
       'Settings',
     ]);
+    // Serial Lookup is not a module: `#/serials` merged into Global search
+    // and the chain is one scope inside it (docs/UX.md).
+    expect(within(rail).queryByRole('button', { name: 'Serial Lookup' })).toBeNull();
     for (const heading of ['Documents', 'Operations', 'Administration']) {
       expect(within(rail).getByText(heading)).toBeTruthy();
     }

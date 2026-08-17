@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from '../../src/api.js';
-import { SerialLookup } from '../../src/views/SerialLookup.js';
+import { SerialTrace } from '../../src/views/SerialTrace.js';
 import { ORG_ID, stubApi } from './helpers.js';
 import { outage, STATE_CASES, type StateCase } from './state-coverage-cases.js';
 
@@ -100,58 +100,29 @@ describe.each(
   }
 });
 
-/* Serial Lookup loads on submit rather than on mount, so it sits outside
- * the table: there is nothing to hang or fail until a serial has been
- * asked for. The state contract is the same one. */
-describe('SerialLookup.tsx — the serial search', () => {
-  function renderLookup(api: ApiClient) {
+/* The serial chain used to sit outside the case table because it loaded
+ * on submit. Merged into Global Search (`docs/UX.md` § `#/serials` merges
+ * into Global Search) it reads on mount from the query it is handed, so
+ * it is covered by STATE_CASES above like every other register — with one
+ * thing the table cannot say: the retry must re-run the SAME serial. */
+describe('SerialTrace.tsx — the serial chain', () => {
+  it('retries the serial it failed on', async () => {
+    const searchSerials = vi.fn().mockRejectedValue(outage());
     render(
-      <SerialLookup
-        api={api}
+      <SerialTrace
+        api={stubApi({ searchSerials })}
         organisationId={ORG_ID}
+        query="SB-2026-014"
         onOpenWork={() => undefined}
         onOpenChallan={() => undefined}
       />,
     );
-    fireEvent.change(screen.getByLabelText('Serial number'), {
-      target: { value: 'SB-2026-014' },
-    });
-    fireEvent.submit(
-      screen.getByRole('button', { name: 'Search' }).closest('form') ??
-        (() => {
-          throw new Error('form missing');
-        })(),
-    );
-  }
 
-  it('announces the wait', () => {
-    renderLookup(
-      stubApi({
-        searchSerials: vi.fn().mockReturnValue(new Promise(() => undefined)),
-      }),
-    );
-
-    expect(screen.getAllByRole('status').length).toBeGreaterThan(0);
-  });
-
-  it('offers a way out of the failure', async () => {
-    const searchSerials = vi.fn().mockRejectedValue(outage());
-    renderLookup(stubApi({ searchSerials }));
-
-    const retry = await screen.findByRole('button', { name: /Retry search/ });
-    expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
-
+    const retry = await screen.findByRole('button', { name: /Retry serial search/ });
     const before = searchSerials.mock.calls.length;
     fireEvent.click(retry);
-    // The retried search asks for the SAME serial, not whatever is in the
-    // box by then.
+
     expect(searchSerials.mock.calls.length).toBeGreaterThan(before);
     expect(searchSerials.mock.calls.at(-1)).toEqual([ORG_ID, 'SB-2026-014']);
-  });
-
-  it('says so when nothing matches', async () => {
-    renderLookup(stubApi());
-
-    expect(await screen.findByText(/No serial matches/)).toBeTruthy();
   });
 });

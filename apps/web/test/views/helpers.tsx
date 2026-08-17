@@ -105,7 +105,17 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     confirmLoa: vi.fn<ApiClient['confirmLoa']>(),
     listWorks: vi.fn<ApiClient['listWorks']>().mockResolvedValue([]),
     getWork: vi.fn<ApiClient['getWork']>(),
-    workBalance: vi.fn<ApiClient['workBalance']>(),
+    /* Resolved rather than bare: the Installations panel reads this for
+       the delivered-balance line beside its quantity field, so an
+       unresolved stub is an unhandled rejection in every test that
+       renders a Work tab rather than a challan editor. Empty items — the
+       line simply does not render — which is the same thing a Work with
+       no issued challan sees. */
+    workBalance: vi.fn<ApiClient['workBalance']>().mockResolvedValue({
+      allowExcessDelivery: false,
+      today: '2026-08-09',
+      items: [],
+    }),
     listChallans: vi.fn<ApiClient['listChallans']>().mockResolvedValue([]),
     listDeliveryChallans: vi
       .fn<ApiClient['listDeliveryChallans']>()

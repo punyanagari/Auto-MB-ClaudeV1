@@ -7,7 +7,6 @@ import type {
 import { RequestFailedError, type ApiClient } from '../api.js';
 import {
   QUOTATIONS_HASH,
-  SERIALS_HASH,
   challanHash,
   issueChallanHash,
   navigateOnClick,
@@ -18,6 +17,7 @@ import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
+import { SerialTrace } from './SerialTrace.js';
 
 interface SearchProps {
   readonly api: ApiClient;
@@ -31,7 +31,6 @@ interface SearchProps {
   readonly onOpenWork: (workId: string) => void;
   readonly onOpenChallan: (workId: string, challanId: string) => void;
   readonly onOpenIssueChallan: (workId: string, challanId: string) => void;
-  readonly onOpenSerials: () => void;
   readonly onOpenQuotations: () => void;
 }
 
@@ -44,6 +43,59 @@ const GROUP_LABELS: Readonly<Record<SearchResultKind, string>> = {
   'purchase-order': 'Purchase orders',
   quotation: 'Quotations',
 };
+
+/**
+ * What the search reads across, in the frozen mock's own vocabulary
+ * (`lib/search.ts` and `app/search/page.tsx` at fdfe5ef).
+ *
+ * The mock offers nine scopes; this build offers the seven it has
+ * registers for. Correspondence and Contacts are omitted rather than
+ * rendered as controls that would return nothing — the same rule
+ * `shell/navigation.ts` applies to the modules the mock draws and this
+ * build has no route for.
+ *
+ * `kinds` is the set of server result groups the scope keeps. `serials`
+ * holds none of them: serial numbers are deliberately outside the record
+ * search (`packages/contracts/src/search.ts`) because their answer is a
+ * lineage rather than a row, so that scope runs the serial lookup
+ * instead — see `SERIAL_SCOPES` below.
+ */
+type SearchScope =
+  | 'all'
+  | 'works'
+  | 'challans'
+  | 'invoices'
+  | 'purchase-orders'
+  | 'quotations'
+  | 'serials';
+
+interface ScopeOption {
+  readonly value: SearchScope;
+  readonly label: string;
+  /** The server result groups this scope keeps, or `null` for all of
+   * them. An empty list keeps none — see `serials` below. */
+  readonly kinds: readonly SearchResultKind[] | null;
+}
+
+const EVERYTHING: ScopeOption = { value: 'all', label: 'Everything', kinds: null };
+
+const SCOPES: readonly ScopeOption[] = [
+  EVERYTHING,
+  { value: 'works', label: 'Works', kinds: ['work'] },
+  { value: 'challans', label: 'Challans', kinds: ['delivery-challan', 'issue-challan'] },
+  { value: 'invoices', label: 'Invoices', kinds: ['tax-invoice', 'credit-note'] },
+  { value: 'purchase-orders', label: 'Purchase orders', kinds: ['purchase-order'] },
+  { value: 'quotations', label: 'Quotations', kinds: ['quotation'] },
+  { value: 'serials', label: 'Installations & serials', kinds: [] },
+];
+
+/** The scopes that render the serial traceability chain. Everything shows
+ * it beside the document groups; the serials scope shows it alone. */
+const SERIAL_SCOPES: readonly SearchScope[] = ['all', 'serials'];
+
+function scopeOf(value: SearchScope): ScopeOption {
+  return SCOPES.find((scope) => scope.value === value) ?? EVERYTHING;
+}
 
 /**
  * Where a result leads.
@@ -81,10 +133,13 @@ export function Search({
   onOpenWork,
   onOpenChallan,
   onOpenIssueChallan,
-  onOpenSerials,
   onOpenQuotations,
 }: SearchProps) {
   const [draft, setDraft] = useState(query);
+  /** Scope is a reading preference over one query, not a destination:
+   * it stays out of the route so Back walks the searches an operator
+   * made rather than the lenses they tried on one of them. */
+  const [scope, setScope] = useState<SearchScope>('all');
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -99,9 +154,16 @@ export function Search({
     setDraft(query);
   }, [query]);
 
+  const trimmed = query.trim();
+  const active = scopeOf(scope);
+  /** The serials scope asks nothing of the record search: its whole
+   * answer comes from the serial lookup below, and firing a search whose
+   * every group would then be filtered away would be a request made to
+   * be discarded. */
+  const documentsWanted = active.kinds === null || active.kinds.length > 0;
+
   useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
+    if (trimmed.length < 2 || !documentsWanted) {
       setResult(null);
       setError(null);
       setPending(false);
@@ -134,7 +196,7 @@ export function Search({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, query, attempt]);
+  }, [api, organisationId, trimmed, documentsWanted, attempt]);
 
   function openResult(result: SearchResult): void {
     switch (result.kind) {
@@ -158,17 +220,27 @@ export function Search({
     }
   }
 
-  const trimmed = query.trim();
-  const hasResults = result !== null && result.groups.length > 0;
+  /* The scope is applied to the one response rather than to the request:
+     the server searches every register in a single pass, so narrowing
+     the reading is a filter, not a second round trip. */
+  const kinds = active.kinds;
+  const groups =
+    result === null
+      ? []
+      : kinds === null
+        ? result.groups
+        : result.groups.filter((group) => kinds.includes(group.kind));
+  const hasResults = groups.length > 0;
+  const showSerials = SERIAL_SCOPES.includes(scope);
 
   return (
     <Card className="w-full" aria-labelledby="search-title">
       <h1 id="search-title" tabIndex={-1}>
-        Search
+        Global search
       </h1>
       <p className="text-muted-foreground">
-        Works, Delivery and Issue Challans, tax invoices, credit notes, purchase orders
-        and quotations — by number, by Work, or by the party named on the document.
+        Every Work, schedule item, serial number, reference and document from one
+        place — by number, by Work, or by the party named on the document.
       </p>
       <form
         role="search"
@@ -189,12 +261,32 @@ export function Search({
             className="w-full"
             maxLength={120}
             autoComplete="off"
-            placeholder="Work code, challan or invoice number, party name"
+            placeholder="Work code, challan or invoice number, serial, party name"
             value={draft}
             onChange={(event) => {
               setDraft(event.target.value);
             }}
           />
+        </div>
+        <div className="min-w-44">
+          <label htmlFor="search-scope" className="block text-xs font-medium">
+            Search inside
+          </label>
+          <select
+            id="search-scope"
+            name="search-scope"
+            className="w-full"
+            value={scope}
+            onChange={(event) => {
+              setScope(event.target.value as SearchScope);
+            }}
+          >
+            {SCOPES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
         <Button type="submit" disabled={pending}>
           Search
@@ -220,16 +312,19 @@ export function Search({
       {pending && <LoadingState label="the search results" rows={3} columns={3} />}
 
       {!pending && error === null && result !== null && !hasResults && (
-        <EmptyState>Nothing in the registers matches “{result.query}”.</EmptyState>
+        <EmptyState>
+          Nothing in {active.kinds === null ? 'the registers' : active.label.toLowerCase()}{' '}
+          matches “{result.query}”.
+        </EmptyState>
       )}
 
       {!pending && error === null && hasResults && (
         <>
           <p className="text-muted-foreground" role="status">
-            {result.returned} {result.returned === 1 ? 'result' : 'results'} for “
-            {result.query}”.
+            {groups.reduce((total, group) => total + group.results.length, 0)} matching
+            documents for “{result?.query ?? trimmed}”.
           </p>
-          {result.groups.map((group) => (
+          {groups.map((group) => (
             <section key={group.kind} aria-labelledby={`search-group-${group.kind}`}>
               <h2 id={`search-group-${group.kind}`}>{GROUP_LABELS[group.kind]}</h2>
               {group.truncated && (
@@ -308,19 +403,22 @@ export function Search({
         </>
       )}
 
-      <p className="text-muted-foreground">
-        Looking for a serial number? Serials carry their own delivery, receipt and
-        installation trail —{' '}
-        <a
-          href={SERIALS_HASH}
-          onClick={navigateOnClick(() => {
-            onOpenSerials();
-          })}
-        >
-          open Serial Lookup
-        </a>
-        .
-      </p>
+      {/* Serials are one scope of this screen rather than a destination of
+          their own (`docs/UX.md` § `#/serials` merges into Global Search).
+          The chain a hit opens is unchanged: Work, item, Delivery Challan
+          and its state, receipt, and where and when the unit went in. */}
+      {showSerials && trimmed.length >= 2 && (
+        <section aria-labelledby="search-group-serials">
+          <h2 id="search-group-serials">Installations &amp; serials</h2>
+          <SerialTrace
+            api={api}
+            organisationId={organisationId}
+            query={trimmed}
+            onOpenWork={onOpenWork}
+            onOpenChallan={onOpenChallan}
+          />
+        </section>
+      )}
     </Card>
   );
 }

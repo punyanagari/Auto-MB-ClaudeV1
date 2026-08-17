@@ -47,9 +47,13 @@ function page(
   return { installations, nextCursor };
 }
 
-function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}) {
+function renderRegister(
+  overrides: Parameters<typeof stubApi>[0] = {},
+  workId: string | null = null,
+) {
   const onOpenWork = vi.fn();
   const onOpenWorks = vi.fn();
+  const onClearWorkFilter = vi.fn();
   const api = stubApi({
     listInstallations: vi.fn().mockResolvedValue(page([RECORDED, CANCELLED])),
     ...overrides,
@@ -58,11 +62,13 @@ function renderRegister(overrides: Parameters<typeof stubApi>[0] = {}) {
     <InstallationsRegister
       api={api}
       organisationId={ORG_ID}
+      workId={workId}
       onOpenWork={onOpenWork}
       onOpenWorks={onOpenWorks}
+      onClearWorkFilter={onClearWorkFilter}
     />,
   );
-  return { api, onOpenWork, onOpenWorks };
+  return { api, onOpenWork, onOpenWorks, onClearWorkFilter };
 }
 
 describe('the installation register', () => {
