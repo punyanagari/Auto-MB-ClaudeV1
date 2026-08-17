@@ -361,9 +361,7 @@ describe('versioning', () => {
     ]);
     expect(afterRenewal.versions[0]?.originalFilename).toBe('solvency-2026.pdf');
     expect(afterRenewal.versions[1]?.originalFilename).toBe('solvency-2025.pdf');
-    expect(afterRenewal.versions[0]?.sha256).not.toBe(
-      afterRenewal.versions[1]?.sha256,
-    );
+    expect(afterRenewal.versions[0]?.sha256).not.toBe(afterRenewal.versions[1]?.sha256);
 
     // The register reports the NEWEST version's validity. v1 lapsed a
     // month ago and that is not what the credential says today.
@@ -510,9 +508,7 @@ describe('archiving', () => {
       organisationId,
     });
     expect(response.statusCode, response.body).toBe(404);
-    expect(response.json<{ code: string }>().code).toBe(
-      'COMPANY_DOCUMENT_NOT_FOUND',
-    );
+    expect(response.json<{ code: string }>().code).toBe('COMPANY_DOCUMENT_NOT_FOUND');
   });
 });
 

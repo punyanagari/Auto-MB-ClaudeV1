@@ -3151,10 +3151,10 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       );
     },
     async archiveCompanyDocument(organisationId, documentId) {
-      return request<CompanyDocument>(
-        `/api/company-documents/${documentId}/archive`,
-        { method: 'POST', organisationId },
-      );
+      return request<CompanyDocument>(`/api/company-documents/${documentId}/archive`, {
+        method: 'POST',
+        organisationId,
+      });
     },
     async downloadCompanyDocumentVersion(organisationId, versionId) {
       const response = await fetchImpl(

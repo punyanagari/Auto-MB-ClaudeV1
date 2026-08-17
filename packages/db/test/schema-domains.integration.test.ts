@@ -194,8 +194,10 @@ describe('the schema at head names all three shapes', () => {
       [],
     );
     // 22 before 0076, which adds eway_bills.rendered_sha256 plus the
-    // render ledger's source_sha256 and pdf_sha256.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(25);
+    // render ledger's source_sha256 and pdf_sha256; 26 after 0078, whose
+    // company_document_versions.sha256 is the digest of a stored
+    // credential PDF and adopts the domain from the start.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(26);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

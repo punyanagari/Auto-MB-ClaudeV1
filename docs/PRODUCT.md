@@ -1072,7 +1072,11 @@ The current product also includes:
   returned by the API — every read answers the last four characters only —
   while a contact's are returned in full because that record is edited
   through a form that must round-trip them. Both travel in the organisation
-  data export, which is the contractor's own portability snapshot.
+  data export, which is the contractor's own portability snapshot;
+- a versioned company document library: the organisation-level credentials
+  every tender and inspection asks for, uploaded once, carrying the validity
+  window printed on them, with expiry derived on read (see "The company
+  document library").
 
 When Whitebooks is configured, IRP transport is direct but never unattended.
 Unknown registration results become lookup-only and are never blindly
@@ -1171,6 +1175,66 @@ Reverse-charge liability is an explicit invoice fact rather than printed from
 a default. The current calculator supports forward charge only: submit requires
 the operator to confirm forward charge, refuses reverse charge, and preserves a
 missing historical value as unknown.
+
+### The company document library
+
+Every document this product had modelled belonged to a Work. The documents
+an agency is asked for most often belong to none: GST registration, PAN, the
+partnership deed, an ISO certificate, a bank solvency letter, last year's
+balance sheet, a completion certificate from a contract three years ago.
+Every tender demands them, every inspection asks after them, and half the
+correspondence encloses them. They lived in somebody's laptop folder and
+were re-scanned whenever nobody could find it.
+
+The library is where they live now. It is organisation-level by definition —
+the point of it is that one PAN copy serves every Work — so nothing in it is
+work-scoped and no work-scope predicate applies to it. Reading it is open to
+any member of the organisation; adding, renewing and archiving are
+owner/office work, the same gate the rest of the organisation's master data
+carries. It deliberately does not take a new membership authority: issue,
+cancel and statutory are authorities over documents the organisation puts
+its name to, and filing a copy of one's own PAN card is not that act.
+
+**A credential and its versions.** A library row is the NAME — a title and
+one of five categories (statutory, financial, eligibility, certification,
+company) — and behind it stands the succession of files that have proved it.
+Uploading a renewal adds a version; it never edits the one before. A stored
+version is immutable, which is what keeps a bid that attached v1 explicable
+after v3 exists. Each version carries the validity window printed on the
+paper: an effective date, an expiry date, both optional and independently so
+(a PAN card has neither, a GST registration certificate has an effective
+date and no expiry, a bank solvency letter has both). Both are date-only
+legal dates and are never timezone-round-tripped. One live credential may
+carry a given name at a time, case-folded, so a renewal lands on the row it
+renews rather than beside it.
+
+**Expiry is derived, never stored.** The register reports the newest
+version's validity as it reads today: no expiry at all, valid, expiring
+within sixty days, or expired — computed on every read against the
+database's current date. A stored status would be wrong the morning after it
+was written, and the whole reason for recording an expiry date is that
+somebody is told before it passes. Sixty days is the same window the
+Dashboard uses for a bank guarantee, because "expiring soon" has to mean one
+thing across the product. An older version having lapsed is not reported:
+that is what superseding it was for.
+
+**Archive, not delete.** A credential the agency no longer offers is
+archived. The row and every version survive and stay downloadable, because a
+bid that already cited the credential must remain explicable; the name it
+held is released, so the credential can be re-added if it comes back. An
+archived credential accepts no new versions.
+
+The stored PDFs go through the same gate as every other upload in the
+product — magic bytes rather than the declared content type, a fail-closed
+malware scan, a 25 MB ceiling, and a server-generated tenant-prefixed object
+key — and they travel in the organisation export, so a data-portability
+request hands back the certificates themselves rather than only the fact
+that they existed.
+
+Not here, and deliberately: no approval or signature state, because these
+are copies of documents an authority already issued rather than documents
+this organisation issues; and no notification when a credential is about to
+lapse. The register colours what is expiring and the operator has to look.
 
 ### The tax-invoice register, and where a direct invoice lives
 

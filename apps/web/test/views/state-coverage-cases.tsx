@@ -398,9 +398,7 @@ export const STATE_CASES: readonly StateCase[] = [
     view: 'CompanyDocuments.tsx',
     name: 'the company document library',
     loads: ['listCompanyDocuments'],
-    render: (api) => (
-      <CompanyDocuments api={api} organisationId={ORG_ID} canModify />
-    ),
+    render: (api) => <CompanyDocuments api={api} organisationId={ORG_ID} canModify />,
     retry: /Retry company documents/,
     empty: { text: /Nothing in the library yet/ },
   },

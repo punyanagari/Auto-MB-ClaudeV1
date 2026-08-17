@@ -644,12 +644,8 @@ describe('tenant migration contract', () => {
     // The stored object key carries the tenant prefix here as well as in
     // packages/documents/src/storage.ts. Two layers, because a path is a
     // filesystem escape.
-    expect(sql).toContain(
-      'company_document_versions_object_key_tenant_prefix_check',
-    );
-    expect(sql).toMatch(
-      /CHECK \(object_key LIKE organisation_id::text \|\| '\/%'\)/,
-    );
+    expect(sql).toContain('company_document_versions_object_key_tenant_prefix_check');
+    expect(sql).toMatch(/CHECK \(object_key LIKE organisation_id::text \|\| '\/%'\)/);
     expect(sql).toContain("CHECK (media_type = 'application/pdf')");
 
     // Both policies arrive in the ADR-0010 InitPlan shape.

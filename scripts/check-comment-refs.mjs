@@ -102,6 +102,14 @@ const ALLOWED_EXTERNAL = new Map([
     'work-registers.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the instruments and completion panels for the metric tile and gapless tile grid they replicate',
   ],
+  [
+    'company-document-library.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the company document library for the two-card grid and bordered credential rows it replicates',
+  ],
+  [
+    'page.tsx',
+    'the v0 MOCK repository is a Next App Router tree, where every screen is a `page.tsx` under its route directory: a citation names the route (`app/tenders/company-documents/page.tsx`) and the file is deliberately not in this tree',
+  ],
 ]);
 
 /**

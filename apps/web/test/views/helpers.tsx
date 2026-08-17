@@ -398,9 +398,8 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createCompanyDocument: vi.fn<ApiClient['createCompanyDocument']>(),
     uploadCompanyDocumentVersion: vi.fn<ApiClient['uploadCompanyDocumentVersion']>(),
     archiveCompanyDocument: vi.fn<ApiClient['archiveCompanyDocument']>(),
-    downloadCompanyDocumentVersion: vi.fn<
-      ApiClient['downloadCompanyDocumentVersion']
-    >(),
+    downloadCompanyDocumentVersion:
+      vi.fn<ApiClient['downloadCompanyDocumentVersion']>(),
     listBudgetaryQuotations: vi
       .fn<ApiClient['listBudgetaryQuotations']>()
       .mockResolvedValue([]),

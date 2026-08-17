@@ -564,10 +564,7 @@ interface VersionInsert {
   readonly userId: string;
 }
 
-async function insertVersion(
-  tx: TransactionSql,
-  insert: VersionInsert,
-): Promise<void> {
+async function insertVersion(tx: TransactionSql, insert: VersionInsert): Promise<void> {
   await tx`
     insert into company_document_versions (
       id, organisation_id, company_document_id, version_number, object_key,

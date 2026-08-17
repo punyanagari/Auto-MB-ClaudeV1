@@ -304,7 +304,9 @@ function FileRow({
       htmlFor={id}
       className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
     >
-      <span className={cn('min-w-0 truncate', filename === '' && 'text-muted-foreground')}>
+      <span
+        className={cn('min-w-0 truncate', filename === '' && 'text-muted-foreground')}
+      >
         {filename === '' ? label : filename}
       </span>
       <FileUp className="size-4 shrink-0" aria-hidden="true" />
@@ -646,8 +648,7 @@ function NewVersionForm({
         />
       </div>
       <Hint>
-        The earlier version is kept. It is what a bid submitted against it
-        attached.
+        The earlier version is kept. It is what a bid submitted against it attached.
       </Hint>
       {formError !== null && <FormError>{formError}</FormError>}
       <Actions>
