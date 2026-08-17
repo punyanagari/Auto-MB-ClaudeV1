@@ -9,10 +9,12 @@
  * a teal action colour on cool neutral surfaces; the earlier quiet-light
  * blue (#155eef) and the "Signal Cabin" amber before it are both retired.
  *
- * Three values deliberately diverge from the mock, each because the mock's
- * value fails WCAG AA 1.4.3 where the product renders it. Each is marked
- * DIVERGENCE below with the pairing and the measured ratio, and each is a
- * defect the mock should absorb so the two can converge again.
+ * One value deliberately diverges from the mock (dark --destructive),
+ * because the mock's value fails WCAG AA 1.4.3 where the product renders
+ * it. It is marked DIVERGENCE below with the pairing and the measured
+ * ratio, and it is a defect the mock should absorb so the two converge
+ * again — as the mock already absorbed this product's four earlier
+ * contrast fixes at commit 984856b.
  *
  * Typography is an approved divergence of its own: the mock uses Inter,
  * the product keeps IBM Plex Sans (which carries Devanagari) with IBM Plex
@@ -119,33 +121,18 @@
 
   /* Status tones. The base colour is legible as text on the theme's
    * surfaces and tints; the -foreground pair is the ink for solid fills.
+   * The mock absorbed this product's earlier contrast divergences at
+   * commit 984856b (its PR #7): light --success 0.50, light --destructive
+   * 0.52 and dark --warning-foreground = dark --warning are verbatim mock
+   * values again.
    *
-   * DIVERGENCE (light --success): the mock's oklch(0.55 0.12 155) is the
-   * ink of the `bg-success/12 text-success` chip, and measures 3.88:1 on
-   * that tint over the card — below AA for 12px text. Lowering L to 0.50
-   * is the smallest change that clears it: 4.79:1 on the tint, 5.58:1 as
-   * plain text on the card.
-   *
-   * DIVERGENCE (light --destructive): the mock's oklch(0.55 0.19 27)
-   * measures 4.27:1 as the ink of `bg-destructive/10 text-destructive`
-   * over the background — below AA. Lowering L to 0.52 is the smallest
-   * change that clears it: 4.82:1 on the tint, 6.17:1 as plain text.
-   *
-   * DIVERGENCE (dark --destructive): the mock's oklch(0.62 0.19 27)
-   * measures 4.11:1 as the ink of `bg-destructive/10 text-destructive` and
-   * 4.49:1 as error text on the card — both under AA. L 0.66 gives
-   * 4.83:1 and 5.27:1.
-   *
-   * DIVERGENCE (dark --warning-foreground): the mock's oklch(0.24 0.05 75)
-   * is ink for a solid warning fill, but neither the mock nor the product
-   * ever renders one — both use it as ink ON a warning tint
-   * (`bg-warning/10 text-warning-foreground`, mock
-   * `components/measurement-book.tsx` and `components/app-sidebar.tsx`;
-   * product `ui/badge.tsx`). In dark that pairing measures 1.22:1. The
-   * value here is the mock's own dark --warning, oklch(0.78 0.13 75),
-   * which reads 6.65:1 on the tint and 8.79:1 on the card. The mock has
-   * the same defect in its own dark theme and should absorb this fix. */
-  --destructive: light-dark(oklch(0.52 0.19 27), oklch(0.66 0.19 27));
+   * DIVERGENCE (dark --destructive): the mock's oklch(0.66 0.19 27)
+   * (already lifted once from 0.62 for the card) measures 4.24:1 by axe
+   * as the ink of `bg-destructive/10 text-destructive` inside a dialog,
+   * whose surface is the lighter dark --popover. L 0.69 clears it with
+   * margin (~4.7:1 on the popover tint, 5.92:1 as text on the card).
+   * Reported upstream so the palettes can converge again. */
+  --destructive: light-dark(oklch(0.52 0.19 27), oklch(0.69 0.19 27));
   --destructive-foreground: light-dark(oklch(0.99 0 0), oklch(0.98 0 0));
   --success: light-dark(oklch(0.5 0.12 155), oklch(0.68 0.12 155));
   --success-foreground: light-dark(oklch(0.99 0 0), oklch(0.16 0.02 155));
@@ -160,15 +147,13 @@
   --info: light-dark(oklch(0.42 0.09 190), oklch(0.72 0.09 190));
   --info-foreground: light-dark(oklch(0.99 0.004 190), oklch(0.19 0.02 195));
 
-  /* The mock sets --input to the same value as --border, and so does this.
-   * That is a knowing regression of the product's earlier WCAG 1.4.11
-   * decision (a control edge wants 3:1 against its surface; this pair
-   * measures 1.39:1 light and 1.36:1 dark), kept because the fidelity
-   * contract binds and a darker edge would drift visibly on every form.
-   * axe has no rule for it, so no gate will catch it — the fix belongs in
-   * the mock. */
+  /* --input separated from --border at mock commit 984856b (its PR #7):
+   * a form-control edge wants WCAG 1.4.11's 3:1 against its surface, and
+   * the shared border value measured 1.31–1.45:1. These are the mock's
+   * values verbatim: 3.12–3.31:1 light, 3.25–3.47:1 dark against
+   * background and card. */
   --border: light-dark(oklch(0.885 0.009 235), oklch(0.31 0.012 250));
-  --input: light-dark(oklch(0.885 0.009 235), oklch(0.31 0.012 250));
+  --input: light-dark(oklch(0.64 0.009 235), oklch(0.52 0.012 250));
   --ring: light-dark(oklch(0.5 0.09 190), oklch(0.72 0.09 190));
   --radius: 0.5rem;
 
