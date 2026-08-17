@@ -459,9 +459,7 @@ describe('SerialTrace', () => {
   });
 
   it('says so when nothing matches', async () => {
-    const searchSerials = vi
-      .fn()
-      .mockResolvedValue({ matches: [], truncated: false });
+    const searchSerials = vi.fn().mockResolvedValue({ matches: [], truncated: false });
     renderLookup(stubApi({ searchSerials }), {}, 'ZZ-NONE');
 
     expect(await screen.findByText(/No serial matches/)).toBeTruthy();

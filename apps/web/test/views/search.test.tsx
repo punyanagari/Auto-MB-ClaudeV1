@@ -242,7 +242,9 @@ describe('record search', () => {
       ],
     });
     renderWorkspaceAt('#/search/SB-2026-014', {
-      search: vi.fn().mockResolvedValue({ query: 'SB-2026-014', returned: 0, groups: [] }),
+      search: vi
+        .fn()
+        .mockResolvedValue({ query: 'SB-2026-014', returned: 0, groups: [] }),
       searchSerials,
     });
 

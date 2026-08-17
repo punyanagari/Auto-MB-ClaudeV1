@@ -15,6 +15,7 @@ import {
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
+import { PageHeader } from '../ui/page-header.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { SerialTrace } from './SerialTrace.js';
@@ -82,7 +83,11 @@ const EVERYTHING: ScopeOption = { value: 'all', label: 'Everything', kinds: null
 const SCOPES: readonly ScopeOption[] = [
   EVERYTHING,
   { value: 'works', label: 'Works', kinds: ['work'] },
-  { value: 'challans', label: 'Challans', kinds: ['delivery-challan', 'issue-challan'] },
+  {
+    value: 'challans',
+    label: 'Challans',
+    kinds: ['delivery-challan', 'issue-challan'],
+  },
   { value: 'invoices', label: 'Invoices', kinds: ['tax-invoice', 'credit-note'] },
   { value: 'purchase-orders', label: 'Purchase orders', kinds: ['purchase-order'] },
   { value: 'quotations', label: 'Quotations', kinds: ['quotation'] },
@@ -234,64 +239,68 @@ export function Search({
   const showSerials = SERIAL_SCOPES.includes(scope);
 
   return (
-    <Card className="w-full" aria-labelledby="search-title">
-      <h1 id="search-title" tabIndex={-1}>
-        Global search
-      </h1>
-      <p className="text-muted-foreground">
-        Every Work, schedule item, serial number, reference and document from one
-        place — by number, by Work, or by the party named on the document.
-      </p>
-      <form
-        role="search"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onQueryChange(draft.trim());
-        }}
-        className="flex flex-wrap items-end gap-3"
-      >
-        <div className="min-w-56 flex-1">
-          <label htmlFor="record-search-query" className="block text-xs font-medium">
-            Search Works and records
-          </label>
-          <input
-            id="record-search-query"
-            name="record-search-query"
-            type="search"
-            className="w-full"
-            maxLength={120}
-            autoComplete="off"
-            placeholder="Work code, challan or invoice number, serial, party name"
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
-          />
-        </div>
-        <div className="min-w-44">
-          <label htmlFor="search-scope" className="block text-xs font-medium">
-            Search inside
-          </label>
-          <select
-            id="search-scope"
-            name="search-scope"
-            className="w-full"
-            value={scope}
-            onChange={(event) => {
-              setScope(event.target.value as SearchScope);
-            }}
-          >
-            {SCOPES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Button type="submit" disabled={pending}>
-          Search
-        </Button>
-      </form>
+    <>
+      <PageHeader
+        eyebrow="Find anything"
+        titleId="search-title"
+        title="Global search"
+        description="Every Work, schedule item, serial number, reference and document from one place — by number, by Work, or by the party named on the document."
+      />
+      {/* The mock's search card: one bordered surface holding the box and
+          the scope, with the results as plain sections beneath it rather
+          than nested inside it (`app/search/page.tsx`). */}
+      <Card className="w-full border-primary/20">
+        <form
+          role="search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onQueryChange(draft.trim());
+          }}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div className="min-w-56 flex-1">
+            <label htmlFor="record-search-query" className="block text-xs font-medium">
+              Search Works and records
+            </label>
+            <input
+              id="record-search-query"
+              name="record-search-query"
+              type="search"
+              className="w-full"
+              maxLength={120}
+              autoComplete="off"
+              placeholder="Work code, challan or invoice number, serial, party name"
+              value={draft}
+              onChange={(event) => {
+                setDraft(event.target.value);
+              }}
+            />
+          </div>
+          <div className="min-w-44">
+            <label htmlFor="search-scope" className="block text-xs font-medium">
+              Search inside
+            </label>
+            <select
+              id="search-scope"
+              name="search-scope"
+              className="w-full"
+              value={scope}
+              onChange={(event) => {
+                setScope(event.target.value as SearchScope);
+              }}
+            >
+              {SCOPES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button type="submit" disabled={pending}>
+            Search
+          </Button>
+        </form>
+      </Card>
 
       {trimmed.length > 0 && trimmed.length < 2 && (
         <p className="text-muted-foreground" role="status">
@@ -313,8 +322,9 @@ export function Search({
 
       {!pending && error === null && result !== null && !hasResults && (
         <EmptyState>
-          Nothing in {active.kinds === null ? 'the registers' : active.label.toLowerCase()}{' '}
-          matches “{result.query}”.
+          Nothing in{' '}
+          {active.kinds === null ? 'the registers' : active.label.toLowerCase()} matches
+          “{result.query}”.
         </EmptyState>
       )}
 
@@ -419,6 +429,6 @@ export function Search({
           />
         </section>
       )}
-    </Card>
+    </>
   );
 }

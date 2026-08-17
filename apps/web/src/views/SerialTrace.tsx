@@ -100,7 +100,9 @@ export function SerialTrace({
         </ErrorState>
       )}
 
-      {pending && <LoadingState label="the serial search results" rows={3} columns={4} />}
+      {pending && (
+        <LoadingState label="the serial search results" rows={3} columns={4} />
+      )}
 
       {!pending && error === null && result !== null && result.matches.length === 0 && (
         <EmptyState>No serial matches “{query}”.</EmptyState>

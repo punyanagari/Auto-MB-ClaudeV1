@@ -634,7 +634,11 @@ export function Installations({
                           key={serial.id}
                           className="flex cursor-pointer items-center gap-3 rounded-md p-2 text-sm hover:bg-accent"
                         >
-                          <input type="checkbox" name="inst-serials" value={serial.id} />
+                          <input
+                            type="checkbox"
+                            name="inst-serials"
+                            value={serial.id}
+                          />
                           <span className="font-mono">{serial.serialNumber}</span>
                           <span className="ml-auto text-xs text-muted-foreground">
                             {serial.challanNumber ?? 'challan'}

@@ -14,8 +14,6 @@ import {
   CheckCircle2,
   CircleAlert,
   Clock3,
-  FileSearch,
-  FileText,
   Upload,
 } from 'lucide-react';
 import type { ApiClient } from '../api.js';
@@ -36,7 +34,10 @@ import {
   workspaceHashOf,
 } from '../lib/workspace-routes.js';
 import { Card } from '../ui/card.js';
+import { PageHeader } from '../ui/page-header.js';
 import { ProgressBar } from '../ui/progress.js';
+import { Stat } from '../ui/stat.js';
+import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
 
 interface OperationsDashboardProps {
@@ -471,74 +472,73 @@ export function OperationsDashboard({
     (alert) => alert.severity === 'danger',
   ).length;
 
+  /* The mock's stat row (`app/page.tsx`): a `.data-surface` panel split by
+     hairline gaps into equal cells, each one a `Stat` — the 11px uppercase
+     label, the mono tabular figure, the qualifier beneath. The retired
+     tiles carried a coloured icon chip and a lift-on-hover; the mock has
+     neither, and a dashboard's job is to be read, not to respond.
+
+     `tone` is emphasis only, never the message: what is wrong is said in
+     the hint, which is why the two tiles that can carry bad news still
+     spell it out in words. */
   const metrics = [
     {
       label: 'Active Works',
       value: String(activeWorks),
-      helper: `${String(completedWorks)} completed`,
-      icon: BriefcaseBusiness,
-      tone: 'bg-primary/10 text-primary',
+      hint: `${String(completedWorks)} completed`,
+      tone: 'default',
     },
     {
       label: 'Delivered value',
       value: formatCompactInr(data.totals.deliveredValue),
-      helper: `${String(deliveryPercent)}% of contract value`,
-      icon: CheckCircle2,
-      tone: 'bg-success/10 text-success',
+      hint: `${String(deliveryPercent)}% of contract value`,
+      tone: 'success',
     },
     {
       label: 'Billed value',
       value: formatCompactInr(data.totals.billedValue),
-      helper:
+      hint:
         executedLabel === null
           ? 'No contract value recorded'
           : `${executedLabel} of contract value`,
-      icon: FileText,
-      tone: 'bg-primary/10 text-primary',
+      tone: 'default',
     },
     {
       label: 'Open drafts',
       value: String(data.totals.openDrafts),
-      helper: 'Documents still in progress',
-      icon: Clock3,
-      tone: 'bg-warning/15 text-warning-foreground',
+      hint: 'Documents still in progress',
+      tone: data.totals.openDrafts > 0 ? 'warning' : 'default',
     },
     {
       label: 'LOAs to review',
       value: String(data.totals.loaAwaitingReview),
-      helper:
+      hint:
         urgentAlerts > 0 ? `${String(urgentAlerts)} urgent alerts` : 'No urgent alerts',
-      icon: FileSearch,
-      tone: 'bg-destructive/10 text-destructive',
+      tone: urgentAlerts > 0 ? 'warning' : 'default',
     },
   ] as const;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="mb-1 text-xs font-semibold tracking-[0.16em] text-primary uppercase">
-            Operations overview
-          </p>
-          <h1 tabIndex={-1} className="mb-1">
-            Dashboard
-          </h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Contract execution, deadlines and payment position in one place.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 print:hidden">
-          <Button variant="outline" onClick={onOpenWorks}>
-            View all Works
-          </Button>
-          {canModify && (
-            <Button onClick={onUploadLoa}>
-              <Upload aria-hidden="true" />
-              Upload LOA
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        eyebrow="Operations overview"
+        title="Dashboard"
+        description="Contract execution, deadlines and payment position in one place."
+        className="mb-0"
+        action={
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <Button variant="outline" onClick={onOpenWorks}>
+              View all Works
             </Button>
-          )}
-        </div>
-      </header>
+            {canModify && (
+              <Button onClick={onUploadLoa}>
+                <Upload data-icon="inline-start" aria-hidden="true" />
+                Upload LOA
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* First run. Above the metrics on purpose: five zero tiles and
           "nothing needs attention" are an accurate description of an
@@ -555,38 +555,135 @@ export function OperationsDashboard({
 
       <section
         aria-label="Organisation summary"
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
+        className="data-surface grid grid-cols-2 gap-px bg-border lg:grid-cols-5"
       >
-        {metrics.map((metric) => {
-          const Icon = metric.icon;
-          return (
-            <article
-              key={metric.label}
-              className="group rounded-2xl border border-border/80 bg-card p-5 shadow-[0_1px_2px_rgba(16,24,40,0.03),0_8px_24px_rgba(16,24,40,0.035)] transition-transform hover:-translate-y-0.5"
-            >
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                  {metric.label}
-                </span>
-                <span
-                  className={`inline-flex size-9 items-center justify-center rounded-xl ${metric.tone}`}
-                >
-                  <Icon className="size-4" aria-hidden="true" />
-                </span>
-              </div>
-              <strong className="block text-2xl font-semibold tracking-tight tabular-nums">
-                {metric.value}
-              </strong>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {metric.helper}
-              </span>
-            </article>
-          );
-        })}
+        {metrics.map((metric) => (
+          <div key={metric.label} className="bg-card p-4 sm:p-5">
+            <Stat
+              label={metric.label}
+              value={metric.value}
+              hint={metric.hint}
+              tone={metric.tone}
+            />
+          </div>
+        ))}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(21rem,0.6fr)]">
-        <Card className="p-0">
+      {/* The mock's two-column body (`app/page.tsx`): the Works panel on
+          the left at three columns of five, what needs a decision on the
+          right at two. The retired third panel — a conic-gradient donut of
+          the delivery percentage over two value chips — is gone rather
+          than re-skinned: the mock draws no such thing, and every figure
+          it carried is already in the stat row above it (delivered value
+          with its percentage, billed value, contract value). */}
+      <section className="grid gap-5 lg:grid-cols-5">
+        <Card className="p-0 lg:col-span-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div>
+              <h2 className="m-0 text-base">Work portfolio</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Live delivery and billing progress for the largest current Works.
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={onOpenWorks}>
+              View all Works
+              <ArrowRight data-icon="inline-end" aria-hidden="true" />
+            </Button>
+          </div>
+          {sortedWorks.length === 0 ? (
+            <div className="flex min-h-48 flex-col items-center justify-center px-6 py-10 text-center">
+              <BriefcaseBusiness className="mb-3 size-8 text-muted-foreground" />
+              {/* The action lives once, in the First steps panel at the top
+                  of this screen; a second copy of the same button here read
+                  as a second, different thing to do. */}
+              <p className="font-medium">
+                {canModify
+                  ? 'No Works yet — the first one is created from an uploaded Letter of Acceptance.'
+                  : 'No Works yet. An owner or office member uploads the first Letter of Acceptance.'}
+              </p>
+            </div>
+          ) : (
+            <div className="px-3 pb-3">
+              {/* The shared register table, so the dashboard's numbers sit
+                  in the same grammar as every other ledger in the product:
+                  sticky 11px uppercase heading, hairline rules, mono
+                  tabular figures right-aligned. It replaces a hand-rolled
+                  table that had invented its own padding and heading
+                  styles. `scroll={false}` — the panel is short by
+                  construction (eight rows) and a scrollport inside a card
+                  inside a dashboard is one box too many. */}
+              <DataTable scroll={false}>
+                <caption className="sr-only">
+                  Work execution and billing progress
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Work</th>
+                    <th scope="col">Delivery progress</th>
+                    <th scope="col" className={numericCell}>
+                      Delivered
+                    </th>
+                    <th scope="col" className={numericCell}>
+                      Billed
+                    </th>
+                    <th scope="col" className={numericCell}>
+                      DCs
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedWorks.slice(0, 8).map((work) => {
+                    const percent = progressPercent(
+                      work.deliveredValue,
+                      work.contractValue,
+                    );
+                    return (
+                      <tr key={work.workId}>
+                        <th scope="row">
+                          {/* A real link so a Work can be middle-clicked
+                              into its own tab; a left click stays in-app. */}
+                          <a
+                            href={workHash(work.workId)}
+                            className="font-mono font-semibold"
+                            onClick={navigateOnClick(() => {
+                              onOpenWork(work.workId);
+                            })}
+                          >
+                            {work.workCode}
+                          </a>
+                          <p
+                            className={`mt-0.5 text-xs text-muted-foreground ${wrapCell}`}
+                          >
+                            {work.title}
+                          </p>
+                        </th>
+                        <td>
+                          <div className="flex min-w-40 items-center gap-2">
+                            <ProgressBar
+                              value={percent}
+                              label={`${work.workCode} delivery progress`}
+                              className="h-1.5 flex-1 bg-muted"
+                            />
+                            <span className="w-9 text-right font-mono text-xs text-muted-foreground tabular-nums">
+                              {percent}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className={numericCell}>
+                          {formatInr(work.deliveredValue)}
+                        </td>
+                        <td className={numericCell}>{formatInr(work.billedValue)}</td>
+                        <td className={numericCell}>{work.issuedChallans}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </DataTable>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-0 lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
             <div>
               <h2 className="m-0 text-base">Needs attention</h2>
@@ -596,7 +693,7 @@ export function OperationsDashboard({
             </div>
             <Button variant="ghost" size="sm" onClick={onOpenApprovals}>
               Approval queue
-              <ArrowRight aria-hidden="true" />
+              <ArrowRight data-icon="inline-end" aria-hidden="true" />
             </Button>
           </div>
           {data.alerts.length === 0 ? (
@@ -667,146 +764,7 @@ export function OperationsDashboard({
             </ul>
           )}
         </Card>
-
-        <Card className="flex flex-col">
-          <div>
-            <h2 className="m-0 text-base">Execution progress</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Delivered and billed value against the current contract portfolio.
-            </p>
-          </div>
-          <div className="flex flex-1 flex-col items-center justify-center py-7">
-            <div
-              className="relative grid size-44 place-items-center rounded-full"
-              style={{
-                background: `conic-gradient(var(--primary) ${String(
-                  deliveryPercent * 3.6,
-                )}deg, var(--muted) 0deg)`,
-              }}
-              role="img"
-              aria-label={`${String(deliveryPercent)} percent of contract value delivered`}
-            >
-              <div className="grid size-32 place-items-center rounded-full bg-card text-center shadow-inner">
-                <span>
-                  <strong className="block text-3xl font-semibold tracking-tight tabular-nums">
-                    {deliveryPercent}%
-                  </strong>
-                  <span className="text-xs text-muted-foreground">delivered</span>
-                </span>
-              </div>
-            </div>
-            <dl className="mt-6 grid w-full grid-cols-2 gap-3 text-sm">
-              <div className="rounded-xl bg-muted/55 p-3">
-                <dt className="text-xs text-muted-foreground">Contract value</dt>
-                <dd className="mt-1 font-semibold tabular-nums">
-                  {formatCompactInr(data.totals.contractValue)}
-                </dd>
-              </div>
-              <div className="rounded-xl bg-primary/5 p-3">
-                <dt className="text-xs text-muted-foreground">Billed</dt>
-                <dd className="mt-1 font-semibold text-primary tabular-nums">
-                  {formatCompactInr(data.totals.billedValue)}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </Card>
       </section>
-
-      <Card className="p-0">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-          <div>
-            <h2 className="m-0 text-base">Work portfolio</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Live delivery and billing progress for the largest current Works.
-            </p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onOpenWorks}>
-            View all Works
-            <ArrowRight aria-hidden="true" />
-          </Button>
-        </div>
-        {sortedWorks.length === 0 ? (
-          <div className="flex min-h-48 flex-col items-center justify-center px-6 py-10 text-center">
-            <BriefcaseBusiness className="mb-3 size-8 text-muted-foreground" />
-            {/* The action lives once, in the First steps panel at the top
-                of this screen; a second copy of the same button here read
-                as a second, different thing to do. */}
-            <p className="font-medium">
-              {canModify
-                ? 'No Works yet — the first one is created from an uploaded Letter of Acceptance.'
-                : 'No Works yet. An owner or office member uploads the first Letter of Acceptance.'}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <caption className="sr-only">Work execution and billing progress</caption>
-              <thead>
-                <tr className="border-b border-border bg-muted/35 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                  <th className="px-5 py-3">Work</th>
-                  <th className="px-5 py-3">Delivery progress</th>
-                  <th className="px-5 py-3 text-right">Delivered</th>
-                  <th className="px-5 py-3 text-right">Billed</th>
-                  <th className="px-5 py-3 text-right">DCs</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {sortedWorks.slice(0, 8).map((work) => {
-                  const percent = progressPercent(
-                    work.deliveredValue,
-                    work.contractValue,
-                  );
-                  return (
-                    <tr
-                      key={work.workId}
-                      className="transition-colors hover:bg-muted/35"
-                    >
-                      <th scope="row" className="px-5 py-4 text-left font-normal">
-                        {/* A real link so a Work can be middle-clicked
-                            into its own tab; a left click stays in-app. */}
-                        <a
-                          href={workHash(work.workId)}
-                          className="font-semibold text-primary no-underline hover:underline"
-                          onClick={navigateOnClick(() => {
-                            onOpenWork(work.workId);
-                          })}
-                        >
-                          {work.workCode}
-                        </a>
-                        <p className="mt-0.5 max-w-lg text-xs text-muted-foreground">
-                          {work.title}
-                        </p>
-                      </th>
-                      <td className="px-5 py-4">
-                        <div className="flex min-w-44 items-center gap-3">
-                          <ProgressBar
-                            value={percent}
-                            label={`${work.workCode} delivery progress`}
-                            className="h-2 flex-1 bg-muted"
-                          />
-                          <span className="w-9 text-right text-xs font-semibold tabular-nums">
-                            {percent}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-right font-mono text-xs tabular-nums">
-                        {formatInr(work.deliveredValue)}
-                      </td>
-                      <td className="px-5 py-4 text-right font-mono text-xs tabular-nums">
-                        {formatInr(work.billedValue)}
-                      </td>
-                      <td className="px-5 py-4 text-right font-mono text-xs tabular-nums">
-                        {work.issuedChallans}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
     </div>
   );
 }

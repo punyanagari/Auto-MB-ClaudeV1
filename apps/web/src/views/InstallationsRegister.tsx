@@ -6,6 +6,7 @@ import { formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
+import { PageHeader } from '../ui/page-header.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { WorkLink } from '../ui/work-link.js';
@@ -202,21 +203,12 @@ export function InstallationsRegister({
 
   return (
     <>
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="mb-1 text-xs font-semibold tracking-widest text-primary uppercase">
-            Operations
-          </p>
-          <h1 id="installations-title" tabIndex={-1}>
-            Installations
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
-            Every quantity recorded as installed at site, newest first, across the Works
-            you can reach. Recording happens on the Work, which is what caps the
-            quantity and holds the delivered serials.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="Operations"
+        titleId="installations-title"
+        title="Installations"
+        description="Every quantity recorded as installed at site, newest first, across the Works you can reach. Recording happens on the Work, which is what caps the quantity and holds the delivered serials."
+      />
 
       <section aria-labelledby="installations-title" className="flex flex-col gap-4">
         {/* The mock's `?work=` chip: it names the Work the register has
@@ -233,7 +225,7 @@ export function InstallationsRegister({
               </span>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-xs"
                 onClick={onClearWorkFilter}
                 aria-label={`Clear the ${workFilter.workCode} filter and read the whole register`}
               >
