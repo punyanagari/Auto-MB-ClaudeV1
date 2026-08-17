@@ -179,7 +179,7 @@ export function Payments({
         description="Employee advances and reimbursements, and what this organisation owes its vendors."
       />
 
-      <div className="stat-row">
+      <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Awaiting approval"
           value={String(awaitingDecision.length)}
@@ -370,7 +370,12 @@ function EmployeeRegister({
               </td>
               <td>{KIND_LABELS[request.kind]}</td>
               <td className={wrapCell}>{request.beneficiaryName}</td>
-              <td className={wrapCell}>{request.purpose}</td>
+              {/* Capped the way the mock caps it (`max-w-60 truncate`):
+                  a purpose is a sentence an operator typed, and left
+                  uncapped it takes the width the action column needs. */}
+              <td className="max-w-60 truncate" title={request.purpose}>
+                {request.purpose}
+              </td>
               <td className={numericCell}>{formatInr(request.amount)}</td>
               <td>
                 <span className={`lamp lamp-${STATUS_TONES[request.status]}`} />
