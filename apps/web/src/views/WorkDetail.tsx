@@ -1120,9 +1120,15 @@ export function WorkDetail({
       </dl>
 
       {/* Eleven sections used to stack on one scroll. Each area now answers
-          for itself, and the counts show what is inside before it is opened. */}
+          for itself, and the counts show what is inside before it is opened.
+          The rail is the mock's work-section nav (Auto-MB-Vercel-du,
+          components/work-section-nav.tsx at fdfe5ef): a 44px underline tab
+          on a horizontally scrollable rule, weight rather than colour
+          carrying the active state. The count pill has no mock counterpart
+          — the mock's Work has no data behind it to count — so it is built
+          from the mock's own muted and primary tints. */}
       <nav
-        className="mt-4 mb-2 flex items-center gap-0.5 overflow-x-auto border-b border-border"
+        className="mt-4 mb-4 flex max-w-full items-center gap-1 overflow-x-auto border-b border-border"
         aria-label="Work sections"
       >
         {WORK_TABS.map((candidate) => {
@@ -1133,11 +1139,11 @@ export function WorkDetail({
               key={candidate}
               type="button"
               className={cn(
-                '-mb-px inline-flex items-center gap-2 border-b-2 border-transparent px-3 py-2',
+                '-mb-px inline-flex h-11 shrink-0 items-center gap-2 border-b-2 border-transparent px-3',
                 'text-sm whitespace-nowrap transition-colors',
                 current
-                  ? 'border-primary font-semibold text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
+                  ? 'border-primary font-medium text-foreground'
+                  : 'font-normal text-muted-foreground hover:text-foreground',
               )}
               aria-current={current ? 'page' : undefined}
               onClick={() => {

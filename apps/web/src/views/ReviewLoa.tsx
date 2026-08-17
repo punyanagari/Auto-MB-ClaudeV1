@@ -1119,7 +1119,7 @@ export function ReviewLoa({
           replaces, and only the reviewer knows which this is. */}
       {document.letterNumberMatches.length > 0 && (
         <div
-          className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3"
+          className="my-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3"
           role="note"
           aria-labelledby="letter-number-conflict-title"
           data-testid="letter-number-conflict"
@@ -1157,7 +1157,7 @@ export function ReviewLoa({
 
       {flagged > 0 && (
         <div
-          className="my-3 rounded-lg border border-warning/40 bg-accent px-4 py-3"
+          className="my-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3"
           role="note"
           aria-labelledby="flags-title"
         >
