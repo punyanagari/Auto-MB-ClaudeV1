@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 import { Button } from './button.js';
 
@@ -53,9 +54,17 @@ export function Disclosure({
         }}
       >
         {label}
-        <span aria-hidden="true" className="text-xs">
-          {open ? '▲' : '▼'}
-        </span>
+        {/* Lucide, like every other icon in the product: the ▲/▼
+         * geometric glyphs this replaced were a second icon vocabulary of
+         * one, and they render in whatever fallback face the machine has
+         * for them rather than in the interface's own. */}
+        <ChevronDown
+          aria-hidden="true"
+          className={cn(
+            'size-4 shrink-0 motion-safe:transition-transform',
+            open && 'rotate-180',
+          )}
+        />
       </Button>
       {/* Unmounted rather than hidden: these panels hold uncontrolled form
        * fields, and a closed form that keeps half-typed values would offer

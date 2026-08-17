@@ -157,8 +157,11 @@ export function Modal({
         type="button"
         tabIndex={-1}
         aria-hidden="true"
+        /* The mock's `DialogOverlay`: a light scrim plus a small blur,
+         * rather than a heavy one. The surface behind is dimmed enough to
+         * recede and still legible enough to keep the operator's place. */
         className={cn(
-          'absolute inset-0 cursor-default bg-foreground/30 backdrop-blur-sm',
+          'absolute inset-0 cursor-default bg-black/10 supports-backdrop-filter:backdrop-blur-xs',
           backdropClassName,
         )}
         onClick={onClose}
@@ -166,8 +169,13 @@ export function Modal({
       <div
         {...(id === undefined ? {} : { id })}
         ref={surfaceRef}
+        /* The mock's `DialogContent`: `rounded-xl` over `--popover`, 14px
+         * ink, a hairline `ring-1 ring-foreground/10` and `p-4`. The
+         * width stays `max-w-md` — wider than the mock's `sm:max-w-sm`
+         * because this product's confirmations carry a required reason
+         * field, not just a sentence — and every caller can override it. */
         className={cn(
-          'relative w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl',
+          'relative w-full max-w-md rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10',
           className,
         )}
         role="dialog"

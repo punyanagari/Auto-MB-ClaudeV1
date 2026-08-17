@@ -74,14 +74,21 @@ export function ConfirmDialog({
       describedBy={descriptionId}
       {...(restoreFocusTo === undefined ? {} : { restoreFocusTo })}
     >
-      <h2 id={titleId} className="mt-0">
-        {title}
-      </h2>
-      <p id={descriptionId} className="text-sm text-muted-foreground">
-        {description}
-      </p>
+      {/* The mock's dialog anatomy (`components/ui/dialog` at
+          a8e1fde): a `gap-2` header of a 16px medium title over a muted
+          description, then the footer below — bled to the surface's own
+          edges and ruled off, so the decision reads as the base of the
+          panel rather than as more content. */}
+      <div className="flex flex-col gap-2">
+        <h2 id={titleId} className="m-0 text-base leading-none font-medium">
+          {title}
+        </h2>
+        <p id={descriptionId} className="m-0 text-sm text-muted-foreground">
+          {description}
+        </p>
+      </div>
       {children}
-      <div className="mt-5 flex flex-wrap justify-end gap-2">
+      <div className="-mx-4 -mb-4 mt-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-border bg-muted/50 p-4 sm:flex-row sm:flex-wrap sm:justify-end">
         <Button variant="outline" disabled={pending} onClick={onCancel}>
           {cancelLabel}
         </Button>

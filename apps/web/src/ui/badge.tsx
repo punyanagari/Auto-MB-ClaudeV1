@@ -1,22 +1,38 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../lib/cn.js';
 
+/* The mock's stock badge (`components/ui/badge` at a8e1fde): a 20px
+ * pill, 12px medium text, transparent border, `gap-1` between an icon and
+ * its label. `ui/chip.tsx` reshapes it into the status badge — 24px,
+ * `rounded-md`, 11px semibold, dot-first — exactly as the mock's
+ * `components/shared` reshapes its own.
+ *
+ * The tints below are the mock's four status families plus its primary
+ * one, read off `components/shared`. A tint is `bg-<tone>/10` with the tone
+ * itself as ink and a `/20` edge; warning is the exception the mock also
+ * makes, because `--warning` is a fill colour and `--warning-foreground`
+ * is the ink that goes on it.
+ *
+ * DIVERGENCE (`neutral`). The mock pairs `bg-muted` with
+ * `text-muted-foreground`, which measures 3.74:1 in light — under WCAG AA
+ * 1.4.3 for text of this size. The ink here is `--secondary-foreground`,
+ * the next tone up the same neutral ramp (9.2:1 light, 8.1:1 dark), so
+ * the chip keeps the mock's surface and loses only the failing ink. The
+ * defect is the mock's and should be fixed there; see the pull request. */
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap border',
+  'inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap',
   {
     variants: {
-      /* Badge text is 12px, so every tint/ink pairing must hold 4.5:1 in
-       * both themes (WCAG 1.4.3): the blue chip uses the accent ink rather
-       * than raw primary, and the neutral chip uses the secondary ink
-       * rather than muted-foreground, whose ratio on the muted tint is
-       * borderline. Verified by the live axe/contrast gate. */
       variant: {
-        default: 'border-transparent bg-accent text-accent-foreground',
-        neutral: 'border-border bg-muted text-secondary-foreground',
-        success: 'border-transparent bg-success/12 text-success',
-        warning: 'border-transparent bg-warning/15 text-warning-foreground',
-        destructive: 'border-transparent bg-destructive/10 text-destructive',
-        info: 'border-transparent bg-info/12 text-info',
+        default: 'border-primary/20 bg-primary/10 text-primary',
+        neutral: 'bg-muted text-secondary-foreground',
+        success: 'border-success/20 bg-success/10 text-success',
+        warning: 'border-warning/30 bg-warning/15 text-warning-foreground',
+        destructive: 'border-destructive/20 bg-destructive/10 text-destructive',
+        /* The mock carries no informational tone, so `--info` holds the
+         * mock's primary values and this family renders as the mock's
+         * "outward legal act" primary tint. */
+        info: 'border-info/20 bg-info/10 text-info',
         outline: 'border-border bg-transparent text-foreground',
       },
     },

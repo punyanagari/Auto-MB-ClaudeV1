@@ -19,9 +19,18 @@ export function Card({ className, ...props }: React.ComponentProps<'section'>) {
          * max-width). Several views had already discovered this and passed
          * `className="w-full"` one at a time; the primitive owns it now.
          * Measured at 320px by `e2e/responsive.spec.ts`. */
-        'w-full rounded-2xl border border-border/90 bg-card p-5',
-        'shadow-[0_1px_2px_rgba(16,24,40,0.03),0_10px_30px_rgba(16,24,40,0.035)]',
-        'print:rounded-none print:border-0 print:p-0 print:shadow-none',
+        /* The mock's card, from `components/ui/card` and the
+         * `[data-slot="card"]` override in its `app/globals` at
+         * a8e1fde: `rounded-xl`, a hairline `ring-1 ring-foreground/10`
+         * rather than a border, one 1px shadow, and `--card-spacing`
+         * (4 → 1rem) as the padding. The earlier 2xl radius, 20px
+         * padding and 30px ambient shadow are all retired — a register
+         * page carries a dozen of these surfaces and the mock keeps
+         * every one of them flat and tight. `ui/form.tsx`'s ActionBar
+         * bleeds to these same edges and tracks the spacing. */
+        'w-full rounded-xl bg-card p-4 ring-1 ring-foreground/10',
+        'shadow-[0_1px_2px_0_rgb(15_23_42/0.025)]',
+        'print:rounded-none print:p-0 print:shadow-none print:ring-0',
         className,
       )}
       {...props}

@@ -36,21 +36,38 @@ const HEAD = [
   '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1',
   '[&_thead_th]:bg-table-header',
   '[&_thead_th]:border-b [&_thead_th]:border-border',
-  '[&_thead_th]:px-4 [&_thead_th]:py-3 [&_thead_th]:text-left',
-  '[&_thead_th]:text-xs [&_thead_th]:font-semibold [&_thead_th]:tracking-[0.025em]',
+  /* The mock's `[data-slot="table-head"]`: a 40px row of 11px semibold
+   * uppercase muted text, cells padded 2 (8px). */
+  '[&_thead_th]:h-10 [&_thead_th]:px-2 [&_thead_th]:py-0 [&_thead_th]:text-left',
+  '[&_thead_th]:align-middle [&_thead_th]:whitespace-nowrap',
+  '[&_thead_th]:text-[11px] [&_thead_th]:font-semibold [&_thead_th]:tracking-wide',
   '[&_thead_th]:text-muted-foreground [&_thead_th]:uppercase',
 ].join(' ');
 
+/* The mock's `TableCell`: `p-2 align-middle whitespace-nowrap`. A register
+ * row is one line of facts, so nothing wraps by default and the columns
+ * stay in step down the page; the prose cells that genuinely need two
+ * lines say so with `wrapCell`, which is every one of them in this tree.
+ *
+ * Hover is the mock's `[data-slot="table-row"]` — `bg-accent/35`, a faint
+ * teal wash rather than the old neutral one. */
 const CELLS = [
-  '[&_td]:border-b [&_td]:border-border [&_td]:px-4 [&_td]:py-3',
-  '[&_td]:text-left [&_td]:align-top [&_td]:font-normal',
-  '[&_tbody_th]:border-b [&_tbody_th]:border-border [&_tbody_th]:px-4 [&_tbody_th]:py-3',
-  '[&_tbody_th]:text-left [&_tbody_th]:align-top [&_tbody_th]:font-medium',
-  '[&_tfoot_th]:border-b [&_tfoot_th]:border-border [&_tfoot_th]:px-4 [&_tfoot_th]:py-3',
-  '[&_tfoot_th]:text-left [&_tfoot_th]:align-top [&_tfoot_th]:font-medium',
+  '[&_td]:border-b [&_td]:border-border [&_td]:p-2',
+  '[&_td]:text-left [&_td]:align-middle [&_td]:font-normal [&_td]:whitespace-nowrap',
+  '[&_tbody_th]:border-b [&_tbody_th]:border-border [&_tbody_th]:p-2',
+  '[&_tbody_th]:text-left [&_tbody_th]:align-middle [&_tbody_th]:font-medium',
+  '[&_tfoot_th]:border-b [&_tfoot_th]:border-border [&_tfoot_th]:p-2',
+  '[&_tfoot_th]:text-left [&_tfoot_th]:align-middle [&_tfoot_th]:font-medium',
   '[&>:last-child>tr:last-child>td]:border-b-0',
   '[&>:last-child>tr:last-child>th]:border-b-0',
-  '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-muted/40',
+  /* A row holding a wrapped prose cell is several lines tall, and a
+   * middle-aligned quantity beside a six-line description floats away
+   * from the line it belongs to. Such a row aligns to the top
+   * throughout; single-line rows — where a 24px status chip or a 32px
+   * button sets the height — keep the mock's centring. */
+  '[&_tbody_tr:has(.whitespace-normal)>td]:align-top',
+  '[&_tbody_tr:has(.whitespace-normal)>th]:align-top',
+  '[&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-accent/35',
 ].join(' ');
 
 /* The ledger's own scrollport.
@@ -156,7 +173,12 @@ export function DataTable({
   const table = (
     <table
       className={cn(
+        /* The mock's `.data-surface`: an overflow-clipped `rounded-xl`
+         * bordered card over `--card` with one 1px shadow. Here the
+         * corner cells do the clipping (see CORNERS above) because the
+         * table cannot own `overflow-hidden` and keep a sticky heading. */
         'my-3 w-full border-separate border-spacing-0 rounded-xl border border-border bg-card text-sm',
+        'shadow-[0_1px_2px_0_rgb(15_23_42/0.03)]',
         CORNERS,
         HEAD,
         CELLS,
@@ -192,5 +214,14 @@ export const numericCell =
   'text-right! font-mono text-[13px] whitespace-nowrap tabular-nums';
 
 /** Prose in a table — a description or a reason. Capped so a long line cannot
- * push the numeric columns off the page. */
-export const wrapCell = 'max-w-[28rem] leading-snug [overflow-wrap:anywhere]';
+ * push the numeric columns off the page.
+ *
+ * This is also the one opt-out of the mock's `whitespace-nowrap` cell: a
+ * letter item description runs to five or six lines and a Work title to
+ * two, so these cells wrap. The `whitespace-normal` is what CELLS above
+ * detects to align the whole row to the top, so it is load-bearing even
+ * where a cell would have wrapped anyway. Anything holding prose —
+ * including every `ClampedText`, whose `line-clamp-2` needs a second
+ * line to clamp — must carry this class. */
+export const wrapCell =
+  'max-w-[28rem] align-top leading-snug whitespace-normal [overflow-wrap:anywhere]';

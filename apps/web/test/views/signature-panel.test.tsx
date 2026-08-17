@@ -115,7 +115,9 @@ describe('SignaturePanel', () => {
     const green = render(
       <SignaturePanel status="signed_and_intact" verdict={report()} />,
     );
-    expect(green.container.querySelectorAll('.bg-success\\/12').length).toBeGreaterThan(
+    // The success tint is `ui/badge.tsx`'s success variant, whose surface
+    // is the mock's `bg-success/10` (`components/shared` at a8e1fde).
+    expect(green.container.querySelectorAll('.bg-success\\/10').length).toBeGreaterThan(
       0,
     );
     green.unmount();
@@ -133,7 +135,7 @@ describe('SignaturePanel', () => {
       const view = render(<SignaturePanel status={status} verdict={null} />);
       const panel = view.getByTestId('signature-panel');
       expect(
-        panel.querySelector(':scope > div .bg-success\\/12'),
+        panel.querySelector(':scope > div .bg-success\\/10'),
         `${status} must not render the success tone`,
       ).toBeNull();
       view.unmount();
