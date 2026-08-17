@@ -58,6 +58,10 @@ export type WorkspaceView =
    * result set can be linked, bookmarked and reached by Back — the same
    * durability finding 28 gave every other view. */
   | { name: 'search'; query: string }
+  /** The company document library: organisation-level credentials that
+   * belong to no Work (migration 0079). One register, no record page —
+   * a credential is its rows, and the versions live inside the row. */
+  | { name: 'company-documents' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -189,6 +193,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return view.query === ''
         ? '#/search'
         : `#/search/${encodeURIComponent(view.query)}`;
+    case 'company-documents':
+      return '#/company-documents';
     case 'members':
       return '#/members';
     case 'settings':
@@ -369,6 +375,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     }
     case 'quotations':
     case 'approvals':
+    case 'company-documents':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;

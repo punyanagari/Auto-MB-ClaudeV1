@@ -263,6 +263,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     cancelPurchaseOrder: vi.fn(),
     closePurchaseOrder: vi.fn(),
     deletePurchaseOrder: vi.fn().mockResolvedValue(undefined),
+    listCompanyDocuments: vi
+      .fn()
+      .mockResolvedValue({ documents: [], expiryWarningDays: 60 }),
+    createCompanyDocument: vi.fn(),
+    uploadCompanyDocumentVersion: vi.fn(),
+    archiveCompanyDocument: vi.fn(),
+    downloadCompanyDocumentVersion: vi.fn(),
     listBudgetaryQuotations: vi.fn().mockResolvedValue([]),
     createBudgetaryQuotation: vi.fn(),
     getBudgetaryQuotation: vi.fn(),

@@ -21,6 +21,9 @@ import type {
   CanonicalItemListResponse,
   ChallanDetailResponse,
   Challan,
+  CompanyDocument,
+  CompanyDocumentCategory,
+  CompanyDocumentListResponse,
   ConfirmWorkRequest,
   ContractSourceContext,
   ContractSourceDocumentKind,
@@ -1142,6 +1145,43 @@ export interface ApiClient {
     organisationId: string,
     purchaseOrderId: string,
   ) => Promise<void>;
+  /** The company document library: organisation-level credentials that
+   * belong to no Work, so none of these take a workId. `validFrom` and
+   * `expiresOn` are date-only `YYYY-MM-DD` strings and ride the
+   * querystring beside the filename, because the request body is the
+   * PDF itself. */
+  readonly listCompanyDocuments: (
+    organisationId: string,
+  ) => Promise<CompanyDocumentListResponse>;
+  readonly createCompanyDocument: (
+    organisationId: string,
+    file: Blob,
+    details: {
+      readonly title: string;
+      readonly category: CompanyDocumentCategory;
+      readonly filename: string;
+      readonly validFrom?: string;
+      readonly expiresOn?: string;
+    },
+  ) => Promise<CompanyDocument>;
+  readonly uploadCompanyDocumentVersion: (
+    organisationId: string,
+    documentId: string,
+    file: Blob,
+    details: {
+      readonly filename: string;
+      readonly validFrom?: string;
+      readonly expiresOn?: string;
+    },
+  ) => Promise<CompanyDocument>;
+  readonly archiveCompanyDocument: (
+    organisationId: string,
+    documentId: string,
+  ) => Promise<CompanyDocument>;
+  readonly downloadCompanyDocumentVersion: (
+    organisationId: string,
+    versionId: string,
+  ) => Promise<Blob>;
   /** A budgetary quotation is a priced offer OUTWARD and carries no
    * Work: draft -> issued (numbered) -> expired/converted/withdrawn via
    * the one outcome transition. */
@@ -1655,6 +1695,17 @@ async function parseError(response: Response): Promise<RequestFailedError> {
  * carry the selected organisation in the x-organisation-id header, which
  * the server re-validates against the database membership floor.
  */
+/** The company-document upload metadata as a querystring. Optional dates
+ * are omitted rather than sent empty: the schema takes a real calendar
+ * date or nothing, and `?expiresOn=` is neither. */
+function companyDocumentQuery(details: Record<string, string | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(details)) {
+    if (value !== undefined && value !== '') query.set(key, value);
+  }
+  return query.toString();
+}
+
 export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
   async function request<T>(
     path: string,
@@ -1694,6 +1745,27 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     });
     if (!response.ok) throw await parseError(response);
     return response.text();
+  }
+
+  /** Both company-document uploads post the same thing — a PDF body with
+   * its metadata already in the path's querystring — and answer the same
+   * refreshed credential, so they share one send. */
+  async function uploadCompanyDocumentPdf(
+    path: string,
+    organisationId: string,
+    file: Blob,
+  ): Promise<CompanyDocument> {
+    const response = await fetchImpl(path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/pdf',
+        'x-organisation-id': organisationId,
+      },
+      body: file,
+    });
+    if (!response.ok) throw await parseError(response);
+    return (await response.json()) as CompanyDocument;
   }
 
   return {
@@ -3058,6 +3130,42 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         method: 'DELETE',
         organisationId,
       });
+    },
+    async listCompanyDocuments(organisationId) {
+      return request<CompanyDocumentListResponse>('/api/company-documents', {
+        organisationId,
+      });
+    },
+    async createCompanyDocument(organisationId, file, details) {
+      return uploadCompanyDocumentPdf(
+        `/api/company-documents?${companyDocumentQuery(details)}`,
+        organisationId,
+        file,
+      );
+    },
+    async uploadCompanyDocumentVersion(organisationId, documentId, file, details) {
+      return uploadCompanyDocumentPdf(
+        `/api/company-documents/${documentId}/versions?${companyDocumentQuery(details)}`,
+        organisationId,
+        file,
+      );
+    },
+    async archiveCompanyDocument(organisationId, documentId) {
+      return request<CompanyDocument>(`/api/company-documents/${documentId}/archive`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async downloadCompanyDocumentVersion(organisationId, versionId) {
+      const response = await fetchImpl(
+        `/api/company-document-versions/${versionId}/file`,
+        {
+          credentials: 'same-origin',
+          headers: { 'x-organisation-id': organisationId },
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async listBudgetaryQuotations(organisationId) {
       const payload = await request<{ budgetaryQuotations: BudgetaryQuotation[] }>(

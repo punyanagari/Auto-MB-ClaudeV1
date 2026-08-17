@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 165;
+const TRIGGER_CENSUS = 168;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -601,5 +601,121 @@ describe('tenant migration contract', () => {
       sql.indexOf('CREATE TRIGGER eway_bill_renders_insert_guard'),
     );
     expect(renderInsertGuard).not.toContain('SECURITY DEFINER');
+  });
+
+  it('binds the company document library in 0079', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0079_company_document_library.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // Categories are a CHECK on text, deliberately, so a sixth bucket is
+    // one ordinary statement rather than an enum-type change.
+    //
+    // This file cannot compare the list against the contract's own
+    // COMPANY_DOCUMENT_CATEGORIES: `packages/db` does not depend on
+    // `packages/contracts` and adding that edge for one census would buy
+    // a workspace dependency to check five strings. The derived
+    // comparison lives where both are already in reach and the constraint
+    // can be read from the live catalog rather than from this text —
+    // `apps/server/test/company-documents.integration.test.ts`, "the
+    // schema's categories are exactly the contract's".
+    expect(sql).toMatch(
+      /category text NOT NULL CHECK \(category IN \(\s*'statutory',\s*'financial',\s*'eligibility',\s*'certification',\s*'company'\s*\)\)/,
+    );
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // One live credential per name, case-folded. Two rows both called
+    // "GST Registration" is the mistake this catches; a renewal belongs
+    // on the existing row as a new version.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX company_documents_live_title_unique\s+ON company_documents \(organisation_id, lower\(title\)\)\s+WHERE archived_at IS NULL;/,
+    );
+
+    // Version numbers are unique within their credential, which is what
+    // makes two renewals uploaded in the same second safe even if the
+    // route's row lock were somehow not taken. It is also the whole index
+    // budget of the table: no `UNIQUE (organisation_id, id)` that nothing
+    // references, and no per-tenant object-key unique that the global one
+    // below already subsumes.
+    expect(sql).toContain(
+      'UNIQUE (organisation_id, company_document_id, version_number)',
+    );
+    expect(sql).not.toContain('UNIQUE (organisation_id, object_key)');
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX company_document_versions_object_key_unique',
+    );
+
+    // Legal dates are date-only (engineering rule 6) and the window has
+    // to open before it closes.
+    expect(sql).toContain('valid_from date');
+    expect(sql).toContain('expires_on date');
+    expect(sql).toContain('company_document_versions_validity_order_check');
+    expect(sql).toMatch(
+      /valid_from IS NULL OR expires_on IS NULL OR expires_on >= valid_from/,
+    );
+
+    // The stored object key carries the tenant prefix here as well as in
+    // packages/documents/src/storage.ts. Two layers, because a path is a
+    // filesystem escape.
+    expect(sql).toContain('company_document_versions_object_key_tenant_prefix_check');
+    expect(sql).toMatch(/CHECK \(object_key LIKE organisation_id::text \|\| '\/%'\)/);
+    expect(sql).toContain("CHECK (media_type = 'application/pdf')");
+
+    // Both policies arrive in the ADR-0010 InitPlan shape.
+    for (const table of ['company_documents', 'company_document_versions']) {
+      expect(sql).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+    }
+
+    // Evidence never leaves and is never rewritten: no DELETE anywhere,
+    // and no UPDATE on the versions.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON company_documents TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT ON company_document_versions TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('DELETE ON company_document');
+
+    // The trigger says the same thing to a writer that reached the table
+    // some other way, and refuses to hang new evidence off an archived
+    // credential.
+    expect(sql).toContain(
+      'a company document version is immutable; upload a new version instead',
+    );
+    expect(sql).toContain('is archived and takes no new versions');
+    expect(sql).toContain(
+      'CREATE TRIGGER company_document_versions_append_only_guard\nBEFORE INSERT OR UPDATE ON company_document_versions',
+    );
+
+    // The archived-parent read takes a share lock. Without it the guard
+    // is not the second layer this migration claims it is: under READ
+    // COMMITTED a bare SELECT would miss an archive that commits between
+    // the read and the insert.
+    expect(sql).toMatch(/SELECT archived_at INTO parent_archived_at[\s\S]*?FOR SHARE;/);
+
+    // The credential's own UPDATE guard: provenance frozen, archive
+    // one-way. Its grant keeps UPDATE, so something has to say what
+    // UPDATE is allowed to do.
+    expect(sql).toContain("a company document''s tenant and provenance are immutable");
+    expect(sql).toContain('an archived company document cannot be un-archived');
+    expect(sql).toContain('CREATE TRIGGER company_documents_update_guard');
+
+    // Both guard functions pin their search_path, as 0067 and 0077 do:
+    // a trigger that resolves identifiers through the caller's path is a
+    // trigger a shadowing object can rewrite.
+    for (const guard of [
+      'app_private.guard_company_document_update()',
+      'app_private.guard_company_document_version()',
+    ]) {
+      const body = sql.slice(sql.indexOf(`CREATE FUNCTION ${guard}`));
+      expect(body.slice(0, 200), guard).toContain(
+        'SET search_path = pg_catalog, public',
+      );
+    }
   });
 });

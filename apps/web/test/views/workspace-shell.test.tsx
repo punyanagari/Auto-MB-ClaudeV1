@@ -261,6 +261,11 @@ describe('OperationsWorkspace mobile shell', () => {
       'Challans',
       'Invoices',
       'Quotations',
+      // The mock HAS this screen (`app/tenders/company-documents`) but
+      // reaches it from its Tenders dashboard, which this build omits;
+      // it therefore carries a rail entry of its own, under Documents
+      // where the mock groups document registers.
+      'Company documents',
       'Installations',
       'Global search',
       'Approvals',
@@ -294,6 +299,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Challans', '#/challans'],
       ['Invoices', '#/invoices'],
       ['Quotations', '#/quotations'],
+      ['Company documents', '#/company-documents'],
       ['Installations', '#/installations'],
       ['Global search', '#/search'],
       ['Approvals', '#/approvals'],

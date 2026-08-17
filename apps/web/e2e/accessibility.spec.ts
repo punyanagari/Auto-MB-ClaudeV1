@@ -75,6 +75,26 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(rail.getByRole('link', { name: 'All Works' })).toHaveCount(0);
   await expectNoAxeViolations(page, 'masters locations from the rail');
 
+  /* The company document library. Scanned with all four validity chips on
+     screen at once — no expiry, valid, expiring, expired — plus the
+     archived one, because those five tints are the only place this screen
+     puts colour on a word, and a dot beside a label is what keeps them off
+     the colour-only path in both themes. */
+  await page.getByRole('link', { name: 'Company documents' }).click();
+  await expect(page.getByRole('heading', { name: 'Company documents' })).toBeVisible();
+  for (const label of ['No expiry', 'Valid', 'Expiring', 'Expired', 'Archived']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'company document library');
+  // The renewal form, which the row hides behind a disclosure: an upload
+  // control whose native input is visually hidden still has to be labelled.
+  await page
+    .getByRole('button', { name: /Versions and renewals/ })
+    .first()
+    .click();
+  await expect(page.getByLabel(/Effective from/).first()).toBeVisible();
+  await expectNoAxeViolations(page, 'company document renewal form');
+
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();

@@ -109,6 +109,11 @@ const OperationsDashboard = lazy(() =>
 const Quotations = lazy(() =>
   import('./Quotations.js').then((module) => ({ default: module.Quotations })),
 );
+const CompanyDocuments = lazy(() =>
+  import('./CompanyDocuments.js').then((module) => ({
+    default: module.CompanyDocuments,
+  })),
+);
 const ReviewLoa = lazy(() =>
   import('./ReviewLoa.js').then((module) => ({ default: module.ReviewLoa })),
 );
@@ -1032,6 +1037,14 @@ export function OperationsWorkspace({
                 canModify={canModify}
                 canIssue={canIssue}
                 canCancel={canCancel}
+              />
+            )}
+
+            {view.name === 'company-documents' && (
+              <CompanyDocuments
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
               />
             )}
 

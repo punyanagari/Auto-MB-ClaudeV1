@@ -22,6 +22,16 @@ export const upstreamErrorResponses = {
   502: ApiErrorSchema,
 } as const;
 
+/** How far ahead "expiring" reaches, in days.
+ *
+ * One number, because "expiring soon" has to mean the same thing on the
+ * Dashboard's PBG alert and in the company document library — an operator
+ * who learns that amber means two months on one screen must not have to
+ * relearn it on the next. The value is the mock's own — its
+ * `expiringGuarantees` helper defaults to sixty days at fdfe5ef — and it
+ * is the lead time a bank guarantee renewal actually needs. */
+export const EXPIRY_WARNING_DAYS = 60;
+
 export const IdParamsSchema = Type.Object(
   {
     id: Type.String({

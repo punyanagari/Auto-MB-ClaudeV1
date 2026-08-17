@@ -362,7 +362,7 @@ describe('signature verdicts are stored with the document', () => {
         signature_verdict: { status: string } | null;
       }[];
     }>();
-    expect(body.formatVersion).toBe('export-v13');
+    expect(body.formatVersion).toBe('export-v14');
     const document = body.loaDocuments.find((entry) => entry.id === detail.id);
     // The export is the incident procedure's evidence snapshot; a document
     // exported without the verdict relied on when it was accepted is

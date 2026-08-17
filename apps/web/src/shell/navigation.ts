@@ -1,6 +1,7 @@
 import {
   CircleCheckBig,
   Database,
+  FileBadge,
   FileText,
   FolderKanban,
   LayoutDashboard,
@@ -21,6 +22,7 @@ export type ModuleKey =
   | 'challans'
   | 'invoices'
   | 'quotations'
+  | 'company-documents'
   | 'approvals'
   | 'search'
   | 'installations'
@@ -53,6 +55,16 @@ export interface NavGroup {
  * rendered as dead entries. Quotations runs the other way: the mock draws
  * it under Documents in its own list, so it keeps its place here.
  *
+ * Company documents runs the other way again, and it is the one entry
+ * here the mock does not draw in its own rail. The mock HAS the screen
+ * (`app/tenders/company-documents/page.tsx` at fdfe5ef) but reaches it
+ * from a toolbar button on its Tenders dashboard — and Tenders is one of
+ * the modules omitted above, so replicating the placement exactly would
+ * leave the screen with no way in at all. It sits under Documents, which
+ * is where the mock's own rail groups document registers. Flagged to the
+ * owner in the pull request: if the mock later grows a rail entry of its
+ * own for it, this follows the mock.
+ *
  * Serial Lookup has no entry because it no longer has a destination
  * (`docs/UX.md` § `#/serials` merges into Global Search): serials are one
  * scope inside Search, and the chain a serial opens is unchanged.
@@ -74,6 +86,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'challans', label: 'Challans', icon: Truck },
       { key: 'invoices', label: 'Invoices', icon: Receipt },
       { key: 'quotations', label: 'Quotations', icon: FileText },
+      { key: 'company-documents', label: 'Company documents', icon: FileBadge },
     ],
   },
   {
@@ -112,6 +125,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'invoices' };
     case 'quotations':
       return { name: 'quotations' };
+    case 'company-documents':
+      return { name: 'company-documents' };
     case 'approvals':
       return { name: 'approvals' };
     case 'search':
@@ -151,6 +166,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'challans':
     case 'invoices':
     case 'quotations':
+    case 'company-documents':
     case 'approvals':
     case 'search':
     case 'installations':
@@ -197,6 +213,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Tax invoice';
     case 'quotations':
       return 'Quotations';
+    case 'company-documents':
+      return 'Company documents';
     case 'approvals':
       return 'Approvals';
     case 'search':

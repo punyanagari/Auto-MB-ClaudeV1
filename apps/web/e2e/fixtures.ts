@@ -251,6 +251,92 @@ export function workBalance(count: number) {
   };
 }
 
+/** The company document library, drawn so every state the register can
+ * tint is on screen at once: a credential with no expiry, one comfortably
+ * valid, one inside the sixty-day window, one lapsed, one archived, and a
+ * two-version history behind the renewed one. */
+/** The window the fixture's own `expiryStatus` values are derived from.
+ * Named once and read by `expiryStatusOf` below, so the fixture cannot
+ * claim a sixty-day window in the payload while colouring its rows
+ * against some other number written inline. */
+const FIXTURE_EXPIRY_WARNING_DAYS = 60;
+
+const COMPANY_DOCUMENT_LIBRARY = {
+  expiryWarningDays: FIXTURE_EXPIRY_WARNING_DAYS,
+  documents: [
+    companyDocument('Bank solvency letter', 'financial', {
+      expiresOn: '2026-08-30',
+      versions: 2,
+    }),
+    companyDocument('GST registration certificate', 'statutory', {
+      expiresOn: null,
+    }),
+    companyDocument('ISO 9001 certificate', 'certification', {
+      expiresOn: '2028-01-31',
+    }),
+    companyDocument('Labour licence', 'statutory', {
+      expiresOn: '2026-07-01',
+    }),
+    companyDocument('Partnership deed', 'company', {
+      expiresOn: null,
+      archived: true,
+    }),
+  ],
+};
+
+function companyDocument(
+  title: string,
+  category: string,
+  options: {
+    readonly expiresOn: string | null;
+    readonly versions?: number;
+    readonly archived?: boolean;
+  },
+) {
+  const count = options.versions ?? 1;
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return {
+    id: `55555555-5555-4555-8555-${slug.slice(0, 12).padEnd(12, '0')}`,
+    title,
+    category,
+    versions: Array.from({ length: count }, (_unused, index) => {
+      const versionNumber = count - index;
+      return {
+        id: `66666666-6666-4666-8666-${slug.slice(0, 10).padEnd(10, '0')}${String(versionNumber).padStart(2, '0')}`,
+        versionNumber,
+        originalFilename: `${slug}-v${String(versionNumber)}.pdf`,
+        sha256: 'a'.repeat(64),
+        sizeBytes: 24_576,
+        validFrom: null,
+        expiresOn: versionNumber === count ? options.expiresOn : '2025-08-30',
+        uploadedByUserId: 'user-owner',
+        createdAt: '2026-08-01T09:00:00.000Z',
+      };
+    }),
+    // The server derives these; the fixture states them the way a server
+    // whose current date is 2026-08-13 would.
+    expiryStatus: expiryStatusOf(options.expiresOn),
+    expiresInDays: options.expiresOn === null ? null : daysUntil(options.expiresOn),
+    archivedAt: options.archived === true ? '2026-08-05T09:00:00.000Z' : null,
+    createdAt: '2026-08-01T09:00:00.000Z',
+  };
+}
+
+/** The reading the server's SQL would produce, against the same fixed
+ * date the rest of these fixtures use and the same window the payload
+ * above declares. */
+function expiryStatusOf(expiresOn: string | null): string {
+  if (expiresOn === null) return 'none';
+  const days = daysUntil(expiresOn);
+  if (days < 0) return 'expired';
+  return days <= FIXTURE_EXPIRY_WARNING_DAYS ? 'expiring' : 'valid';
+}
+
+function daysUntil(expiresOn: string): number {
+  const today = Date.parse('2026-08-13T00:00:00.000Z');
+  return Math.round((Date.parse(`${expiresOn}T00:00:00.000Z`) - today) / 86_400_000);
+}
+
 export async function mockWorkspace(
   page: Page,
   options: {
@@ -283,6 +369,14 @@ export async function mockWorkspace(
   );
   await page.route('**/api/approvals*', (route) =>
     route.fulfill(json({ approvals: [] })),
+  );
+  /* The company document library, with one credential in each of the
+     three validity readings that carry a tint — valid, expiring and
+     expired — plus a two-version history. The axe scan needs all three
+     chips on screen at once, in both themes, because they are the only
+     place this screen puts colour on a word. */
+  await page.route('**/api/company-documents', (route) =>
+    route.fulfill(json(COMPANY_DOCUMENT_LIBRARY)),
   );
   await page.route('**/api/masters/contacts*', (route) =>
     route.fulfill(json({ contacts: [] })),

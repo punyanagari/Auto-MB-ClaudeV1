@@ -79,6 +79,13 @@ const REFERENCE_PATTERN = new RegExp(
 /**
  * References that are real and intentional but name something outside the
  * repository, so path resolution cannot see them. Each entry states why.
+ *
+ * Matched on the BASENAME, which is only safe for a basename that could
+ * mean one thing. A framework-generic one — a Next route file, an
+ * index module, a route handler — belongs in ALLOWED_EXTERNAL_PATHS
+ * below instead: exempting it here would exempt every future comment
+ * naming any file of that name anywhere, including a real one that had
+ * been moved or deleted.
  */
 const ALLOWED_EXTERNAL = new Map([
   ['package.json', 'names the concept, not one file — every workspace has one'],
@@ -102,7 +109,38 @@ const ALLOWED_EXTERNAL = new Map([
     'work-registers.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the instruments and completion panels for the metric tile and gapless tile grid they replicate',
   ],
+  [
+    'company-document-library.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the company document library for the two-card grid and bordered credential rows it replicates',
+  ],
 ]);
+
+/**
+ * The same idea for references whose BASENAME is too generic to exempt.
+ *
+ * Matched as a path suffix against the whole reference, so only the
+ * route spelled out below is exempt; the same basename under any other
+ * route, or on its own, is still checked.
+ *
+ * The v0 MOCK repository (punyanagari/Auto-MB-Vercel-du) is a Next App
+ * Router tree, where every screen is a route file of the same name under
+ * its own directory. A replication cites the screen it replicates, and
+ * naming the route is the only way to say WHICH screen.
+ */
+const ALLOWED_EXTERNAL_PATHS = new Map([
+  [
+    'app/tenders/company-documents/page.tsx',
+    'the v0 mock screen the company document library replicates',
+  ],
+]);
+
+/** Whether a reference names something deliberately outside this tree. */
+function isAllowedExternal(reference) {
+  if (ALLOWED_EXTERNAL.has(path.posix.basename(reference))) return true;
+  return [...ALLOWED_EXTERNAL_PATHS.keys()].some(
+    (suffix) => reference === suffix || reference.endsWith(`/${suffix}`),
+  );
+}
 
 /**
  * References that are stale and cannot be corrected, keyed `<file> <reference>`.
@@ -319,7 +357,7 @@ function main() {
       for (const match of comment.text.matchAll(REFERENCE_PATTERN)) {
         const reference = match[1];
         const lineNumber = match[3] === undefined ? null : Number(match[3]);
-        if (ALLOWED_EXTERNAL.has(path.posix.basename(reference))) continue;
+        if (isAllowedExternal(reference)) continue;
         // A bare `.` prefix like `.ts` or a version-ish token is not a path.
         if (!/[\w-]\.[a-z]+$/i.test(reference)) continue;
         // Absolute paths name the filesystem or a usage placeholder

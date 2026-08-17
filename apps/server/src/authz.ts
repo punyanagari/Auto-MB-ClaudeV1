@@ -23,13 +23,31 @@ export async function membershipOf(
   return membership;
 }
 
+/**
+ * Whether this membership is a WRITER: owner or office.
+ *
+ * The same two-role test the refusal below applies, as a question rather
+ * than an assertion — for the several places that need the answer to
+ * decide what to SHOW rather than whether to allow. It had been spelled
+ * out inline at each of them (`routes/loa.ts` twice, the company document
+ * library once), which is three copies of a role set that must not
+ * disagree with the guard beneath it.
+ *
+ * A MISSING membership answers false. The tenant binding refuses an
+ * unbound caller before a route body runs, so it should not arise; the
+ * posture matches `hasFullWorkScope` below, where the safe default is
+ * "sees less", never "sees everything".
+ */
+export function isWriterRole(membership: MembershipRow | undefined): boolean {
+  return membership?.role === 'owner' || membership?.role === 'office';
+}
+
 /** Drafting/uploading/confirming mutates Works — owner/office only. */
 export async function requireWriterRole(
   tx: TransactionSql,
   userId: string,
 ): Promise<void> {
-  const membership = await membershipOf(tx, userId);
-  if (membership?.role !== 'owner' && membership?.role !== 'office') {
+  if (!isWriterRole(await membershipOf(tx, userId))) {
     throw httpError(
       403,
       'ROLE_FORBIDDEN',

@@ -17,6 +17,12 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v14: the company document library (0079) joins the package —
+ * the credentials themselves, their version history, and the stored
+ * PDFs in the manifest. Left out, a data-portability export would hand
+ * an agency back everything about its Works and nothing about the
+ * company: no GST registration, no PAN, no experience certificates.
+ *
  * export-v13: the two masters migration 0078 added — the canonical item
  * catalogue and the organisation's own bank accounts — join the record.
  * Both sections take `select *`, which for the bank accounts means the
@@ -40,7 +46,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v13';
+const EXPORT_FORMAT_VERSION = 'export-v14';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -65,6 +71,7 @@ type ManifestBucket =
   | 'challan'
   | 'correction-notice'
   | 'pac-certificate'
+  | 'company-document'
   | 'issue-challan'
   | 'extension'
   | 'measurement-book'
@@ -79,6 +86,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'challan',
   'correction-notice',
   'pac-certificate',
+  'company-document',
   'issue-challan',
   'extension',
   'measurement-book',
@@ -432,6 +440,30 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'organisationBankAccounts',
     sql: `select * from organisation_bank_accounts order by created_at, id`,
+  },
+  {
+    // The company document library (0079). Organisation-level master
+    // data like the rows above it, and the only one of them with stored
+    // bytes — the credential PDFs travel in the manifest so an export
+    // taken for a data-portability request carries the certificates and
+    // not merely the fact that they existed.
+    key: 'companyDocuments',
+    sql: `select * from company_documents order by lower(title), id`,
+  },
+  {
+    key: 'companyDocumentVersions',
+    sql: `select * from company_document_versions
+          order by company_document_id, version_number`,
+    manifest: {
+      bucket: 'company-document',
+      entries: (row) => [
+        {
+          kind: 'company-document-version',
+          objectKey: row.object_key,
+          sha256: row.sha256 ?? null,
+        },
+      ],
+    },
   },
   {
     key: 'purchaseOrders',
