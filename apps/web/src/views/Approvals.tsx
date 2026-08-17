@@ -6,6 +6,7 @@ import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { DataTable } from '../ui/table.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
+import { PageHeader } from '../ui/page-header.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 interface ApprovalsProps {
@@ -73,8 +74,11 @@ function CitedVariationOrder({
     (claim) => !claim.required && !claim.verified,
   );
   return (
-    <section aria-label="Cited variation order">
-      <h3>Variation order</h3>
+    <section aria-label="Cited variation order" className="mt-4">
+      {/* The mock's sub-section label inside a panel: 14px medium muted,
+       * not the uppercase `.section-label` eyebrow, which the mock keeps
+       * for page headers, stats and sidebar groups. */}
+      <h3 className="m-0 text-sm font-medium text-muted-foreground">Variation order</h3>
       <DataTable>
         <caption className="sr-only">
           The railway variation order cited for this omission
@@ -200,23 +204,33 @@ function ApprovalCard({
   const omissionNeedsOrder = isOmission(approval) && approval.variationOrder == null;
   return (
     <article
-      className="rounded-xl border border-border bg-card p-5 shadow-sm print:border-0 print:p-0 print:shadow-none"
+      /* The mock's request card (`app/approvals/page` at fdfe5ef):
+       * the same surface `ui/card.tsx` draws — `rounded-xl`, a hairline
+       * ring, one 1px shadow — with the identity block stacked at
+       * `gap-0.5` over the evidence. It stays an `<article>` rather than
+       * becoming a `Card` because each request is a self-contained
+       * record, and the label is what an approver hears first. */
+      className="w-full rounded-xl bg-card p-4 ring-1 ring-foreground/10 shadow-[0_1px_2px_0_rgb(15_23_42/0.025)] print:p-0 print:shadow-none print:ring-0"
       aria-label={`${TYPE_LABELS[approval.entityType]} for ${approval.workCode}`}
     >
-      <h2>
-        {approval.workCode}
-        {approval.itemNumber !== null && (
-          <span className="text-muted-foreground"> · item {approval.itemNumber}</span>
-        )}
-        {approval.documentNumber != null && approval.documentNumber.length > 0 && (
-          <span className="text-muted-foreground"> · {approval.documentNumber}</span>
-        )}
-      </h2>
-      <p className="text-muted-foreground">{TYPE_LABELS[approval.entityType]}</p>
-      <p>{approval.reason}</p>
-      <p className="text-muted-foreground">
-        Requested by {isRequester ? 'you' : approval.requestedByUserId}
-      </p>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">
+            {TYPE_LABELS[approval.entityType]}
+          </span>
+          <h2 className="m-0 font-mono text-xs font-normal text-muted-foreground">
+            {approval.workCode}
+            {approval.itemNumber !== null && <span> · item {approval.itemNumber}</span>}
+            {approval.documentNumber != null && approval.documentNumber.length > 0 && (
+              <span> · {approval.documentNumber}</span>
+            )}
+          </h2>
+        </div>
+        <p className="text-sm text-pretty text-muted-foreground">{approval.reason}</p>
+        <p className="text-xs text-muted-foreground">
+          Requested by {isRequester ? 'you' : approval.requestedByUserId}
+        </p>
+      </div>
       <DataTable>
         <caption className="sr-only">
           Proposed changes for {approval.workCode}
@@ -397,14 +411,22 @@ export function Approvals({
   }
 
   return (
-    <Card className="w-full" aria-labelledby="approvals-title">
-      <h1 id="approvals-title" tabIndex={-1}>
-        Approvals
-      </h1>
-      <p className="text-muted-foreground">
-        Pending amendment and correction requests. Approving applies the change
-        immediately; original awarded values and issued snapshots are never overwritten.
-      </p>
+    <>
+      <PageHeader
+        eyebrow="Administration"
+        title="Approvals"
+        description="Changes that need a second pair of eyes before they take effect."
+      />
+      {/* The mock's standing info note (`app/members/page`): a muted
+       * panel that states the rule the screen runs on, with the part that
+       * must not be misread lifted to full ink. */}
+      <div className="mb-4 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+        Approving applies the change immediately;{' '}
+        <strong className="font-medium text-foreground">
+          original awarded values and issued snapshots are never overwritten
+        </strong>
+        .
+      </div>
 
       {loadError !== null && (
         <ErrorState onRetry={retry} retryLabel="Retry approvals">
@@ -418,10 +440,17 @@ export function Approvals({
       {actionError !== null && <FormError>{actionError}</FormError>}
 
       {approvals !== null && approvals.length === 0 && (
-        <EmptyState>
-          Nothing is waiting for a decision. Amendment and correction requests arrive
-          here as colleagues raise them.
-        </EmptyState>
+        <Card>
+          <EmptyState>
+            Nothing is waiting for a decision. Amendment and correction requests arrive
+            here as colleagues raise them.
+          </EmptyState>
+        </Card>
+      )}
+      {approvals !== null && approvals.length > 0 && (
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Pending ({approvals.length})
+        </h2>
       )}
       {approvals !== null &&
         approvals.map((approval) => (
@@ -465,6 +494,6 @@ export function Approvals({
             }}
           />
         ))}
-    </Card>
+    </>
   );
 }

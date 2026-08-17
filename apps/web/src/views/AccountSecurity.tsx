@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { cn } from '../lib/cn.js';
 import { Button } from '../ui/button.js';
-import { Card } from '../ui/card.js';
+import { Card, CardHeader } from '../ui/card.js';
 import { Disclosure } from '../ui/disclosure.js';
-import { Field, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
+import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { TwoFactorEnrolment } from './TwoFactorEnrolment.js';
 
@@ -17,20 +19,41 @@ interface SecurityState {
   readonly mfaEnforced: boolean;
 }
 
-/** The signal lamp for the account's second factor. */
-function StatusLamp({ on }: { readonly on: boolean }) {
+/** The account's second-factor state, as the mock's bordered status row
+ * (`app/settings/page` at fdfe5ef: a `rounded-lg border px-4 py-3`
+ * strip led by a tinted shield, with the standing reason beneath it).
+ * The mock draws only the "on" case; "off" reads the same shape in the
+ * warning tone. The icon never carries the state alone — the sentence
+ * beside it says it in words. */
+function StatusLamp({
+  on,
+  reason,
+}: {
+  readonly on: boolean;
+  readonly reason?: React.ReactNode;
+}) {
+  const Icon = on ? ShieldCheck : ShieldAlert;
   return (
-    <span className="inline-flex items-center gap-2 text-sm font-medium">
-      <span
+    <div className="my-3 flex items-start gap-3 rounded-lg border border-border px-4 py-3">
+      <Icon
         aria-hidden="true"
-        className={
-          on
-            ? 'size-2.5 rounded-full bg-success shadow-[0_0_6px] shadow-success/60'
-            : 'size-2.5 rounded-full bg-warning shadow-[0_0_6px] shadow-warning/60'
-        }
+        /* `--warning` is a fill colour for tints, `--warning-foreground`
+         * is the ink that goes on them (`docs/DESIGN.md` § Palette); the
+         * off state takes the ink so it stays legible on `--card`. */
+        className={cn(
+          'mt-0.5 size-5 shrink-0',
+          on ? 'text-success' : 'text-warning-foreground',
+        )}
       />
-      {on ? 'Two-factor authentication is on' : 'Two-factor authentication is off'}
-    </span>
+      <div className="flex min-w-0 flex-col">
+        <span className="text-sm font-medium">
+          {on ? 'Two-factor authentication is on' : 'Two-factor authentication is off'}
+        </span>
+        {reason !== undefined && (
+          <span className="text-xs text-pretty text-muted-foreground">{reason}</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -118,8 +141,16 @@ export function AccountSecurity({ api }: AccountSecurityProps) {
   }
 
   return (
-    <Card className="mx-auto mb-8 max-w-[26rem]">
-      <h2 className="mt-0">Account security</h2>
+    <Card className="mx-auto w-full max-w-4xl">
+      <CardHeader>
+        <div className="flex flex-col gap-1">
+          <h2 className="m-0 text-base leading-snug font-medium">Account security</h2>
+          <p className="text-sm text-muted-foreground">
+            Your sign-in, not this organisation&rsquo;s data. It follows you into every
+            organisation you belong to.
+          </p>
+        </div>
+      </CardHeader>
       {state === null ? (
         loadError === null ? (
           <LoadingState label="the account security status" rows={2} />
@@ -135,14 +166,14 @@ export function AccountSecurity({ api }: AccountSecurityProps) {
         )
       ) : (
         <>
-          <StatusLamp on={state.twoFactorEnabled} />
-          {state.mfaRequired && (
-            <Hint>
-              Your account holds document authority, so two-factor authentication is
-              required{state.mfaEnforced ? '' : ' before the pilot goes live'} and
-              cannot be turned off.
-            </Hint>
-          )}
+          <StatusLamp
+            on={state.twoFactorEnabled}
+            reason={
+              state.mfaRequired
+                ? `Your account holds document authority, so two-factor authentication is required${state.mfaEnforced ? '' : ' before the pilot goes live'} and cannot be turned off.`
+                : undefined
+            }
+          />
 
           {!state.twoFactorEnabled &&
             (enrolling ? (

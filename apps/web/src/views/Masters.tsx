@@ -22,6 +22,7 @@ import { StatusChip as Chip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FieldRow, FormError, FormNotice, Hint } from '../ui/form.js';
+import { PageHeader } from '../ui/page-header.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 
 interface MastersProps {
@@ -101,17 +102,42 @@ function RetiredFilter({
   readonly onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="text-muted-foreground" htmlFor={id}>
+    <label
+      className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground"
+      htmlFor={id}
+    >
       <input
         id={id}
         type="checkbox"
+        className="size-4 accent-primary"
         checked={includeRetired}
         onChange={(event) => {
           onChange(event.currentTarget.checked);
         }}
-      />{' '}
+      />
       Show retired
     </label>
+  );
+}
+
+/** A category's opening line and the one control that filters it, on the
+ * mock's panel header row (`app/masters/page` at fdfe5ef: an
+ * explainer on the left, the panel's own control on the right). The
+ * create form stays where this product puts it — behind the verb at the
+ * foot of the panel (`ui/disclosure.tsx`) — so this row carries the
+ * filter rather than the mock's "New …" button. */
+function MasterIntro({
+  children,
+  filter,
+}: {
+  readonly children: ReactNode;
+  readonly filter?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <p className="max-w-2xl text-sm text-pretty text-muted-foreground">{children}</p>
+      {filter}
+    </div>
   );
 }
 
@@ -277,16 +303,19 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="text-muted-foreground">
+      <MasterIntro
+        filter={
+          <RetiredFilter
+            id="contacts-retired"
+            includeRetired={includeRetired}
+            onChange={setIncludeRetired}
+          />
+        }
+      >
         One master for consignees, vendors, and clients (role flags on each record).
         Contacts prefill documents; the document always keeps its own copy, so editing
         or retiring a contact never changes issued records.
-      </p>
-      <RetiredFilter
-        id="contacts-retired"
-        includeRetired={includeRetired}
-        onChange={setIncludeRetired}
-      />
+      </MasterIntro>
       {rows === null ? (
         <p className="text-muted-foreground" role="status">
           Loading contacts…
@@ -618,15 +647,18 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="text-muted-foreground">
+      <MasterIntro
+        filter={
+          <RetiredFilter
+            id="locations-retired"
+            includeRetired={includeRetired}
+            onChange={setIncludeRetired}
+          />
+        }
+      >
         Stations, installation points, and stores referenced during delivery and
         installation work.
-      </p>
-      <RetiredFilter
-        id="locations-retired"
-        includeRetired={includeRetired}
-        onChange={setIncludeRetired}
-      />
+      </MasterIntro>
       {rows === null ? (
         <p className="text-muted-foreground" role="status">
           Loading locations…
@@ -792,15 +824,18 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="text-muted-foreground">
+      <MasterIntro
+        filter={
+          <RetiredFilter
+            id="units-retired"
+            includeRetired={includeRetired}
+            onChange={setIncludeRetired}
+          />
+        }
+      >
         The standard units are added automatically on first use; retire the ones this
         organisation never uses and add any missing ones.
-      </p>
-      <RetiredFilter
-        id="units-retired"
-        includeRetired={includeRetired}
-        onChange={setIncludeRetired}
-      />
+      </MasterIntro>
       {rows === null ? (
         <p className="text-muted-foreground" role="status">
           Loading units…
@@ -950,15 +985,18 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
 
   return (
     <>
-      <p className="text-muted-foreground">
+      <MasterIntro
+        filter={
+          <RetiredFilter
+            id="signatories-retired"
+            includeRetired={includeRetired}
+            onChange={setIncludeRetired}
+          />
+        }
+      >
         The people who sign generated documents for this organisation. Documents
         snapshot the chosen signatory, so retiring one never alters past records.
-      </p>
-      <RetiredFilter
-        id="signatories-retired"
-        includeRetired={includeRetired}
-        onChange={setIncludeRetired}
-      />
+      </MasterIntro>
       {rows === null ? (
         <p className="text-muted-foreground" role="status">
           Loading signatories…
@@ -1130,12 +1168,12 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
 
   return (
     <>
-      <p className="text-muted-foreground">
+      <MasterIntro>
         The Government-notified GST rates, each with the dates it was in force. Invoices
         and quotations only accept a rate this list covers on the document date. A rate
         leaves force by end-dating — rows are never edited or deleted, so old invoices
         stay explainable. Changes are owner-only.
-      </p>
+      </MasterIntro>
       {rows === null ? (
         <p className="text-muted-foreground" role="status">
           Loading GST rates…
@@ -1291,10 +1329,12 @@ export function Masters({
   const setTab = onTabChange ?? setOwnTab;
 
   return (
-    <Card className="w-full" aria-labelledby="masters-title">
-      <h1 id="masters-title" tabIndex={-1}>
-        Masters
-      </h1>
+    <>
+      <PageHeader
+        eyebrow="Administration"
+        title="Masters"
+        description="Reusable records that fill your documents automatically."
+      />
       {/* Not a tablist, deliberately.
        *
        * It was one, and the promise was empty: `role="tablist"` tells a
@@ -1316,56 +1356,81 @@ export function Masters({
        * `overflow-x-auto` is not decoration either: five unwrapped buttons
        * measured 445px on a 320px screen and took the whole page sideways
        * with them. The strip scrolls; the page does not. */}
-      <nav
-        className="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-border"
-        aria-label="Master data categories"
-      >
-        {TABS.map((candidate) => {
-          const current = tab === candidate.key;
-          return (
-            <button
-              key={candidate.key}
-              type="button"
-              aria-current={current ? 'page' : undefined}
-              className={
-                '-mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ' +
-                (current
-                  ? 'border-primary font-semibold text-foreground'
-                  : 'text-muted-foreground hover:text-foreground')
-              }
-              onClick={() => {
-                setTab(candidate.key);
-              }}
-            >
-              {candidate.label}
-            </button>
-          );
-        })}
-      </nav>
-      {tab === 'contacts' && (
-        <ContactsTab api={api} organisationId={organisationId} canModify={canModify} />
-      )}
-      {tab === 'locations' && (
-        <LocationsTab api={api} organisationId={organisationId} canModify={canModify} />
-      )}
-      {tab === 'units' && (
-        <UnitsTab api={api} organisationId={organisationId} canModify={canModify} />
-      )}
-      {tab === 'signatories' && (
-        <SignatoriesTab
-          api={api}
-          organisationId={organisationId}
-          canModify={canModify}
-        />
-      )}
-      {tab === 'gst-rates' && (
-        <GstRatesTab
-          api={api}
-          organisationId={organisationId}
-          canModify={canModify}
-          isOwner={isOwner}
-        />
-      )}
-    </Card>
+      {/* The mock's boxed category rail (`app/masters/page`): a 40px
+       * card-coloured box holding 32px `rounded-md` pills, the open one
+       * lifted onto `--background` with a hairline shadow. The outer
+       * `-mx-1 … px-1` pair is the mock's own: it lets a focus ring bleed
+       * without `overflow-x-auto` clipping it. */}
+      <div className="-mx-1 mb-4 overflow-x-auto px-1 pb-1">
+        <nav
+          className="inline-flex h-10 w-fit items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-sm"
+          aria-label="Master data categories"
+        >
+          {TABS.map((candidate) => {
+            const current = tab === candidate.key;
+            return (
+              <button
+                key={candidate.key}
+                type="button"
+                aria-current={current ? 'page' : undefined}
+                className={
+                  'inline-flex h-8 shrink-0 items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ' +
+                  (current
+                    ? 'bg-background text-foreground shadow-sm'
+                    : /* DIVERGENCE (`docs/UX.md` § Approved divergences 5).
+                       * The mock's inactive trigger is `text-foreground/60`,
+                       * which over this rail's `--card` measures about
+                       * 3.9:1 in light — under WCAG AA 1.4.3 for 14px
+                       * text. `--muted-foreground` is the next tone up the
+                       * same neutral ramp (~7.5:1) and is what the mock
+                       * itself switches to in dark. The defect is the
+                       * mock's; see the pull request. */
+                      'text-muted-foreground hover:text-foreground')
+                }
+                onClick={() => {
+                  setTab(candidate.key);
+                }}
+              >
+                {candidate.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+      <Card>
+        {tab === 'contacts' && (
+          <ContactsTab
+            api={api}
+            organisationId={organisationId}
+            canModify={canModify}
+          />
+        )}
+        {tab === 'locations' && (
+          <LocationsTab
+            api={api}
+            organisationId={organisationId}
+            canModify={canModify}
+          />
+        )}
+        {tab === 'units' && (
+          <UnitsTab api={api} organisationId={organisationId} canModify={canModify} />
+        )}
+        {tab === 'signatories' && (
+          <SignatoriesTab
+            api={api}
+            organisationId={organisationId}
+            canModify={canModify}
+          />
+        )}
+        {tab === 'gst-rates' && (
+          <GstRatesTab
+            api={api}
+            organisationId={organisationId}
+            canModify={canModify}
+            isOwner={isOwner}
+          />
+        )}
+      </Card>
+    </>
   );
 }

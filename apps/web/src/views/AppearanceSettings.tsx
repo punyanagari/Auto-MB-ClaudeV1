@@ -7,7 +7,6 @@ import {
 } from '../lib/theme.js';
 import { cn } from '../lib/cn.js';
 import { Card, CardHeader } from '../ui/card.js';
-import { Hint } from '../ui/form.js';
 
 const OPTIONS = [
   { value: 'system', label: 'System', icon: Monitor },
@@ -26,11 +25,20 @@ export function AppearanceSettings() {
   const [preference, setPreference] = useState<ThemePreference>(storedThemePreference);
 
   return (
-    <Card aria-labelledby="appearance-title">
+    <Card className="mx-auto w-full max-w-4xl" aria-labelledby="appearance-title">
       <CardHeader>
-        <h2 id="appearance-title" className="m-0">
-          Appearance
-        </h2>
+        {/* The mock's card section anatomy (`app/settings/page` at
+         * fdfe5ef): a 16px medium title over a muted sentence, with the
+         * explanation in the header rather than trailing the control. */}
+        <div className="flex flex-col gap-1">
+          <h2 id="appearance-title" className="m-0 text-base leading-snug font-medium">
+            Appearance
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Saved on this device only. System follows your operating system&rsquo;s
+            light or dark preference.
+          </p>
+        </div>
       </CardHeader>
       <fieldset className="m-0 border-0 p-0">
         <legend className="sr-only">Theme</legend>
@@ -74,10 +82,6 @@ export function AppearanceSettings() {
           })}
         </div>
       </fieldset>
-      <Hint>
-        Saved on this device only. System follows your operating system&rsquo;s light or
-        dark preference.
-      </Hint>
     </Card>
   );
 }
