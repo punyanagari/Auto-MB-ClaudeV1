@@ -161,8 +161,6 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // workflow.
   INSTALLATION_EXCEEDS_DELIVERY:
     'Issue the Delivery Challan for the balance first; installation is only ever recorded against material already delivered.',
-  INSTALLATION_EXCEEDS_LOA:
-    'Amend the item quantity first if the railway sanctioned more; installation never exceeds the sanctioned quantity.',
   SERIAL_BEFORE_DELIVERY:
     'Record the installation on or after the delivery date shown on the challan that carried the serial.',
   CHALLAN_HAS_EVIDENCE:

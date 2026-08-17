@@ -3069,3 +3069,208 @@ describe('the three kinds (0034): record MBs, merge, and un-merge', () => {
     expect(recordRefused.json()).toMatchObject({ code: 'FINAL_MB_EXISTS' });
   });
 });
+
+/**
+ * Billing under an unprocessed variation (owner ruling, 2026-08-17:
+ * "Final MB can be done even if excess installation variation is not
+ * processed — sometimes we have to work free for the Railways").
+ *
+ * Migration 0077 lets site install past the sanctioned quantity. The
+ * money does not follow it: every stage measured on physical work bills
+ * min(measured, sanctioned) over the item's lifetime, the remainder is
+ * left unbilled rather than refused, and the Work reports what it is
+ * carrying unbilled as its variation exposure.
+ */
+describe('billing clamps at the sanctioned quantity while a variation is pending', () => {
+  let workVId: string;
+  let vItemId: string;
+  let straddleInstallationId: string;
+
+  it('clamps one straddling record to the sanctioned quantity and reports the exposure', async () => {
+    // THE STRADDLE. One record of 12 against a sanctioned 10 — the case a
+    // whole-record refusal could not express, because sources are
+    // selected per record and there is no way to select two thirds of
+    // one. It bills 10 and leaves 2 unbilled.
+    vItemId = randomUUID();
+    workVId = await seedWork({
+      code: `VAR1${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: vItemId,
+          itemNumber: '1',
+          description: 'Signal post erection',
+          unit: 'Nos',
+          quantity: '10.000',
+          rate: '100.00',
+          paymentCategory: 'PURE_INSTALLATION',
+        },
+      ],
+    });
+    await insertMatrixRow(workVId, 'PURE_INSTALLATION', [
+      '0.00',
+      '90.00',
+      '0.00',
+      '10.00',
+    ]);
+
+    straddleInstallationId = await recordInstallation(workVId, vItemId, '12.000');
+    const [item] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${vItemId}
+    `;
+    expect(item?.pending_variation).toBe(true);
+
+    const draft = await createDraft(workVId, { mbDate: '2026-08-01' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'installation', sourceId: straddleInstallationId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    // The PREVIEW already tells the truth — the clamp lives in the
+    // computation, so what the operator is shown is what finalize writes.
+    const preview = claimed.json<MeasurementBookDetailResponse>();
+    expect(preview.lines[0]?.deltaInstalled).toBe('10.000');
+    // 10 x 100.00 at the 90% installation stage.
+    expect(preview.previewTotal).toBe('900.00');
+    // Two units above sanction at the accepted rate of 100.00.
+    expect(preview.unbillableVariationExposure).toBe('200.00');
+
+    const finalized = await finalize(draft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.lines[0]?.deltaInstalled).toBe('10.000');
+    expect(detail.book.totalAmount).toBe('900.00');
+    // The exposure is a fact about the Work, not a snapshot of the book:
+    // it reads the same after finalizing, because the two units are still
+    // in the ground and still unsanctioned.
+    expect(detail.unbillableVariationExposure).toBe('200.00');
+
+    // And the snapshot agrees with the preview, in the database.
+    const [stored] = await admin<{ delta_installed: string }[]>`
+      select delta_installed::text as delta_installed
+      from measurement_book_lines where measurement_book_id = ${draft.book.id}
+    `;
+    expect(stored?.delta_installed).toBe('10.000');
+  });
+
+  it('clamps the CERTIFICATION stage too, so a PAC-only book cannot bill the excess', async () => {
+    // The escape a delta_installed-only cap left open: a non-AMC
+    // certificate attests installed work, which 0077 unbound, so a book
+    // selecting only the certificate would have billed 12 through the PAC
+    // stage. The clamp is per stage, so it does not.
+    const pacItemId = randomUUID();
+    const pacWorkId = await seedWork({
+      code: `VAR2${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: pacItemId,
+          itemNumber: '1',
+          description: 'Signal post erection',
+          unit: 'Nos',
+          quantity: '10.000',
+          rate: '100.00',
+          paymentCategory: 'PURE_INSTALLATION',
+        },
+      ],
+    });
+    // The whole 100% sits on the certification stage, so the clamp has
+    // nowhere to hide.
+    await insertMatrixRow(pacWorkId, 'PURE_INSTALLATION', [
+      '0.00',
+      '0.00',
+      '100.00',
+      '0.00',
+    ]);
+    await recordInstallation(pacWorkId, pacItemId, '12.000');
+    // Certification is capped at the INSTALLED total, which is now 12 —
+    // the railway may accept every post that exists. What it may not do
+    // is pay for more than it sanctioned.
+    const pacId = await recordPac(pacWorkId, `PAC-VAR2-${runId}`, [
+      { workItemId: pacItemId, certifiedQuantity: '12.000' },
+    ]);
+
+    const draft = await createDraft(pacWorkId, { mbDate: '2026-08-01' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'pac_certificate', sourceId: pacId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+    const preview = claimed.json<MeasurementBookDetailResponse>();
+    expect(preview.lines[0]?.deltaPac).toBe('10.000');
+    expect(preview.previewTotal).toBe('1000.00');
+    expect(preview.unbillableVariationExposure).toBe('200.00');
+
+    const finalized = await finalize(draft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    expect(finalized.json<MeasurementBookDetailResponse>().book.totalAmount).toBe(
+      '1000.00',
+    );
+  });
+
+  it('finalizes the FINAL book with the excess unbilled, sweeping it all the same', async () => {
+    // The ruling itself. Three more units go in on a Work already ten of
+    // ten billed: the sweep still demands the record, the clamp still
+    // bills nothing for it, and the book still closes the contract.
+    const excessInstallationId = await recordInstallation(workVId, vItemId, '3.000');
+    const finalDraft = await createDraft(workVId, {
+      mbDate: '2026-08-02',
+      kind: 'final',
+    });
+    // Leaving it out is refused — the sweep is unchanged by any of this.
+    const withoutIt = await finalize(finalDraft.book.id);
+    expect(withoutIt.statusCode, withoutIt.body).toBe(409);
+    expect(withoutIt.json()).toMatchObject({ code: 'MB_FINAL_SWEEP_INCOMPLETE' });
+
+    const swept = await setSources(finalDraft.book.id, [
+      { sourceType: 'installation', sourceId: excessInstallationId },
+    ]);
+    expect(swept.statusCode, swept.body).toBe(200);
+
+    const finalized = await finalize(finalDraft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.book.status).toBe('finalized');
+    expect(detail.book.isFinal).toBe(true);
+    // The installation stage bills NOTHING — ten of ten is already billed
+    // and the three new units are above the sanction.
+    expect(detail.lines[0]?.deltaInstalled).toBe('0.000');
+    // The final-bill stage earns on the clamped lifetime base: ten, not
+    // the fifteen that are actually in the ground.
+    expect(detail.lines[0]?.deltaFinalBill).toBe('10.000');
+    expect(detail.book.totalAmount).toBe('100.00');
+    // Five units above sanction now (15 installed against 10), all of it
+    // the agency's exposure, and the contract closed over it.
+    expect(detail.unbillableVariationExposure).toBe('500.00');
+  });
+
+  it('leaves the excess billable rather than written off once the sanction rises', async () => {
+    // The clamp is not a write-off: it is a hold. Raising the sanctioned
+    // quantity clears the flag and the exposure with it, and what was
+    // measured all along is billable — no correction entry, no
+    // re-recording. (This Work's final book is finalized, so it takes no
+    // further Measurement Book; the proof is read off the state the
+    // loader would feed.)
+    await admin`
+      update work_items set effective_quantity = 15.000 where id = ${vItemId}
+    `;
+    const [item] = await admin<{ pending_variation: boolean }[]>`
+      select pending_variation from work_items where id = ${vItemId}
+    `;
+    expect(item?.pending_variation).toBe(false);
+
+    const [billed] = await admin<{ total: string }[]>`
+      select coalesce(sum(l.delta_installed), 0)::numeric(18,3)::text as total
+      from measurement_book_lines l
+      join measurement_books mb on mb.id = l.measurement_book_id
+      where l.work_item_id = ${vItemId} and mb.status = 'finalized'
+    `;
+    expect(billed?.total).toBe('10.000');
+    const [state] = await admin<{ installed: string; sanctioned: string }[]>`
+      select coalesce((
+               select sum(i.quantity) from installations i
+               where i.work_item_id = wi.id and i.status = 'recorded'
+             ), 0)::numeric(18,3)::text as installed,
+             coalesce(wi.effective_quantity, wi.awarded_quantity)::text as sanctioned
+      from work_items wi where wi.id = ${vItemId}
+    `;
+    expect(state).toEqual({ installed: '15.000', sanctioned: '15.000' });
+  });
+});

@@ -51,6 +51,7 @@ interface InstallationRow {
   serials: unknown;
   created_at: Date;
   cancelled_at: Date | null;
+  pending_variation: boolean;
 }
 
 interface SerialLink {
@@ -84,6 +85,11 @@ function toInstallation(row: InstallationRow): Installation {
     serials,
     createdAt: row.created_at.toISOString(),
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    // The ITEM's state, carried on the record because the recording
+    // screen is where an operator learns they have just gone past the
+    // sanction (migration 0077). Read from the column the database
+    // derives, never recomputed here.
+    pendingVariation: row.pending_variation,
   };
 }
 
@@ -105,7 +111,7 @@ const INSTALLATION_COLUMNS = `
     join delivery_challans dc on dc.id = s.delivery_challan_id
     where att.installation_id = i.id
   ), '[]'::jsonb) as serials,
-  i.created_at, i.cancelled_at
+  i.created_at, i.cancelled_at, wi.pending_variation
 `;
 
 async function readInstallation(
@@ -120,6 +126,46 @@ async function readInstallation(
     [id],
   )) as unknown as InstallationRow[];
   return rows[0];
+}
+
+/**
+ * The item's variation state as the DATABASE now holds it — read AFTER
+ * the write that may have moved it, never predicted before.
+ *
+ * The audit trail is the only place the shape of a variation stays
+ * answerable: the flag on the item says an item is over-installed, this
+ * says which recording took it over (or which cancellation brought it
+ * back) and by how much. Cancellation is audited with the same three
+ * fields as recording, because the cancel path is the one that CLEARS a
+ * variation and a cleared variation with no trace is worse than an
+ * opened one.
+ */
+async function readVariationState(
+  tx: TransactionSql,
+  workItemId: string,
+): Promise<{
+  pendingVariation: boolean;
+  cumulativeInstalled: string;
+  sanctionedQuantity: string;
+}> {
+  const [row] = await tx<
+    { pending_variation: boolean; installed: string; sanctioned: string }[]
+  >`
+    select wi.pending_variation,
+           coalesce((
+             select sum(i.quantity) from installations i
+             where i.work_item_id = wi.id and i.status = 'recorded'
+           ), 0)::numeric(18,3)::text as installed,
+           coalesce(wi.effective_quantity, wi.awarded_quantity)::text as sanctioned
+    from work_items wi
+    where wi.id = ${workItemId}
+  `;
+  if (!row) throw new Error('work item variation read-back returned no row');
+  return {
+    pendingVariation: row.pending_variation,
+    cumulativeInstalled: row.installed,
+    sanctionedQuantity: row.sanctioned,
+  };
 }
 
 export function registerInstallationRoutes(
@@ -436,24 +482,25 @@ export function registerInstallationRoutes(
         // snapshotted onto the record below.
         const location = await resolveLocation(tx, organisationId, user.id, body);
 
-        // R5, first half: per item, total installed never exceeds the
-        // LOA quantity (effective when amended, else awarded). The
-        // excess-delivery toggle deliberately does NOT apply here.
-        const [loaCap] = await tx<{ exceeded: boolean }[]>`
-            select (
-              coalesce((
-                select sum(quantity) from installations
-                where work_item_id = ${body.workItemId} and status = 'recorded'
-              ), 0) + ${body.quantity}::numeric(18,3)
-            ) > ${item.loa_quantity}::numeric(18,3) as exceeded
-          `;
-        if (loaCap?.exceeded === true) {
-          throw httpError(
-            409,
-            'INSTALLATION_EXCEEDS_LOA',
-            `Cumulative installation for ${item.item_number} would exceed the sanctioned LOA quantity ${item.loa_quantity}. If the railway sanctioned more, amend the item quantity first.`,
-          );
-        }
+        // R5, first half, as the owner settled it on 2026-08-17: the
+        // sanctioned quantity no longer caps INSTALLATION. Work goes in
+        // before the variation order that sanctions it arrives, and
+        // refusing the record refuses the measurement without stopping
+        // the units — so the excess is recorded and the item is flagged
+        // as owing a variation instead. There is no check here at all:
+        // migration 0077's trigger derives work_items.pending_variation
+        // from the committed sum, under the item row lock this
+        // transaction already holds, and the flag is READ BACK below
+        // rather than predicted here. Two readings of one fact is how
+        // they drift.
+        //
+        // What the lifted cap does NOT lift: the sanctioned quantity
+        // still binds BILLING (clampToSanctioned in mb-compute.ts bills
+        // min(measured, sanctioned)) and still decides COMPLETION
+        // (work-completion.ts measures equality), so an unsanctioned
+        // excess can be measured but never invoiced or closed on.
+        // Delivery-cap semantics — including the excess-delivery
+        // toggle, which never reached this rule — are untouched.
 
         // R5, second half: supply-type items cannot be installed beyond
         // what issued Delivery Challans delivered. Milestone 7 knows
@@ -628,6 +675,7 @@ export function registerInstallationRoutes(
 
         const full = await readInstallation(tx, row.id);
         if (!full) throw new Error('installation read-back returned no row');
+        const variation = await readVariationState(tx, body.workItemId);
         await audit(
           tx,
           organisationId,
@@ -644,6 +692,7 @@ export function registerInstallationRoutes(
             locationId: location.id,
             locationName: location.name,
             serialCount: serialIds.length,
+            ...variation,
           },
         );
         return toInstallation(full);
@@ -790,6 +839,7 @@ export function registerInstallationRoutes(
         }
         const full = await readInstallation(tx, id);
         if (!full) throw new Error('installation read-back returned no row');
+        const variation = await readVariationState(tx, existing.work_item_id);
         await audit(
           tx,
           organisationId,
@@ -803,6 +853,7 @@ export function registerInstallationRoutes(
             itemNumber: existing.item_number,
             note: body.note,
             releasedSerialCount: released.length,
+            ...variation,
           },
         );
         return toInstallation(full);

@@ -86,6 +86,10 @@ const ALLOWED_EXTERNAL = new Map([
   ['node.js', 'the runtime, in prose'],
   ['index.js', 'ESM import specifiers rewritten from .ts are checked by the compiler'],
   ['postgres.js', 'the driver library, referred to by its published name'],
+  [
+    'installation-capture-flow.tsx',
+    'a component of the v0 MOCK repository (punyanagari/Auto-MB-Vercel-du), which AGENTS.md makes the binding UI contract: a replication cites the file it replicates, and that file is deliberately not in this tree',
+  ],
 ]);
 
 /**

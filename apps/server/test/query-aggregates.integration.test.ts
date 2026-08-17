@@ -82,7 +82,9 @@ const RETIRED_ITEM_INPUTS_SQL = `
          prior.pac::text as prior_pac,
          prior.final_bill::text as prior_final_bill,
          delivered.total::text as cumulative_delivered,
-         installed.total::text as cumulative_installed
+         installed.total::text as cumulative_installed,
+         coalesce(wi.effective_quantity, wi.awarded_quantity)::text
+           as sanctioned_quantity
   from work_items wi
   cross join lateral (
     select coalesce(sum(dci.quantity), 0)::numeric(18,3) as total

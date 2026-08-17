@@ -9,11 +9,17 @@ import type { Sql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
 import { runMigrations } from '../src/migration-runner.js';
 
-// These tests prove the database-level delivery and installation quantity
-// ceilings introduced by migration 0046, and the migration-time assertions that
-// arrive with them. Everything runs against real PostgreSQL: a trigger is only
-// as good as the plan the server actually executes, and the concurrency proofs
-// need genuine row locks.
+// These tests prove the database-level quantity rules around a Work item:
+// the delivery ceiling migration 0046 introduced, the installation ceiling it
+// also introduced and migration 0077 REPLACED with a derived pending-variation
+// flag, and the migration-time assertions that arrived with 0046. Everything
+// runs against real PostgreSQL: a trigger is only as good as the plan the
+// server actually executes, and the concurrency proofs need genuine row locks.
+//
+// The staged "pre-0046" block at the bottom is deliberately unchanged. It
+// applies migrations up to 0046 and no further, so it still proves what 0046
+// did on the database it was written for — which is the history 0077 is a
+// decision against, not a contradiction of.
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
   'postgres://auto_mb_owner:local-owner-change-me@127.0.0.1:5432/auto_mb';
@@ -260,6 +266,16 @@ async function refused(write: Promise<unknown>): Promise<RefusedWrite> {
   );
 }
 
+/** The item's derived variation flag (migration 0077): true exactly when its
+ * cumulative installed quantity stands above the sanctioned quantity. */
+async function pendingVariationOf(pool: Sql, workItemId: string): Promise<boolean> {
+  const [item] = await pool<{ pending_variation: boolean }[]>`
+    select pending_variation from work_items where id = ${workItemId}
+  `;
+  if (!item) throw new Error('work item read returned no row');
+  return item.pending_variation;
+}
+
 /** Blocks until the backend `pid` is waiting on a lock, so a concurrency proof
  * asserts real blocking rather than a lucky interleaving. */
 async function waitUntilBlockedOnLock(pool: Sql, pid: number): Promise<void> {
@@ -345,22 +361,25 @@ describe('database quantity ceilings', () => {
     expect(challan?.status).toBe('issued');
   });
 
-  it('caps installation at the sanctioned quantity even when excess delivery is allowed', async () => {
+  it('admits installation past the sanctioned quantity and flags the variation', async () => {
+    // Migration 0077, and the excess-delivery toggle is beside the point
+    // in both directions: it never reached this rule when the rule was a
+    // cap, and it does not reach the flag that replaced it.
     const seed = await seedWork(pool, '10.000', { allowExcessDelivery: true });
     const challanId = await draftChallan(pool, seed, '12.000');
     await issueChallan(pool, challanId, 1);
 
     await recordInstallation(pool, seed, '10.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
 
-    const refusal = await refused(recordInstallation(pool, seed, '1.000'));
-    expect(refusal.code).toBe('23514');
-    expect(refusal.message).toContain('installation ceiling');
+    await recordInstallation(pool, seed, '1.000');
 
     const [installed] = await pool<{ total: string }[]>`
       select coalesce(sum(quantity), 0)::text as total from installations
       where work_item_id = ${seed.workItemId} and status = 'recorded'
     `;
-    expect(installed?.total).toBe('10.000');
+    expect(installed?.total).toBe('11.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
   });
 
   it('accepts delivery and installation exactly at the sanctioned quantity', async () => {
@@ -375,34 +394,125 @@ describe('database quantity ceilings', () => {
       where work_item_id = ${seed.workItemId} and status = 'recorded'
     `;
     expect(installed?.total).toBe('10.000');
+    // Exactly at the sanctioned quantity owes no variation: the flag is
+    // strictly-greater-than, like the ceiling it replaced.
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
   });
 
-  it('releases installed quantity on cancellation and re-admits it afterwards', async () => {
+  it('clears the variation flag when the excess installation is cancelled', async () => {
     const seed = await seedWork(pool, '10.000');
     const [recorded] = await recordInstallation(pool, seed, '10.000');
     if (!recorded) throw new Error('installation insert returned no row');
-
-    const refusal = await refused(recordInstallation(pool, seed, '1.000'));
-    expect(refusal.code).toBe('23514');
+    const [excess] = await recordInstallation(pool, seed, '1.000');
+    if (!excess) throw new Error('installation insert returned no row');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
 
     await pool`
       update installations
       set status = 'cancelled', cancelled_at = now(),
           cancelled_by_user_id = 'ceiling-test',
-          cancellation_note = 'released for the ceiling proof'
-      where id = ${recorded.id}
+          cancellation_note = 'released for the variation proof'
+      where id = ${excess.id}
     `;
-    await recordInstallation(pool, seed, '10.000');
 
     const [installed] = await pool<{ total: string }[]>`
       select coalesce(sum(quantity), 0)::text as total from installations
       where work_item_id = ${seed.workItemId} and status = 'recorded'
     `;
     expect(installed?.total).toBe('10.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+  });
+
+  it('clears the variation flag when the amendment sanctions the excess', async () => {
+    const seed = await seedWork(pool, '10.000');
+    await recordInstallation(pool, seed, '12.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
+
+    // The variation order arrives and the amendment raises the ceiling —
+    // the one move the 0030 floor permits while an excess stands.
+    await pool`
+      update work_items set effective_quantity = '12.000'
+      where id = ${seed.workItemId}
+    `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+
+    // And the floor still refuses the opposite move, which is what keeps
+    // a measured excess from being paperwork'd away: the sanctioned
+    // quantity cannot go back below the twelve that are in the ground.
+    const refusal = await refused(pool`
+      update work_items set effective_quantity = '10.000'
+      where id = ${seed.workItemId}
+    `);
+    expect(refusal.code).toBe('23514');
+    expect(refusal.message).toContain('amendment floor');
+    expect(refusal.message).toContain('already-installed 12.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+  });
+
+  it('refuses a hand-set variation flag no measurement supports', async () => {
+    // The column is DERIVED. A direct writer that asserts it is corrected
+    // in place rather than believed — the trigger recomputes whenever the
+    // flag or either quantity column is written, in both directions.
+    const seed = await seedWork(pool, '10.000');
+    await pool`
+      update work_items set pending_variation = true where id = ${seed.workItemId}
+    `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+
+    await recordInstallation(pool, seed, '11.000');
+    await pool`
+      update work_items set pending_variation = false where id = ${seed.workItemId}
+    `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
+
+    // …and an item cannot be BORN flagged either. The insert gate fires
+    // only on this one shape, so ordinary item inserts — the bulk one an
+    // LOA confirmation makes — take the column default and pay nothing.
+    const [born] = await pool<{ id: string; pending_variation: boolean }[]>`
+      insert into work_items (
+        organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, pending_variation
+      )
+      values (
+        ${seed.organisationId}, ${seed.workId}, ${seed.scheduleId}, 'I-BORN',
+        'Born-flagged item', 'Nos', '5.000', '100.00', true
+      )
+      returning id, pending_variation
+    `;
+    expect(born?.pending_variation).toBe(false);
+  });
+
+  it('leaves the flag alone on a work_items write that cannot move it', async () => {
+    // The WHEN gate, from the outside: an item write that touches neither
+    // quantity nor the flag must not recompute anything. Proved by making
+    // the aggregate LIE — an over-installed item whose flag is already
+    // true stays true after an unrelated column changes, and (the half
+    // that would fail without the gate) `updated_at` is the only thing
+    // the unrelated write moves.
+    const seed = await seedWork(pool, '10.000');
+    await recordInstallation(pool, seed, '4.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+
+    await pool`
+      update work_items set description = 'Renamed, nothing else'
+      where id = ${seed.workItemId}
+    `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+
+    // And the gate opens for the write that CAN move it: the same item,
+    // amended below what is installed... which the 0030 floor refuses, so
+    // the move that opens it is the lawful one — down to exactly four.
+    await pool`
+      update work_items set effective_quantity = '4.000'
+      where id = ${seed.workItemId}
+    `;
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(false);
+    await recordInstallation(pool, seed, '1.000');
+    expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
   });
 
   it(
-    'binds the installation ceiling against two simultaneous recordings',
+    'raises the variation flag against two simultaneous recordings',
     async () => {
       const seed = await seedWork(pool, '10.000');
       const first = await pool.reserve();
@@ -419,7 +529,10 @@ describe('database quantity ceilings', () => {
         await first.unsafe('begin');
         await second.unsafe('begin');
 
-        // Six each: either alone fits under ten, together they breach it.
+        // Six each: either alone fits under ten, together they do not.
+        // Both are now accepted — what must not happen is that each one
+        // reads its own six, concludes "not over", and leaves twelve
+        // installed with nothing saying so.
         await first`
           insert into installations (
             organisation_id, work_id, work_item_id, quantity, installed_on,
@@ -446,16 +559,16 @@ describe('database quantity ceilings', () => {
         await waitUntilBlockedOnLock(pool, secondBackend.pid);
 
         await first.unsafe('commit');
-        const refusal = refusalOf(await pending);
-        expect(refusal.code).toBe('23514');
-        expect(refusal.message).toContain('12.000 against the sanctioned quantity');
-        await second.unsafe('rollback');
+        const outcome = await pending;
+        if (outcome instanceof Error) throw outcome;
+        await second.unsafe('commit');
 
         const [installed] = await pool<{ total: string }[]>`
           select coalesce(sum(quantity), 0)::text as total from installations
           where work_item_id = ${seed.workItemId} and status = 'recorded'
         `;
-        expect(installed?.total).toBe('6.000');
+        expect(installed?.total).toBe('12.000');
+        expect(await pendingVariationOf(pool, seed.workItemId)).toBe(true);
       } finally {
         first.release();
         second.release();

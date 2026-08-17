@@ -147,11 +147,22 @@ interface UnfinishedRow {
 /**
  * The R8 predicate, in exact SQL over EFFECTIVE quantities. "Fully" is
  * numeric EQUALITY against coalesce(effective_quantity, awarded_quantity)
- * — no tolerance, no >=; an over-delivered item (possible only with the
- * excess toggle) is as unfinished as a short one, and short closure means
- * amending the baseline down first. Soft-deleted items are excluded (a
+ * — no tolerance, no >=; an item that measures ABOVE its baseline is as
+ * unfinished as a short one, and short closure means amending the
+ * baseline down first. Over-delivery reaches this only with the Work's
+ * excess toggle; over-INSTALLATION reaches it whenever site ran ahead of
+ * the variation order (migration 0077), and this predicate is exactly why
+ * a Work still cannot be closed on the strength of unsanctioned work. Soft-deleted items are excluded (a
  * removed item owes nothing). An item amended to quantity 0 — the
  * omission case — is satisfied by delivering and installing nothing.
+ *
+ * ONE DIMENSION IS MEASURED ON EVERY ITEM WHATEVER ITS REQUIREMENT: the
+ * installed quantity, when it stands ABOVE the baseline. Migration 0077
+ * lets site install past the sanctioned quantity on any item, and a
+ * requirement says which dimension an item must finish on — it does not
+ * license the others to run over. Without this arm a SUPPLY item that
+ * was over-installed would close a Work while its variation order was
+ * still outstanding, because its requirement only looks at delivery.
  *
  * The requirement per payment category (spec §8 / the settled matrix):
  *   SUPPLY, SPARE_SUPPLY        -> fully delivered
@@ -212,8 +223,15 @@ async function unfinishedItems(
                measured.requirement in ('delivery', 'delivery_and_installation')
                and measured.delivered_quantity > measured.required_quantity
              ) or (
-               measured.requirement in ('installation', 'delivery_and_installation')
-               and measured.installed_quantity > measured.required_quantity
+               -- NOT gated on the requirement, unlike its neighbours.
+               -- Since migration 0077 an item can hold more installed
+               -- than the contract sanctions whatever its payment
+               -- category, and a SUPPLY item that site over-installed is
+               -- over-executed even though its requirement measures
+               -- delivery. Gating this arm the way the others are gated
+               -- would let such a Work close with an unsanctioned
+               -- variation outstanding.
+               measured.installed_quantity > measured.required_quantity
              ) or (
                measured.requirement = 'service'
                and measured.certified_quantity > measured.required_quantity
@@ -278,6 +296,14 @@ async function unfinishedItems(
     ) or (
       measured.requirement = 'service'
       and measured.certified_quantity <> measured.required_quantity
+    ) or (
+      -- The over-installed arm, on EVERY requirement (migration 0077).
+      -- A requirement decides which dimension an item must FINISH on; it
+      -- does not license the other dimensions to run over the sanction.
+      -- Strictly greater-than, not <>: a supply item with nothing
+      -- installed is not unfinished for that reason, and one that is
+      -- part-installed on the way to full delivery is not either.
+      measured.installed_quantity > measured.required_quantity
     )
     order by measured.item_number
   `;
@@ -295,9 +321,16 @@ async function unfinishedItems(
 }
 
 /** The 409's prose, split on the direction of the remedy. Telling the
- * operator to "amend those quantities down" for an over-delivered item
- * sends them at an instruction the R7 floor refuses; the sanctioned
- * quantity has to go UP to meet the delivery instead.
+ * operator to "amend those quantities down" for an item that measures
+ * ABOVE its sanctioned quantity sends them at an instruction the R7
+ * floor refuses; the sanctioned quantity has to go UP to meet the
+ * measurement instead.
+ *
+ * The excess arm names no dimension, because since migration 0077 it has
+ * two. An over-DELIVERED item needs the Work's excess-delivery toggle;
+ * an over-INSTALLED one needs nothing at all — site installs what the
+ * railway asked for and the item waits for the variation order. Both
+ * resolve the same way, by amending the sanctioned quantity up.
  *
  * Short AMC items are split out again, because their remedy is not the
  * same sentence. An unfinished supply item is waiting for material that
@@ -334,7 +367,7 @@ function notFullyExecutedMessage(unfinished: readonly UnfinishedWorkItem[]): str
   }
   if (excess.length > 0) {
     parts.push(
-      `${String(excess.length)} item(s) are over-delivered: ${excess.join(', ')}. For those, amend the sanctioned quantity up to match the delivery through the approval path, then complete.`,
+      `${String(excess.length)} item(s) measure above the sanctioned quantity: ${excess.join(', ')}. For those, amend the sanctioned quantity up to match the measurement through the approval path, then complete.`,
     );
   }
   return parts.join(' ');

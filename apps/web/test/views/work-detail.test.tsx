@@ -734,7 +734,7 @@ describe('WorkDetail R8 completion panel', () => {
     });
     // The worklist is the point of the refusal: every unfinished item,
     // with what it owes, what it has, and which way its remedy runs —
-    // the over-delivered row must not be told to amend down.
+    // the over-measured row must not be told to amend down.
     expect(
       await screen.findByText('Items not yet at 100% executed value'),
     ).toBeTruthy();
@@ -742,7 +742,9 @@ describe('WorkDetail R8 completion panel', () => {
     expect(screen.getByText('uncategorised')).toBeTruthy();
     expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
     expect(screen.getByText('short — amend the quantity down')).toBeTruthy();
-    expect(screen.getByText('over-delivered — amend the quantity up')).toBeTruthy();
+    expect(
+      screen.getByText('above the sanctioned quantity — amend the quantity up'),
+    ).toBeTruthy();
   });
 
   it('names every clean-state blocker from the 409 details', async () => {

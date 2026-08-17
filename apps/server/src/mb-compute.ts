@@ -14,6 +14,12 @@
  * result; unit tests drive the workbook scenario without a database.
  * Every quantity, percentage, rate, and amount is an exact decimal
  * STRING — no JavaScript float ever touches an authoritative value.
+ *
+ * This is also where the sanctioned quantity binds the MONEY (migration
+ * 0077, `clampToSanctioned`). It is decided here rather than at the
+ * finalize route deliberately: the draft preview, the draft PDF and the
+ * finalize snapshot all read this one function, so what an operator is
+ * shown before finalizing is what finalizing writes.
  */
 
 import type { WorkItemPaymentCategory } from '@auto-mb/contracts';
@@ -59,6 +65,11 @@ export interface MbItemInput {
    * other category because no other branch reads it. See
    * `FinalBillBaseInput.amcCertifiedQuantity`. */
   readonly cumulativeAmcCertified: string;
+  /** coalesce(effective_quantity, awarded_quantity) — what the contract
+   * sanctions. THE BILLING CEILING: every stage measured on work that
+   * was physically done clamps its lifetime billed quantity here (see
+   * `clampToSanctioned`). */
+  readonly sanctionedQuantity: string;
 }
 
 /** One computed (previewed or to-be-snapshotted) MB line. */
@@ -74,10 +85,19 @@ export interface MbComputedLine {
   readonly percentages: PaymentMatrixPercentages;
   readonly effectiveRate: string;
   readonly deltaSupplied: string;
+  /** BILLED installation quantity, not measured: the selected sources'
+   * installation total after `clampToSanctioned`. The two differ exactly
+   * when the item is over-installed and its variation order has not
+   * arrived. */
   readonly deltaInstalled: string;
+  /** BILLED certified quantity, clamped the same way and for the same
+   * reason — a non-AMC certificate attests installed work, which is no
+   * longer bounded by the sanction. */
   readonly deltaPac: string;
-  /** Final MB only: resolveFinalBillBase(cumulative) minus the prior
-   * final-bill cumulative, floored at 0. '0' on every non-final MB. */
+  /** Final MB only: resolveFinalBillBase(cumulative), clamped at the
+   * sanctioned quantity on the installed and certified branches, minus
+   * the prior final-bill cumulative, floored at 0. '0' on every non-final
+   * MB. */
   readonly deltaFinalBill: string;
   readonly priorSupplied: string;
   readonly priorInstalled: string;
@@ -133,12 +153,56 @@ export function subtractDecimalStrings(a: string, b: string): string {
   return addDecimalStrings(a, negated);
 }
 
+/** The smaller of two exact decimals, without a float in the middle. */
+function minDecimalStrings(a: string, b: string): string {
+  return isNegativeDecimal(subtractDecimalStrings(a, b)) ? a : b;
+}
+
+/**
+ * THE BILLING CLAMP (owner ruling, 2026-08-17: "Final MB can be done even
+ * if excess installation variation is not processed — sometimes we have
+ * to work free for the Railways").
+ *
+ * Migration 0077 lifted the sanctioned quantity off INSTALLATION, so site
+ * may measure more than the contract sanctions while the variation order
+ * is awaited. Money did not move with it: a stage whose basis is work
+ * physically done bills min(lifetime measured, sanctioned), and the
+ * remainder is simply not billed. It is not refused — refusing would
+ * block the final book, and the final book has to be able to close a
+ * contract that was worked over.
+ *
+ * Given what prior books already billed on this stage and what this
+ * book's selected sources measure, returns the delta this book may bill:
+ * the room left under the sanction, never negative, never more than the
+ * measurement. A stage already billed up to the sanction contributes
+ * nothing further, so the excess stays outside every book until an
+ * amendment raises the ceiling — at which point the room reopens and the
+ * next book bills it with no correction entry needed.
+ */
+export function clampToSanctioned(input: {
+  readonly priorQuantity: string;
+  readonly deltaQuantity: string;
+  readonly sanctionedQuantity: string;
+}): string {
+  const room = subtractDecimalStrings(input.sanctionedQuantity, input.priorQuantity);
+  if (isNegativeDecimal(room)) return '0';
+  return minDecimalStrings(input.deltaQuantity, room);
+}
+
 /**
  * The final-bill stage delta for one item on the FINAL MB: the base
  * quantity (delivered for supply-branch items, installed for
  * installation-branch items, certified for AMC items —
  * resolveFinalBillBase) minus what the final-bill stage already billed,
  * floored at zero.
+ *
+ * The base is clamped at the sanctioned quantity on the two branches
+ * that measure work physically done. The DELIVERED branch deliberately
+ * is not: over-delivery is reachable only through the Work's
+ * excess-delivery toggle, which is an owner's deliberate acceptance of
+ * material beyond the sanction and has always billed, and 0077 did not
+ * touch it. Clamping it here would silently change what over-delivering
+ * Works are paid.
  */
 export function computeFinalBillDelta(item: MbItemInput): string {
   const base = resolveFinalBillBase({
@@ -148,7 +212,11 @@ export function computeFinalBillDelta(item: MbItemInput): string {
     installedQuantity: item.cumulativeInstalled,
     amcCertifiedQuantity: item.cumulativeAmcCertified,
   });
-  const delta = subtractDecimalStrings(base.baseQuantity, item.priorFinalBill);
+  const baseQuantity =
+    base.branch === 'delivered'
+      ? base.baseQuantity
+      : minDecimalStrings(base.baseQuantity, item.sanctionedQuantity);
+  const delta = subtractDecimalStrings(baseQuantity, item.priorFinalBill);
   return isNegativeDecimal(delta) ? '0' : delta;
 }
 
@@ -171,11 +239,28 @@ export function computeMeasurementBook(input: {
   );
 
   for (const item of ordered) {
+    // The two stages measured on work physically done are clamped at the
+    // sanctioned quantity; the supply stage is not, for the reason
+    // `computeFinalBillDelta` gives. From here down `deltaInstalled` and
+    // `deltaPac` mean BILLED quantity, which is what they have always
+    // meant on a Measurement Book line — the measurement itself lives on
+    // the installation record and the certificate, and the difference is
+    // reported as the Work's unbillable variation exposure.
+    const deltaInstalled = clampToSanctioned({
+      priorQuantity: item.priorInstalled,
+      deltaQuantity: item.deltaInstalled,
+      sanctionedQuantity: item.sanctionedQuantity,
+    });
+    const deltaPac = clampToSanctioned({
+      priorQuantity: item.priorPac,
+      deltaQuantity: item.deltaPac,
+      sanctionedQuantity: item.sanctionedQuantity,
+    });
     const deltaFinalBill = input.isFinal ? computeFinalBillDelta(item) : '0';
     const hasDelta =
       isPositiveDecimal(item.deltaSupplied) ||
-      isPositiveDecimal(item.deltaInstalled) ||
-      isPositiveDecimal(item.deltaPac) ||
+      isPositiveDecimal(deltaInstalled) ||
+      isPositiveDecimal(deltaPac) ||
       isPositiveDecimal(deltaFinalBill);
     if (!hasDelta) continue;
 
@@ -201,9 +286,9 @@ export function computeMeasurementBook(input: {
         {
           stage: 'installation',
           percent: percentages.pctInstallation,
-          deltaQuantity: item.deltaInstalled,
+          deltaQuantity: deltaInstalled,
         },
-        { stage: 'pac', percent: percentages.pctPac, deltaQuantity: item.deltaPac },
+        { stage: 'pac', percent: percentages.pctPac, deltaQuantity: deltaPac },
         {
           stage: 'final_bill',
           percent: percentages.pctFinalBill,
@@ -226,13 +311,13 @@ export function computeMeasurementBook(input: {
           stage: 'installation',
           percent: percentages.pctInstallation,
           priorCumulativeQuantity: item.priorInstalled,
-          deltaQuantity: item.deltaInstalled,
+          deltaQuantity: deltaInstalled,
         },
         {
           stage: 'pac',
           percent: percentages.pctPac,
           priorCumulativeQuantity: item.priorPac,
-          deltaQuantity: item.deltaPac,
+          deltaQuantity: deltaPac,
         },
         {
           stage: 'final_bill',
@@ -253,8 +338,8 @@ export function computeMeasurementBook(input: {
       percentages,
       effectiveRate: item.effectiveRate,
       deltaSupplied: item.deltaSupplied,
-      deltaInstalled: item.deltaInstalled,
-      deltaPac: item.deltaPac,
+      deltaInstalled,
+      deltaPac,
       deltaFinalBill,
       priorSupplied: item.priorSupplied,
       priorInstalled: item.priorInstalled,

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  clampToSanctioned,
   computeFinalBillDelta,
   computeMeasurementBook,
   subtractDecimalStrings,
@@ -74,6 +75,11 @@ function itemInput(overrides: Partial<MbItemInput>): MbItemInput {
     cumulativeDelivered: '0',
     cumulativeInstalled: '0',
     cumulativeAmcCertified: '0',
+    // Far above anything the workbook scenario measures, so the cases
+    // written before the clamp existed keep asking what they asked: the
+    // clamp only speaks when an item is over-installed, and the cases
+    // that mean to exercise it set this deliberately.
+    sanctionedQuantity: '99999999',
     ...overrides,
   };
 }
@@ -268,6 +274,150 @@ describe('computeMeasurementBook over the workbook scenario', () => {
       ],
     });
     expect(computation.lines).toHaveLength(0);
+    expect(computation.totalAmount).toBe('0.00');
+  });
+});
+
+describe('clampToSanctioned (migration 0077, owner ruling 2026-08-17)', () => {
+  it('bills the measurement when the sanction has room for it', () => {
+    expect(
+      clampToSanctioned({
+        priorQuantity: '4.000',
+        deltaQuantity: '3.000',
+        sanctionedQuantity: '10.000',
+      }),
+    ).toBe('3.000');
+  });
+
+  it('bills only the room left when the measurement straddles the sanction', () => {
+    // The straddle: one 12-unit record against a sanctioned 10 with
+    // nothing billed yet. Ten is billable, two are not, and there is no
+    // way to express that by refusing a whole record.
+    expect(
+      clampToSanctioned({
+        priorQuantity: '0',
+        deltaQuantity: '12.000',
+        sanctionedQuantity: '10.000',
+      }),
+    ).toBe('10.000');
+  });
+
+  it('bills nothing once the sanction is already billed out', () => {
+    // Zero at the scale the subtraction produced; every consumer casts to
+    // numeric(18,3) and `isPositiveDecimal` reads it as nothing either
+    // way, so the scale is cosmetic and asserted rather than normalised.
+    expect(
+      clampToSanctioned({
+        priorQuantity: '10.000',
+        deltaQuantity: '2.000',
+        sanctionedQuantity: '10.000',
+      }),
+    ).toBe('0.000');
+  });
+
+  it('never returns a negative delta, whatever history it is handed', () => {
+    // A prior above the sanction is reachable by amending a quantity down
+    // after billing; the answer is "nothing more", never a clawback.
+    expect(
+      clampToSanctioned({
+        priorQuantity: '12.000',
+        deltaQuantity: '1.000',
+        sanctionedQuantity: '10.000',
+      }),
+    ).toBe('0');
+  });
+
+  it('clamps at exact decimal scale, without a float in the middle', () => {
+    expect(
+      clampToSanctioned({
+        priorQuantity: '0.001',
+        deltaQuantity: '0.999',
+        sanctionedQuantity: '0.5',
+      }),
+    ).toBe('0.499');
+  });
+});
+
+describe('computeMeasurementBook under an unprocessed variation', () => {
+  it('clamps the installation and certification stages, not the supply stage', () => {
+    // Sanctioned 10; site installed and the railway certified 12; the
+    // consignee also accepted 12 delivered under the Work's
+    // excess-delivery permission. Only the two stages measured on
+    // physical work clamp — over-delivery is an owner's deliberate
+    // acceptance and has always billed.
+    const computation = computeMeasurementBook({
+      matrix: [
+        {
+          category: 'UNCATEGORISED',
+          pctSupply: '40.00',
+          pctInstallation: '30.00',
+          pctPac: '20.00',
+          pctFinalBill: '10.00',
+        },
+      ],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          sanctionedQuantity: '10.000',
+          deltaSupplied: '12.000',
+          deltaInstalled: '12.000',
+          deltaPac: '12.000',
+        }),
+      ],
+    });
+    const [line] = computation.lines;
+    expect(line?.deltaSupplied).toBe('12.000');
+    expect(line?.deltaInstalled).toBe('10.000');
+    expect(line?.deltaPac).toBe('10.000');
+    // 12 x 100 x 40% + 10 x 100 x 30% + 10 x 100 x 20%.
+    expect(line?.lineTotal).toBe('980.00');
+  });
+
+  it('clamps the final-bill base on the installed branch and leaves it on the delivered one', () => {
+    const installed = computeFinalBillDelta(
+      itemInput({
+        paymentCategory: 'PURE_INSTALLATION',
+        sanctionedQuantity: '10.000',
+        cumulativeInstalled: '15.000',
+      }),
+    );
+    expect(installed).toBe('10.000');
+
+    const delivered = computeFinalBillDelta(
+      itemInput({
+        paymentCategory: 'SUPPLY',
+        sanctionedQuantity: '10.000',
+        cumulativeDelivered: '15.000',
+      }),
+    );
+    expect(delivered).toBe('15.000');
+  });
+
+  it('drops an item whose whole measurement is above the sanction', () => {
+    // Ten of ten already billed and two more installed: this book has
+    // nothing to say about the item, and says nothing rather than
+    // refusing the book.
+    const computation = computeMeasurementBook({
+      matrix: [
+        {
+          category: 'UNCATEGORISED',
+          pctSupply: '0.00',
+          pctInstallation: '100.00',
+          pctPac: '0.00',
+          pctFinalBill: '0.00',
+        },
+      ],
+      isFinal: false,
+      items: [
+        itemInput({
+          sanctionedQuantity: '10.000',
+          priorInstalled: '10.000',
+          deltaInstalled: '2.000',
+        }),
+      ],
+    });
+    expect(computation.lines).toEqual([]);
     expect(computation.totalAmount).toBe('0.00');
   });
 });

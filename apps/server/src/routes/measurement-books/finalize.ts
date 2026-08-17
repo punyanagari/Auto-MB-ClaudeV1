@@ -245,6 +245,29 @@ export function registerMeasurementBookFinalizeRoutes(
             details,
           );
         }
+        // THE SANCTIONED QUANTITY BINDS THE MONEY, AND IT BINDS IT IN THE
+        // COMPUTATION, NOT HERE (owner ruling, 2026-08-17: "Final MB can
+        // be done even if excess installation variation is not processed
+        // — sometimes we have to work free for the Railways"). Migration
+        // 0077 lets site install past the sanction; `clampToSanctioned`
+        // in mb-compute.ts then bills min(measured, sanctioned) on every
+        // stage measured on physical work, so the excess is left unbilled
+        // rather than refused. Nothing is checked at this route because
+        // there is nothing left to refuse — and the operator's preview,
+        // the draft PDF and this snapshot are the same numbers precisely
+        // because the decision is made in one place upstream of all
+        // three.
+        //
+        // An empty book is still refused, and the clamp cannot make a
+        // FINAL book empty — which is what has to be true for the ruling
+        // to hold with this check unchanged. A final book computes the
+        // final-bill stage, whose base is the item's LIFETIME measurement
+        // clamped at the sanction, not a delta over selected sources. So
+        // an item that measured anything at all carries a positive
+        // final-bill delta on the final book even when every other stage
+        // clamps to nothing, and the book has a line. Only a Work that
+        // measured nothing whatsoever reaches this refusal, which is what
+        // it always meant.
         if (computation.lines.length === 0) {
           throw httpError(
             409,
