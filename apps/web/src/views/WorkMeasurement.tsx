@@ -1,6 +1,7 @@
 import type { Bill, Challan, MbEntry, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { formValue, type ApiClient } from '../api.js';
+import { formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
@@ -109,7 +110,7 @@ export function WorkMeasurement({
                   <tr key={entry.id}>
                     <th scope="row">{entry.itemNumber}</th>
                     <td className={numericCell}>{entry.measuredQuantity}</td>
-                    <td>{entry.measuredOn}</td>
+                    <td>{formatDate(entry.measuredOn)}</td>
                     <td>
                       {entry.deliveryChallanId === null
                         ? '—'

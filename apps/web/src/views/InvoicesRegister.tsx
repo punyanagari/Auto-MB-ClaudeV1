@@ -20,6 +20,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
 import { FormError, FormNotice } from '../ui/form.js';
+import { PageHeader } from '../ui/page-header.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { WorkLink } from '../ui/work-link.js';
@@ -365,22 +366,25 @@ export function InvoicesRegister({
 
   return (
     <>
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="mb-1 text-xs font-semibold tracking-widest text-primary uppercase">
-            Documents
-          </p>
-          <h1 id="invoices-title" tabIndex={-1}>
-            Invoices
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground text-pretty">
+      {/* The mock's page-header block, through the shared primitive rather
+          than a second hand-rolled copy of it — the mock's invoices
+          register draws its own header with `PageHeader` from
+          `components/shared` (Auto-MB-Vercel-du at a8e1fde). `titleId`
+          keeps the anchor the section below is labelled by, and the one
+          navigation moves focus to. */}
+      <PageHeader
+        eyebrow="Documents"
+        title="Invoices"
+        titleId="invoices-title"
+        description={
+          <>
             Every GST tax invoice in the organisation, newest first — raised against a
             Work&rsquo;s finalized Measurement Book, or directly against a private
             customer. A Work&rsquo;s invoice is drafted on the Work; a direct one is
             drafted here.
-          </p>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <section aria-labelledby="invoices-title" className="flex flex-col gap-4">
         <form

@@ -188,14 +188,21 @@ export function WorkBillingReadiness({
   const unmet = items.filter((item) => !item.ok);
 
   return (
-    <section aria-labelledby="billing-readiness-heading">
-      <h2 id="billing-readiness-heading">Billing readiness</h2>
-      <p className="text-muted-foreground">
+    /* `.data-surface`, the mock's shared panel wrapper (docs/DESIGN.md
+       § Component-layer conventions, ported from the mock at a8e1fde). */
+    <section
+      className="data-surface mt-4 flex flex-col gap-3 p-4"
+      aria-labelledby="billing-readiness-heading"
+    >
+      <h2 id="billing-readiness-heading" className="m-0 text-sm font-medium">
+        Billing readiness
+      </h2>
+      <p className="m-0 text-sm text-muted-foreground">
         {unmet.length === 0
           ? 'Every invoice prerequisite is in place.'
           : `${String(unmet.length)} of ${String(items.length)} prerequisites still need attention before an invoice can be submitted.`}
       </p>
-      <ul className="my-2 flex list-none flex-col gap-2 p-0">
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
         {items.map((item) => (
           <li key={item.key} className="flex items-start gap-2 text-[13px]">
             {item.ok ? (
@@ -204,8 +211,16 @@ export function WorkBillingReadiness({
                 aria-hidden="true"
               />
             ) : (
+              /* Warning, not destructive. The mock's tint families put
+                 "attention, in progress, awaiting someone" on warning and
+                 reserve destructive for cancelled and rejected
+                 (docs/DESIGN.md § Status badge semantics; the same pending
+                 treatment the mock gives an unmet prerequisite in
+                 Auto-MB-Vercel-du, components/measurement-book.tsx at
+                 a8e1fde). An unfilled prerequisite is waiting on someone,
+                 not refused. */
               <CircleAlert
-                className="mt-0.5 size-4 shrink-0 text-destructive"
+                className="mt-0.5 size-4 shrink-0 text-warning-foreground"
                 aria-hidden="true"
               />
             )}

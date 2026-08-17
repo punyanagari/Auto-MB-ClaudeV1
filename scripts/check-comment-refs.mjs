@@ -90,6 +90,10 @@ const ALLOWED_EXTERNAL = new Map([
     'installation-capture-flow.tsx',
     'a component of the v0 MOCK repository (punyanagari/Auto-MB-Vercel-du), which AGENTS.md makes the binding UI contract: a replication cites the file it replicates, and that file is deliberately not in this tree',
   ],
+  [
+    'measurement-book.tsx',
+    'a component of the v0 MOCK repository (punyanagari/Auto-MB-Vercel-du) — same reason as installation-capture-flow.tsx above: the unbillable-variation-exposure panel cites the mock screen it replicates',
+  ],
 ]);
 
 /**

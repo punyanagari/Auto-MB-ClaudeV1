@@ -789,6 +789,7 @@ describe('MeasurementBooks workspace', () => {
     lines: [LINE],
     warnings: [],
     previewTotal: '4000.00',
+    unbillableVariationExposure: '0.00',
   };
 
   const FINAL_DETAIL = {
@@ -797,6 +798,7 @@ describe('MeasurementBooks workspace', () => {
     lines: [LINE],
     warnings: [],
     previewTotal: '4000.00',
+    unbillableVariationExposure: '0.00',
   };
 
   const CANDIDATES: Partial<ApiClient> = {
@@ -1001,11 +1003,13 @@ describe('MeasurementBooks workspace', () => {
     await screen.findByText('Delivery challans (issued)');
     expect(screen.getByText('Installations (recorded)')).toBeTruthy();
     expect(screen.getByText('PAC certificates (recorded)')).toBeTruthy();
-    expect(screen.getByText(/DC\/1 · 2026-08-01/)).toBeTruthy();
+    // Dates run through the shared `formatDate` helper, never the raw
+    // date-only string the API sends.
+    expect(screen.getByText(/DC\/1 · 01 Aug 2026/)).toBeTruthy();
     expect(
-      screen.getByText(/A\/1 × 1000\.000 · 2026-08-02 · Nashik Road station/),
+      screen.getByText(/A\/1 × 1000\.000 · 02 Aug 2026 · Nashik Road station/),
     ).toBeTruthy();
-    expect(screen.getByText(/PAC\/2026\/01 · 2026-08-03/)).toBeTruthy();
+    expect(screen.getByText(/PAC\/2026\/01 · 03 Aug 2026/)).toBeTruthy();
 
     // The live preview mirrors the PDF columns including the remark.
     expect(screen.getByText('Supplied Δ')).toBeTruthy();
@@ -1014,13 +1018,70 @@ describe('MeasurementBooks workspace', () => {
     // PDF, where only a foot repeats across pages.
     expect(screen.getByText('Total payable this MB').closest('tfoot')).toBeTruthy();
 
-    fireEvent.click(screen.getByLabelText(/DC\/1 · 2026-08-01/));
+    fireEvent.click(screen.getByLabelText(/DC\/1 · 01 Aug 2026/));
     fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
     await waitFor(() => {
       expect(setMeasurementBookSources).toHaveBeenCalledWith(ORG_ID, MB_DRAFT_ID, {
         sources: [{ sourceType: 'delivery_challan', sourceId: DC_ID }],
       });
     });
+  });
+
+  /**
+   * The unbillable variation exposure panel (Auto-MB-Vercel-du,
+   * components/measurement-book.tsx at a8e1fde). Installation may now
+   * exceed the sanctioned quantity; measurement and billing still cap at it. The MB
+   * lines therefore arrive already clamped by the server, and the excess
+   * would be invisible without this panel — the operator would read a
+   * short MB with no statement of what was left out of it.
+   */
+  it('states the unbillable variation exposure in rupees when the Work carries one', async () => {
+    const api = mbApi({
+      getMeasurementBook: vi.fn().mockResolvedValue({
+        ...DRAFT_DETAIL,
+        unbillableVariationExposure: '18500.50',
+      }),
+    });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+
+    expect(await screen.findByText('Unbillable variation exposure')).toBeTruthy();
+    // Exact to the paisa. This is the money a variation order would have to
+    // sanction, so it is never abbreviated to crores.
+    expect(screen.getByText('₹18,500.50')).toBeTruthy();
+    expect(
+      screen.getByText(
+        /excluded from measurement and billing until variation approval/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('stays silent when nothing is installed above the sanctioned quantity', async () => {
+    // '0.00' is not "no answer" — it is the Work reporting no exposure, and
+    // an amber panel reading zero would be a standing false alarm.
+    renderMb(mbApi());
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
+
+    await screen.findByText('Supplied Δ');
+    expect(screen.queryByText('Unbillable variation exposure')).toBeNull();
+  });
+
+  it('shows the exposure on a finalized book too, not only on a draft', async () => {
+    // The exposure is a current fact about the Work rather than a snapshot
+    // of the book, so finalizing does not retire it.
+    const api = mbApi({
+      getMeasurementBook: vi
+        .fn()
+        .mockResolvedValue({ ...FINAL_DETAIL, unbillableVariationExposure: '200.00' }),
+    });
+    renderMb(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'DCW-1-MB-02' }));
+
+    expect(await screen.findByText('Unbillable variation exposure')).toBeTruthy();
+    expect(screen.getByText('₹200.00')).toBeTruthy();
   });
 
   function sourceConflict(
@@ -1045,7 +1106,7 @@ describe('MeasurementBooks workspace', () => {
     renderMb(api);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
-    fireEvent.click(await screen.findByLabelText(/DC\/1 · 2026-08-01/));
+    fireEvent.click(await screen.findByLabelText(/DC\/1 · 01 Aug 2026/));
     fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
 
     const chip = await screen.findByText('claimed by DCW-1-MB-02');
@@ -1056,7 +1117,7 @@ describe('MeasurementBooks workspace', () => {
     // The claim is enforced in the UI rather than left to fail server-side on
     // the next save, and the chip describes the box instead of being read as
     // part of its name.
-    const box = screen.getByLabelText<HTMLInputElement>(/DC\/1 · 2026-08-01/);
+    const box = screen.getByLabelText<HTMLInputElement>(/DC\/1 · 01 Aug 2026/);
     expect(box.disabled).toBe(true);
     expect(box.checked).toBe(false);
     expect(box.getAttribute('aria-describedby')).toBe(chip.id);
@@ -1073,7 +1134,7 @@ describe('MeasurementBooks workspace', () => {
     renderMb(api);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Draft' }));
-    fireEvent.click(await screen.findByLabelText(/DC\/1 · 2026-08-01/));
+    fireEvent.click(await screen.findByLabelText(/DC\/1 · 01 Aug 2026/));
     fireEvent.click(screen.getByRole('button', { name: 'Save source selection' }));
     await screen.findByText('claimed by DCW-1-MB-02');
 

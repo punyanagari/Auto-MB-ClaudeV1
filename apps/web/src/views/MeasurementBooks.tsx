@@ -17,7 +17,7 @@ import {
   RequestFailedError,
   type ApiClient,
 } from '../api.js';
-import { formatInr } from '../format.js';
+import { compareDecimalStrings, formatDate, formatInr } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
 import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
@@ -249,21 +249,21 @@ export function MeasurementBooks({
         .map((challan) => ({
           sourceType: 'delivery_challan' as const,
           sourceId: challan.id,
-          label: `${challan.challanNumber ?? challan.id} · ${challan.challanDate}`,
+          label: `${challan.challanNumber ?? challan.id} · ${formatDate(challan.challanDate)}`,
         })),
       ...installationList.installations
         .filter((installation: Installation) => installation.status === 'recorded')
         .map((installation) => ({
           sourceType: 'installation' as const,
           sourceId: installation.id,
-          label: `${installation.itemNumber} × ${installation.quantity} · ${installation.installedOn} · ${installation.locationName}`,
+          label: `${installation.itemNumber} × ${installation.quantity} · ${formatDate(installation.installedOn)} · ${installation.locationName}`,
         })),
       ...pacList.certificates
         .filter((certificate: PacCertificate) => certificate.status === 'recorded')
         .map((certificate) => ({
           sourceType: 'pac_certificate' as const,
           sourceId: certificate.id,
-          label: `${certificate.reference} · ${certificate.issueDate}`,
+          label: `${certificate.reference} · ${formatDate(certificate.issueDate)}`,
         })),
     ];
     setCandidates(all);
@@ -411,6 +411,41 @@ export function MeasurementBooks({
         </p>
       )}
 
+      {/* The Work's unbillable variation exposure, drawn where the mock
+          draws it (Auto-MB-Vercel-du, components/measurement-book.tsx at
+          a8e1fde): above the MB register, because it is a fact about the
+          Work rather than about any one book, and it reads the same on a
+          draft as on a finalized one.
+
+          It is gated on an opened book only because that is the one
+          response carrying it — `unbillableVariationExposure` rides on
+          MeasurementBookDetailResponse, and the list endpoint has no
+          equivalent. The position is the mock's; the availability is the
+          API's.
+
+          `formatInr`, not the compact form the mock uses: this is the
+          money a variation would have to sanction, and rounding it to two
+          decimal places of a crore would misstate the figure an operator
+          takes to an approving authority. Exposure arrives as an exact
+          decimal string and is printed as one. */}
+      {detail !== null &&
+        compareDecimalStrings(detail.unbillableVariationExposure, '0') > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4">
+            <div>
+              <p className="text-sm font-medium text-warning-foreground">
+                Unbillable variation exposure
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Installed above sanctioned quantity; excluded from measurement and
+                billing until variation approval.
+              </p>
+            </div>
+            <span className="font-mono font-semibold tabular-nums text-warning-foreground">
+              {formatInr(detail.unbillableVariationExposure)}
+            </span>
+          </div>
+        )}
+
       {books.length > 0 ? (
         <DataTable>
           <caption className="sr-only">Measurement Books raised on this Work</caption>
@@ -457,7 +492,7 @@ export function MeasurementBooks({
                       </span>
                     )}
                   </td>
-                  <td>{row.mbDate}</td>
+                  <td>{formatDate(row.mbDate)}</td>
                   <td>
                     {row.status === 'merged' && mergedInto !== null ? (
                       /* The chip is the row's one live affordance: a merged
@@ -672,7 +707,8 @@ export function MeasurementBooks({
                           });
                         }}
                       />{' '}
-                      {consigneeLabel(draft.consigneeContactId)} · {draft.mbDate}
+                      {consigneeLabel(draft.consigneeContactId)} ·{' '}
+                      {formatDate(draft.mbDate)}
                     </label>
                   </Field>
                 ))}
@@ -691,7 +727,8 @@ export function MeasurementBooks({
             <ul>
               {recordDrafts.map((draft) => (
                 <li key={draft.id}>
-                  {consigneeLabel(draft.consigneeContactId)} · {draft.mbDate}
+                  {consigneeLabel(draft.consigneeContactId)} ·{' '}
+                  {formatDate(draft.mbDate)}
                 </li>
               ))}
             </ul>
@@ -702,7 +739,7 @@ export function MeasurementBooks({
       {detail !== null && book !== null && (
         <div className="my-3">
           <h3>
-            Measurement Book {book.mbNumber ?? 'draft'} · {book.mbDate}{' '}
+            Measurement Book {book.mbNumber ?? 'draft'} · {formatDate(book.mbDate)}{' '}
             <StatusChip status={book.status} />{' '}
             {book.kind === 'record' && (
               <StatusChip status="record">
