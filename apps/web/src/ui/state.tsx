@@ -30,7 +30,8 @@ export function Skeleton({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       aria-hidden="true"
       className={cn(
-        'motion-safe:animate-pulse rounded-md bg-muted-foreground/15',
+        // The mock's `ui/skeleton`: `animate-pulse rounded-md bg-muted`.
+        'motion-safe:animate-pulse rounded-md bg-muted',
         'h-4 w-full',
         className,
       )}
@@ -105,11 +106,21 @@ interface EmptyStateProps {
   readonly className?: string;
 }
 
-/** Nothing here yet, said once, with the action that changes that. */
+/** Nothing here yet, said once, with the action that changes that.
+ *
+ * The mock's `ui/empty`: a centred, balanced block at `p-6` with the
+ * sentence over its one action. No box of its own — the surface it sits
+ * in already has an edge, and a second dashed one inside a card is the
+ * "startup pretty" the density rules refuse. */
 export function EmptyState({ children, action, className }: EmptyStateProps) {
   return (
-    <div className={cn('my-3 flex flex-col items-start gap-3', className)}>
-      <p className="m-0 text-sm text-muted-foreground">{children}</p>
+    <div
+      className={cn(
+        'my-3 flex w-full min-w-0 flex-col items-center justify-center gap-4 rounded-xl p-6 text-center text-balance',
+        className,
+      )}
+    >
+      <p className="m-0 max-w-sm text-sm/relaxed text-muted-foreground">{children}</p>
       {action !== undefined && (
         <Button variant="outline" size="sm" onClick={action.onClick}>
           {action.label}
@@ -152,13 +163,16 @@ export function ErrorState({
   return (
     <div
       role="alert"
+      /* The mock's `components/remedy-error`: a `rounded-lg`
+       * destructive-tinted panel at `p-3`, 14px ink, `AlertCircle`
+       * nudged to the first line's baseline. */
       className={cn(
-        'my-3 flex flex-col items-start gap-2 rounded-xl border border-destructive/25 bg-destructive/5 p-4',
+        'my-3 flex flex-col items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3',
         className,
       )}
     >
-      <p className="m-0 flex items-start gap-2 text-[13px] font-medium text-destructive">
-        <AlertCircle className="mt-px size-4 shrink-0" aria-hidden="true" />
+      <p className="m-0 flex items-start gap-2 text-sm font-medium text-destructive">
+        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>{children}</span>
       </p>
       <Button variant="outline" size="sm" onClick={onRetry}>

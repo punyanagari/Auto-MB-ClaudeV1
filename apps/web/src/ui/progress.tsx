@@ -19,7 +19,10 @@ export function ProgressBar({
       aria-valuemin={0}
       aria-valuemax={100}
       {...(label !== undefined ? { 'aria-label': label } : {})}
-      className={cn('h-2 w-full overflow-hidden rounded-full bg-muted', className)}
+      /* The mock's `ProgressTrack` / `ProgressIndicator`
+       * (`components/ui/progress` at a8e1fde): a 4px `--muted` track
+       * carrying a `--primary` fill. */
+      className={cn('h-1 w-full overflow-hidden rounded-full bg-muted', className)}
     >
       <div
         className={cn(

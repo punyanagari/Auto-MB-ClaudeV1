@@ -159,10 +159,17 @@ describe('accessibility invariants', () => {
      * shipped exactly that — its two sibling sheets carried an id, a role
      * and a name, and it carried none — and so did both "Show more" text
      * clamps and the rail's module submenus. */
+    /* The lookahead excludes Tailwind's STYLING variant — the
+     * `aria-expanded:bg-muted` in `ui/button.tsx`'s outline recipe, which
+     * keeps a disclosure's opener looking pressed while its panel is
+     * open. A variant is a class name, not an attribute: it styles the
+     * state, it does not claim it, so there is nothing for it to control.
+     * A real attribute is never followed by a colon — including the JSX
+     * boolean shorthand `<div aria-expanded>`, which this still catches. */
     const unpaired: string[] = [];
     for (const path of FILES) {
       const source = withoutComments(readFileSync(path, 'utf8'));
-      for (const match of source.matchAll(/aria-expanded/g)) {
+      for (const match of source.matchAll(/aria-expanded(?!:)/g)) {
         const tag = openingTagAt(source, match.index);
         if (!tag.includes('aria-controls')) {
           unpaired.push(`${label(path)}:${String(lineOf(source, match.index))}`);

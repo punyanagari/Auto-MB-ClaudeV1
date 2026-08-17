@@ -1,3 +1,4 @@
+import { cn } from '../lib/cn.js';
 import { Badge } from './badge.js';
 
 /** Every lifecycle status the product renders as a chip, mapped to the badge
@@ -47,16 +48,32 @@ function toneOf(status: string) {
   return status in CHIP_TONES ? CHIP_TONES[status as ChipStatus] : 'neutral';
 }
 
+/** The mock's status badge, verbatim from `components/shared` at
+ * a8e1fde: a 24px `rounded-md` chip — not the stock pill — carrying 11px
+ * semibold capitalised text behind a 6px dot that inherits the ink at 70%
+ * opacity.
+ *
+ * The dot NEVER carries the meaning on its own. It is decoration in front
+ * of a word, which is what keeps record state off the colour-only path
+ * (WCAG 1.4.1) and what the axe gate checks. Do not "tidy" a status
+ * surface down to the dot. */
+const STATUS_SHAPE = 'h-6 rounded-md px-2 text-[11px] font-semibold capitalize';
+
 /** A lifecycle status, rendered in the tone its stage earns. Statuses arrive
  * from the contracts as open strings, so an unmapped one reads neutral
  * instead of losing its chip. */
 export function StatusChip({
   status,
   children,
+  className,
   ...props
 }: Omit<React.ComponentProps<typeof Badge>, 'variant'> & { readonly status: string }) {
   return (
-    <Badge variant={toneOf(status)} {...props}>
+    <Badge variant={toneOf(status)} className={cn(STATUS_SHAPE, className)} {...props}>
+      <span
+        aria-hidden="true"
+        className="mr-1.5 size-1.5 shrink-0 rounded-full bg-current opacity-70"
+      />
       {children ?? status}
     </Badge>
   );

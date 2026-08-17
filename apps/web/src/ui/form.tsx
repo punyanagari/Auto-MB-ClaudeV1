@@ -8,8 +8,11 @@ export function Field({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-field=""
+      /* The mock's `Field` + `FieldLabel` (`components/ui/field` at
+       * a8e1fde): a vertical `gap-2` group whose label is 14px medium on
+       * a snug leading. */
       className={cn(
-        'my-3 flex max-w-[34rem] flex-col gap-1.5 [&>label]:text-[13px] [&>label]:font-medium',
+        'my-3 flex max-w-[34rem] flex-col gap-2 [&>label]:text-sm [&>label]:leading-snug [&>label]:font-medium',
         className,
       )}
       {...props}
@@ -48,12 +51,18 @@ export function Actions({ className, ...props }: React.ComponentProps<'div'>) {
 
 /** An editor's primary controls, kept visible while the form scrolls. The
  * negative margins bleed it to the card's edges so it picks up the card's
- * bottom corners. */
+ * bottom corners, so they track `ui/card.tsx`'s padding — the mock's
+ * `--card-spacing` of 4 — and the radius tracks its `rounded-xl`.
+ *
+ * The fill stays `--card` rather than the mock's `bg-muted/50` footer
+ * tint, and that is deliberate: this bar is STICKY over its own scrolling
+ * form, so a translucent one would let half-typed fields read through the
+ * buttons. A dialog footer, which sits over nothing, does use the tint. */
 export function ActionBar({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'sticky bottom-0 -mx-5 -mb-5 mt-4 flex items-center gap-2 rounded-b-xl border-t border-border bg-card px-5 py-3 print:hidden',
+        'sticky bottom-0 -mx-4 -mb-4 mt-4 flex items-center gap-2 rounded-b-xl border-t border-border bg-card px-4 py-3 print:hidden',
         className,
       )}
       {...props}
@@ -61,7 +70,9 @@ export function ActionBar({ className, ...props }: React.ComponentProps<'div'>) 
   );
 }
 
-const ERROR_TEXT = 'my-2 text-[13px] font-medium text-destructive';
+/* The mock's `FieldError`: 14px destructive ink. The weight stays medium
+ * — these two are the form's alerts, not its descriptions. */
+const ERROR_TEXT = 'my-2 text-sm font-medium text-destructive';
 
 /** Why an action failed. Always announced. */
 export function FormError({ className, ...props }: React.ComponentProps<'p'>) {
@@ -106,7 +117,7 @@ export function FormNotice({
   return (
     <p
       role="status"
-      className={cn('my-2 text-[13px] font-medium text-success', className)}
+      className={cn('my-2 text-sm font-medium text-success', className)}
       {...props}
     >
       {children}
