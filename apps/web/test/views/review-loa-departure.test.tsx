@@ -130,7 +130,7 @@ describe('ReviewLoa departure protection', () => {
        anchored by `correctTheLetter`, which waits on a loaded-only field. */
     await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }));
 
     await screen.findByRole('heading', { name: 'Dashboard', level: 1 });
     expect(screen.queryByText('Unsaved draft changes')).toBeNull();
@@ -141,7 +141,7 @@ describe('ReviewLoa departure protection', () => {
     await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
     await correctTheLetter();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }));
 
     await screen.findByRole('heading', { name: 'Unsaved draft changes' });
     // Declining leaves the reviewer exactly where they were, with the
@@ -157,7 +157,7 @@ describe('ReviewLoa departure protection', () => {
     await screen.findByRole('heading', { name: 'Review loa-letter.pdf', level: 1 });
     await correctTheLetter();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }));
     await screen.findByRole('heading', { name: 'Unsaved draft changes' });
     fireEvent.click(screen.getByRole('button', { name: 'Discard and leave' }));
 

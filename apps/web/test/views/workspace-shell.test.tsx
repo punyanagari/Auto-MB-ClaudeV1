@@ -241,7 +241,7 @@ describe('OperationsWorkspace mobile shell', () => {
     expect(document.title).toBe('Dashboard · Sharma Constructions · Auto-MB');
 
     const rail = screen.getByRole('navigation', { name: 'Modules' });
-    fireEvent.click(within(rail).getByRole('button', { name: 'Works' }));
+    fireEvent.click(within(rail).getByRole('link', { name: 'Works' }));
     await screen.findByRole('heading', { name: 'Works' });
     expect(document.title).toBe('Works · Sharma Constructions · Auto-MB');
   });
@@ -272,12 +272,56 @@ describe('OperationsWorkspace mobile shell', () => {
     ]);
     // Serial Lookup is not a module: `#/serials` merged into Global search
     // and the chain is one scope inside it (docs/UX.md).
-    expect(within(rail).queryByRole('button', { name: 'Serial Lookup' })).toBeNull();
+    expect(within(rail).queryByRole('link', { name: 'Serial Lookup' })).toBeNull();
     for (const heading of ['Documents', 'Operations', 'Administration']) {
       expect(within(rail).getByText(heading)).toBeTruthy();
     }
     // Bills is a Work section, not a module (docs/UX.md).
-    expect(within(rail).queryByRole('button', { name: 'Bills' })).toBeNull();
+    expect(within(rail).queryByRole('link', { name: 'Bills' })).toBeNull();
+  });
+
+  it('gives every rail destination the fragment it opens', async () => {
+    // The point of the anchors: the address a middle-click opens is the
+    // one a plain click produces, so a destination can be copied out of
+    // the rail and pasted back in. A `<button>` could promise neither.
+    renderWorkspace();
+    const rail = await screen.findByRole('navigation', { name: 'Modules' });
+    expect(
+      within(rail)
+        .getAllByRole('link')
+        .map((item) => [item.textContent, item.getAttribute('href')]),
+    ).toEqual([
+      ['Dashboard', '#/'],
+      ['Works', '#/works'],
+      ['Challans', '#/challans'],
+      ['Invoices', '#/invoices'],
+      ['Quotations', '#/quotations'],
+      ['Installations', '#/installations'],
+      ['Global search', '#/search'],
+      ['Approvals', '#/approvals'],
+      ['Masters', '#/masters'],
+      ['Members', '#/members'],
+      ['Settings', '#/settings'],
+    ]);
+  });
+
+  it('leaves a modified click to the browser so the rail opens in a new tab', async () => {
+    renderWorkspace();
+    const rail = await screen.findByRole('navigation', { name: 'Modules' });
+    const invoices = within(rail).getByRole('link', { name: 'Invoices' });
+    const before = window.location.hash;
+
+    // A ctrl-click is the browser's business: nothing is prevented, the
+    // workspace stays where it is, and the href does the rest.
+    const event = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+    });
+    invoices.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(window.location.hash).toBe(before);
+    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
   });
 
   it('collapses the rail to icons and remembers the choice', async () => {
@@ -291,7 +335,7 @@ describe('OperationsWorkspace mobile shell', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     // Collapsed is a visual state, not a reachability one: every destination
     // still answers to its name.
-    expect(within(rail).getByRole('button', { name: 'Works' })).toBeTruthy();
+    expect(within(rail).getByRole('link', { name: 'Works' })).toBeTruthy();
     expect(localStorage.getItem('auto-mb.sidebar-collapsed')).toBe('true');
 
     first.unmount();
@@ -384,7 +428,7 @@ describe('OperationsWorkspace mobile shell', () => {
     // The rail is shell chrome, so it needs no arrival await on the
     // Dashboard's own fetch.
     const rail = await screen.findByRole('navigation', { name: 'Modules' });
-    fireEvent.click(within(rail).getByRole('button', { name: 'Installations' }));
+    fireEvent.click(within(rail).getByRole('link', { name: 'Installations' }));
 
     // Anchored on the loaded register rather than on its heading, which the
     // loading branch renders too (`loading-anchor-census`).
@@ -396,7 +440,7 @@ describe('OperationsWorkspace mobile shell', () => {
   it('reaches the invoice register from the Documents rail', async () => {
     renderWorkspace();
     const rail = await screen.findByRole('navigation', { name: 'Modules' });
-    fireEvent.click(within(rail).getByRole('button', { name: 'Invoices' }));
+    fireEvent.click(within(rail).getByRole('link', { name: 'Invoices' }));
 
     // Anchored on the loaded register rather than on its heading, which the
     // loading branch renders too (`loading-anchor-census`).
@@ -569,7 +613,10 @@ describe('OperationsWorkspace mobile shell', () => {
       const quantity = screen.getByLabelText('Quantity of A/1 on this challan');
       fireEvent.change(quantity, { target: { value: '1' } });
 
-      fireEvent.click(screen.getByRole('button', { name: 'Home' }));
+      // The bar cell is an anchor now, and the guard still catches it:
+      // `navigateOnClick` prevents the default and routes the plain click
+      // through `navigate`, which is where the departure prompt lives.
+      fireEvent.click(screen.getByRole('link', { name: 'Home' }));
       expect(
         screen.getByRole('dialog', { name: 'Unsaved draft changes' }),
       ).toBeTruthy();
@@ -675,7 +722,7 @@ describe('OperationsWorkspace hash routing', () => {
     expect(window.location.hash).toBe('#/');
 
     // In-app navigation writes the hash…
-    fireEvent.click(screen.getAllByRole('button', { name: 'Works' })[0] as HTMLElement);
+    fireEvent.click(screen.getAllByRole('link', { name: 'Works' })[0] as HTMLElement);
     expect(await screen.findByRole('heading', { name: 'Works' })).toBeTruthy();
     expect(window.location.hash).toBe('#/works');
 

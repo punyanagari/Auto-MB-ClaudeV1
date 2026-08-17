@@ -47,11 +47,21 @@ export function IrpPanel({
   const mayRegister = canIssue && canManageStatutory;
   const mayCancel = canCancel && canManageStatutory;
   return (
-    <>
-      <h4>Government e-invoicing</h4>
+    /* `.data-surface`, the mock's shared panel wrapper (docs/DESIGN.md
+       § Component-layer conventions), so the transport reads as one card
+       beside the invoice it belongs to rather than as loose markup under a
+       bold line. The statutory states below stay spelled out — a provider
+       state is never reduced to a colour or an icon. */
+    <section
+      className="data-surface mt-4 flex flex-col gap-3 p-4"
+      aria-labelledby="irp-panel-heading"
+    >
+      <h4 id="irp-panel-heading" className="m-0 text-sm font-medium">
+        Government e-invoicing
+      </h4>
       {invoice.irn === null ? (
         <>
-          <p className="text-muted-foreground">
+          <p className="m-0 text-sm text-muted-foreground">
             Issued locally. Whitebooks can register the frozen invoice at the IRP. An
             unknown result is reconciled by document details and is never blindly
             generated twice.
@@ -99,7 +109,7 @@ export function IrpPanel({
               Copy e-invoice payload
             </Button>
           </Actions>
-          <p className="text-muted-foreground">
+          <p className="m-0 text-sm text-muted-foreground">
             Provider state: <strong>{invoice.irpProviderState}</strong>
           </p>
           {mayRegister && (
@@ -193,7 +203,7 @@ export function IrpPanel({
         </>
       ) : (
         <>
-          <p>
+          <p className="m-0">
             <StatusChip status={invoice.irpProviderState}>
               {invoice.irpProvider === 'whitebooks'
                 ? `Whitebooks · ${invoice.irpProviderState}`
@@ -202,11 +212,11 @@ export function IrpPanel({
                   : `manual — ${invoice.irpProviderState} · unverified`}
             </StatusChip>
           </p>
-          <dl>
-            <dt>IRN</dt>
-            <dd className={wrapCell}>{invoice.irn}</dd>
-            <dt>Acknowledgement</dt>
-            <dd>
+          <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-muted-foreground">IRN</dt>
+            <dd className={`m-0 font-mono ${wrapCell}`}>{invoice.irn}</dd>
+            <dt className="text-muted-foreground">Acknowledgement</dt>
+            <dd className="m-0 tabular-nums">
               {invoice.ackNumber ?? '—'}
               {invoice.ackDateText !== null && ` · ${invoice.ackDateText}`}
               {invoice.ackDateText === null &&
@@ -215,8 +225,8 @@ export function IrpPanel({
             </dd>
             {invoice.irpProviderState === 'registered' && (
               <>
-                <dt>IRN cancellation window</dt>
-                <dd>
+                <dt className="text-muted-foreground">IRN cancellation window</dt>
+                <dd className="m-0">
                   {invoice.irpCancelWindowClosesAt === null
                     ? 'Closed — the acknowledgement instant cannot be proven from the retained evidence'
                     : invoice.irpCancelWindowOpen
@@ -236,7 +246,7 @@ export function IrpPanel({
             invoice.irpProvider === 'whitebooks' &&
             invoice.irpProviderState === 'registered' &&
             !invoice.irpCancelWindowOpen && (
-              <p className="text-muted-foreground">
+              <p className="m-0 text-sm text-muted-foreground">
                 NIC accepts an IRN cancellation only within 24 hours of acknowledgement
                 {invoice.irpCancelWindowClosesAt === null
                   ? ', and this record’s acknowledgement instant cannot be proven'
@@ -392,6 +402,6 @@ export function IrpPanel({
             )}
         </>
       )}
-    </>
+    </section>
   );
 }

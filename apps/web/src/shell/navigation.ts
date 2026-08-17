@@ -11,7 +11,7 @@ import {
   Users,
   Wrench,
 } from 'lucide-react';
-import type { WorkspaceView } from '../lib/workspace-routes.js';
+import { workspaceHashOf, type WorkspaceView } from '../lib/workspace-routes.js';
 
 /** The modules the rail can open. One key per lamp: a module's register and
  * an opened record inside it light the same lamp. */
@@ -125,6 +125,18 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
     case 'settings':
       return { name: 'settings' };
   }
+}
+
+/** Where a rail destination points, as a plain fragment.
+ *
+ * The mock's rail is a list of Next `Link`s (`components/app-sidebar` at
+ * fdfe5ef), and `docs/UX.md` § navigation asks that every mock `Link`
+ * become a real anchor with a hash href. This is that href: the same
+ * view `onOpenModule` would set, serialised through the one serializer,
+ * so the address a middle-click opens and the address the click produces
+ * cannot drift apart. */
+export function moduleHash(key: ModuleKey): string {
+  return workspaceHashOf({ view: defaultViewOf(key) });
 }
 
 export function activeModuleOf(view: WorkspaceView): ModuleKey {

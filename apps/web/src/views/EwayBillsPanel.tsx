@@ -4,6 +4,7 @@ import { formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import { EmptyState } from '../ui/state.js';
 import { DataTable } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
@@ -89,8 +90,17 @@ export function EwayBillsPanel({
   };
   const hasLiveBill = ewayBills.some((bill) => bill.status !== 'cancelled');
   return (
-    <>
-      <h4>E-way bills</h4>
+    /* `.data-surface`, the mock's shared panel wrapper (docs/DESIGN.md
+       § Component-layer conventions). The carriage record is its own card
+       under the document that moves the goods, beside the IRP transport and
+       the credit note. */
+    <section
+      className="data-surface mt-4 flex flex-col gap-3 p-4"
+      aria-labelledby="eway-bills-heading"
+    >
+      <h4 id="eway-bills-heading" className="m-0 text-sm font-medium">
+        E-way bills
+      </h4>
       {source.refusal !== null && <FormError>{source.refusal}</FormError>}
       {source.eligible && canModify && !hasLiveBill && (
         <>
@@ -189,7 +199,7 @@ export function EwayBillsPanel({
                     name="eway-new-vehicle"
                     pattern="[A-Z0-9]{6,12}"
                   />
-                  <p className="text-muted-foreground">
+                  <p className="m-0 text-sm text-muted-foreground">
                     A road movement names a vehicle; rail, air and ship name a transport
                     document instead.
                   </p>
@@ -341,17 +351,17 @@ export function EwayBillsPanel({
           </tbody>
         </DataTable>
       ) : (
-        <p className="text-muted-foreground">
+        <EmptyState>
           No e-way bill has been raised for this{' '}
           {source.kind === 'tax_invoice' ? 'invoice' : 'delivery challan'}.
-        </p>
+        </EmptyState>
       )}
 
       {ewayBills.some((bill) => bill.renderedAvailable === true) && (
         // Standing legal text, not a transient success notice: a FormNotice
         // self-destructs after a few seconds, and this disclaimer must stay
         // visible for as long as a rendered summary exists.
-        <p className="text-muted-foreground">
+        <p className="m-0 text-sm text-muted-foreground">
           The rendered summary is a convenience print of the facts recorded here. The
           statutory e-way bill is the one held on the NIC portal.
         </p>
@@ -563,6 +573,6 @@ export function EwayBillsPanel({
               </form>
             </Disclosure>
           ))}
-    </>
+    </section>
   );
 }

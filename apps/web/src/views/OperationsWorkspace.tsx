@@ -25,6 +25,8 @@ import {
 import type { ApiClient, MeResponse } from '../api.js';
 import { useDocumentTitle } from '../lib/document-title.js';
 import {
+  mastersHash,
+  navigateOnClick,
   parseWorkspaceHash,
   workspaceHashOf,
   type WorkspaceRoute,
@@ -725,6 +727,7 @@ export function OperationsWorkspace({
     works: [
       {
         label: 'All Works',
+        href: workspaceHashOf({ view: { name: 'works' } }),
         open: () => {
           navigate({ name: 'works' });
         },
@@ -734,6 +737,7 @@ export function OperationsWorkspace({
         ? [
             {
               label: 'Upload LOA',
+              href: workspaceHashOf({ view: { name: 'upload' } }),
               open: () => {
                 navigate({ name: 'upload' });
               },
@@ -744,6 +748,7 @@ export function OperationsWorkspace({
     ],
     masters: MASTERS_CATEGORIES.map((category) => ({
       label: category.label,
+      href: mastersHash(category.key),
       open: () => {
         navigate({ name: 'masters' }, { mastersTab: category.key });
       },
@@ -1392,30 +1397,37 @@ export function OperationsWorkspace({
         aria-label="Mobile navigation"
         inert={mobileMenuOpen || pendingDeparture !== null}
       >
-        <button
-          type="button"
+        {/* The bar's two destinations are the mock's own `Link`s, so they
+            are real anchors here: a long-press offers "open in new tab"
+            and the address can be copied, which a button never allows.
+            A plain tap still navigates in-app through `navigate`, keeping
+            the dirty-editor guard on the path. */}
+        <a
+          href={workspaceHashOf({ view: { name: 'dashboard' } })}
           className={`${MOBILE_BAR_CELL} ${
             activeModule === 'dashboard' ? 'text-primary' : 'text-muted-foreground'
           }`}
-          onClick={() => {
+          aria-current={activeModule === 'dashboard' ? 'page' : undefined}
+          onClick={navigateOnClick(() => {
             navigate({ name: 'dashboard' });
-          }}
+          })}
         >
           <Home className="size-5" aria-hidden="true" />
           Home
-        </button>
-        <button
-          type="button"
+        </a>
+        <a
+          href={workspaceHashOf({ view: { name: 'works' } })}
           className={`${MOBILE_BAR_CELL} ${
             activeModule === 'works' ? 'text-primary' : 'text-muted-foreground'
           }`}
-          onClick={() => {
+          aria-current={activeModule === 'works' ? 'page' : undefined}
+          onClick={navigateOnClick(() => {
             navigate({ name: 'works' });
-          }}
+          })}
         >
           <FolderKanban className="size-5" aria-hidden="true" />
           Works
-        </button>
+        </a>
         {/* Both sheet triggers drop `aria-expanded`/`aria-controls`: what
             they open is now a modal dialog that names itself, traps focus
             and restores it, not a disclosure sitting in the page. */}

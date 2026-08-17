@@ -53,9 +53,18 @@ export function CreditNotesPanel({
   const mayCancelAtPortal = canCancel && canManageStatutory;
   const liveNote = creditNotes.find((note) => note.status !== 'cancelled') ?? null;
   return (
-    <>
-      <h4>Credit note (Section 34)</h4>
-      <p className="text-muted-foreground">
+    /* `.data-surface`, the mock's shared panel wrapper (docs/DESIGN.md
+       § Component-layer conventions). The Section 34 remedy is its own
+       card beside the invoice and the IRP transport, which is how the mock
+       stacks a document's subordinate surfaces. */
+    <section
+      className="data-surface mt-4 flex flex-col gap-3 p-4"
+      aria-labelledby="credit-notes-heading"
+    >
+      <h4 id="credit-notes-heading" className="m-0 text-sm font-medium">
+        Credit note (Section 34)
+      </h4>
+      <p className="m-0 text-sm text-muted-foreground">
         A credit note credits this invoice IN FULL and supersedes it, releasing its
         Measurement Book for a corrected invoice — the lawful remedy once NIC&apos;s
         24-hour IRN cancellation window has closed. The note is an IRN document of its
@@ -63,7 +72,7 @@ export function CreditNotesPanel({
         window.
       </p>
       {invoice.status === 'superseded' && (
-        <p>
+        <p className="m-0 text-sm">
           <strong>Superseded:</strong> an issued credit note replaced this invoice in
           full. Its issued facts and IRN evidence stay frozen; the Measurement Book it
           billed is released.
@@ -207,35 +216,37 @@ export function CreditNotesPanel({
       )}
       {liveNote !== null && liveNote.status !== 'draft' && (
         <>
-          <dl>
-            <dt>Credit note</dt>
-            <dd>
+          <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            <dt className="text-muted-foreground">Credit note</dt>
+            <dd className="m-0 tabular-nums">
               {liveNote.noteNumber} · {formatDate(liveNote.noteDate)} ·{' '}
               {liveNote.totalAmount === null ? '—' : formatInr(liveNote.totalAmount)}
             </dd>
-            <dt>Reason</dt>
-            <dd className={wrapCell}>{liveNote.reason}</dd>
-            <dt>Recipient ITC (Section 34(2))</dt>
-            <dd>{liveNote.recipientItcStatus.replaceAll('_', ' ')}</dd>
+            <dt className="text-muted-foreground">Reason</dt>
+            <dd className={`m-0 ${wrapCell}`}>{liveNote.reason}</dd>
+            <dt className="text-muted-foreground">Recipient ITC (Section 34(2))</dt>
+            <dd className="m-0">{liveNote.recipientItcStatus.replaceAll('_', ' ')}</dd>
             {liveNote.irpReportingDeadline !== null && (
               <>
-                <dt>IRP reporting deadline</dt>
-                <dd>{formatDate(liveNote.irpReportingDeadline)}</dd>
+                <dt className="text-muted-foreground">IRP reporting deadline</dt>
+                <dd className="m-0 tabular-nums">
+                  {formatDate(liveNote.irpReportingDeadline)}
+                </dd>
               </>
             )}
             {liveNote.irn !== null && (
               <>
-                <dt>IRN</dt>
-                <dd className={wrapCell}>{liveNote.irn}</dd>
-                <dt>Acknowledgement</dt>
-                <dd>
+                <dt className="text-muted-foreground">IRN</dt>
+                <dd className={`m-0 font-mono ${wrapCell}`}>{liveNote.irn}</dd>
+                <dt className="text-muted-foreground">Acknowledgement</dt>
+                <dd className="m-0 tabular-nums">
                   {liveNote.ackNumber ?? '—'}
                   {liveNote.ackDateText !== null && ` · ${liveNote.ackDateText}`}
                 </dd>
                 {liveNote.irpProviderState === 'registered' && (
                   <>
-                    <dt>IRN cancellation window</dt>
-                    <dd>
+                    <dt className="text-muted-foreground">IRN cancellation window</dt>
+                    <dd className="m-0">
                       {liveNote.irpCancelWindowClosesAt === null
                         ? 'Closed — the acknowledgement instant cannot be proven'
                         : liveNote.irpCancelWindowOpen
@@ -364,7 +375,7 @@ export function CreditNotesPanel({
             liveNote.irpProvider === 'whitebooks' &&
             liveNote.irpProviderState === 'registered' &&
             !liveNote.irpCancelWindowOpen && (
-              <p className="text-muted-foreground">
+              <p className="m-0 text-sm text-muted-foreground">
                 NIC accepts an IRN cancellation only within 24 hours of acknowledgement;
                 this credit note&apos;s window has closed, so it remains registered and
                 cannot be cancelled.
@@ -477,6 +488,6 @@ export function CreditNotesPanel({
             )}
         </>
       )}
-    </>
+    </section>
   );
 }

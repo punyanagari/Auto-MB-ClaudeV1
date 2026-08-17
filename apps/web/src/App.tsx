@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { Organisation } from '@auto-mb/contracts';
-import { AlertTriangle, Building2 } from 'lucide-react';
+import { AlertTriangle, FileCheck2 } from 'lucide-react';
 import { createApiClient, type ApiClient, type MeResponse } from './api.js';
 import { useDocumentTitle } from './lib/document-title.js';
+import { cn } from './lib/cn.js';
 import { Button } from './ui/button.js';
+import { Card, CardHeader } from './ui/card.js';
 import { OperationsWorkspace } from './views/OperationsWorkspace.js';
 import { OrganisationOnboarding } from './views/OrganisationOnboarding.js';
 import { OrgPicker } from './views/OrgPicker.js';
@@ -94,6 +103,48 @@ function phaseTitle(phase: Phase): string | null {
     case 'workspace':
       return null;
   }
+}
+
+/**
+ * The frame every screen outside a workspace shares.
+ *
+ * The mock draws these pages (`app/sign-in/page`, `app/onboarding/page` at
+ * fdfe5ef) as one centred column on a full-height background: the product
+ * mark and its lede, then the screen's own surface, then a quiet line
+ * underneath. There is no chrome bar on any of them, which is why the
+ * 4.5rem product header this build carried is gone — its only live control,
+ * signing out, is the footer line here.
+ *
+ * The mark's caption is deliberately a paragraph and not a heading. This
+ * shell moves focus to the first `h1` inside `main` whenever the phase
+ * changes, and a brand line above every screen would swallow that anchor.
+ */
+function AuthPage({
+  width,
+  description,
+  footer,
+  children,
+}: {
+  /** The column's width, per screen: the mock's sign-in is `max-w-sm` and
+   * its onboarding `max-w-lg`. */
+  readonly width: string;
+  readonly description: string;
+  readonly footer?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className={cn('flex w-full flex-col gap-6', width)}>
+      <div className="text-center">
+        <span className="mx-auto flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+          <FileCheck2 className="size-5" aria-hidden="true" />
+        </span>
+        <p className="mt-3 text-xl font-semibold">Auto-MB</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      </div>
+      {children}
+      {footer}
+    </div>
+  );
 }
 
 interface AppProps {
@@ -240,115 +291,130 @@ export function App({ api: providedApi }: AppProps) {
     );
   }
 
-  if (phase.name === 'signed-out') {
-    return (
-      <main ref={mainRef}>
-        <SignIn
-          api={api}
-          onSignedIn={() => void refreshSession({ forceOrganisationChoice: true })}
-        />
-      </main>
-    );
-  }
-
-  if (phase.name === 'session-error') {
-    return (
-      <main
-        ref={mainRef}
-        className="grid min-h-screen place-items-center bg-background p-6"
-      >
-        <section className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <span className="mb-4 inline-flex size-11 items-center justify-center rounded-xl bg-warning/15 text-warning-foreground">
-            <AlertTriangle className="size-5" aria-hidden="true" />
-          </span>
-          <h1 tabIndex={-1}>Workspace temporarily unavailable</h1>
-          <p className="text-sm text-muted-foreground">{phase.message}</p>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Button onClick={() => void refreshSession()}>Try again</Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                sessionRefreshIdRef.current += 1;
-                forgetOrganisation();
-                setPhase({ name: 'signed-out' });
-              }}
-            >
-              Return to sign in
-            </Button>
-          </div>
-        </section>
-      </main>
-    );
-  }
+  /* The mock's quiet footer line under the card, carrying the one control
+     the retired header held. An account that has reached a chooser, an
+     onboarding form or the enrolment wall is signed in, so the way back
+     out has to stay on screen. */
+  const signOutFooter =
+    phase.name === 'pick-organisation' ||
+    phase.name === 'no-organisation' ||
+    phase.name === 'mfa-enrolment' ? (
+      <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
+        <span className="max-w-64 truncate">{phase.me.user.email}</span>
+        <Button variant="ghost" size="sm" onClick={() => void signOut()}>
+          Sign out
+        </Button>
+      </div>
+    ) : undefined;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="flex h-[4.5rem] items-center justify-between gap-4 border-b border-border bg-card px-4 sm:px-7 print:hidden">
-        <span className="flex items-center gap-3">
-          <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <Building2 className="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <strong className="block text-base tracking-tight">Auto-MB</strong>
-            <span className="block text-xs text-muted-foreground">
-              Contract operations
-            </span>
-          </span>
-        </span>
-        {(phase.name === 'pick-organisation' ||
-          phase.name === 'no-organisation' ||
-          phase.name === 'mfa-enrolment') && (
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="hidden max-w-64 truncate text-xs text-muted-foreground sm:inline">
-              {phase.me.user.email}
-            </span>
-            <Button variant="outline" onClick={() => void signOut()}>
-              Sign out
-            </Button>
-          </div>
-        )}
-      </header>
+    <main
+      ref={mainRef}
+      className="flex min-h-svh items-center justify-center bg-background px-4 py-10"
+    >
+      {phase.name === 'signed-out' && (
+        <AuthPage
+          width="max-w-sm"
+          description="Secure access to railway contract operations."
+        >
+          <SignIn
+            api={api}
+            onSignedIn={() => void refreshSession({ forceOrganisationChoice: true })}
+          />
+        </AuthPage>
+      )}
 
-      <main ref={mainRef}>
-        {phase.name === 'loading' && (
-          <div className="grid min-h-[calc(100vh-4.5rem)] place-items-center p-8">
-            <div className="text-center" role="status">
-              <span className="mx-auto mb-4 block size-10 animate-pulse rounded-2xl bg-primary/15" />
-              <p className="font-medium">Opening your workspace…</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Checking your session and organisation access.
-              </p>
+      {phase.name === 'loading' && (
+        <AuthPage
+          width="max-w-sm"
+          description="Checking your session and organisation access."
+        >
+          <Card className="text-center" role="status">
+            <span className="mx-auto mb-3 block size-10 animate-pulse rounded-xl bg-primary/15" />
+            <p className="m-0 text-sm font-medium">Opening your workspace…</p>
+          </Card>
+        </AuthPage>
+      )}
+
+      {phase.name === 'session-error' && (
+        <AuthPage
+          width="max-w-lg"
+          description="Your session could not be read just now."
+        >
+          <Card>
+            <CardHeader>
+              <h1 tabIndex={-1} className="text-base font-semibold">
+                Workspace temporarily unavailable
+              </h1>
+              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning-foreground">
+                <AlertTriangle className="size-4" aria-hidden="true" />
+              </span>
+            </CardHeader>
+            <p className="m-0 text-sm text-muted-foreground">{phase.message}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => void refreshSession()}>Try again</Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  sessionRefreshIdRef.current += 1;
+                  forgetOrganisation();
+                  setPhase({ name: 'signed-out' });
+                }}
+              >
+                Return to sign in
+              </Button>
             </div>
-          </div>
-        )}
-        {phase.name === 'pick-organisation' && (
+          </Card>
+        </AuthPage>
+      )}
+
+      {phase.name === 'pick-organisation' && (
+        <AuthPage
+          width="max-w-lg"
+          description="Secure access to railway contract operations."
+          footer={signOutFooter}
+        >
           <OrgPicker
             organisations={phase.organisations}
             memberships={phase.me.memberships}
             onSelect={selectOrganisation}
           />
-        )}
-        {phase.name === 'no-organisation' && (
+        </AuthPage>
+      )}
+
+      {phase.name === 'no-organisation' && (
+        <AuthPage
+          width="max-w-lg"
+          description="Set the legal identity used across statutory documents."
+          footer={signOutFooter}
+        >
           <OrganisationOnboarding api={api} onCreated={() => void refreshSession()} />
-        )}
-        {phase.name === 'mfa-enrolment' && (
-          <div className="mx-auto mt-[8vh] mb-8 w-full max-w-[30rem] px-4">
-            <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-              <h1 tabIndex={-1}>Two-factor authentication required</h1>
-              <p className="text-sm text-muted-foreground text-pretty">
-                Your account can issue, cancel, or approve legal documents, so it must
-                be protected by an authenticator app before the workspace opens.
-              </p>
-              <TwoFactorEnrolment
-                api={api}
-                onEnrolled={() =>
-                  void refreshSession({ forceOrganisationChoice: true })
-                }
-              />
-            </section>
-          </div>
-        )}
-      </main>
-    </div>
+        </AuthPage>
+      )}
+
+      {phase.name === 'mfa-enrolment' && (
+        <AuthPage
+          width="max-w-lg"
+          description="Secure access to railway contract operations."
+          footer={signOutFooter}
+        >
+          <Card>
+            <CardHeader>
+              <h1 tabIndex={-1} className="text-base font-semibold">
+                Two-factor authentication required
+              </h1>
+            </CardHeader>
+            <p className="m-0 text-sm text-muted-foreground text-pretty">
+              Your account can issue, cancel, or approve legal documents, so it must be
+              protected by an authenticator app before the workspace opens.
+            </p>
+            <TwoFactorEnrolment
+              api={api}
+              onEnrolled={() => void refreshSession({ forceOrganisationChoice: true })}
+            />
+          </Card>
+        </AuthPage>
+      )}
+    </main>
   );
 }
