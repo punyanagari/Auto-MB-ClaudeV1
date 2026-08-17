@@ -151,6 +151,7 @@ describe('UploadLoa', () => {
       <UploadLoa
         api={api}
         organisationId={ORG_ID}
+        tenderId={null}
         onUploaded={vi.fn()}
         onOpenDocument={vi.fn()}
         onOpenWork={vi.fn()}
@@ -189,6 +190,7 @@ describe('UploadLoa', () => {
       <UploadLoa
         api={stubApi({ uploadLoa })}
         organisationId={ORG_ID}
+        tenderId={null}
         onUploaded={vi.fn()}
         onOpenDocument={onOpenDocument}
         onOpenWork={vi.fn()}
@@ -225,6 +227,7 @@ describe('UploadLoa', () => {
       <UploadLoa
         api={stubApi({ uploadLoa })}
         organisationId={ORG_ID}
+        tenderId={null}
         onUploaded={vi.fn()}
         onOpenDocument={vi.fn()}
         onOpenWork={onOpenWork}

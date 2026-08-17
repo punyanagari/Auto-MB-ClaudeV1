@@ -16,6 +16,7 @@ const WORK_ID = '33333333-3333-4333-8333-333333333333';
 const DOC_ID = '22222222-2222-4222-8222-222222222222';
 const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
 const INVOICE_ID = '55555555-5555-4555-8555-555555555555';
+const TENDER_ID = '66666666-6666-4666-8666-666666666666';
 
 /** One route per WorkspaceView kind — the union's exhaustiveness proof
  * for the serializer. A new view name that is not added here fails the
@@ -23,7 +24,7 @@ const INVOICE_ID = '55555555-5555-4555-8555-555555555555';
 const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'dashboard' } },
   { view: { name: 'works' } },
-  { view: { name: 'upload' } },
+  { view: { name: 'upload', tenderId: null } },
   { view: { name: 'review', documentId: DOC_ID } },
   { view: { name: 'work', workId: WORK_ID } },
   { view: { name: 'work', workId: WORK_ID }, workTab: 'bills' },
@@ -54,6 +55,10 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'approvals' } },
   { view: { name: 'installations', workId: null } },
   { view: { name: 'installations', workId: WORK_ID } },
+  { view: { name: 'upload', tenderId: TENDER_ID } },
+  { view: { name: 'tenders' } },
+  { view: { name: 'tender-new' } },
+  { view: { name: 'tender', tenderId: TENDER_ID } },
   { view: { name: 'members' } },
   { view: { name: 'settings' } },
 ];

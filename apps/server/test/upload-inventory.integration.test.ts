@@ -126,6 +126,16 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
       '?filename=certificate.pdf&certificateNumber=IC/1&certificateDate=2026-01-05',
   },
   {
+    // The tender notice (0083): the NIT is read for a proposal on the
+    // request path, so the gate has to hold before pdftotext runs, not
+    // only before storage.
+    key: 'POST /api/tender-notices',
+    sourceFile: 'routes/tenders.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=inventory.pdf',
+  },
+  {
     key: 'POST /api/challans/:id/signed-copy',
     sourceFile: 'routes/challans.ts',
     format: 'pdf',

@@ -20,11 +20,11 @@ let createdTriggers: string[] = [];
  * The panel's coverage reading was "131 triggers, 4 named in tests": the
  * trigger population grows silently because nothing counts it. This census
  * makes each addition an explicit edit. Raising the number is a normal
- * part of adding a trigger — the value of the constant is that it cannot
+ * part of adding a trigger â€” the value of the constant is that it cannot
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 183;
+const TRIGGER_CENSUS = 190;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -127,7 +127,7 @@ describe('tenant migration contract', () => {
     );
     expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
     expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
-    // 0046's installation ceiling goes, trigger and function together —
+    // 0046's installation ceiling goes, trigger and function together â€”
     // a dropped trigger over a surviving function is a guard that comes
     // back the next time somebody re-creates the trigger.
     expect(sql).toContain('DROP TRIGGER installations_quantity_ceiling_guard');
@@ -160,8 +160,8 @@ describe('tenant migration contract', () => {
     );
     expect(installationSync).toContain('FOR UPDATE');
     // Both work_items triggers are WHEN-gated, and that is the point of
-    // them being two. Ungated, every write of a work item — the bulk
-    // insert of an LOA confirmation, a payment-category sweep — would run
+    // them being two. Ungated, every write of a work item â€” the bulk
+    // insert of an LOA confirmation, a payment-category sweep â€” would run
     // the installations aggregate for an answer that cannot have changed.
     expect(sql).toMatch(
       /CREATE TRIGGER work_items_pending_variation_insert\nBEFORE INSERT ON work_items\nFOR EACH ROW WHEN \(NEW\.pending_variation\)/,
@@ -180,7 +180,7 @@ describe('tenant migration contract', () => {
     // installation.
     expect(sql).not.toContain('allow_excess_delivery');
     // A database restored from before 0046 can hold an over-installed
-    // item, so the flag is backfilled — driven from the INSTALLATIONS
+    // item, so the flag is backfilled â€” driven from the INSTALLATIONS
     // side, because the ADD COLUMN above holds ACCESS EXCLUSIVE on
     // work_items and an item with no installation cannot be
     // over-installed.
@@ -213,14 +213,14 @@ describe('tenant migration contract', () => {
     expect([
       ...sql.matchAll(/'\^\(\?=\.\*\[0-9\]\)\[0-9A-Z\]\{6,18\}\$'/g),
     ]).toHaveLength(2);
-    // A contact's four payable fields are all present or all absent — a
+    // A contact's four payable fields are all present or all absent â€” a
     // partial set is not a beneficiary anyone can be paid as.
     expect(sql).toContain('CONSTRAINT contacts_bank_details_shape_check');
     // No mapping COLUMN on work_items: the link is derived from the
     // aliases, and a nullable foreign key with no writer would feed
     // counts that all read zero. Asserted over the DDL rather than the
     // whole file, because the header names the column it declines to add
-    // and explains why — which is the record this test protects.
+    // and explains why â€” which is the record this test protects.
     expect(sql).not.toMatch(/ADD COLUMN canonical_item_id/);
     expect(sql).not.toContain('ALTER TABLE work_items');
     // One canonical item per wording, case- and space-insensitively: two
@@ -250,7 +250,7 @@ describe('tenant migration contract', () => {
     expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
     // What 0046 wrote, asserted over 0046's own bytes. Its installation
     // ceiling was lifted by 0077 (owner decision, 2026-08-17) and the
-    // assertions here describe the migration, not the live schema — an
+    // assertions here describe the migration, not the live schema â€” an
     // applied migration's text never changes, so this stays true.
     expect(sql).toContain('installations_quantity_ceiling_guard');
     expect(sql).toContain('delivery_challans_quantity_ceiling_guard');
@@ -298,7 +298,7 @@ describe('tenant migration contract', () => {
     // One row per notified (rate, start) pair per organisation.
     expect(sql).toContain('UNIQUE (organisation_id, rate, effective_from)');
     // The guard is SECURITY DEFINER, so it must scope its read to the row's
-    // own tenant — the 0046 review found a definer guard reading across
+    // own tenant â€” the 0046 review found a definer guard reading across
     // tenants once, and this trigger must not repeat it.
     expect(sql).toContain('tax_invoices_gst_rate_guard');
     expect(sql).toContain('g.organisation_id = NEW.organisation_id');
@@ -362,7 +362,7 @@ describe('tenant migration contract', () => {
     expect(sql).toContain(
       'the invoice stays superseded while an issued credit note exists',
     );
-    // The 0047 scope CHECK gains an EXPLICIT credit_note arm — the old
+    // The 0047 scope CHECK gains an EXPLICIT credit_note arm â€” the old
     // ELSE true must not silently exempt the new type (finding 8).
     expect(sql).toMatch(/WHEN 'credit_note' THEN\s+template LIKE '%\{FY%'/);
     // The provider ledger gains its third, mutually exclusive target.
@@ -619,7 +619,7 @@ describe('tenant migration contract', () => {
     // `packages/contracts` and adding that edge for one census would buy
     // a workspace dependency to check five strings. The derived
     // comparison lives where both are already in reach and the constraint
-    // can be read from the live catalog rather than from this text —
+    // can be read from the live catalog rather than from this text â€”
     // `apps/server/test/company-documents.integration.test.ts`, "the
     // schema's categories are exactly the contract's".
     expect(sql).toMatch(
@@ -750,13 +750,13 @@ describe('tenant migration contract', () => {
     expect(sql).not.toContain('CREATE TYPE');
 
     // THE GATE IS QUANTITATIVE. One function, summing certified coverage
-    // per item and comparing it against cumulative despatch — existence
+    // per item and comparing it against cumulative despatch â€” existence
     // would let one call for 10 release 500. Both enforcement points call
     // this same function, which is what stops the two drifting.
     expect(sql).toContain('CREATE FUNCTION app_private.inspection_dispatch_shortfall(');
     expect(sql).toMatch(/SELECT sum\(ici\.quantity\) AS certified/);
     expect(sql).toMatch(/moved\.despatched > coalesce\(cover\.certified, 0\)/);
-    // …and it matches the clause's OWN agency and the call's own Work.
+    // â€¦and it matches the clause's OWN agency and the call's own Work.
     expect(sql).toContain('AND ic.agency = c.agency');
     expect(sql).toContain('AND ici.work_id = c.work_id');
 
@@ -857,5 +857,151 @@ describe('tenant migration contract', () => {
     );
     expect(sql).not.toContain('DELETE ON inspection_calls');
     expect(sql).not.toContain('DELETE ON inspection_call_documents');
+  });
+  it('binds the tender pipeline in 0083', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0083_tenders.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // Statuses are a CHECK on text, deliberately, for the reason 0079
+    // gives about its categories.
+    expect(sql).toMatch(
+      /status text NOT NULL DEFAULT 'drafted' CHECK \(status IN \(\s*'drafted',\s*'submitted',\s*'opened',\s*'awarded',\s*'lost'\s*\)\)/,
+    );
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // One tender number, one record, case-folded. One line per demand
+    // within a tender, likewise.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX tenders_number_unique\s+ON tenders \(organisation_id, lower\(tender_number\)\);/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX tender_checklist_items_title_unique\s+ON tender_checklist_items \(organisation_id, tender_id, lower\(title\)\);/,
+    );
+
+    // The closing moment is an INSTANT, and the schema says why â€” the one
+    // place in this series where a legal-looking date is not date-only,
+    // because a tender closes at a stated time of day and a bid one
+    // minute late is rejected.
+    expect(sql).toContain('bid_closes_at timestamptz NOT NULL');
+    expect(sql).toContain('The closing INSTANT, not a legal date');
+
+    // Money uses the 0065 domain, never a bare numeric.
+    expect(sql).toContain('estimated_value money_amount');
+    expect(sql).toContain('emd_amount money_amount');
+
+    // Every child FK is composite, so no row can reach across tenants â€”
+    // including the one that reaches into the company document library.
+    for (const composite of [
+      'FOREIGN KEY (organisation_id, award_loa_document_id)\n    REFERENCES loa_documents(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, confirmed_tender_id)\n    REFERENCES tenders(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, tender_id)\n    REFERENCES tenders(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, company_document_id)\n    REFERENCES company_documents(organisation_id, id)',
+    ]) {
+      expect(sql).toContain(composite);
+    }
+
+    // An award letter belongs only to an awarded tender, and only to one.
+    expect(sql).toContain('tenders_award_shape_check');
+    expect(sql).toContain('UNIQUE (organisation_id, award_loa_document_id)');
+
+    // The notice's object key carries the tenant prefix here as well as
+    // in packages/documents/src/storage.ts.
+    expect(sql).toContain('tender_notices_object_key_tenant_prefix_check');
+    expect(sql).toMatch(/CHECK \(object_key LIKE organisation_id::text \|\| '\/%'\)/);
+    expect(sql).toContain("CHECK (media_type = 'application/pdf')");
+
+    // Four tables, four policies, all in the ADR-0010 InitPlan shape.
+    for (const table of [
+      'tenders',
+      'tender_notices',
+      'tender_checklist_items',
+      'tender_status_events',
+    ]) {
+      expect(sql).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+    }
+
+    // DELETE is granted on the checklist and nowhere else: a checklist
+    // line is draft working material (AGENTS.md rule 8); a tender, its
+    // notice and its trail are records.
+    expect(sql).toContain('GRANT SELECT, INSERT, UPDATE ON tenders TO auto_mb_app;');
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON tender_notices TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON tender_checklist_items TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT ON tender_status_events TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('DELETE ON tenders');
+    expect(sql).not.toContain('DELETE ON tender_status_events');
+    expect(sql).not.toContain('DELETE ON tender_notices');
+
+    // The trail runs one way and the terminals are terminal, said in the
+    // database rather than in whichever route happened to be called.
+    expect(sql).toContain('is already %, which is final');
+    expect(sql).toContain('a tender cannot move from % to %');
+    expect(sql).toContain(
+      'CREATE TRIGGER tenders_status_transition_guard\nBEFORE UPDATE ON tenders',
+    );
+
+    // The notice and its extraction are evidence; only the confirmation
+    // link moves, and only once.
+    expect(sql).toContain(
+      'a tender notice and its extraction are immutable; upload the notice again instead',
+    );
+    expect(sql).toContain('was already confirmed into tender');
+    expect(sql).toContain(
+      'CREATE TRIGGER tender_notices_evidence_guard\nBEFORE UPDATE ON tender_notices',
+    );
+
+    // Provenance and the tenant are immutable on both tables that take
+    // UPDATE, and a tender's facts stop being correctable the moment the
+    // bid is no longer a draft.
+    expect(sql).toContain("a tender''s tenant and provenance are immutable");
+    expect(sql).toContain('and its facts can no longer be corrected');
+    expect(sql).toContain('CREATE TRIGGER tenders_update_guard');
+    expect(sql).toContain(
+      "a tender checklist line''s tender and provenance are immutable",
+    );
+    expect(sql).toContain(
+      'the attachment provenance of a tender checklist line moves only with its credential',
+    );
+    expect(sql).toContain('CREATE TRIGGER tender_checklist_items_update_guard');
+
+    // Every guard function pins its search_path, as 0067, 0077 and 0079
+    // do: a trigger that resolves identifiers through the caller's path
+    // is a trigger a shadowing object can rewrite.
+    for (const guard of [
+      'app_private.guard_tender_status()',
+      'app_private.guard_tender_update()',
+      'app_private.guard_tender_notice()',
+      'app_private.guard_tender_checklist_item_update()',
+    ]) {
+      const body = sql.slice(sql.indexOf(`CREATE FUNCTION ${guard}`));
+      expect(body.slice(0, 200), guard).toContain(
+        'SET search_path = pg_catalog, public',
+      );
+    }
+
+    // None of them runs with definer rights: none needs to read across
+    // RLS, and a definer trigger on a tenant table is a way out of it.
+    for (const guard of [
+      'app_private.guard_tender_status()',
+      'app_private.guard_tender_update()',
+      'app_private.guard_tender_notice()',
+      'app_private.guard_tender_checklist_item_update()',
+    ]) {
+      const body = sql.slice(sql.indexOf(`CREATE FUNCTION ${guard}`));
+      expect(body.slice(0, body.indexOf('$$;')), guard).not.toContain(
+        'SECURITY DEFINER',
+      );
+    }
   });
 });

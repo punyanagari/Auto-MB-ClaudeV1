@@ -35,15 +35,15 @@ const userB = 'integration-user-b';
  * completeness test below fails if this list drifts from the database. */
 /**
  * Tables that carry an `organisation_id` column and are nonetheless NOT
- * tenant-scoped in the sense this suite proves — so they are excluded from
+ * tenant-scoped in the sense this suite proves â€” so they are excluded from
  * the completeness census above rather than being quietly missing from it.
  *
  * `worker_jobs` (0072) is the only one, and the exclusion is load-bearing
  * in both directions. Its `organisation_id` is real and is exactly what
  * the worker binds before touching anything, but the ROW is not reachable
  * by the application role at all: ADR-0011 gives the table no grant and no
- * policy, so every proof in this suite — which drives reads and writes
- * through `auto_mb_app` — would fail with `permission denied` rather than
+ * policy, so every proof in this suite â€” which drives reads and writes
+ * through `auto_mb_app` â€” would fail with `permission denied` rather than
  * demonstrating isolation. The isolation that matters for the queue is
  * proved where it actually lives, in
  * `packages/db/test/worker-queue.integration.test.ts`: that the table is
@@ -84,7 +84,7 @@ const TENANT_TABLES = [
   'mb_entries',
   'work_assignments',
   // The unified Contacts master and the Work<->consignee association
-  // (0028). consignee_masters is a VIEW over contacts since 0028 — views
+  // (0028). consignee_masters is a VIEW over contacts since 0028 â€” views
   // are compatibility surfaces, not tenant tables; RLS lives on contacts.
   'contacts',
   'work_consignees',
@@ -150,6 +150,13 @@ const TENANT_TABLES = [
   // credentials and the versioned files behind them (0079).
   'company_documents',
   'company_document_versions',
+  // The tender pipeline: the confirmed tender, the notice it was read
+  // from, the bid checklist that points into the library above, and the
+  // status trail (0083).
+  'tenders',
+  'tender_notices',
+  'tender_checklist_items',
+  'tender_status_events',
   // The inspection lifecycle: the contract clause per item, the agency's
   // document checklist, and the calls, their coverage and their evidence
   // (0082).
@@ -199,7 +206,11 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // Coverage of an inspection call is settled before the agency comes;
     // the 0082 guard refuses an UPDATE-shaped change to it, and the
     // application role holds no UPDATE on the table at all.
-    table !== 'inspection_call_items',
+    table !== 'inspection_call_items' &&
+    // The tender status trail is append-only: the application role has
+    // no UPDATE, so a cross-tenant one raises 42501 rather than matching
+    // zero rows (0083).
+    table !== 'tender_status_events',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -296,13 +307,24 @@ const DELETE_REVOKED_TABLES = [
   // A counter records what a series reached; resetting it would reissue a
   // number a cancelled call still holds (0082).
   'inspection_call_counters',
+  // A tender is the answer to "why did we not bid", its notice is the
+  // evidence the record was read from, and the trail is append-only. Only
+  // the checklist deletes, and it is in DELETE_ALLOWED_TABLES below
+  // (0083).
+  'tenders',
+  'tender_notices',
+  'tender_status_events',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // A bid-checklist line is draft working material while the bid is
+  // being assembled, so it deletes; the route refuses it from submission
+  // onwards, when the list becomes the record of what went out (0083).
+  'tender_checklist_items',
   // Restoring a document's default number format DELETES the row that
-  // overrode it — configuration, cleared in place (0039).
+  // overrode it â€” configuration, cleared in place (0039).
   'document_number_series',
   // A draft invoice or e-way bill may be discarded; anything submitted or
   // generated cancels instead (0035).
@@ -366,7 +388,7 @@ let app: Sql;
 let graphA: TenantGraph;
 let graphB: TenantGraph;
 
-/** Deletes both fixture organisations' rows — the shared helper discovers
+/** Deletes both fixture organisations' rows â€” the shared helper discovers
  * the closure from the catalog and censuses foreign keys afterwards. */
 async function removeSeedResidue(): Promise<void> {
   await removeOrganisationResidue(admin, [organisationA.id, organisationB.id]);
@@ -388,7 +410,7 @@ async function countAs(
 
 /**
  * Seeds one organisation with a row in every tenant-owned table, inserted
- * through the application role inside a tenant-scoped transaction — the
+ * through the application role inside a tenant-scoped transaction â€” the
  * same path product code will use.
  */
 async function seedTenantGraph(
@@ -403,7 +425,7 @@ async function seedTenantGraph(
   // organisation under the membership floor: it atomically creates the
   // organisation, the owner membership, and the audit event. It runs with
   // a USER context and no organisation, exactly as POST /api/organisations
-  // does — since migration 0069 a tenant binding is refused outright when
+  // does â€” since migration 0069 a tenant binding is refused outright when
   // no membership backs it, and at this point the membership is the thing
   // being created.
   await withUserContext(app, userId, async (tx) => {
@@ -834,7 +856,7 @@ async function seedTenantGraph(
     //
     // It carries a settleable verdict, which it did not before 0067. The
     // payment register cannot hold a row against an unclosed measurement
-    // — that is 0067's gate, not an incidental precondition — so a suite
+    // â€” that is 0067's gate, not an incidental precondition â€” so a suite
     // that must seed one row in every tenant table now has to close this
     // book, and closing it is what reads the verdict. The per-signature
     // RULING stays the server's and is proved in the railway-bill suites;
@@ -872,8 +894,8 @@ async function seedTenantGraph(
     // A bill prepared from that closed book, and the payment register
     // against it (0067). Bill 1 above is a Milestone 5 sweep-era row with
     // no `mb_id` and can never take a payment; this is the modern shape.
-    // The figures are the point rather than the amounts: ₹10 billed, ₹7
-    // received, ₹2 kept in two named heads, ₹1 still outstanding — the
+    // The figures are the point rather than the amounts: â‚¹10 billed, â‚¹7
+    // received, â‚¹2 kept in two named heads, â‚¹1 still outstanding â€” the
     // three-figure position the register exists to state.
     const [mbBill] = await tx<{ id: string }[]>`
       insert into bills (
@@ -1261,7 +1283,7 @@ async function seedTenantGraph(
     `;
 
     // One company credential and one version of it (0079). It hangs off
-    // no Work at all — that is the point of the library — so it is
+    // no Work at all â€” that is the point of the library â€” so it is
     // seeded from the organisation alone.
     const [companyDocument] = await tx<{ id: string }[]>`
       insert into company_documents (
@@ -1290,7 +1312,7 @@ async function seedTenantGraph(
 
     // The inspection lifecycle (0082): one clause that gates despatch,
     // one checklist demand, and one call in its first state covering the
-    // item, with its checklist snapshot. Seeded `requested` on purpose —
+    // item, with its checklist snapshot. Seeded `requested` on purpose â€”
     // it is the state in which coverage may still be deleted, which is
     // what the DELETE-allowed sweep exercises.
     await tx`
@@ -1341,6 +1363,54 @@ async function seedTenantGraph(
       values (
         ${organisationId}, ${inspectionCall.id}, 'evidence',
         'Routine Test Report', true, 1
+      )
+    `;
+
+    // One tender, the notice it was confirmed from, one checklist line
+    // answered by the credential above, and the trail row its creation
+    // wrote (0083). Like the library, none of it hangs off a Work.
+    const [tender] = await tx<{ id: string }[]>`
+      insert into tenders (
+        organisation_id, tender_number, authority, title, bid_closes_at,
+        estimated_value, emd_amount, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${`NIT/${workCode}`}, 'Western Railway',
+        'Supply of passenger information systems',
+        '2027-01-15T09:30:00Z', 84000000.00, 1680000.00, ${userId}
+      )
+      returning id
+    `;
+    if (!tender) throw new Error('seed tender insert returned no row');
+    await tx`
+      insert into tender_notices (
+        organisation_id, object_key, original_filename, sha256, media_type,
+        size_bytes, extraction_status, extraction_payload,
+        confirmed_tender_id, uploaded_by_user_id
+      )
+      values (
+        ${organisationId}, ${`${organisationId}/nit/${tender.id}.pdf`},
+        'nit.pdf', ${'a'.repeat(64)}, 'application/pdf', 2048, 'review',
+        '{"review":{"seeded":true}}'::jsonb, ${tender.id}, ${userId}
+      )
+    `;
+    await tx`
+      insert into tender_checklist_items (
+        organisation_id, tender_id, title, mandatory, company_document_id,
+        attached_at, attached_by_user_id, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${tender.id}, 'GST registration', true,
+        ${companyDocument.id}, now(), ${userId}, ${userId}
+      )
+    `;
+    await tx`
+      insert into tender_status_events (
+        organisation_id, tender_id, from_status, to_status, note, actor_user_id
+      )
+      values (
+        ${organisationId}, ${tender.id}, null, 'drafted',
+        'seed: created from the tender notice', ${userId}
       )
     `;
 
@@ -1468,7 +1538,7 @@ describe('application role security posture', () => {
     // added to TENANT_TABLES, this fails instead of silently narrowing the
     // proofs below. Restricted to BASE TABLES: the consignee_masters
     // compatibility VIEW (0028) also exposes organisation_id, but a view
-    // has no RLS of its own — with security_invoker the base table's
+    // has no RLS of its own â€” with security_invoker the base table's
     // policy applies, and that base table (contacts) is in the list.
     const rows = await admin<{ table_name: string }[]>`
       select c.table_name
@@ -1488,7 +1558,7 @@ describe('application role security posture', () => {
 
   it('keeps the consignee_masters compatibility view invoker-scoped over contacts', async () => {
     // The 0028 view must stay security_invoker (the caller's own RLS and
-    // grants apply underneath) — a definer view would read contacts with
+    // grants apply underneath) â€” a definer view would read contacts with
     // the view owner's privileges and could leak across tenants.
     const [view] = await admin<{ options: string[] | null }[]>`
       select reloptions as options from pg_class
@@ -1498,7 +1568,7 @@ describe('application role security posture', () => {
     expect(view?.options ?? []).toContain('security_invoker=true');
 
     // Behavioural proof: the view answers nothing without a bound tenant
-    // and only the caller's rows with one — the contacts policy applied
+    // and only the caller's rows with one â€” the contacts policy applied
     // through the view.
     const bare = (await app.unsafe(
       `select count(*)::int as count from consignee_masters`,
@@ -1524,13 +1594,13 @@ describe('application role security posture', () => {
 describe('no-context behaviour on every tenant table', () => {
   it('returns zero rows from every tenant table without organisation context', async () => {
     for (const table of TENANT_TABLES) {
-      // The data exists (verified through the admin connection)…
+      // The data exists (verified through the admin connection)â€¦
       const adminVisible =
         (await countAs(admin, table, organisationA.id)) +
         (await countAs(admin, table, organisationB.id));
       expect(adminVisible, `${table} seed data`).toBeGreaterThanOrEqual(2);
 
-      // …but the application role sees none of it without tenant context.
+      // â€¦but the application role sees none of it without tenant context.
       const rows = (await app.unsafe(
         `select count(*)::int as count from ${table}`,
       )) as unknown as { count: number }[];
@@ -1815,7 +1885,7 @@ describe('statutory document delete guards', () => {
  *
  * Since migration 0069 `withTenant` also proves the binding before the
  * transaction runs anything, so a non-member binding no longer reaches the
- * policies at all. That is a semantics improvement, not the floor — and
+ * policies at all. That is a semantics improvement, not the floor â€” and
  * the difference matters enough that both are asserted here.
  * `bindDirectly` writes the two GUCs the way `tenant.ts` did before 0069,
  * which is what any future code path that skipped `bind_tenant` would do;
@@ -1834,7 +1904,7 @@ describe('membership floor', () => {
     // The positive control for `bindDirectly` itself. Every assertion
     // below reads "nothing is visible" through this same path, and a
     // coordinated rename of the two GUCs would make all of them
-    // vacuously true — an unbound transaction also sees nothing. This
+    // vacuously true â€” an unbound transaction also sees nothing. This
     // case fails in exactly that scenario, so the negatives keep their
     // meaning.
     await bindDirectly(organisationA.id, userA, async (tx) => {
@@ -1850,7 +1920,7 @@ describe('membership floor', () => {
   it('refuses the binding outright for a non-member, before any statement runs', async () => {
     // The bind-refusal contract, asserted once and here: the typed error
     // `@auto-mb/db` raises, Auto-MB's own SQLSTATE underneath it, and that
-    // the callback never ran. The SQLSTATE is deliberately NOT 28000 —
+    // the callback never ran. The SQLSTATE is deliberately NOT 28000 â€”
     // that is PostgreSQL's own invalid_authorization_specification, which
     // a pg_hba or LOGIN failure raises, and a caller mapping it to
     // "not a member" would report an authentication outage as a fleet of
@@ -1879,8 +1949,8 @@ describe('membership floor', () => {
   it('lets a genuine driver failure keep its own shape', async () => {
     // The other half of the discrimination: only the bind statement is
     // wrapped and only Auto-MB's SQLSTATE is converted, so an error the
-    // callback itself raises — including one carrying a PostgreSQL class
-    // 28 code — is never relabelled a membership decision.
+    // callback itself raises â€” including one carrying a PostgreSQL class
+    // 28 code â€” is never relabelled a membership decision.
     const outcome = await withTenant(
       app,
       { organisationId: organisationA.id, userId: userA },
@@ -1900,7 +1970,7 @@ describe('membership floor', () => {
 
   it('does not bind tenant context for a non-member, even with a valid organisation id', async () => {
     // userB is not a member of organisation A: every read is empty and
-    // every write is denied, no matter what the handler stamped — and this
+    // every write is denied, no matter what the handler stamped â€” and this
     // holds with the GUCs written directly, without bind_tenant's help.
     await bindDirectly(organisationA.id, userB, async (tx) => {
       const [bound] = await tx<{ organisation_id: string | null }[]>`
@@ -1934,7 +2004,7 @@ describe('membership floor', () => {
       where organisation_id = ${organisationB.id} and user_id = ${userB}
     `;
     try {
-      // Disabling the membership is enough to fail the bind …
+      // Disabling the membership is enough to fail the bind â€¦
       await expect(
         withTenant(
           app,
@@ -1942,7 +2012,7 @@ describe('membership floor', () => {
           (tx) => tx`select 1`,
         ),
       ).rejects.toBeInstanceOf(TenantBindRefusedError);
-      // … and enough for the policies to deny on their own if something
+      // â€¦ and enough for the policies to deny on their own if something
       // wrote the GUCs without asking.
       await bindDirectly(organisationB.id, userB, async (tx) => {
         const works = await tx`select id from works`;

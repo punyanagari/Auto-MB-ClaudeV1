@@ -1333,7 +1333,12 @@ The current product also includes:
 - a versioned company document library: the organisation-level credentials
   every tender and inspection asks for, uploaded once, carrying the validity
   window printed on them, with expiry derived on read (see "The company
-  document library").
+  document library");
+- the tender pipeline: NIT intake with field extraction a human confirms, a
+  bid checklist that attaches library credentials and reads their validity
+  against the tender's closing date, an iREPS status trail, and an award
+  conversion that deep-links into the ordinary LOA intake (see "The tender
+  pipeline, before there is a Work").
 
 When Whitebooks is configured, IRP transport is direct but never unattended.
 Unknown registration results become lookup-only and are never blindly
@@ -1562,6 +1567,71 @@ to read it on, and no screen listed one.
   separate columns. A locally issued invoice is never shown as
   IRP-registered without provider evidence.
 
+### The tender pipeline, before there is a Work
+
+Everything else in this product describes a contract the agency already
+holds. The work that decides whether it holds one is a Notice Inviting
+Tender, a bid package, an upload to iREPS, and weeks of waiting — and the
+two things that lose bids are a deadline nobody watched and a certificate
+that had lapsed by the day the bid was opened. The pipeline is
+organisation-level by definition: a tender belongs to no Work, because the
+Work is what winning it produces.
+
+**NIT intake proposes; a human confirms.** The notice PDF is uploaded,
+scanned for malware and read with the same Poppler `pdftotext` the LOA and
+contract-source paths use. A field reader takes the six things an NIT's
+first page states — tender number, inviting authority, name of work,
+closing date and time, estimated cost, EMD — plus the eligibility
+paragraph, each with the source text it was read from and its own
+"needs review" mark. **Nothing authoritative is written by the reading**
+(engineering rule 10): the notice is a proposal, the tender record exists
+only when a reviewer sends back the values they accepted, and it carries
+theirs rather than the machine's. A notice with no text layer is stored
+anyway, flagged, and typed in by hand — a photocopied notice is still the
+notice, and refusing it would leave the commonest real document nowhere to
+go. Unlike the LOA the reading is synchronous, because six labelled fields
+off a short notice is one extraction rather than a job.
+
+**The closing moment is an instant, not a legal date.** This is the one
+place the product departs from "legal dates are date-only": a railway
+tender closes at a stated time of day and a bid one minute late is
+rejected, so the time is the half of it that decides the outcome. The
+wall clock the notice prints is bound to the organisation's own timezone
+by the database when the tender is created, and rendered back through the
+same timezone on every read, so no browser and no server process can shift
+a deadline onto a different day.
+
+**The bid checklist points at the company document library.** Each line
+names a document the tender asks for and is either unanswered or answered
+by a credential in the library. Whether that credential is any good is a
+question about the tender's closing date, not about today: a certificate
+lapsing in three weeks is green in the library and useless for a bid that
+opens in four. So validity is derived on every read by comparing the
+attached credential's newest version's expiry to the tender's closing day —
+`expired by close` when it lapses first, `lapses soon after` inside the
+same sixty-day window the library uses, `valid at close` otherwise, and
+`no expiry` for a credential that never lapses. A mandatory line that is
+unanswered, or answered with something that will have expired, **blocks**
+the bid, and the register prints that count.
+
+**iREPS is tracked, never driven.** The portal has no interface a program
+may use; it is operated by a human with a CAPTCHA, an OTP and a local
+digital signature. The product therefore records what that human did:
+drafted → submitted → opened → awarded or lost, one way only, with awarded
+and lost final, each step carrying its actor, its moment, an optional note
+and the acknowledgement the portal printed. None of it is verified against
+iREPS and the screen says so. The one refusal the product can make
+honestly is a submission recorded while a mandatory checklist line is
+blocking — a package that would be rejected at the other end.
+
+**The award converts through the ordinary intake.** An awarded tender does
+not create a Work. It deep-links into the existing LOA intake carrying its
+own facts, so the operator can check the letter against the tender it
+answers; the letter is recorded against the tender, and the Work is read
+through that letter once it is confirmed the way every other Work is. One
+letter awards one tender. There is no second path to a Work and no Work id
+stored on the tender that could disagree with the letter's.
+
 ### Standing choices on a new Issue Challan
 
 Material leaves to the same storekeeper, at the same location, movement after
@@ -1600,6 +1670,11 @@ Remarks are never carried either: they are the individual movement's note.
   rather than sent again blindly;
 - tenant-specific multi-GSTIN provider credential routing; the current adapter
   is bound to one configured GSTIN and refuses a mismatch;
+- automated iREPS bidding: the portal has no public interface, so tender
+  submission is recorded after the fact and never performed by the product;
+- tender-document generation and per-tender file storage: a bid attaches
+  credentials the company document library already holds, and the product
+  does not become a third place to keep documents;
 - broad reporting;
 - mobile-native apps;
 - offline sync;

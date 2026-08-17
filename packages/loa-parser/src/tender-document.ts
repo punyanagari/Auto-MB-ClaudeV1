@@ -81,7 +81,7 @@ export interface TenderIdentityMatch {
   readonly reasons: readonly string[];
 }
 
-function normalizeLines(rawText: string): readonly string[] {
+export function normalizeLines(rawText: string): readonly string[] {
   return rawText
     .replace(/\r\n?/g, '\n')
     .split('\n')
@@ -107,7 +107,7 @@ function paragraphs(rawText: string): readonly string[] {
   return result;
 }
 
-function firstLabelValue(
+export function firstLabelValue(
   lines: readonly string[],
   labels: readonly RegExp[],
 ): TenderField {
@@ -140,7 +140,7 @@ const NEXT_LABEL_RE = /^[A-Za-z][^:]{0,80}:\s*\S/;
  * clause, or the sentence-ending line. This keeps adjacent tender metadata
  * out of the name of work while preserving its complete printed wording.
  */
-function firstWrappedLabelValue(
+export function firstWrappedLabelValue(
   lines: readonly string[],
   labels: readonly RegExp[],
 ): TenderField {

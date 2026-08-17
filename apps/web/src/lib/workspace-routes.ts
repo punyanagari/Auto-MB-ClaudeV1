@@ -23,7 +23,12 @@ export type PaymentsRegisterTab = 'employee' | 'vendors';
 export type WorkspaceView =
   | { name: 'dashboard' }
   | { name: 'works' }
-  | { name: 'upload' }
+  /** The LOA intake. `tenderId` is the award conversion's deep link: an
+   * awarded tender sends the operator here, the screen shows the tender's
+   * facts to check the letter against, and the uploaded letter is
+   * recorded against that tender. Null is the ordinary intake, reached
+   * from the sidebar. */
+  | { name: 'upload'; tenderId: string | null }
   | { name: 'review'; documentId: string }
   | { name: 'work'; workId: string }
   | { name: 'challan-new'; workId: string; workCode: string }
@@ -79,6 +84,12 @@ export type WorkspaceView =
    * caller reaches (migration 0082). One register, no record page — a call
    * is its card, and its documents live inside the card. */
   | { name: 'inspection' }
+  /** The tender pipeline (migration 0083). Pre-award and organisation
+   * level, so none of the three carries a Work: the register, the NIT
+   * intake wizard, and one tender's bid workspace. */
+  | { name: 'tenders' }
+  | { name: 'tender-new' }
+  | { name: 'tender'; tenderId: string }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -159,7 +170,9 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
     case 'works':
       return '#/works';
     case 'upload':
-      return '#/works/upload';
+      return view.tenderId === null
+        ? '#/works/upload'
+        : `#/works/upload/${view.tenderId}`;
     case 'review':
       return `#/loa/${view.documentId}`;
     case 'work': {
@@ -221,6 +234,12 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/company-documents';
     case 'inspection':
       return '#/inspection';
+    case 'tenders':
+      return '#/tenders';
+    case 'tender-new':
+      return '#/tenders/new';
+    case 'tender':
+      return `#/tenders/${view.tenderId}`;
     case 'members':
       return '#/members';
     case 'settings':
@@ -268,6 +287,11 @@ export function mastersHash(tab?: MastersTab): string {
     view: { name: 'masters' },
     ...(tab === undefined ? {} : { mastersTab: tab }),
   });
+}
+
+/** `#/tenders/<id>` as a plain href — what a register row links to. */
+export function tenderHash(tenderId: string): string {
+  return workspaceHashOf({ view: { name: 'tender', tenderId } });
 }
 
 export const SETTINGS_HASH = '#/settings';
@@ -415,6 +439,13 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (!isRecordId(workId) || extra.length > 0) return null;
       return { view: { name: 'installations', workId } };
     }
+    case 'tenders': {
+      const [first, ...extra] = rest;
+      if (extra.length > 0) return null;
+      if (first === undefined) return { view: { name: 'tenders' } };
+      if (first === 'new') return { view: { name: 'tender-new' } };
+      return isRecordId(first) ? { view: { name: 'tender', tenderId: first } } : null;
+    }
     case 'quotations':
     case 'approvals':
     case 'company-documents':
@@ -431,7 +462,10 @@ function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {
   const [first, ...rest] = segments;
   if (first === undefined) return { view: { name: 'works' } };
   if (first === 'upload') {
-    return rest.length === 0 ? { view: { name: 'upload' } } : null;
+    const [tenderId, ...extra] = rest;
+    if (extra.length > 0) return null;
+    if (tenderId === undefined) return { view: { name: 'upload', tenderId: null } };
+    return isRecordId(tenderId) ? { view: { name: 'upload', tenderId } } : null;
   }
   if (!isRecordId(first)) return null;
   const workId = first;

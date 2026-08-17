@@ -120,6 +120,17 @@ const CompanyDocuments = lazy(() =>
 const Inspection = lazy(() =>
   import('./Inspection.js').then((module) => ({ default: module.Inspection })),
 );
+const Tenders = lazy(() =>
+  import('./Tenders.js').then((module) => ({ default: module.Tenders })),
+);
+const NitIntake = lazy(() =>
+  import('./NitIntake.js').then((module) => ({ default: module.NitIntake })),
+);
+const TenderWorkspace = lazy(() =>
+  import('./TenderWorkspace.js').then((module) => ({
+    default: module.TenderWorkspace,
+  })),
+);
 const ReviewLoa = lazy(() =>
   import('./ReviewLoa.js').then((module) => ({ default: module.ReviewLoa })),
 );
@@ -744,9 +755,9 @@ export function OperationsWorkspace({
         ? [
             {
               label: 'Upload LOA',
-              href: workspaceHashOf({ view: { name: 'upload' } }),
+              href: workspaceHashOf({ view: { name: 'upload', tenderId: null } }),
               open: () => {
-                navigate({ name: 'upload' });
+                navigate({ name: 'upload', tenderId: null });
               },
               current: view.name === 'upload',
             },
@@ -810,7 +821,7 @@ export function OperationsWorkspace({
         inert={mobileMenuOpen || pendingDeparture !== null}
         onOpenModule={openModule}
         onUploadLoa={() => {
-          navigate({ name: 'upload' });
+          navigate({ name: 'upload', tenderId: null });
         }}
         onSwitchOrganisation={() => {
           requestDeparture(onSwitchOrganisation);
@@ -907,7 +918,7 @@ export function OperationsWorkspace({
                   navigate({ name: 'works' });
                 }}
                 onUploadLoa={() => {
-                  navigate({ name: 'upload' });
+                  navigate({ name: 'upload', tenderId: null });
                 }}
                 onOpenApprovals={() => {
                   navigate({ name: 'approvals' });
@@ -940,7 +951,7 @@ export function OperationsWorkspace({
                 organisationId={organisation.id}
                 canModify={canModify}
                 onUpload={() => {
-                  navigate({ name: 'upload' });
+                  navigate({ name: 'upload', tenderId: null });
                 }}
                 onReview={(documentId) => {
                   navigate({ name: 'review', documentId });
@@ -955,6 +966,7 @@ export function OperationsWorkspace({
               <UploadLoa
                 api={api}
                 organisationId={organisation.id}
+                tenderId={view.tenderId}
                 onUploaded={(document) => {
                   navigate(
                     document.extractionStatus === 'review'
@@ -1062,6 +1074,51 @@ export function OperationsWorkspace({
                 canRecord={canRecordEvidence}
                 canModify={canModify}
                 canCancel={canCancel}
+              />
+            )}
+
+            {view.name === 'tenders' && (
+              <Tenders
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                onOpenTender={(tenderId) => {
+                  navigate({ name: 'tender', tenderId });
+                }}
+                onUploadNotice={() => {
+                  navigate({ name: 'tender-new' });
+                }}
+              />
+            )}
+
+            {view.name === 'tender-new' && (
+              <NitIntake
+                api={api}
+                organisationId={organisation.id}
+                onConfirmed={(tender) => {
+                  navigate(
+                    { name: 'tender', tenderId: tender.id },
+                    { confirmed: true },
+                  );
+                }}
+                onCancel={() => {
+                  navigate({ name: 'tenders' });
+                }}
+              />
+            )}
+
+            {view.name === 'tender' && (
+              <TenderWorkspace
+                api={api}
+                organisationId={organisation.id}
+                tenderId={view.tenderId}
+                canModify={canModify}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId });
+                }}
+                onUploadAwardLetter={(tenderId) => {
+                  navigate({ name: 'upload', tenderId });
+                }}
               />
             )}
 

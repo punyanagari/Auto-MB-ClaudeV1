@@ -184,8 +184,9 @@ describe('the schema at head names all three shapes', () => {
     // and inspection_call_items.quantity; 0080 adds four money columns
     // of its own (the payment-request amount, the vendor-invoice amount,
     // and the vendor payment's gross/tds/net less the two counted as one
-    // pair) plus the TDS taxable amount.
-    expect(adopted.length).toBe(63);
+    // pair) plus the TDS taxable amount; 0083 adds a tender's estimated
+    // value and its EMD.
+    expect(adopted.length).toBe(65);
   });
 
   it('types every digest column as sha256_hex', () => {
@@ -202,8 +203,9 @@ describe('the schema at head names all three shapes', () => {
     // render ledger's source_sha256 and pdf_sha256; 26 after 0079, whose
     // company_document_versions.sha256 is the digest of a stored
     // credential PDF and adopts the domain from the start; 27 after 0082,
-    // which adds the inspection document's.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(27);
+    // which adds the inspection document's; 28 after 0083 adds
+    // tender_notices.sha256, the digest of a stored NIT.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(28);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

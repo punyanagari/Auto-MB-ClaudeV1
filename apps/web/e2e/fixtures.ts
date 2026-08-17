@@ -230,6 +230,7 @@ export function location(index: number) {
 /** The Work the dashboard fixture already names, reused by the specs that
  * need to open one of its documents. */
 export const WORK_ID = '33333333-3333-4333-8333-333333333333';
+export const TENDER_ID = '77777777-7777-4777-8777-777777777700';
 
 /** One row of a Work's delivery balance — the shape the challan editor
  * draws a table row and a controlled quantity input from. `count` is the
@@ -341,6 +342,135 @@ function daysUntil(expiresOn: string): number {
   return Math.round((Date.parse(`${expiresOn}T00:00:00.000Z`) - today) / 86_400_000);
 }
 
+/** A closing moment `days` from now, as the pair the register reads: the
+ * instant it splits Upcoming from Expired on, and the wall clock it
+ * prints. Relative, because the register now compares the instant to the
+ * real clock — a hard-coded 2026 date drifts into the wrong tab the week
+ * it passes, and the scan would then be measuring the empty state. */
+function closingIn(days: number): {
+  bidClosesAt: string;
+  bidClosesAtLocal: string;
+  daysToClose: number;
+} {
+  const at = new Date(Date.now() + days * 86_400_000);
+  return {
+    bidClosesAt: at.toISOString(),
+    bidClosesAtLocal: `${at.toISOString().slice(0, 10)}T15:00`,
+    daysToClose: days,
+  };
+}
+
+/** One tender in each of the three states the register tints, so a scan
+ * sees the whole status vocabulary at once: an open bid with blocking
+ * lines, one already submitted, and one that was won. */
+const TENDER_LIST = {
+  tenders: [
+    {
+      id: TENDER_ID,
+      tenderNumber: 'WR-MMCT-S&T-34/2026',
+      authority: 'Western Railway',
+      title: 'Supply and commissioning of passenger information systems',
+      ...closingIn(36),
+      status: 'drafted',
+      checklistTotal: 3,
+      checklistBlocking: 1,
+    },
+    {
+      id: '77777777-7777-4777-8777-777777777701',
+      tenderNumber: 'CR/2026/EL/118',
+      authority: 'Central Railway',
+      title: 'Signalling cable renewal at four block sections',
+      ...closingIn(2),
+      status: 'submitted',
+      checklistTotal: 2,
+      checklistBlocking: 0,
+    },
+    {
+      id: '77777777-7777-4777-8777-777777777702',
+      tenderNumber: 'WCR/2026/TRD/7',
+      authority: 'West Central Railway',
+      title: 'Overhead equipment spares',
+      ...closingIn(-72),
+      status: 'awarded',
+      checklistTotal: 2,
+      checklistBlocking: 0,
+    },
+  ],
+};
+
+/** The opened tender, drawn so every validity reading the checklist can
+ * tint is on screen at once — no expiry, valid at close, lapsing soon
+ * after, expired by close — because those four are the only place this
+ * screen puts colour on a word. */
+const TENDER_DETAIL = {
+  ...TENDER_LIST.tenders[0],
+  checklistTotal: 4,
+  checklistBlocking: 1,
+  estimatedValue: '84000000.00',
+  emdAmount: '1680000.00',
+  eligibilitySummary: 'Similar railway S&T works of 35% value in three years.',
+  irepsReference: null,
+  noticeId: '88888888-8888-4888-8888-888888888801',
+  noticeFilename: 'wr-mmct-st-34-2026-nit.pdf',
+  award: null,
+  checklist: [
+    checklistLine('PAN card', 'PAN card', 'none', null, null),
+    checklistLine(
+      'ISO 9001 certificate',
+      'ISO 9001 certificate',
+      'valid',
+      '2028-01-31',
+      500,
+    ),
+    checklistLine(
+      'Bank solvency letter',
+      'Bank solvency letter',
+      'expiring',
+      '2026-10-30',
+      42,
+    ),
+    checklistLine('Labour licence', 'Labour licence', 'expired', '2026-07-01', -79),
+  ],
+  statusEvents: [
+    {
+      id: '99999999-9999-4999-8999-999999999901',
+      fromStatus: null,
+      toStatus: 'drafted',
+      note: 'Created from the tender notice.',
+      actorUserId: 'user-owner',
+      occurredAt: '2026-08-01T09:00:00.000Z',
+    },
+  ],
+};
+
+function checklistLine(
+  title: string,
+  documentTitle: string | null,
+  validity: string | null,
+  expiresOn: string | null,
+  expiresInDaysAtClose: number | null,
+) {
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return {
+    id: `aaaaaaaa-aaaa-4aaa-8aaa-${slug.slice(0, 12).padEnd(12, '0')}`,
+    title,
+    mandatory: true,
+    companyDocumentId:
+      documentTitle === null
+        ? null
+        : `bbbbbbbb-bbbb-4bbb-8bbb-${slug.slice(0, 12).padEnd(12, '0')}`,
+    companyDocumentTitle: documentTitle,
+    restricted: false,
+    companyDocumentArchived: false,
+    companyDocumentVersionNumber: documentTitle === null ? null : 2,
+    expiresOn,
+    validity,
+    expiresInDaysAtClose,
+    blocking: validity === 'expired',
+    createdAt: '2026-08-01T09:00:00.000Z',
+  };
+}
+
 export async function mockWorkspace(
   page: Page,
   options: {
@@ -382,6 +512,11 @@ export async function mockWorkspace(
   await page.route('**/api/company-documents', (route) =>
     route.fulfill(json(COMPANY_DOCUMENT_LIBRARY)),
   );
+  // The tender pipeline (migration 0083). The detail route is registered
+  // first because Playwright matches the LAST registered handler, so the
+  // bare-register pattern would otherwise swallow the one with an id.
+  await page.route('**/api/tenders/*', (route) => route.fulfill(json(TENDER_DETAIL)));
+  await page.route('**/api/tenders', (route) => route.fulfill(json(TENDER_LIST)));
   await page.route('**/api/masters/contacts*', (route) =>
     route.fulfill(json({ contacts: [] })),
   );

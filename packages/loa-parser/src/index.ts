@@ -84,6 +84,10 @@ export {
   type TenderReviewPayload,
   type TenderIdentityMatch,
 } from './tender-document.js';
+// The NIT reader (migration 0083). Pre-award and standalone: it takes the
+// six first-page fields off a Notice Inviting Tender months before any
+// LOA exists, as a proposal a human confirms.
+export { reviewTenderNotice, type TenderNoticeReview } from './tender-notice.js';
 // DC-26 — the needsReview trigger set (six proven traps, additive review
 // flags, never a work-writing function). Re-exported for the same "coherent
 // public surface" reason as DC-23's, DC-24's and DC-25's exports above; this

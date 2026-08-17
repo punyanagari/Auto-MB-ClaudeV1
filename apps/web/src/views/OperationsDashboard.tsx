@@ -75,7 +75,7 @@ const ALERT_TONE: Record<
   },
 };
 
-const UPLOAD_HASH = workspaceHashOf({ view: { name: 'upload' } });
+const UPLOAD_HASH = workspaceHashOf({ view: { name: 'upload', tenderId: null } });
 /** The register that lists uploaded letters and their Review action. */
 const WORKS_HASH = workspaceHashOf({ view: { name: 'works' } });
 

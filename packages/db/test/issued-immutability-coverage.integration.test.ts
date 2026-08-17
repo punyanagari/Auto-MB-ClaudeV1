@@ -140,6 +140,35 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'archived_by_user_id',
   ],
 
+  // The tender (0083). Its tenant and provenance are frozen outright.
+  // Its FACTS are frozen conditionally — correctable while the bid is a
+  // draft, fixed from submission onwards — and the guard is what decides
+  // when. What is genuinely free is the status trail's own columns, the
+  // award link, and the maintained timestamp.
+  // The facts themselves are NOT declared here even though a draft's may
+  // be corrected: the guard names them, conditionally, and this census
+  // reads "named by a trigger" as covered. Declaring them too would be
+  // the two statements contradicting each other, which is exactly what
+  // the assertion below catches.
+  tenders: ['status', 'ireps_reference', 'award_loa_document_id', 'updated_at'],
+
+  // A bid-checklist line (0083). The tender it belongs to and who created
+  // it are frozen outright; what is free is the line's own wording and
+  // whether it is mandatory.
+  // `attached_at` and `attached_by_user_id` are absent deliberately: the
+  // guard names them, tying them to the credential so provenance cannot
+  // be rewritten on its own, so the census reads them as covered.
+  // `company_document_id` is the thing they are tied TO and is genuinely
+  // free — attaching and detaching is what this line is for.
+  tender_checklist_items: ['company_document_id', 'mandatory', 'title', 'updated_at'],
+
+  // The tender notice (0083). The bytes, the hash and the machine's
+  // reading of them are evidence and are frozen whole. The confirmation
+  // link is frozen too, and conditionally so — the guard names it, which
+  // is why it is not declared here: it may be set once, from null, and
+  // never moved afterwards. Only the maintained timestamp is free.
+  tender_notices: ['updated_at'],
+
   correction_notices: [
     'id',
     'updated_at',
