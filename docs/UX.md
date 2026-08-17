@@ -1,46 +1,303 @@
 # Auto-MB product experience contract
 
-## Purpose
+## Purpose and status
 
-This document records the approved interaction architecture for the full Auto-MB overhaul. It complements `docs/PRODUCT.md`: Product defines the domain and invariants; this document defines how operators move through them.
+This document is the binding UI/UX contract for Auto-MB. It records what the
+interface must be, what it is allowed not to be, and how that is proved.
 
-The interface is operational, calm and document-oriented. Tables remain first-class because the product is a quantity, evidence and legal-record system, but the interface must not expose every table and action at once.
+Owner decision, 2026-08-16 (refined 2026-08-17): the Vercel/v0 mock repository
+`punyanagari/Auto-MB-Vercel-du` is the design contract, replacing the "quiet
+light" visual language blessed on 2026-08-12. The rationale, the
+design-port-not-code boundary and the iteration pipeline are in
+`adr/0014-v0-mock-as-design-contract.md`. The rule itself is in `AGENTS.md`
+§ Design contract (PR #96). `docs/DESIGN.md` is this document's component- and
+token-level companion.
+
+What changed on 2026-08-16 is the visual language and the information
+architecture. What did not change is everything below the paint: the shared-state
+model, focus and keyboard behaviour, the accessibility gate, and the rule that
+the server remains authoritative. Those sections are carried forward from the
+previous contract, updated where the mock moved them.
+
+`docs/PRODUCT.md` defines the domain and its invariants; this document defines
+how operators move through them.
+
+## The frozen mock
+
+|                            |                                                                          |
+| -------------------------- | ------------------------------------------------------------------------ |
+| Repository                 | `github.com/punyanagari/Auto-MB-Vercel-du`                               |
+| Freeze commit              | `a8e1fde` (`Merge pull request #6 from punyanagari/fix/freeze-blockers`) |
+| Local clone at that commit | `C:\Users\agast\Downloads\Auto-MB-Vercel-du`                             |
+| Live render                | `https://satyakosh.vercel.app`                                           |
+
+Advancing the freeze commit is an owner action recorded in `docs/DESIGN.md`
+§ Freeze pointer, taken only after the delta has been diffed and ported.
+
+## Fidelity contract
+
+1. **The mock is replicated exactly.** Screens the mock covers are built to look
+   like the mock, not like an interpretation of it.
+2. **Tokens are ported verbatim.** The oklch values, the radius scale, the type
+   families and weights are copied, not re-derived. Their _delivery mechanism_
+   stays the application's (`data-theme` on `<html>` plus `light-dark()` pairs);
+   only the values are the contract. See `docs/DESIGN.md` § Token architecture.
+3. **Shared screens are visually indistinguishable.** Open the mock and the
+   application side by side at the same width and theme; a reviewer must not be
+   able to tell which is which from the layout, spacing, type or colour.
+4. **Pixel drift is a bug, not a liberty.** "Slightly tidier", "more consistent
+   with our other screen" and "the designer probably meant" are all defects. The
+   remedy for a mock the team disagrees with is to change the mock in v0.
+5. **Every visible change cites a mock screen by path** in the frozen clone —
+   for example `app/challans/page.tsx` plus `components/document-register.tsx`.
+   A visible change with no citation is unapproved visual invention.
+6. **Behaviour the mock cannot express is built in the mock's grammar.**
+   Validation, real data, permission refusals, concurrency and lifecycle states
+   reuse the mock's existing components and tokens. No new visual language is
+   invented to express them.
+
+## Approved divergences
+
+This list is exhaustive. A divergence not on it is a defect. Adding to it is an
+owner decision, not an implementation decision.
+
+### 1. Type: IBM Plex Sans (Devanagari) and IBM Plex Mono
+
+The mock loads IBM Plex Sans and IBM Plex Mono from `next/font/google` with the
+`latin` subset only. The application ships the same two families, self-hosted
+through `@fontsource-variable/ibm-plex-sans`, `@fontsource/ibm-plex-mono` and
+`@fontsource/ibm-plex-sans-devanagari`, with the Devanagari companion in the
+`--font-sans` stack.
+
+The divergence is delivery and script coverage, not the typeface: Indian Railways
+correspondence, party names and place names carry Devanagari, and a latin-only
+subset renders them in a fallback face that breaks the mock's own metrics. The
+mock's weights (400/500/600/700 sans, 400/500/600 mono) and its
+`font-feature-settings` remain the contract.
+
+### 2. Full mobile shell
+
+The mock is desktop-first. It ships a mobile shell — a fixed bottom bar below the
+`lg` breakpoint with four cells (Home, Works, Record, More) and two bottom sheets
+(`components/mobile-navigation.tsx`) — but that shell is _navigation only_: the
+Record sheet links to desktop screens and the More sheet is a flat module list.
+
+The application keeps the mock's bar and sheets exactly as drawn, and builds the
+site-facing task flows behind them — receipt capture, serial capture,
+installation recording, evidence attachment, offline and service-error messaging,
+persistent save state — in the mock's visual grammar, using its `Sheet`, `Field`,
+`Card` and `StatusBadge` components. Cells keep the mock's `min-h-14` touch
+target and its `env(safe-area-inset-bottom)` padding.
+
+Large financial, numbering and organisation-administration surfaces stay
+office-first. Offline synchronisation is not implied in copy until it is
+implemented.
+
+### 3. Members: per-feature permission matrix, not roles
+
+The application's Members screen keeps the per-feature permission matrix and the
+per-member work assignment. Any Owner/Editor/Viewer role collapse is **rejected**
+under the `AGENTS.md` rule against replacing the per-feature permission matrix,
+and would be rejected even if a future mock proposed it.
+
+At `a8e1fde` the mock agrees: `app/members/page.tsx` renders a feature-column
+matrix with an "All works access" checkbox and assigned-work chips, and its own
+copy says the matrix "renders from feature definitions and can expand". The
+application renders the real feature set rather than the mock's six
+representative columns, and the real permission and work-scope semantics behind
+it. The divergence is recorded anyway, because it is the one place where a mock
+change would not be followed.
+
+### 4. Screens the mock does not cover
+
+The mock covers the shell and the main registers. The application covers more
+product than the mock draws. Each of the following is built inside the mock's
+visual grammar — its components, tokens, density and page-header pattern — with
+no new visual language:
+
+- **PAC certificates.** The mock shows a read-only "PAC / BG certificates" list
+  inside the Work's Instruments section (`components/work-registers.tsx`). The
+  application's issuance, validity tracking and evidence surfaces are additive.
+- **Timeline.** Present in the mock as the Work workspace's first section
+  (`components/work-section-nav.tsx`); the application's audit timeline, amendment
+  chains and approval decisions render into it.
+- **Completion extensions.** Extension-of-time letters and revised completion
+  dates. No mock screen.
+- **Tender-terms review.** Extracted tender clause and item-mapping review from
+  LOA intake. The mock's Tenders module is a bidding workspace, not this.
+- **Authentication depth.** The mock's `app/sign-in/page.tsx` is a single card
+  stepping credentials → two-factor → organisation chooser, and
+  `app/onboarding/page.tsx` is a one-form organisation create. The application's
+  two-factor enrolment, recovery codes, password recovery, account security,
+  organisation access settings and multi-organisation entry are additive; they
+  reuse that card, its `Field`/`FieldGroup` anatomy and its centred layout.
+- **Billing depth.** Measurement-book finalisation, billing-readiness checklists,
+  bill settlement, railway bill rendering, tax-invoice IRP transport and credit
+  notes go well past the mock's registers.
+- **Lifecycle-locking surfaces.** The mock's outward-document lifecycle machine
+  (see § Document lifecycle) is drawn for one document type; the application
+  applies it to challans, invoices and measurement books, which needs per-type
+  guard copy the mock does not carry.
+- **Wayfinding refusal→remedy errors.** The mock ships `RemedyError`
+  (`components/remedy-error.tsx`) as a component. The application's remedy
+  catalogue (`apps/server/src/remedies.ts`) supplies many more refusals than the
+  mock demonstrates, each rendered through that component.
+
+### 5. Token-level accessibility fixes
+
+Where the real-render axe gate fails a text/background pair on a mock token, the
+token value is adjusted until it passes, and the adjustment is flagged to the
+owner as a divergence with the measured ratio, the screen, and the theme it
+failed in.
+
+The mock is the design contract; it is not an exemption from WCAG AA. The
+adjustment is the minimum that clears the gate, applied at token level so it
+propagates everywhere rather than being patched per screen. Ideally the owner
+then feeds the corrected value back into v0, which retires the divergence.
+
+## Settled information architecture
+
+Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
+
+### Shell
+
+A collapsible icon sidebar plus a sticky topbar (`components/app-shell.tsx`,
+`app-sidebar.tsx`, `app-topbar.tsx`). Content is centred at `max-w-[1440px]`.
+Sidebar groups, in the mock's order:
+
+| Group          | Modules                                                                                |
+| -------------- | -------------------------------------------------------------------------------------- |
+| _(ungrouped)_  | Dashboard · Works · Tenders · Inspection · Payments                                    |
+| Documents      | Challans · Invoices · E-Way Bills · Quotations · Correspondence                        |
+| Operations     | Production · Inventory · Purchase orders · Installations · Maintenance · Global search |
+| Administration | Employees · Approvals · Masters · Members · Settings                                   |
+
+The sidebar footer carries the primary **Upload LOA** action and the signed-in
+identity. Approvals carries a count badge. This retires the previous
+Home/Works/Documents/Operations/Administration five-item rail.
+
+### Challans, installations and issue challans reach top level
+
+They were Work-workspace-only. They are now reachable without first choosing a
+Work, because the operator's question crosses Works: what moved this week, what
+is still an open draft, what went in and where.
+
+The mock expresses this as one **Challans** module under Documents with two tabs
+— delivery and issue — addressed by `?type=delivery` / `?type=installation`
+(`components/challans-workspace.tsx`), with `/delivery-challans` and
+`/issue-challans` redirecting into it. **Installations** is its own module under
+Operations.
+
+Every one of these registers takes a `?work=` deep link. When present it renders
+as a dismissible filter chip naming the Work, whose clear control returns to the
+unfiltered register (`components/document-register.tsx`). Recording still happens
+where the Work caps or measures the record; the register reads across. A document
+with no Work at all — a standalone delivery challan, a direct invoice — is created
+on the register, because there is nowhere else to create it, and takes
+organisation-wide reach.
+
+### Timeline joins the Work workspace navigation
+
+The Work workspace sections, in the mock's order
+(`components/work-section-nav.tsx`, addressed by `?section=`, defaulting to
+`timeline`):
+
+Timeline · Quantity ledger · Variation · Measurement books · Bills · Instruments ·
+Amendments · Documents · Inspection clause · Specifications · Settings ·
+Contract details
+
+Underline tabs on a horizontally scrollable rail, not a segmented control. A
+`?section=` value this build does not know keeps the Work and opens Timeline —
+the Work id is the durable half of that address.
+
+### Bills is a Work section, not top-level nav
+
+**Owner call 2026-08-17**, overriding the 2026-08-16 decision that put Bills in
+the top-level rail. A bill is raised from a finalised measurement book on the
+Work that holds it, and reading bills across Works is the Payments module's
+question, not a register's.
+
+The mock enforces it: `app/bills/page.tsx` is a redirect to
+`/works/<code>?section=bills`, and the Bills register's clear-filter control
+returns to the Work section rather than to an unfiltered bills list. Do not
+reintroduce a top-level Bills entry.
+
+### `#/serials` merges into Global Search
+
+The standalone serial-lookup destination is retired. Serial numbers are one scope
+among the Global Search scopes (`lib/search.ts`: everything, works and items,
+challans, purchase orders, invoices, quotations, correspondence, installations
+and serials, contacts).
+
+**A serial hit must still open the full traceability chain** — receipt, custody,
+issue, installation, the documents at each step. Merging the entry point does not
+merge the answer. The mock keeps that chain in `components/serial-trace-panel.tsx`,
+reachable from the search results and from the mobile Record sheet.
+
+### Masters loses the bank-accounts tab
+
+Masters tabs, per `app/masters/page.tsx`: items, contacts, locations, units,
+signatories, GST. No bank accounts.
+
+Bank fields move inline onto the records that own them — a contact's bank details
+sit on the contact, an employee's on the employee. The organisation's _own_
+accounts are company identity, not master data, and live under Settings →
+Company (`components/company-bank-accounts.tsx`). A shared bank-accounts table
+made every account look interchangeable when a payee account and the
+organisation's collection account are different facts with different permissions.
+
+### Document-lifecycle locking extends beyond its mock home
+
+The mock's outward-document lifecycle machine
+(`components/outward-document-lifecycle.tsx`) runs
+`draft → pending → finalized`, with `amendment-pending → amendment-open` for a
+sanctioned edit to an already-issued document, a finalize-and-issue action, an
+explicit lock signal to the editor it wraps, and an approval route through the
+signature inbox.
+
+The application applies that same machine and the same visual states to
+**delivery and issue challans, tax invoices, and measurement books**. Draft
+editing and legal issue stay visually and semantically separate; an issued
+document is read-only until an amendment is approved; a cancelled number is
+retained forever and never reused.
+
+### ⌘K command palette: planned, Phase 4
+
+The mock ships a command palette bound to ⌘K/Ctrl+K from the topbar search
+control (`components/app-topbar.tsx`, `components/ui/command.tsx`). The
+application ports the topbar control's appearance — including the `⌘K` hint chip
+— from day one, and implements the palette itself in Phase 4. Until then the
+control opens Global Search. Do not ship the chip without a working shortcut:
+either the shortcut works or the chip is not rendered.
 
 ## Experience principles
 
-1. **The Work is the centre of gravity.** Most contract execution begins from a Work workspace, not from unrelated global modules.
-2. **Show what is true before showing forms.** Creation and correction controls open deliberately through named actions.
-3. **Progressive disclosure.** Summary, exception and next-action information appears before detailed registers.
-4. **Legal states are explicit.** Draft, locally issued, externally registered, cancelled, corrected and replaced are never collapsed into one ambiguous status.
-5. **Failure is not an empty state.** Loading, no data, permission denial and service failure are represented separately.
-6. **Actions explain their consequence.** A blocked or destructive action states what prevents it and which workflow resolves the block.
-7. **Mobile is task-oriented.** Site staff receive focused receipt, serial, installation and evidence flows rather than a compressed office dashboard.
-8. **Accessibility is part of the workflow.** Every action is keyboard reachable, headings and regions are ordered, focus follows navigation, and status is not conveyed by colour alone.
-9. **The server remains authoritative.** Browser calculations are explanatory only; money, quantities, numbering, permissions and lifecycle transitions remain server/database concerns.
+Carried forward. They constrain how the mock's grammar is applied to behaviour
+the mock does not draw.
 
-## Visual system
-
-Owner decision, 2026-08-12: the shipped quiet light system is the blessed
-design contract, and the earlier "Signal Cabin" amber/dark-default language is
-retired.
-
-- **Light system (default identity).** Cool white surfaces, one dependable
-  blue action colour (`#155eef`), restrained status tones, tabular numerals.
-- **Dark palette (added).** A complete dark theme is defined purely by the
-  semantic tokens in `apps/web/src/globals.css` — surfaces, text, borders,
-  sidebar, status tints, focus ring and selection all have light/dark pairs
-  via `light-dark()`. No component carries theme-specific colours.
-- **Three-state theming.** The default follows the operating system
-  (`prefers-color-scheme`); the Appearance card under Settings persists an
-  explicit choice in `localStorage` and applies `data-theme` on `<html>`,
-  which pins `color-scheme` and wins over the media query. Native controls
-  follow the same `color-scheme`. Print always renders light.
-- **Type.** IBM Plex is the only family — Sans for UI, Mono for figures; no
-  second display face. The scale is 26px/650 display (h1), 16px/600 section
-  (h2), 13px/600 subsection (h3), 14px body, with a 12px floor for
-  persistent UI text (labels, meta lines, table headings, keyboard chips).
-- **Contrast.** Text/tint pairings, including 12px status chips, must hold
-  WCAG AA 4.5:1 in both themes; the live axe/contrast gate is the proof.
+1. **The Work is the centre of gravity.** Most contract execution begins from a
+   Work workspace. Top-level registers answer cross-Work questions; they do not
+   replace the Work as the place records are made.
+2. **Show what is true before showing forms.** Creation and correction controls
+   open deliberately through named actions.
+3. **Progressive disclosure.** Summary, exception and next-action information
+   appears before detailed registers.
+4. **Legal states are explicit.** Draft, locally issued, externally registered,
+   cancelled, corrected and replaced are never collapsed into one ambiguous
+   status.
+5. **Failure is not an empty state.** Loading, no data, permission denial and
+   service failure are represented separately.
+6. **Actions explain their consequence.** A blocked or destructive action states
+   what prevents it and which workflow resolves the block.
+7. **Mobile is task-oriented.** Site staff get focused capture flows, not a
+   compressed office dashboard.
+8. **Accessibility is part of the workflow.** Every action is keyboard reachable,
+   headings and regions are ordered, focus follows navigation, and status is
+   never conveyed by colour alone — which is why the mock's status badge carries
+   a label beside its dot.
+9. **The server remains authoritative.** Browser calculations are explanatory
+   only; money, quantities, numbering, permissions and lifecycle transitions
+   remain server and database concerns.
 
 ## Organisation entry
 
@@ -51,47 +308,21 @@ Sign in
   └─ 2+ active organisations → choose tenant
 ```
 
-Only active memberships appear. A refresh may reopen the current active organisation during the same browser session; a fresh sign-in with two or more memberships requires deliberate tenant choice. The switch action appears only when another active organisation exists.
+Only active memberships appear. A refresh may reopen the current active
+organisation during the same browser session; a fresh sign-in with two or more
+memberships requires deliberate tenant choice. The switch action appears only
+when another active organisation exists. Creating another organisation is an
+account-level action under Settings; one organisation remains one legal entity
+and tenant.
 
-Creating another organisation is an account-level action under Settings. One organisation remains one legal entity and tenant.
-
-## Global navigation
-
-The desktop navigation is intentionally small:
-
-- **Home** — attention queue, deadlines, progress and financial follow-up;
-- **Works** — contract registry and LOA intake;
-- **Documents** — cross-Work legal-document register and quotations;
-- **Operations** — search, serial traceability, the installation register, and bounded operational registers;
-- **Administration** — masters, members, organisation profile, numbering and security.
-
-Capabilities that belong to one contract—Delivery Challans, Issue Challans, installations, Measurement Books, bills, guarantees and amendments—normally live inside the Work workspace rather than competing as permanent global destinations.
-
-The exception is earned, not assumed: a capability also gets a global register when the operator's real question crosses Works. Delivery Challans did, because two of their three movements have no Work to live under. Installations did, because site supervision asks what went in this week and where, and a gang works several Works in a day. Tax invoices did, because a direct invoice — raised against a private customer, outside any works contract — has no Work to live under either, and because "what have we billed, and what is still unreported" is an office question about the organisation rather than about one contract.
-
-Recording still happens on the Work where a Work is what caps or measures the record: an installation is recorded on its Work, and an invoice that bills a finalized Measurement Book is drafted on the Work that holds it. The register reads across. The exception to the exception is a document with no Work at all — a standalone Delivery Challan, a direct invoice — which is created on the register, because there is nowhere else for it to be created. Such a document takes organisation-wide reach: work scope binds through a Work, and one with none is reachable by every member or by none.
-
-A global register carries the filter its question needs and no more. The installation register's is an inclusive date window, because "what went in this week" is a date range; the invoice register's is the same window over the invoice date. Both read a page at a time with an explicit action to fetch the next, rather than serialising a division's whole history into one response. Work and status filters stay out: a Work's own records are read on the Work, and a status filter would offer to hide exactly what the register exists to keep visible — a cancelled challan, a cancelled invoice, a record that was made and withdrawn.
-
-## Work workspace
-
-Every Work is organised into seven operator-facing areas:
-
-1. **Overview** — contract identity, progress, upcoming obligations, exceptions and next actions;
-2. **Items & rates** — schedules, effective quantities, rates, payment categories and specifications;
-3. **Documents** — Delivery Challans, Issue Challans, extension letters and other issued Work documents;
-4. **Material & site** — procurement position, receipts, custody, and PAC evidence, with the installation records and the serial trace on a section of their own (they were the tail of the delivery section, below the challans and their correction notices, and the serial pool a recording draws from is the same list the trace prints);
-5. **Measurement & billing** — measurement evidence, formal Measurement Books, contractual bills and GST invoices;
-6. **Guarantees** — PBG, security deposit, warranty/maintenance obligations, completion and acceptance dates;
-7. **Activity** — audit timeline, amendments, correction chains and approval decisions.
-
-The Work header remains visible context: Work code, title, status, LOA/tender reference, contract value and current completion position.
+The mock draws this as one centred card that steps credentials → two-factor →
+organisation chooser. The application uses that card and that layout for the
+whole family of auth screens (§ Approved divergences 4).
 
 ## Contract-source intake
 
-The LOA is required. NIT, Contract Agreement and tender/specification PDFs are optional.
-
-The intake flow is:
+The LOA is required. NIT, Contract Agreement and tender/specification PDFs are
+optional.
 
 ```text
 Upload LOA
@@ -107,39 +338,43 @@ Upload LOA
 ```
 
 The payment setup is a dialog, not a screen: stage percentages per category
-beside a category per item, with one Save and a Later that writes nothing.
-Items the reviewer left uncategorised arrive with a category proposed from
-their description and marked as a proposal until saved; Save commits the
-proposals still standing and says how many. It is offered by the navigation
-that follows confirmation and never again — a revisit or a refresh opens the
-Work page plainly — and both editors stay permanently on the Work's Schedules
-tab.
+beside a category per item, with one Save and a Later that writes nothing. Items
+the reviewer left uncategorised arrive with a category proposed from their
+description, marked as a proposal until saved; Save commits the proposals still
+standing and says how many. It is offered by the navigation that follows
+confirmation and never again — a revisit or a refresh opens the Work plainly —
+and both editors stay permanently on the Work's Quantity ledger section.
 
 The unanswered question outlives the dialog, quietly. While any item on a Work
-would bill through a category with no matrix row, the Work's overview carries
-one muted line saying so and one inline control that opens the same dialog. It
-is derived from the Work's data rather than from the visit, so it appears on a
-Work configured badly months ago and disappears the moment the gap closes —
-which is why the modal never has to reappear. Save refuses to leave that state
-in the first place, naming the categories inline.
+would bill through a category with no matrix row, the Work's Timeline carries one
+muted line saying so and one inline control that opens the same dialog. It is
+derived from the Work's data rather than from the visit, so it appears on a Work
+configured badly months ago and disappears the moment the gap closes. Save
+refuses to leave that state in the first place, naming the categories inline.
 
-Extracted payment terms, warranty/maintenance periods, PBG/security-deposit release clauses and item specifications are proposal evidence. They never bypass human review.
+Extracted payment terms, warranty and maintenance periods, PBG and
+security-deposit release clauses, and item specifications are proposal evidence.
+They never bypass human review.
 
 ## Document creation
 
-Major legal documents use a guided pattern:
+Major legal documents use a guided pattern, rendered through the mock's card and
+field anatomy:
 
 1. **Context** — Work, party, date and movement/document purpose;
-2. **Lines or sources** — eligible items, quantities, PO/source links and remaining balance;
-3. **Evidence and logistics** — transport, serial, attachment or certificate facts where applicable;
-4. **Review** — human-readable document preview, warnings and authority requirements;
-5. **Issue/finalise** — the server revalidates, allocates the number and freezes the immutable snapshot.
+2. **Lines or sources** — eligible items, quantities, PO/source links, remaining
+   balance;
+3. **Evidence and logistics** — transport, serial, attachment or certificate
+   facts where applicable;
+4. **Review** — human-readable document preview, warnings, authority
+   requirements;
+5. **Issue/finalise** — the server revalidates, allocates the number and freezes
+   the immutable snapshot.
 
-Draft editing and legal issue/finalisation are visually and semantically separate.
+The lifecycle strip above the editor is the mock's
+`OutwardDocumentLifecycle`; the editor below it locks when the strip says locked.
 
 ## Measurement and financial narrative
-
-The product must consistently explain this sequence:
 
 ```text
 site evidence
@@ -151,42 +386,50 @@ site evidence
   → payment receipt/reconciliation
 ```
 
-The branch is the point, and this document used to draw it as one straight
-line — bill, then invoice from the bill (resolved finding 31 in
-`docs/AUDIT-DISPOSITION-2026-08-10.md`). The code does not work that way and
-never did. Finalising a Measurement Book raises the contractual bill from
-that book's lines in the same transaction
-(`routes/measurement-books/finalize.ts`), and the GST tax invoice is raised
-from the **finalised Measurement Book** as well — a draft invoice is created
-against a `measurementBookId` (`routes/tax-invoices/drafting.ts`), never
-against a bill id. The bill is not an input to the invoice.
+The branch is the point. Finalising a Measurement Book raises the contractual
+bill from that book's lines in the same transaction
+(`routes/measurement-books/finalize.ts`), and the GST tax invoice is raised from
+the **finalised Measurement Book** as well — a draft invoice is created against a
+`measurementBookId` (`routes/tax-invoices/drafting.ts`), never against a bill id.
+The bill is not an input to the invoice.
 
-They are siblings from one parent because they answer to different
-authorities: the bill is the contractual claim the Railways department
-measures and pays against, the tax invoice is the GST document the statutory
-regime requires. One finalised measurement is the single source of truth
-under both, which is what keeps them from disagreeing. An invoice may also
-be raised directly, with no Work and no Measurement Book behind it, for
-service billing outside a measured contract.
+They are siblings from one parent because they answer to different authorities:
+the bill is the contractual claim the Railways department measures and pays
+against; the tax invoice is the GST document the statutory regime requires. One
+finalised measurement is the single source of truth under both, which is what
+keeps them from disagreeing. An invoice may also be raised directly, with no Work
+and no Measurement Book behind it, for service billing outside a measured
+contract.
 
-Cancellation releases the Measurement Book so a corrected document can be
-raised against the same measurement; after the IRP's 24-hour cancellation
-window a Section 34 credit note is the lawful instrument instead.
+Cancellation releases the Measurement Book so a corrected document can be raised
+against the same measurement; after the IRP's 24-hour cancellation window a
+Section 34 credit note is the lawful instrument instead.
 
-The older site `mb_entries` surface is labelled **Measurement evidence** rather than presented as the formal Measurement Book itself: the register heads itself with measurement-evidence language, states that billing runs through the formal Measurement Books below, and no longer shows the retired billed/unbilled chips. (Resolved finding 30 in `docs/AUDIT-DISPOSITION-2026-08-10.md`.)
+The older site `mb_entries` surface is labelled **Measurement evidence** rather
+than presented as the formal Measurement Book itself. External statutory
+registration status is shown separately from local invoice status: a locally
+issued invoice is never represented as IRP-registered without verified provider
+evidence.
 
-External statutory registration status is shown separately from local invoice status. A locally issued invoice is never represented as IRP-registered without verified provider evidence.
+## Business-rule note: installation above sanctioned quantity
 
-## Mobile/site shell
+The rule changed with the redesign. **Installation quantity may now exceed the
+LOA sanctioned quantity.** The excess does not block the recording; it raises a
+_pending variation_ against the Work, surfaced on the Work's **Variation**
+section as an unbillable exposure with the installed-versus-sanctioned figures
+and the money at risk. **Measurement and billing still cap at the sanctioned
+quantity** until the variation is approved and its sanction locked.
 
-The mobile bottom navigation is:
+The mock draws the surface: the "Pending variation" card in
+`components/work-variations.tsx`, above the variation ledger, whose copy is
+"Installation recorded above sanctioned quantity. Excess remains unbillable until
+approval."
 
-- **Home** — assigned Work alerts and today’s tasks;
-- **Works** — assigned Work list and concise Work position;
-- **Record** — receipt, serial, installation and evidence actions;
-- **More** — permitted secondary registers and account actions.
-
-Large financial, numbering and organisation-administration surfaces remain office-first. Mobile forms use one decision per section, large touch targets, persistent save state and explicit offline/service-error messaging; offline synchronisation is not implied until it is implemented.
+Implementation lands in a parallel pull request on branch
+`rules/installation-variation`, which owns `docs/PRODUCT.md` and
+`docs/PRODUCT-SPEC.md` for this rule. This document records that the rule exists
+because it changes what the Variation section is for; it deliberately does not
+document the server semantics, the migration or the approval path.
 
 ## Shared states
 
@@ -203,154 +446,158 @@ Every register and detail page provides distinct patterns for:
 - unsaved draft with navigation warning where data loss is possible.
 
 Three of these are shared components rather than a convention each screen
-re-implements: `ui/state.tsx` carries the wait (`LoadingState`, skeleton
-blocks announced as busy), the legitimate empty state (`EmptyState`, one
-plain operational sentence and at most one action), and the service
-failure (`ErrorState`, a persistent alert). `ErrorState` takes its retry
-handler as a **required** prop — a failure with no way back is a dead end,
-and the type checker is what refuses one. A screen with more than one
-independent read carries one failure state per read, each naming what it
-retries, so a failed picker stays distinguishable from a failed register.
+re-implements. `apps/web/src/ui/state.tsx` carries the wait (`LoadingState`,
+skeleton blocks announced as busy), the legitimate empty state (`EmptyState`, one
+plain operational sentence and at most one action), and the service failure
+(`ErrorState`, a persistent alert). `ErrorState` takes its retry handler as a
+**required** prop — a failure with no way back is a dead end, and the type checker
+is what refuses one. A screen with more than one independent read carries one
+failure state per read, each naming what it retries, so a failed picker stays
+distinguishable from a failed register.
 
-The permission-limited state is deliberately NOT an `ErrorState`: a 403
-does not become a success on the second attempt, so it reads as an inline
-refusal rather than offering an action that would refuse identically.
+These three re-skin to the mock's `Skeleton`, `Empty` and destructive-alert
+anatomy (`docs/DESIGN.md` § Primitive inventory). Their contract — three states,
+required retry, one per read — does not change with the paint.
 
-`apps/web/test/views/state-coverage*` holds these to the screen. It derives
-the views with a mount load path from the source and fails if one is
-neither covered by a case that renders all three states nor exempt with a
-stated reason.
+The permission-limited state is deliberately NOT an `ErrorState`: a 403 does not
+become a success on the second attempt, so it reads as an inline refusal rather
+than offering an action that would refuse identically.
+
+`apps/web/test/views/state-coverage*` holds these to the screen. It derives the
+views with a mount load path from the source and fails if one is neither covered
+by a case that renders all three states nor exempt with a stated reason.
 
 The server side of a failure is the shared error envelope
-(`packages/contracts/src/errors.ts`):
-`message` states the fact that was refused, and the optional `remedy`
-states the action that clears it. A remedy belongs to the error code
-rather than to the call site, so the reviewed text lives in one catalog
-(`apps/server/src/remedies.ts`) instead of drifting across the routes that
-throw it.
+(`packages/contracts/src/errors.ts`): `message` states the fact that was refused,
+and the optional `remedy` states the action that clears it. A remedy belongs to
+the error code rather than to the call site, so the reviewed text lives in one
+catalogue (`apps/server/src/remedies.ts`) instead of drifting across the routes
+that throw it. It renders through the mock's `RemedyError`: a destructive-tinted
+`role="alert"` panel, the fact on the first line, the remedy beneath it as a link
+or button carrying a forward arrow.
 
-## Screen inventory
+## Focus, keyboard and navigation
 
-The approved design pack covers:
+- Workspace navigation is serialised into `location.hash` (hand-rolled, no router
+  library). A refresh restores the exact view including the Work workspace
+  section, Back and Forward walk the view history, register rows render real
+  links so middle-click works, and unknown fragments fall back to the Dashboard —
+  except a Work fragment naming an unknown section, which keeps the Work and
+  opens Timeline.
+- Porting the mock's Next.js `Link`/`usePathname` structure means porting its
+  _appearance and affordances_, not its router. Every mock `Link` becomes a real
+  anchor with a hash href.
+- Focus moves to the heading of the newly opened view on navigation, and returns
+  to the invoking control when a dialog or sheet closes.
+- Dialogs and sheets trap focus and close on `Escape`. The mobile sheets are the
+  same primitive and behave the same way.
+- The topbar search control is reachable in tab order before the page content.
+  Its `⌘K` chip is only rendered when the shortcut is wired (§ ⌘K command
+  palette).
+- Blocked actions whose remedy lives on another screen (payment matrix rows,
+  organisation GST profile, buyer contact facts) link directly to that screen.
 
-1. Sign in
-2. Create account
-3. Organisation chooser
-4. Home dashboard
-5. Works register
-6. LOA upload
-7. LOA and contract-source review
-8. Work overview
-9. Work items and rates
-10. Work documents
-11. Material and site position
-12. Measurement and billing
-13. Guarantees and acceptance
-14. Work activity
-15. Delivery Challan editor
-16. Issued Delivery Challan detail
-17. Issue Challan editor/detail
-18. Measurement Book builder
-19. Billing and GST register/detail
-20. Purchase Orders
-21. Budgetary quotations
-22. Approval queue and decision detail
-23. Organisation-wide document register
-24. Serial lookup and traceability
-25. Installation register (tenant-wide)
-26. Tax-invoice register (organisation-wide), with the direct-invoice
-    editor and the shared invoice detail it opens
-27. Contacts
-28. Locations, units and signatories
-29. Members and permissions
-30. Organisation profile
-31. Numbering, tax and compliance settings
-32. Mobile home
-33. Mobile record hub
-34. Mobile installation/serial evidence
+## Verification gates
 
-Small confirmation dialogs, validation summaries, skeletons and error panels use shared patterns rather than becoming separate product architectures.
+Carried forward from the previous contract and still binding. Re-skinning does
+not lower any of these bars; it is precisely the change most likely to breach
+them.
 
-## Current implementation status
+### Dual-theme axe suite — the WCAG proof
 
-The task-first shell, organisation entry, Home/Works/Documents/Operations/
-Administration navigation, Work workspace, LOA and contract-source review,
-delivery/issue documents, installation, Measurement Book, billing, tax invoice,
-and e-way-bill surfaces are implemented. Shared loading, empty, retry,
-read-only, permission, and blocked-action states cover the primary paths, with
-component and Playwright/axe regression coverage. Every view that reads on
-mount renders the three shared states from `ui/state.tsx`, enforced per view
-by `apps/web/test/views/state-coverage*`.
+`pnpm --filter @auto-mb/web test:e2e` is the standing accessibility gate. It runs
+Playwright against the real production bundle with the API mocked at the network
+layer, and it scans **both themes** on every screen it covers: the fixture applies
+`data-theme` the way the product does, asserts that `color-scheme` was pinned,
+asserts that the two passes resolved different `--background` values (so a dark
+scan that silently ran light fails rather than passing vacuously), and waits out
+the theme-transition frames before sampling. Text and tint pairings, including
+the 11px status badges, must hold WCAG AA 4.5:1 in both themes.
 
-Workspace navigation is serialized into `location.hash` (hand-rolled, no
-router library): a refresh restores the exact view including the Work
-workspace section, browser Back/Forward walk the view history, register rows
-render real links so middle-click works, and unknown or stale fragments fall
-back to the Dashboard — except a Work fragment naming a section this build
-does not know, which keeps the Work and opens its Overview, because the id is
-the durable half of that address. Blocked actions whose remedy lives on another screen
-(payment matrix rows, organisation GST profile, buyer contact facts) link
-directly to that screen, and each Work's Bills section opens with a billing
-readiness checklist deriving the same prerequisites from existing reads.
+It runs at the desk width for the accessibility suite (the sidebar is hidden below
+`lg`), and the responsive suite runs at 320, 768 and desk widths.
 
-When Whitebooks is configured, the billing UI performs explicit IRP register,
-reconcile, and cancel actions directly through the server adapter. Local and
-provider states remain separate. A 202 unknown result is displayed as unknown,
-stale in-progress operations expose a recovery action, and registration or
-generation is never repeated blindly. Manual compatibility evidence is labelled
-unverified and cannot overwrite a provider attempt.
+**Known trap.** The `design:contrast` and `design:states` scripts
+(`scripts/design-audit.mjs`) misparse `oklab()` alpha tints on this palette, and
+the mock's status styles are built almost entirely from alpha tints
+(`bg-success/10`, `bg-warning/15`, `border-primary/20`). Their numbers on those
+pairs are wrong. **Real-render axe measurement is authoritative.** The `design:*`
+scripts also require a rendered HTML file as an argument
+(`pnpm design:a11y <file.html>`); a bare invocation refuses rather than passing.
 
-Invoice drafting requires an explicit forward-charge or reverse-charge choice;
-submit explains that reverse charge is not yet supported instead of inventing
-the printed answer. Submitted tax invoices can be rendered from frozen invoice
-facts, regenerated after IRP evidence arrives to embed the signed QR, and
-downloaded through an authenticated tenant-bound request. Every render retains
-its own PDF, source digest, and frozen logo; the current version remains readable
-after local cancellation and all versions are included in the owner export.
-The invoice form offers both line shapes: one cumulative SAC service line, or
-itemised HSN/SAC lines with their own quantity, unit, rate and GST rate. The
-switch starts on the organisation's default and is a choice about the document
-in hand, never about the buyer. An itemised invoice's detail and PDF print a
-line table instead of a single description.
+The full set, for reference: `design:contrast`, `design:states`, `design:a11y`,
+`design:rtl`, `design:taste`.
 
-Invoices are also a module of their own under Documents. Its register reads
-every invoice the caller may see — work-backed and direct — with the local
-status and the IRP state as separate columns and the source named as a Work
-link or as Direct. A row opens the same detail surface the Work's Bills tab
-opens, which is what puts Generate PDF, Open PDF, the IRP transport and the
-credit note within reach of a direct invoice for the first time. The
-direct-invoice editor lives on the register because there is no Work to put it
-on; it is the Work form's fields with the Measurement Book replaced by a stated
-taxable value, and an itemised direct invoice states no value at all.
+### State coverage
 
-An e-way bill is raised where the goods are: from a submitted tax invoice that
-carries goods lines, and from an issued standalone Delivery Challan that does.
-One panel serves both, because the operator's question is the same either way —
-what is moving, under what number, and is it still valid. Applicability is the
-server's answer and never the screen's: where a document cannot raise a bill
-the panel says why in a sentence that names the fix, rather than offering an
-action that would be refused. A service-only document is refused, which is the
-2026-08-10 ruling surviving intact and what NIC itself enforces.
+`apps/web/test/views/state-coverage*` enumerates every view with a mount load
+path and fails if one neither renders all three shared states nor carries a
+stated exemption. A new screen added during the port is covered by this
+automatically — it will fail until its case exists.
 
-The standalone Delivery Challan editor carries the statutory facts that make
-this possible: per line an HSN/SAC code beside a goods-or-service marker, and
-per challan the movement reason and transport block. They are optional on the
-document and required before a bill can be raised, and the editor says so —
-they freeze at issue, so they belong on the draft.
+### Bundle budget
 
-A generated e-way bill renders a printable summary. It is a convenience print
-and labelled as one on its face and in the panel: the statutory e-way bill is
-the document held on the NIC portal. Historical records remain visible,
-reconcilable, and cancellable.
+`pnpm bundle:check` (`apps/web/scripts/check-bundle-size.mjs`) enforces the
+initial JavaScript payload: a programme budget of 220,000 bytes gzip and a
+tighter ratchet beneath it that is the current measured floor. The port adds
+components; the ratchet is what stops it adding them invisibly. Raising the
+ratchet is a deliberate, explained change, and the script refuses a ratchet above
+the budget.
+
+### Whole-branch verification
+
+`pnpm verify` — format check, lint, typecheck, build, bundle check, tests,
+migration check, architecture check, config check, comment-reference check, dead
+code, secret scan — before handoff.
+
+### Visual evidence
+
+`CONTRIBUTING.md` § Evidence for a visible UI change applies to every porting
+pull request: paste before/after images into the thread, or state explicitly that
+capture was infeasible and name the CI text assertions standing in for them.
+Silence is not the fallback.
+
+## Screen coverage map
+
+Screens the mock covers, which must be visually indistinguishable:
+
+Dashboard · Works register · Work workspace (twelve sections) · Tenders ·
+Inspection · Payments · Challans (delivery and issue tabs) · Delivery-challan
+editor · Issue-challan editor · Invoices · E-Way Bills · Quotations ·
+Correspondence · Production · Inventory · Purchase orders · Installations ·
+Maintenance · Global search · Employees · Approvals · Masters · Members ·
+Settings · Sign in · Onboarding · Mobile bottom bar and sheets
+
+Screens the application adds, built in the mock's grammar (§ Approved divergences
+4):
+
+LOA upload · LOA and contract-source review · Tender-terms review · Payment
+matrix dialog · PAC certificate issuance · Completion extensions · Measurement
+Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invoice
+IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
+recovery · Password recovery · Account security · Organisation access settings ·
+Appearance settings
+
+Small confirmation dialogs, validation summaries, skeletons and error panels use
+shared patterns rather than becoming separate product architectures.
 
 ## Definition of UX completion
 
-The overhaul is complete only when:
+The port is complete only when:
 
-- the approved information architecture is implemented rather than merely recoloured;
-- all accepted workflows retain their server-side invariants and permission gates;
-- the existing browser and component suites are updated to traverse the new navigation;
-- every major page has loading, empty, failure and read-only coverage;
-- desktop, tablet and mobile layouts pass keyboard and serious axe checks;
-- the final branch passes `pnpm verify`, production Compose smoke and fresh-cluster restore;
+- every screen the mock covers is visually indistinguishable from the frozen
+  mock at `a8e1fde`, at desk, tablet and mobile widths, in both themes;
+- every additive screen reads as part of the same system, using only the mock's
+  tokens and primitives;
+- the settled information architecture above is implemented, including the Bills
+  demotion and the serials merge, and no retired destination survives;
+- divergences match the enumerated list exactly, each traceable to this document;
+- all accepted workflows retain their server-side invariants and permission
+  gates;
+- the component and Playwright suites are updated to traverse the new navigation;
+- every view with a mount load path renders loading, empty and failure states;
+- the dual-theme axe suite passes, with any token-level fix flagged to the owner;
+- the bundle ratchet holds or its rise is explained;
+- the branch passes `pnpm verify`, the production Compose smoke and the
+  fresh-cluster restore;
 - the merge candidate receives product-owner visual approval.
