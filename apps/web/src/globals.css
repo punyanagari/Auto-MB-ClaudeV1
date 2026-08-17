@@ -126,6 +126,11 @@
    * is the smallest change that clears it: 4.79:1 on the tint, 5.58:1 as
    * plain text on the card.
    *
+   * DIVERGENCE (light --destructive): the mock's oklch(0.55 0.19 27)
+   * measures 4.27:1 as the ink of `bg-destructive/10 text-destructive`
+   * over the background — below AA. Lowering L to 0.52 is the smallest
+   * change that clears it: 4.82:1 on the tint, 6.17:1 as plain text.
+   *
    * DIVERGENCE (dark --destructive): the mock's oklch(0.62 0.19 27)
    * measures 4.11:1 as the ink of `bg-destructive/10 text-destructive` and
    * 4.49:1 as error text on the card — both under AA. L 0.66 gives
@@ -140,7 +145,7 @@
    * value here is the mock's own dark --warning, oklch(0.78 0.13 75),
    * which reads 6.65:1 on the tint and 8.79:1 on the card. The mock has
    * the same defect in its own dark theme and should absorb this fix. */
-  --destructive: light-dark(oklch(0.55 0.19 27), oklch(0.66 0.19 27));
+  --destructive: light-dark(oklch(0.52 0.19 27), oklch(0.66 0.19 27));
   --destructive-foreground: light-dark(oklch(0.99 0 0), oklch(0.98 0 0));
   --success: light-dark(oklch(0.5 0.12 155), oklch(0.68 0.12 155));
   --success-foreground: light-dark(oklch(0.99 0 0), oklch(0.16 0.02 155));
