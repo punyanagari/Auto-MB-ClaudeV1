@@ -390,6 +390,71 @@
   }
 }
 
+/* The mock's component layer, ported whole from `app/globals` at a8e1fde
+ * (`docs/DESIGN.md` § Component-layer conventions: "port all nine").
+ * That file is byte-identical here at the mock's current main, fdfe5ef —
+ * the two commits differ only in the token values PR #104 already
+ * absorbed — so the freeze pointer does not move for this port.
+ *
+ * The first three name a recurring shape rather than restate it: the
+ * eyebrow above a heading, the panel a register sits on, and the figure on
+ * a metric tile. They are classes and not tokens on purpose. Each is a
+ * fixed bundle of existing tokens — a caller picks the bundle, never the
+ * values — which is what keeps the eyebrow in `ui/page-header.tsx`, the
+ * label on `ui/stat.tsx` and a rail group heading in `shell/SidebarNav.tsx`
+ * one 11px uppercase text instead of three copies of it. */
+@layer components {
+  .data-surface {
+    @apply overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.03)];
+  }
+
+  .section-label {
+    @apply text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase;
+  }
+
+  .metric-value {
+    @apply font-mono text-2xl font-semibold tracking-tight tabular-nums;
+  }
+
+  /* The six slot overrides. They are inert in this build today: nothing
+   * emits `data-slot` yet, because the primitives they govern were ported
+   * in #101 with these same declarations written inline instead. They are
+   * here so the rules exist where the mock puts them, ready for
+   * `ui/card.tsx` and `ui/table.tsx` to adopt the hooks
+   * (`docs/DESIGN.md` § Primitive inventory asks them to) and for the Tabs
+   * primitive to arrive with a consumer.
+   *
+   * `table-header` is the one rule that is NOT the mock's literal. The
+   * mock tints with `bg-muted/55`; a sticky heading cannot be translucent
+   * or scrolled rows read through it, so this build resolves the same 55%
+   * against the card as the opaque `--table-header` — the reasoning
+   * recorded with that token above, and already live in `ui/table.tsx`.
+   * Whoever adopts the slot hooks must keep it opaque. */
+  [data-slot='card'] {
+    @apply border-border/90 shadow-[0_1px_2px_0_rgb(15_23_42/0.025)];
+  }
+
+  [data-slot='table-header'] {
+    @apply bg-table-header;
+  }
+
+  [data-slot='table-head'] {
+    @apply h-10 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase;
+  }
+
+  [data-slot='table-row'] {
+    @apply transition-colors hover:bg-accent/35;
+  }
+
+  [data-slot='tabs-list'] {
+    @apply rounded-lg;
+  }
+
+  [data-slot='tabs-trigger'] {
+    @apply rounded-md px-3 font-medium;
+  }
+}
+
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;

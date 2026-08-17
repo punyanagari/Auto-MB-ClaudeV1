@@ -1,5 +1,25 @@
+import type { ReactElement } from 'react';
 import { cn } from '../lib/cn.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { NAVIGATION, type ModuleKey } from './navigation.js';
+
+/** A collapsed destination is an icon with an `sr-only` label: named for a
+ * screen reader, unlabelled for an eye. The mock's bubble puts the word
+ * back on hover and on focus. Expanded, the label is already on screen and
+ * a bubble repeating it would be noise. */
+function withRailLabel(
+  collapsed: boolean,
+  label: string,
+  destination: ReactElement,
+): ReactElement {
+  return collapsed ? (
+    <Tooltip content={label} side="right" className="w-full">
+      {destination}
+    </Tooltip>
+  ) : (
+    destination
+  );
+}
 
 /** A destination inside an open module. The mock's rail is flat, but its own
  * component library draws this shape (`components/ui/sidebar` →
@@ -67,32 +87,35 @@ export function SidebarNav({
               const showBadge = item.key === 'approvals' && pendingApprovals > 0;
               return (
                 <li key={item.key} className="relative">
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex w-full items-center gap-2 overflow-hidden rounded-lg text-left text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring [&>span:last-child]:truncate',
-                      collapsed ? 'size-8 justify-center p-2' : 'h-9 p-2',
-                      current
-                        ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                        : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                    )}
-                    aria-current={current ? 'page' : undefined}
-                    aria-expanded={children.length > 0 ? current : undefined}
-                    /* Names the list the state refers to. Present only
+                  {withRailLabel(
+                    collapsed,
+                    item.label,
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex w-full items-center gap-2 overflow-hidden rounded-lg text-left text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring [&>span:last-child]:truncate',
+                        collapsed ? 'size-8 justify-center p-2' : 'h-9 p-2',
+                        current
+                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                          : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                      )}
+                      aria-current={current ? 'page' : undefined}
+                      aria-expanded={children.length > 0 ? current : undefined}
+                      /* Names the list the state refers to. Present only
                        alongside aria-expanded, so it never points at an id
                        that no module will ever render. */
-                    aria-controls={children.length > 0 ? submenuId : undefined}
-                    title={collapsed ? item.label : undefined}
-                    onClick={() => {
-                      onOpenModule(item.key);
-                      onSelected?.();
-                    }}
-                  >
-                    <Icon className="size-4 shrink-0" aria-hidden="true" />
-                    <span className={collapsed ? 'sr-only' : 'min-w-0 flex-1'}>
-                      {item.label}
-                    </span>
-                  </button>
+                      aria-controls={children.length > 0 ? submenuId : undefined}
+                      onClick={() => {
+                        onOpenModule(item.key);
+                        onSelected?.();
+                      }}
+                    >
+                      <Icon className="size-4 shrink-0" aria-hidden="true" />
+                      <span className={collapsed ? 'sr-only' : 'min-w-0 flex-1'}>
+                        {item.label}
+                      </span>
+                    </button>,
+                  )}
                   {showBadge && !collapsed && (
                     <span className="pointer-events-none absolute top-1.5 right-1 flex h-5 min-w-5 items-center justify-center rounded-md bg-warning/15 px-1 font-mono text-xs font-medium text-warning-foreground tabular-nums">
                       {pendingApprovals}
