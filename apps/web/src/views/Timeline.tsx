@@ -295,8 +295,12 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
           appears here as it is recorded.
         </EmptyState>
       )}
+      {/* The rail below is `--border` like every other rule in the product.
+          It used to be a hard-coded `#cbc9c0`, a warm grey left over from
+          the retired quiet-light palette, which does not flip with the
+          theme: in dark it drew a pale warm line across a cool dark ground. */}
       {events !== null && events.length > 0 && (
-        <ol className="m-0 list-none border-l-2 border-[#cbc9c0] p-0">
+        <ol className="m-0 list-none border-l-2 border-border p-0">
           {events.map((event) => {
             const rows = diffRows(event.details);
             const facts = contextFacts(event.details);

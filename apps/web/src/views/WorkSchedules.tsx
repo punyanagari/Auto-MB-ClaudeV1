@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { ApiClient, SetWorkItemTaxFactsRequest } from '../api.js';
 import { formatCompactInr } from '../format.js';
 import { exactRowsTotal } from '../loa-payload.js';
+import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import {
@@ -39,6 +40,13 @@ function itemFlags(item: WorkItem, pendingRemovals: ReadonlySet<string>) {
   return {
     removalPending: pendingRemovals.has(item.id),
     added: item.amendmentAdded === true,
+    /* More installed than the contract sanctions, so the item owes a
+     * railway variation order. `pendingVariation` is optional on the work
+     * item — absent on responses built before migration 0077 — so the
+     * test is explicit rather than truthy. Same words and same warning
+     * tint as the recording flow's chip in `Installations.tsx`, which is
+     * the mock's (`components/installation-capture-flow.tsx:50`). */
+    variationPending: item.pendingVariation === true,
   };
 }
 
@@ -259,6 +267,9 @@ export function WorkSchedules({
                       {flags.added && <StatusChip status="issued">added</StatusChip>}
                       {flags.removalPending && (
                         <StatusChip status="pending">omission pending</StatusChip>
+                      )}
+                      {flags.variationPending && (
+                        <Badge variant="warning">Above LOA — variation pending</Badge>
                       )}
                     </th>
                     <td className={wrapCell}>
