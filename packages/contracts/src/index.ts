@@ -32,3 +32,5 @@ export * from './received-railway-bills.js';
 export * from './bill-payments.js';
 export * from './company-documents.js';
 export * from './inspections.js';
+export * from './statutory.js';
+export * from './payments.js';

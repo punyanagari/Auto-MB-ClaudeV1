@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { BILL_DEDUCTION_HEAD_RULES } from '@auto-mb/contracts';
 import type {
   BillDeductionCategory,
   BillSettlementPosition,
@@ -38,30 +39,32 @@ interface WorkBillSettlementProps {
   readonly canCancel: boolean;
 }
 
-/** The four heads with a statutory or contractual identity, in the order
- * a railway payment advice prints them, plus the described fifth. */
+/**
+ * The named heads, in the order a railway payment advice prints them.
+ *
+ * Derived from `BILL_DEDUCTION_HEAD_RULES` rather than restated: the
+ * labels and the statutory hints used to be typed out here as well as in
+ * the migration, the contract and the route, and four copies of "section
+ * 194C" is three chances to update the wrong one. `OTHER` is excluded
+ * because it is not a field on the advice — it is the described row the
+ * operator adds when the railway kept something unnamed.
+ */
 const DEDUCTION_FIELDS: readonly {
   readonly category: BillDeductionCategory;
   readonly label: string;
   readonly hint?: string;
-}[] = [
-  { category: 'GST_TDS', label: 'GST TDS', hint: 'CGST section 51 — GSTR-7A' },
-  {
-    category: 'INCOME_TAX_TDS',
-    label: 'Income-tax TDS',
-    hint: 'Section 194C — Form 26AS',
-  },
-  { category: 'SECURITY_DEPOSIT', label: 'Retention / SD' },
-  { category: 'PENALTY', label: 'Penalty or recovery' },
-];
+}[] = BILL_DEDUCTION_HEAD_RULES.filter((rule) => rule.head !== 'OTHER').map((rule) => ({
+  category: rule.head,
+  label: rule.label,
+  hint:
+    rule.provision === null
+      ? rule.reconciledThrough
+      : `${rule.provision.citation} — ${rule.reconciledThrough}`,
+}));
 
-const CATEGORY_LABELS: Record<BillDeductionCategory, string> = {
-  GST_TDS: 'GST TDS',
-  INCOME_TAX_TDS: 'Income-tax TDS',
-  SECURITY_DEPOSIT: 'Retention / SD',
-  PENALTY: 'Penalty or recovery',
-  OTHER: 'Other',
-};
+const CATEGORY_LABELS: Record<BillDeductionCategory, string> = Object.fromEntries(
+  BILL_DEDUCTION_HEAD_RULES.map((rule) => [rule.head, rule.label]),
+) as Record<BillDeductionCategory, string>;
 
 /** One trimmed field, or null when it was left blank.
  *

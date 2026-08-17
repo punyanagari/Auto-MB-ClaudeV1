@@ -14,6 +14,20 @@ import type {
   WorkSupersessionResponse,
   ProposeCorrectionNoticeRequest,
   ProposeIssueChallanCancelReplaceRequest,
+  CancelVendorInvoice,
+  CreatePaymentRequest,
+  DecidePaymentRequest,
+  PayPaymentRequest,
+  PaymentRequest,
+  PaymentRequestListResponse,
+  RecordAdvanceBills,
+  RecordVendorInvoice,
+  RecordVendorPayment,
+  TdsPreviewResponse,
+  VendorInvoice,
+  VendorLedgerResponse,
+  VendorPayment,
+  VoidVendorPayment,
   Bill,
   BillListResponse,
   CancelChallanRequest,
@@ -776,6 +790,56 @@ export interface ApiClient {
     organisationId: string,
     status?: ApprovalStatus,
   ) => Promise<readonly ApprovalRequest[]>;
+  readonly listPaymentRequests: (
+    organisationId: string,
+  ) => Promise<PaymentRequestListResponse>;
+  readonly createPaymentRequest: (
+    organisationId: string,
+    body: CreatePaymentRequest,
+  ) => Promise<PaymentRequest>;
+  readonly decidePaymentRequest: (
+    organisationId: string,
+    requestId: string,
+    body: DecidePaymentRequest,
+  ) => Promise<PaymentRequest>;
+  readonly payPaymentRequest: (
+    organisationId: string,
+    requestId: string,
+    body: PayPaymentRequest,
+  ) => Promise<PaymentRequest>;
+  readonly recordAdvanceBills: (
+    organisationId: string,
+    requestId: string,
+    body: RecordAdvanceBills,
+  ) => Promise<PaymentRequest>;
+  readonly listVendorInvoices: (
+    organisationId: string,
+  ) => Promise<VendorLedgerResponse>;
+  readonly recordVendorInvoice: (
+    organisationId: string,
+    body: RecordVendorInvoice,
+  ) => Promise<VendorInvoice>;
+  readonly previewVendorTds: (
+    organisationId: string,
+    invoiceId: string,
+    grossAmount: string,
+    paidOn: string,
+  ) => Promise<TdsPreviewResponse>;
+  readonly recordVendorPayment: (
+    organisationId: string,
+    invoiceId: string,
+    body: RecordVendorPayment,
+  ) => Promise<VendorPayment>;
+  readonly voidVendorPayment: (
+    organisationId: string,
+    paymentId: string,
+    body: VoidVendorPayment,
+  ) => Promise<VendorPayment>;
+  readonly cancelVendorInvoice: (
+    organisationId: string,
+    invoiceId: string,
+    body: CancelVendorInvoice,
+  ) => Promise<VendorInvoice>;
   readonly listWorkAmendments: (
     organisationId: string,
     workId: string,
@@ -2641,6 +2705,79 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { organisationId },
       );
       return payload.approvals;
+    },
+    async listPaymentRequests(organisationId) {
+      return request<PaymentRequestListResponse>('/api/payment-requests', {
+        organisationId,
+      });
+    },
+    async createPaymentRequest(organisationId, body) {
+      return request<PaymentRequest>('/api/payment-requests', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async decidePaymentRequest(organisationId, requestId, body) {
+      return request<PaymentRequest>(`/api/payment-requests/${requestId}/decision`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async payPaymentRequest(organisationId, requestId, body) {
+      return request<PaymentRequest>(`/api/payment-requests/${requestId}/payment`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async recordAdvanceBills(organisationId, requestId, body) {
+      return request<PaymentRequest>(`/api/payment-requests/${requestId}/bills`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async listVendorInvoices(organisationId) {
+      return request<VendorLedgerResponse>('/api/vendor-invoices', {
+        organisationId,
+      });
+    },
+    async recordVendorInvoice(organisationId, body) {
+      return request<VendorInvoice>('/api/vendor-invoices', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async previewVendorTds(organisationId, invoiceId, grossAmount, paidOn) {
+      const query = new URLSearchParams({ grossAmount, paidOn }).toString();
+      return request<TdsPreviewResponse>(
+        `/api/vendor-invoices/${invoiceId}/tds-preview?${query}`,
+        { organisationId },
+      );
+    },
+    async recordVendorPayment(organisationId, invoiceId, body) {
+      return request<VendorPayment>(`/api/vendor-invoices/${invoiceId}/payments`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async voidVendorPayment(organisationId, paymentId, body) {
+      return request<VendorPayment>(`/api/vendor-payments/${paymentId}/void`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async cancelVendorInvoice(organisationId, invoiceId, body) {
+      return request<VendorInvoice>(`/api/vendor-invoices/${invoiceId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
     },
     async listWorkAmendments(organisationId, workId) {
       const payload = await request<{ approvals: ApprovalRequest[] }>(

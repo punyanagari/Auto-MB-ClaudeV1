@@ -172,6 +172,21 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     downloadExtensionDraftPreview: vi.fn(),
     backfillExtensionRequest: vi.fn(),
     listApprovals: vi.fn().mockResolvedValue([]),
+    listPaymentRequests: vi
+      .fn()
+      .mockResolvedValue({ requests: [], beneficiariesWithBillsDue: [] }),
+    createPaymentRequest: vi.fn(),
+    decidePaymentRequest: vi.fn(),
+    payPaymentRequest: vi.fn(),
+    recordAdvanceBills: vi.fn(),
+    listVendorInvoices: vi
+      .fn()
+      .mockResolvedValue({ invoices: [], totalOutstanding: '0', overdueCount: 0 }),
+    recordVendorInvoice: vi.fn(),
+    previewVendorTds: vi.fn(),
+    recordVendorPayment: vi.fn(),
+    voidVendorPayment: vi.fn(),
+    cancelVendorInvoice: vi.fn(),
     listWorkAmendments: vi.fn().mockResolvedValue([]),
     proposeAmendment: vi.fn(),
     proposeAddItem: vi.fn(),

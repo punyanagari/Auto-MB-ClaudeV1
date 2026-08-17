@@ -815,9 +815,30 @@ railway withheld, and what is still owed. The distinction is the point:
   release path, no schedule of what is due back and no reconciliation
   against what was eventually returned, so a retention figure here answers
   "how much has been held" and never "how much is still held";
-- **penalties and recoveries**, argued individually;
+- **liquidated damages**, the pre-agreed contractual recovery for delay
+  under a named GCC clause;
+- **BOCW cess**, 1% under section 3 of the Building and Other Construction
+  Workers' Welfare Cess Act 1996, reconciled against a cess return to the
+  State welfare board;
+- **penalties and recoveries**, argued individually — kept distinct from
+  liquidated damages, which are the specific pre-agreed sum for delay;
 - **other**, which is the head that always turns up and is the only one that
   cannot be recorded without saying what it is.
+
+Liquidated damages and BOCW cess were added by migration 0078. Before it,
+the first fell into `penalty` alongside unrelated recoveries and the second
+into `other`, and neither belonged there: a head reconciled through its own
+form needs its own row, which is the same reasoning that separated GST TDS
+from income-tax TDS when the register was built.
+
+Every rate, threshold and legal citation named in this section lives in one
+module, `packages/contracts/src/statutory.ts`, which both the server and the
+web client read. It is in `contracts` rather than in the server because the
+web half needs the citations to label a field honestly, and that package is
+the only one both halves already depend on. **The values in it are an
+engineer's reading and are marked as requiring owner verification**;
+`statutoryVerificationChecklist()` enumerates them so a review can check
+them off rather than hunt them through a diff.
 
 Each is a typed row rather than free text or a nullable column, because each
 is a different conversation with a different authority on a different form.
@@ -977,6 +998,89 @@ the job parked and visible rather than silently run on their behalf; an
 administrator re-requests the reading under a live user. This is ADR-0011,
 and it is why there is no service account anywhere in the product.
 
+### 5.9 Money going out: employee requests and the vendor ledger
+
+§5.7 is money coming in. This is the other half of the cash position, added
+by migration 0078: what the agency pays its own people and its vendors.
+
+**An employee request is an approval, not a payment.** An advance or a
+reimbursement is raised with its proof attached — the product refuses to
+accept one without it — and moves `submitted → approved → paid`. It is
+decided by somebody other than the person who raised it; that refusal is
+the whole reason the flow exists rather than being a form that writes a
+payment directly.
+
+**An advance is not finished when it is paid.** A reimbursement arrives with
+its bills, so paying it settles it in the same act. An advance is paid
+against an estimate, and stays open until the final bills are recorded.
+While it is open, **that beneficiary cannot be given another advance** — a
+rule the mock draws as a blocking banner, held here by a partial unique
+index so a second open advance is impossible rather than merely refused, and
+refused by name in the route so an operator is told which request to close.
+
+**A vendor invoice is a liability, not a document this product issues.** It
+records what a vendor billed, the credit terms it falls due on, and how much
+is still open. The due date is derived from `invoice_date + credit_days` in
+SQL and never stored: two copies of one fact eventually disagree.
+
+**A vendor payment is three figures.** `gross = tds + net`. The gross is what
+the payment discharges of the invoice; the TDS is what was withheld and paid
+to the Government on the vendor's behalf; the net is what reached the
+vendor's bank. **The invoice is consumed by the gross**, because tax withheld
+is money the vendor has been credited with — recording only the net would
+leave every invoice permanently short by its own TDS, which is exactly the
+mistake the deduction rows of §5.7 exist to prevent on the receivable side.
+
+**TDS is computed by the server, from one table.** The client sends a gross
+and never a tax amount: a browser-computed deduction is a float-rounded
+deduction, and it would also let a caller choose its own rate. The rate
+decision reads `packages/contracts/src/statutory.ts` and honours three
+behaviours an operator should not meet for the first time in the ledger:
+
+- **thresholds**, tested per payee and per financial year. 194C triggers on
+  either a single payment reaching its threshold or the year's aggregate
+  reaching the annual one; 194J has no single-payment trigger. The aggregate
+  is tested _including_ the payment being made, because the payment that
+  crosses the line is itself deductible.
+- **section 206AA**, applied as a **floor** and not a substitution: where no
+  PAN has been furnished, the rate is the higher of the rate in force and
+  20%. Modelling it as "20% when PAN is missing" would under-deduct for any
+  section whose own rate exceeds 20%.
+- **the rate is snapshotted on the payment**, not looked up when the return
+  is drawn. Finance Acts move rates, and a return re-derived from today's
+  table would restate last quarter's deductions.
+
+A quarterly CSV export lists the deductions of one financial-year quarter —
+Q1 is April to June — for a practitioner's return-preparation utility.
+
+**Reused rather than rebuilt.** The vendor and the employee are both rows in
+`contacts`, the party master `purchase_orders.vendor_contact_id` already
+references; migration 0078 adds an `is_employee` flag beside `is_vendor`. A
+consequence worth stating: a paid site worker does **not** need a login,
+because the beneficiary is a contact and not a membership.
+
+**Not reused, deliberately.** `approval_requests` was not generalised to
+carry payment approvals. It is amendment-shaped — `work_id` is NOT NULL and a
+reimbursement need not belong to a Work, its `proposed`/`diff` pair describes
+an edit rather than a new record, and its one-pending-per-entity index
+assumes the entity exists independently of the request. A payment request's
+approval state is a status column on the request itself.
+
+**Authority.** `can_manage_payments` is a new explicit per-member grant,
+defaulting to false and not backfilled, following the precedent of the
+statutory authority in migration 0061. Being allowed to issue a document the
+agency is owed for is not being allowed to send the agency's money out. It
+requires MFA, like every other authority.
+
+**Not built yet.** Bank-statement import and Tally reconciliation are drawn
+in the mock's Vendors tab and are deliberately absent: both are file-ingestion
+problems that belong with the importer infrastructure, and a second ad-hoc
+CSV parser here would be the thing that has to be deleted when it lands. The
+mock's cumulative bank batch — selecting several approved requests and vendor
+payables into one summary — is also not built; the register is a plain
+two-tab table until the owner's v0 round for this screen settles how the
+batch surface should look.
+
 ### 5.10 Inspection gates despatch
 
 Nothing manufactured for Indian Railways moves until somebody the railway
@@ -1091,6 +1195,7 @@ definition and exists so that one PAN copy serves every Work, whereas an
 inspection certificate is evidence about specific items of one contract.
 A call's evidence is replaceable while the call is open and frozen the
 moment it closes.
+
 
 ## 6. Data conventions
 

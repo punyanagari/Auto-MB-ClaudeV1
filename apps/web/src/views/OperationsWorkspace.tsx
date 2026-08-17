@@ -66,6 +66,9 @@ import type { WorkTab } from './WorkDetail.js';
 const Approvals = lazy(() =>
   import('./Approvals.js').then((module) => ({ default: module.Approvals })),
 );
+const Payments = lazy(() =>
+  import('./Payments.js').then((module) => ({ default: module.Payments })),
+);
 const ChallanDetail = lazy(() =>
   import('./ChallanDetail.js').then((module) => ({ default: module.ChallanDetail })),
 );
@@ -362,6 +365,7 @@ export function OperationsWorkspace({
   // invoice does not thereby register it at the IRP. The server refuses
   // either way; hiding the controls only spares the useless attempt.
   const canManageStatutory = membership?.canManageStatutoryReporting ?? false;
+  const canManagePayments = membership?.canManagePayments ?? false;
   const isOwner = membership?.role === 'owner';
   const canSwitchOrganisation = organisations.length > 1;
   const identityRole =
@@ -1068,6 +1072,20 @@ export function OperationsWorkspace({
                 currentUserId={me.user.id}
                 canApprove={canApprove}
                 onChanged={refreshPendingApprovals}
+              />
+            )}
+
+            {view.name === 'payments' && (
+              <Payments
+                api={api}
+                organisationId={organisation.id}
+                currentUserId={me.user.id}
+                canManagePayments={canManagePayments}
+                canCancel={canCancel}
+                tab={view.tab}
+                onOpenRegister={(tab) => {
+                  navigate({ name: 'payments', tab });
+                }}
               />
             )}
 

@@ -7,6 +7,7 @@ export interface MembershipRow {
   can_issue_documents: boolean;
   can_cancel_documents: boolean;
   can_manage_statutory_reporting: boolean;
+  can_manage_payments: boolean;
 }
 
 export async function membershipOf(
@@ -15,7 +16,7 @@ export async function membershipOf(
 ): Promise<MembershipRow | undefined> {
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
-           can_manage_statutory_reporting
+           can_manage_statutory_reporting, can_manage_payments
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -101,7 +102,7 @@ export async function requireEvidenceRole(
  * name — and recording what those portals are said to have answered — is
  * a different act from issuing a document of our own, so it carries its
  * own grant on top of issue/cancel rather than replacing them. */
-export type DocumentAuthority = 'issue' | 'cancel' | 'statutory';
+export type DocumentAuthority = 'issue' | 'cancel' | 'statutory' | 'payments';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -111,15 +112,35 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
     'Your membership does not carry the cancel authority, which is required to cancel an issued document or to withdraw a confirmed Work.',
   statutory:
     'Your membership does not carry the statutory reporting authority, which is required to register, reconcile, cancel, or record government e-invoice and E-way Bill evidence.',
+  payments:
+    'Your membership does not carry the payments authority, which is required to approve employee payment requests and to record or pay vendor invoices.',
+};
+
+/** Exhaustive by construction: a new `DocumentAuthority` that is not
+ * given a column here fails to typecheck, which is what stops a new
+ * authority from silently defaulting to "granted". */
+const AUTHORITY_COLUMNS: Record<
+  DocumentAuthority,
+  keyof Pick<
+    MembershipRow,
+    | 'can_issue_documents'
+    | 'can_cancel_documents'
+    | 'can_manage_statutory_reporting'
+    | 'can_manage_payments'
+  >
+> = {
+  issue: 'can_issue_documents',
+  cancel: 'can_cancel_documents',
+  statutory: 'can_manage_statutory_reporting',
+  payments: 'can_manage_payments',
 };
 
 function authorityGranted(
   membership: MembershipRow | undefined,
   authority: DocumentAuthority,
 ): boolean {
-  if (authority === 'issue') return membership?.can_issue_documents ?? false;
-  if (authority === 'cancel') return membership?.can_cancel_documents ?? false;
-  return membership?.can_manage_statutory_reporting ?? false;
+  if (membership === undefined) return false;
+  return membership[AUTHORITY_COLUMNS[authority]];
 }
 
 export async function requireAuthority(

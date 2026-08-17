@@ -314,6 +314,25 @@ const SECTIONS: readonly ExportSection[] = [
           order by bill_payment_id, category, id`,
   },
   {
+    // Outbound money (0078). Payments follow their invoice and requests
+    // follow their sequence, so a diff of two exports is readable.
+    key: 'paymentRequests',
+    sql: `select * from payment_requests order by fy_label, sequence_number, id`,
+  },
+  {
+    key: 'paymentRequestCounters',
+    sql: `select * from payment_request_counters order by fy_label`,
+  },
+  {
+    key: 'vendorInvoices',
+    sql: `select * from vendor_invoices
+          order by vendor_contact_id, invoice_date, id`,
+  },
+  {
+    key: 'vendorPayments',
+    sql: `select * from vendor_payments order by vendor_invoice_id, paid_on, id`,
+  },
+  {
     key: 'installations',
     sql: `select * from installations order by installed_on, created_at, id`,
   },

@@ -224,6 +224,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Say what the other deduction is, because a head with no name cannot be reconciled against a statement or claimed back later.',
   BILL_PAYMENT_ALREADY_VOIDED:
     'Reload the register: this receipt has already been withdrawn, and the amount it carried is outstanding again.',
+  VENDOR_INVOICE_NOT_FOUND:
+    'Reload the vendor ledger: the invoice was cancelled or belongs to another organisation, so record it again if it is genuinely outstanding.',
   BILL_ALREADY_PAID:
     'Record the correction as a receipt or a deduction against a later bill, the way a billed Measurement Book is corrected on a subsequent one, because the register of a paid bill is closed in both directions.',
   RAILWAY_BILL_EXTRACTION_FAILED:

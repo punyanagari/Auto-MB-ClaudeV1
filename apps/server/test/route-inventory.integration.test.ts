@@ -191,6 +191,8 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     'GET /api/works/:id/measurement-books',
     'grows per Work; pack P11 owns this route this wave',
   ],
+  ['GET /api/payment-requests', 'grows per organisation — next candidate'],
+  ['GET /api/vendor-invoices', 'grows per organisation — next candidate'],
 ]);
 
 const adminUrl =

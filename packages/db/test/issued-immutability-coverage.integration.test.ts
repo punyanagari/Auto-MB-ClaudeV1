@@ -81,6 +81,44 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // maintained timestamp.
   bill_payments: ['id', 'updated_at', 'voided_at', 'voided_by_user_id', 'void_reason'],
 
+  // An employee advance or reimbursement (0078). Everything about it may
+  // be corrected while it is a draft or a submission; what the trigger
+  // freezes once it has been DECIDED is the money it authorises — the
+  // amount, the kind, the beneficiary and the number. The columns below
+  // are the lifecycle itself, which is the whole point of the record.
+  payment_requests: [
+    'id',
+    'updated_at',
+    'status',
+    'decided_by_user_id',
+    'decided_at',
+    'decision_note',
+    'paid_at',
+    'paid_reference',
+    'bills_recorded_at',
+    // Draft-stage corrections. The trigger permits these only while the
+    // request is undecided; after that the freeze above applies.
+    'work_id',
+    'beneficiary_snapshot',
+    'purpose',
+    'category',
+    'proof_object_key',
+    'proof_filename',
+    'fy_label',
+    'sequence_number',
+  ],
+
+  // A recorded vendor payment (0078), on the same terms as bill_payments
+  // above: every fact of it is frozen when written, and the void is the
+  // only later act.
+  vendor_payments: [
+    'id',
+    'updated_at',
+    'voided_at',
+    'voided_by_user_id',
+    'void_reason',
+  ],
+
   // The legacy bill record (0006). Its money and lines snapshot are
   // frozen; submission and payment are the two later facts.
   bills: ['id', 'status', 'submitted_at', 'paid_at'],

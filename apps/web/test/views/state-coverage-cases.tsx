@@ -21,6 +21,7 @@ import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
 import { Members } from '../../src/views/Members.js';
 import { PacCertificates } from '../../src/views/PacCertificates.js';
 import { PaymentMatrix } from '../../src/views/PaymentMatrix.js';
+import { Payments } from '../../src/views/Payments.js';
 import { Quotations } from '../../src/views/Quotations.js';
 import { ReviewLoa } from '../../src/views/ReviewLoa.js';
 import { Search } from '../../src/views/Search.js';
@@ -109,6 +110,42 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry approvals/,
     empty: { text: /Nothing is waiting for a decision/ },
+  },
+  {
+    view: 'Payments.tsx',
+    name: 'the employee payment requests',
+    loads: ['listPaymentRequests'],
+    render: (api) => (
+      <Payments
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-1"
+        canManagePayments
+        canCancel
+        tab="employee"
+        onOpenRegister={noop}
+      />
+    ),
+    retry: /Retry payment requests/,
+    empty: { text: /No advance or reimbursement has been raised yet/ },
+  },
+  {
+    view: 'Payments.tsx',
+    name: 'the vendor ledger',
+    loads: ['listVendorInvoices'],
+    render: (api) => (
+      <Payments
+        api={api}
+        organisationId={ORG_ID}
+        currentUserId="user-1"
+        canManagePayments
+        canCancel
+        tab="vendors"
+        onOpenRegister={noop}
+      />
+    ),
+    retry: /Retry vendor ledger/,
+    empty: { text: /No vendor invoice has been recorded yet/ },
   },
   {
     view: 'CompletionExtensions.tsx',
