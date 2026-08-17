@@ -1,6 +1,7 @@
 import { ChevronsUpDown, Upload } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 import { Button } from '../ui/button.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { SidebarNav, type NavSubItem } from './SidebarNav.js';
 import type { ModuleKey } from './navigation.js';
 
@@ -65,14 +66,13 @@ function BrandBlock({
     );
   }
 
-  return (
+  const chooser = (
     <button
       type="button"
       className={cn(
         shell,
         'w-full transition-colors outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-sidebar-ring',
       )}
-      title={collapsed ? 'Switch organisation' : undefined}
       onClick={onSwitchOrganisation}
     >
       {mark}
@@ -82,6 +82,49 @@ function BrandBlock({
       )}
       <span className="sr-only">Switch organisation</span>
     </button>
+  );
+
+  /* Collapsed, the words are gone from the block and only the mark is
+     left, so the label has to come back on hover — as the mock's own
+     bubble rather than the browser's `title`, which appears after a
+     second-long delay, in the operating system's font, outside the
+     theme. Expanded, the block already reads as itself. */
+  return collapsed ? (
+    <Tooltip content="Switch organisation" side="right" className="w-full">
+      {chooser}
+    </Tooltip>
+  ) : (
+    chooser
+  );
+}
+
+/** The rail's footer action. Collapsed it is the button ladder's `icon`
+ * step — a real size, not a `size-8` patch over the default one — and it
+ * borrows the same hover bubble the destinations above it use. */
+function UploadAction({
+  collapsed,
+  onUploadLoa,
+}: {
+  readonly collapsed: boolean;
+  readonly onUploadLoa: () => void;
+}) {
+  const action = (
+    <Button
+      size={collapsed ? 'icon' : 'default'}
+      className={cn('shadow-sm', !collapsed && 'w-full')}
+      onClick={onUploadLoa}
+    >
+      <Upload aria-hidden="true" />
+      <span className={collapsed ? 'sr-only' : undefined}>Upload LOA</span>
+    </Button>
+  );
+
+  return collapsed ? (
+    <Tooltip content="Upload LOA" side="right">
+      {action}
+    </Tooltip>
+  ) : (
+    action
   );
 }
 
@@ -132,16 +175,7 @@ export function AppSidebar({
       </nav>
 
       <div className="flex flex-col gap-3 p-3">
-        {canModify && (
-          <Button
-            className={cn('shadow-sm', collapsed ? 'size-8 p-0' : 'w-full')}
-            title={collapsed ? 'Upload LOA' : undefined}
-            onClick={onUploadLoa}
-          >
-            <Upload aria-hidden="true" />
-            <span className={collapsed ? 'sr-only' : undefined}>Upload LOA</span>
-          </Button>
-        )}
+        {canModify && <UploadAction collapsed={collapsed} onUploadLoa={onUploadLoa} />}
         <div className="h-px w-full shrink-0 bg-sidebar-border" />
         <div
           className={cn(

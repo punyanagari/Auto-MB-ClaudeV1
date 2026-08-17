@@ -13,6 +13,14 @@ import {
   Upload,
 } from 'lucide-react';
 import { Button } from '../ui/button.js';
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '../ui/dropdown-menu.js';
+import { Separator } from '../ui/separator.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 export interface AppTopbarProps {
   readonly sidebarId: string;
@@ -43,11 +51,6 @@ export interface AppTopbarProps {
   readonly onSwitchOrganisation: () => void;
   readonly onSignOut: () => void;
 }
-
-const MENU_PANEL =
-  'absolute top-[calc(100%+0.5rem)] right-0 z-40 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10';
-const MENU_ITEM =
-  'flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0';
 
 /**
  * The mock's sticky 64px topbar (`components/app-topbar` at `a8e1fde`):
@@ -94,7 +97,7 @@ export function AppTopbar({
       <Button
         variant="ghost"
         size="icon"
-        className="-ml-1 size-8 lg:hidden"
+        className="-ml-1 lg:hidden"
         aria-label="Open navigation"
         aria-expanded={mobileNavOpen}
         aria-controls="mobile-navigation-dialog"
@@ -108,8 +111,8 @@ export function AppTopbar({
 
       <Button
         variant="ghost"
-        size="icon"
-        className="-ml-1 hidden size-7 rounded-md lg:inline-flex"
+        size="icon-sm"
+        className="-ml-1 hidden lg:inline-flex"
         aria-label="Toggle sidebar"
         aria-expanded={!sidebarCollapsed}
         aria-controls={sidebarId}
@@ -117,10 +120,7 @@ export function AppTopbar({
       >
         <PanelLeft aria-hidden="true" />
       </Button>
-      <span
-        className="hidden h-5 w-px shrink-0 bg-border lg:block"
-        aria-hidden="true"
-      />
+      <Separator orientation="vertical" decorative className="hidden h-5 lg:block" />
 
       <div className="min-w-0">
         <p className="truncate text-[11px] font-medium text-muted-foreground">
@@ -179,19 +179,26 @@ export function AppTopbar({
               onToggleQuickActions(event.currentTarget);
             }}
           >
-            <Plus aria-hidden="true" />
+            {/* The mock's asymmetric icon padding: an icon opening a
+                labelled button is lighter than a word, so the edge beside
+                it comes in 2px and the control reads as evenly inset. */}
+            <Plus data-icon="inline-start" aria-hidden="true" />
             <span className="hidden sm:inline">Quick action</span>
-            <ChevronDown className="hidden size-3.5 sm:block" aria-hidden="true" />
+            <ChevronDown
+              data-icon="inline-end"
+              className="hidden size-3.5 sm:block"
+              aria-hidden="true"
+            />
           </Button>
           {quickActionsOpen && (
-            <div
+            <DropdownMenuContent
               id="header-quick-actions"
-              className={`${MENU_PANEL} w-64`}
+              className="w-64"
               role="group"
               aria-label="Quick actions"
             >
               {canModify && (
-                <button type="button" className={MENU_ITEM} onClick={onUploadLoa}>
+                <DropdownMenuItem onClick={onUploadLoa}>
                   <Upload className="text-primary" aria-hidden="true" />
                   <span className="min-w-0">
                     <span className="block text-xs font-semibold">Upload LOA</span>
@@ -199,9 +206,9 @@ export function AppTopbar({
                       Start a new awarded Work
                     </span>
                   </span>
-                </button>
+                </DropdownMenuItem>
               )}
-              <button type="button" className={MENU_ITEM} onClick={onOpenWorks}>
+              <DropdownMenuItem onClick={onOpenWorks}>
                 <FolderKanban className="text-primary" aria-hidden="true" />
                 <span className="min-w-0">
                   <span className="block text-xs font-semibold">Open Works</span>
@@ -209,8 +216,8 @@ export function AppTopbar({
                     Find a contract or document
                   </span>
                 </span>
-              </button>
-              <button type="button" className={MENU_ITEM} onClick={onOpenApprovals}>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onOpenApprovals}>
                 <Bell className="text-primary" aria-hidden="true" />
                 <span className="min-w-0">
                   <span className="block text-xs font-semibold">Approval queue</span>
@@ -220,33 +227,44 @@ export function AppTopbar({
                       : 'No pending decisions'}
                   </span>
                 </span>
-              </button>
-            </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
           )}
         </div>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative size-8"
-          aria-label={
+        {/* The mock puts a tooltip on this control and nothing else in the
+            topbar. The count is already the button's accessible name, so
+            the bubble only shows a pointer what the label already says. */}
+        <Tooltip
+          content={
             pendingApprovals > 0
               ? `${String(pendingApprovals)} pending approvals`
               : 'No pending approvals'
           }
-          onClick={onOpenApprovals}
+          side="bottom"
         >
-          <Bell aria-hidden="true" />
-          {pendingApprovals > 0 && (
-            <span className="absolute top-2 right-2 size-1.5 rounded-full bg-warning" />
-          )}
-        </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative"
+            aria-label={
+              pendingApprovals > 0
+                ? `${String(pendingApprovals)} pending approvals`
+                : 'No pending approvals'
+            }
+            onClick={onOpenApprovals}
+          >
+            <Bell aria-hidden="true" />
+            {pendingApprovals > 0 && (
+              <span className="absolute top-2 right-2 size-1.5 rounded-full bg-warning" />
+            )}
+          </Button>
+        </Tooltip>
 
         <div className="relative">
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 p-0"
             aria-label="Account menu"
             aria-expanded={accountMenuOpen}
             aria-controls="header-account-menu"
@@ -259,39 +277,35 @@ export function AppTopbar({
             </span>
           </Button>
           {accountMenuOpen && (
-            <div
+            <DropdownMenuContent
               id="header-account-menu"
-              className={`${MENU_PANEL} w-60`}
+              className="w-60"
               role="group"
               aria-label="Account"
             >
-              <p className="flex flex-col gap-0.5 px-1.5 py-1 text-sm">
+              <DropdownMenuLabel className="flex flex-col gap-0.5 text-sm text-popover-foreground">
                 <span className="truncate font-medium">{identityName}</span>
                 <span className="truncate text-xs font-normal text-muted-foreground">
                   {identityRole}
                 </span>
-              </p>
-              <div className="-mx-1 my-1 h-px bg-border" />
-              <button type="button" className={MENU_ITEM} onClick={onOpenSettings}>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onOpenSettings}>
                 <SettingsIcon aria-hidden="true" />
                 Settings
-              </button>
+              </DropdownMenuItem>
               {canSwitchOrganisation && (
-                <button
-                  type="button"
-                  className={MENU_ITEM}
-                  onClick={onSwitchOrganisation}
-                >
+                <DropdownMenuItem onClick={onSwitchOrganisation}>
                   <ArrowLeftRight aria-hidden="true" />
                   Switch organisation
-                </button>
+                </DropdownMenuItem>
               )}
-              <div className="-mx-1 my-1 h-px bg-border" />
-              <button type="button" className={MENU_ITEM} onClick={onSignOut}>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onSignOut}>
                 <LogOut aria-hidden="true" />
                 Sign out
-              </button>
-            </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
           )}
         </div>
       </div>

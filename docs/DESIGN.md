@@ -215,8 +215,9 @@ evidence system, and airing it out is a defect.
 
 ### Component-layer conventions
 
-`app/globals.css` defines four project classes and five slot overrides. Port all
-nine; screens depend on them implicitly.
+`app/globals.css` defines three project classes and six slot overrides. Port all
+nine; screens depend on them implicitly. All nine are ported, in the
+`@layer components` block of `apps/web/src/globals.css`.
 
 ```css
 .data-surface   /* overflow-hidden rounded-xl border bg-card + 1px shadow — the panel wrapper */
@@ -237,6 +238,16 @@ foreground text.
 
 `.data-surface` is the mock's answer to "how do I wrap a table". Use it rather
 than hand-rolling a bordered card around every register.
+
+Two things to know about the six slot overrides as they stand. They are inert
+until a primitive emits `data-slot` — `ui/card.tsx` and `ui/table.tsx` were
+ported with these declarations written inline instead, so the rules and the
+rendering agree today but the rules are not what produces it. And
+`[data-slot="table-header"]` is the one rule that is deliberately not the mock's
+literal: the mock tints with `bg-muted/55`, and a sticky heading cannot be
+translucent without scrolled rows reading through it, so this build ships the
+opaque `--table-header` mix instead. Whoever adopts the slot hooks keeps it
+opaque.
 
 ## Status badge semantics
 
@@ -316,25 +327,26 @@ adding a module is one edit.
 
 ### Content primitives
 
-| Mock                                                                                                                     | Application                             | Notes                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------ |
-| `shared.tsx` → `PageHeader`                                                                                              | New `ui/page-header.tsx`                | eyebrow / title / description / action                                   |
-| `shared.tsx` → `Stat`                                                                                                    | New `ui/stat.tsx`                       | `.section-label` + `.metric-value` + hint; tones default/success/warning |
-| `shared.tsx` → `StatusBadge`                                                                                             | `ui/badge.tsx`                          | Re-skin to dot + label; keep the app's status vocabulary                 |
-| `ui/card.tsx`                                                                                                            | `ui/card.tsx`                           | Adopt `--card-spacing` and `ring-1 ring-foreground/10`                   |
-| `ui/table.tsx`                                                                                                           | `ui/table.tsx`                          | Adopt `data-slot` hooks so the `globals.css` overrides apply             |
-| `ui/tabs.tsx`                                                                                                            | `ui/disclosure.tsx` / new `ui/tabs.tsx` | Two shapes: the boxed list and the underline rail                        |
-| `ui/button.tsx`                                                                                                          | `ui/button.tsx`                         | Adopt the size ladder and `data-icon="inline-start\|inline-end"`         |
-| `ui/input.tsx`, `label.tsx`, `field.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`                                   | `ui/form.tsx`, `ui/date-field.tsx`      | `Field`/`FieldGroup`/`FieldLabel`/`FieldDescription` is the form anatomy |
-| `ui/dialog.tsx`                                                                                                          | `ui/dialog.tsx`, `ui/confirm.tsx`       | Header/description/footer anatomy                                        |
-| `ui/sheet.tsx`                                                                                                           | New `ui/sheet.tsx`                      | Bottom sheet for mobile; side sheet elsewhere                            |
-| `ui/skeleton.tsx`                                                                                                        | `ui/state.tsx` → `LoadingState`         | Keep `aria-busy`; re-skin the blocks                                     |
-| `ui/empty.tsx`                                                                                                           | `ui/state.tsx` → `EmptyState`           | One sentence, at most one action                                         |
-| `ui/spinner.tsx`                                                                                                         | `ui/state.tsx`                          | Inline waits only; lists and tables use skeletons                        |
-| `ui/progress.tsx`                                                                                                        | `ui/progress.tsx`                       | Direct re-skin                                                           |
-| `ui/badge.tsx`                                                                                                           | `ui/badge.tsx`, `ui/chip.tsx`           | Stock pill badge; `outline` variant is the status base                   |
-| `ui/tooltip.tsx`, `dropdown-menu.tsx`, `avatar.tsx`, `separator.tsx`, `breadcrumb.tsx`, `toggle*.tsx`, `input-group.tsx` | New, as each screen needs one           | Do not port ahead of a consumer                                          |
-| `ui/command.tsx`                                                                                                         | Deferred to Phase 4                     | Port the topbar control now, the palette later (`docs/UX.md` § ⌘K)       |
+| Mock                                                                                   | Application                                                  | Notes                                                                                |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `shared.tsx` → `PageHeader`                                                            | `ui/page-header.tsx`                                         | eyebrow / title / description / action; `titleId` keeps the focus anchor             |
+| `shared.tsx` → `Stat`                                                                  | `ui/stat.tsx`                                                | `.section-label` + `.metric-value` + hint; tones default/success/warning             |
+| `shared.tsx` → `StatusBadge`                                                           | `ui/badge.tsx`                                               | Re-skin to dot + label; keep the app's status vocabulary                             |
+| `ui/card.tsx`                                                                          | `ui/card.tsx`                                                | Adopt `--card-spacing` and `ring-1 ring-foreground/10`                               |
+| `ui/table.tsx`                                                                         | `ui/table.tsx`                                               | Adopt `data-slot` hooks so the `globals.css` overrides apply                         |
+| `ui/tabs.tsx`                                                                          | `ui/disclosure.tsx` / new `ui/tabs.tsx`                      | Two shapes: the boxed list and the underline rail                                    |
+| `ui/button.tsx`                                                                        | `ui/button.tsx`                                              | Adopt the size ladder and `data-icon="inline-start\|inline-end"`                     |
+| `ui/input.tsx`, `label.tsx`, `field.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx` | `ui/form.tsx`, `ui/date-field.tsx`                           | `Field`/`FieldGroup`/`FieldLabel`/`FieldDescription` is the form anatomy             |
+| `ui/dialog.tsx`                                                                        | `ui/dialog.tsx`, `ui/confirm.tsx`                            | Header/description/footer anatomy                                                    |
+| `ui/sheet.tsx`                                                                         | `ui/sheet.tsx`                                               | Bottom sheet for mobile; side sheet elsewhere; skins `ui/dialog.tsx`                 |
+| `ui/skeleton.tsx`                                                                      | `ui/state.tsx` → `LoadingState`                              | Keep `aria-busy`; re-skin the blocks                                                 |
+| `ui/empty.tsx`                                                                         | `ui/state.tsx` → `EmptyState`                                | One sentence, at most one action                                                     |
+| `ui/spinner.tsx`                                                                       | `ui/state.tsx`                                               | Inline waits only; lists and tables use skeletons                                    |
+| `ui/progress.tsx`                                                                      | `ui/progress.tsx`                                            | Direct re-skin                                                                       |
+| `ui/badge.tsx`                                                                         | `ui/badge.tsx`, `ui/chip.tsx`                                | Stock pill badge; `outline` variant is the status base                               |
+| `ui/tooltip.tsx`, `dropdown-menu.tsx`, `separator.tsx`                                 | `ui/tooltip.tsx`, `ui/dropdown-menu.tsx`, `ui/separator.tsx` | Ported for the shell. The dropdown is the mock's surface, not a `role="menu"` widget |
+| `ui/avatar.tsx`, `breadcrumb.tsx`, `toggle*.tsx`, `input-group.tsx`                    | New, as each screen needs one                                | Do not port ahead of a consumer                                                      |
+| `ui/command.tsx`                                                                       | Deferred to Phase 4                                          | Port the topbar control now, the palette later (`docs/UX.md` § ⌘K)                   |
 
 ### Composite patterns
 
