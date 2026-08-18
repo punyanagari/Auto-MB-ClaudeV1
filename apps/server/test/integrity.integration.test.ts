@@ -692,6 +692,75 @@ describe('export completeness is catalog-driven', () => {
     schema_migrations: 'the migration ledger, a property of the database',
   };
 
+  /**
+   * The census above is per-TABLE, and that is exactly how a grant went
+   * missing.
+   *
+   * `members` is the one section whose SQL lists its columns explicitly
+   * rather than selecting `*`, because a membership row carries things a
+   * recovery package should not — and the explicit list is a
+   * hand-maintained list, which is a list that goes stale. It did:
+   * `can_sign_documents` arrived with migration 0091 and was never added,
+   * so from v24 onward a restored organisation came back with signing
+   * revoked from every member. Nothing in this suite could see it,
+   * because the table was present and only a column was absent.
+   *
+   * So the columns get their own census. It is narrow on purpose — only
+   * the authority grants, only on `organisation_memberships` — because
+   * those are the columns whose silent loss is a privilege change nobody
+   * reviewed, and widening it to every column of every table would
+   * re-state `select *` as a test.
+   */
+  it('exports every membership authority grant the catalog knows about', async () => {
+    const grants = await admin<{ column_name: string }[]>`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'organisation_memberships'
+        and column_name like 'can\_%'
+      order by column_name
+    `;
+    // The live list, not a floor with slack in it. A floor of six would
+    // let three of these disappear from the catalog without this failing,
+    // which is the same shape of hole the census exists to close. A tenth
+    // authority edits this list, which is the point at which somebody
+    // reads it.
+    expect(grants.map((row) => row.column_name)).toEqual([
+      'can_approve_amendments',
+      'can_cancel_documents',
+      'can_import_data',
+      'can_issue_documents',
+      'can_manage_notifications',
+      'can_manage_payments',
+      'can_manage_payroll',
+      'can_manage_statutory_reporting',
+      'can_sign_documents',
+    ]);
+
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(response.statusCode).toBe(200);
+    const exported = response.json<{ members: Record<string, unknown>[] }>();
+    const [member] = exported.members;
+    expect(member, 'the export published no membership row to check').toBeDefined();
+
+    const missing = grants
+      .map((row) => row.column_name)
+      .filter((column) => !Object.prototype.hasOwnProperty.call(member ?? {}, column));
+    expect(
+      missing,
+      `membership authority grants absent from the organisation export: ${missing.join(
+        ', ',
+      )}. Add each to the \`members\` section's column list in routes/export.ts — a ` +
+        'grant left off it is silently revoked from every member of a restored ' +
+        'organisation, with no error anywhere, because nothing refuses a column ' +
+        'left false.',
+    ).toEqual([]);
+  });
+
   it('accounts for every table that is not organisation-scoped', async () => {
     const rows = await admin<{ table_name: string; scoped: boolean }[]>`
       select

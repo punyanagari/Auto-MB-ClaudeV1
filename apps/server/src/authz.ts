@@ -11,6 +11,7 @@ export interface MembershipRow {
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
   can_manage_notifications: boolean;
+  can_import_data: boolean;
 }
 
 export async function membershipOf(
@@ -20,7 +21,8 @@ export async function membershipOf(
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
-           can_sign_documents, can_manage_payroll, can_manage_notifications
+           can_sign_documents, can_manage_payroll, can_manage_notifications,
+           can_import_data
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -154,7 +156,15 @@ export type DocumentAuthority =
    * counterparty asked for, and choosing the number those words leave
    * from — and who else may be messaged — is a different decision about
    * the organisation's outbound voice. */
-  | 'notifications';
+  | 'notifications'
+  /** Pointing a spreadsheet at a register and committing the rows it
+   * staged (0094, owner ruling). Separate from the writer role the
+   * registers themselves require, because the two acts are not the same
+   * size: adding one contact is a considered act with a form in front of
+   * it, and committing a batch writes eight hundred rows from a file
+   * somebody forwarded. It confers nothing on its own — a batch still
+   * commits into the register's own role and its own constraints. */
+  | 'import';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -171,6 +181,8 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
     'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
   notifications:
     'Your membership does not carry the notifications authority, which is required to configure a messaging channel, maintain a message template, record a recipient’s consent, or send a message.',
+  import:
+    'Your membership does not carry the import authority, which is required to upload a spreadsheet against a register and to commit the rows it stages. It is separate from the writer role because adding one record and adding eight hundred from a forwarded file are not the same act.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -187,6 +199,7 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_sign_documents'
     | 'can_manage_payroll'
     | 'can_manage_notifications'
+    | 'can_import_data'
   >
 > = {
   issue: 'can_issue_documents',
@@ -196,6 +209,7 @@ const AUTHORITY_COLUMNS: Record<
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
   notifications: 'can_manage_notifications',
+  import: 'can_import_data',
 };
 
 function authorityGranted(

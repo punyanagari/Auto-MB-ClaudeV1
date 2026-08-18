@@ -17,6 +17,27 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v26: the spreadsheet importer (0094) joins the package — every
+ * batch an organisation staged and every row of every sheet it uploaded,
+ * with the verdict each row was given and the record it became.
+ *
+ * WHAT DOES NOT TRAVEL is the row's `cells`, and that is the decision
+ * worth recording. They are the operator's own file, and a contacts
+ * sheet's file is a column of bank account numbers and IFSCs — precisely
+ * the values the direct write path is deliberately discreet about
+ * ("never audited and never logged"). The register they fed already holds
+ * the authoritative copy under that discretion; a second, unredacted copy
+ * in the recovery package would be the one place it did not reach. The
+ * route forgets them as a batch turns terminal, and this section excludes
+ * them regardless, so the format does not depend on that timing.
+ *
+ * `organisation_memberships.can_sign_documents` (0091) also joins here,
+ * and it is a REPAIR rather than an addition: it should have arrived with
+ * v24 and was left off the members section's explicit column list, so a
+ * restored organisation came back with signing revoked from everyone. The
+ * census that would have caught it is added in the same pull request.
+ *
+ *
  * export-v25: notifications (0092) join the package — the channels the
  * organisation speaks through, the templates it may say, the consent that
  * permits each recipient to be spoken to, and every message it sent.
@@ -242,7 +263,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v25';
+const EXPORT_FORMAT_VERSION = 'export-v26';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -334,11 +355,26 @@ const SECTIONS: readonly ExportSection[] = [
     /* Every grant is listed explicitly, so a new one that is not added
        here is silently dropped from the recovery package — a restored
        organisation would come back with the authority revoked and
-       nobody able to pay a vendor until an owner noticed. */
+       nobody able to pay a vendor until an owner noticed.
+
+       `can_sign_documents` (0091) WAS missing, and this is the pack that
+       found it: the export census is per-table, so a column left off this
+       list is invisible to every check in the suite. It is added here
+       beside `can_import_data`, and
+       `test/integrity.integration.test.ts` gains a census that reads the
+       catalog's own `can_%` columns and fails when one of them is absent
+       from this statement — so the next pack's authority cannot be lost
+       the same way.
+
+       It earned its keep immediately: `can_manage_notifications` (0092)
+       arrived on the same merge with the same omission, and the census
+       named it rather than a restored organisation discovering it. */
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 can_manage_payroll, status, created_at
+                 can_manage_payroll, can_sign_documents, can_import_data,
+                 can_manage_notifications,
+                 status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -639,6 +675,34 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'importRecords',
     sql: `select * from import_records order by imported_at, id`,
     jsonbColumns: ['payload'],
+  },
+  // The spreadsheet importer (0094). Adjacent to the two sections above
+  // on purpose: those are the v1 cutover CLI's, these are the product
+  // feature's, and a reader of a recovery package who does not know they
+  // are different will otherwise assume one of them is a duplicate.
+  //
+  // BOTH TABLES TRAVEL, and the row table travels WITHOUT ITS CELLS.
+  // `test/integrity.integration.test.ts` § NOT_EXPORTED is where a table
+  // is declared scratch, and it holds exactly one entry after eight waves
+  // — a bar neither of these clears. The verdicts are what makes a
+  // committed import auditable: which row, what was wrong with it in the
+  // register's own words, and what it became. None of that is a value.
+  //
+  // The cells are, and for a contacts sheet they are a column of bank
+  // account numbers and IFSCs — the values `contact-fields.ts` says are
+  // "never audited and never logged". The register they fed already holds
+  // the authoritative copy under that discretion, so a second unredacted
+  // copy here would be the one place it did not reach.
+  {
+    key: 'spreadsheetImportBatches',
+    sql: `select * from spreadsheet_import_batches order by created_at, id`,
+  },
+  {
+    key: 'spreadsheetImportRows',
+    sql: `select id, organisation_id, batch_id, row_number, status, errors,
+                 imported_record_id
+          from spreadsheet_import_rows order by batch_id, row_number`,
+    jsonbColumns: ['errors'],
   },
   // M6/7 retrofit (migration 0028): the unified Contacts master and the
   // Work<->consignee association. consignee_masters was never a section

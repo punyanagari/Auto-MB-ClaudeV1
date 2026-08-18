@@ -40,6 +40,7 @@ import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
 import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
 import { SigningKioskSettings } from '../../src/views/SigningKioskSettings.js';
+import { Imports } from '../../src/views/Imports.js';
 import { SigningQueue } from '../../src/views/SigningQueue.js';
 import { Notifications } from '../../src/views/Notifications.js';
 import { Employees } from '../../src/views/Employees.js';
@@ -655,6 +656,17 @@ export const STATE_CASES: readonly StateCase[] = [
     render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
     retry: /Retry the delivery log/,
     empty: { text: /Nothing has been sent yet/ },
+  },
+  {
+    view: 'Imports.tsx',
+    name: 'the imports register',
+    // One read on mount, and it carries the registers that accept a
+    // sheet alongside the batches — the screen needs those on an
+    // organisation's first day, when there is nothing else to show.
+    loads: ['listImportBatches'],
+    render: (api) => <Imports api={api} organisationId={ORG_ID} canImport />,
+    retry: /Retry the imports/,
+    empty: { text: /No spreadsheet has been imported yet/ },
   },
   {
     view: 'Employees.tsx',

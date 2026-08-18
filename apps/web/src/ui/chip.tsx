@@ -89,6 +89,21 @@ const CHIP_TONES = {
   // unmapped and reads neutral, because a withdrawn template is finished
   // rather than bad.
   paused: 'warning',
+  // An import batch whose every row has been judged and which is waiting
+  // for somebody to decide (0094). Warning is the family for "awaiting
+  // someone", and that is exactly what a validated batch is: the machine
+  // has finished and nothing will happen until a person acts. Its
+  // siblings are already mapped — `pending` above reads as a queue,
+  // `completed` as the closed step, `cancelled` as withdrawn.
+  validated: 'warning',
+  // A staged row the register refused (0094), and the one word this
+  // product uses for a thing that is simply wrong rather than cancelled
+  // or rejected by somebody. `docs/DESIGN.md` § Status badge semantics
+  // gives the destructive family cancelled/rejected/declined; a row that
+  // cannot be written belongs with them, because unlike `low-stock` it
+  // is not a thing to do — it is a thing that failed. Collision-checked
+  // against every status already in this map: the word is new.
+  error: 'destructive',
   // A maintenance request nobody has decided yet, and one part-way
   // through its dispatches (0088). `docs/DESIGN.md` § Status badge
   // semantics puts both in the warning family — the first is waiting on

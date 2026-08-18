@@ -223,12 +223,51 @@ const FEATURES = [
     authority: 'Notifications authority',
     change: 'Notifications authority',
   },
-] as const satisfies readonly {
+  {
+    /* The import authority (migration 0094): who may point a spreadsheet
+       at a register and commit the rows it stages. Separate from the
+       writer role the registers themselves require, because adding one
+       contact is a considered act with a form in front of it and
+       committing a batch writes eight hundred rows from a forwarded
+       file. */
+    key: 'canImportData',
+    heading: 'Can import',
+    authority: 'Import authority',
+    change: 'Import authority',
+  },
+] as const satisfies readonly GrantDescriptor[];
+
+interface GrantDescriptor {
   key: keyof Membership & `can${string}`;
   heading: string;
   authority: string;
   change: string;
-}[];
+}
+
+/**
+ * EVERY GRANT THE WIRE CARRIES HAS A COLUMN ON THIS SCREEN, checked at
+ * compile time rather than by whoever adds the next one.
+ *
+ * `satisfies` above proves each entry is well formed; it cannot prove the
+ * list is complete, and that gap shipped: migration 0091's
+ * `canSignDocuments` reached the matrix, but 0094's `canImportData` did
+ * not, which made a per-member authority grantable by nobody — a founding
+ * owner held it implicitly and no owner could hand it to anyone else. The
+ * feature's own integration test had to grant it with raw SQL, which was
+ * the tell.
+ *
+ * This assignment is the check, and it has to be a TYPE-level one: an
+ * `Object.fromEntries` census with a cast is what the first attempt used,
+ * and a cast is precisely the thing that stops a compiler noticing.
+ * `Exclude` narrows the wire's grant keys by the ones this list carries;
+ * complete, that is `never` and `Record<never, never>` is `{}`. Leave one
+ * out and the empty object is missing a required property. The ninth
+ * authority cannot repeat this.
+ */
+type GrantKey = keyof Membership & `can${string}`;
+type ListedGrantKey = (typeof FEATURES)[number]['key'];
+const _EVERY_GRANT_HAS_A_COLUMN: Record<Exclude<GrantKey, ListedGrantKey>, never> = {};
+void _EVERY_GRANT_HAS_A_COLUMN;
 
 export function Members({ api, organisationId, currentUserId }: MembersProps) {
   const [members, setMembers] = useState<readonly Membership[] | null>(null);

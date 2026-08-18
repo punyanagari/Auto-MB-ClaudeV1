@@ -69,6 +69,13 @@ const MembershipSchema = Type.Object(
      * decision from committing the words of a document. Defaults false;
      * the owner of a new organisation holds it implicitly. */
     canManageNotifications: Type.Boolean(),
+    /** The import authority (migration 0094): may upload a spreadsheet
+     * against a register and commit the rows it stages. Separate from the
+     * writer role the registers themselves require, because adding one
+     * record and adding eight hundred from a forwarded file are not the
+     * same act. Defaults false; the owner of a new organisation holds it
+     * implicitly. */
+    canImportData: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -105,6 +112,7 @@ export const AddMemberRequestSchema = Type.Object(
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
     canManageNotifications: Type.Optional(Type.Boolean()),
+    canImportData: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -422,6 +430,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
     canManageNotifications: Type.Optional(Type.Boolean()),
+    canImportData: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

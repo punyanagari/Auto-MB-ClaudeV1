@@ -68,6 +68,7 @@ import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
+import { registerImportRoutes } from './routes/imports.js';
 import { registerSigningRoutes } from './routes/signing.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
 import { registerHrRoutes } from './routes/hr.js';
@@ -964,9 +965,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     });
     registerIdentityRoutes(app, authInstance, database);
 
-    // Raw bodies for the upload endpoints (LOA PDFs, organisation logo);
-    // every other route keeps the default JSON-only content types.
-    for (const contentType of ['application/pdf', 'image/png', 'image/jpeg']) {
+    // Raw bodies for the upload endpoints (LOA PDFs, organisation logo,
+    // imported workbooks); every other route keeps the default JSON-only
+    // content types.
+    for (const contentType of [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]) {
       app.addContentTypeParser(
         contentType,
         { parseAs: 'buffer' },
@@ -987,6 +994,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerQuotationRoutes(app, authInstance, database);
     registerPurchaseOrderRoutes(app, authInstance, database);
     registerInventoryRoutes(app, authInstance, database);
+    registerImportRoutes(app, authInstance, database, scanner);
     registerMaintenanceRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);

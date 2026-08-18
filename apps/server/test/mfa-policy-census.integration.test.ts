@@ -213,6 +213,12 @@ describe('MFA authority census', () => {
     // wall being reconsidered.
     expect(Object.keys(MFA_REQUIRING_AUTHORITIES).sort()).toEqual([
       'cancel',
+      // The import authority (migration 0094). Its damage is measured in
+      // rows: a stolen session holding it can commit a prepared workbook
+      // that rewrites every vendor's bank account in a single call, and
+      // the payment advices generated afterwards look exactly like the
+      // organisation's own.
+      'import',
       'issue',
       // The notifications authority (0092). Whoever holds it can point
       // the organisation's outbound voice at a number they control and
