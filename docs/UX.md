@@ -267,10 +267,16 @@ All three are built from the mock's own components — its cards, its rows,
 its status badge, its readiness panel — so the grammar is unchanged even
 where the behaviour is.
 
-### 11. Production screens — PROPOSED, owner ruling pending
+### 11. Production screens — APPROVED
 
-**Status: PROPOSED, not approved.** Same footing as § 9 and § 10, and the
-same convergence path: change the mock in v0 and each entry retires.
+**Status: APPROVED, owner ruling of 2026-08-18** (all eight rows, reviewed
+section by section). Same convergence path as § 9 and § 10: change the
+mock in v0 and each entry retires. One ruling came with work attached:
+11a was argued from a stock ledger that did not exist, and the same
+ruling that approved it commissioned the follow-up now that 0087 exists —
+wire Available and Shortage into the production register's Material
+column and the job card's Materials tab from the real ledger. The 11a row
+below stands until that lands, then retires.
 
 The screens themselves are ported (`app/production/page.tsx`,
 `app/production/items/page.tsx`, `components/production-job-card-page.tsx`
@@ -322,10 +328,11 @@ architecture), and it left the omitted list this wave. Inventory,
 Purchase orders and Maintenance stay omitted rather than drawn as dead
 entries.
 
-### 12. Correspondence screens — PROPOSED, owner ruling pending
+### 12. Correspondence screens — APPROVED
 
-**Status: PROPOSED, not approved.** Same footing as § 9, § 10 and § 11, and the
-same convergence path: change the mock in v0 and each entry retires.
+**Status: APPROVED, owner ruling of 2026-08-18** (all eleven rows,
+reviewed section by section). Same convergence path as § 9–§ 11: change
+the mock in v0 and each entry retires.
 
 The three screens are ported (`app/correspondence/page.tsx`,
 `app/correspondence/new`, `app/correspondence/new/inward` at `fdfe5ef`).
@@ -353,7 +360,11 @@ only textual change is the banner's plural, which `AGENTS.md` § Design
 contract 2 allows to land application-first — the mock's literal reads "1
 extension request awaiting response" whatever the number is.
 
-### 13. Inventory screens — the fakes the stock ledger refused
+### 13. Inventory screens — APPROVED
+
+**Status: APPROVED, owner ruling of 2026-08-18** (all eight rows, reviewed
+section by section). Same convergence path as its siblings: change the
+mock in v0 and each entry retires.
 
 The two screens are ported (`app/inventory/page.tsx`,
 `app/inventory/purchase-orders/page.tsx` at `fdfe5ef`) inside the mock's own
@@ -362,12 +373,6 @@ rows, its supplier-order cards. What is listed here is data the mock DRAWS
 that its own code cannot mean — in three of the eight cases its running
 fixture contradicts itself — so replicating the pixel would have made the
 product state a number that is not true.
-
-**The section number is not settled here.** Production and correspondence
-both claim § 11 in their own branches, and the coordinator renumbers these
-sections when the wave is assembled. This one is written as § 13 so it
-collides with neither: read it as a placeholder, not as a claim, and do not
-renumber the others to fit it.
 
 | #   | The mock draws                                                   | The application ships                                                                 | Why                                                                                                                                                                                                                                                                                 |
 | --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
