@@ -17,10 +17,32 @@
   (e-Mudhra Class 3, KSP "HyperPKI HYP2003 KSP India v3") on 2026-08-17,
   and it is the one fact that shapes how this is deployed.
 
-  So: run it in the signer's own logged-in session. Double-click it, or
-  register it with Task Scheduler as "run only when user is logged on"
-  with "run with highest privileges" OFF. Not a Windows service, not
-  PsExec, not a scheduled task running as SYSTEM.
+  So: run it in the signer's own logged-in session. Not a Windows service,
+  not PsExec, not a scheduled task running as SYSTEM.
+
+  HOW TO START IT. Double-clicking a .ps1 does NOT run it — Windows opens
+  it in Notepad — so use one of:
+
+    * a shortcut, or a Task Scheduler action, whose target is
+        powershell.exe -ExecutionPolicy RemoteSigned -NoExit -File
+          "C:\path\kiosk-signing-agent.ps1" -BaseUrl … -Thumbprint … -TokenFile …
+      registered "run only when the user is logged on", with "run with
+      highest privileges" OFF;
+    * or an open PowerShell window in the signer's session, running the
+      command above.
+
+  EXECUTION POLICY. A file copied from another machine or downloaded
+  arrives with a mark-of-the-web and is blocked whatever the policy says.
+  Clear it once:
+
+    Unblock-File .\kiosk-signing-agent.ps1
+
+  The machine-wide policy only needs to be RemoteSigned, which is the
+  Windows Server default; `-ExecutionPolicy RemoteSigned` in the shortcut
+  above sets it for that process alone, so nothing needs changing for the
+  whole machine. These scripts are not Authenticode-signed, so AllSigned
+  will refuse them — ADR-0012 requires a signed binary for the service it
+  described, and this is a script the owner reads instead.
 
   ADR-0012's other deployment preconditions still stand and are not
   optional: the machine runs nothing but this, accepts no inbound
@@ -62,6 +84,13 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# TLS, pinned. Windows PowerShell 5.1 still negotiates from an old default
+# on some builds, and a modern server simply closes the connection — which
+# surfaces as "The underlying connection was closed", a message that sends
+# an operator hunting for a firewall that is not the problem.
+[Net.ServicePointManager]::SecurityProtocol =
+  [Net.SecurityProtocolType]::SystemDefault -bor [Net.SecurityProtocolType]::Tls12
 
 if ($BaseUrl -notmatch '^https://' -and $BaseUrl -notmatch '^http://(localhost|127\.0\.0\.1)') {
   throw "BaseUrl must be https:// (http is allowed only for localhost testing): $BaseUrl"

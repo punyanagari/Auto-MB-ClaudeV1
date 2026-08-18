@@ -36,6 +36,8 @@ interface InvoiceDetailProps {
   readonly gstRates: readonly GstRateMaster[];
   readonly canModify: boolean;
   readonly canIssue: boolean;
+  /** The signing authority (0091), separate from canIssue. */
+  readonly canSign: boolean;
   readonly pending: boolean;
   readonly act: ActRunner;
   /** Reloads the register and reopens this invoice's detail. */
@@ -58,6 +60,7 @@ export function InvoiceDetail({
   gstRates,
   canModify,
   canIssue,
+  canSign,
   pending,
   act,
   refresh,
@@ -582,6 +585,24 @@ export function InvoiceDetail({
             disabled={pending}
           >
             Open PDF
+          </Button>
+        )}
+        {/* SEND FOR SIGNING (0091, ADR-0012). A submitted invoice with a
+            render, for a member holding the signing authority. */}
+        {invoice.status === 'submitted' && invoice.renderedAvailable && canSign && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              void act(async () => {
+                await api.createSigningRequest(organisationId, {
+                  documentType: 'tax_invoice',
+                  documentId: invoice.id,
+                });
+              }, 'Sent to the signing queue.');
+            }}
+            disabled={pending}
+          >
+            Send for signing
           </Button>
         )}
       </Actions>

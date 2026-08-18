@@ -67,6 +67,7 @@ interface InvoicesRegisterProps {
   readonly organisationId: string;
   readonly canModify: boolean;
   readonly canIssue: boolean;
+  readonly canSign: boolean;
   readonly canCancel: boolean;
   readonly canManageStatutory: boolean;
   /** Whether this member has organisation-wide work scope. A DIRECT
@@ -87,6 +88,7 @@ export function InvoicesRegister({
   organisationId,
   canModify,
   canIssue,
+  canSign,
   canCancel,
   canManageStatutory,
   hasFullWorkScope,
@@ -613,6 +615,7 @@ export function InvoicesRegister({
 
         {detail !== null && (
           <OpenedInvoice
+            canSign={canSign}
             api={api}
             organisationId={organisationId}
             detail={detail}

@@ -189,6 +189,17 @@ const FEATURES = [
     authority: 'Payments authority',
     change: 'Payments authority',
   },
+  {
+    /* The signing authority (migration 0091, owner ruling 2026-08-18):
+       who may send an issued document for the organisation's own digital
+       signature. Granted on top of issue, never inherited from it — the
+       person at the kiosk types their PIN because the queue said to, so
+       who may fill that queue is its own decision. */
+    key: 'canSignDocuments',
+    heading: 'Can sign',
+    authority: 'Signing authority',
+    change: 'Signing authority',
+  },
 ] as const satisfies readonly {
   key: keyof Membership & `can${string}`;
   heading: string;

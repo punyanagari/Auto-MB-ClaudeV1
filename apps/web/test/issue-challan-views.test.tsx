@@ -427,6 +427,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createShortagePurchaseOrder: vi.fn(),
     listSigningRequests: vi.fn(),
     createSigningRequest: vi.fn(),
+    downloadSignedPdf: vi.fn(),
     cancelSigningRequest: vi.fn(),
     registerSigningAgent: vi.fn(),
     revokeSigningAgent: vi.fn(),
@@ -1005,6 +1006,7 @@ describe('WorkDetail Issue Challans section', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
+        canSign={false}
         canModify
         canRecordEvidence
         canIssue

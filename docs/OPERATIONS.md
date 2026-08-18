@@ -409,10 +409,50 @@ Quarterly, by a human, never automatically:
    but unreadable path REFUSES to start rather than silently degrading
    every railway document to "issuer not checked".
 
-Leaving `AUTO_MB_PDF_TRUST_ANCHORS` unset is a legitimate posture and is
-not a silent one: every signature is still verified cryptographically, no
-document can reach the `signed_and_intact` state, and the review screen
-says that no certifying authorities are installed.
+For INBOUND documents, leaving `AUTO_MB_PDF_TRUST_ANCHORS` unset is a
+legitimate posture and is not a silent one: every signature is still
+verified cryptographically, no document can reach the `signed_and_intact`
+state, and the review screen says that no certifying authorities are
+installed.
+
+### Required for the signing kiosk (0091, ADR-0012)
+
+**For OUTBOUND signing it is not a posture, it is a prerequisite, and
+getting it wrong wastes a PIN entry.**
+
+The kiosk lane refuses to store a signature its own verifier does not read
+as `signed_and_intact`, and that verdict requires the signing
+certificate's chain to reach a configured anchor. With no anchors the
+server cannot vouch for its own output, so the sequence is: a member
+queues a document, the signer walks to the kiosk, enters the token PIN,
+the token signs — and the server then refuses the result with
+
+```
+SIGNED_OUTPUT_REJECTED
+The server holds no trust anchors, so it cannot confirm its own
+signature; install the CCA India root under AUTO_MB_PDF_TRUST_ANCHORS
+and retry.
+```
+
+The refusal is deliberate — storing a signature the server cannot check
+would be exactly the manufactured confidence this whole subsystem refuses
+— but it lands after the human work, which is why it belongs on a
+checklist rather than in a runbook nobody reads.
+
+So before the first production signing: the root that issued the
+organisation's own Class 3 token must be in the anchor directory. For an
+e-Mudhra Class 3 token that is the **CCA India** root of the year the
+certificate was issued under, plus the licensed CA between them in
+`intermediates/`. The default bundle at `/etc/auto-mb/pdf-trust` already
+carries `cca-india-2022.pem` and `cca-india-2014.pem`; check which one
+your token actually chains to — `tools/kiosk-signing-check.ps1` prints the
+issuer — and add it if it is neither.
+
+Verify it end to end rather than by inspection: queue one document, run
+`tools/kiosk-signing-check.ps1 -BaseUrl … -TokenFile …` at the kiosk, and
+confirm it prints `VERIFIED:True`. A signed row in the queue carrying a
+`signed_and_intact` verdict is the proof; anything else names what is
+missing.
 
 ### What is NOT checked
 

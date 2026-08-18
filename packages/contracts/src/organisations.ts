@@ -56,6 +56,7 @@ export const MembershipSchema = Type.Object(
      * issue/cancel because sending the organisation's money out is not
      * the same act as issuing a document it is owed for. */
     canManagePayments: Type.Boolean(),
+    canSignDocuments: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -89,6 +90,7 @@ export const AddMemberRequestSchema = Type.Object(
     canApproveAmendments: Type.Optional(Type.Boolean()),
     canManageStatutoryReporting: Type.Optional(Type.Boolean()),
     canManagePayments: Type.Optional(Type.Boolean()),
+    canSignDocuments: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -412,6 +414,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canApproveAmendments: Type.Optional(Type.Boolean()),
     canManageStatutoryReporting: Type.Optional(Type.Boolean()),
     canManagePayments: Type.Optional(Type.Boolean()),
+    canSignDocuments: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

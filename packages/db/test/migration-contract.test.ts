@@ -1698,10 +1698,22 @@ describe('tenant migration contract', () => {
     // one read that must cross tenancy because the tenant is what the
     // token is being read to discover. Both guards are invoker-rights and
     // every function pins its search_path.
+    // The migration's own three. `create_organisation_with_owner` is
+    // separately re-created here — CREATE OR REPLACE, so it is not in
+    // this match — to give the founding owner the new authority; it keeps
+    // 0004's definer status and 0004's search_path, and asserting this
+    // migration's conventions over copied code would be asserting the
+    // wrong thing.
     const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
     expect(functions).toHaveLength(3);
     expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(
       functions.length,
+    );
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(',
+    );
+    expect(sql).toContain(
+      "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, 'active');",
     );
     // Bodies only, in the sibling migrations' idiom: the header explains
     // in prose why the guards are not definers, and a naive substring
@@ -1729,11 +1741,47 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('WHERE a.token_hash = p_token_hash');
     expect(sql).toContain('AND a.revoked_at IS NULL');
 
-    // Every RAISE carries a named SQLSTATE from the 23J block, which this
-    // migration is the first to use, so `routes/signing.ts` maps it to a
-    // code instead of surfacing a bare 23514 as a 500.
-    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    // SIGNING IS ITS OWN AUTHORITY (owner ruling 2026-08-18), in 0061's
+    // and 0080's shape: a per-member column, default false, not
+    // backfilled. `issue` does not confer it.
+    expect(sql).toContain(
+      'ALTER TABLE organisation_memberships\n  ADD COLUMN can_sign_documents boolean NOT NULL DEFAULT false;',
+    );
+
+    // EVERY TERMINAL DOOR IS OPEN, and each one closes a wedge that a
+    // narrower state machine actually produced:
+    //
+    //   pending -> failed    a revocation kills requests nobody claimed.
+    //                        Without it the revoke transaction raises
+    //                        23J01 and rolls the revocation itself back.
+    //   claimed -> cancelled the operator's exit from a lease the kiosk
+    //                        abandoned. Without it the partial unique
+    //                        index blocks the document forever.
+    expect(sql).toContain(
+      "(OLD.status = 'pending' AND NEW.status IN ('claimed', 'cancelled', 'failed'))",
+    );
+    expect(sql).toContain(
+      "OR (OLD.status = 'claimed' AND NEW.status IN ('signed', 'failed', 'cancelled'))",
+    );
+    // …and nothing rewinds: `claimed` never returns to `pending`, because
+    // the token may already have produced a signature the server has not
+    // seen. A kiosk re-takes a lapsed claim by claiming it again, which is
+    // not a status change at all.
+    expect(sql).not.toMatch(/NEW\.status = 'pending'/);
+
+    // Every RAISE in the migration's OWN guards carries a named SQLSTATE
+    // from the 23J block, which this migration is the first to use, so
+    // `routes/signing.ts` maps it to a code instead of surfacing a bare
+    // 23514 as a 500.
+    //
+    // Scoped to the guards, because the file also re-creates
+    // `create_organisation_with_owner` verbatim from 0004 (plus the new
+    // column) and that function carries 0004's own 28000. Widening the
+    // 23J rule over it would be asserting the wrong thing about copied
+    // code.
+    const guards = sql.slice(sql.indexOf('CREATE FUNCTION app_private.guard_signing'));
+    const raises = guards.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(6);
-    expect(sql.match(/USING ERRCODE = '23J\d\d'/g)?.length).toBe(raises.length);
+    expect(guards.match(/USING ERRCODE = '23J\d\d'/g)?.length).toBe(raises.length);
   });
 });

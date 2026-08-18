@@ -158,9 +158,13 @@ export const CreateSigningRequestSchema = Type.Object(
      * Defaulted from the organisation profile when omitted, because the
      * common case is that every document is signed the same way and a
      * required field there is a field somebody types wrong. */
-    signerName: Type.Optional(nonBlankString({ minLength: 2, maxLength: 120 })),
+    // The bounds are migration 0091's, which are in turn the bounds of
+    // the columns these default from. Narrower ones here would turn a
+    // long-but-legitimate company name into a 500 at insert; truncating
+    // was refused because these strings go inside the signed bytes.
+    signerName: Type.Optional(nonBlankString({ minLength: 2, maxLength: 200 })),
     signingReason: Type.Optional(nonBlankString({ minLength: 2, maxLength: 200 })),
-    signingLocation: Type.Optional(nonBlankString({ minLength: 2, maxLength: 120 })),
+    signingLocation: Type.Optional(nonBlankString({ minLength: 2, maxLength: 1000 })),
   },
   { additionalProperties: false },
 );

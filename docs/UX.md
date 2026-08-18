@@ -439,16 +439,42 @@ dialog opens. The two are meant to be compared by eye. A truncated hash — the
 usual register treatment, and what a designer would reach for — compares
 nothing, so it is not truncated.
 
-**Three things the screen does not do**, each because the alternative would
-be a second place to do something:
+**Three things the queue screen does not do**, each because the alternative
+would be a second place to do something:
 
 - **Raise a request.** That belongs on the document being signed. A picker
   here would be a second way to choose a challan.
 - **Register a kiosk.** That belongs in Settings: it hands out a credential
   and is owner-only. The panel here reports whether one exists and when it
   last polled, which is the fact that explains a queue that has stopped.
-- **Show the signed PDF inline.** The document register already owns
-  document viewing.
+- **Show the signed PDF inline.** The row links to it and it opens the way
+  every other PDF in the product opens.
+
+#### The other three surfaces this feature touches
+
+The queue is where signing is _read_. The acts live where their documents
+live, and all three are the mock's existing components with no new grammar:
+
+| Surface                                             | What it is                                                                                          | Why there                                                                                                                                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Send for signing** on the challan and the invoice | One more `Button` in the `Actions` row those screens already have, beside Generate PDF and Open PDF | Signing is a thing you do TO a document. It appears only on an issued/submitted document that has a render, for a member holding the signing authority.                                 |
+| **Signing kiosk** in Settings                       | A `Card` with the registered kiosks, a register form, and a destructive `ConfirmDialog` for revoke  | It hands out a credential, so it is owner-only and sits with the other owner-only settings. The one-time token is shown in a bordered panel that must be dismissed, never auto-hidden.  |
+| **Open signed PDF** on a completed queue row        | A `Button` that fetches and opens, exactly as the challan's own Open PDF does                       | A signed document nobody can open is a record of an act with the act missing. Same work-scope authority as the unsigned document's download — it is the same document plus a signature. |
+
+**Two chips joined the shared vocabulary** rather than being styled
+locally: `signed` in the success family beside `paid` and `approved`, and
+`claimed` in the warning family beside `in-production` — work in hand.
+`pending` was already mapped and keeps its reading as a queue rather than a
+caution.
+
+**One divergence from the product's own habit, stated so it is not
+mistaken for an oversight:** the queue prints the full 64-character
+SHA-256 on every row, monospaced and wrapped, where every other register
+in the product would truncate a long identifier. ADR-0012 requires the
+person authorising a signature to see the hash of what they are
+authorising, and the kiosk prints the same string to its console before
+the PIN dialog opens. The two are meant to be compared by eye. Half a hash
+compares nothing.
 
 **When the mock grows a signing screen, the mock wins.** This entry retires
 the moment there is something to cite, on the § 4 iteration pipeline: change

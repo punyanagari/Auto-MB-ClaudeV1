@@ -142,6 +142,7 @@ describe('the Work page', () => {
         canModify={canModify}
         canRecordEvidence
         canIssue
+        canSign={false}
         canCancel
         canApprove
         canManageStatutory

@@ -1929,6 +1929,12 @@ export interface ApiClient {
     requestId: string,
     body: CancelSigningRequest,
   ) => Promise<SigningRequestResponse>;
+  /** The signed PDF of a completed request. Same authority as the
+   * unsigned document's own download: work scope and nothing more. */
+  readonly downloadSignedPdf: (
+    organisationId: string,
+    requestId: string,
+  ) => Promise<Blob>;
   readonly registerSigningAgent: (
     organisationId: string,
     body: RegisterSigningAgent,
@@ -4523,6 +4529,17 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/signing-requests/${requestId}/cancel`,
         { method: 'POST', body, organisationId },
       );
+    },
+    async downloadSignedPdf(organisationId, requestId) {
+      // Fetched rather than linked, like every other PDF here: the
+      // tenant header travels on every scoped request and an <a href>
+      // cannot carry one.
+      const response = await fetchImpl(`/api/signing-requests/${requestId}/pdf`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async registerSigningAgent(organisationId, body) {
       return request<RegisterSigningAgentResponse>('/api/signing-agents', {

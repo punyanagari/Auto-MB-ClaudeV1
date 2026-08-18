@@ -64,6 +64,7 @@ import {
   buildSignedAttributes,
   type SignedAttributes,
 } from './pdf-signing/cms-build.js';
+import { CONTENTS_HEX_RESERVATION } from './pdf-signing/pdf-revision.js';
 import {
   embedSignature,
   prepareSignedRevision,
@@ -180,6 +181,43 @@ export async function signPdfDetached(
     preparation,
     await signer.signDigest(preparation.digest),
   );
+}
+
+/**
+ * Whether a signature made with this chain will fit the `/Contents`
+ * reservation, answered without a private key.
+ *
+ * The reservation is fixed (`CONTENTS_HEX_RESERVATION`) and so is
+ * everything that fills it: the certificates, three signed attributes of
+ * known shape, and an RSA signature exactly as long as the key's modulus.
+ * So this is a rehearsal, not an estimate — it assembles the real blob
+ * with a zero-filled signature of the right length and measures it.
+ *
+ * It exists because the alternative is finding out at the worst possible
+ * moment. `finishDetachedPdfSignature` throws on an oversized blob, and by
+ * then the token has already signed: the operator has typed their PIN, the
+ * signature is real, and there is nowhere to put it. Asking the question
+ * when the kiosk registers turns that into a refused registration.
+ */
+export function detachedSignatureFits(
+  certificateChain: readonly X509Certificate[],
+): boolean {
+  const [signerCertificate] = certificateChain;
+  if (signerCertificate === undefined) return false;
+  const modulusBits =
+    signerCertificate.publicKey.asymmetricKeyDetails?.modulusLength ?? 2048;
+  try {
+    const rehearsal = assembleSignedData({
+      certificateChain,
+      // The content is irrelevant to the size: `messageDigest` is 32
+      // bytes whatever it digests.
+      signedAttributes: buildSignedAttributes(Buffer.alloc(0), signerCertificate),
+      signature: Buffer.alloc(Math.ceil(modulusBits / 8)),
+    });
+    return rehearsal.length * 2 <= CONTENTS_HEX_RESERVATION;
+  } catch {
+    return false;
+  }
 }
 
 /**

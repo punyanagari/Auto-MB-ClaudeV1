@@ -3,6 +3,7 @@ import { ShieldCheck } from 'lucide-react';
 import type { SigningAgent, SigningRequest } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatTimestamp } from '../format.js';
+import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -48,6 +49,22 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
  * anybody asked for a signature on — so the whole recent queue fits one
  * request and the cursor is there for the year, not the day. */
 const PAGE_SIZE = 50;
+
+/** Whether the authorisation's window has closed. The server holds the
+ * same rule (`lapsed` in `routes/signing.ts`) and is authoritative; this
+ * decides only what to draw. */
+function hasLapsed(request: SigningRequest): boolean {
+  return new Date(request.expiresAt).getTime() <= Date.now();
+}
+
+/** A request an operator may still withdraw: one nobody has picked up, or
+ * one whose kiosk lease lapsed and is therefore held by nobody. The
+ * server refuses anything else. */
+function withdrawable(request: SigningRequest): boolean {
+  return (
+    request.status === 'pending' || (request.status === 'claimed' && hasLapsed(request))
+  );
+}
 
 interface SigningQueueProps {
   readonly api: ApiClient;
@@ -114,6 +131,22 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
       }
     },
     [api, organisationId, reload],
+  );
+
+  const openSigned = useCallback(
+    async (request: SigningRequest) => {
+      setActionError(null);
+      try {
+        await openPdf(() => api.downloadSignedPdf(organisationId, request.id));
+      } catch (cause: unknown) {
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The signed document could not be opened.',
+        );
+      }
+    },
+    [api, organisationId],
   );
 
   const header = (
@@ -188,9 +221,19 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
                     <span className="tabular-nums">
                       {formatTimestamp(request.requestedAt)}
                     </span>
-                    {request.completedAt !== null && (
+                    {request.completedAt !== null ? (
                       <span className="block text-xs text-muted-foreground tabular-nums">
                         finished {formatTimestamp(request.completedAt)}
+                      </span>
+                    ) : (
+                      /* A lapsed authorisation is the commonest reason a
+                         queue stops moving, and without this the row just
+                         reads "pending" forever with nothing to explain
+                         it. Both halves are shown: when it will lapse, and
+                         that it has. */
+                      <span className="block text-xs text-muted-foreground tabular-nums">
+                        {hasLapsed(request) ? 'lapsed ' : 'expires '}
+                        {formatTimestamp(request.expiresAt)}
                       </span>
                     )}
                   </td>
@@ -198,17 +241,17 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
                     {/* Complete, never truncated: half a digest compares
                         nothing, and comparing it against what the kiosk
                         printed is the whole point of showing it. */}
-                    <code className="break-all font-mono text-xs">
+                    <code className="break-all font-mono text-xs tabular-nums">
                       {request.sourceSha256}
                     </code>
                     {request.signedSha256 !== null && (
-                      <code className="mt-1 block break-all font-mono text-xs text-muted-foreground">
+                      <code className="mt-1 block break-all font-mono text-xs tabular-nums text-muted-foreground">
                         signed {request.signedSha256}
                       </code>
                     )}
                   </td>
                   <td>
-                    <code className="break-all font-mono text-xs">
+                    <code className="break-all font-mono text-xs tabular-nums">
                       {request.certificateThumbprint ?? '—'}
                     </code>
                   </td>
@@ -221,8 +264,8 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
                     )}
                   </td>
                   {canModify && (
-                    <td>
-                      {request.status === 'pending' && (
+                    <td className="whitespace-nowrap">
+                      {withdrawable(request) && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -232,6 +275,17 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
                           }}
                         >
                           Withdraw
+                        </Button>
+                      )}
+                      {request.status === 'signed' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            void openSigned(request);
+                          }}
+                        >
+                          Open signed PDF
                         </Button>
                       )}
                     </td>
@@ -305,7 +359,9 @@ function KioskPanel({ agents }: { readonly agents: readonly SigningAgent[] }) {
               aria-hidden="true"
             />
             <span className="text-sm font-medium">{agent.label}</span>
-            <code className="font-mono text-xs">{agent.certificateThumbprint}</code>
+            <code className="font-mono text-xs tabular-nums">
+              {agent.certificateThumbprint}
+            </code>
             <span className="text-xs text-muted-foreground">
               {agent.certificateSubject}
             </span>

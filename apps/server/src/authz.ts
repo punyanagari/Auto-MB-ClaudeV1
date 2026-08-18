@@ -8,6 +8,7 @@ export interface MembershipRow {
   can_cancel_documents: boolean;
   can_manage_statutory_reporting: boolean;
   can_manage_payments: boolean;
+  can_sign_documents: boolean;
 }
 
 export async function membershipOf(
@@ -16,7 +17,8 @@ export async function membershipOf(
 ): Promise<MembershipRow | undefined> {
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
-           can_manage_statutory_reporting, can_manage_payments
+           can_manage_statutory_reporting, can_manage_payments,
+           can_sign_documents
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -125,7 +127,19 @@ export async function requireEvidenceRole(
  * name — and recording what those portals are said to have answered — is
  * a different act from issuing a document of our own, so it carries its
  * own grant on top of issue/cancel rather than replacing them. */
-export type DocumentAuthority = 'issue' | 'cancel' | 'statutory' | 'payments';
+export type DocumentAuthority =
+  | 'issue'
+  | 'cancel'
+  | 'statutory'
+  | 'payments'
+  /** Putting the organisation's own registered certificate on a document
+   * it has already issued (0091, ADR-0012, owner ruling 2026-08-18).
+   * Separate from `issue` because the digest binding and this authority
+   * answer different questions: the binding makes it impossible to sign
+   * bytes nobody authorised, and this makes it impossible for the wrong
+   * member to put a correctly-bound request in front of a signer who is
+   * about to type their PIN because the queue said to. */
+  | 'sign';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -137,6 +151,7 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
     'Your membership does not carry the statutory reporting authority, which is required to register, reconcile, cancel, or record government e-invoice and E-way Bill evidence.',
   payments:
     'Your membership does not carry the payments authority, which is required to approve employee payment requests and to record or pay vendor invoices.',
+  sign: 'Your membership does not carry the signing authority, which is required to send an issued document for the organisation’s digital signature or to withdraw a request for one.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -150,12 +165,14 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_cancel_documents'
     | 'can_manage_statutory_reporting'
     | 'can_manage_payments'
+    | 'can_sign_documents'
   >
 > = {
   issue: 'can_issue_documents',
   cancel: 'can_cancel_documents',
   statutory: 'can_manage_statutory_reporting',
   payments: 'can_manage_payments',
+  sign: 'can_sign_documents',
 };
 
 function authorityGranted(

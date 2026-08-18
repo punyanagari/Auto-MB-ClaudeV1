@@ -509,9 +509,25 @@ describe('export completeness', () => {
       'taxInvoiceCounters',
       // export-v10: gap-free credit-note numbering state (0051).
       'creditNoteCounters',
+      // export-v24: the signing trail (0091).
+      'signingAgents',
+      'signingRequests',
     ]) {
       expect(Array.isArray(exported[section])).toBe(true);
     }
+
+    // THE ONE COLUMN THE PACKAGE WITHHOLDS. `signing_agents.token_hash`
+    // is the digest of a kiosk's bearer credential: it proves nothing —
+    // a signature is proved by its certificate — and it is the single
+    // value in the schema an offline attacker could usefully grind. The
+    // section names its columns instead of starring them, and this is
+    // the assertion that keeps a later `select *` from undoing that.
+    // Checked over the SERIALISED archive rather than the parsed rows,
+    // so a nested copy could not slip through either.
+    const agentSection = JSON.stringify(exported.signingAgents ?? []);
+    expect(agentSection).not.toContain('token_hash');
+    // …and the certificate, which IS the evidence, is present.
+    expect(Array.isArray(exported.signingAgents)).toBe(true);
     expect(exported.importBatches).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

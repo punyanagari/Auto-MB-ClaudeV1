@@ -24,7 +24,7 @@ export interface RateLimitRule {
  * Both implementations of each interface count at the moment of refusal,
  * so the metric measures the control rather than any one caller's
  * bookkeeping. */
-export type RateLimitScopeName = 'auth' | 'upload' | 'account_lockout';
+export type RateLimitScopeName = 'auth' | 'upload' | 'account_lockout' | 'signing';
 
 export interface RateLimiter {
   /** Records an attempt for the key and reports whether it is allowed.
@@ -35,7 +35,7 @@ export interface RateLimiter {
 
 export function createRateLimiter(
   rule: RateLimitRule,
-  scope: 'auth' | 'upload' = 'auth',
+  scope: Exclude<RateLimitScopeName, 'account_lockout'> = 'auth',
 ): RateLimiter {
   const hits = new Map<string, number[]>();
   let lastSweep = 0;
@@ -178,7 +178,7 @@ function limiterKeyHash(namespace: string, key: string): string {
   return createHash('sha256').update(`${namespace}:${key}`).digest('hex');
 }
 
-type ThrottleScope = 'auth' | 'upload' | 'account_lockout';
+type ThrottleScope = RateLimitScopeName;
 
 /** Serialises this statement's transaction against every other mutation of
  * the same (scope, key) pair. hashtextextended gives a stable 64-bit key;
@@ -195,7 +195,7 @@ async function lockThrottleKey(
 
 export function createPgRateLimiter(
   sql: Sql,
-  scope: 'auth' | 'upload',
+  scope: Exclude<RateLimitScopeName, 'account_lockout'>,
   rule: RateLimitRule,
   namespace: string,
 ): RateLimiter {

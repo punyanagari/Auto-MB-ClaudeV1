@@ -316,12 +316,21 @@ beforeAll(async () => {
     });
     expect(added.statusCode, added.body).toBe(201);
   }
-  // The office member signs; the scoped member sees only assigned Works
-  // and holds no issue authority, which is two walls in one fixture.
+  // The office member holds BOTH authorities, which is what makes the
+  // negative control below meaningful: the scoped member is given
+  // `can_issue_documents` and NOT `can_sign_documents`, so a refusal there
+  // proves the signing authority is doing the work rather than issue
+  // standing in for it.
+  await admin`
+    update organisation_memberships
+    set can_issue_documents = true, can_sign_documents = true
+    where organisation_id = ${organisationId}
+      and user_id in (select "id" from auth_users where "email" = ${officeEmail})
+  `;
   await admin`
     update organisation_memberships set can_issue_documents = true
     where organisation_id = ${organisationId}
-      and user_id in (select "id" from auth_users where "email" = ${officeEmail})
+      and user_id in (select "id" from auth_users where "email" = ${scopedEmail})
   `;
   await admin`
     update organisation_memberships set work_scope = 'assigned'
@@ -690,6 +699,67 @@ describe('the kiosk credential', () => {
     await runKiosk();
   });
 
+  it('revokes a kiosk that is HOLDING a pending request, and the revocation sticks', async () => {
+    // THE CASE THE TEST ABOVE DOES NOT COVER, and the one that was broken:
+    // there, the spare kiosk held nothing, because raising against it had
+    // been refused for two-kiosk ambiguity. Here the kiosk being revoked
+    // is the only one, so it owns a real pending request — and the
+    // revocation and the request's failure are ONE transaction. With
+    // `pending -> failed` missing from the state machine the bulk update
+    // raised 23J01, the whole transaction rolled back, and the kiosk
+    // stayed live: a credential that could not be revoked because it had
+    // work queued, which is exactly when revoking matters.
+    const challan = await seedIssuedChallan('Held when the kiosk was revoked');
+    const created = (await raise(challan.challanId)).json<SigningRequestResponse>()
+      .request;
+    expect(created.status).toBe('pending');
+
+    const revoked = await authed(owner, {
+      method: 'POST',
+      url: `/api/signing-agents/${kioskAgentId}/revoke`,
+      organisationId,
+    });
+    expect(revoked.statusCode, revoked.body).toBe(200);
+
+    // The revocation is real and committed…
+    const [agentRow] = await admin<{ revoked_at: Date | null }[]>`
+      select revoked_at from signing_agents where id = ${kioskAgentId}
+    `;
+    expect(agentRow?.revoked_at).not.toBeNull();
+
+    // …the credential is dead…
+    const afterRevoke = await asKiosk({
+      method: 'POST',
+      url: '/api/signing/agent/claim',
+    });
+    expect(afterRevoke.statusCode).toBe(401);
+
+    // …and the request it was holding says why it will never move.
+    const [row] = await admin<{ status: string; failure_reason: string | null }[]>`
+      select status, failure_reason from signing_requests where id = ${created.id}
+    `;
+    expect(row?.status).toBe('failed');
+    expect(row?.failure_reason).toContain('revoked');
+
+    // Re-register for the tests that follow: this suite shares one kiosk.
+    const replacement = await authed(owner, {
+      method: 'POST',
+      url: '/api/signing-agents',
+      organisationId,
+      payload: {
+        label: 'Cabin kiosk (replacement)',
+        certificateChainPem: [pki.signer.pem, pki.intermediate.pem, pki.root.pem].join(
+          '',
+        ),
+        certificateThumbprint: thumbprintOf(pki.signer.pem),
+      },
+    });
+    expect(replacement.statusCode, replacement.body).toBe(201);
+    const body = replacement.json<RegisterSigningAgentResponse>();
+    kioskToken = body.token;
+    kioskAgentId = body.agent.id;
+  });
+
   it('cannot see another organisation’s queue', async () => {
     // The outsider's own kiosk, registered in their own organisation.
     const theirs = createTestPki({
@@ -758,6 +828,293 @@ describe('the kiosk credential', () => {
   });
 });
 
+/**
+ * A kiosk that dies mid-signature used to wedge its document forever: the
+ * claim query skipped the row, cancel refused a non-pending one, the
+ * partial unique index refused any replacement request, and past the
+ * expiry even a failure report was refused. Every door out is tested here.
+ */
+describe('a claim whose lease lapsed', () => {
+  /**
+   * Ages a request past its lease.
+   *
+   * `expires_at` is one of the authorised facts the guard freezes, and
+   * the guard is right to — it is inside the signed preparation's own
+   * contract. That leaves no way to simulate a week passing except to
+   * turn the trigger off around the edit, which is what migration 0043
+   * does for its one-time reclassification and is the same posture: the
+   * guard is disabled for exactly one statement, by the owner role, and
+   * turned back on in a `finally` so a failing assertion cannot leave it
+   * off for the rest of the suite.
+   *
+   * The guard being in the way here is itself worth noticing — it is the
+   * reason a production operator cannot extend a lease either, and why
+   * the exit is "withdraw and raise again" rather than "give it longer".
+   */
+  async function lapse(requestId: string): Promise<void> {
+    await admin`ALTER TABLE signing_requests DISABLE TRIGGER signing_requests_guard`;
+    try {
+      await admin`
+        update signing_requests set expires_at = now() - interval '1 minute'
+        where id = ${requestId}
+      `;
+    } finally {
+      await admin`ALTER TABLE signing_requests ENABLE TRIGGER signing_requests_guard`;
+    }
+  }
+
+  /** Claims and completes everything already queued, so each test below
+   * reasons about ONE request. The suite shares a queue, and "the kiosk
+   * was offered nothing" is an assertion several of these make. */
+  async function drain(): Promise<void> {
+    for (;;) {
+      const claim = await asKiosk({ method: 'POST', url: '/api/signing/agent/claim' });
+      const { job } = claim.json<ClaimSigningJobResponse>();
+      if (job === null) return;
+      await asKiosk({
+        method: 'POST',
+        url: `/api/signing/agent/requests/${job.requestId}/result`,
+        payload: { signature: signDigest(job.digest) },
+      });
+    }
+  }
+
+  async function claimOne(expected: string): Promise<string> {
+    const claim = await asKiosk({ method: 'POST', url: '/api/signing/agent/claim' });
+    expect(claim.statusCode, claim.body).toBe(200);
+    const { job } = claim.json<ClaimSigningJobResponse>();
+    if (job === null) throw new Error('no job offered');
+    expect(job.requestId).toBe(expected);
+    return job.requestId;
+  }
+
+  it('lets the operator withdraw it — door one', async () => {
+    await drain();
+    const challan = await seedIssuedChallan('Abandoned at the kiosk');
+    const created = (await raise(challan.challanId)).json<SigningRequestResponse>()
+      .request;
+    await claimOne(created.id);
+
+    // While the lease is live the request belongs to the kiosk.
+    const early = await authed(owner, {
+      method: 'POST',
+      url: `/api/signing-requests/${created.id}/cancel`,
+      organisationId,
+      payload: { reason: 'Too soon' },
+    });
+    expect(early.statusCode, early.body).toBe(409);
+    expect(early.json<{ message: string }>().message).toContain('lease lapses');
+
+    await lapse(created.id);
+    const late = await authed(owner, {
+      method: 'POST',
+      url: `/api/signing-requests/${created.id}/cancel`,
+      organisationId,
+      payload: { reason: 'The kiosk never came back' },
+    });
+    expect(late.statusCode, late.body).toBe(200);
+    expect(late.json<SigningRequestResponse>().request.status).toBe('cancelled');
+
+    // The document is free again, which is the whole point.
+    expect((await raise(challan.challanId)).statusCode).toBe(201);
+    await runKiosk();
+  });
+
+  it('is offered to the kiosk again — door two', async () => {
+    await drain();
+    const challan = await seedIssuedChallan('The kiosk restarted');
+    const created = (await raise(challan.challanId)).json<SigningRequestResponse>()
+      .request;
+    await claimOne(created.id);
+
+    // Live: nothing more to claim.
+    const whileLive = await asKiosk({
+      method: 'POST',
+      url: '/api/signing/agent/claim',
+    });
+    expect(whileLive.json<ClaimSigningJobResponse>().job).toBeNull();
+
+    await lapse(created.id);
+    const again = await asKiosk({ method: 'POST', url: '/api/signing/agent/claim' });
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json<ClaimSigningJobResponse>().job?.requestId).toBe(created.id);
+
+    // Clear it before the second half, so what follows is the only thing
+    // the queue holds.
+    await authed(owner, {
+      method: 'POST',
+      url: `/api/signing-requests/${created.id}/cancel`,
+      organisationId,
+      payload: { reason: 'Fixture cleanup' },
+    });
+
+    // A LAPSED PENDING REQUEST IS NOT RE-OFFERED — the asymmetry is
+    // deliberate. Nobody picked it up, so its authorisation expired the
+    // way ADR-0012 intends and it must be raised again; there is no
+    // abandoned lease to recover, which is the only thing re-offering is
+    // for.
+    const untouched = await seedIssuedChallan('Never picked up');
+    const stale = (await raise(untouched.challanId)).json<SigningRequestResponse>()
+      .request;
+    await lapse(stale.id);
+    const offered = await asKiosk({ method: 'POST', url: '/api/signing/agent/claim' });
+    expect(offered.json<ClaimSigningJobResponse>().job).toBeNull();
+
+    await authed(owner, {
+      method: 'POST',
+      url: `/api/signing-requests/${stale.id}/cancel`,
+      organisationId,
+      payload: { reason: 'Fixture cleanup' },
+    });
+  });
+
+  it('accepts a failure report but never a signature — door three', async () => {
+    await drain();
+    const challan = await seedIssuedChallan('Lapsed under the PIN dialog');
+    const created = (await raise(challan.challanId)).json<SigningRequestResponse>()
+      .request;
+    const claim = await asKiosk({ method: 'POST', url: '/api/signing/agent/claim' });
+    const { job } = claim.json<ClaimSigningJobResponse>();
+    if (job === null) throw new Error('no job offered');
+    await lapse(created.id);
+
+    // A SIGNATURE IS REFUSED: the digest was derived a week ago and the
+    // authorisation is spent. Terminal, so a kiosk that retries cannot
+    // re-wedge the row it was just re-offered.
+    const signature = await asKiosk({
+      method: 'POST',
+      url: `/api/signing/agent/requests/${job.requestId}/result`,
+      payload: { signature: signDigest(job.digest) },
+    });
+    expect(signature.statusCode, signature.body).toBe(409);
+    expect(signature.json<{ code: string }>().code).toBe('SIGNING_REQUEST_EXPIRED');
+    const [afterSignature] = await admin<{ status: string }[]>`
+      select status from signing_requests where id = ${created.id}
+    `;
+    expect(afterSignature?.status).toBe('failed');
+
+    // A FAILURE REPORT IS ACCEPTED even past the lease, on a fresh one:
+    // a kiosk saying "I could not do this" is the cheapest way a row ever
+    // terminates, and refusing it is what left the wedge.
+    const second = await seedIssuedChallan('Reported late');
+    const later = (await raise(second.challanId)).json<SigningRequestResponse>()
+      .request;
+    const secondClaim = await asKiosk({
+      method: 'POST',
+      url: '/api/signing/agent/claim',
+    });
+    const secondJob = secondClaim.json<ClaimSigningJobResponse>().job;
+    if (secondJob === null) throw new Error('no job offered');
+    await lapse(later.id);
+    const reported = await asKiosk({
+      method: 'POST',
+      url: `/api/signing/agent/requests/${secondJob.requestId}/result`,
+      payload: { failureReason: 'The token was unplugged overnight' },
+    });
+    expect(reported.statusCode, reported.body).toBe(200);
+    expect(reported.json<SubmitSignatureResponse>().status).toBe('failed');
+  });
+});
+
+describe('the document has to still be a document', () => {
+  it('refuses a signature after the challan was cancelled', async () => {
+    // The digest binding does NOT catch this: cancelling a challan
+    // changes no bytes, so the preparation re-derives identically. Only
+    // the status re-check stands between a withdrawn document and the
+    // organisation's certificate.
+    const challan = await seedIssuedChallan('Cancelled under the kiosk');
+    const created = (await raise(challan.challanId)).json<SigningRequestResponse>()
+      .request;
+    const claim = await asKiosk({ method: 'POST', url: '/api/signing/agent/claim' });
+    const { job } = claim.json<ClaimSigningJobResponse>();
+    if (job === null) throw new Error('no job offered');
+
+    await admin`
+      update delivery_challans
+      set status = 'cancelled', cancellation_note = 'Wrong consignee',
+          cancelled_at = now(), cancelled_by_user_id = ${ownerUserId}
+      where id = ${challan.challanId}
+    `;
+
+    const result = await asKiosk({
+      method: 'POST',
+      url: `/api/signing/agent/requests/${job.requestId}/result`,
+      payload: { signature: signDigest(job.digest) },
+    });
+    expect(result.statusCode, result.body).toBe(409);
+    expect(result.json<{ code: string }>().code).toBe('SIGNING_DOCUMENT_NOT_RENDERED');
+    const [row] = await admin<{ status: string; failure_reason: string | null }[]>`
+      select status, failure_reason from signing_requests where id = ${created.id}
+    `;
+    expect(row?.status).toBe('failed');
+    expect(row?.failure_reason).toContain('left its issued state');
+  });
+});
+
+describe('the Origin guard, and the hole it must not become', () => {
+  /**
+   * The CSRF guard refuses any mutation without an exact-match `Origin`,
+   * and PowerShell sends none — so with `trustedOrigins` configured (which
+   * is production, and only production) the whole kiosk lane was dead, and
+   * dead SILENTLY: the agent reads a 403 as a transport blip and backs off.
+   *
+   * Both directions are proved here, because an exemption that is too wide
+   * is worse than the bug it fixes.
+   */
+  let guarded: FastifyInstance;
+
+  beforeAll(async () => {
+    guarded = await buildApp({
+      databaseUrl: appUrl,
+      authSecret: `integration-secret-${'0'.repeat(32)}`,
+      baseUrl: 'http://127.0.0.1:3000',
+      objectStorageDir: storageDir,
+      pdfTrustAnchors: anchors,
+      trustedOrigins: ['https://app.example.test'],
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    await guarded?.close();
+  }, 60_000);
+
+  it('lets the kiosk poll with no Origin header at all', async () => {
+    const response = await guarded.inject({
+      method: 'POST',
+      url: '/api/signing/agent/claim',
+      headers: { authorization: `Bearer ${kioskToken}` },
+    });
+    // 200 with or without a job — what matters is that it is not the
+    // guard's 403.
+    expect(response.statusCode, response.body).toBe(200);
+  });
+
+  it('still refuses a cookie-authenticated mutation with no Origin', async () => {
+    // The exemption must not have widened into "mutations may skip the
+    // guard". Same server, same missing header, a session-authenticated
+    // route: still 403.
+    const response = await guarded.inject({
+      method: 'POST',
+      url: '/api/signing-requests',
+      headers: { cookie: owner.cookie, 'x-organisation-id': organisationId },
+      payload: { documentType: 'delivery_challan', documentId: randomUUID() },
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.json<{ code: string }>().code).toBe('ORIGIN_FORBIDDEN');
+  });
+
+  it('refuses an unauthenticated kiosk call even though the guard let it past', async () => {
+    // The exemption removes CSRF, not authentication. A caller with no
+    // bearer token gets the credential wall, not a free pass.
+    const response = await guarded.inject({
+      method: 'POST',
+      url: '/api/signing/agent/claim',
+    });
+    expect(response.statusCode, response.body).toBe(401);
+    expect(response.json<{ code: string }>().code).toBe('SIGNING_UNAUTHENTICATED');
+  });
+});
+
 describe('two kiosks polling one queue', () => {
   it('hands the request to exactly one of them', async () => {
     // Drained first, so what is proved is the mutex and not the depth of
@@ -796,11 +1153,15 @@ describe('two kiosks polling one queue', () => {
 });
 
 describe('the walls a browser caller meets', () => {
-  it('refuses a member without the issue authority', async () => {
+  it('refuses a member who holds issue but not the signing authority', async () => {
+    // THE NEGATIVE CONTROL for the owner's 2026-08-18 ruling. The scoped
+    // member CAN issue documents; what they cannot do is put one in front
+    // of a signer. If `issue` were still the gate this would pass.
     const challan = await seedIssuedChallan('Authority required');
     const response = await raise(challan.challanId, scoped);
     expect(response.statusCode, response.body).toBe(403);
     expect(response.json<{ code: string }>().code).toBe('AUTHORITY_REQUIRED');
+    expect(response.json<{ message: string }>().message).toContain('signing authority');
   });
 
   it('hides a Work an assigned-scope member cannot reach', async () => {
@@ -872,6 +1233,86 @@ describe('the database’s own arm', () => {
       `,
     ).rejects.toThrow(/written once and never change/);
     await runKiosk();
+  });
+
+  it('refuses a second signature against a request already signed', async () => {
+    // The double-submit: a kiosk that retries after a response it did not
+    // see. The row is terminal, so the second attempt finds nothing at
+    // the kiosk rather than producing a second signed copy.
+    const challan = await seedIssuedChallan('Submitted twice');
+    (await raise(challan.challanId)).json<SigningRequestResponse>();
+    const claim = await asKiosk({ method: 'POST', url: '/api/signing/agent/claim' });
+    const { job } = claim.json<ClaimSigningJobResponse>();
+    if (job === null) throw new Error('no job offered');
+    const body = { signature: signDigest(job.digest) };
+    const url = `/api/signing/agent/requests/${job.requestId}/result`;
+
+    const first = await asKiosk({ method: 'POST', url, payload: body });
+    expect(first.statusCode, first.body).toBe(200);
+    const second = await asKiosk({ method: 'POST', url, payload: body });
+    expect(second.statusCode, second.body).toBe(409);
+    expect(second.json<{ code: string }>().code).toBe('SIGNING_REQUEST_STATE');
+
+    // One request, one signed copy, and the copy is the FIRST attempt's.
+    const rows = await admin<{ status: string; signed_sha256: string | null }[]>`
+      select status, signed_sha256 from signing_requests
+      where delivery_challan_id = ${challan.challanId}
+    `;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe('signed');
+    expect(rows[0]?.signed_sha256).toBe(
+      first.json<SubmitSignatureResponse>().signedSha256,
+    );
+  });
+
+  it('refuses to withdraw a request that is already signed', async () => {
+    const challan = await seedIssuedChallan('Signed, then withdrawn');
+    const created = (await raise(challan.challanId)).json<SigningRequestResponse>()
+      .request;
+    await runKiosk();
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/signing-requests/${created.id}/cancel`,
+      organisationId,
+      payload: { reason: 'Second thoughts' },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('SIGNING_REQUEST_STATE');
+  });
+
+  it('refuses a certificate chain too large for the signature reservation', async () => {
+    // M2's pre-flight, at the route. Discovering this AFTER a token has
+    // signed is a 500 with a real signature and nowhere to put it, so the
+    // question is asked once, when the kiosk registers.
+    //
+    // The chain is padded with enough certificates to overflow the
+    // 8192-byte reservation; the leaf is still the real signer, so the
+    // thumbprint check passes and this is the only thing that can refuse.
+    const bulky = createTestPki({
+      signerCommonName: 'BULKY SIGNER',
+      serialBase: 11_000,
+    });
+    const filler = Array.from({ length: 12 }, (_, index) =>
+      createTestPki({ serialBase: 12_000 + index * 10 }),
+    );
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/signing-agents',
+      organisationId,
+      payload: {
+        label: 'Overstuffed kiosk',
+        certificateChainPem: [
+          bulky.signer.pem,
+          bulky.intermediate.pem,
+          bulky.root.pem,
+          ...filler.flatMap((extra) => [extra.intermediate.pem, extra.root.pem]),
+        ].join(''),
+        certificateThumbprint: thumbprintOf(bulky.signer.pem),
+      },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('SIGNING_CERTIFICATE_INVALID');
+    expect(response.json<{ message: string }>().message).toContain('too large');
   });
 
   it('refuses a state that skips the kiosk', async () => {

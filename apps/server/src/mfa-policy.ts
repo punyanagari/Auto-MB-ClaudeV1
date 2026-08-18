@@ -87,6 +87,12 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // Moving the organisation's money out of its bank is the single most
   // worthwhile thing to steal this account for.
   payments: true,
+  // Queueing a document for the organisation's own registered
+  // certificate. Step-up is not enforced separately today — the wall is
+  // the same session-wide gate every authority sits behind — but the
+  // classification is stated rather than defaulted: a stolen session that
+  // can queue a signature can get a signer to sign something.
+  sign: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -97,6 +103,7 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   cancel: 'can_cancel_documents',
   statutory: 'can_manage_statutory_reporting',
   payments: 'can_manage_payments',
+  sign: 'can_sign_documents',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

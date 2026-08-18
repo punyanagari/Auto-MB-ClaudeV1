@@ -2045,6 +2045,77 @@ the job card and through the purchase order as well as through a directly
 named Work, at the route and again at the database — or the indirect arms
 would be the way around the direct one.
 
+### Signing an issued document with the organisation's own certificate
+
+The counterparty wants the agency's registered Class 3 DSC on the document,
+not a scan of a rubber stamp. The token that holds it is a USB device in one
+machine in a private room, and it will never be in the server.
+
+So the product moves the 32 bytes that need signing to the token instead of
+moving the key to the server. ADR-0012 calls this lane 2; lane 1 (Aadhaar
+eSign) is designed, gated on ESP onboarding, and not built.
+
+**The lifecycle**, one row in the signing queue from end to end:
+
+1. **Raise.** A member holding the **signing authority** opens an issued
+   delivery challan or a submitted tax invoice and sends it for signing.
+   The server prepares the entire signature there and then — it appends the
+   PDF revision, computes the ByteRange, builds the CMS signed attributes —
+   and stores the one value the token will be asked for: the SHA-256 of
+   those attributes. The request names the exact bytes it authorises, the
+   certificate it was prepared for, and an expiry.
+2. **Claim.** The kiosk agent, a script the signer starts in their own
+   logged-in Windows session, polls over outbound HTTPS. It takes one
+   request, prints the document, who asked for it and its SHA-256, and asks
+   the token to sign the digest. The token's PIN dialog appears on that
+   desktop — which is why the agent cannot be a Windows service.
+3. **Sign.** 256 bytes of RSA signature come back. Nothing else crosses: no
+   document, no key, no PIN.
+4. **Verify.** The server rebuilds the preparation from the stored bytes and
+   **refuses unless the digest it derives is the digest it authorised**.
+   Then it assembles the CMS, embeds it, and runs its own signature verifier
+   over the result. Anything other than `signed_and_intact` is refused and
+   the request is failed with the reason.
+5. **Store.** The signed PDF goes to a new object key. The unsigned render
+   keeps its own — a signature is a new version, never an overwrite, because
+   the signature can only be checked against the bytes it covered.
+
+**The rules that make it safe, and what each one is actually for:**
+
+- **The digest is re-derived, not trusted.** This is the whole security
+  argument. Re-rendering a challan rewrites the same object key, so a
+  document can change underneath a pending request; the re-derivation
+  catches it and the request fails instead of the certificate landing on
+  something nobody reviewed. It also catches a cancelled document, which is
+  checked separately because cancelling does not change any bytes.
+- **The signing authority is separate from the issue authority.** The digest
+  binding answers _which document_ may be signed. It says nothing about _who
+  may put a request in front of a signer_ who is about to type their PIN
+  because the queue said to. Both are needed.
+- **One open request per document.** Two live authorisations over one
+  document would produce two "the" signed copies and no answer to which is
+  the record.
+- **Seven days, and it is a lease.** A pending authorisation nobody acted on
+  lapses and must be raised again. A _claimed_ one lapses too, which is what
+  stops a kiosk that crashed mid-signature from wedging the document
+  forever: once the lease is up the request can be re-offered or withdrawn,
+  but a signature against it is refused — the digest is stale and the
+  request has to be raised afresh.
+- **The kiosk's credential is a scoped, revocable token**, not a password,
+  and only its digest is stored. Revoking it kills every request it was
+  raised for, with a stated reason, so the queue explains why it stopped.
+- **The certificate is pinned by thumbprint.** A Windows certificate store
+  routinely holds several certificates with identical subjects — an expiry,
+  a renewal, a test issue — so selecting by name picks whichever came back
+  first.
+- **The server must hold the trust anchor** that the organisation's own
+  certificate chains to, or it will refuse its own output _after_ the PIN
+  has been entered. See `docs/OPERATIONS.md`.
+
+**Not yet:** an RFC 3161 timestamp. The TSA contract is a procurement
+dependency, so the signature carries the signer's claimed time labelled as a
+claim, and no attestation is manufactured in its place.
+
 ## 9. Current non-goals and release boundaries
 
 - security-deposit deductions, price variation, and other bill maths not

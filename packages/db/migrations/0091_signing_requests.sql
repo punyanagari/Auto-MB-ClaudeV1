@@ -91,17 +91,127 @@ SET LOCAL statement_timeout = '5min';
 -- gap-free sequence and no cancelled-number rule, and inventing one would
 -- be numbering ceremony for a row nobody outside the organisation reads.
 --
--- No new membership authority column. ADR-0012 says raising and approving
--- are distinct permissions, and the distinction was drawn for the eSign
--- lane, where approval is a separate act performed from a phone by the
--- signer. The kiosk lane has no such act: the person who fulfils the
--- request is the person standing at the token typing the PIN, and the
--- server cannot see them. So raising a request carries the existing
--- `issue` authority — signing an issued document is an act of the same
--- authority that issued it — and registering the kiosk is owner-only.
--- When the eSign lane lands and approval becomes a real server-side act,
--- it brings its own authority with it and this note is the record of why
--- it did not arrive early.
+-- ---------------------------------------------------------------------
+-- THE SIGNING AUTHORITY, AND THE TWO DIFFERENT QUESTIONS IT ANSWERS.
+--
+-- Owner ruling of 2026-08-18: signing is its own authority, granted per
+-- member and defaulting to false, in the same shape as 0061's statutory
+-- authority and 0080's payments authority. Raising and withdrawing a
+-- signing request need it; the `issue` authority does not confer it.
+--
+-- The first draft of this migration reused `issue` and argued that
+-- ADR-0012's raise/approve split was drawn for the eSign lane, where
+-- approval is a real server-side act. That reasoning was half right and
+-- reached the wrong conclusion, because the two mechanisms in this lane
+-- answer two DIFFERENT questions and neither answers the other's:
+--
+--   the digest binding answers WHICH DOCUMENT. It makes it impossible to
+--   sign bytes nobody authorised — the token only ever sees the digest
+--   of a preparation the server can rebuild and check.
+--
+--   the authority answers WHO MAY QUEUE ONE. Nothing in the digest
+--   binding stops a member with `issue` from putting a perfectly valid,
+--   correctly-bound request in front of a signer who then types their
+--   PIN because the queue said to.
+--
+-- That second gap is what the PIN-caching risk actually looks like in
+-- this lane. The verified hardware means the token cannot be driven
+-- without a person at its desktop, so the "signing oracle" ADR-0012
+-- feared is weaker than an unattended one — but the person at that
+-- desktop is trusting the queue, and the queue is exactly what a wider
+-- authority widens. Both mechanisms are needed and neither is
+-- redundant.
+
+ALTER TABLE organisation_memberships
+  ADD COLUMN can_sign_documents boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN organisation_memberships.can_sign_documents IS
+  'Authority to raise and withdraw a request for the organisation''s own digital signature (0091, ADR-0012). Separate from can_issue_documents: issuing a document commits the organisation''s words, and putting its registered certificate on those words is a second act that a signer at a token will trust the queue about. Not backfilled: an owner grants it per member.';
+
+-- THE FOUNDING OWNER HOLDS IT, and every existing member does not.
+--
+-- Two halves of the owner's ruling, and they pull in opposite directions
+-- on purpose. "Default false, not backfilled" is 0061's and 0080's rule
+-- and it holds here: nobody who has an authority today gains this one,
+-- because inheriting a signing authority from an issue authority is
+-- exactly the conflation the column exists to undo. But "the owner holds
+-- it implicitly like every authority" is also true, and in this schema
+-- that is not a role check — it is `create_organisation_with_owner`
+-- writing `can_issue_documents` and `can_cancel_documents` true for the
+-- founder. So the function is re-created with the third.
+--
+-- The consequence, stated rather than discovered: a NEW organisation can
+-- sign the day it is created, and an EXISTING one has to grant the
+-- authority once on the Members screen. That is the correct asymmetry —
+-- silently granting a new signing power to every current owner is the
+-- backfill this migration just refused.
+CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(
+  p_name text,
+  p_slug text,
+  p_id uuid DEFAULT gen_random_uuid()
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, app_private, pg_temp
+AS $$
+DECLARE
+  v_user_id text;
+BEGIN
+  v_user_id := nullif(current_setting('app.user_id', true), '');
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'organisation creation requires an authenticated user context'
+      USING ERRCODE = '28000';
+  END IF;
+
+  INSERT INTO organisations (id, name, slug) VALUES (p_id, p_name, p_slug);
+
+  INSERT INTO organisation_memberships (
+    organisation_id, user_id, role, work_scope,
+    can_issue_documents, can_cancel_documents, can_sign_documents, status
+  )
+  VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, 'active');
+
+  INSERT INTO audit_events (
+    organisation_id, actor_user_id, action, entity_type, entity_id
+  )
+  VALUES (p_id, v_user_id, 'organisation.created', 'organisations', p_id);
+
+  RETURN p_id;
+END
+$$;
+
+-- CREATE OR REPLACE keeps the existing owner and grants, but says so
+-- explicitly rather than relying on that: this function is SECURITY
+-- DEFINER, and a definer function that silently changed hands would be a
+-- privilege change nobody reviewed.
+ALTER FUNCTION app_private.create_organisation_with_owner(text, text, uuid)
+  OWNER TO auto_mb_definer;
+REVOKE ALL ON FUNCTION app_private.create_organisation_with_owner(text, text, uuid)
+  FROM PUBLIC;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'auto_mb_app') THEN
+    GRANT EXECUTE ON FUNCTION
+      app_private.create_organisation_with_owner(text, text, uuid) TO auto_mb_app;
+  END IF;
+END
+$$;
+
+-- The shared throttle gains a fourth scope (0054).
+--
+-- The kiosk's two routes authenticate by bearer token, so an
+-- unauthenticated caller can spend a database lookup per request without
+-- ever holding a credential. They are throttled per address like the
+-- login and upload surfaces, and the window is sized against the
+-- LEGITIMATE poll (the shipped agent polls every 15 seconds) rather than
+-- borrowed from the auth rule, which would throttle a working kiosk.
+ALTER TABLE rate_limit_attempts
+  DROP CONSTRAINT rate_limit_attempts_scope_check;
+ALTER TABLE rate_limit_attempts
+  ADD CONSTRAINT rate_limit_attempts_scope_check
+  CHECK (scope IN ('auth', 'upload', 'account_lockout', 'signing'));
 
 -- ---------------------------------------------------------------------
 -- 1. The kiosk credential.
@@ -183,7 +293,7 @@ CREATE TABLE signing_agents (
 );
 
 COMMENT ON TABLE signing_agents IS
-  'A kiosk signing agent: the scoped bearer credential it authenticates with, the certificate it is pinned to by thumbprint, and the member whose membership bounds everything it may reach. Registered by an owner, revocable, and never in possession of anything but a 32-byte digest at a time.';
+  'A kiosk signing agent: the scoped bearer credential it authenticates with, the certificate it is pinned to by thumbprint, and the member whose membership bounds everything it may reach. Revocable, and never in possession of anything but a 32-byte digest at a time. The owner-only rule on registering one is the ROUTE''s (routes/signing.ts, role: owner) — this table grants INSERT to the application role like every other, which is this schema''s convention: RLS decides which organisation, the route decides which member.';
 COMMENT ON COLUMN signing_agents.token_hash IS
   'SHA-256 of the bearer token. The token itself is returned once, at registration, and is never stored, logged or recoverable.';
 COMMENT ON COLUMN signing_agents.certificate_thumbprint IS
@@ -360,18 +470,46 @@ CREATE TABLE signing_requests (
   -- The signature dictionary's own entries, fixed when the request is
   -- raised. They are INSIDE the signed bytes, so the preparation is only
   -- reproducible if they are stored rather than recomputed from a clock.
+  --
+  -- THE BOUNDS ARE THE SOURCE COLUMNS' BOUNDS, not tidier ones. When a
+  -- request names none of these the route defaults them from
+  -- `organisation_signatories.name` (2..200),
+  -- `organisations.name` (2..200) and `organisations.address` (3..1000),
+  -- so anything narrower here turns a long-but-legitimate company name
+  -- into a bare 23514 at insert time. The alternative — truncating at the
+  -- route — was considered and refused: these strings go INSIDE the
+  -- signed bytes and are what a counterparty reads in Adobe's signature
+  -- panel, and a silently shortened signer name is a document that
+  -- misstates who signed it.
   claimed_signing_time timestamptz NOT NULL,
   signer_name text NOT NULL CHECK (
-    btrim(signer_name) = signer_name AND length(signer_name) BETWEEN 1 AND 120
+    btrim(signer_name) = signer_name AND length(signer_name) BETWEEN 1 AND 200
   ),
   signing_reason text NOT NULL CHECK (
     btrim(signing_reason) = signing_reason AND length(signing_reason) BETWEEN 1 AND 200
   ),
   signing_location text NOT NULL CHECK (
     btrim(signing_location) = signing_location
-    AND length(signing_location) BETWEEN 1 AND 120
+    AND length(signing_location) BETWEEN 1 AND 1000
   ),
 
+  -- THE LEASE, and it is one value doing two jobs on purpose.
+  --
+  -- For a `pending` request it is ADR-0012's authorisation expiry: an
+  -- authorisation nobody acted on for a week is one whose document has
+  -- probably been re-rendered since, and it should be re-reviewed rather
+  -- than sat on.
+  --
+  -- For a `claimed` request it is a LEASE on the claim. A kiosk that
+  -- crashes between claiming and answering would otherwise wedge the row
+  -- forever: the claim query skips it, the partial unique index blocks
+  -- any replacement request against the same document, and nothing in
+  -- the system ever revisits it. Once the lease lapses the row becomes
+  -- claimable again — the kiosk simply re-claims it, which is not a
+  -- status change and never rewinds anything — and the operator can
+  -- withdraw it. What a lapsed claim may NEVER accept is a signature:
+  -- the request must be raised again so the digest is re-derived against
+  -- whatever the document says now.
   expires_at timestamptz NOT NULL,
 
   -- The kiosk this request is FOR, bound when it is raised rather than
@@ -468,15 +606,16 @@ CREATE TABLE signing_requests (
         AND signature_status = 'not_checked'
     END
   ),
-  -- When a kiosk had it, and when it never did. `cancelled` is reachable
-  -- only from `pending`, so a withdrawn request was never at a kiosk;
-  -- `failed` is reachable from both — the kiosk reporting a cancelled PIN
-  -- dialog, and a revocation killing a request nobody had picked up yet —
-  -- so it is the one state that admits either.
+  -- When a kiosk had it, and when it never did. Only two states are
+  -- decided: `pending` never was at a kiosk, and `claimed`/`signed`
+  -- always were. Both terminal failures admit either, because both are
+  -- reachable from both sides — a revocation kills requests nobody
+  -- picked up, and an operator withdraws a lapsed claim the kiosk
+  -- abandoned.
   CONSTRAINT signing_requests_claim_shape CHECK (
     CASE status
       WHEN 'pending' THEN claimed_at IS NULL
-      WHEN 'cancelled' THEN claimed_at IS NULL
+      WHEN 'cancelled' THEN true
       WHEN 'failed' THEN true
       ELSE claimed_at IS NOT NULL
     END
@@ -658,15 +797,35 @@ BEGIN
       USING ERRCODE = '23J01';
   END IF;
 
-  -- The state machine, stated once. pending -> claimed -> {signed,
-  -- failed}, and pending -> cancelled. Nothing goes backwards, and a
-  -- claimed request is never released back to the queue: the token may
-  -- already have produced a signature the server has not seen yet, and a
-  -- request returned to pending could then be signed twice.
+  -- The state machine, stated once:
+  --
+  --   pending -> claimed | cancelled | failed
+  --   claimed ->          cancelled | failed | signed
+  --
+  -- Nothing goes backwards, and in particular a claimed request is never
+  -- released to `pending`: the token may already have produced a
+  -- signature the server has not seen yet, and a request returned to the
+  -- queue could then be signed twice. The kiosk picks an EXPIRED claim
+  -- back up by claiming it again — `claimed -> claimed` is not a status
+  -- change and does not reach this branch — rather than by any rewind.
+  --
+  -- `pending -> failed` is here because a revocation kills the requests
+  -- the revoked kiosk was raised for, and most of those have never been
+  -- picked up. Without it, revoking a kiosk holding one pending request
+  -- raises 23J01 inside the revoke transaction and rolls the revocation
+  -- itself back — the credential stays live because a request it can
+  -- never fulfil exists. The outcome CHECK and the claim-shape CHECK
+  -- both already admit a failure that was never claimed; this is the
+  -- third arm agreeing with them.
+  --
+  -- `claimed -> cancelled` is the operator's exit from a LEASE THAT
+  -- LAPSED (see `expires_at`). Only the route can tell a live claim from
+  -- a dead one, because only the route knows the clock it is comparing
+  -- against; what this arm guarantees is that the door exists at all.
   IF NEW.status <> OLD.status THEN
     IF NOT (
-      (OLD.status = 'pending' AND NEW.status IN ('claimed', 'cancelled'))
-      OR (OLD.status = 'claimed' AND NEW.status IN ('signed', 'failed'))
+      (OLD.status = 'pending' AND NEW.status IN ('claimed', 'cancelled', 'failed'))
+      OR (OLD.status = 'claimed' AND NEW.status IN ('signed', 'failed', 'cancelled'))
     ) THEN
       RAISE EXCEPTION
         'a signing request cannot move from % to %', OLD.status, NEW.status

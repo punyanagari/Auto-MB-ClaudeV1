@@ -32,6 +32,19 @@
 
   It prints VERIFIED:True only if every check it was asked to make passed.
 
+  HOW TO RUN IT. Double-clicking a .ps1 opens it in Notepad rather than
+  running it. From a PowerShell window in the signer's own session — not
+  an elevated one, and not over remote desktop:
+
+    Unblock-File .\kiosk-signing-check.ps1
+    powershell -ExecutionPolicy RemoteSigned -File .\kiosk-signing-check.ps1 `
+      -Thumbprint <40 hex characters>
+
+  `Unblock-File` is needed once for a copy that came from another machine;
+  the mark-of-the-web blocks it whatever the execution policy says. The
+  scripts are not Authenticode-signed, so an AllSigned machine will refuse
+  them.
+
 .PARAMETER Thumbprint
   The 40-character SHA-1 thumbprint of the signing certificate.
 
@@ -70,6 +83,21 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# TLS, pinned — same reason as the agent script: an unpinned 5.1 host fails
+# a modern endpoint with a message that names the wrong cause.
+[Net.ServicePointManager]::SecurityProtocol =
+  [Net.SecurityProtocolType]::SystemDefault -bor [Net.SecurityProtocolType]::Tls12
+
+# HTTPS or loopback, and nothing else. This is the FIRST script the owner
+# runs, and with -TokenFile it sends the kiosk's bearer credential; one
+# mistyped scheme would put that credential on the wire in clear. The agent
+# script carries the same guard and this one had been missing it.
+if ($BaseUrl -and
+    $BaseUrl -notmatch '^https://' -and
+    $BaseUrl -notmatch '^http://(localhost|127\.0\.0\.1)') {
+  throw "BaseUrl must be https:// (http is allowed only for localhost testing): $BaseUrl"
+}
 
 $failures = New-Object System.Collections.Generic.List[string]
 function Add-Failure { param([string]$Message) $failures.Add($Message); Write-Warning $Message }
@@ -221,6 +249,18 @@ if ($BaseUrl) {
     Write-Host "  request     : $($job.requestId)"
     Write-Host "  document    : $($job.documentType) $($job.documentNumber)"
     Write-Host "  SHA-256     : $($job.sourceSha256)"
+    # The same pin the agent applies before it opens a PIN dialog. Without
+    # it this script would happily sign a job raised for a DIFFERENT
+    # certificate, produce a signature the server then rejects, and burn
+    # the request — while printing VERIFIED:False for a reason that has
+    # nothing to do with the token.
+    if ($job.certificateThumbprint -ne $certificate.Thumbprint) {
+      Add-Failure "The queued request names certificate $($job.certificateThumbprint), but this token holds $($certificate.Thumbprint). Nothing was signed."
+      Write-Host ''
+      Write-Host "VERIFIED:False ($($failures.Count) problem(s))"
+      foreach ($failure in $failures) { Write-Host "  - $failure" }
+      exit 1
+    }
     $jobSignature = $privateKey.SignHash(
       [Convert]::FromBase64String($job.digest),
       [System.Security.Cryptography.HashAlgorithmName]::SHA256,

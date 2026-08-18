@@ -218,6 +218,10 @@ describe('MFA authority census', () => {
       // organisation's bank, so it joins the wall rather than sitting
       // beside it.
       'payments',
+      // The signing authority (migration 0091). A stolen session that can
+      // queue a signature can get a signer standing at the token to put
+      // the organisation's registered certificate on it.
+      'sign',
       'statutory',
     ]);
     expect(Object.values(MFA_REQUIRING_AUTHORITIES)).not.toContain(false);

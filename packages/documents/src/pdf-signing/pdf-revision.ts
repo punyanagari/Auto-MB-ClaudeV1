@@ -262,9 +262,35 @@ function firstPageObject(pdf: Buffer, pagesNumber: number): number {
 
 /* --- writing --------------------------------------------------------- */
 
-/** A PDF literal string, with the three bytes that would end it escaped. */
-function literalString(value: string): string {
-  return `(${value.replace(/[\\()]/g, (character) => `\\${character}`)})`;
+/**
+ * A PDF text string, in whichever of the two encodings the value needs.
+ *
+ * PDF 32000-1 § 7.9.2.2 gives text strings two forms: PDFDocEncoded bytes
+ * in a literal `(…)`, which reaches Latin-1 and no further, and UTF-16BE
+ * behind a `FEFF` byte-order mark. The whole revision is written as
+ * latin1, so the literal is the natural form — and a signer's name in
+ * Devanagari written through it becomes mojibake in Adobe's signature
+ * panel, on a document whose entire purpose is to say who signed it.
+ *
+ * So: a literal while the value fits Latin-1, and a UTF-16BE hex string
+ * the moment it does not. Restricting the schema's character set instead
+ * was the alternative and is not defensible in an Indian works-contract
+ * product — "your company's name cannot appear in its own signature" is
+ * not a rule anybody would accept.
+ */
+function textString(value: string): string {
+  if (/^[ -ÿ]*$/.test(value)) {
+    return `(${value.replace(/[\\()]/g, (character) => `\\${character}`)})`;
+  }
+  // The mark is written as its two bytes rather than as a U+FEFF in a
+  // template literal: an invisible character in source is the kind of
+  // thing an editor or a codemod quietly eats, and this is the byte pair
+  // the spec actually names.
+  const utf16be = Buffer.concat([
+    Buffer.from([0xfe, 0xff]),
+    Buffer.from(value, 'utf16le').swap16(),
+  ]);
+  return `<${utf16be.toString('hex').toUpperCase()}>`;
 }
 
 /**
@@ -340,10 +366,10 @@ export function prepareSignedRevision(
   const signatureHead =
     `${String(signatureNumber)} 0 obj\n` +
     '<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /ETSI.CAdES.detached' +
-    ` /Name ${literalString(options.signerName)}` +
-    ` /Reason ${literalString(options.reason)}` +
-    ` /Location ${literalString(options.location)}` +
-    ` /M ${literalString(options.claimedSigningTime)}` +
+    ` /Name ${textString(options.signerName)}` +
+    ` /Reason ${textString(options.reason)}` +
+    ` /Location ${textString(options.location)}` +
+    ` /M ${textString(options.claimedSigningTime)}` +
     ' /Contents <';
   const contentsStart = cursor + signatureHead.length - 1;
   push(
@@ -364,7 +390,7 @@ export function prepareSignedRevision(
     widgetNumber,
     `${String(widgetNumber)} 0 obj\n` +
       '<< /Type /Annot /Subtype /Widget /FT /Sig' +
-      ` /T ${literalString('AutoMB Signature 1')}` +
+      ` /T ${textString('AutoMB Signature 1')}` +
       ` /V ${String(signatureNumber)} 0 R` +
       ` /P ${String(pageNumber)} 0 R` +
       ' /Rect [0 0 0 0] /F 132 >>\nendobj\n',

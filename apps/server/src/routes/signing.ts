@@ -20,6 +20,8 @@ import {
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import {
   certificateThumbprint,
+  CONTENTS_HEX_RESERVATION,
+  detachedSignatureFits,
   finishDetachedPdfSignature,
   prepareDetachedPdfSignature,
   sha256Hex,
@@ -32,7 +34,7 @@ import { jsonb } from '@auto-mb/db';
 import type { FastifyRequest } from 'fastify';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, membershipOf } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { keysetPage, sqlLimit, workScopedCursorRowId } from '../pagination.js';
@@ -89,11 +91,14 @@ import {
  *
  * ## Permissions
  *
- * Raising and cancelling a request carry the `issue` authority: signing an
- * issued document is an act of the authority that issued it. Registering
- * and revoking a kiosk is owner-only — it hands out a credential. Migration
- * 0091's header records why ADR-0012's separate signing authority did not
- * arrive with this pack.
+ * Raising and withdrawing a request carry the `sign` authority (owner
+ * ruling 2026-08-18; migration 0091 adds the column). NOT `issue`, and
+ * the distinction is load-bearing: the digest binding answers WHICH
+ * DOCUMENT may be signed, and nothing in it stops the wrong member from
+ * putting a perfectly valid request in front of a signer who then types
+ * their PIN because the queue said to. The authority answers WHO MAY
+ * QUEUE ONE. Registering and revoking a kiosk is owner-only on top of
+ * that — it hands out a credential.
  */
 
 /**
@@ -180,6 +185,29 @@ interface SigningSource {
  * document re-rendered under a pending request fails the digest check
  * rather than being signed unreviewed.
  */
+/** Which Work a document belongs to, and nothing else about it.
+ *
+ * Split out of `readSigningSource` so work-scope can be proved before any
+ * refusal that describes the document's STATE. See the call site: the
+ * other order lets a caller who may not see the Work distinguish a draft
+ * challan from a nonexistent id. */
+async function readSigningDocumentWork(
+  tx: TransactionSql,
+  documentType: SigningDocumentType,
+  documentId: string,
+): Promise<string> {
+  const [row] =
+    documentType === 'delivery_challan'
+      ? await tx<{ work_id: string }[]>`
+          select work_id from delivery_challans where id = ${documentId}
+        `
+      : await tx<{ work_id: string }[]>`
+          select work_id from tax_invoices where id = ${documentId}
+        `;
+  if (!row) throw documentNotFound();
+  return row.work_id;
+}
+
 async function readSigningSource(
   tx: TransactionSql,
   documentType: SigningDocumentType,
@@ -569,10 +597,20 @@ export function registerSigningRoutes(
           limit ${sqlLimit(limit)}
         `;
         const page = keysetPage(rows, limit, (row) => row.id);
+        // THE KIOSK INVENTORY IS NOT PART OF THE REGISTER. The requests
+        // are ordinary work-scoped records every member may read; the
+        // agents are the organisation's security posture — which machine
+        // holds the certificate, which thumbprint, when it last checked
+        // in — and a viewer has no work that needs it. Empty for everyone
+        // else, so the screen simply does not draw the panel rather than
+        // refusing the whole page.
+        const membership = await membershipOf(tx, user.id);
+        const seesKiosks =
+          membership?.role === 'owner' || membership?.can_sign_documents === true;
         return {
           requests: page.rows.map(toRequest),
           nextCursor: page.nextCursor,
-          agents: await readAgents(tx),
+          agents: seesKiosks ? await readAgents(tx) : [],
         };
       });
     },
@@ -589,7 +627,7 @@ export function registerSigningRoutes(
         response: { 201: SigningRequestResponseSchema, ...upstreamErrorResponses },
       },
       role: 'writer',
-      authority: 'issue',
+      authority: 'sign',
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
@@ -599,8 +637,20 @@ export function registerSigningRoutes(
       // may be signed and by which kiosk, the read fetches the bytes, and
       // the third writes the authorisation those bytes produced.
       const context = await tenant(async (tx) => {
+        // WORK-SCOPE FIRST, then the document's state. The other order is
+        // a status oracle: `readSigningSource` refuses a draft challan
+        // with a 409 and a missing one with a 404, so a member who may
+        // not see the Work at all could tell "this id is a draft challan"
+        // from "this id is nothing" before `assertWorkAccess` ever runs.
+        // Reading the Work id is the only thing that has to happen first,
+        // and it discloses nothing on its own.
+        const workId = await readSigningDocumentWork(
+          tx,
+          body.documentType,
+          body.documentId,
+        );
+        await assertWorkAccess(tx, user.id, workId);
         const source = await readSigningSource(tx, body.documentType, body.documentId);
-        await assertWorkAccess(tx, user.id, source.workId);
         const [agent] = await tx<
           {
             id: string;
@@ -721,7 +771,7 @@ export function registerSigningRoutes(
         response: { 200: SigningRequestResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'issue',
+      authority: 'sign',
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -729,19 +779,27 @@ export function registerSigningRoutes(
       return tenant(async (tx) => {
         const existing = await lockRequest(tx, id);
         await assertWorkAccess(tx, user.id, existing.work_id);
-        if (existing.status !== 'pending') {
+        // A live claim is the kiosk's; a LAPSED one is nobody's, and this
+        // is the operator's door out of it (migration 0091, `expires_at`).
+        // Without it a kiosk that died mid-signature wedges the document
+        // forever: the partial unique index refuses a replacement request
+        // and nothing else can move the row.
+        const withdrawable =
+          existing.status === 'pending' ||
+          (existing.status === 'claimed' && lapsed(existing));
+        if (!withdrawable) {
           throw httpError(
             409,
             'SIGNING_REQUEST_STATE',
             existing.status === 'claimed'
-              ? 'This request is at the kiosk; wait for it to finish or fail before withdrawing it.'
+              ? 'This request is at the kiosk; wait for it to finish or fail, or withdraw it once its lease lapses.'
               : 'This signing request has already finished and cannot be withdrawn.',
           );
         }
         await tx`
           update signing_requests
           set status = 'cancelled', completed_at = now(), failure_reason = ${reason}
-          where id = ${id} and status = 'pending'
+          where id = ${id} and status in ('pending', 'claimed')
         `.catch(rethrowWriteRefusal);
         await audit(
           tx,
@@ -754,6 +812,40 @@ export function registerSigningRoutes(
         );
         return { request: await readOne(tx, id) };
       });
+    },
+  );
+
+  /* --- reading the signed document ---------------------------------------- */
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/signing-requests/:id/pdf',
+      schema: { params: IdParamsSchema },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      // Same authority as the unsigned document's own download: work
+      // scope and nothing more. A signed challan is the SAME document
+      // anyone who could read it already could read, plus a signature —
+      // gating it harder than its own register would mean the people who
+      // work the contract cannot see the copy that goes to the railway.
+      const key = await tenant(async (tx) => {
+        const row = await readRow(tx, id);
+        await assertWorkAccess(tx, user.id, row.work_id);
+        if (row.signed_object_key === null) {
+          throw httpError(
+            404,
+            'PDF_NOT_AVAILABLE',
+            'This request has not produced a signed document.',
+          );
+        }
+        return row.signed_object_key;
+      });
+      const bytes = await storage.get(key);
+      void reply.type('application/pdf');
+      void reply.header('content-disposition', `inline; filename="signed-${id}.pdf"`);
+      return reply.send(bytes);
     },
   );
 
@@ -812,6 +904,20 @@ export function registerSigningRoutes(
             'This certificate has already expired; a signature made with it would not verify.',
           );
         }
+
+        // DOES A SIGNATURE MADE WITH THIS CHAIN FIT? Answered here, once,
+        // rather than discovered after a token has already signed —
+        // which is a 500 with the signature already made and the request
+        // wedged `claimed`. Everything that decides the blob's size is
+        // fixed the moment the chain is, so the rehearsal is exact.
+        if (!detachedSignatureFits(chain)) {
+          throw httpError(
+            400,
+            'SIGNING_CERTIFICATE_INVALID',
+            `This certificate chain is too large: a signature made with it would not fit the ${String(CONTENTS_HEX_RESERVATION / 2)}-byte reservation this signer writes. Register the signer and the issuers above it only, without whatever extra certificates the export picked up.`,
+          );
+        }
+
         const [row] = await tx<AgentRow[]>`
           insert into signing_agents (
             organisation_id, label, token_hash, certificate_thumbprint,
@@ -921,14 +1027,27 @@ export function registerSigningRoutes(
         // second matches zero rows and is told there is nothing to do.
         // `skip locked` rather than a wait, because a poll that blocks is
         // a poll that times out.
+        //
+        // TWO KINDS OF ROW ARE CLAIMABLE, and the asymmetry in how they
+        // read `expires_at` is the point (migration 0091, `expires_at`).
+        // A PENDING request past its expiry is a lapsed authorisation:
+        // nobody ever picked it up, ADR-0012 says it should be
+        // re-reviewed, and it stays where it is. A CLAIMED request past
+        // its expiry is an abandoned lease — a kiosk took it and died —
+        // and leaving it there wedges the document forever, because the
+        // partial unique index refuses any replacement request. So it is
+        // offered again. Re-claiming is `claimed -> claimed`, which is
+        // not a status change and rewinds nothing.
         const [claimed] = await tx<{ id: string }[]>`
           update signing_requests
           set status = 'claimed', claimed_at = now()
           where id = (
             select r.id from signing_requests r
-            where r.status = 'pending'
-              and r.signing_agent_id = ${agent.id}
-              and r.expires_at > now()
+            where r.signing_agent_id = ${agent.id}
+              and (
+                (r.status = 'pending' and r.expires_at > now())
+                or (r.status = 'claimed' and r.expires_at <= now())
+              )
             order by r.requested_at
             for update skip locked
             limit 1
@@ -1017,7 +1136,9 @@ export function registerSigningRoutes(
       // that is not plugged in. Recorded as a failure so the queue says
       // why it stopped instead of holding a claim until it lapses. It is
       // not an error for the caller: reporting a failure honestly is the
-      // kiosk doing its job.
+      // kiosk doing its job, and it is accepted even on a LAPSED claim,
+      // because a kiosk that comes back after its lease ran out saying "I
+      // could not do this" is the cheapest way the row ever terminates.
       if (body.signature === undefined) {
         return agent.bound(async (tx) => {
           await tx`
@@ -1040,6 +1161,43 @@ export function registerSigningRoutes(
       }
 
       if (context.chainPem === undefined) throw agentUnauthenticated();
+
+      // A SIGNATURE, unlike a failure report, needs a live lease. The
+      // digest this kiosk holds was derived when the request was raised;
+      // once the authorisation has lapsed, ADR-0012 says it is spent, and
+      // the honest answer is to raise a new request so the digest is
+      // re-derived against whatever the document says now. Terminal
+      // rather than a bare refusal, so a kiosk that keeps retrying does
+      // not re-wedge the row it was just re-offered.
+      if (lapsed(row)) {
+        return fail(
+          row,
+          'The authorisation lapsed before the kiosk returned a signature.',
+          httpError(
+            409,
+            'SIGNING_REQUEST_EXPIRED',
+            'This authorisation has lapsed; raise the signing request again.',
+          ),
+        );
+      }
+
+      // THE DOCUMENT IS STILL A DOCUMENT WE STAND BEHIND. Checked here as
+      // well as at insert, because cancelling a challan does not change
+      // the bytes of its render: the digest binding below would pass
+      // cleanly and put the organisation's certificate on a document it
+      // has withdrawn.
+      if (!(await agent.bound((tx) => documentStillSignable(tx, row)))) {
+        return fail(
+          row,
+          'The document left its issued state after this signature was authorised.',
+          httpError(
+            409,
+            'SIGNING_DOCUMENT_NOT_RENDERED',
+            'This document was cancelled after the signing request was raised, so it was not signed.',
+          ),
+        );
+      }
+
       const signature = Buffer.from(body.signature, 'base64');
       const source = await storage.get(row.source_object_key);
       const preparation = prepareSafely(
@@ -1073,7 +1231,27 @@ export function registerSigningRoutes(
         );
       }
 
-      const signed = finishDetachedPdfSignature(preparation, signature);
+      // ASSEMBLY CAN THROW, AND THE TOKEN HAS ALREADY SIGNED. A CMS blob
+      // larger than the `/Contents` reservation is the way it happens,
+      // and an unhandled throw here is the worst outcome in the module: a
+      // bare 500, no failure row, and a request stuck `claimed` with a
+      // signature nobody can use. Registration pre-flights the chain so
+      // this should be unreachable; it is caught anyway, because "should
+      // be unreachable" is not a state to leave a wedge behind.
+      let signed: Buffer;
+      try {
+        signed = finishDetachedPdfSignature(preparation, signature);
+      } catch (error) {
+        return fail(
+          row,
+          `The signature could not be embedded: ${error instanceof Error ? error.message : 'the document refused it'}.`,
+          httpError(
+            409,
+            'SIGNED_OUTPUT_REJECTED',
+            'The signature the kiosk produced could not be embedded in this document; register a kiosk whose certificate chain fits the signature reservation.',
+          ),
+        );
+      }
       const verdict = verifyPdfSignatures(signed, {
         trustAnchors: pdfTrustAnchors,
         now: new Date(),
@@ -1111,8 +1289,18 @@ export function registerSigningRoutes(
           where id = ${row.id} and status = 'claimed' and signing_agent_id = ${agent.id}
         `.catch(rethrowWriteRefusal);
         if (updated.count === 0) {
-          // The request stopped being claimed while the PDF was assembled;
-          // the stored object is an orphan, not evidence, so no audit row.
+          // The request stopped being claimed while the PDF was assembled
+          // — withdrawn, or its kiosk revoked. No audit row: the stored
+          // object is not evidence of anything that happened.
+          //
+          // ponytail: the object stays on disk, unreferenced. Deleting it
+          // here is the obvious fix and the wrong one — a delete on a
+          // path this narrow is a delete nobody exercises, and the one
+          // time it runs it will be against a key some other race has
+          // just claimed. The upgrade path is a sweeper that reconciles
+          // `<org>/sig/*` against `signing_requests.signed_object_key`,
+          // which is the same shape the storage layer's orphan temp files
+          // already need and should be built once for both.
           throw httpError(
             409,
             'SIGNING_REQUEST_STATE',
@@ -1188,8 +1376,26 @@ async function lockRequest(tx: TransactionSql, id: string): Promise<RequestRow> 
   return row;
 }
 
-/** The one request a kiosk is allowed to answer for: its own, claimed, and
- * not yet lapsed. */
+/** True once the lease on a claim has run out. See migration 0091's
+ * `expires_at` comment: the same instant is the authorisation's expiry
+ * while a request is pending and the claim's lease once a kiosk holds it,
+ * because a kiosk that crashed mid-signature and an authorisation nobody
+ * acted on are the same problem — a row nothing will ever revisit. */
+function lapsed(row: RequestRow): boolean {
+  return row.expires_at.getTime() <= Date.now();
+}
+
+/**
+ * The one request a kiosk is allowed to answer for: its own, and claimed.
+ *
+ * A LAPSED claim is still returned, and the distinction is the caller's to
+ * act on — which is why this returns the row rather than throwing on it.
+ * A kiosk whose lease ran out mid-PIN must still be able to say "I could
+ * not sign this", or the row wedges and the operator is left guessing. It
+ * must NOT be able to submit a signature, because the digest it holds was
+ * derived against bytes that are now a week old. The result route makes
+ * exactly that split.
+ */
 async function claimedRequest(
   tx: TransactionSql,
   id: string,
@@ -1210,14 +1416,33 @@ async function claimedRequest(
       'This signing request is not at the kiosk.',
     );
   }
-  if (row.expires_at.getTime() <= Date.now()) {
-    throw httpError(
-      409,
-      'SIGNING_REQUEST_EXPIRED',
-      'This authorisation has lapsed; raise the signing request again.',
-    );
-  }
   return row;
+}
+
+/**
+ * Whether the document a request names is still in the state that admitted
+ * it, checked again at the moment the signature would land.
+ *
+ * The insert guard checks this once, and once is not enough: cancelling a
+ * challan does not change the bytes of its render, so the digest binding
+ * passes cleanly and the organisation's certificate goes onto a document
+ * it has withdrawn. The binding answers "are these the authorised bytes";
+ * only this answers "is this still a document we stand behind".
+ */
+async function documentStillSignable(
+  tx: TransactionSql,
+  row: RequestRow,
+): Promise<boolean> {
+  if (row.delivery_challan_id !== null) {
+    const [challan] = await tx<{ status: string }[]>`
+      select status from delivery_challans where id = ${row.delivery_challan_id}
+    `;
+    return challan?.status === 'issued';
+  }
+  const [invoice] = await tx<{ status: string }[]>`
+    select status from tax_invoices where id = ${row.tax_invoice_id}
+  `;
+  return invoice?.status === 'submitted';
 }
 
 async function readOne(tx: TransactionSql, id: string): Promise<SigningRequest> {

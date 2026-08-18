@@ -8,8 +8,8 @@
  * hundred lines; writing it is fewer, because a writer only ever emits the
  * shapes it chose.
  *
- * DER, not BER: definite lengths, minimal length octets, `SET OF` members
- * emitted in the order the caller gives them. Nothing here decides
+ * DER, not BER: definite lengths, minimal length octets, and `SET OF`
+ * members sorted by their encoding. Nothing here decides
  * anything — `cms-build.ts` decides what to encode and `node:crypto` does
  * the mathematics.
  *
@@ -20,6 +20,17 @@
  * header insists on is preserved and is the one that matters: the verifier
  * has its own reader (`../pdf-signature/asn1.ts`) and imports nothing from
  * here, so a fixture is still never checked by the code that built it.
+ *
+ * ONE SEAM RUNS THE OTHER WAY, and it is worth naming rather than leaving
+ * to be discovered: `cms-build.ts` imports `certificateIdentity` from the
+ * VERIFIER's `../pdf-signature/cms.ts` to read a certificate's issuer DER
+ * and serial for the `IssuerAndSerialNumber`. That is deliberate reuse of
+ * an X.509 field reader rather than a second one, and it is a narrow
+ * exception to the writer/reader separation: a bug in it would be
+ * self-consistent between this signer and this verifier. What catches
+ * that class of bug is not the test suite but the acceptance criterion
+ * the feature actually has — a third-party reader (Adobe) displaying the
+ * signature — which is why `tools/kiosk-signing-check.ps1` exists.
  */
 
 /** DER length octets: short form below 128, long form above. */
@@ -41,7 +52,26 @@ export function tlv(tag: number, content: Buffer): Buffer {
 
 export const der = {
   sequence: (...items: Buffer[]): Buffer => tlv(0x30, Buffer.concat(items)),
-  set: (...items: Buffer[]): Buffer => tlv(0x31, Buffer.concat(items)),
+  /**
+   * `SET OF`, with its members SORTED BY ENCODING, which is what DER
+   * requires (X.690 § 11.6) and what a verifier re-deriving the signed
+   * octets will assume.
+   *
+   * The sort is not cosmetic. RFC 5652 § 5.4 says the signature is
+   * computed over the DER encoding of `signedAttrs` as a `SET OF`, so a
+   * signer that emits its attributes in insertion order and a verifier
+   * that re-encodes them sorted are signing two different byte strings.
+   * The three attributes this module emits happen to sort into the order
+   * they are written — `contentType` (OID …9.3) before `messageDigest`
+   * (…9.4) before `signing-certificate-v2` (…16.2.47) — so the bug was
+   * latent, and it would have surfaced the day a fourth attribute was
+   * added or one of the three was reworded.
+   */
+  set: (...items: Buffer[]): Buffer =>
+    tlv(
+      0x31,
+      Buffer.concat([...items].sort((left, right) => Buffer.compare(left, right))),
+    ),
   context: (tag: number, ...items: Buffer[]): Buffer =>
     tlv(0xa0 | tag, Buffer.concat(items)),
   /** Context tag with the constructed bit cleared, for IMPLICIT primitives. */

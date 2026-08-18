@@ -251,9 +251,32 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'members':
     case 'settings':
       return view.name;
-    default:
+    case 'signing':
+      return 'signing';
+    // Everything the WORKS module owns: the register, one Work, and every
+    // screen that is really a step inside one — LOA upload and review, the
+    // challan and issue-challan editors, an opened challan.
+    case 'work':
+    case 'works':
+    case 'upload':
+    case 'review':
+    case 'challan':
+    case 'challan-new':
+    case 'challan-edit':
+    case 'issue-challan':
+    case 'issue-challan-new':
+    case 'issue-challan-edit':
       return 'works';
   }
+  // EXHAUSTIVE, on purpose, and this is the whole reason there is no
+  // `default` arm. A `default: return 'works'` is what let `#/signing`
+  // ship highlighting Works and announcing it as the current page — a
+  // wrong `aria-current`, which is a screen-reader defect and not a
+  // cosmetic one, and nothing failed. With the switch exhaustive, a new
+  // view name fails to typecheck here until somebody says which lamp it
+  // lights.
+  const unreachable: never = view;
+  return unreachable;
 }
 
 export function pageTitleOf(view: WorkspaceView): string {

@@ -36,6 +36,7 @@ import {
 import { Production } from '../../src/views/Production.js';
 import { ProductionItems } from '../../src/views/ProductionItems.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
+import { SigningKioskSettings } from '../../src/views/SigningKioskSettings.js';
 import { SigningQueue } from '../../src/views/SigningQueue.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
 import { StockShortages } from '../../src/views/StockShortages.js';
@@ -287,6 +288,7 @@ export const STATE_CASES: readonly StateCase[] = [
         organisationId={ORG_ID}
         canModify
         canIssue
+        canSign
         canCancel
         canManageStatutory
         hasFullWorkScope
@@ -593,6 +595,16 @@ export const STATE_CASES: readonly StateCase[] = [
     },
   },
   {
+    view: 'SigningKioskSettings.tsx',
+    name: 'the signing kiosk settings',
+    // Reads the queue endpoint for its agents block rather than an
+    // endpoint of its own: one list, one authority, one round trip.
+    loads: ['listSigningRequests'],
+    render: (api) => <SigningKioskSettings api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the signing kiosks/,
+    empty: { text: /No kiosk is registered/ },
+  },
+  {
     view: 'SigningQueue.tsx',
     name: 'the signing queue',
     loads: ['listSigningRequests'],
@@ -850,6 +862,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove
         canManageStatutory
@@ -877,6 +890,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove
         canManageStatutory
@@ -907,6 +921,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canCreateDocuments
         canIssue
+        canSign
         canCancel
         canManageStatutory
         pending={false}
@@ -929,6 +944,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canCreateDocuments
         canIssue
+        canSign
         canCancel
         canManageStatutory
         pending={false}
