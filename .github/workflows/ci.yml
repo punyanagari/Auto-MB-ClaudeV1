@@ -200,7 +200,7 @@ jobs:
             -e DATABASE_ADMIN_URL="postgres://auto_mb_owner:${POSTGRES_PASSWORD}@postgres:5432/auto_mb" \
             -e AUTO_MB_APP_DB_PASSWORD="${AUTO_MB_APP_DB_PASSWORD}" \
             -e DATABASE_URL="postgres://auto_mb_app:${AUTO_MB_APP_DB_PASSWORD}@postgres:5432/auto_mb" \
-            server pnpm --filter @auto-mb/db bootstrap < /dev/null
+            server node apps/server/dist/bootstrap.mjs < /dev/null
       - name: Readiness through Caddy (complete, scanner included)
         run: |
           # ClamAV downloads its virus database on first boot — minutes,
