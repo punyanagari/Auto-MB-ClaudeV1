@@ -509,14 +509,19 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  -- A schedule's identity is its organisation and its kind. Letting either
-  -- move would silently repoint a run history at a different check, and
-  -- the UNIQUE (organisation_id, kind) above would not notice, because the
-  -- row that moved is the row that would have collided with itself.
-  IF ROW(NEW.organisation_id, NEW.kind)
-     IS DISTINCT FROM ROW(OLD.organisation_id, OLD.kind)
+  -- A schedule's identity is its id, its organisation and its kind.
+  -- Letting the last of those move would silently repoint a run history at
+  -- a different check, and the UNIQUE (organisation_id, kind) above would
+  -- not notice, because the row that moved is the row that would have
+  -- collided with itself. The id and the creation instant are frozen for
+  -- the reason issued-immutability-coverage.integration.test.ts exists: a
+  -- ROW guard is a denylist, so a column left out of it is silently
+  -- editable, and this census refuses one that is neither frozen nor
+  -- declared changeable.
+  IF ROW(NEW.id, NEW.organisation_id, NEW.kind, NEW.created_at)
+     IS DISTINCT FROM ROW(OLD.id, OLD.organisation_id, OLD.kind, OLD.created_at)
   THEN
-    RAISE EXCEPTION 'a schedule''s organisation and kind are written once'
+    RAISE EXCEPTION 'a schedule''s identity and creation instant are written once'
       USING ERRCODE = '23N03';
   END IF;
 

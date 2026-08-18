@@ -215,6 +215,11 @@ const TENANT_TABLES = [
   'maintenance_dispatches',
   'maintenance_dispatch_lines',
   'maintenance_returns',
+  // The platform controls (0096). No order matters between them: none
+  // references another, and each hangs only off `organisations`.
+  'organisation_entitlements',
+  'statutory_job_schedules',
+  'organisation_export_requests',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -421,6 +426,15 @@ const DELETE_REVOKED_TABLES = [
   'maintenance_dispatches',
   'maintenance_dispatch_lines',
   'maintenance_returns',
+  // The platform controls (0096). Deleting an entitlement row would
+  // silently restore the shipped default and erase who decided
+  // otherwise; a schedule is switched off rather than forgotten, so a
+  // check somebody expected is visibly not running; and an export is a
+  // disclosure of the whole organisation, which is not a record that may
+  // be removed. Expiry empties the storage, never the row.
+  'organisation_entitlements',
+  'statutory_job_schedules',
+  'organisation_export_requests',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -1931,6 +1945,54 @@ async function seedTenantGraph(
         'Store clerk', ${userId}
       )
       returning id
+    `;
+
+    // The platform controls (0096). Three flat rows: none references
+    // another and each hangs only off the organisation, so the sweeps
+    // above have something to hide from the other tenant. The export is
+    // seeded READY, because a queued one carries none of the columns —
+    // key, digest, expiry — the cross-tenant proofs are worth running
+    // against.
+    await tx`
+      insert into organisation_entitlements (
+        organisation_id, flag_key, enabled, note, set_by_user_id
+      )
+      values (
+        ${organisationId}, 'eway_bill', false,
+        'waiting on NIC re-certification', ${userId}
+      )
+    `;
+    await tx`
+      insert into statutory_job_schedules (
+        organisation_id, kind, cadence, authority_user_id
+      )
+      values (
+        ${organisationId}, 'instrument_expiry_review', 'weekly', ${userId}
+      )
+    `;
+    const [exportRequest] = await tx<{ id: string }[]>`
+      insert into organisation_export_requests (
+        organisation_id, requested_by_user_id
+      )
+      values (${organisationId}, ${userId})
+      returning id
+    `;
+    if (!exportRequest) throw new Error('seed export request returned no row');
+    await tx`
+      update organisation_export_requests
+         set state = 'running', started_at = now()
+       where id = ${exportRequest.id}
+    `;
+    await tx`
+      update organisation_export_requests
+         set state = 'ready',
+             completed_at = now(),
+             object_key = ${`${organisationId}/exports/${exportRequest.id}.json`},
+             byte_size = 4096,
+             sha256 = ${'e'.repeat(64)},
+             format_version = 'export-v28',
+             expires_at = now() + interval '7 days'
+       where id = ${exportRequest.id}
     `;
 
     return {

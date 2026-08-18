@@ -141,7 +141,12 @@ export function createFileSystemStorage(rootDir: string) {
       await mkdir(dir, { recursive: true });
       const temp = path.join(dir, `.put-${randomUUID()}.tmp`);
       await pipeline(source, createWriteStream(temp, { flags: 'wx' }));
-      const handle = await open(temp, 'r');
+      // `r+`, not `r`. Windows refuses fsync on a read-only handle with
+      // EPERM, so the durability step this method exists for would fail on
+      // every development machine while passing in CI — the worst shape a
+      // durability bug can have. `put` above never hits it because it
+      // syncs the same handle it wrote through.
+      const handle = await open(temp, 'r+');
       try {
         await handle.sync();
       } finally {

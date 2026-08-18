@@ -213,6 +213,15 @@ describe('MFA authority census', () => {
     // wall being reconsidered.
     expect(Object.keys(MFA_REQUIRING_AUTHORITIES).sort()).toEqual([
       'cancel',
+      // The entitlements authority (0096) decides which modules the
+      // organisation may use at all: a stolen owner session that can turn
+      // the e-way bill module on is one that can start speaking to a
+      // government portal in the organisation's name.
+      'entitlements',
+      // The organisation-export authority (0096) takes the whole
+      // organisation away in one file — every contract, price, payslip and
+      // bank detail it holds. The single highest-value read in the product.
+      'export',
       'issue',
       // The payments authority (migration 0080) moves money out of the
       // organisation's bank, so it joins the wall rather than sitting

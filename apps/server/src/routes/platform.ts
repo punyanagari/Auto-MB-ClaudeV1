@@ -269,12 +269,15 @@ export function registerPlatformRoutes(
         );
         const entitlements = await readEntitlements(tx);
         const changed = entitlements.find((candidate) => candidate.key === key);
+        // Unreachable rather than defensive: the params schema admits only
+        // declared keys and `readEntitlements` maps over the same
+        // declaration, so a miss here is a broken invariant and not a
+        // refusal an operator could act on. A plain Error keeps it out of
+        // the refusal vocabulary, where a code nothing can really raise
+        // would need a remedy nobody could write.
+        /* c8 ignore next 3 */
         if (changed === undefined) {
-          throw httpError(
-            404,
-            'ENTITY_NOT_FOUND',
-            'That entitlement is not one this product declares.',
-          );
+          throw new Error(`entitlement ${key} is declared but was not read back`);
         }
         return { entitlement: changed };
       });
