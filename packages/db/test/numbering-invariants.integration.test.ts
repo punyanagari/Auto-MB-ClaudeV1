@@ -116,6 +116,15 @@ const COUNTER_TABLES = [
     refusal: 'standalone challan counters',
   },
   {
+    // The stock ledger's per-item position (0087). Monotonic like every
+    // other counter here, and for a sharper reason than most: rewinding
+    // it would put two movements at one point in an item's history, and
+    // the balance each of them cached is read back by position.
+    table: 'stock_movement_counters',
+    scope: 'production-item',
+    refusal: 'stock_movement_counters',
+  },
+  {
     table: 'tax_invoice_counters',
     scope: 'financial-year',
     refusal: 'tax_invoice_counters',

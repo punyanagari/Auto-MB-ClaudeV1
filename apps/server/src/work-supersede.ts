@@ -172,6 +172,21 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   tender_notices: 'the NIT a tender was read from, which does not block',
   tender_checklist_items: 'lines of a tender bid package, which does not block',
   tender_status_events: 'the trail of a tender, which does not block',
+  // The stock ledger (0087). A movement reaches `works` two ways — an
+  // issue may name one directly, and a purchase-order line reaches one
+  // through its order — and neither makes it a document of that Work.
+  // Stock belongs to the ORGANISATION: the material is on a shelf, it was
+  // there before the letter was superseded and it is there afterwards,
+  // and the ledger is append-only precisely so that nothing rewrites what
+  // was on the shelf when. Blocking a supersede on it would mean a letter
+  // read wrongly could never be re-read once anything had been issued
+  // against its Work; releasing the material instead would be a stock
+  // correction nobody made. The movement keeps its row and its Work
+  // reference, which now names a superseded Work — which is the truth of
+  // what happened.
+  stock_movements:
+    'the organisation’s own shelf; superseding a letter moves no material',
+  stock_movement_counters: 'the per-item ledger position, not a document',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

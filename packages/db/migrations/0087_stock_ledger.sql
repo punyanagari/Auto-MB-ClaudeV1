@@ -428,10 +428,19 @@ COMMENT ON CONSTRAINT stock_movements_source_shape_check ON stock_movements IS
 CREATE UNIQUE INDEX stock_movements_item_position
   ON stock_movements (organisation_id, production_item_id, sequence_number);
 
--- The register's "Recent movements" list, keyset-seeked on
--- (movement_date, id) across every item.
+-- The register's "Recent movements" list, newest first across every item.
+--
+-- THREE COLUMNS, and the middle one is load-bearing. A movement is dated
+-- by the operator and several land on one date routinely — an opening
+-- count and the first issue against it, most obviously — so
+-- (movement_date, id) leaves same-day rows tie-broken by a RANDOM uuid.
+-- That is not merely arbitrary: it puts the issue above the receipt that
+-- funded it about half the time, on a ledger whose whole job is to show
+-- what happened in what order. `created_at` is the order the ledger
+-- actually recorded them in, and the id still closes the key so the
+-- keyset has a total order to seek on.
 CREATE INDEX stock_movements_register_idx
-  ON stock_movements (organisation_id, movement_date, id);
+  ON stock_movements (organisation_id, movement_date, created_at, id);
 
 -- A despatch is received into stock exactly once. NULLs are distinct in
 -- PostgreSQL, so this is also the non-partial leading index the foreign

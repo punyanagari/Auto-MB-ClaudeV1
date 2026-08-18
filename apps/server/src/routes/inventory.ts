@@ -128,10 +128,15 @@ function rethrowWriteRefusal(error: unknown): never {
   throw error;
 }
 
-/** `PP-26-081` — the job card as production names it. Built from the
- * financial year and the sequence exactly as `routes/production.ts` builds
- * it, because both halves are columns and neither module stores the
- * assembled string. */
+/** `PP-26-081` — the job card as production names it.
+ *
+ * Built from the financial year and the sequence, because both halves are
+ * columns and 0084 deliberately stores no third copy of the assembled
+ * string (`JobCardSummary.number` in `@auto-mb/contracts` says so). The
+ * production module will build the same string from the same two columns
+ * when its own routes land; the format is the contract's, not this
+ * module's, and this is the second reader of it rather than a second
+ * definition. */
 function jobCardNumber(fyLabel: string, sequenceNumber: number): string {
   return `PP-${fyLabel.slice(2, 4)}-${String(sequenceNumber).padStart(3, '0')}`;
 }
@@ -359,13 +364,13 @@ async function readMovements(
       and (${parameters.movementId}::uuid is null or m.id = ${parameters.movementId})
       and (
         ${parameters.cursorId}::uuid is null
-        or (m.movement_date, m.id) < (
-          select cursor_row.movement_date, cursor_row.id
+        or (m.movement_date, m.created_at, m.id) < (
+          select cursor_row.movement_date, cursor_row.created_at, cursor_row.id
           from stock_movements cursor_row
           where cursor_row.id = ${parameters.cursorId}
         )
       )
-    order by m.movement_date desc, m.id desc
+    order by m.movement_date desc, m.created_at desc, m.id desc
     limit ${parameters.limit}
   `;
 }
@@ -666,11 +671,17 @@ export function registerInventoryRoutes(
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
-      assertSourceShape(body);
       const reason = optionalTrimmed(body.reason) ?? null;
       const counterparty = optionalTrimmed(body.counterparty) ?? null;
 
       const movement = await tenant(async (tx) => {
+        // INSIDE the bound transaction, so the membership wall answers
+        // first. Checked out here it ran before `tenant()` had proved
+        // anything, and a non-member posting a malformed body learned
+        // that the field was malformed — a 400 where every other route
+        // in the product answers 403. Shape refusals are for callers who
+        // are allowed to be here.
+        assertSourceShape(body);
         const item = await requireItem(tx, body.productionItemId);
         await assertNotFutureDated(tx, organisationId, body.movementDate);
         await assertDestinationReachable(tx, user.id, body);

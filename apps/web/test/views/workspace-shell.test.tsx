@@ -281,6 +281,10 @@ describe('OperationsWorkspace mobile shell', () => {
       // (`components/app-sidebar.tsx` at fdfe5ef); it sits under
       // Operations here, beside the other shop-floor registers.
       'Inspection',
+      // The stock ledger (migration 0087). The mock draws Inventory in
+      // its rail and this build had no route for it until the ledger
+      // landed.
+      'Inventory',
       'Global search',
       'Approvals',
       'Masters',
@@ -321,6 +325,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Production', '#/production'],
       ['Installations', '#/installations'],
       ['Inspection', '#/inspection'],
+      ['Inventory', '#/inventory'],
       ['Global search', '#/search'],
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],

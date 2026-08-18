@@ -110,6 +110,15 @@ export type WorkspaceView =
   | { name: 'correspondence' }
   | { name: 'correspondence-new' }
   | { name: 'correspondence-inward' }
+  /** The stock ledger (migration 0087). Organisation-level, so neither
+   * carries a Work: the register and its movements, and the shortage
+   * screen that turns an open job card's unmet bill of material into a
+   * draft purchase order. Two addresses because the mock draws two
+   * pages (`app/inventory/page.tsx` and
+   * `app/inventory/purchase-orders/page.tsx` at fdfe5ef) with a link
+   * each way, not one screen with a tab strip. */
+  | { name: 'stock' }
+  | { name: 'stock-shortages' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -254,6 +263,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/company-documents';
     case 'inspection':
       return '#/inspection';
+    case 'stock':
+      return '#/inventory';
+    case 'stock-shortages':
+      return '#/inventory/shortages';
     case 'tenders':
       return '#/tenders';
     case 'production':
@@ -339,6 +352,16 @@ export function productionHash(workId: string | null = null): string {
 /** `#/production/<id>` — what a register row links to. */
 export function productionJobCardHash(jobCardId: string): string {
   return workspaceHashOf({ view: { name: 'production-job-card', jobCardId } });
+}
+
+/** `#/inventory` and its shortage screen, as plain hrefs — what the link
+ * between the two renders. */
+export function stockRegisterHash(): string {
+  return workspaceHashOf({ view: { name: 'stock' } });
+}
+
+export function stockShortagesHash(): string {
+  return workspaceHashOf({ view: { name: 'stock-shortages' } });
 }
 
 export const SETTINGS_HASH = '#/settings';
@@ -485,6 +508,18 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       }
       if (!isRecordId(workId) || extra.length > 0) return null;
       return { view: { name: 'installations', workId } };
+    }
+    case 'inventory': {
+      const [first, ...extra] = rest;
+      if (extra.length > 0) return null;
+      if (first === undefined) return { view: { name: 'stock' } };
+      // The mock's own second page is `/inventory/purchase-orders`; this
+      // build calls it `shortages` because the orders it drafts are the
+      // procurement module's and live under `#/works/…/procurement`,
+      // while what this screen owns is the shortage.
+      return first === 'shortages' || first === 'purchase-orders'
+        ? { view: { name: 'stock-shortages' } }
+        : null;
     }
     case 'tenders': {
       const [first, ...extra] = rest;

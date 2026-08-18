@@ -1923,6 +1923,82 @@ that moved stock the wrong way. The Movement select therefore always opens on
 
 Remarks are never carried either: they are the individual movement's note.
 
+### The stock ledger, and the shortage it feeds
+
+Migration 0087. An agency that MANUFACTURES what it delivers holds material,
+and until now the product could not say how much. This is the record of it:
+an append-only ledger of every movement of every part, with the balance
+derived from it and the shortage that balance finally lets a bill of material
+compute.
+
+**The item is the production item.** There is no stock item master of its
+own. A bill-of-material component and a thing on a shelf are the same object,
+so stock is a fact about `production_items` (0084) and the one column
+Inventory adds to that master is a reorder level. A separate stock catalogue
+would need a mapping to the bill of material with nothing to write it.
+
+**A balance is never stored as a balance.** The ledger is the only
+authority. Each movement carries the running total after it, computed by the
+database under the item's own lock and never supplied by a writer, and the
+table takes no UPDATE and no DELETE — so the sum of the movements and the
+last row's running total are the same number forever. A movement posted in
+error is REVERSED by an adjustment carrying its reason, which leaves both the
+mistake and the correction on the record.
+
+**Stock never goes negative.** An issue that would take a part below zero is
+refused, and the refusal is a constraint on the column rather than a check
+somebody has to remember. Every inbound movement names a document that
+already exists — a production despatch, a purchase order line — or carries a
+typed reason, so a negative balance could never mean "the paperwork is late";
+it would mean material was issued that is not there. An adjustment out cannot
+go below zero either: you cannot lose more than you had.
+
+**Six movements, each bound to what caused it.** A production receipt names
+the despatch that released the units and takes ITS unit count, never a typed
+one. A purchase receipt names the purchase order line it arrived against. An
+issue and a return name exactly one of a job card or a Work. An adjustment in
+or out names neither and carries a reason instead. The shape is a database
+constraint, so a movement that explains nothing cannot be written.
+
+**Committed is derived, and it is what "available" subtracts.** Every open
+job card's outstanding bill of material — the recursive explosion times the
+units not yet serialised — is what the organisation has already spoken for.
+Available is on hand minus committed and may go negative, and a negative
+available IS the shortage.
+
+**A shortage is a fact about a part, not about a job card.** The requirement
+is summed across every open job card and netted once against one balance, and
+the contributing job cards are named on the row. Attributing one shelf to
+several job cards separately is how the same part gets ordered twice.
+
+**Shortage buying extends the existing purchase order; it does not add a
+second one.** Selected shortages draft a purchase order (§5.8's, migration 0033) on the job card's Work, with the quantities the server computes at the
+moment of ordering and nil rates — the screen knows what to buy and not what
+it costs. Rates, terms and issue stay in the procurement module, and its
+`issue` authority still gates the moment the draft becomes a document. Two
+nullable columns on a purchase order line carry the part it buys and the job
+card whose shortage asked for it.
+
+**A purchase order line now receives onto a shelf as well as onto a
+challan.** A line's received quantity is the sum of issued delivery-challan
+items pointing at it AND stock receipts pointing at it. Before this, a
+shortage order could never be closed at all: its material is consumed in the
+factory and never appears on a challan. Only a line naming a part can be
+stock-received, and the ledger refuses a receipt whose part is not that one,
+so the two sums are always in one unit.
+
+**A job card serving a private purchase order cannot raise one.** A purchase
+order belongs to a Work — its number is per Work, its authorization is per
+Work — and a private job card has none. The refusal says so; relaxing it is a
+numbering-and-authorization change to an issued-document surface and belongs
+in its own change.
+
+**Stock is organisation-level, and a Work is not.** One shelf serves every
+contract, so the register and the ledger are visible to every member. Which
+Work a movement served is work-scoped and is withheld from a member who
+cannot reach that Work; purchase orders raised from shortages are filtered by
+work-scope outright, because a purchase order is a Work's document.
+
 ## 9. Current non-goals and release boundaries
 
 - security-deposit deductions, price variation, and other bill maths not

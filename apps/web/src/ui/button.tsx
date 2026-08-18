@@ -17,7 +17,7 @@ import { cn } from '../lib/cn.js';
  * of the instrument, not a landing page. The press translate skips
  * anything that opens a menu (`aria-haspopup`), because a trigger that
  * drops 1px while its popup is anchored to it makes the popup jump. */
-const buttonVariants = cva(
+export const buttonVariants = cva(
   "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {

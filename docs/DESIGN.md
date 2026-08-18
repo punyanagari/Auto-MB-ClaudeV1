@@ -284,7 +284,7 @@ Statuses mapped at `fdfe5ef`:
 - **Success** — `active`, `paid`, `approved`, `accepted`, `confirmed`, `passed`,
   `received`, `valid`, `awarded`
 - **Warning** — `on-hold`, `pending`, `needs-review`, `recording`, `partial`,
-  `expiring`, `opened`, `in-production`
+  `expiring`, `opened`, `in-production`, `low-stock`
 - **Destructive** — `cancelled`, `rejected`, `declined`, `expired`, `lost`
 - **Primary** — `issued`, `sent`, `checked`, `replied`, `submitted`
 - **Neutral** — `draft`, `completed`, `ordered`, `returned`, `released`,
@@ -317,6 +317,16 @@ name, not a state. The three states a job card does NOT get are the
 mock's `material-short`, `material-ready` and `dispatch-ready`, which are
 derived from stock and serial counts rather than decided by anybody
 (`docs/UX.md` § 11).
+`low-stock` is the stock register's (migration 0087), and its two siblings
+are deliberately **unmapped**. The register badges a part `Available`,
+`Low stock` or `Retired`; the mock badges the middle one `destructive`, and
+that family is cancelled/rejected/declined — a part that needs reordering is
+a thing to do, not a thing that failed, which is what warning means one line
+above. `available` and `retired` are left out of both maps on purpose, so
+they render neutral: being in stock is not an achievement, and a retired part
+is finished rather than currently bad, exactly as `completed` and `archived`
+are. Collision-checked against every status already listed here — all three
+words are new to the vocabulary.
 
 `valid` and `archived` are the application's, added for the company document
 library (owner decision 2026-08-18, `docs/UX.md` § Approved divergences 8).
