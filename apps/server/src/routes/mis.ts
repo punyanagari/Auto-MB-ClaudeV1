@@ -1,0 +1,772 @@
+import {
+  MisSummaryQuerySchema,
+  MisSummaryResponseSchema,
+  TallyExportQuerySchema,
+  type ExportableRegister,
+  type MisAgeingBucket,
+  type MisSummaryResponse,
+} from '@auto-mb/contracts';
+import { Type } from '@sinclair/typebox';
+import type { Sql, TransactionSql } from '@auto-mb/db';
+import type { Auth } from '../auth.js';
+import { hasAuthority, hasFullWorkScope, requireAuthority } from '../authz.js';
+import { httpError } from '../http.js';
+import {
+  TALLY_CONTENT_TYPE,
+  buildTallyXml,
+  type TallyCreditNote,
+  type TallyInvoice,
+  type TallyReceipt,
+} from '../tally-xml.js';
+import { XLSX_CONTENT_TYPE, buildXlsx, type XlsxColumn } from '../xlsx.js';
+import type { AppInstance } from '../app-instance.js';
+import { createTenantRouteRegistrar } from '../tenant-route.js';
+import { EXPORT_ROW_CAP } from './audit.js';
+import { audit, errorResponses } from './shared.js';
+
+/**
+ * Management information: the aggregates the landing dashboard does not
+ * carry, every register as a workbook, and the accountant's Tally file.
+ *
+ * `packages/contracts/src/mis.ts` argues which three aggregates and why
+ * only three. This module is the SQL for them plus the two export
+ * families, and all three surfaces share one rule that is worth stating
+ * once here rather than three times below:
+ *
+ * **NOTHING IN THIS FILE DOES ARITHMETIC ON MONEY.** Every sum, every
+ * difference and every bucket boundary is computed by PostgreSQL over its
+ * own exact numerics and arrives as a decimal string. The Tally export goes
+ * further and does not even sum: each voucher's legs are the invoice's own
+ * frozen snapshot columns, which is the rule `tally-xml.ts` is built
+ * around.
+ *
+ * ## Why the whole module requires full work scope
+ *
+ * A management summary of a slice of the portfolio is a management summary
+ * that is wrong, silently, in the direction of "things look smaller than
+ * they are" — and none of its three aggregates has a Work dimension to
+ * narrow honestly anyway: output tax includes the direct invoices that
+ * belong to no Work, ageing is over the whole receivables position, and
+ * payroll has no Work at all. The register EXPORTS are different and do
+ * narrow, register by register; see `REGISTERS` below.
+ */
+
+/** The month series' default depth. Two financial years is what a
+ * comparison against "the same month last year" needs. */
+const DEFAULT_MONTHS = 24;
+
+/** Refuses a caller whose scope does not cover every Work. Shared with
+ * `routes/audit.ts`'s rule and worded the same way, because it is the same
+ * rule: an organisation-wide read needs an organisation-wide member. */
+async function requireFullScope(tx: TransactionSql, userId: string): Promise<void> {
+  if (await hasFullWorkScope(tx, userId)) return;
+  throw httpError(
+    403,
+    'WORK_SCOPE_FORBIDDEN',
+    'This is an organisation-wide summary, and your membership is limited to the Works you are assigned to. The Works register and each Work’s own screens carry the same figures for the Works you can see.',
+  );
+}
+
+/* --- the three aggregates ------------------------------------------------- */
+
+/**
+ * Output tax by month, from the FROZEN columns of submitted invoices and
+ * issued credit notes.
+ *
+ * Cancelled documents are excluded on both sides: a cancelled invoice
+ * declares no liability, and 0035's `tax_invoices_cancel_shape` makes the
+ * status the whole answer to whether it stands.
+ *
+ * The month key is derived from `invoice_date` / `note_date`, which are
+ * date-only legal values — so the month is the document's own month, not a
+ * timezone interpretation of a timestamp. The two sides are unioned into a
+ * month spine and joined back, so a month with credit notes and no invoices
+ * still appears rather than dropping out of the series.
+ *
+ * Exported so `test/query-aggregates.integration.test.ts` can EXPLAIN what
+ * production runs.
+ */
+export const MIS_OUTPUT_TAX_SQL = `
+  with spine as (
+    select to_char(invoice_date, 'YYYY-MM') as month
+    from tax_invoices where status = 'submitted'
+    union
+    select to_char(note_date, 'YYYY-MM') as month
+    from credit_notes where status = 'issued'
+  ),
+  invoiced as (
+    select to_char(invoice_date, 'YYYY-MM') as month,
+           count(*) as invoice_count,
+           sum(taxable_value) as taxable_value,
+           sum(cgst_amount) as cgst,
+           sum(sgst_amount) as sgst,
+           sum(igst_amount) as igst,
+           sum(total_amount) as total
+    from tax_invoices where status = 'submitted'
+    group by 1
+  ),
+  credited as (
+    select to_char(note_date, 'YYYY-MM') as month,
+           count(*) as credit_note_count,
+           sum(taxable_value) as taxable_value,
+           sum(total_amount) as total
+    from credit_notes where status = 'issued'
+    group by 1
+  )
+  select
+    spine.month,
+    coalesce(invoiced.invoice_count, 0)::text as invoice_count,
+    coalesce(invoiced.taxable_value, 0)::numeric(18,2)::text as taxable_value,
+    coalesce(invoiced.cgst, 0)::numeric(18,2)::text as cgst,
+    coalesce(invoiced.sgst, 0)::numeric(18,2)::text as sgst,
+    coalesce(invoiced.igst, 0)::numeric(18,2)::text as igst,
+    coalesce(invoiced.total, 0)::numeric(18,2)::text as total,
+    coalesce(credited.credit_note_count, 0)::text as credit_note_count,
+    coalesce(credited.taxable_value, 0)::numeric(18,2)::text as credit_taxable_value,
+    coalesce(credited.total, 0)::numeric(18,2)::text as credit_total
+  from spine
+  left join invoiced on invoiced.month = spine.month
+  left join credited on credited.month = spine.month
+  order by spine.month desc
+  limit $1
+`;
+
+/**
+ * Receivables ageing.
+ *
+ * Age is days since SUBMISSION, taken from `bills.submitted_at` against the
+ * organisation's own today (`organisations.timezone`, the same reading the
+ * dashboard's IRP window uses) rather than the server's. A bill that has
+ * not been submitted has no age the railway is responsible for, so it gets
+ * its own bucket instead of being folded into the youngest one — a prepared
+ * bill sitting unsent for four months is a management fact of its own.
+ *
+ * The outstanding figure comes from `bill_settlement_positions` (0067),
+ * which IS the definition of one in this product. A bill whose measurement
+ * is not closed has `outstanding_amount IS NULL` — the railway has
+ * certified no figure, so nothing is outstanding YET rather than zero — and
+ * those are counted separately rather than bucketed at zero, because a
+ * table that showed them as nil would state an amount nobody knows.
+ */
+export const MIS_AGEING_SQL = `
+  with today as (
+    select (now() at time zone o.timezone)::date as day
+    from organisations o
+    where o.id = app_private.current_organisation_id()
+  ),
+  positions as (
+    select
+      p.outstanding_amount,
+      case
+        when b.submitted_at is null then 'unsubmitted'
+        when (today.day - b.submitted_at::date) <= 30 then '0-30'
+        when (today.day - b.submitted_at::date) <= 60 then '31-60'
+        when (today.day - b.submitted_at::date) <= 90 then '61-90'
+        else '90+'
+      end as bucket
+    from bill_settlement_positions p
+    join bills b
+      on b.organisation_id = p.organisation_id and b.id = p.bill_id
+    cross join today
+    where p.status in ('prepared', 'submitted')
+  )
+  select
+    bucket,
+    count(*) filter (where outstanding_amount is not null)::text as bill_count,
+    coalesce(sum(outstanding_amount), 0)::numeric(18,2)::text as outstanding,
+    count(*) filter (where outstanding_amount is null)::text as indeterminate
+  from positions
+  group by bucket
+`;
+
+/** Finalised payroll runs, rolled up by the month they pay for. Deductions
+ * are `gross - net` computed by PostgreSQL over exact numerics — the two
+ * columns 0090 stores — rather than by summing the eight statutory heads,
+ * which would be a second derivation of a figure the line already states. */
+export const MIS_PAYROLL_SQL = `
+  select
+    to_char(r.period_month, 'YYYY-MM') as month,
+    count(distinct r.id)::text as run_count,
+    count(l.id)::text as headcount,
+    coalesce(sum(l.gross_earnings), 0)::numeric(18,2)::text as gross_pay,
+    coalesce(sum(l.gross_earnings) - sum(l.net_pay), 0)::numeric(18,2)::text
+      as deductions,
+    coalesce(sum(l.net_pay), 0)::numeric(18,2)::text as net_pay
+  from payroll_runs r
+  join payroll_run_lines l
+    on l.organisation_id = r.organisation_id and l.payroll_run_id = r.id
+  where r.status = 'finalized'
+  group by 1
+  order by 1 desc
+  limit $1
+`;
+
+const AGEING_ORDER: readonly MisAgeingBucket['bucket'][] = [
+  'unsubmitted',
+  '0-30',
+  '31-60',
+  '61-90',
+  '90+',
+];
+
+/* --- the register workbooks ----------------------------------------------- */
+
+/**
+ * One exportable register: its sheet name, its columns, and the statement
+ * that produces its rows.
+ *
+ * `$1` is the caller's full-scope flag and `$2` their user id, exactly as
+ * `routes/dashboard.ts` passes them, so a WORK-scoped register narrows to
+ * the caller's assignments with the same predicate the register's own
+ * screen uses. An ORGANISATION-scoped register has no Work dimension to
+ * narrow by — a vendor payment and an employee belong to the company, not
+ * to a Work — so those require full scope outright rather than answering an
+ * empty file.
+ *
+ * Adding a register is one entry here and one name in
+ * `EXPORTABLE_REGISTERS`. That is the whole of "Excel everywhere": one
+ * route, one writer, one descriptor per register — not six endpoints, six
+ * schemas and six client methods that would drift apart the first time a
+ * column was renamed.
+ */
+interface RegisterDescriptor {
+  readonly sheet: string;
+  readonly filename: string;
+  readonly columns: readonly XlsxColumn[];
+  readonly sql: string;
+  /** Whether an assigned-scope member may export a narrowed version. */
+  readonly scope: 'work' | 'organisation';
+  /** An authority required on top, where the register carries one. */
+  readonly authority?: 'payments' | 'payroll';
+}
+
+/** The assignment predicate, shared by every work-scoped register. */
+const VISIBLE_WORK = `($1::boolean or exists (
+  select 1 from work_assignments wa
+  where wa.work_id = w.id and wa.user_id = $2))`;
+
+/**
+ * Every register this route can produce.
+ *
+ * `audit-events` is deliberately ABSENT: it is exported by
+ * `routes/audit.ts`, which owns its filters, its retention clamp and its
+ * own authority. It stays in `EXPORTABLE_REGISTERS` so one client-side
+ * list renders every export button in the product, and a second descriptor
+ * for it here would be a second definition of the same file.
+ */
+const REGISTERS: Readonly<Partial<Record<ExportableRegister, RegisterDescriptor>>> = {
+  works: {
+    sheet: 'Works',
+    filename: 'works',
+    columns: [
+      { header: 'Work code' },
+      { header: 'Title' },
+      { header: 'Status' },
+      { header: 'Letter date' },
+      { header: 'Completion date' },
+      { header: 'Contract value', numeric: true },
+      { header: 'GST basis' },
+    ],
+    scope: 'work',
+    sql: `
+      select w.work_code, w.title, w.status,
+             w.letter_date::text as letter_date,
+             w.current_completion_date::text as completion_date,
+             w.contract_value::text as contract_value,
+             w.gst_basis
+      from works w
+      where w.deleted_at is null and ${VISIBLE_WORK}
+      order by w.work_code asc
+    `,
+  },
+  'delivery-challans': {
+    sheet: 'Delivery challans',
+    filename: 'delivery-challans',
+    columns: [
+      { header: 'Challan number' },
+      { header: 'Challan date' },
+      { header: 'Work code' },
+      { header: 'Status' },
+      { header: 'Line count', numeric: true },
+      { header: 'Total amount', numeric: true },
+    ],
+    scope: 'work',
+    sql: `
+      select c.challan_number, c.challan_date::text as challan_date,
+             w.work_code, c.status,
+             (select count(*) from delivery_challan_items i
+               where i.delivery_challan_id = c.id)::text as line_count,
+             (select coalesce(sum(i.line_amount), 0)
+               from delivery_challan_items i
+               where i.delivery_challan_id = c.id)::numeric(18,2)::text as total_amount
+      from delivery_challans c
+      join works w on w.id = c.work_id and w.deleted_at is null
+      where ${VISIBLE_WORK}
+      order by c.challan_date desc, c.created_at desc
+    `,
+  },
+  'tax-invoices': {
+    sheet: 'Tax invoices',
+    filename: 'tax-invoices',
+    columns: [
+      { header: 'Invoice number' },
+      { header: 'Invoice date' },
+      { header: 'Work code' },
+      { header: 'Status' },
+      { header: 'Taxable value', numeric: true },
+      { header: 'CGST', numeric: true },
+      { header: 'SGST', numeric: true },
+      { header: 'IGST', numeric: true },
+      { header: 'Total', numeric: true },
+      { header: 'IRN' },
+    ],
+    scope: 'work',
+    sql: `
+      select ti.invoice_number, ti.invoice_date::text as invoice_date,
+             w.work_code, ti.status,
+             ti.taxable_value::text as taxable_value,
+             ti.cgst_amount::text as cgst_amount,
+             ti.sgst_amount::text as sgst_amount,
+             ti.igst_amount::text as igst_amount,
+             ti.total_amount::text as total_amount,
+             ti.irn
+      from tax_invoices ti
+      join works w on w.id = ti.work_id and w.deleted_at is null
+      where ${VISIBLE_WORK}
+      order by ti.invoice_date desc, ti.created_at desc
+    `,
+  },
+  'stock-movements': {
+    sheet: 'Stock movements',
+    filename: 'stock-movements',
+    columns: [
+      { header: 'Date' },
+      { header: 'Item code' },
+      { header: 'Movement' },
+      { header: 'Quantity', numeric: true },
+      { header: 'Balance after', numeric: true },
+      { header: 'Work code' },
+      { header: 'Reason' },
+    ],
+    scope: 'work',
+    sql: `
+      select sm.movement_date::text as movement_date, pi.item_code,
+             sm.movement_type, sm.quantity::text as quantity,
+             sm.balance_after::text as balance_after,
+             w.work_code, sm.reason
+      from stock_movements sm
+      join production_items pi
+        on pi.organisation_id = sm.organisation_id and pi.id = sm.production_item_id
+      join works w on w.id = sm.work_id and w.deleted_at is null
+      where ${VISIBLE_WORK}
+      order by sm.movement_date desc, sm.created_at desc
+    `,
+  },
+  payments: {
+    sheet: 'Vendor payments',
+    filename: 'vendor-payments',
+    columns: [
+      { header: 'Paid on' },
+      { header: 'Vendor invoice' },
+      { header: 'Gross', numeric: true },
+      { header: 'TDS', numeric: true },
+      { header: 'Net', numeric: true },
+      { header: 'TDS section' },
+      { header: 'Vendor PAN' },
+    ],
+    scope: 'organisation',
+    authority: 'payments',
+    sql: `
+      select vp.paid_on::text as paid_on, vi.invoice_number,
+             vp.gross_amount::text as gross_amount,
+             vp.tds_amount::text as tds_amount,
+             vp.net_amount::text as net_amount,
+             vp.tds_section, vp.vendor_pan
+      from vendor_payments vp
+      join vendor_invoices vi
+        on vi.organisation_id = vp.organisation_id and vi.id = vp.vendor_invoice_id
+      order by vp.paid_on desc, vp.created_at desc
+    `,
+  },
+  employees: {
+    sheet: 'Employees',
+    filename: 'employees',
+    columns: [
+      { header: 'Employee code' },
+      { header: 'Name' },
+      { header: 'Department' },
+      { header: 'Joined' },
+      { header: 'Exited' },
+      { header: 'PF covered' },
+      { header: 'ESI applicable' },
+    ],
+    scope: 'organisation',
+    authority: 'payroll',
+    sql: `
+      select e.employee_code, c.name, e.department,
+             e.date_of_joining::text as date_of_joining,
+             e.date_of_exit::text as date_of_exit,
+             e.pf_covered::text as pf_covered,
+             e.esi_applicable::text as esi_applicable
+      from employees e
+      join contacts c on c.organisation_id = e.organisation_id and c.id = e.contact_id
+      order by e.employee_code asc
+    `,
+  },
+};
+
+/* --- routes --------------------------------------------------------------- */
+
+const RegisterParamsSchema = Type.Object(
+  { register: Type.String({ pattern: '^[a-z-]{4,30}$' }) },
+  { additionalProperties: false },
+);
+
+function descriptorOf(name: string): RegisterDescriptor {
+  const descriptor = REGISTERS[name as ExportableRegister];
+  if (descriptor === undefined) {
+    throw httpError(
+      404,
+      'REGISTER_UNKNOWN',
+      'No register of that name can be exported here.',
+    );
+  }
+  return descriptor;
+}
+
+export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): void {
+  const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/mis/summary',
+      schema: {
+        querystring: MisSummaryQuerySchema,
+        response: { 200: MisSummaryResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, user, tenant }): Promise<MisSummaryResponse> => {
+      const months = request.query.months ?? DEFAULT_MONTHS;
+      return tenant(async (tx) => {
+        await requireFullScope(tx, user.id);
+        const outputTax = (await tx.unsafe(MIS_OUTPUT_TAX_SQL, [
+          months,
+        ])) as unknown as {
+          month: string;
+          invoice_count: string;
+          taxable_value: string;
+          cgst: string;
+          sgst: string;
+          igst: string;
+          total: string;
+          credit_note_count: string;
+          credit_taxable_value: string;
+          credit_total: string;
+        }[];
+        const ageingRows = (await tx.unsafe(MIS_AGEING_SQL, [])) as unknown as {
+          bucket: MisAgeingBucket['bucket'];
+          bill_count: string;
+          outstanding: string;
+          indeterminate: string;
+        }[];
+        const byBucket = new Map(ageingRows.map((row) => [row.bucket, row]));
+        // Every bucket every time, in a fixed order: a table whose rows
+        // appear and disappear with the data is one an operator has to
+        // re-read each visit, and "nothing is 61-90 days old" is itself
+        // the answer they came for.
+        const receivablesAgeing = AGEING_ORDER.map((bucket) => ({
+          bucket,
+          billCount: Number(byBucket.get(bucket)?.bill_count ?? '0'),
+          outstanding: byBucket.get(bucket)?.outstanding ?? '0.00',
+        }));
+        const indeterminateBills = ageingRows.reduce(
+          (total, row) => total + Number(row.indeterminate),
+          0,
+        );
+        // The payroll panel is answered only for a member who may read
+        // payroll at all. Absent, not refused: a management summary that
+        // 403s as a whole because one of four panels is out of reach is
+        // useless to everyone who is not an owner.
+        const payrollCost = (await hasAuthority(tx, user.id, 'payroll'))
+          ? ((await tx.unsafe(MIS_PAYROLL_SQL, [months])) as unknown as {
+              month: string;
+              run_count: string;
+              headcount: string;
+              gross_pay: string;
+              deductions: string;
+              net_pay: string;
+            }[])
+          : null;
+        return {
+          outputTax: outputTax.map((row) => ({
+            month: row.month,
+            invoiceCount: Number(row.invoice_count),
+            taxableValue: row.taxable_value,
+            cgst: row.cgst,
+            sgst: row.sgst,
+            igst: row.igst,
+            total: row.total,
+            creditNoteCount: Number(row.credit_note_count),
+            creditTaxableValue: row.credit_taxable_value,
+            creditTotal: row.credit_total,
+          })),
+          receivablesAgeing,
+          indeterminateBills,
+          payrollCost:
+            payrollCost === null
+              ? null
+              : payrollCost.map((row) => ({
+                  month: row.month,
+                  runCount: Number(row.run_count),
+                  headcount: Number(row.headcount),
+                  grossPay: row.gross_pay,
+                  deductions: row.deductions,
+                  netPay: row.net_pay,
+                })),
+        };
+      });
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/registers/:register.xlsx',
+      schema: { params: RegisterParamsSchema },
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const register = descriptorOf(request.params.register);
+      const bytes = await tenant(async (tx) => {
+        if (register.authority !== undefined) {
+          await requireAuthority(tx, user.id, register.authority);
+        }
+        const full = await hasFullWorkScope(tx, user.id);
+        // An organisation-wide register has no Work to narrow by, so a
+        // member who cannot see every Work cannot export one. A
+        // work-scoped register narrows instead, with the same predicate
+        // its own screen uses — the export shows exactly what the screen
+        // showed, which is the property the scope test pins.
+        if (register.scope === 'organisation' && !full) {
+          await requireFullScope(tx, user.id);
+        }
+        const rows = (await tx.unsafe(`${register.sql} limit ${EXPORT_ROW_CAP}`, [
+          full,
+          user.id,
+        ])) as unknown as Record<string, string | null>[];
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'register.exported',
+          'organisations',
+          organisationId,
+          { register: request.params.register, rows: rows.length },
+        );
+        return buildXlsx(
+          register.sheet,
+          register.columns,
+          rows.map((row) => Object.values(row)),
+        );
+      });
+      void reply.type(XLSX_CONTENT_TYPE);
+      void reply.header(
+        'content-disposition',
+        `attachment; filename="${register.filename}.xlsx"`,
+      );
+      return reply.send(bytes);
+    },
+  );
+
+  /**
+   * The accountant's Tally import file.
+   *
+   * Owner-only and organisation-wide: it carries every sale, every credit
+   * note and every receipt in the window, which is the company's whole
+   * revenue position in one download.
+   */
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/exports/tally.xml',
+      role: 'owner',
+      schema: { querystring: TallyExportQuerySchema },
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { from, to } = request.query;
+      if (from > to) {
+        throw httpError(
+          400,
+          'AUDIT_WINDOW_INVALID',
+          'The export window starts after it ends.',
+        );
+      }
+      const xml = await tenant(async (tx) => {
+        const invoices = await tx<TallyInvoiceRow[]>`
+          select ti.invoice_number, ti.invoice_date::text as invoice_date,
+                 ti.buyer_snapshot, ti.taxable_value::text as taxable_value,
+                 ti.cgst_amount::text as cgst_amount,
+                 ti.sgst_amount::text as sgst_amount,
+                 ti.igst_amount::text as igst_amount,
+                 ti.total_amount::text as total_amount,
+                 ti.service_description
+          from tax_invoices ti
+          where ti.status = 'submitted'
+            and ti.invoice_date between ${from}::date and ${to}::date
+          order by ti.invoice_date asc, ti.invoice_number asc
+        `;
+        const creditNotes = await tx<TallyCreditNoteRow[]>`
+          select cn.note_number, cn.note_date::text as note_date,
+                 ti.buyer_snapshot, cn.taxable_value::text as taxable_value,
+                 cn.cgst_amount::text as cgst_amount,
+                 cn.sgst_amount::text as sgst_amount,
+                 cn.igst_amount::text as igst_amount,
+                 cn.total_amount::text as total_amount,
+                 cn.reason
+          from credit_notes cn
+          join tax_invoices ti
+            on ti.organisation_id = cn.organisation_id and ti.id = cn.tax_invoice_id
+          where cn.status = 'issued'
+            and cn.note_date between ${from}::date and ${to}::date
+          order by cn.note_date asc, cn.note_number asc
+        `;
+        const receipts = await tx<TallyReceiptRow[]>`
+          select p.reference, p.received_on::text as received_on,
+                 p.received_amount::text as received_amount,
+                 w.work_code, b.bill_number
+          from bill_payments p
+          join bills b
+            on b.organisation_id = p.organisation_id and b.id = p.bill_id
+          join works w on w.id = b.work_id
+          where p.voided_at is null
+            and p.received_on between ${from}::date and ${to}::date
+          order by p.received_on asc, p.created_at asc
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tally_export.produced',
+          'organisations',
+          organisationId,
+          {
+            from,
+            to,
+            invoices: invoices.length,
+            creditNotes: creditNotes.length,
+            receipts: receipts.length,
+          },
+        );
+        return buildTallyXml({
+          invoices: invoices.map(toTallyInvoice),
+          creditNotes: creditNotes.map(toTallyCreditNote),
+          receipts: receipts.map(toTallyReceipt),
+        });
+      });
+      void reply.type(TALLY_CONTENT_TYPE);
+      void reply.header(
+        'content-disposition',
+        `attachment; filename="tally-${from}-to-${to}.xml"`,
+      );
+      return reply.send(xml);
+    },
+  );
+}
+
+/* --- snapshot rows to voucher inputs -------------------------------------- */
+
+/** The buyer as INVOICED. `buyer_snapshot` is written once at submit
+ * (0035) and never again, so the voucher names the party the invoice named
+ * even after the contact master was renamed. */
+interface BuyerSnapshot {
+  readonly name?: unknown;
+  readonly gstin?: unknown;
+}
+
+interface TallyInvoiceRow {
+  invoice_number: string;
+  invoice_date: string;
+  buyer_snapshot: unknown;
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  service_description: string;
+}
+
+interface TallyCreditNoteRow {
+  note_number: string;
+  note_date: string;
+  buyer_snapshot: unknown;
+  taxable_value: string;
+  cgst_amount: string;
+  sgst_amount: string;
+  igst_amount: string;
+  total_amount: string;
+  reason: string;
+}
+
+interface TallyReceiptRow {
+  reference: string | null;
+  received_on: string;
+  received_amount: string;
+  work_code: string;
+  bill_number: number;
+}
+
+/** The snapshot's own party name, or the placeholder Tally uses for a sale
+ * to an unidentified party. Never the contact master's current name: the
+ * voucher must say what the invoice said. */
+function buyerName(snapshot: unknown): string {
+  const name = (snapshot as BuyerSnapshot | null)?.name;
+  return typeof name === 'string' && name.trim().length > 0 ? name : 'Unregistered';
+}
+
+function buyerGstin(snapshot: unknown): string | null {
+  const gstin = (snapshot as BuyerSnapshot | null)?.gstin;
+  return typeof gstin === 'string' && gstin.length > 0 ? gstin : null;
+}
+
+function toTallyInvoice(row: TallyInvoiceRow): TallyInvoice {
+  return {
+    invoiceNumber: row.invoice_number,
+    invoiceDate: row.invoice_date,
+    buyerName: buyerName(row.buyer_snapshot),
+    buyerGstin: buyerGstin(row.buyer_snapshot),
+    taxableValue: row.taxable_value,
+    cgst: row.cgst_amount,
+    sgst: row.sgst_amount,
+    igst: row.igst_amount,
+    total: row.total_amount,
+    serviceDescription: row.service_description,
+  };
+}
+
+function toTallyCreditNote(row: TallyCreditNoteRow): TallyCreditNote {
+  return {
+    noteNumber: row.note_number,
+    noteDate: row.note_date,
+    buyerName: buyerName(row.buyer_snapshot),
+    taxableValue: row.taxable_value,
+    cgst: row.cgst_amount,
+    sgst: row.sgst_amount,
+    igst: row.igst_amount,
+    total: row.total_amount,
+    reason: row.reason,
+  };
+}
+
+function toTallyReceipt(row: TallyReceiptRow): TallyReceipt {
+  const subject = `${row.work_code} bill ${String(row.bill_number)}`;
+  return {
+    // A receipt with no bank reference still needs a voucher number Tally
+    // can key on, and the bill it settles is the only identifier the
+    // record carries that an accountant would recognise.
+    reference: row.reference ?? subject,
+    receivedOn: row.received_on,
+    payerName: 'Railway',
+    amount: row.received_amount,
+    narration: `Receipt against ${subject}`,
+  };
+}

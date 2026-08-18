@@ -190,6 +190,7 @@ interface ProfileRow extends Record<string, unknown> {
   einvoice_applicability: EinvoiceApplicability;
   einvoice_applicable_from: string | null;
   irp_reporting_window_days: number | null;
+  audit_retention_months: number;
 }
 
 function toProfile(row: ProfileRow): OrganisationProfile {
@@ -214,6 +215,7 @@ function toProfile(row: ProfileRow): OrganisationProfile {
     einvoiceApplicability: row.einvoice_applicability,
     einvoiceApplicableFrom: row.einvoice_applicable_from,
     irpReportingWindowDays: row.irp_reporting_window_days,
+    auditRetentionMonths: row.audit_retention_months,
   };
 }
 
@@ -228,7 +230,7 @@ async function loadProfile(tx: TransactionSql): Promise<ProfileRow> {
            pincode, locality, trade_name, msme_number, invoice_number_prefix,
            invoice_notes, default_invoice_shape, einvoice_applicability,
            einvoice_applicable_from::text as einvoice_applicable_from,
-           irp_reporting_window_days
+           irp_reporting_window_days, audit_retention_months
     from organisations
     where id = app_private.current_organisation_id()
   `;
@@ -439,6 +441,14 @@ export function registerOrganisationRoutes(
             body.irpReportingWindowDays !== undefined
               ? body.irpReportingWindowDays
               : current.irp_reporting_window_days,
+          // How far back the audit register may look (migration 0095). A
+          // VIEWING window, not a purge — nothing is ever deleted from
+          // audit_events — and the schema's minimum is the statutory
+          // eight years, so the only meaningful edit is to raise it.
+          audit_retention_months:
+            body.auditRetentionMonths !== undefined
+              ? body.auditRetentionMonths
+              : current.audit_retention_months,
         };
         // Against the values as they will stand, so neither field can be
         // edited into contradicting the other.
@@ -467,6 +477,7 @@ export function registerOrganisationRoutes(
             einvoice_applicability = ${next.einvoice_applicability},
             einvoice_applicable_from = ${next.einvoice_applicable_from},
             irp_reporting_window_days = ${next.irp_reporting_window_days},
+            audit_retention_months = ${next.audit_retention_months},
             updated_at = now()
           where id = ${organisationId}
           returning id, name, slug, address, gstin, contact_phone,
@@ -475,7 +486,7 @@ export function registerOrganisationRoutes(
                     invoice_number_prefix, invoice_notes,
                     default_invoice_shape, einvoice_applicability,
                     einvoice_applicable_from::text as einvoice_applicable_from,
-                    irp_reporting_window_days
+                    irp_reporting_window_days, audit_retention_months
         `;
         if (!updated) throw httpError(404, 'NOT_FOUND', 'Organisation not found.');
         // Milestone 6: record each changed field's old and new value —
@@ -498,6 +509,7 @@ export function registerOrganisationRoutes(
             einvoiceApplicability: current.einvoice_applicability,
             einvoiceApplicableFrom: current.einvoice_applicable_from,
             irpReportingWindowDays: current.irp_reporting_window_days,
+            auditRetentionMonths: current.audit_retention_months,
           },
           {
             name: next.name,
@@ -516,6 +528,7 @@ export function registerOrganisationRoutes(
             einvoiceApplicability: next.einvoice_applicability,
             einvoiceApplicableFrom: next.einvoice_applicable_from,
             irpReportingWindowDays: next.irp_reporting_window_days,
+            auditRetentionMonths: next.audit_retention_months,
           },
         );
         await tx`

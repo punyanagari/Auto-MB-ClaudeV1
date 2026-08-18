@@ -97,6 +97,15 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // finalising a run authorises the salaries — worth stealing on both
   // counts, so it joins the wall beside payments.
   payroll: true,
+  // The organisation-wide audit register. This is the first grant on the
+  // wall that authorises no WRITE at all, and it belongs there anyway, on
+  // the payroll precedent: payroll is MFA-required half because reading
+  // the employee register is itself the secret. The audit register is a
+  // strictly wider read — every action every colleague took, with the
+  // before and after of each change — and a stolen session holding it can
+  // export the lot in one request. A read can be worth stealing an account
+  // for, and this one is.
+  audit: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -109,6 +118,7 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  audit: 'can_view_audit_trail',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

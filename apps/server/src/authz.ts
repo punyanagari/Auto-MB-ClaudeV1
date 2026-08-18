@@ -10,6 +10,7 @@ export interface MembershipRow {
   can_manage_payments: boolean;
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
+  can_view_audit_trail: boolean;
 }
 
 export async function membershipOf(
@@ -19,7 +20,7 @@ export async function membershipOf(
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
-           can_sign_documents, can_manage_payroll
+           can_sign_documents, can_manage_payroll, can_view_audit_trail
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -146,7 +147,18 @@ export type DocumentAuthority =
    * register carries every colleague's salary, PAN, UAN and bank
    * account, and a member who may approve a vendor payment has no
    * business reading any of that by default. */
-  | 'payroll';
+  | 'payroll'
+  /** Opening the organisation-wide audit register and exporting it (0095,
+   * owner ruling 2026-08-18). Separate from every other authority because
+   * the register is not about documents at all: it answers "what did this
+   * person do" across every Work and every module, and prints the
+   * before/after of each change. The per-Work timeline stays open to every
+   * member whose scope reaches the Work — that is a Work's history shown to
+   * the people working on it — and this gates the cross-Work, cross-member
+   * view, which is a different object. Full work scope is required on top,
+   * because audit_events carries no work_id and the entity-to-Work mapping
+   * covers no organisation-level fact — see migration 0095. */
+  | 'audit';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -161,6 +173,8 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
   sign: 'Your membership does not carry the signing authority, which is required to send an issued document for the organisation’s digital signature or to withdraw a request for one.',
   payroll:
     'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
+  audit:
+    'Your membership does not carry the audit authority, which is required to open the organisation-wide audit register and to export it. A Work’s own timeline stays open to everyone assigned to it.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -176,6 +190,7 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_manage_payments'
     | 'can_sign_documents'
     | 'can_manage_payroll'
+    | 'can_view_audit_trail'
   >
 > = {
   issue: 'can_issue_documents',
@@ -184,6 +199,7 @@ const AUTHORITY_COLUMNS: Record<
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  audit: 'can_view_audit_trail',
 };
 
 function authorityGranted(
@@ -192,6 +208,29 @@ function authorityGranted(
 ): boolean {
   if (membership === undefined) return false;
   return membership[AUTHORITY_COLUMNS[authority]];
+}
+
+/**
+ * Whether this member holds an authority, as a QUESTION rather than an
+ * assertion — the same relationship `isWriterRole` has to
+ * `requireWriterRole`.
+ *
+ * For a screen that shows less rather than refusing: the MIS view's payroll
+ * cost panel is answered as null for a member without the payroll
+ * authority, because a management summary that 403s as a whole because one
+ * of its four panels is out of reach would be useless to everyone who is
+ * not an owner. The panel is absent, the rest of the summary is served, and
+ * the screen says which authority would fill it.
+ *
+ * A MISSING membership answers false, exactly as `hasFullWorkScope` does:
+ * the safe default is "sees less", never "sees everything".
+ */
+export async function hasAuthority(
+  tx: TransactionSql,
+  userId: string,
+  authority: DocumentAuthority,
+): Promise<boolean> {
+  return authorityGranted(await membershipOf(tx, userId), authority);
 }
 
 export async function requireAuthority(

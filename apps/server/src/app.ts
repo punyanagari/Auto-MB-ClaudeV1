@@ -61,6 +61,8 @@ import { registerLoaRoutes } from './routes/loa.js';
 import { registerMasterRoutes } from './routes/masters.js';
 import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
+import { registerAuditRoutes } from './routes/audit.js';
+import { registerMisRoutes } from './routes/mis.js';
 import { registerSearchRoutes } from './routes/search.js';
 import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
@@ -947,6 +949,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerInventoryRoutes(app, authInstance, database);
     registerMaintenanceRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
+    registerAuditRoutes(app, authInstance, database);
+    registerMisRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);
     registerSearchRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);

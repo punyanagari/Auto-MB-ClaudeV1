@@ -17,6 +17,32 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v27: the audit authority and the retention policy (0095) join the
+ * package, and a grant that had been silently missing since v24 rejoins it.
+ *
+ * TWO GRANT COLUMNS, AND ONE OF THEM IS NOT THIS PACK'S. The members
+ * section lists every authority explicitly — the comment beside it says
+ * why, and warns exactly what happens when a new one is not added: "a
+ * restored organisation would come back with the authority revoked and
+ * nobody able to pay a vendor until an owner noticed". `can_sign_documents`
+ * (0091, export-v24) was added to the column and never to this list, so
+ * every package produced since would have restored an organisation whose
+ * signers could no longer queue a document for signature. It is added here
+ * beside `can_view_audit_trail` rather than left for the pack that added
+ * it, because a defect found while editing the line that carries it is
+ * cheaper to fix than to hand on. The pull request says so out loud.
+ *
+ * `organisations` exports with `select *`, so `audit_retention_months`
+ * travels without an edit — which is the point of the difference between
+ * the two sections rather than an inconsistency: a membership's grants are
+ * enumerated precisely so that dropping one is a visible edit.
+ *
+ * The audit EVENTS themselves already travelled: `auditEvents` has been a
+ * section since the first version, and 0095's retention policy deliberately
+ * does not narrow it. The package is the organisation's own portability
+ * snapshot, and a viewing window that quietly truncated the exported trail
+ * would make the package disagree with the table it was taken from.
+ *
  * export-v24: the signing trail (0091, ADR-0012) joins the package — the
  * kiosk credentials, and every request to put the organisation's own
  * Class 3 certificate on an issued document.
@@ -209,7 +235,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v24';
+const EXPORT_FORMAT_VERSION = 'export-v27';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -305,7 +331,8 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 can_manage_payroll, status, created_at
+                 can_sign_documents, can_manage_payroll,
+                 can_view_audit_trail, status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,

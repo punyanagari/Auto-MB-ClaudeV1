@@ -61,6 +61,14 @@ const MembershipSchema = Type.Object(
      * salaries, PAN, UAN or bank details by default. Defaults false; the
      * owner of a new organisation holds it implicitly. */
     canManagePayroll: Type.Boolean(),
+    /** The audit authority (migration 0095): may open the
+     * organisation-wide audit register and export it. Separate from every
+     * other authority because the register answers "what did this person
+     * do" across every Work, every module and every member, and prints the
+     * before/after of each change. A Work's own timeline stays open to
+     * everyone assigned to it; this gates the cross-Work view. Defaults
+     * false; the owner of a new organisation holds it implicitly. */
+    canViewAuditTrail: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -96,6 +104,7 @@ export const AddMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canViewAuditTrail: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -213,6 +222,21 @@ export type SaveNumberSeriesRequest = Static<typeof SaveNumberSeriesRequestSchem
 /** The organisation's document-branding profile: company details and the
  * logo that appear on generated PDFs. Presentation-level — issued
  * snapshots keep the legal record. */
+/**
+ * How far back the audit register may look, in months.
+ *
+ * The floor is the statutory one: section 128 of the Companies Act 2013
+ * requires the books of account — and, through Rule 3(1) of the Companies
+ * (Accounts) Rules, the audit trail with them — to be preserved for eight
+ * financial years. An organisation may commit to longer; it may not
+ * configure its way below the law, so the minimum is not merely the
+ * default. The ceiling of fifty years is a sanity bound on a free integer.
+ */
+export const AuditRetentionMonthsSchema = Type.Integer({
+  minimum: 96,
+  maximum: 600,
+});
+
 export const OrganisationProfileSchema = Type.Object(
   {
     id: UuidSchema,
@@ -283,6 +307,16 @@ export const OrganisationProfileSchema = Type.Object(
      * only while applicable. */
     einvoiceApplicability: Type.Optional(EinvoiceApplicabilitySchema),
     einvoiceApplicableFrom: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
+    /** How far back the audit register and its exports may look, in
+     * months (migration 0095). A VIEWING WINDOW, not a purge: nothing is
+     * ever deleted from `audit_events`, because Rule 3(1) of the
+     * Companies (Accounts) Rules requires the trail to be preserved for
+     * the section 128 period — eight financial years, which is where the
+     * floor of 96 comes from — and because migration 0002 revoked DELETE
+     * on the table from the application role on purpose. Optional on the
+     * wire like the other later facts, so a reader that predates it omits
+     * rather than invents it. */
+    auditRetentionMonths: Type.Optional(AuditRetentionMonthsSchema),
     irpReportingWindowDays: Type.Optional(
       Type.Union([IrpReportingWindowDaysSchema, Type.Null()]),
     ),
@@ -389,6 +423,10 @@ export const UpdateOrganisationProfileRequestSchema = Type.Object(
      * while applicable. */
     einvoiceApplicability: Type.Optional(EinvoiceApplicabilitySchema),
     einvoiceApplicableFrom: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
+    /** Never nullable: every organisation has a window, defaulting to the
+     * statutory eight years. Raising it is the only meaningful move; the
+     * floor is in the schema and again in the column's CHECK. */
+    auditRetentionMonths: Type.Optional(AuditRetentionMonthsSchema),
     irpReportingWindowDays: Type.Optional(
       Type.Union([IrpReportingWindowDaysSchema, Type.Null()]),
     ),
@@ -412,6 +450,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canViewAuditTrail: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

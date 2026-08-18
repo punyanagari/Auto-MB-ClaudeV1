@@ -812,6 +812,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canManagePayments: false,
     canSignDocuments: false,
     canManagePayroll: true,
+    canViewAuditTrail: true,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,
