@@ -1313,7 +1313,12 @@ describe('the database’s own arm', () => {
     expect(response.statusCode, response.body).toBe(400);
     expect(response.json<{ code: string }>().code).toBe('SIGNING_CERTIFICATE_INVALID');
     expect(response.json<{ message: string }>().message).toContain('too large');
-  });
+    // Thirteen key pairs to build one over-sized chain, which is the
+    // cost of proving the refusal against real certificates rather than
+    // a padded string. Comfortable locally, over the 5s default on a
+    // loaded runner: budgeted like the other slow integration tests
+    // rather than made faster with fake bytes the parser would reject.
+  }, 30_000);
 
   it('refuses a state that skips the kiosk', async () => {
     const challan = await seedIssuedChallan('No shortcuts');
