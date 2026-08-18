@@ -618,6 +618,7 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'delivered_at',
     'read_at',
     'failed_at',
+    'updated_at',
   ],
 
   // A recurring check's identity is its organisation and its kind (0096),
