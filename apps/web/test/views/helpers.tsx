@@ -84,6 +84,7 @@ const FIXTURE_JOB_CARD: JobCardDetail = {
   manufactured: 0,
   dispatched: 0,
   materialLines: 0,
+  materialShortParts: 0,
   status: 'planned',
   dueDate: '2026-12-31',
   completedOn: null,

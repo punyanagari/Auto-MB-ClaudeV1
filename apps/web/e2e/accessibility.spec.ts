@@ -1312,8 +1312,11 @@ test('production register, job card and item master pass the axe scan', async ({
   await expect(page.getByRole('heading', { name: 'Production' })).toBeVisible();
   // Scanned with a row on screen: the register's tints — the status chip,
   // the Material badge and the progress bar — live in the row and would
-  // never be scanned against an empty table.
+  // never be scanned against an empty table. The badge is the pack's one
+  // warning-tinted word, and it is the shortage the stock ledger makes
+  // real, so it is asserted rather than left to chance.
   await expect(page.getByText('PP-26-081')).toBeVisible();
+  await expect(page.getByText('part short')).toBeVisible();
   await expectNoAxeViolations(page, 'production register');
 
   await page.getByRole('link', { name: 'PP-26-081' }).click();
@@ -1321,6 +1324,14 @@ test('production register, job card and item master pass the axe scan', async ({
     page.getByRole('heading', { name: 'IP Display Board · 6 line' }),
   ).toBeVisible();
   await expectNoAxeViolations(page, 'production job card overview');
+
+  // The Materials tab: Required, Available and Shortage in three numeric
+  // columns, none of them tinted, so the figures have to hold contrast on
+  // the plain table surface in both themes.
+  await page.getByRole('button', { name: 'Materials' }).click();
+  await expect(page.getByRole('columnheader', { name: 'Shortage' })).toBeVisible();
+  await expect(page.getByText('8.000')).toBeVisible();
+  await expectNoAxeViolations(page, 'production job card materials');
 
   // The Serials tab is the one place this module colour-codes a figure —
   // the captured/required count goes destructive short and success

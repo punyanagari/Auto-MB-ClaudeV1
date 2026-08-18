@@ -152,3 +152,41 @@ export function receivedQuantitySql(
     ), 0)
   end`;
 }
+
+/**
+ * How much of a part is already coming, as one SQL expression over an
+ * expression naming a `production_items.id`.
+ *
+ * The other half of a shortage. What is short is what the open job cards
+ * need, less the shelf, LESS THIS — and this is the arm that stops the
+ * same part being bought twice because the first order has not arrived
+ * yet.
+ *
+ * ONE FRAGMENT, FOUR READERS: the shortage list, the conversion that
+ * drafts a purchase order from it (twice — the projection and the
+ * predicate that decides a part is still short), and the production job
+ * card's own material position. The conversion recomputes the quantity
+ * inside its writing transaction, so a figure that disagreed with the
+ * one the register showed would be an order for the wrong amount rather
+ * than a cosmetic drift.
+ *
+ * A draft counts as much as an issued order. Material an operator has
+ * decided to buy is material this organisation is not short of twice,
+ * and 0033 holds one draft per Work and vendor, so a draft is a decision
+ * rather than a scratchpad. `receivedQuantitySql` supplies what has
+ * already arrived against each line; the outstanding balance floors at
+ * zero, because an over-receipt is stock on the shelf and is counted
+ * there instead.
+ *
+ * `itemColumn` is a SQL expression from this repository, never request
+ * text: every caller passes a column reference or a placeholder.
+ */
+export function onOrderQuantitySql(itemColumn: string): string {
+  return `coalesce((
+    select sum(greatest(pol.quantity - ${receivedQuantitySql()}, 0))
+    from purchase_order_lines pol
+    join purchase_orders po on po.id = pol.purchase_order_id
+    where pol.production_item_id = ${itemColumn}
+      and po.status in ('draft', 'issued')
+  ), 0)`;
+}

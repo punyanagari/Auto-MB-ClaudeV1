@@ -275,36 +275,78 @@ mock in v0 and each entry retires. One ruling came with work attached:
 11a was argued from a stock ledger that did not exist, and the same
 ruling that approved it commissioned the follow-up now that 0087 exists —
 wire Available and Shortage into the production register's Material
-column and the job card's Materials tab from the real ledger. The 11a row
-below stands until that lands, then retires.
+column and the job card's Materials tab from the real ledger. **That work
+has landed and 11a is retired**; what replaced it is recorded under the
+table below, and the rows are numbered from 11b so nothing that cited
+them has to be renumbered.
 
 The screens themselves are ported (`app/production/page.tsx`,
 `app/production/items/page.tsx`, `components/production-job-card-page.tsx`
 at `fdfe5ef`). What is listed here is behaviour inside them the mock
-implements as a `useState` fiction over `lib/data.ts`, plus one whole
-column family that depends on a table this wave has not built yet.
+implements as a `useState` fiction over `lib/data.ts`.
 
 The test applied throughout is the same one § 10 states: would
 replicating the pixel make the product claim something untrue?
 
-| #   | The mock draws                                                                                        | The application ships                                                                                                | Why                                                                                                                                                                                                                                                                                                       |
-| --- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11a | A Material column badging "2277 units short", and a Materials tab with Available and Shortage columns | A Material column counting the bill of material, and a Materials tab with Required only, captioned as such           | Shortage is required minus on-hand, and on-hand is the Inventory pack's stock ledger, which does not exist yet. Computed against no stock it reads zero for everything — "nothing is short" — and would flip to alarming the day stock arrived. The requirement half is real and is shipped.              |
-| 11b | Six job-card statuses, three of them derived (`material-short`, `material-ready`, `dispatch-ready`)   | Four stored states — planned, in production, completed, cancelled — with readiness derived on read                   | The mock's own fixture disagrees with itself: two of its three plans carry a `status` its `planMaterial` contradicts, so its "Ready" branch is dead and every card renders "Material blocked". A stored copy of a computed fact is a field that can disagree with the fact.                               |
-| 11c | Component serials as a bag of strings per PLAN, keyed by bill-of-material node                        | Component serials captured per FINISHED UNIT, with the unit chosen on the Serials tab                                | The mock can say a batch of twelve boards consumed twelve power supplies and cannot say which board holds which. That is the question a field failure asks — this board is dead, whose supply is in it, what else has one from that batch — and it is the whole point of traceability.                    |
-| 11d | A "Create delivery challan" button on the Dispatch tab                                                | A "Release to stock" action, and copy saying the Delivery Challan is raised separately                               | A Delivery Challan is a statutory document with a consignee, a number series, an e-way bill and an inspection interlock behind it. A button on the factory floor that appeared to issue one would claim an act it does not perform. Production releases units; the challan is a later act against a Work. |
-| 11e | "Complete one unit" and "Generate next serial" as two independent controls                            | One act: recording a unit mints its serial from the item's counter                                                   | In the mock the counter and the serial list can disagree, and its own `canComplete` has to compare them. A unit that exists and is unnameable is not a unit this product can trace, deliver or install.                                                                                                   |
-| 11f | `BomNode.type` ('raw' / 'sub-assembly'), `unit` and `serialControlled` stored per NODE                | All three derived or moved to the item: type from whether the node has a bill, unit and serial control from the part | The same bolt would otherwise be Nos in one assembly and Kg in another, and serialised in one place and not in another. They are facts about the PART, and `type` is precisely "has children or does not".                                                                                                |
-| 11g | A `nextSerial` figure printed in the item's serial-series well                                        | The series SHAPE (`IPDB6-00000`) and the words "Claimed per unit, gap-free"                                          | The next number is claimed from a counter at the moment a unit is built. Any figure rendered here is stale the instant a second operator builds one, and a wrong next-serial on a screen an operator plans labels from is worse than no figure.                                                           |
-| 11h | A status-free register, with state encoded in the Material badge                                      | The product's status chip, plus the Material badge                                                                   | `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label chip the single vocabulary for record state, and the mock's own fixture shows why one badge cannot carry both readings at once.                                                                                                        |
+| #   | The mock draws                                                                                      | The application ships                                                                                                | Why                                                                                                                                                                                                                                                                                                       |
+| --- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11b | Six job-card statuses, three of them derived (`material-short`, `material-ready`, `dispatch-ready`) | Four stored states — planned, in production, completed, cancelled — with readiness derived on read                   | The mock's own fixture disagrees with itself: two of its three plans carry a `status` its `planMaterial` contradicts, so its "Ready" branch is dead and every card renders "Material blocked". A stored copy of a computed fact is a field that can disagree with the fact.                               |
+| 11c | Component serials as a bag of strings per PLAN, keyed by bill-of-material node                      | Component serials captured per FINISHED UNIT, with the unit chosen on the Serials tab                                | The mock can say a batch of twelve boards consumed twelve power supplies and cannot say which board holds which. That is the question a field failure asks — this board is dead, whose supply is in it, what else has one from that batch — and it is the whole point of traceability.                    |
+| 11d | A "Create delivery challan" button on the Dispatch tab                                              | A "Release to stock" action, and copy saying the Delivery Challan is raised separately                               | A Delivery Challan is a statutory document with a consignee, a number series, an e-way bill and an inspection interlock behind it. A button on the factory floor that appeared to issue one would claim an act it does not perform. Production releases units; the challan is a later act against a Work. |
+| 11e | "Complete one unit" and "Generate next serial" as two independent controls                          | One act: recording a unit mints its serial from the item's counter                                                   | In the mock the counter and the serial list can disagree, and its own `canComplete` has to compare them. A unit that exists and is unnameable is not a unit this product can trace, deliver or install.                                                                                                   |
+| 11f | `BomNode.type` ('raw' / 'sub-assembly'), `unit` and `serialControlled` stored per NODE              | All three derived or moved to the item: type from whether the node has a bill, unit and serial control from the part | The same bolt would otherwise be Nos in one assembly and Kg in another, and serialised in one place and not in another. They are facts about the PART, and `type` is precisely "has children or does not".                                                                                                |
+| 11g | A `nextSerial` figure printed in the item's serial-series well                                      | The series SHAPE (`IPDB6-00000`) and the words "Claimed per unit, gap-free"                                          | The next number is claimed from a counter at the moment a unit is built. Any figure rendered here is stale the instant a second operator builds one, and a wrong next-serial on a screen an operator plans labels from is worse than no figure.                                                           |
+| 11h | A status-free register, with state encoded in the Material badge                                    | The product's status chip, plus the Material badge                                                                   | `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label chip the single vocabulary for record state, and the mock's own fixture shows why one badge cannot carry both readings at once.                                                                                                        |
 
-Two more the review of this pack settled, recorded so the reasoning is
+**What replaced 11a.** The Material column and the Materials tab say
+_shortage_ now, because shortage is real: the stock ledger of migration
+0087 holds the shelf, and both figures are derived on read from it and
+from `app_private.stock_outstanding_requirement`. Nothing is stored. The
+mock is followed with two deliberate differences, neither of them new
+visual language:
+
+- **The badge counts PARTS short, not units.** The mock's "2277 units
+  short" is a sum of quantities across parts measured in Nos, Mtr and Kg,
+  which is the arithmetic § 13a already refuses for the stock register's
+  tiles. A count of parts is the same question asked in a unit that
+  exists. The mock's grammar is otherwise kept: `N parts short`, or
+  `Ready`, or `No bill of material` where the product has none.
+- **The badge is in the WARNING family, not the mock's destructive.**
+  `docs/DESIGN.md` § Status badge semantics keeps destructive for
+  cancelled, rejected and declined. Material still to buy is a thing to
+  do, exactly as § 13h settled for the register's low-stock badge.
+
+The Materials tab gains Available and Shortage beside Required, untinted
+in the numeric columns the way the stock register leaves its own negative
+Available untinted.
+
+**Required** is the card's gross bill. **Available** is this card's share
+of the shelf — what is on hand, less every OTHER open job card's
+outstanding claim on the same part, so two cards cannot each be promised
+the same reel of cable, while the card's own claim is left in so it is
+never told it cannot have what it itself reserved.
+
+**Shortage** is what still has to be bought, and it is measured on a
+different basis on purpose: not the gross bill, but the card's
+_outstanding_ requirement — the bill times the units not yet serialised,
+less what has already been issued to the card. Material issued to the
+bench has left the shelf, so a gross requirement measured against that
+shelf would report a card short of the parts lying in front of the
+operator. From that, the shelf and the outstanding balance of every open
+purchase order come off, both after the other cards' claim, through the
+same fragment the shortage screen reads.
+
+So `Required − Available` is deliberately not the shortage — two bases
+and one term the pair does not carry — and the caption under the table
+says so. Two cards competing for one part with a single order covering
+one of them BOTH read short: neither may assume the order is theirs, and
+the organisation-wide shortage screen stays the authority on how much to
+buy. Allocating one order across competing cards is the planning pass
+migration 0087 § 7 refuses to hide inside a list.
+
+One more the review of this pack settled, recorded so the reasoning is
 not re-litigated:
 
-- **The Material column counts parts, and the Materials tab is captioned
-  as a requirement rather than a shortage.** Both say what they are
-  instead of showing an empty Available column that reads as "nothing is
-  short".
 - **The serial trace gains an Origin column** (§ Approved divergences 7's
   table, extended): a production unit and a delivered one are different
   kinds of answer, and a unit still on the factory floor has no Work,

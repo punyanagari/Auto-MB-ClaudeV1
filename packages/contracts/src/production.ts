@@ -14,16 +14,16 @@ import {
 // turns a contract line into physical units, the serial genealogy of
 // those units, and the despatch that hands them to stock.
 //
-// Two things this module deliberately does not carry, both recorded in
-// migration 0084's header and in `docs/UX.md` § 11:
+// One thing this module deliberately does not carry, recorded in
+// migration 0084's header and in `docs/UX.md` § 11: no stored readiness.
+// `material-short`, `material-ready` and `dispatch-ready` are the mock's
+// derived facts stored as a status field, and its own fixture disagrees
+// with itself on two of three plans as a result.
 //
-//   * no material SHORTAGE. Shortage is required minus on-hand, and
-//     on-hand is the Inventory pack's stock ledger, which does not exist
-//     yet. `MaterialRequirementSchema` carries the half that is real.
-//   * no stored readiness. `material-short`, `material-ready` and
-//     `dispatch-ready` are the mock's derived facts stored as a status
-//     field, and its own fixture disagrees with itself on two of three
-//     plans as a result.
+// Material SHORTAGE was the second such omission until the Inventory
+// pack's stock ledger landed (migration 0087). It is here now, and it is
+// DERIVED ON READ from that ledger — nothing below is a column anyone can
+// type into.
 
 /* --- The item master ---------------------------------------------------- */
 
@@ -191,13 +191,39 @@ export const JobCardStatusSchema = Type.Union(
 );
 export type JobCardStatus = Static<typeof JobCardStatusSchema>;
 
-/** What the bill of material asks of one job card, one part at a time.
+/** What the bill of material asks of one job card, one part at a time,
+ * and how much of it this card can actually have.
  *
- * `available` and `shortage` are absent, not zeroed: on-hand stock is the
- * Inventory pack's ledger and does not exist yet, and a shortage computed
- * against no stock reads zero for everything. Adding the two fields when
- * the ledger lands is additive; shipping them empty would be a number
- * that says something untrue. */
+ * All three quantities are derived on read. `required` is 0084's
+ * explosion; `available` and `shortage` come off the stock ledger of
+ * migration 0087 and no column stores either.
+ *
+ * `available` is THIS CARD'S share of the shelf — what is on hand, less
+ * every OTHER open job card's outstanding claim on the same part. The
+ * card's own claim is not taken off, because a card must not be told it
+ * cannot have what it itself reserved, and the other cards are, because
+ * two cards each subtracting nothing would each be promised the same reel
+ * of cable.
+ *
+ * `shortage` is what still has to be BOUGHT, and it is measured on a
+ * different basis on purpose: not `required`, but the card's outstanding
+ * requirement — the bill times the units not yet serialised, less what
+ * has already been issued to the card and not returned. Material issued
+ * to the bench has left the shelf, so measuring a gross requirement
+ * against the shelf would report a card short of the parts lying in front
+ * of the operator. From that it takes off the shelf and the outstanding
+ * balance of every open purchase order for the part, both after the other
+ * cards' claim.
+ *
+ * So `required - available` is deliberately not `shortage`: different
+ * bases, and one term the pair does not carry. A card that is completed,
+ * cancelled or fully serialised is short of nothing whatever the shelf
+ * says, because it needs nothing more.
+ *
+ * Two cards competing for one part with a single purchase order covering
+ * one of them BOTH read short. Neither may assume the order is theirs,
+ * and the organisation-wide shortage screen stays the authority on how
+ * much to buy. */
 export const MaterialRequirementSchema = Type.Object(
   {
     itemId: UuidSchema,
@@ -207,6 +233,11 @@ export const MaterialRequirementSchema = Type.Object(
     /** For the whole job card: the exploded per-unit quantity times the
      * planned quantity. */
     required: NonNegativeDecimalStringSchema,
+    /** On the shelf and unclaimed by any other open job card. */
+    available: NonNegativeDecimalStringSchema,
+    /** What still has to be bought, net of the shelf and of what is on
+     * order. Zero, never negative: a surplus is not a shortage. */
+    shortage: NonNegativeDecimalStringSchema,
     serialControlled: Type.Boolean(),
   },
   { additionalProperties: false },
@@ -246,10 +277,24 @@ export const JobCardSummarySchema = Type.Object(
     manufactured: Type.Integer({ minimum: 0 }),
     /** Units that have left production on a despatch. Counted. */
     dispatched: Type.Integer({ minimum: 0 }),
-    /** How many distinct parts the bill of material asks for. The
-     * register's Material column, which is the honest half of the mock's
-     * shortage badge until the stock ledger lands. */
+    /** How many lines the product's bill of material has at its TOP
+     * level — not the exploded part count, which is what the Materials
+     * tab lists. It is asked one question only: zero means the product
+     * has no bill at all, which the register says in those words rather
+     * than reporting nothing short. */
     materialLines: Type.Integer({ minimum: 0 }),
+    /** How many EXPLODED parts this card is short of: one per row of the
+     * Materials tab whose `shortage` is above zero, so the register's
+     * Material badge and the tab cannot answer differently. Unrelated to
+     * `materialLines`, which counts top-level bill lines — a card can be
+     * short of a part nested three sub-assemblies down.
+     *
+     * A COUNT OF PARTS, not the mock's sum of quantities. The mock badges
+     * "2277 units short" by adding cabinets in Nos to cable in Mtr to
+     * solder in Kg, which `docs/UX.md` § 13a refuses for the stock
+     * register's tiles and refuses here for the same reason: a count of
+     * parts is the same question asked in a unit that exists. */
+    materialShortParts: Type.Integer({ minimum: 0 }),
     status: JobCardStatusSchema,
     dueDate: DateOnlySchema,
     completedOn: Type.Union([DateOnlySchema, Type.Null()]),

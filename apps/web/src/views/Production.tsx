@@ -31,13 +31,18 @@ import { DataTable, numericCell } from '../ui/table.js';
  * Three departures, each recorded in `docs/UX.md` § 11 and each because
  * replicating the pixel would make the screen say something untrue:
  *
- *   * **The Material column counts the bill of material, not a
- *     shortage.** The mock badges "2277 units short" from
- *     `stockItems.onHand`, which is the Inventory pack's ledger and does
- *     not exist yet. A shortage computed against no stock reads zero for
- *     everything, and would flip to alarming the day stock arrived.
+ *   * **The Material badge counts PARTS short, not units.** The mock
+ *     badges "2277 units short" by adding cabinets in Nos to cable in Mtr
+ *     to solder in Kg and printing the total, which `docs/UX.md` § 13a
+ *     refuses for the stock register's tiles and this refuses for the
+ *     same reason. The shortage itself is real now — it comes off the
+ *     stock ledger of migration 0087 — and the badge is in the WARNING
+ *     family rather than the mock's destructive, because
+ *     `docs/DESIGN.md` § Status badge semantics keeps destructive for
+ *     cancelled and rejected: material to buy is a thing to do.
  *   * **The middle tile counts job cards in production**, not material
- *     shortages, for the same reason.
+ *     shortages: the tile is a count of the register's workload and the
+ *     shortage lives on the row that has it.
  *   * **The status chip is here and the mock has none.** The mock encodes
  *     state in the Material badge, which is why its own fixture shows
  *     "Material blocked" on a plan it also calls `dispatch-ready`.
@@ -262,7 +267,7 @@ export function Production({
         ) : (
           <DataTable>
             <caption className="sr-only">
-              Production job cards with source, OEM item, bill-of-material size,
+              Production job cards with source, OEM item, material shortage,
               manufacturing progress, despatch count, status and due date
             </caption>
             <thead>
@@ -306,13 +311,7 @@ export function Production({
                     </p>
                   </td>
                   <td>
-                    <Badge
-                      variant={card.materialLines === 0 ? 'destructive' : 'neutral'}
-                    >
-                      {card.materialLines === 0
-                        ? 'No bill of material'
-                        : `${String(card.materialLines)} parts`}
-                    </Badge>
+                    <MaterialBadge card={card} />
                   </td>
                   <td>
                     <div className="min-w-32">
@@ -378,6 +377,32 @@ export function Production({
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * The Material cell: the mock's badge, in this product's colour rules.
+ *
+ * Three readings, and only one of them is the mock's. A product with no
+ * bill of material cannot be built at all and says so — the mock has no
+ * such case because its fixture always has one. A card short of material
+ * badges the count of PARTS, not the mock's sum of quantities across
+ * units that do not add. Everything else is the mock's own "Ready".
+ *
+ * The figure is mono and tabular so it lines up down the column, and the
+ * word beside it always carries the meaning: the tint is never the only
+ * thing that says a card is short.
+ */
+function MaterialBadge({ card }: { readonly card: JobCardSummary }) {
+  if (card.materialLines === 0) {
+    return <Badge variant="destructive">No bill of material</Badge>;
+  }
+  if (card.materialShortParts === 0) return <Badge variant="neutral">Ready</Badge>;
+  return (
+    <Badge variant="warning">
+      <span className="font-mono tabular-nums">{String(card.materialShortParts)}</span>
+      {card.materialShortParts === 1 ? ' part short' : ' parts short'}
+    </Badge>
   );
 }
 
