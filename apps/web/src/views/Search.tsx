@@ -49,11 +49,19 @@ const GROUP_LABELS: Readonly<Record<SearchResultKind, string>> = {
  * What the search reads across, in the frozen mock's own vocabulary
  * (`lib/search` and `app/search/page` at fdfe5ef).
  *
- * The mock offers nine scopes; this build offers the seven it has
- * registers for. Correspondence and Contacts are omitted rather than
- * rendered as controls that would return nothing — the same rule
+ * The mock offers nine scopes; this build offers the seven whose hits
+ * have somewhere to land. Contacts is omitted for the reason
  * `shell/navigation.ts` applies to the modules the mock draws and this
- * build has no route for.
+ * build has no route for: a control that would return nothing.
+ *
+ * Correspondence is omitted for a different reason now that migration
+ * 0086 has built the register. Every scope here answers with a row that
+ * OPENS something, and a letter has no record page to open: the design
+ * contract draws the register and its two composers and no detail screen,
+ * so a correspondence hit could only land on the unfiltered register —
+ * which is what the rail already does, in one click, without a search.
+ * The convergence path is upstream: when the mock grows a letter detail
+ * screen, the scope earns its place. Recorded in `docs/UX.md`.
  *
  * `kinds` is the set of server result groups the scope keeps. `serials`
  * holds none of them: serial numbers are deliberately outside the record

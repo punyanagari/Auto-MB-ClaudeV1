@@ -104,6 +104,12 @@ export type WorkspaceView =
    * money against it stays on its Work's Bills tab, where the receipt form
    * and its withdrawal path already live. */
   | { name: 'receivables' }
+  /** The correspondence register (migration 0086), and the two screens
+   * that write into it. Organisation level: a letter may name a Work but
+   * need not, so none of the three carries one in its address. */
+  | { name: 'correspondence' }
+  | { name: 'correspondence-new' }
+  | { name: 'correspondence-inward' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -262,6 +268,12 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return `#/tenders/${view.tenderId}`;
     case 'receivables':
       return '#/receivables';
+    case 'correspondence':
+      return '#/correspondence';
+    case 'correspondence-new':
+      return '#/correspondence/new';
+    case 'correspondence-inward':
+      return '#/correspondence/new/inward';
     case 'members':
       return '#/members';
     case 'settings':
@@ -480,6 +492,14 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (first === undefined) return { view: { name: 'tenders' } };
       if (first === 'new') return { view: { name: 'tender-new' } };
       return isRecordId(first) ? { view: { name: 'tender', tenderId: first } } : null;
+    }
+    case 'correspondence': {
+      const [first, second, ...extra] = rest;
+      if (extra.length > 0) return null;
+      if (first === undefined) return { view: { name: 'correspondence' } };
+      if (first !== 'new') return null;
+      if (second === undefined) return { view: { name: 'correspondence-new' } };
+      return second === 'inward' ? { view: { name: 'correspondence-inward' } } : null;
     }
     case 'production': {
       const [first, second, ...extra] = rest;

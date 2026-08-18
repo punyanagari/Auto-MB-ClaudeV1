@@ -112,6 +112,21 @@ const OperationsDashboard = lazy(() =>
 const Quotations = lazy(() =>
   import('./Quotations.js').then((module) => ({ default: module.Quotations })),
 );
+const Correspondence = lazy(() =>
+  import('./Correspondence.js').then((module) => ({
+    default: module.Correspondence,
+  })),
+);
+const WriteOutwardLetter = lazy(() =>
+  import('./CorrespondenceComposer.js').then((module) => ({
+    default: module.WriteOutwardLetter,
+  })),
+);
+const UploadInwardLetter = lazy(() =>
+  import('./CorrespondenceComposer.js').then((module) => ({
+    default: module.UploadInwardLetter,
+  })),
+);
 const CompanyDocuments = lazy(() =>
   import('./CompanyDocuments.js').then((module) => ({
     default: module.CompanyDocuments,
@@ -1072,6 +1087,47 @@ export function OperationsWorkspace({
                 canModify={canModify}
                 canIssue={canIssue}
                 canCancel={canCancel}
+              />
+            )}
+
+            {view.name === 'correspondence' && (
+              <Correspondence
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                canCancel={canCancel}
+                onWriteLetter={() => {
+                  navigate({ name: 'correspondence-new' });
+                }}
+                onUploadInward={() => {
+                  navigate({ name: 'correspondence-inward' });
+                }}
+              />
+            )}
+
+            {view.name === 'correspondence-new' && (
+              <WriteOutwardLetter
+                api={api}
+                organisationId={organisation.id}
+                onDone={() => {
+                  navigate({ name: 'correspondence' });
+                }}
+                onCancel={() => {
+                  navigate({ name: 'correspondence' });
+                }}
+              />
+            )}
+
+            {view.name === 'correspondence-inward' && (
+              <UploadInwardLetter
+                api={api}
+                organisationId={organisation.id}
+                onDone={() => {
+                  navigate({ name: 'correspondence' });
+                }}
+                onCancel={() => {
+                  navigate({ name: 'correspondence' });
+                }}
               />
             )}
 

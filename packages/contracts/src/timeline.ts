@@ -35,6 +35,13 @@ export const TIMELINE_ENTITY_TYPES = [
   // paper trail — and a despatch this Work could not make without the
   // certificate is unexplainable from a trail that never mentions it.
   'inspection_calls',
+  // The correspondence register (0086). A letter filed against a Work is
+  // part of that Work's paper trail — the approval that unblocked an
+  // item, the clarification that changed a make — and a trail that
+  // omitted the letters would leave those decisions unexplained. Letters
+  // filed as general correspondence carry no work_id and simply never
+  // match a Work's scope.
+  'correspondence_letters',
   // The production job card (0084). Raising, revising, completing and
   // cancelling an order to BUILD what the Work will be delivered are
   // acts on the Work's paper trail, and a delivery whose units were

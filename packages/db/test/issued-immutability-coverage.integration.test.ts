@@ -153,6 +153,22 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // nothing but the maintained timestamp is outside the freeze.
   budgetary_quotations: ['updated_at'],
 
+  // A registered letter (0086). Everything on the paper is frozen the
+  // moment the row exists — there is no draft state and no edit path at
+  // all — and the cancellation triple is frozen too, one step later: the
+  // guard's first comparison exempts it so the single legal UPDATE can
+  // write it, and its third refuses any change once `cancelled_at` is
+  // set. So the triple is write-once, which the freeze detector reads as
+  // frozen and which is the honest reading — it is the record that
+  // explains what a retained number now stands for. Only the primary key
+  // and the maintained timestamp sit outside a freeze.
+  correspondence_letters: [
+    // `id` is the primary key of the row the guard was handed; there is
+    // nothing for the ROW comparison to freeze it against.
+    'id',
+    'updated_at',
+  ],
+
   // A reusable company credential (0079). Its provenance is frozen; the
   // name and category stay editable so a mis-typed credential can be
   // corrected without discarding its version history, and archiving is

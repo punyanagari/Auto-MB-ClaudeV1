@@ -20,6 +20,7 @@ import {
   removeOrganisationResidue,
   runMigrations,
 } from '@auto-mb/db';
+import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -676,7 +677,7 @@ describe('organisation export (Milestone 4)', () => {
       deliveryChallans: { status: string; issued_snapshot: unknown }[];
       auditEvents: { action: string }[];
     }>();
-    expect(exported.formatVersion).toBe('export-v19');
+    expect(exported.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
     expect(exported.organisation.id).toBe(organisationId);
     expect(exported.works.length).toBeGreaterThanOrEqual(1);
     const issued = exported.deliveryChallans.find(

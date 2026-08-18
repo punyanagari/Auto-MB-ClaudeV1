@@ -329,6 +329,15 @@ good", and colouring a PAN card green would say the wrong thing.
 `archived` is neutral for the same reason `completed` is: a retired credential
 is finished, not currently bad.
 
+`sent`, `received` and `replied` are the correspondence register's (migration
+0086), and they were listed above as the mock's map before this build had a
+screen that rendered them; `ui/chip.tsx` now carries all three. They follow the
+families without argument: a dispatched letter is an outward legal act
+(primary), a received one is the state that closes the arrival step (success),
+and `replied` is primary because the reply — not the receipt — is the act. All
+three are DERIVED on read, never stored, so `replied` can appear on a letter
+written months ago the moment a later letter cites it.
+
 `completed` being neutral rather than green is deliberate: a completed Work is
 finished, not currently good. Do not "fix" it.
 

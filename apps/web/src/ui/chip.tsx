@@ -13,6 +13,12 @@ const CHIP_TONES = {
   issued: 'info',
   submitted: 'info',
   pending: 'info',
+  // A letter this organisation dispatched, and one that a later letter
+  // answers (0086). `docs/DESIGN.md` § Status badge semantics puts both
+  // in the primary family: an outward legal act, and a thread that has
+  // been closed by one.
+  sent: 'info',
+  replied: 'info',
 
   // A tender that was won (0083). The LOA follows, and the Work follows
   // that.
@@ -30,6 +36,9 @@ const CHIP_TONES = {
   // A company document whose newest version is inside its validity
   // window with room to spare (migration 0079).
   valid: 'success',
+  // An inward letter on file (0086). Receiving the paper is what closes
+  // the step; whether it has been answered is `replied`.
+  received: 'success',
 
   // A tender whose technical bid has been opened: the result is with
   // the railway and nobody here can do anything about it (0083).
@@ -56,6 +65,15 @@ const CHIP_TONES = {
   // An invoice replaced in full by an issued credit note (0051): not a
   // failure, but no longer the live document either.
   superseded: 'warning',
+
+  // Neutral by DECISION, not by falling off the end of the map.
+  // `docs/DESIGN.md` § Status badge semantics puts `draft` in the inert
+  // family and records why: a record being assembled is not in progress
+  // and not good news, and an amber lamp on every draft is a lamp that is
+  // always lit. It was previously unmapped, which rendered the same
+  // neutral by accident — and an accident is exactly what somebody
+  // "fixes" later.
+  draft: 'neutral',
 
   // A tender that was not won, or was not pursued (0083). Not a system
   // failure, but the end of that pipeline either way.

@@ -445,6 +445,19 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     deletePurchaseOrder: vi
       .fn<ApiClient['deletePurchaseOrder']>()
       .mockResolvedValue(undefined),
+    listCorrespondence: vi.fn<ApiClient['listCorrespondence']>().mockResolvedValue({
+      entries: [],
+      nextCursor: null,
+      counts: { outward: 0, inward: 0, extensions: 0, inspection: 0 },
+      awaitingExtensionResponses: 0,
+    }),
+    listCorrespondenceThreadOptions: vi
+      .fn<ApiClient['listCorrespondenceThreadOptions']>()
+      .mockResolvedValue({ letters: [] }),
+    writeOutwardLetter: vi.fn<ApiClient['writeOutwardLetter']>(),
+    registerInwardLetter: vi.fn<ApiClient['registerInwardLetter']>(),
+    cancelCorrespondenceLetter: vi.fn<ApiClient['cancelCorrespondenceLetter']>(),
+    downloadCorrespondenceLetter: vi.fn<ApiClient['downloadCorrespondenceLetter']>(),
     listCompanyDocuments: vi
       .fn<ApiClient['listCompanyDocuments']>()
       .mockResolvedValue({ documents: [], expiryWarningDays: 60 }),

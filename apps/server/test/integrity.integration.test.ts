@@ -12,6 +12,7 @@ import {
   removeOrganisationResidue,
   runMigrations,
 } from '@auto-mb/db';
+import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -433,7 +434,7 @@ describe('export completeness', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v19');
+    expect(exported.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
     expect(exported.challanReceipts?.length).toBeGreaterThan(0);
     expect(exported.workInstruments?.length).toBeGreaterThan(0);
     expect(exported.mbEntries?.length).toBeGreaterThan(0);
@@ -628,6 +629,95 @@ describe('export completeness is catalog-driven', () => {
         .map((table) => `${table} (expected section "${sectionNameOf(table)}")`)
         .join(', ')}. Add the table to routes/export.ts, or add a section-name ` +
         'override here if it is published under a different name.',
+    ).toEqual([]);
+  });
+
+  /**
+   * Tables the application role is granted on that are NOT
+   * organisation-scoped, and therefore fall outside the census above.
+   *
+   * The test above derives its required set from `organisation_id`, which
+   * is the right definition for "the organisation's business record" and
+   * the wrong one for "everything the application can read". A table with
+   * a grant and no `organisation_id` is in neither census: nothing would
+   * notice it missing from the export, and nothing would notice it
+   * missing from the audit either.
+   *
+   * There are only two kinds and both are correctly absent. Naming them
+   * here is what makes a THIRD kind — some new table that is neither
+   * identity nor bookkeeping — a failure instead of a silence.
+   *
+   * Derived from the CATALOG rather than from bootstrap's
+   * `TABLE_PRIVILEGES`, which was the other candidate. The catalog is
+   * strictly stronger: the privilege matrix lists what the application
+   * role may touch, so a table added with no grant at all would be in
+   * neither list and this census would not see it. `packages/db/test/
+   * bootstrap.integration.test.ts` already proves the matrix covers the
+   * catalog, so checking the catalog here covers the matrix too, and
+   * without a cross-package import of another package's internals.
+   */
+  const NOT_ORGANISATION_SCOPED: Readonly<Record<string, string>> = {
+    // Identity is Better Auth's, shared across organisations: a user
+    // belongs to as many as they are a member of, so their credential
+    // rows are not any one organisation's to export. Publishing them
+    // would put another tenant's membership in this tenant's package.
+    auth_users: "identity, shared across organisations — not one tenant's to export",
+    auth_accounts: 'identity credentials, shared across organisations',
+    auth_sessions: 'live session state, shared and worthless once exported',
+    auth_two_factors: 'second-factor secrets, shared and never exportable',
+    auth_verifications: 'short-lived verification tokens, shared',
+    identity_audit_events:
+      'the identity trail is per USER across organisations; the per-organisation trail is audit_events, which is exported',
+    // Bookkeeping the product keeps about itself.
+    account_lockout_locks: 'brute-force lockout state, operational not business',
+    rate_limit_attempts: 'rate-limit counters, operational not business',
+    schema_migrations: 'the migration ledger, a property of the database',
+  };
+
+  it('accounts for every table that is not organisation-scoped', async () => {
+    const rows = await admin<{ table_name: string; scoped: boolean }[]>`
+      select
+        t.table_name,
+        exists (
+          select 1 from information_schema.columns c
+          where c.table_schema = t.table_schema
+            and c.table_name = t.table_name
+            and c.column_name = 'organisation_id'
+        ) as scoped
+      from information_schema.tables t
+      where t.table_schema = 'public' and t.table_type = 'BASE TABLE'
+      order by t.table_name
+    `;
+    expect(rows.length).toBeGreaterThan(60);
+
+    const unaccounted = rows
+      .filter((row) => !row.scoped && row.table_name !== 'organisations')
+      .map((row) => row.table_name)
+      .filter(
+        (table) =>
+          !Object.prototype.hasOwnProperty.call(NOT_ORGANISATION_SCOPED, table),
+      );
+
+    expect(
+      unaccounted,
+      `tables that carry no organisation_id and are in neither census: ` +
+        `${unaccounted.join(', ')}. Either give the ` +
+        'table an organisation_id (which puts it in the export census above), ' +
+        'or record it in NOT_ORGANISATION_SCOPED here with the reason it is ' +
+        'not part of any one organisation record.',
+    ).toEqual([]);
+
+    // And the list cannot rot: an entry naming a table that no longer
+    // exists, or that has since gained an organisation_id, is a stale
+    // exemption hiding a table the export census should now be checking.
+    const byName = new Map(rows.map((row) => [row.table_name, row.scoped]));
+    const stale = Object.keys(NOT_ORGANISATION_SCOPED).filter(
+      (table) => byName.get(table) !== false,
+    );
+    expect(
+      stale,
+      `NOT_ORGANISATION_SCOPED names a table that is gone or is now ` +
+        `organisation-scoped: ${stale.join(', ')}`,
     ).toEqual([]);
   });
 });

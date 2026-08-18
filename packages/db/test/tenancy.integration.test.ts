@@ -166,6 +166,10 @@ const TENANT_TABLES = [
   'inspection_call_counters',
   'inspection_call_items',
   'inspection_call_documents',
+  // The correspondence register: the inward/outward letters and the two
+  // numbering series behind them (0086).
+  'correspondence_letters',
+  'correspondence_letter_counters',
   // OEM production: the item master, its recursive bill of material, the
   // job card and its numbering, the finished serials and their series,
   // the per-unit component genealogy, and the despatch that hands units
@@ -337,6 +341,11 @@ const DELETE_REVOKED_TABLES = [
   'tenders',
   'tender_notices',
   'tender_status_events',
+  // A letter that went out or came in is a record of what was on the
+  // paper: it cancels with a reason and keeps its number forever, so the
+  // series stays provably gap-free (0086).
+  'correspondence_letters',
+  'correspondence_letter_counters',
   // A part number is printed on physical labels and a job card holds a
   // number that must never be reissued; both retire or cancel instead.
   // Counters record how far a series has gone (0084).
@@ -1452,6 +1461,27 @@ async function seedTenantGraph(
       values (
         ${organisationId}, ${tender.id}, null, 'drafted',
         'seed: created from the tender notice', ${userId}
+      )
+    `;
+
+    // One outward letter and the counter that numbered it (0086). Filed
+    // against the Work, so the composite foreign key is exercised too.
+    await tx`
+      insert into correspondence_letter_counters (
+        organisation_id, direction, fy_label, next_value
+      )
+      values (${organisationId}, 'outward', '2026-27', 2)
+    `;
+    await tx`
+      insert into correspondence_letters (
+        organisation_id, work_id, direction, letter_number, financial_year,
+        sequence_number, letter_date, subject, counterparty_name, body,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, 'outward', 'OUT/26-27/001', '2026-27',
+        1, '2026-06-12', 'Submission of approved makes',
+        'Sr. DSTE/MMCT', 'Seed letter body.', ${userId}
       )
     `;
 

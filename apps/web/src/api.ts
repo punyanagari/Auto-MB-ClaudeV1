@@ -51,6 +51,10 @@ import type {
   ConfirmTenderRequest,
   TenderDetail,
   TenderListResponse,
+  CorrespondenceListResponse,
+  CorrespondenceTab,
+  CorrespondenceThreadOptionsResponse,
+  WriteOutwardLetterRequest,
   TenderNotice,
   UpdateTenderStatusRequest,
   ConfirmWorkRequest,
@@ -1388,6 +1392,51 @@ export interface ApiClient {
     tenderId: string,
     loaDocumentId: string,
   ) => Promise<TenderDetail>;
+  /** The correspondence register (migration 0086). One list endpoint
+   * behind four tabs, because three of them read modules this one only
+   * projects — extension requests and inspection call letters keep their
+   * own routes and are never written here. `document` answers the
+   * rendered outward letter or the stored inward scan, whichever the row
+   * is. */
+  readonly listCorrespondence: (
+    organisationId: string,
+    options?: {
+      readonly tab?: CorrespondenceTab;
+      readonly limit?: number;
+      readonly cursor?: string;
+    },
+  ) => Promise<CorrespondenceListResponse>;
+  readonly listCorrespondenceThreadOptions: (
+    organisationId: string,
+  ) => Promise<CorrespondenceThreadOptionsResponse>;
+  readonly writeOutwardLetter: (
+    organisationId: string,
+    body: WriteOutwardLetterRequest,
+  ) => Promise<{ readonly id: string; readonly number: string }>;
+  readonly registerInwardLetter: (
+    organisationId: string,
+    file: Blob,
+    details: {
+      readonly filename: string;
+      readonly receivedOn: string;
+      readonly contactId: string;
+      readonly subject: string;
+      readonly workId?: string;
+      readonly senderReference?: string;
+      readonly senderLetterDate?: string;
+      readonly replyToLetterId?: string;
+      readonly responseDueOn?: string;
+    },
+  ) => Promise<{ readonly id: string; readonly number: string }>;
+  readonly cancelCorrespondenceLetter: (
+    organisationId: string,
+    letterId: string,
+    reason: string,
+  ) => Promise<void>;
+  readonly downloadCorrespondenceLetter: (
+    organisationId: string,
+    letterId: string,
+  ) => Promise<Blob>;
   /** The company document library: organisation-level credentials that
    * belong to no Work, so none of these take a workId. `validFrom` and
    * `expiresOn` are date-only `YYYY-MM-DD` strings and ride the
@@ -2058,14 +2107,27 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     return response.text();
   }
 
-  /** Both company-document uploads post the same thing — a PDF body with
-   * its metadata already in the path's querystring — and answer the same
-   * refreshed credential, so they share one send. */
-  async function uploadCompanyDocumentPdf(
+  /**
+   * The one PDF upload in this client: a raw PDF body with every fact
+   * already in the path's querystring, under the tenant header.
+   *
+   * Every upload route in the product takes exactly this shape, and the
+   * client had grown a copy of it per module — same headers, same
+   * `parseError`, same cast, three times over — each of which is a place
+   * the `credentials` or the content type can be forgotten. The response
+   * type is the caller's, because that is the only thing that actually
+   * differs between them.
+   *
+   * ponytail: the remaining callers still go through the two named
+   * wrappers below rather than being rewritten here; that is a mechanical
+   * follow-up over `routes/company-documents` and `routes/inspections`
+   * with no behaviour in it, and it is not this pack's diff to make.
+   */
+  async function uploadPdf<T>(
     path: string,
     organisationId: string,
     file: Blob,
-  ): Promise<CompanyDocument> {
+  ): Promise<T> {
     const response = await fetchImpl(path, {
       method: 'POST',
       credentials: 'same-origin',
@@ -2076,29 +2138,40 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       body: file,
     });
     if (!response.ok) throw await parseError(response);
-    return (await response.json()) as CompanyDocument;
+    return (await response.json()) as T;
+  }
+
+  /** The one stored-document download: a GET under the tenant header
+   * answering bytes rather than JSON. */
+  async function downloadBlob(path: string, organisationId: string): Promise<Blob> {
+    const response = await fetchImpl(path, {
+      credentials: 'same-origin',
+      headers: { 'x-organisation-id': organisationId },
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.blob();
+  }
+
+  /** Both company-document uploads post the same thing and answer the same
+   * refreshed credential. */
+  function uploadCompanyDocumentPdf(
+    path: string,
+    organisationId: string,
+    file: Blob,
+  ): Promise<CompanyDocument> {
+    return uploadPdf<CompanyDocument>(path, organisationId, file);
   }
 
   /** The same send for every inspection upload — the inward call letter,
    * a checklist paper, the certificate — because they differ only in the
    * facts already encoded in the path, and every one of them answers the
    * refreshed call. */
-  async function uploadInspectionPdf(
+  function uploadInspectionPdf(
     path: string,
     organisationId: string,
     file: Blob,
   ): Promise<InspectionCall> {
-    const response = await fetchImpl(path, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'content-type': 'application/pdf',
-        'x-organisation-id': organisationId,
-      },
-      body: file,
-    });
-    if (!response.ok) throw await parseError(response);
-    return (await response.json()) as InspectionCall;
+    return uploadPdf<InspectionCall>(path, organisationId, file);
   }
 
   return {
@@ -3575,6 +3648,30 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         body,
       });
     },
+    async listCorrespondence(organisationId, options) {
+      const query = uploadQuery({
+        tab: options?.tab,
+        limit: options?.limit === undefined ? undefined : String(options.limit),
+        cursor: options?.cursor,
+      });
+      return request<CorrespondenceListResponse>(
+        query === '' ? '/api/correspondence' : `/api/correspondence?${query}`,
+        { organisationId },
+      );
+    },
+    async listCorrespondenceThreadOptions(organisationId) {
+      return request<CorrespondenceThreadOptionsResponse>(
+        '/api/correspondence/thread-options',
+        { organisationId },
+      );
+    },
+    async writeOutwardLetter(organisationId, body) {
+      return request<{ id: string; number: string }>('/api/correspondence/outward', {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
     async listProductionItems(organisationId, includeRetired = false) {
       return request<ProductionItemListResponse>(
         `/api/production/items?includeRetired=${String(includeRetired)}`,
@@ -3605,6 +3702,23 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
         body,
       });
+    },
+    async registerInwardLetter(organisationId, file, details) {
+      return uploadPdf<{ id: string; number: string }>(
+        `/api/correspondence/inward?${uploadQuery(details)}`,
+        organisationId,
+        file,
+      );
+    },
+    async cancelCorrespondenceLetter(organisationId, letterId, reason) {
+      await request(`/api/correspondence/${letterId}/cancel`, {
+        method: 'POST',
+        organisationId,
+        body: { reason },
+      });
+    },
+    async downloadCorrespondenceLetter(organisationId, letterId) {
+      return downloadBlob(`/api/correspondence/${letterId}/document`, organisationId);
     },
     async updateProductionBomLine(organisationId, lineId, quantity) {
       return request<BomResponse>(`/api/production/bom-lines/${lineId}`, {
