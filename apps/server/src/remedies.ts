@@ -479,6 +479,24 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   SIGNED_OUTPUT_REJECTED:
     'Check that the certificate chain the kiosk holds reaches a trust anchor installed on this server, then raise the request again.',
 
+  // ---- Importing a register from a spreadsheet (0094) -----------------------
+  IMPORT_TARGET_UNKNOWN:
+    'Choose one of the registers listed on the Imports screen; only those have an importer behind them.',
+  IMPORT_SHEET_UNREADABLE:
+    'Open the file in Excel and save it again as an .xlsx workbook, then upload the saved copy.',
+  IMPORT_SHEET_EMPTY:
+    'Check that the rows are on the first sheet of the workbook and that the header row is the top row.',
+  IMPORT_SHEET_HEADERS_UNRECOGNISED:
+    'Download the template for this register and copy your rows into it, so the header row names the columns the importer reads.',
+  IMPORT_BATCH_NOT_FOUND:
+    'Reload the Imports screen; this import may have been withdrawn from another session.',
+  IMPORT_BATCH_FINISHED:
+    'Reload the Imports screen and act on what it shows now; a finished import keeps its record and cannot be run or withdrawn twice.',
+  IMPORT_BATCH_NOT_VALIDATED:
+    'Reload the import and wait for every row to carry a verdict before writing any of them to the register.',
+  IMPORT_NOTHING_TO_IMPORT:
+    'Correct the rows this import lists as errors and upload the sheet again; nothing was written to the register.',
+
   // ---- The envelope's own codes -------------------------------------------
   //
   // These three are minted by the error handler in `app.ts` rather than by

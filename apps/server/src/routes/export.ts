@@ -17,6 +17,28 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v26: the spreadsheet importer (0094) joins the package — every
+ * batch an organisation staged and every row of every sheet it uploaded,
+ * with the verdict each row was given and the record it became.
+ *
+ * The staged rows travel, which is the decision worth recording. A
+ * committed import is the provenance of hundreds of live records, and the
+ * uploaded workbook is deliberately never stored — the rows ARE the file,
+ * as far as anything that can be recovered goes. Exporting the batch
+ * without them would publish "412 rows, 9 refused" with nothing behind
+ * it, which answers the summary question and loses the one a dispute
+ * actually asks: what did the sheet say, and why was that row refused.
+ *
+ * `organisation_memberships.can_sign_documents` (0091) also joins here,
+ * and it is a REPAIR rather than an addition: it should have arrived with
+ * v24 and was left off the members section's explicit column list, so a
+ * restored organisation came back with signing revoked from everyone. The
+ * census that would have caught it is added in the same pull request.
+ *
+ * v25 is the notifications pack's, allocated by the coordinator rather
+ * than claimed on merge, for the reason the v15, v17 and v21 notes record
+ * at length.
+ *
  * export-v24: the signing trail (0091, ADR-0012) joins the package — the
  * kiosk credentials, and every request to put the organisation's own
  * Class 3 certificate on an issued document.
@@ -209,7 +231,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v24';
+const EXPORT_FORMAT_VERSION = 'export-v26';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -301,11 +323,21 @@ const SECTIONS: readonly ExportSection[] = [
     /* Every grant is listed explicitly, so a new one that is not added
        here is silently dropped from the recovery package — a restored
        organisation would come back with the authority revoked and
-       nobody able to pay a vendor until an owner noticed. */
+       nobody able to pay a vendor until an owner noticed.
+
+       `can_sign_documents` (0091) WAS missing, and this is the pack that
+       found it: the export census is per-table, so a column left off this
+       list is invisible to every check in the suite. It is added here
+       beside `can_import_data`, and
+       `test/integrity.integration.test.ts` gains a census that reads the
+       catalog's own `can_%` columns and fails when one of them is absent
+       from this statement — so the next pack's authority cannot be lost
+       the same way. */
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 can_manage_payroll, status, created_at
+                 can_manage_payroll, can_sign_documents, can_import_data,
+                 status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -606,6 +638,29 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'importRecords',
     sql: `select * from import_records order by imported_at, id`,
     jsonbColumns: ['payload'],
+  },
+  // The spreadsheet importer (0094). Adjacent to the two sections above
+  // on purpose: those are the v1 cutover CLI's, these are the product
+  // feature's, and a reader of a recovery package who does not know they
+  // are different will otherwise assume one of them is a duplicate.
+  //
+  // BOTH TRAVEL, including the staged rows, and the alternative was
+  // considered. `test/integrity.integration.test.ts` § NOT_EXPORTED is
+  // the place a table is declared scratch, and it holds exactly one entry
+  // after eight waves — a bar this does not clear. The batch alone would
+  // export a claim ("412 rows, 9 refused") with none of its evidence, and
+  // the rows ARE the evidence: what the operator's own file said, which
+  // is the only record of it, because the workbook itself is never
+  // stored. They are bounded by the row cap and they are what makes a
+  // committed import auditable years later.
+  {
+    key: 'spreadsheetImportBatches',
+    sql: `select * from spreadsheet_import_batches order by created_at, id`,
+  },
+  {
+    key: 'spreadsheetImportRows',
+    sql: `select * from spreadsheet_import_rows order by batch_id, row_number`,
+    jsonbColumns: ['cells', 'errors'],
   },
   // M6/7 retrofit (migration 0028): the unified Contacts master and the
   // Work<->consignee association. consignee_masters was never a section

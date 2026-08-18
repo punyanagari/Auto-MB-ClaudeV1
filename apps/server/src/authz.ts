@@ -10,6 +10,7 @@ export interface MembershipRow {
   can_manage_payments: boolean;
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
+  can_import_data: boolean;
 }
 
 export async function membershipOf(
@@ -19,7 +20,7 @@ export async function membershipOf(
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
-           can_sign_documents, can_manage_payroll
+           can_sign_documents, can_manage_payroll, can_import_data
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -146,7 +147,15 @@ export type DocumentAuthority =
    * register carries every colleague's salary, PAN, UAN and bank
    * account, and a member who may approve a vendor payment has no
    * business reading any of that by default. */
-  | 'payroll';
+  | 'payroll'
+  /** Pointing a spreadsheet at a register and committing the rows it
+   * staged (0094, owner ruling). Separate from the writer role the
+   * registers themselves require, because the two acts are not the same
+   * size: adding one contact is a considered act with a form in front of
+   * it, and committing a batch writes eight hundred rows from a file
+   * somebody forwarded. It confers nothing on its own — a batch still
+   * commits into the register's own role and its own constraints. */
+  | 'import';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -161,6 +170,8 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
   sign: 'Your membership does not carry the signing authority, which is required to send an issued document for the organisation’s digital signature or to withdraw a request for one.',
   payroll:
     'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
+  import:
+    'Your membership does not carry the import authority, which is required to upload a spreadsheet against a register and to commit the rows it stages. It is separate from the writer role because adding one record and adding eight hundred from a forwarded file are not the same act.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -176,6 +187,7 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_manage_payments'
     | 'can_sign_documents'
     | 'can_manage_payroll'
+    | 'can_import_data'
   >
 > = {
   issue: 'can_issue_documents',
@@ -184,6 +196,7 @@ const AUTHORITY_COLUMNS: Record<
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  import: 'can_import_data',
 };
 
 function authorityGranted(
