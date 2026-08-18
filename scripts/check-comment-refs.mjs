@@ -192,6 +192,18 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
   [
     'app/correspondence/new/inward/page.tsx',
     'the v0 mock screen the inward letter upload replicates',
+  ['app/production/page.tsx', 'the v0 mock screen the production register replicates'],
+  [
+    'app/production/items/page.tsx',
+    'the v0 mock screen the OEM item master replicates',
+  ],
+  [
+    'production-job-card-page.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the production job card for the four-tab layout it replicates',
+  ],
+  [
+    'work-controls.tsx',
+    'a component of the v0 MOCK repository — cited by migration 0084 for the "OEM production mapping" card it draws, which is the relation between a canonical item and a manufactured one that this build does not yet implement',
   ],
 ]);
 

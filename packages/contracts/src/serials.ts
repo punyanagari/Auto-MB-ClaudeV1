@@ -36,19 +36,52 @@ export const SerialSearchQuerySchema = Type.Object(
 );
 export type SerialSearchQuery = Static<typeof SerialSearchQuerySchema>;
 
+/** Where a matched serial came from.
+ *
+ * `delivery` is the original: a serial captured on a Delivery Challan
+ * line, which is always attached to a Work. `production` is a unit the
+ * factory built (migration 0084), which may have no Work at all — a job
+ * card raised against a private purchase order is the ordinary case —
+ * and has not been despatched under any challan yet. */
+export const SerialSourceSchema = Type.Union([
+  Type.Literal('delivery'),
+  Type.Literal('production'),
+]);
+export type SerialSource = Static<typeof SerialSourceSchema>;
+
 export const SerialSearchMatchSchema = Type.Object(
   {
     id: UuidSchema,
     serialNumber: Type.String(),
-    workId: UuidSchema,
-    workCode: Type.String(),
-    workTitle: Type.String(),
+    source: SerialSourceSchema,
+    /* THE WORK AND CHALLAN BLOCK IS NULLABLE, and that is what the
+       production union costs. A delivery serial always has both — it
+       exists because a challan line captured it. A production serial has
+       neither at the moment it is minted: it is named from the item's own
+       series before any contract has been chosen for it, and a job card
+       may serve a private order with no Work in the product at all.
+       Widening these is the honest shape; the alternative was inventing
+       a Work for a unit that has none. */
+    workId: Type.Union([UuidSchema, Type.Null()]),
+    workCode: Type.Union([Type.String(), Type.Null()]),
+    workTitle: Type.Union([Type.String(), Type.Null()]),
     itemDescription: Type.String(),
-    challanId: UuidSchema,
+    challanId: Type.Union([UuidSchema, Type.Null()]),
     challanNumber: Type.Union([Type.String(), Type.Null()]),
-    challanDate: DateOnlySchema,
-    challanStatus: ChallanStatusSchema,
+    challanDate: Type.Union([DateOnlySchema, Type.Null()]),
+    challanStatus: Type.Union([ChallanStatusSchema, Type.Null()]),
     receiptRecorded: Type.Boolean(),
+    /** Production only: the job card that built the unit, and how far
+     * its genealogy has been recorded. Null on a delivery serial. */
+    jobCardNumber: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    jobCardId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    /** How many component serials are recorded inside this unit, and
+     * whether its bill of material is satisfied. */
+    componentsCaptured: Type.Optional(Type.Integer({ minimum: 0 })),
+    genealogyComplete: Type.Optional(Type.Boolean()),
+    /** The date the unit left production, or null while it is still on
+     * the factory floor. */
+    releasedOn: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
     installedOn: Type.Union([DateOnlySchema, Type.Null()]),
     /** Live quantity-level installation record covering this serial
      * (Milestone 7): id and snapshot location name, null when the serial

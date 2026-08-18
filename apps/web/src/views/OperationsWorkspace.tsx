@@ -141,6 +141,19 @@ const Tenders = lazy(() =>
 const Receivables = lazy(() =>
   import('./Receivables.js').then((module) => ({ default: module.Receivables })),
 );
+const Production = lazy(() =>
+  import('./Production.js').then((module) => ({ default: module.Production })),
+);
+const ProductionItems = lazy(() =>
+  import('./ProductionItems.js').then((module) => ({
+    default: module.ProductionItems,
+  })),
+);
+const ProductionJobCard = lazy(() =>
+  import('./ProductionJobCard.js').then((module) => ({
+    default: module.ProductionJobCard,
+  })),
+);
 const NitIntake = lazy(() =>
   import('./NitIntake.js').then((module) => ({ default: module.NitIntake })),
 );
@@ -1133,6 +1146,42 @@ export function OperationsWorkspace({
                 canRecord={canRecordEvidence}
                 canModify={canModify}
                 canCancel={canCancel}
+              />
+            )}
+
+            {view.name === 'production' && (
+              <Production
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                canRecord={canRecordEvidence}
+                onOpenJobCard={(jobCardId) => {
+                  navigate({ name: 'production-job-card', jobCardId });
+                }}
+                onOpenItemMaster={() => {
+                  navigate({ name: 'production-items' });
+                }}
+              />
+            )}
+
+            {view.name === 'production-items' && (
+              <ProductionItems
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+              />
+            )}
+
+            {view.name === 'production-job-card' && (
+              <ProductionJobCard
+                api={api}
+                organisationId={organisation.id}
+                jobCardId={view.jobCardId}
+                canRecord={canRecordEvidence}
+                canCancel={canCancel}
+                onBack={() => {
+                  navigate({ name: 'production', workId: null });
+                }}
               />
             )}
 

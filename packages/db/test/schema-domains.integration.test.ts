@@ -185,8 +185,10 @@ describe('the schema at head names all three shapes', () => {
     // of its own (the payment-request amount, the vendor-invoice amount,
     // and the vendor payment's gross/tds/net less the two counted as one
     // pair) plus the TDS taxable amount; 0083 adds a tender's estimated
-    // value and its EMD.
-    expect(adopted.length).toBe(65);
+    // value and its EMD; 0084 adds one, the bill-of-material line
+    // quantity — a job card's own quantity is a whole-unit integer, not
+    // a measured quantity, because every unit becomes a serial.
+    expect(adopted.length).toBe(66);
   });
 
   it('types every digest column as sha256_hex', () => {

@@ -8,6 +8,7 @@ import type {
   ChallanDetailResponse,
   Contact,
   EwayBill,
+  JobCardDetail,
   LoaDocumentDetail,
   MeasurementBook,
   Membership,
@@ -65,6 +66,34 @@ export const NO_BILLING = {
   billed: '0.00',
   unbilled: '0.00',
 } as const;
+
+/** One inert job card, so every production mutation stub can answer
+ * the shape the view re-renders from. */
+const FIXTURE_JOB_CARD: JobCardDetail = {
+  id: 'job-card-1',
+  number: 'PP-26-001',
+  sourceType: 'work',
+  sourceReference: 'A2/1',
+  workId: null,
+  workCode: null,
+  customer: 'Fixture customer',
+  itemId: 'item-1',
+  itemCode: 'FIX-1',
+  itemName: 'Fixture board',
+  quantity: 1,
+  manufactured: 0,
+  dispatched: 0,
+  materialLines: 0,
+  status: 'planned',
+  dueDate: '2026-12-31',
+  completedOn: null,
+  cancellationReason: null,
+  materials: [],
+  serials: [],
+  componentSlots: [],
+  dispatches: [],
+  dispatchReady: false,
+};
 
 export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
@@ -461,6 +490,68 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadTenderNotice: vi.fn<ApiClient['uploadTenderNotice']>(),
     downloadTenderNotice: vi.fn<ApiClient['downloadTenderNotice']>(),
     confirmTenderNotice: vi.fn<ApiClient['confirmTenderNotice']>(),
+    // OEM production (migration 0084). The register resolves empty and
+    // every mutation answers the same inert card, so a view under test
+    // renders its own states rather than the fixture's data.
+    listProductionItems: vi
+      .fn<ApiClient['listProductionItems']>()
+      .mockResolvedValue({ items: [] }),
+    saveProductionItem: vi
+      .fn<ApiClient['saveProductionItem']>()
+      .mockRejectedValue(new Error('not stubbed')),
+    setProductionItemActive: vi
+      .fn<ApiClient['setProductionItemActive']>()
+      .mockRejectedValue(new Error('not stubbed')),
+    getProductionBom: vi
+      .fn<ApiClient['getProductionBom']>()
+      .mockResolvedValue({ nodes: [], truncated: false }),
+    addProductionBomLine: vi
+      .fn<ApiClient['addProductionBomLine']>()
+      .mockResolvedValue({ nodes: [], truncated: false }),
+    updateProductionBomLine: vi
+      .fn<ApiClient['updateProductionBomLine']>()
+      .mockResolvedValue({ nodes: [], truncated: false }),
+    removeProductionBomLine: vi
+      .fn<ApiClient['removeProductionBomLine']>()
+      .mockResolvedValue({ nodes: [], truncated: false }),
+    listJobCards: vi.fn<ApiClient['listJobCards']>().mockResolvedValue({
+      jobCards: [],
+      nextCursor: null,
+      openCount: 0,
+      inProductionCount: 0,
+      dispatchReadyCount: 0,
+    }),
+    getJobCard: vi.fn<ApiClient['getJobCard']>().mockResolvedValue(FIXTURE_JOB_CARD),
+    createJobCard: vi
+      .fn<ApiClient['createJobCard']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    updateJobCard: vi
+      .fn<ApiClient['updateJobCard']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    completeJobCard: vi
+      .fn<ApiClient['completeJobCard']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    cancelJobCard: vi
+      .fn<ApiClient['cancelJobCard']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    recordProductionSerial: vi
+      .fn<ApiClient['recordProductionSerial']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    removeProductionSerial: vi
+      .fn<ApiClient['removeProductionSerial']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    recordComponentSerial: vi
+      .fn<ApiClient['recordComponentSerial']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    removeComponentSerial: vi
+      .fn<ApiClient['removeComponentSerial']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    createProductionDispatch: vi
+      .fn<ApiClient['createProductionDispatch']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
+    withdrawProductionDispatch: vi
+      .fn<ApiClient['withdrawProductionDispatch']>()
+      .mockResolvedValue(FIXTURE_JOB_CARD),
     listTenders: vi.fn<ApiClient['listTenders']>().mockResolvedValue({ tenders: [] }),
     getTender: vi.fn<ApiClient['getTender']>(),
     updateTenderStatus: vi.fn<ApiClient['updateTenderStatus']>(),

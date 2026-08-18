@@ -82,6 +82,50 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Upload the notice again from Tenders, Upload NIT; a notice already confirmed is reached through the tender it became.',
   CORRESPONDENCE_LETTER_NOT_FOUND:
     'Pick the letter again from the Correspondence register; a letter filed against a Work you are not assigned to is not listed there.',
+  // OEM production (migration 0084). The remedies say what to DO, not
+  // what went wrong: the message already carries that.
+  PRODUCTION_ITEM_NOT_FOUND:
+    'Pick the item again from the OEM catalogue on Production, Item master; one retired there is no longer selectable by its old id.',
+  PRODUCTION_ITEM_EXISTS:
+    'Give the item a part number no other item carries; a retired item keeps its code, because the code is printed on labels and reissuing it would make an old label name a new thing.',
+  PRODUCTION_ITEM_INVALID:
+    'A manufactured item needs a serial series before it can be saved, and the series cannot change once it has minted a unit — create a new item instead of renumbering this one.',
+  PRODUCTION_ITEM_IN_USE:
+    'Close or cancel the open job cards for this item before retiring it; finished job cards are history and do not block.',
+  PRODUCTION_BOM_CYCLE:
+    'Take the component out of the assembly it already contains, or build the shared part as an item of its own; a bill of material that reaches itself has no bottom.',
+  PRODUCTION_BOM_LINE_EXISTS:
+    'Change the quantity on the line that already names this component instead of adding a second one.',
+  PRODUCTION_BOM_LINE_INVALID:
+    'A bill of material hangs off a manufactured item and names live parts; mark the parent manufactured, or reactivate the part, before adding the line.',
+  PRODUCTION_BOM_LINE_NOT_FOUND:
+    "Open the bill of material again from the item's page; a line removed there is no longer reachable by its old id.",
+  PRODUCTION_JOB_CARD_NOT_FOUND:
+    'Open the job card from the Production register; one cancelled is still listed there.',
+  PRODUCTION_JOB_CARD_STATE_INVALID:
+    'Check where the job card actually stands before recording the next step; a completed or cancelled card is final and its units keep their serials.',
+  PRODUCTION_JOB_CARD_INCOMPLETE:
+    'Serialise the outstanding units before completing the card, or reduce the planned quantity to what was actually built.',
+  PRODUCTION_QUANTITY_EXCEEDED:
+    'Raise the job card quantity if more units are genuinely wanted; a card builds what was ordered and no more.',
+  PRODUCTION_SERIAL_NOT_FOUND:
+    "Open the job card's Serials tab again; a unit removed there is no longer reachable by its old id.",
+  PRODUCTION_SERIAL_LOCKED:
+    'A unit that has been despatched or whose card is finished keeps its record; correct the stock movement instead of the unit.',
+  PRODUCTION_COMPONENT_SERIAL_NOT_FOUND:
+    "Open the unit again from the job card's Serials tab; a component record removed there is no longer reachable by its old id.",
+  PRODUCTION_COMPONENT_SERIAL_INVALID:
+    "Scan a part the unit is actually built from, and no more of it than the bill of material calls for; check the assembly's bill if the part should be there.",
+  PRODUCTION_COMPONENT_SERIAL_EXISTS:
+    'That component serial is already recorded inside another unit — check the label, because one physical part cannot be in two places.',
+  PRODUCTION_DISPATCH_NOT_FOUND:
+    "Open the job card's Dispatch tab again; a release deleted there is no longer reachable by its old id.",
+  PRODUCTION_DISPATCH_INVALID:
+    'Release only units of this job card that are still in the factory and have every required component serial captured.',
+  // Crossed the three-throw coverage bar when the production register
+  // added a third keyset list of its own.
+  CURSOR_INVALID:
+    'Reload the register and page again from the start; a cursor from an older result set no longer names a row in it.',
   FIELD_TOO_SHORT:
     'Fill the named field in and submit again; a value of nothing but spaces is not a value.',
   // Crossed the coverage bar when the correspondence register added a

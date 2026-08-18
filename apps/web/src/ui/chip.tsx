@@ -44,6 +44,11 @@ const CHIP_TONES = {
   // the railway and nobody here can do anything about it (0083).
   opened: 'warning',
 
+  // A job card the factory has started (0084): work in hand, which is
+  // the warning family's own meaning. Its sibling `planned` is
+  // deliberately NOT mapped — see the note below `CHIP_TONES`.
+  'in-production': 'warning',
+
   review: 'warning',
   prepared: 'warning',
   // A company document whose newest version lapses inside the warning
@@ -80,6 +85,16 @@ const CHIP_TONES = {
   omitted: 'destructive',
 } as const;
 
+/**
+ * `planned` is deliberately absent, and it is recorded here so it is not
+ * "fixed" later.
+ *
+ * A production job card that has been raised and not started is inert —
+ * the same reading `draft` has, and the state most job cards are in for
+ * most of their lives. Mapping it to warning would put an amber lamp on
+ * every card the moment it is created, and a chip that is always lit
+ * says nothing. Unmapped renders neutral, which is the answer.
+ */
 type ChipStatus = keyof typeof CHIP_TONES;
 
 function toneOf(status: string) {

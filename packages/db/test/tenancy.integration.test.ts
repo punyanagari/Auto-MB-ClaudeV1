@@ -170,6 +170,20 @@ const TENANT_TABLES = [
   // numbering series behind them (0086).
   'correspondence_letters',
   'correspondence_letter_counters',
+  // OEM production: the item master, its recursive bill of material, the
+  // job card and its numbering, the finished serials and their series,
+  // the per-unit component genealogy, and the despatch that hands units
+  // to stock (0084). Children follow their parents.
+  'production_items',
+  'production_bom_lines',
+  'production_job_card_counters',
+  'production_job_cards',
+  'production_serial_counters',
+  'production_serials',
+  'production_component_serials',
+  'production_dispatch_counters',
+  'production_dispatches',
+  'production_dispatch_serials',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -214,7 +228,16 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // The tender status trail is append-only: the application role has
     // no UPDATE, so a cross-tenant one raises 42501 rather than matching
     // zero rows (0083).
-    table !== 'tender_status_events',
+    table !== 'tender_status_events' &&
+    // A serial number is stamped on hardware, so it is never corrected:
+    // the application role holds no UPDATE on the finished serial, its
+    // component genealogy, the despatch, or the despatch's lines, and a
+    // cross-tenant UPDATE raises 42501 rather than matching zero rows
+    // (0084).
+    table !== 'production_serials' &&
+    table !== 'production_component_serials' &&
+    table !== 'production_dispatches' &&
+    table !== 'production_dispatch_serials',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -323,6 +346,14 @@ const DELETE_REVOKED_TABLES = [
   // series stays provably gap-free (0086).
   'correspondence_letters',
   'correspondence_letter_counters',
+  // A part number is printed on physical labels and a job card holds a
+  // number that must never be reissued; both retire or cancel instead.
+  // Counters record how far a series has gone (0084).
+  'production_items',
+  'production_job_cards',
+  'production_job_card_counters',
+  'production_serial_counters',
+  'production_dispatch_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -332,6 +363,16 @@ const DELETE_ALLOWED_TABLES = [
   // being assembled, so it deletes; the route refuses it from submission
   // onwards, when the list becomes the record of what went out (0083).
   'tender_checklist_items',
+  // A bill-of-material line is design working material and is removed
+  // rather than cancelled. A unit recorded in error, a mis-scanned
+  // component serial, and a despatch raised in error all delete while
+  // the unit is still in the factory; the foreign keys from the despatch
+  // tables are what close each of those paths afterwards (0084).
+  'production_bom_lines',
+  'production_serials',
+  'production_component_serials',
+  'production_dispatches',
+  'production_dispatch_serials',
   // Restoring a document's default number format DELETES the row that
   // overrode it â€” configuration, cleared in place (0039).
   'document_number_series',
@@ -1441,6 +1482,116 @@ async function seedTenantGraph(
         ${organisationId}, ${work.id}, 'outward', 'OUT/26-27/001', '2026-27',
         1, '2026-06-12', 'Submission of approved makes',
         'Sr. DSTE/MMCT', 'Seed letter body.', ${userId}
+    // OEM production (0084): a manufactured board, one serial-controlled
+    // component, the bill-of-material edge between them, a job card
+    // against the Work, one finished unit with one component consumed
+    // into it, and the despatch that released it. Seeded as a complete
+    // chain because every table has to carry a row for the sweeps above,
+    // and the chain is the only order that satisfies its own guards.
+    const [product] = await tx<{ id: string }[]>`
+      insert into production_items (
+        organisation_id, item_code, name, category, unit, manufactured,
+        serial_prefix, serial_controlled, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${`PEB-${workCode}`}, 'IP display board',
+        'Display boards', 'Nos', true, ${`SEED${workCode.slice(-4)}`}, true,
+        ${userId}
+      )
+      returning id
+    `;
+    if (!product) throw new Error('seed production item returned no row');
+    const [component] = await tx<{ id: string }[]>`
+      insert into production_items (
+        organisation_id, item_code, name, category, unit, serial_controlled,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${`SMPS-${workCode}`}, '24 V 10 A SMPS',
+        'Power supplies', 'Nos', true, ${userId}
+      )
+      returning id
+    `;
+    if (!component) throw new Error('seed production component returned no row');
+    await tx`
+      insert into production_bom_lines (
+        organisation_id, parent_item_id, component_item_id, quantity,
+        created_by_user_id
+      )
+      values (${organisationId}, ${product.id}, ${component.id}, 1, ${userId})
+    `;
+    await tx`
+      insert into production_job_card_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    const [jobCard] = await tx<{ id: string }[]>`
+      insert into production_job_cards (
+        organisation_id, fy_label, sequence_number, item_id, quantity,
+        work_id, source_reference, due_date, created_by_user_id
+      )
+      values (
+        ${organisationId}, '2026-27', 1, ${product.id}, 4, ${work.id},
+        ${`${workCode} · A2/1`}, '2026-09-15', ${userId}
+      )
+      returning id
+    `;
+    if (!jobCard) throw new Error('seed job card returned no row');
+    await tx`
+      insert into production_serial_counters (
+        organisation_id, production_item_id, next_value
+      )
+      values (${organisationId}, ${product.id}, 2)
+    `;
+    const [unit] = await tx<{ id: string }[]>`
+      insert into production_serials (
+        organisation_id, job_card_id, item_id, serial_number, sequence_number,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${jobCard.id}, ${product.id},
+        ${`SEED${workCode.slice(-4)}-00001`}, 1, ${userId}
+      )
+      returning id
+    `;
+    if (!unit) throw new Error('seed production serial returned no row');
+    await tx`
+      insert into production_component_serials (
+        organisation_id, finished_serial_id, component_item_id, serial_number,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${unit.id}, ${component.id},
+        ${`SMPS24-${workCode.slice(-4)}`}, ${userId}
+      )
+    `;
+    await tx`
+      insert into production_dispatch_counters (
+        organisation_id, job_card_id, next_value
+      )
+      values (${organisationId}, ${jobCard.id}, 2)
+    `;
+    const [dispatch] = await tx<{ id: string }[]>`
+      insert into production_dispatches (
+        organisation_id, job_card_id, sequence_number, dispatched_on,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${jobCard.id}, 1,
+        -- The despatch guard (0084) refuses a date after the
+        -- organisation's own today, so the seed dates it in the past
+        -- rather than pinning a future day that goes stale.
+        current_date - 1, ${userId}
+      )
+      returning id
+    `;
+    if (!dispatch) throw new Error('seed production dispatch returned no row');
+    await tx`
+      insert into production_dispatch_serials (
+        organisation_id, production_dispatch_id, production_serial_id,
+        job_card_id
+      )
+      values (
+        ${organisationId}, ${dispatch.id}, ${unit.id}, ${jobCard.id}
       )
     `;
 

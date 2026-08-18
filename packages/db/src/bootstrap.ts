@@ -212,6 +212,24 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // cancelled letter still holds its number.
   correspondence_letters: 'SELECT, INSERT, UPDATE',
   correspondence_letter_counters: 'SELECT, INSERT, UPDATE',
+  // OEM production (0084). The item master retires via its active flag
+  // like every master since 0013, so no DELETE; a bill of material is
+  // design working material and deletes. A job card carries a number and
+  // cancels rather than disappearing. Serials and their genealogy are
+  // never UPDATEd — a serial number is stamped on hardware, not
+  // corrected — and delete only while the unit is still in the factory,
+  // which the references from the despatch tables enforce. A despatch
+  // states a past fact, so it never updates either.
+  production_items: 'SELECT, INSERT, UPDATE',
+  production_bom_lines: 'SELECT, INSERT, UPDATE, DELETE',
+  production_job_cards: 'SELECT, INSERT, UPDATE',
+  production_job_card_counters: 'SELECT, INSERT, UPDATE',
+  production_serials: 'SELECT, INSERT, DELETE',
+  production_serial_counters: 'SELECT, INSERT, UPDATE',
+  production_component_serials: 'SELECT, INSERT, DELETE',
+  production_dispatches: 'SELECT, INSERT, DELETE',
+  production_dispatch_counters: 'SELECT, INSERT, UPDATE',
+  production_dispatch_serials: 'SELECT, INSERT, DELETE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

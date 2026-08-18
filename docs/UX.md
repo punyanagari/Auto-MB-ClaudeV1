@@ -267,9 +267,426 @@ All three are built from the mock's own components — its cards, its rows,
 its status badge, its readiness panel — so the grammar is unchanged even
 where the behaviour is.
 
-### 11. Correspondence screens — PROPOSED, owner ruling pending
+### 11. Production screens — PROPOSED, owner ruling pending
 
 **Status: PROPOSED, not approved.** Same footing as § 9 and § 10, and the
+same convergence path: change the mock in v0 and each entry retires.
+
+The screens themselves are ported (`app/production/page.tsx`,
+`app/production/items/page.tsx`, `components/production-job-card-page.tsx`
+at `fdfe5ef`). What is listed here is behaviour inside them the mock
+implements as a `useState` fiction over `lib/data.ts`, plus one whole
+column family that depends on a table this wave has not built yet.
+
+The test applied throughout is the same one § 10 states: would
+replicating the pixel make the product claim something untrue?
+
+| #   | The mock draws                                                                                        | The application ships                                                                                                | Why                                                                                                                                                                                                                                                                                                       |
+| --- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11a | A Material column badging "2277 units short", and a Materials tab with Available and Shortage columns | A Material column counting the bill of material, and a Materials tab with Required only, captioned as such           | Shortage is required minus on-hand, and on-hand is the Inventory pack's stock ledger, which does not exist yet. Computed against no stock it reads zero for everything — "nothing is short" — and would flip to alarming the day stock arrived. The requirement half is real and is shipped.              |
+| 11b | Six job-card statuses, three of them derived (`material-short`, `material-ready`, `dispatch-ready`)   | Four stored states — planned, in production, completed, cancelled — with readiness derived on read                   | The mock's own fixture disagrees with itself: two of its three plans carry a `status` its `planMaterial` contradicts, so its "Ready" branch is dead and every card renders "Material blocked". A stored copy of a computed fact is a field that can disagree with the fact.                               |
+| 11c | Component serials as a bag of strings per PLAN, keyed by bill-of-material node                        | Component serials captured per FINISHED UNIT, with the unit chosen on the Serials tab                                | The mock can say a batch of twelve boards consumed twelve power supplies and cannot say which board holds which. That is the question a field failure asks — this board is dead, whose supply is in it, what else has one from that batch — and it is the whole point of traceability.                    |
+| 11d | A "Create delivery challan" button on the Dispatch tab                                                | A "Release to stock" action, and copy saying the Delivery Challan is raised separately                               | A Delivery Challan is a statutory document with a consignee, a number series, an e-way bill and an inspection interlock behind it. A button on the factory floor that appeared to issue one would claim an act it does not perform. Production releases units; the challan is a later act against a Work. |
+| 11e | "Complete one unit" and "Generate next serial" as two independent controls                            | One act: recording a unit mints its serial from the item's counter                                                   | In the mock the counter and the serial list can disagree, and its own `canComplete` has to compare them. A unit that exists and is unnameable is not a unit this product can trace, deliver or install.                                                                                                   |
+| 11f | `BomNode.type` ('raw' / 'sub-assembly'), `unit` and `serialControlled` stored per NODE                | All three derived or moved to the item: type from whether the node has a bill, unit and serial control from the part | The same bolt would otherwise be Nos in one assembly and Kg in another, and serialised in one place and not in another. They are facts about the PART, and `type` is precisely "has children or does not".                                                                                                |
+| 11g | A `nextSerial` figure printed in the item's serial-series well                                        | The series SHAPE (`IPDB6-00000`) and the words "Claimed per unit, gap-free"                                          | The next number is claimed from a counter at the moment a unit is built. Any figure rendered here is stale the instant a second operator builds one, and a wrong next-serial on a screen an operator plans labels from is worse than no figure.                                                           |
+| 11h | A status-free register, with state encoded in the Material badge                                      | The product's status chip, plus the Material badge                                                                   | `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label chip the single vocabulary for record state, and the mock's own fixture shows why one badge cannot carry both readings at once.                                                                                                        |
+
+Two more the review of this pack settled, recorded so the reasoning is
+not re-litigated:
+
+- **The Material column counts parts, and the Materials tab is captioned
+  as a requirement rather than a shortage.** Both say what they are
+  instead of showing an empty Available column that reads as "nothing is
+  short".
+- **The serial trace gains an Origin column** (§ Approved divergences 7's
+  table, extended): a production unit and a delivered one are different
+  kinds of answer, and a unit still on the factory floor has no Work,
+  no challan and no receipt to show. The row says "Private order" or
+  "in the factory" rather than linking nowhere.
+
+Two additions of the application's own, on the same ruling:
+
+- **A withdraw control on a release.** A despatch raised in error would
+  otherwise lock its units out of production for good. It is deliberately
+  self-closing: the moment Inventory's stock ledger references a
+  despatch, the foreign key refuses the delete (migration 0084 § 7).
+- **A remove control on a captured component serial**, live only while
+  the unit is still in the factory. A scanner typo on a unit on the bench
+  is a data-entry error; after despatch the record is the only account of
+  what is inside a unit somewhere else, and nothing removes it.
+
+**The Production rail entry is not a divergence.** It is the first item
+of the mock's own Operations group (`docs/UX.md` § Settled information
+architecture), and it left the omitted list this wave. Inventory,
+Purchase orders and Maintenance stay omitted rather than drawn as dead
+entries.
+
+## Settled information architecture
+
+Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
+
+### Shell
+
+A collapsible icon sidebar plus a sticky topbar (`components/app-shell.tsx`,
+`app-sidebar.tsx`, `app-topbar.tsx`). Content is centred at `max-w-[1440px]`.
+Sidebar groups, in the mock's order:
+
+| Group          | Modules                                                                                |
+| -------------- | -------------------------------------------------------------------------------------- |
+| _(ungrouped)_  | Dashboard · Works · Tenders · Inspection · Payments                                    |
+| Documents      | Challans · Invoices · E-Way Bills · Quotations · Correspondence                        |
+| Operations     | Production · Inventory · Purchase orders · Installations · Maintenance · Global search |
+| Administration | Employees · Approvals · Masters · Members · Settings                                   |
+
+The sidebar footer carries the primary **Upload LOA** action and the signed-in
+identity. Approvals carries a count badge. This retires the previous
+Home/Works/Documents/Operations/Administration five-item rail.
+
+### Challans, installations and issue challans reach top level
+
+They were Work-workspace-only. They are now reachable without first choosing a
+Work, because the operator's question crosses Works: what moved this week, what
+is still an open draft, what went in and where.
+
+The mock expresses this as one **Challans** module under Documents with two tabs
+— delivery and issue — addressed by `?type=delivery` / `?type=installation`
+(`components/challans-workspace.tsx`), with `/delivery-challans` and
+`/issue-challans` redirecting into it. **Installations** is its own module under
+Operations.
+
+Every one of these registers takes a `?work=` deep link. When present it renders
+as a dismissible filter chip naming the Work, whose clear control returns to the
+unfiltered register (`components/document-register.tsx`). Recording still happens
+where the Work caps or measures the record; the register reads across. A document
+with no Work at all — a standalone delivery challan, a direct invoice — is created
+on the register, because there is nowhere else to create it, and takes
+organisation-wide reach.
+
+### Timeline joins the Work workspace navigation
+
+The Work workspace sections, in the mock's order
+(`components/work-section-nav.tsx`, addressed by `?section=`, defaulting to
+`timeline`):
+
+Timeline · Quantity ledger · Variation · Measurement books · Bills · Instruments ·
+Amendments · Documents · Inspection clause · Specifications · Settings ·
+Contract details
+
+Underline tabs on a horizontally scrollable rail, not a segmented control. A
+`?section=` value this build does not know keeps the Work and opens Timeline —
+the Work id is the durable half of that address.
+
+### Bills is a Work section, not top-level nav
+
+**Owner call 2026-08-17**, overriding the 2026-08-16 decision that put Bills in
+the top-level rail. A bill is raised from a finalised measurement book on the
+Work that holds it, and reading bills across Works is the Payments module's
+question, not a register's.
+
+The mock enforces it: `app/bills/page.tsx` is a redirect to
+`/works/<code>?section=bills`, and the Bills register's clear-filter control
+returns to the Work section rather than to an unfiltered bills list. Do not
+reintroduce a top-level Bills entry.
+
+### `#/serials` merges into Global Search
+
+The standalone serial-lookup destination is retired. Serial numbers are one scope
+among the Global Search scopes (`lib/search.ts`: everything, works and items,
+challans, purchase orders, invoices, quotations, correspondence, installations
+and serials, contacts).
+
+**A serial hit must still open the full traceability chain** — receipt, custody,
+issue, installation, the documents at each step. Merging the entry point does not
+merge the answer. The mock keeps that chain in `components/serial-trace-panel.tsx`,
+reachable from the search results and from the mobile Record sheet.
+
+### Masters loses the bank-accounts tab
+
+Masters tabs, per `app/masters/page.tsx`: items, contacts, locations, units,
+signatories, GST. No bank accounts.
+
+Bank fields move inline onto the records that own them — a contact's bank details
+sit on the contact, an employee's on the employee. The organisation's _own_
+accounts are company identity, not master data, and live under Settings →
+Company (`components/company-bank-accounts.tsx`). A shared bank-accounts table
+made every account look interchangeable when a payee account and the
+organisation's collection account are different facts with different permissions.
+
+### Document-lifecycle locking extends beyond its mock home
+
+The mock's outward-document lifecycle machine
+(`components/outward-document-lifecycle.tsx`) runs
+`draft → pending → finalized`, with `amendment-pending → amendment-open` for a
+sanctioned edit to an already-issued document, a finalize-and-issue action, an
+explicit lock signal to the editor it wraps, and an approval route through the
+signature inbox.
+
+The application applies that same machine and the same visual states to
+**delivery and issue challans, tax invoices, and measurement books**. Draft
+editing and legal issue stay visually and semantically separate; an issued
+document is read-only until an amendment is approved; a cancelled number is
+retained forever and never reused.
+
+### The company document library sits under Documents
+
+Owner decision, 2026-08-18. Permanent — not a placeholder pending a Tenders
+module.
+
+The mock has the screen
+(`app/tenders/company-documents/page.tsx`,
+`components/company-document-library.tsx`) but no rail entry for it: it is
+reached from a toolbar button on the Tenders dashboard. Tenders is one of the
+modules `shell/navigation.ts` omits for having no route in this build, so
+replicating that placement exactly would leave a screen the mock covers with
+no way into it.
+
+It therefore carries a rail entry of its own, in the **Documents** group after
+Quotations, with the Lucide `FileBadge` icon — Documents being where the mock's
+own rail groups document registers. If a Tenders module lands later the library
+stays where it is; a bid checklist links into it rather than absorbing it,
+because the library is organisation-level and tendering is one of four
+consumers.
+
+### ⌘K command palette: planned, Phase 4
+
+The mock ships a command palette bound to ⌘K/Ctrl+K from the topbar search
+control (`components/app-topbar.tsx`, `components/ui/command.tsx`). The
+application ports the topbar control's appearance — including the `⌘K` hint chip
+— from day one, and implements the palette itself in Phase 4. Until then the
+control opens Global Search. Do not ship the chip without a working shortcut:
+either the shortcut works or the chip is not rendered.
+
+## Experience principles
+
+Carried forward. They constrain how the mock's grammar is applied to behaviour
+the mock does not draw.
+
+1. **The Work is the centre of gravity.** Most contract execution begins from a
+   Work workspace. Top-level registers answer cross-Work questions; they do not
+   replace the Work as the place records are made.
+2. **Show what is true before showing forms.** Creation and correction controls
+   open deliberately through named actions.
+3. **Progressive disclosure.** Summary, exception and next-action information
+   appears before detailed registers.
+4. **Legal states are explicit.** Draft, locally issued, externally registered,
+   cancelled, corrected and replaced are never collapsed into one ambiguous
+   status.
+5. **Failure is not an empty state.** Loading, no data, permission denial and
+   service failure are represented separately.
+6. **Actions explain their consequence.** A blocked or destructive action states
+   what prevents it and which workflow resolves the block.
+7. **Mobile is task-oriented.** Site staff get focused capture flows, not a
+   compressed office dashboard.
+8. **Accessibility is part of the workflow.** Every action is keyboard reachable,
+   headings and regions are ordered, focus follows navigation, and status is
+   never conveyed by colour alone — which is why the mock's status badge carries
+   a label beside its dot.
+9. **The server remains authoritative.** Browser calculations are explanatory
+   only; money, quantities, numbering, permissions and lifecycle transitions
+   remain server and database concerns.
+
+## Organisation entry
+
+```text
+Sign in
+  └─ 0 active organisations → onboarding / create first organisation
+  └─ 1 active organisation  → enter automatically
+  └─ 2+ active organisations → choose tenant
+```
+
+Only active memberships appear. A refresh may reopen the current active
+organisation during the same browser session; a fresh sign-in with two or more
+memberships requires deliberate tenant choice. The switch action appears only
+when another active organisation exists. Creating another organisation is an
+account-level action under Settings; one organisation remains one legal entity
+and tenant.
+
+The mock draws this as one centred card that steps credentials → two-factor →
+organisation chooser. The application uses that card and that layout for the
+whole family of auth screens (§ Approved divergences 4).
+
+## Contract-source intake
+
+The LOA is required. NIT, Contract Agreement and tender/specification PDFs are
+optional.
+
+```text
+Upload LOA
+  → extract proposal
+  → optionally attach contract-source documents
+  → reject any source whose tender number or name of work does not match
+  → review header, schedules and items
+  → review extracted tender clauses and item mappings
+  → manually confirm/edit the payment matrix
+  → warn and preserve evidence when manual values differ from tender extraction
+  → atomically confirm Work, source links and authoritative matrix
+  → open the new Work with its payment setup offered once
+```
+
+The payment setup is a dialog, not a screen: stage percentages per category
+beside a category per item, with one Save and a Later that writes nothing. Items
+the reviewer left uncategorised arrive with a category proposed from their
+description, marked as a proposal until saved; Save commits the proposals still
+standing and says how many. It is offered by the navigation that follows
+confirmation and never again — a revisit or a refresh opens the Work plainly —
+and both editors stay permanently on the Work's Quantity ledger section.
+
+The unanswered question outlives the dialog, quietly. While any item on a Work
+would bill through a category with no matrix row, the Work's Timeline carries one
+muted line saying so and one inline control that opens the same dialog. It is
+derived from the Work's data rather than from the visit, so it appears on a Work
+configured badly months ago and disappears the moment the gap closes. Save
+refuses to leave that state in the first place, naming the categories inline.
+
+Extracted payment terms, warranty and maintenance periods, PBG and
+security-deposit release clauses, and item specifications are proposal evidence.
+They never bypass human review.
+
+## Document creation
+
+Major legal documents use a guided pattern, rendered through the mock's card and
+field anatomy:
+
+1. **Context** — Work, party, date and movement/document purpose;
+2. **Lines or sources** — eligible items, quantities, PO/source links, remaining
+   balance;
+3. **Evidence and logistics** — transport, serial, attachment or certificate
+   facts where applicable;
+4. **Review** — human-readable document preview, warnings, authority
+   requirements;
+5. **Issue/finalise** — the server revalidates, allocates the number and freezes
+   the immutable snapshot.
+
+The lifecycle strip above the editor is the mock's
+`OutwardDocumentLifecycle`; the editor below it locks when the strip says locked.
+
+## Measurement and financial narrative
+
+```text
+site evidence
+  → formal Measurement Book
+  → finalisation
+      ├→ contractual bill/payment claim
+      └→ GST tax invoice
+           → IRP registration where applicable
+  → payment receipt/reconciliation
+```
+
+The branch is the point. Finalising a Measurement Book raises the contractual
+bill from that book's lines in the same transaction
+(`routes/measurement-books/finalize.ts`), and the GST tax invoice is raised from
+the **finalised Measurement Book** as well — a draft invoice is created against a
+`measurementBookId` (`routes/tax-invoices/drafting.ts`), never against a bill id.
+The bill is not an input to the invoice.
+
+They are siblings from one parent because they answer to different authorities:
+the bill is the contractual claim the Railways department measures and pays
+against; the tax invoice is the GST document the statutory regime requires. One
+finalised measurement is the single source of truth under both, which is what
+keeps them from disagreeing. An invoice may also be raised directly, with no Work
+and no Measurement Book behind it, for service billing outside a measured
+contract.
+
+Cancellation releases the Measurement Book so a corrected document can be raised
+against the same measurement; after the IRP's 24-hour cancellation window a
+Section 34 credit note is the lawful instrument instead.
+
+The older site `mb_entries` surface is labelled **Measurement evidence** rather
+than presented as the formal Measurement Book itself. External statutory
+registration status is shown separately from local invoice status: a locally
+issued invoice is never represented as IRP-registered without verified provider
+evidence.
+
+## Business-rule note: installation above sanctioned quantity
+
+The rule changed with the redesign. **Installation quantity may now exceed the
+LOA sanctioned quantity.** The excess does not block the recording; it raises a
+_pending variation_ against the Work, surfaced on the Work's **Variation**
+section as an unbillable exposure with the installed-versus-sanctioned figures
+and the money at risk. **Measurement and billing still cap at the sanctioned
+quantity** until the variation is approved and its sanction locked.
+
+The mock draws the surface: the "Pending variation" card in
+`components/work-variations.tsx`, above the variation ledger, whose copy is
+"Installation recorded above sanctioned quantity. Excess remains unbillable until
+approval."
+
+Implementation lands in a parallel pull request on branch
+`rules/installation-variation`, which owns `docs/PRODUCT.md` and
+`docs/PRODUCT-SPEC.md` for this rule. This document records that the rule exists
+because it changes what the Variation section is for; it deliberately does not
+document the server semantics, the migration or the approval path.
+
+## Shared states
+
+Every register and detail page provides distinct patterns for:
+
+- initial loading;
+- loaded with records;
+- legitimate empty state;
+- filtered zero results;
+- permission-limited/read-only state;
+- transient network or service failure with retry;
+- deleted/archived/cancelled historical record;
+- blocked action with corrective workflow;
+- unsaved draft with navigation warning where data loss is possible.
+
+Three of these are shared components rather than a convention each screen
+re-implements. `apps/web/src/ui/state.tsx` carries the wait (`LoadingState`,
+skeleton blocks announced as busy), the legitimate empty state (`EmptyState`, one
+plain operational sentence and at most one action), and the service failure
+(`ErrorState`, a persistent alert). `ErrorState` takes its retry handler as a
+**required** prop — a failure with no way back is a dead end, and the type checker
+is what refuses one. A screen with more than one independent read carries one
+failure state per read, each naming what it retries, so a failed picker stays
+distinguishable from a failed register.
+
+These three re-skin to the mock's `Skeleton`, `Empty` and destructive-alert
+anatomy (`docs/DESIGN.md` § Primitive inventory). Their contract — three states,
+required retry, one per read — does not change with the paint.
+
+The permission-limited state is deliberately NOT an `ErrorState`: a 403 does not
+become a success on the second attempt, so it reads as an inline refusal rather
+than offering an action that would refuse identically.
+
+`apps/web/test/views/state-coverage*` holds these to the screen. It derives the
+views with a mount load path from the source and fails if one is neither covered
+by a case that renders all three states nor exempt with a stated reason.
+
+The server side of a failure is the shared error envelope
+(`packages/contracts/src/errors.ts`): `message` states the fact that was refused,
+and the optional `remedy` states the action that clears it. A remedy belongs to
+the error code rather than to the call site, so the reviewed text lives in one
+catalogue (`apps/server/src/remedies.ts`) instead of drifting across the routes
+that throw it. It renders through the mock's `RemedyError`: a destructive-tinted
+`role="alert"` panel, the fact on the first line, the remedy beneath it as a link
+or button carrying a forward arrow.
+
+## Focus, keyboard and navigation
+
+- Workspace navigation is serialised into `location.hash` (hand-rolled, no router
+  library). A refresh restores the exact view including the Work workspace
+  section, Back and Forward walk the view history, register rows render real
+  links so middle-click works, and unknown fragments fall back to the Dashboard —
+  except a Work fragment naming an unknown section, which keeps the Work and
+  opens Timeline.
+- Porting the mock's Next.js `Link`/`usePathname` structure means porting its
+  _appearance and affordances_, not its router. Every mock `Link` becomes a real
+  anchor with a hash href.
+- Focus moves to the heading of the newly opened view on navigation, and returns
+  to the invoking control when a dialog or sheet closes.
+- Dialogs and sheets trap focus and close on `Escape`. The mobile sheets are the
+  same primitive and behave the same way.
+- The topbar search control is reachable in tab order before the page content.
+  Its `⌘K` chip is only rendered when the shortcut is wired (§ ⌘K command
+  palette).
+- Blocked actions whose remedy lives on another screen (payment matrix rows,
+  organisation GST profile, buyer contact facts) link directly to that screen.
+
+### 12. Correspondence screens — PROPOSED, owner ruling pending
+
+**Status: PROPOSED, not approved.** Same footing as § 9, § 10 and § 11, and the
 same convergence path: change the mock in v0 and each entry retires.
 
 The three screens are ported (`app/correspondence/page.tsx`,
@@ -280,17 +697,17 @@ has modules the mock's single `correspondence` array does not.
 
 | #   | The mock draws                                                                | The application ships                                                                          | Why                                                                                                                                                                                                                                                                                                                                                           |
 | --- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11a | Extension requests and inspection letters as rows of the correspondence array | Two tabs that READ `extension_requests` (0011) and `inspection_calls` (0082) and write neither | Both letters already have registers that number them, render them and hold the replies. A second home for one letter is two records that can disagree about its number, its date and its state. The tabs link back to the module that owns each. Each record is up to TWO rows — the letter out and the answer back — which one flat seed array cannot model. |
-| 11b | A read-only "Letter number" field showing the next number before it is filed  | The same field, stating the series (`OUT / financial year / serial`)                           | The number is allocated inside the writing transaction and a letter filed a second later takes a different one. A number shown before the counter has handed it out is a promise nothing made — and on a legal identifier that is the worst kind of placeholder.                                                                                              |
-| 11c | A "Letter type" toggle: Outward / Inward / Extension request                  | No toggle; the composer writes outward letters only                                            | An inward letter is registered on the upload screen beside this one, because the register refuses an inward row with no scan. An extension request is raised on the Work, which is where its completion dates and its own series live. A toggle leading elsewhere lies.                                                                                       |
-| 11d | "Save draft" on the inward screen, and a `draft` status in the register       | No draft state at all                                                                          | The contract draws no correspondence detail screen, so a saved draft has nowhere to be reopened. A row nobody can finish is worse than a form somebody has to complete. (`draft` survives in the vocabulary: an unfinalised extension request still renders it.)                                                                                              |
-| 11e | An inert mono letter number in the register's first column                    | The number is a control that opens the letter                                                  | The mock's rows have no files behind them. Here an outward letter renders on demand and an inward one is the stored scan, and a register with no way to reach either is a register nobody can work from. Rows the register only projects stay inert, for the same reason.                                                                                     |
-| 11f | A dropzone accepting PDF, JPG or PNG up to 20 MB                              | PDF, up to 25 MB                                                                               | Every stored document in this product is a PDF through one hardened path — magic bytes, malware scan, tenant-prefixed key. A second media model for one screen buys nothing an operator's scanner cannot already produce.                                                                                                                                     |
-| 11g | Two hard-coded rows on the Inspection letters tab                             | The mock's own two-row card markup, mapped over every call the member may see                  | The mock's pair is seed data. The anatomy is unchanged — the primary clipboard icon for our request, the muted upload icon for the agency's letter, the same detail line — it simply repeats per call.                                                                                                                                                        |
-| 11h | A `correspondence` scope in Global search                                     | Still omitted                                                                                  | Every search scope answers with a row that OPENS something, and a letter has no record page to open. A correspondence hit could only land on the unfiltered register, which the rail already does in one click. When the mock grows a letter detail screen, the scope earns its place.                                                                        |
-| 11i | No cancel anywhere on the register                                            | A `Cancel…` action per letter row, for members holding the cancel authority                    | The table takes no DELETE, so a misrecorded letter is otherwise permanent. It opens the product's one confirmation shape with a required reason, and the retained number needs that reason beside it to explain what it now stands for. Projected rows carry no control: they cancel in the module that owns them.                                            |
-| 11j | No Reply-due column                                                           | One on the Inward tab, the way Extension until sits on the Extensions tab                      | The mock's inward form captures a reply-due date and the banner above the tabs promises due-date tracking. A date the register stores and never shows is a promise it does not keep, and the conditional-column mechanism is the mock's own.                                                                                                                  |
-| 11k | Fifteen literal rows and no paging control                                    | `Load more letters`, fifty rows a page                                                         | The mock's register is seed data. A real one is a financial year of correspondence, and the alternative to a page is a request that serialises the whole register on every tab change.                                                                                                                                                                        |
+| 12a | Extension requests and inspection letters as rows of the correspondence array | Two tabs that READ `extension_requests` (0011) and `inspection_calls` (0082) and write neither | Both letters already have registers that number them, render them and hold the replies. A second home for one letter is two records that can disagree about its number, its date and its state. The tabs link back to the module that owns each. Each record is up to TWO rows — the letter out and the answer back — which one flat seed array cannot model. |
+| 12b | A read-only "Letter number" field showing the next number before it is filed  | The same field, stating the series (`OUT / financial year / serial`)                           | The number is allocated inside the writing transaction and a letter filed a second later takes a different one. A number shown before the counter has handed it out is a promise nothing made — and on a legal identifier that is the worst kind of placeholder.                                                                                              |
+| 12c | A "Letter type" toggle: Outward / Inward / Extension request                  | No toggle; the composer writes outward letters only                                            | An inward letter is registered on the upload screen beside this one, because the register refuses an inward row with no scan. An extension request is raised on the Work, which is where its completion dates and its own series live. A toggle leading elsewhere lies.                                                                                       |
+| 12d | "Save draft" on the inward screen, and a `draft` status in the register       | No draft state at all                                                                          | The contract draws no correspondence detail screen, so a saved draft has nowhere to be reopened. A row nobody can finish is worse than a form somebody has to complete. (`draft` survives in the vocabulary: an unfinalised extension request still renders it.)                                                                                              |
+| 12e | An inert mono letter number in the register's first column                    | The number is a control that opens the letter                                                  | The mock's rows have no files behind them. Here an outward letter renders on demand and an inward one is the stored scan, and a register with no way to reach either is a register nobody can work from. Rows the register only projects stay inert, for the same reason.                                                                                     |
+| 12f | A dropzone accepting PDF, JPG or PNG up to 20 MB                              | PDF, up to 25 MB                                                                               | Every stored document in this product is a PDF through one hardened path — magic bytes, malware scan, tenant-prefixed key. A second media model for one screen buys nothing an operator's scanner cannot already produce.                                                                                                                                     |
+| 12g | Two hard-coded rows on the Inspection letters tab                             | The mock's own two-row card markup, mapped over every call the member may see                  | The mock's pair is seed data. The anatomy is unchanged — the primary clipboard icon for our request, the muted upload icon for the agency's letter, the same detail line — it simply repeats per call.                                                                                                                                                        |
+| 12h | A `correspondence` scope in Global search                                     | Still omitted                                                                                  | Every search scope answers with a row that OPENS something, and a letter has no record page to open. A correspondence hit could only land on the unfiltered register, which the rail already does in one click. When the mock grows a letter detail screen, the scope earns its place.                                                                        |
+| 12i | No cancel anywhere on the register                                            | A `Cancel…` action per letter row, for members holding the cancel authority                    | The table takes no DELETE, so a misrecorded letter is otherwise permanent. It opens the product's one confirmation shape with a required reason, and the retained number needs that reason beside it to explain what it now stands for. Projected rows carry no control: they cancel in the module that owns them.                                            |
+| 12j | No Reply-due column                                                           | One on the Inward tab, the way Extension until sits on the Extensions tab                      | The mock's inward form captures a reply-due date and the banner above the tabs promises due-date tracking. A date the register stores and never shows is a promise it does not keep, and the conditional-column mechanism is the mock's own.                                                                                                                  |
+| 12k | Fifteen literal rows and no paging control                                    | `Load more letters`, fifty rows a page                                                         | The mock's register is seed data. A real one is a financial year of correspondence, and the alternative to a page is a request that serialises the whole register on every tab change.                                                                                                                                                                        |
 
 The mock's own copy is otherwise unchanged: the tab labels, the column
 headings, the banner sentence and the two header actions are its own. The

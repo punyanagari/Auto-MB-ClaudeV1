@@ -23,10 +23,23 @@ const errorResponses = {
  * because their PDF is rendered on demand from the frozen columns that
  * travel here, so a restored export can reprint every letter it holds.
  *
- * v19 belongs to the production pack landing beside this one. The two
- * were coded against the same base and the coordinator sequences the
- * merges; a shared version string is the failure the v13 note below
- * describes, and a gap is not.
+ * export-v19: OEM production (0084) joins the package — the item master,
+ * the recursive bill of material, the job cards, the finished serials,
+ * the per-unit component genealogy, the despatches, and all three of the
+ * module's counters.
+ *
+ * Left out, a restored organisation would come back with the contracts
+ * and none of the factory: no record of what it manufactures, no bill of
+ * material behind any of it, and — the loss that cannot be reconstructed
+ * from anywhere else — no serial genealogy. A delivered unit's challan
+ * says a number moved; only these tables say what is inside it. The
+ * counters travel for the reason the standalone-challan note below
+ * gives: without them a restored organisation reissues serials it has
+ * already stamped on hardware.
+ *
+ * No manifest bucket: production stores no PDFs. Every other module here
+ * that carries one does so because it accepted an upload, and this one
+ * accepts none.
  *
  * export-v18: the tender pipeline (0083) joins the package — the tenders
  * themselves, the notices they were read from with their stored PDFs, the
@@ -734,6 +747,42 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'statutoryProviderOperations',
     sql: `select * from statutory_provider_operations order by started_at, id`,
   },
+  // OEM production (0084). Organisation-level, like the masters above
+  // it: the item master and its bill of material describe what the
+  // factory can build and outlive every Work built against them. The
+  // children follow their parents so a restore sees an item before the
+  // edge that names it, and a job card before its units.
+  {
+    key: 'productionItems',
+    sql: `select * from production_items order by item_code, id`,
+    jsonbColumns: ['specifications'],
+  },
+  {
+    key: 'productionBomLines',
+    sql: `select * from production_bom_lines order by parent_item_id, component_item_id`,
+  },
+  {
+    key: 'productionJobCards',
+    sql: `select * from production_job_cards order by fy_label, sequence_number, id`,
+  },
+  {
+    key: 'productionSerials',
+    sql: `select * from production_serials order by item_id, sequence_number, id`,
+  },
+  {
+    // The genealogy. Ordered by the unit it belongs to, so a restore
+    // reads a finished serial's components together.
+    key: 'productionComponentSerials',
+    sql: `select * from production_component_serials order by finished_serial_id, component_item_id, serial_number`,
+  },
+  {
+    key: 'productionDispatches',
+    sql: `select * from production_dispatches order by job_card_id, sequence_number, id`,
+  },
+  {
+    key: 'productionDispatchSerials',
+    sql: `select * from production_dispatch_serials order by production_dispatch_id, production_serial_id`,
+  },
   {
     key: 'deliveryChallanCounters',
     sql: `select * from delivery_challan_counters order by work_id`,
@@ -778,6 +827,21 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'standaloneChallanCounters',
     sql: `select * from standalone_challan_counters order by fy_label`,
+  },
+  // The three production counters (0084). A serial counter especially:
+  // its numbers are stamped on hardware, so a restore that reset one
+  // would mint a second unit bearing a number already in the field.
+  {
+    key: 'productionJobCardCounters',
+    sql: `select * from production_job_card_counters order by fy_label`,
+  },
+  {
+    key: 'productionSerialCounters',
+    sql: `select * from production_serial_counters order by production_item_id`,
+  },
+  {
+    key: 'productionDispatchCounters',
+    sql: `select * from production_dispatch_counters order by job_card_id`,
   },
 ];
 

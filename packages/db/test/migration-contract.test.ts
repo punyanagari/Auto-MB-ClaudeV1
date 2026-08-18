@@ -83,6 +83,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0080_payments_workspace.sql': 7,
   '0082_inspection_lifecycle.sql': 8,
   '0083_tenders.sql': 7,
+  '0084_production.sql': 13,
   '0086_correspondence_register.sql': 4,
 };
 
@@ -1093,6 +1094,231 @@ describe('tenant migration contract', () => {
         'SECURITY DEFINER',
       );
     }
+  });
+
+  it('binds OEM production in 0084', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0084_production.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // States are CHECKed text, not enum types, as 0079, 0082 and 0083
+    // all are: a sixth value must stay one ordinary statement.
+    expect(sql).toMatch(
+      /status IN \('planned', 'in_production', 'completed', 'cancelled'\)/,
+    );
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // THE CYCLE REFUSAL IS THE POINT OF THE PACK, and it lives at the
+    // layer no writer can go around. Three parts, each asserted: the
+    // one-step CHECK, the recursive search, and the advisory lock that
+    // makes the search hold when two sessions add opposite edges at the
+    // same moment — the one failure a row lock cannot fix, because the
+    // rows that would have to be locked do not exist yet.
+    expect(sql).toContain('production_bom_lines_not_self_check');
+    expect(sql).toMatch(/CHECK \(parent_item_id <> component_item_id\)/);
+    expect(sql).toContain('CREATE FUNCTION app_private.guard_production_bom_edge()');
+    expect(sql).toMatch(/WITH RECURSIVE reachable\(item_id\) AS \(/);
+    // THE DEPTH BOUND MEASURES BOTH DIRECTIONS. Downward only bounds a
+    // bottom-up build and lets a top-down one through entirely, because
+    // the new component is a leaf every time.
+    expect(sql).toMatch(/WITH RECURSIVE ascent\(item_id, height\) AS \(/);
+    expect(sql).toMatch(/WITH RECURSIVE descent\(item_id, depth\) AS \(/);
+    expect(sql).toContain(
+      'IF reached_above + 1 + reached_below > app_private.production_bom_max_depth()',
+    );
+    // The requirement explosion aggregates per level rather than walking
+    // one row per path, so a shared sub-assembly costs rows once.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.production_bom_requirements(org uuid, root uuid)',
+    );
+    expect(sql).toContain('GROUP BY line.component_item_id');
+    // One readiness expression, read by the register tile and the job
+    // card badge alike.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.production_job_card_dispatch_ready(',
+    );
+    expect(sql).toContain('CREATE FUNCTION app_private.production_unit_incomplete(');
+    // The despatch rules hold at the database too, not only at the route.
+    expect(sql).toContain(
+      'CREATE TRIGGER production_dispatches_guard_write\nBEFORE INSERT ON production_dispatches',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER production_dispatch_serials_guard_write\nBEFORE INSERT ON production_dispatch_serials',
+    );
+    // …and an unresolvable organisation date is refused, not defaulted.
+    expect(sql).toContain("USING ERRCODE = '23D17'");
+    expect(sql).toMatch(/IF today IS NULL THEN/);
+    // The CYCLE clause is what makes the guard terminate even against
+    // stored data that already contains a loop, so the guard can never
+    // itself be the thing that hangs.
+    expect(sql).toMatch(/\) CYCLE item_id SET is_cycle USING path/);
+    expect(sql).toMatch(
+      /PERFORM pg_advisory_xact_lock\(\s*hashtext\('production_bom_lines'\), hashtext\(NEW\.organisation_id::text\)\s*\);/,
+    );
+    expect(sql).toContain('app_private.production_bom_max_depth()');
+
+    // SERIAL SCOPES. The finished serial is unique per ORGANISATION, a
+    // deliberate departure from challan_item_serials' per-Work scope
+    // (0006) that the migration header argues; the component serial is
+    // unique per part number, because two part numbers may legitimately
+    // carry one supplier serial.
+    expect(sql).toContain('UNIQUE (organisation_id, serial_number)');
+    expect(sql).toContain('UNIQUE (organisation_id, component_item_id, serial_number)');
+    // And a unit leaves the factory exactly once.
+    expect(sql).toContain('UNIQUE (organisation_id, production_serial_id)');
+
+    // The despatch boundary is proved by KEYS, not by a trigger: both
+    // composite keys carry job_card_id, so a unit from one job card
+    // cannot be released on another card's despatch.
+    for (const composite of [
+      'FOREIGN KEY (organisation_id, job_card_id, item_id)\n    REFERENCES production_job_cards(organisation_id, id, item_id)',
+      'FOREIGN KEY (organisation_id, production_dispatch_id, job_card_id)\n    REFERENCES production_dispatches(organisation_id, id, job_card_id)',
+      'FOREIGN KEY (organisation_id, production_serial_id, job_card_id)\n    REFERENCES production_serials(organisation_id, id, job_card_id)',
+      'FOREIGN KEY (organisation_id, parent_item_id)\n    REFERENCES production_items(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, component_item_id)\n    REFERENCES production_items(organisation_id, id)',
+    ]) {
+      expect(sql, composite).toContain(composite);
+    }
+
+    // A job card serves a Work or a private order, never both and never
+    // neither — the mock's stored sourceType label expressed as the
+    // shape of the row, so the two cannot disagree.
+    expect(sql).toContain('production_job_cards_source_shape_check');
+    expect(sql).toMatch(
+      /\(work_id IS NOT NULL AND customer_name IS NULL\)\s+OR \(work_id IS NULL AND customer_name IS NOT NULL\)/,
+    );
+
+    // No readiness is STORED. The mock's own fixture disagrees with its
+    // own derived shortage on two of three plans, which is the defect a
+    // stored copy of a computed fact produces.
+    // No stored COLUMN for any of them. `dispatch_ready` appears as the
+    // name of the FUNCTION that derives it, which is the whole point —
+    // what must not exist is a column somebody has to keep in step.
+    expect(sql).not.toMatch(/^\s+(material_short|material_ready|dispatch_ready) /m);
+    // …and nothing here writes to a stock table that does not exist yet.
+    expect(sql).not.toMatch(/stock_items|stock_ledger/);
+
+    // Every policy in the ADR-0010 InitPlan shape.
+    for (const table of [
+      'production_items',
+      'production_bom_lines',
+      'production_job_cards',
+      'production_job_card_counters',
+      'production_serials',
+      'production_serial_counters',
+      'production_component_serials',
+      'production_dispatches',
+      'production_dispatch_counters',
+      'production_dispatch_serials',
+    ]) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+    }
+
+    // The grants, verbatim. A serial number is stamped on hardware, so
+    // none of the four record tables takes an UPDATE at all.
+    for (const grant of [
+      'GRANT SELECT, INSERT, UPDATE ON production_items TO auto_mb_app;',
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON production_bom_lines TO auto_mb_app;',
+      'GRANT SELECT, INSERT, UPDATE ON production_job_cards TO auto_mb_app;',
+      'GRANT SELECT, INSERT, DELETE ON production_serials TO auto_mb_app;',
+      'GRANT SELECT, INSERT, DELETE ON production_component_serials TO auto_mb_app;',
+      'GRANT SELECT, INSERT, DELETE ON production_dispatches TO auto_mb_app;',
+      'GRANT SELECT, INSERT, DELETE ON production_dispatch_serials TO auto_mb_app;',
+    ]) {
+      expect(sql, grant).toContain(grant);
+    }
+    for (const table of [
+      'production_items',
+      'production_job_cards',
+      'production_job_card_counters',
+      'production_serial_counters',
+      'production_dispatch_counters',
+    ]) {
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+    for (const table of [
+      'production_serials',
+      'production_component_serials',
+      'production_dispatches',
+      'production_dispatch_serials',
+    ]) {
+      expect(sql, table).not.toContain(`UPDATE ON ${table} TO auto_mb_app`);
+    }
+
+    // Numbering is counters, not max()+1, and all three carry 0064's
+    // monotonicity guard (the generic sweep above also counts them).
+    for (const counter of [
+      'production_job_card_counters',
+      'production_serial_counters',
+      'production_dispatch_counters',
+    ]) {
+      expect(sql, counter).toContain(`CREATE TABLE ${counter}`);
+    }
+    expect(sql).not.toMatch(/max\(sequence_number\)|max\(next_value\)/);
+
+    // Guards sort alphabetically before the touch trigger, so a refused
+    // write raises before updated_at moves (the 0003 ordering note).
+    expect(sql.indexOf('CREATE TRIGGER production_items_guard_update')).toBeLessThan(
+      sql.indexOf('CREATE TRIGGER production_items_touch_updated_at'),
+    );
+    expect(
+      sql.indexOf('CREATE TRIGGER production_job_cards_guard_transition'),
+    ).toBeLessThan(sql.indexOf('CREATE TRIGGER production_job_cards_touch_updated_at'));
+
+    // The INSERT doors are shut: a job card cannot be born completed,
+    // and a unit cannot be born on a card that is finished or full.
+    expect(sql).toContain(
+      'CREATE TRIGGER production_job_cards_guard_transition\nBEFORE INSERT OR UPDATE ON production_job_cards',
+    );
+    expect(sql).toMatch(/a job card is created as planned, not as/);
+    expect(sql).toContain(
+      'CREATE TRIGGER production_serials_guard_write\nBEFORE INSERT OR DELETE ON production_serials',
+    );
+    // The ceiling holds under concurrency only because the job card's
+    // own row is locked before the count is read.
+    expect(sql).toMatch(
+      /SELECT status, quantity INTO card_status, card_quantity[\s\S]*?FOR UPDATE;/,
+    );
+    // Per-unit component capture takes the same lock, on the same row —
+    // the JOB CARD, not the unit. Locking the unit would need an UPDATE
+    // privilege that § 4 deliberately withholds, and locking a different
+    // row from the route's would be a deadlock waiting for two operators.
+    expect(sql).toMatch(
+      /PERFORM 1 FROM production_job_cards\s+WHERE organisation_id = NEW\.organisation_id AND id = parent_card\s+FOR UPDATE;/,
+    );
+    expect(sql).not.toMatch(/FROM production_serials[\s\S]{0,200}?FOR UPDATE;/);
+
+    // Every trigger function pins its search_path, and there are no
+    // exceptions to count against.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(6);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    for (const guard of functions) {
+      const body = sql.slice(sql.indexOf(guard));
+      expect(body.slice(0, body.indexOf('$$;')), guard).not.toContain(
+        'SECURITY DEFINER',
+      );
+    }
+
+    // Every RAISE carries a named SQLSTATE from the 23D block, which
+    // this migration is the first to use, so the route maps it to a code
+    // instead of surfacing a bare 23514 as a 500.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(15);
+    expect(sql.match(/USING ERRCODE = '23D\d\d'/g)?.length).toBe(raises.length);
+
+    // The despatch boundary is documented where the next pack will look
+    // for it, because Inventory's stock ledger takes its foreign key
+    // from this section.
+    expect(sql).toContain('THE DESPATCH BOUNDARY');
+    expect(sql).toContain('REFERENCES production_dispatches(organisation_id, id)');
   });
 
   it('binds the correspondence register in 0086', async () => {
