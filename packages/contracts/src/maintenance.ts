@@ -39,9 +39,22 @@ export type MaintenanceStatus = Static<typeof MaintenanceStatusSchema>;
 
 const StationSchema = nonBlankString({ minLength: 2, maxLength: 200 });
 const PersonSchema = nonBlankString({ minLength: 2, maxLength: 200 });
-const SerialsSchema = Type.Array(nonBlankString({ minLength: 1, maxLength: 100 }), {
-  maxItems: 100,
-});
+
+/** Trimmed text that may be a single character — a unit is 'm' as often
+ * as it is 'Nos', and a serial can be one digit. `nonBlankString` cannot
+ * express a minimum of one: its pattern subtracts two from the minimum
+ * for the two anchor characters, and 1 would ask for `{-1,}`. */
+function trimmedShortString(maxLength: number) {
+  return Type.String({
+    minLength: 1,
+    maxLength,
+    pattern: '^[^\\s](?:[\\s\\S]*[^\\s])?$',
+    description: 'Text with no leading or trailing whitespace.',
+  });
+}
+
+const UnitSchema = trimmedShortString(20);
+const SerialsSchema = Type.Array(trimmedShortString(100), { maxItems: 100 });
 
 /**
  * One material line, with the four quantities the mock stores and this
@@ -203,7 +216,7 @@ export const CreateMaintenanceLineSchema = Type.Object(
     /** A part from the item master, or omitted for a custom material. */
     itemId: Type.Optional(UuidSchema),
     description: nonBlankString({ minLength: 3, maxLength: 300 }),
-    unit: nonBlankString({ minLength: 1, maxLength: 20 }),
+    unit: UnitSchema,
     quantity: PositiveDecimalStringSchema,
     purpose: Type.Optional(nonBlankString({ minLength: 2, maxLength: 300 })),
     expectedReturnQuantity: NonNegativeDecimalStringSchema,

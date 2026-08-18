@@ -294,12 +294,12 @@ async function readLines(
              (select sum(dl.quantity) from maintenance_dispatch_lines dl
               where dl.organisation_id = l.organisation_id
                 and dl.maintenance_request_line_id = l.id), 0
-           )::text as dispatched,
+           )::quantity_amount::text as dispatched,
            coalesce(
              (select sum(rt.quantity) from maintenance_returns rt
               where rt.organisation_id = l.organisation_id
                 and rt.maintenance_request_line_id = l.id), 0
-           )::text as received,
+           )::quantity_amount::text as received,
            app_private.maintenance_line_outstanding(
              l.organisation_id, l.id)::text as outstanding,
            app_private.maintenance_line_return_due(
