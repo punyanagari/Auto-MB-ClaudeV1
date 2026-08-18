@@ -61,6 +61,14 @@ const MembershipSchema = Type.Object(
      * salaries, PAN, UAN or bank details by default. Defaults false; the
      * owner of a new organisation holds it implicitly. */
     canManagePayroll: Type.Boolean(),
+    /** The notifications authority (migration 0092): may configure the
+     * WhatsApp and email channels, maintain message templates, record
+     * recipient consent and send a message. Separate from
+     * canIssueDocuments because choosing the number the organisation
+     * speaks from — and who else may be messaged — is a different
+     * decision from committing the words of a document. Defaults false;
+     * the owner of a new organisation holds it implicitly. */
+    canManageNotifications: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -96,6 +104,7 @@ export const AddMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageNotifications: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -412,6 +421,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageNotifications: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

@@ -17,6 +17,39 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v25: notifications (0092) join the package — the channels the
+ * organisation speaks through, the templates it may say, the consent that
+ * permits each recipient to be spoken to, and every message it sent.
+ *
+ * THE CONSENT REGISTER IS THE POINT OF THIS SECTION. An organisation
+ * asked years later to show that it had permission to message a
+ * counterparty needs the agreement, the address it was given for, the
+ * words the member wrote down about how it was obtained, and the date —
+ * and unlike a challan there is no counterparty holding a copy. The
+ * delivery log is its other half: it says what was actually sent, to
+ * which address, and whether the handset acknowledged it.
+ *
+ * Nothing is withheld and nothing needs to be, because there was never a
+ * credential to withhold: the WhatsApp access token, the Meta app secret
+ * and the SMTP password are deployment environment held inside an
+ * injected adapter (`notify/transport.ts`), so `select *` publishes
+ * identity — a phone number id, a display number, a sender address — and
+ * no secret. That is a property of the schema rather than of this query,
+ * which is why it is stated here rather than defended by naming columns
+ * as `signingAgents` has to.
+ *
+ * The RENDERED text of a message is absent because it was never stored:
+ * a message row carries the template it was rendered from and the ordered
+ * parameter values, and the text is reproducible from the two. An export
+ * carrying one fewer copy of a recipient's personal data is the right
+ * trade when the copy is derivable.
+ *
+ * v24 (signing) is the pack of this wave that landed ahead of it. The
+ * numbers were ALLOCATED by the coordinator rather than claimed on merge,
+ * for the reason the v15, v17 and v21 notes record at length: a version
+ * string identifies a format, two formats sharing one string is the
+ * failure that matters, and a gap is not.
+ *
  * export-v24: the signing trail (0091, ADR-0012) joins the package — the
  * kiosk credentials, and every request to put the organisation's own
  * Class 3 certificate on an issued document.
@@ -209,7 +242,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v24';
+const EXPORT_FORMAT_VERSION = 'export-v25';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -962,6 +995,38 @@ const SECTIONS: readonly ExportSection[] = [
             ]
           : [],
     },
+  },
+  {
+    // The channels an organisation speaks through (0092). `select *`
+    // publishes no secret, because the schema holds none: the access
+    // token, the app secret and the mail password are the deployment's
+    // and live inside the injected adapter.
+    key: 'notificationChannels',
+    sql: `select * from notification_channels order by channel`,
+  },
+  {
+    // What the organisation is allowed to say (0092), before the messages
+    // that name it. Every logged message renders from one of these, so a
+    // package carrying the log without the templates would say that
+    // something was sent and not what.
+    key: 'notificationTemplates',
+    sql: `select * from notification_templates order by name, language, id`,
+  },
+  {
+    // The consent register (0092). The most load-bearing section of this
+    // pack: an organisation asked to show it had permission to message a
+    // counterparty has nowhere else to look, because unlike a challan
+    // there is no counterparty holding a copy.
+    key: 'notificationConsents',
+    sql: `select * from notification_consents order by recorded_at, id`,
+  },
+  {
+    // The delivery log (0092). What was sent, to which address, and what
+    // became of it. The rendered text is absent because it was never
+    // stored — the template above plus `parameters` reproduce it.
+    key: 'notificationMessages',
+    sql: `select * from notification_messages order by queued_at, id`,
+    jsonbColumns: ['parameters'],
   },
   {
     // Maintenance (0088). Five sections, and every one of them is load

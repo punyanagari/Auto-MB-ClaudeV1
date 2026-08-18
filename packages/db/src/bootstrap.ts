@@ -243,6 +243,16 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // updates.
   signing_requests: 'SELECT, INSERT, UPDATE',
   signing_agents: 'SELECT, INSERT, UPDATE',
+  // Notifications (0092). None of the four deletes. A channel is what
+  // every historical message went out through, a template is what every
+  // logged message was rendered from, a consent record absent is
+  // indistinguishable from consent never given, and the delivery log is
+  // the answer to "did you tell us". Disabling, withdrawing and opting
+  // out are the operations.
+  notification_channels: 'SELECT, INSERT, UPDATE',
+  notification_templates: 'SELECT, INSERT, UPDATE',
+  notification_consents: 'SELECT, INSERT, UPDATE',
+  notification_messages: 'SELECT, INSERT, UPDATE',
   // Payroll (0089, 0090). The three schedules and the employee master
   // retire by end-dating, exactly as gst_rates does, so none of them
   // holds DELETE. Nor does a payroll run at any status: it has claimed a
@@ -341,6 +351,17 @@ const FUNCTION_GRANTS = [
   'app_private.complete_job(uuid, uuid, jsonb)',
   'app_private.fail_job(uuid, uuid, text, timestamptz, text)',
   'app_private.release_job(uuid, uuid, text)',
+  // The kiosk token resolver (0091) and the webhook receipt writer
+  // (0092). Both are SECURITY DEFINER and both were missing from this
+  // list, which is a restore hazard with no symptom: after
+  // `pg_restore --no-owner` they come back owned by the restoring role,
+  // so the resolver reads `signing_agents` through RLS and finds nothing
+  // — every kiosk poll answers "no such token" — and the receipt writer
+  // reads `notification_channels` the same way, so every WhatsApp
+  // delivery receipt silently no-ops and the delivery log freezes at
+  // `sent` forever. Neither failure raises anything.
+  'app_private.resolve_signing_agent(text)',
+  'app_private.record_notification_receipt(text, text, text, timestamptz, text, text)',
 ];
 
 export async function applyGrants(admin: Sql): Promise<void> {
@@ -386,6 +407,16 @@ export async function applyGrants(admin: Sql): Promise<void> {
   );
   await admin.unsafe(
     `GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer`,
+  );
+  // The tables the two definer functions above reach. BYPASSRLS lifts the
+  // POLICY, never the table privilege, so these grants are separate from
+  // the ownership repair and are exactly as narrow as each function is:
+  // the kiosk resolver only reads, and the receipt writer reads a channel
+  // to find the tenant and moves one message row forwards.
+  await admin.unsafe(`GRANT SELECT ON signing_agents TO auto_mb_definer`);
+  await admin.unsafe(`GRANT SELECT ON notification_channels TO auto_mb_definer`);
+  await admin.unsafe(
+    `GRANT SELECT, UPDATE ON notification_messages TO auto_mb_definer`,
   );
   // These functions MUST be owned by the BYPASSRLS definer role: they are
   // SECURITY DEFINER and read organisation_memberships from inside the RLS

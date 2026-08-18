@@ -36,6 +36,10 @@ export const ME = {
       // the rail carries no Employees door and both payroll screens
       // refuse. The owner of a new organisation holds it implicitly.
       canManagePayroll: true,
+      // The notifications authority (0092). Without it the Notifications
+      // screen mounts its refusal panel instead of its four registers,
+      // and the axe scan would be scanning two paragraphs in a card.
+      canManageNotifications: true,
       status: 'active',
     },
   ],
@@ -745,6 +749,128 @@ const PRODUCTION_BOM = {
    once — pending, claimed, signed, failed — because the status chip is
    the only colour this screen puts on a word, and a scan of an empty
    register proves nothing about chips it never drew. */
+/* Notifications (0092). Every tint the screen can draw, at once.
+   The channel block carries an ENABLED channel whose deployment has no
+   transport, because that two-lamp state is the one thing on this screen
+   with no precedent in the mock and the only place a success chip and a
+   warning chip sit side by side. The template list carries the four
+   statuses that tint differently — approved, pending, rejected, paused —
+   and one draft, which is the deliberate neutral. The delivery log
+   carries queued, sent, delivered, read and failed, so the scan sees the
+   whole ledger vocabulary rather than whichever end of it the fixture
+   happened to reach. */
+const NOTIFICATION_CHANNELS = {
+  channels: [
+    {
+      id: '11111111-0092-4000-8000-000000000001',
+      channel: 'whatsapp',
+      enabled: true,
+      wabaPhoneNumberId: '109876543210987',
+      wabaBusinessAccountId: '209876543210987',
+      displayPhoneNumber: '+919000000001',
+      apiBaseUrl: null,
+      fromAddress: null,
+      replyToAddress: null,
+      // The lie a single lamp would have to tell: set up here, and the
+      // server it runs on cannot send.
+      transportConfigured: false,
+      updatedAt: '2026-08-18T09:00:00.000Z',
+    },
+    {
+      id: '11111111-0092-4000-8000-000000000002',
+      channel: 'email',
+      enabled: true,
+      wabaPhoneNumberId: null,
+      wabaBusinessAccountId: null,
+      displayPhoneNumber: null,
+      apiBaseUrl: null,
+      fromAddress: 'no-reply@punyanagari.example',
+      replyToAddress: 'accounts@punyanagari.example',
+      transportConfigured: true,
+      updatedAt: '2026-08-18T09:00:00.000Z',
+    },
+  ],
+};
+
+const NOTIFICATION_TEMPLATES = {
+  templates: [
+    ['challan_issued', 'approved', null, 'Challan issued'],
+    ['bill_submitted', 'pending', null, 'Bill submitted'],
+    ['payment_due', 'rejected', 'Template content violates policy', 'Payment due'],
+    ['inspection_call', 'paused', 'Quality rating dropped to medium', null],
+    ['warranty_note', 'draft', null, null],
+  ].map(([name, status, statusReason, emailSubject], index) => ({
+    id: `22222222-0092-4000-8000-00000000000${String(index)}`,
+    name,
+    language: 'en',
+    category: 'utility',
+    status,
+    statusReason,
+    bodyText: 'Document {{1}} for work {{2}} has been recorded.',
+    parameterCount: 2,
+    emailSubject,
+    createdAt: '2026-08-18T09:00:00.000Z',
+    updatedAt: '2026-08-18T09:00:00.000Z',
+  })),
+  nextCursor: null,
+};
+
+const NOTIFICATION_CONSENTS = {
+  consents: [
+    ['Sr. DEE (G) CR Nagpur', 'whatsapp', '+919812345678', 'opted_in'],
+    ['Dy. CME Ajni', 'email', 'dycme.ajni@railways.example', 'opted_in'],
+    ['Sr. DME Bhusaval', 'whatsapp', '+919812345679', 'opted_out'],
+  ].map(([contactDesignation, channel, address, state], index) => ({
+    id: `33333333-0092-4000-8000-00000000000${String(index)}`,
+    contactId: `44444444-0092-4000-8000-00000000000${String(index)}`,
+    contactDesignation,
+    channel,
+    address,
+    state,
+    evidence:
+      state === 'opted_in'
+        ? 'Signed the delivery acknowledgement on 12 Aug 2026'
+        : 'Asked to stop on the site call of 14 Aug 2026',
+    recordedByUserId: 'user-1',
+    recordedAt: '2026-08-18T09:00:00.000Z',
+    updatedAt: '2026-08-18T09:00:00.000Z',
+  })),
+  nextCursor: null,
+};
+
+const NOTIFICATION_MESSAGES = {
+  messages: [
+    ['queued', null, null],
+    ['sent', null, null],
+    ['delivered', null, null],
+    ['read', null, null],
+    ['failed', '131047', 'Re-engagement message'],
+  ].map(([status, failureCode, failureDetail], index) => ({
+    id: `55555555-0092-4000-8000-00000000000${String(index)}`,
+    channel: index % 2 === 0 ? 'whatsapp' : 'email',
+    templateId: '22222222-0092-4000-8000-000000000000',
+    templateName: 'challan_issued',
+    templateLanguage: 'en',
+    contactId: '44444444-0092-4000-8000-000000000000',
+    contactDesignation: 'Sr. DEE (G) CR Nagpur',
+    toAddress: index % 2 === 0 ? '+919812345678' : 'dycme.ajni@railways.example',
+    parameters: ['DC/2026/0042', 'RE-2026-11'],
+    status,
+    provider: index % 2 === 0 ? 'meta_cloud' : 'smtp',
+    providerMessageId: status === 'queued' ? null : `wamid.00${String(index)}`,
+    failureCode,
+    failureDetail,
+    requestedByUserId: 'user-1',
+    queuedAt: '2026-08-18T09:00:00.000Z',
+    sentAt: status === 'queued' ? null : '2026-08-18T09:00:01.000Z',
+    deliveredAt:
+      status === 'delivered' || status === 'read' ? '2026-08-18T09:00:05.000Z' : null,
+    readAt: status === 'read' ? '2026-08-18T09:00:09.000Z' : null,
+    failedAt: status === 'failed' ? '2026-08-18T09:00:03.000Z' : null,
+  })),
+  nextCursor: null,
+};
+
 const SIGNING_THUMBPRINT = 'CFD1D2EF23018CEC652D1F380FC57FDCF5C0C4E4';
 const SIGNING_QUEUE = {
   requests: [
@@ -1566,6 +1692,23 @@ export async function mockWorkspace(
      scan has to check the contrast of. */
   await page.route('**/api/signing-requests*', (route) =>
     route.fulfill(json(SIGNING_QUEUE)),
+  );
+  // Notifications (0092). Four registers, four handlers. Playwright
+  // matches the LAST registered pattern, so a broader one added after
+  // these would swallow them; the three hyphenated paths are registered
+  // ahead of the bare `notifications` one, and the order is kept explicit
+  // rather than relied on, because the paths only happen not to overlap.
+  await page.route('**/api/notification-channels*', (route) =>
+    route.fulfill(json(NOTIFICATION_CHANNELS)),
+  );
+  await page.route('**/api/notification-templates*', (route) =>
+    route.fulfill(json(NOTIFICATION_TEMPLATES)),
+  );
+  await page.route('**/api/notification-consents*', (route) =>
+    route.fulfill(json(NOTIFICATION_CONSENTS)),
+  );
+  await page.route('**/api/notifications*', (route) =>
+    route.fulfill(json(NOTIFICATION_MESSAGES)),
   );
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),
