@@ -28,6 +28,11 @@ import { ReviewLoa } from '../../src/views/ReviewLoa.js';
 import { Search } from '../../src/views/Search.js';
 import { SerialTrace } from '../../src/views/SerialTrace.js';
 import { Settings } from '../../src/views/Settings.js';
+import { Correspondence } from '../../src/views/Correspondence.js';
+import {
+  UploadInwardLetter,
+  WriteOutwardLetter,
+} from '../../src/views/CorrespondenceComposer.js';
 import { Tenders } from '../../src/views/Tenders.js';
 import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
@@ -480,6 +485,60 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry receivables/,
     empty: { text: /No bill has been prepared yet/ },
+  },
+  {
+    view: 'Correspondence.tsx',
+    name: 'the correspondence register',
+    loads: ['listCorrespondence'],
+    render: (api) => (
+      <Correspondence
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onWriteLetter={noop}
+        onUploadInward={noop}
+      />
+    ),
+    retry: /Retry correspondence/,
+    empty: { text: /No outward letter has been dispatched yet/ },
+  },
+  {
+    view: 'CorrespondenceComposer.tsx',
+    name: 'the outward letter composer',
+    // Both screens in the file share `usePickers`, so one case covers the
+    // load path; the inward screen's own states are the same three.
+    loads: ['listContacts', 'listWorks', 'listCorrespondenceThreadOptions'],
+    render: (api) => (
+      <WriteOutwardLetter
+        api={api}
+        organisationId={ORG_ID}
+        onDone={noop}
+        onCancel={noop}
+      />
+    ),
+    retry: /Retry/,
+    empty: {
+      notApplicable:
+        'A composer has no register to be empty: an organisation with no contacts still gets the form, with an empty picker.',
+    },
+  },
+  {
+    view: 'CorrespondenceComposer.tsx',
+    name: 'the inward letter upload',
+    loads: ['listContacts', 'listWorks', 'listCorrespondenceThreadOptions'],
+    render: (api) => (
+      <UploadInwardLetter
+        api={api}
+        organisationId={ORG_ID}
+        onDone={noop}
+        onCancel={noop}
+      />
+    ),
+    retry: /Retry/,
+    empty: {
+      notApplicable:
+        'An upload form has no register to be empty; the pickers simply come back empty.',
+    },
   },
   {
     view: 'Tenders.tsx',

@@ -54,6 +54,7 @@ import { registerCompanyDocumentRoutes } from './routes/company-documents.js';
 import { registerInspectionRoutes } from './routes/inspections.js';
 import { registerPaymentsWorkspaceRoutes } from './routes/payments.js';
 import { registerTenderRoutes } from './routes/tenders.js';
+import { registerCorrespondenceRoutes } from './routes/correspondence.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
@@ -996,6 +997,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       storage,
       options.gotenbergUrl ?? 'http://127.0.0.1:3001',
       options.statutoryProvider,
+    );
+    registerCorrespondenceRoutes(
+      app,
+      authInstance,
+      database,
+      storage,
+      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      scanner,
     );
     registerWorkCompletionRoutes(app, authInstance, database);
     registerWorkSupersedeRoutes(app, authInstance, database);

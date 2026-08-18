@@ -50,6 +50,10 @@ import type {
   ConfirmTenderRequest,
   TenderDetail,
   TenderListResponse,
+  CorrespondenceListResponse,
+  CorrespondenceTab,
+  CorrespondenceThreadOptionsResponse,
+  WriteOutwardLetterRequest,
   TenderNotice,
   UpdateTenderStatusRequest,
   ConfirmWorkRequest,
@@ -1284,6 +1288,47 @@ export interface ApiClient {
     tenderId: string,
     loaDocumentId: string,
   ) => Promise<TenderDetail>;
+  /** The correspondence register (migration 0086). One list endpoint
+   * behind four tabs, because three of them read modules this one only
+   * projects — extension requests and inspection call letters keep their
+   * own routes and are never written here. `document` answers the
+   * rendered outward letter or the stored inward scan, whichever the row
+   * is. */
+  readonly listCorrespondence: (
+    organisationId: string,
+    options?: { readonly tab?: CorrespondenceTab; readonly cursor?: string },
+  ) => Promise<CorrespondenceListResponse>;
+  readonly listCorrespondenceThreadOptions: (
+    organisationId: string,
+  ) => Promise<CorrespondenceThreadOptionsResponse>;
+  readonly writeOutwardLetter: (
+    organisationId: string,
+    body: WriteOutwardLetterRequest,
+  ) => Promise<{ readonly id: string; readonly number: string }>;
+  readonly registerInwardLetter: (
+    organisationId: string,
+    file: Blob,
+    details: {
+      readonly filename: string;
+      readonly receivedOn: string;
+      readonly contactId: string;
+      readonly subject: string;
+      readonly workId?: string;
+      readonly senderReference?: string;
+      readonly senderLetterDate?: string;
+      readonly replyToLetterId?: string;
+      readonly responseDueOn?: string;
+    },
+  ) => Promise<{ readonly id: string; readonly number: string }>;
+  readonly cancelCorrespondenceLetter: (
+    organisationId: string,
+    letterId: string,
+    reason: string,
+  ) => Promise<void>;
+  readonly downloadCorrespondenceLetter: (
+    organisationId: string,
+    letterId: string,
+  ) => Promise<Blob>;
   /** The company document library: organisation-level credentials that
    * belong to no Work, so none of these take a workId. `validFrom` and
    * `expiresOn` are date-only `YYYY-MM-DD` strings and ride the
@@ -3470,6 +3515,60 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
         body,
       });
+    },
+    async listCorrespondence(organisationId, options) {
+      const query = uploadQuery({
+        tab: options?.tab,
+        cursor: options?.cursor,
+      });
+      return request<CorrespondenceListResponse>(
+        query === '' ? '/api/correspondence' : `/api/correspondence?${query}`,
+        { organisationId },
+      );
+    },
+    async listCorrespondenceThreadOptions(organisationId) {
+      return request<CorrespondenceThreadOptionsResponse>(
+        '/api/correspondence/thread-options',
+        { organisationId },
+      );
+    },
+    async writeOutwardLetter(organisationId, body) {
+      return request<{ id: string; number: string }>('/api/correspondence/outward', {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async registerInwardLetter(organisationId, file, details) {
+      const response = await fetchImpl(
+        `/api/correspondence/inward?${uploadQuery(details)}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as { id: string; number: string };
+    },
+    async cancelCorrespondenceLetter(organisationId, letterId, reason) {
+      await request(`/api/correspondence/${letterId}/cancel`, {
+        method: 'POST',
+        organisationId,
+        body: { reason },
+      });
+    },
+    async downloadCorrespondenceLetter(organisationId, letterId) {
+      const response = await fetchImpl(`/api/correspondence/${letterId}/document`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
     async listTenders(organisationId) {
       return request<TenderListResponse>('/api/tenders', { organisationId });

@@ -206,6 +206,12 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   tender_notices: 'SELECT, INSERT, UPDATE',
   tender_checklist_items: 'SELECT, INSERT, UPDATE, DELETE',
   tender_status_events: 'SELECT, INSERT',
+  // The correspondence register (0086). A letter that went out or came in
+  // is a record: it takes UPDATE for the cancellation triple alone and
+  // never DELETE, and the counter behind it must never be reset because a
+  // cancelled letter still holds its number.
+  correspondence_letters: 'SELECT, INSERT, UPDATE',
+  correspondence_letter_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

@@ -277,6 +277,40 @@ test('the receivables register passes the axe scan', async ({ page }) => {
   await expectNoAxeViolations(page, 'receivables bill sheet');
 });
 
+test('the correspondence register and both composers pass the axe scan', async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+  await page.goto('/#/correspondence');
+
+  /* The correspondence register (0086). Scanned with all four letter
+     statuses on screen at once — sent, received, replied, cancelled —
+     plus the amber extension banner above them, because those chips and
+     that banner are the only colour this screen puts on a word. */
+  await expect(page.getByRole('heading', { name: 'Correspondence' })).toBeVisible();
+  await expect(page.getByText('2 extension requests awaiting response')).toBeVisible();
+  for (const label of ['sent', 'received', 'replied', 'cancelled']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'correspondence register');
+
+  // The inward upload screen: a file input whose native control is
+  // visually hidden behind a dashed dropzone still has to be labelled and
+  // reachable, which is exactly the failure this scan is here for.
+  await page.getByRole('button', { name: 'Upload inward' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Upload inward letter' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'inward letter upload');
+
+  await page.getByRole('button', { name: 'Correspondence' }).first().click();
+  await page.getByRole('button', { name: 'New letter' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Write outward letter' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'outward letter composer');
+});
+
 test('LOA upload and review screens pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
 

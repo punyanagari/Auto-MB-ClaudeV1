@@ -267,6 +267,33 @@ All three are built from the mock's own components — its cards, its rows,
 its status badge, its readiness panel — so the grammar is unchanged even
 where the behaviour is.
 
+### 11. Correspondence screens — PROPOSED, owner ruling pending
+
+**Status: PROPOSED, not approved.** Same footing as § 9 and § 10, and the
+same convergence path: change the mock in v0 and each entry retires.
+
+The three screens are ported (`app/correspondence/page.tsx`,
+`app/correspondence/new`, `app/correspondence/new/inward` at `fdfe5ef`).
+What is listed here is behaviour inside them that the mock implements as
+module-scope seed data or `useState`, plus the two places the real product
+has modules the mock's single `correspondence` array does not.
+
+| #   | The mock draws                                                                | The application ships                                                                          | Why                                                                                                                                                                                                                                                                                    |
+| --- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11a | Extension requests and inspection letters as rows of the correspondence array | Two tabs that READ `extension_requests` (0011) and `inspection_calls` (0082) and write neither | Both letters already have registers that number them, render them and hold the replies. A second home for one letter is two records that can disagree about its number, its date and its state. The tabs link back to the module that owns each.                                       |
+| 11b | A read-only "Letter number" field showing the next number before it is filed  | The same field, stating the series (`OUT / financial year / serial`)                           | The number is allocated inside the writing transaction and a letter filed a second later takes a different one. A number shown before the counter has handed it out is a promise nothing made — and on a legal identifier that is the worst kind of placeholder.                       |
+| 11c | A "Letter type" toggle: Outward / Inward / Extension request                  | No toggle; the composer writes outward letters only                                            | An inward letter is registered on the upload screen beside this one, because the register refuses an inward row with no scan. An extension request is raised on the Work, which is where its completion dates and its own series live. A toggle leading elsewhere lies.                |
+| 11d | "Save draft" on the inward screen, and a `draft` status in the register       | No draft state at all                                                                          | The contract draws no correspondence detail screen, so a saved draft has nowhere to be reopened. A row nobody can finish is worse than a form somebody has to complete. (`draft` survives in the vocabulary: an unfinalised extension request still renders it.)                       |
+| 11e | An inert mono letter number in the register's first column                    | The number is a control that opens the letter                                                  | The mock's rows have no files behind them. Here an outward letter renders on demand and an inward one is the stored scan, and a register with no way to reach either is a register nobody can work from. Rows the register only projects stay inert, for the same reason.              |
+| 11f | A dropzone accepting PDF, JPG or PNG up to 20 MB                              | PDF, up to 25 MB                                                                               | Every stored document in this product is a PDF through one hardened path — magic bytes, malware scan, tenant-prefixed key. A second media model for one screen buys nothing an operator's scanner cannot already produce.                                                              |
+| 11g | Two hard-coded rows on the Inspection letters tab                             | The mock's own two-row card markup, mapped over every call the member may see                  | The mock's pair is seed data. The anatomy is unchanged — the primary clipboard icon for our request, the muted upload icon for the agency's letter, the same detail line — it simply repeats per call.                                                                                 |
+| 11h | A `correspondence` scope in Global search                                     | Still omitted                                                                                  | Every search scope answers with a row that OPENS something, and a letter has no record page to open. A correspondence hit could only land on the unfiltered register, which the rail already does in one click. When the mock grows a letter detail screen, the scope earns its place. |
+
+One addition belongs to the same ruling: an **inward letter's reply-due
+date** is captured by the mock's own field and rendered nowhere in it. It
+is stored, and it is the fact the Inward tab needs to answer "what do we
+still owe a reply to".
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

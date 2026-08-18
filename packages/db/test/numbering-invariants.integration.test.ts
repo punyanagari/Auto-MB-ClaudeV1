@@ -120,6 +120,15 @@ const COUNTER_TABLES = [
     scope: 'financial-year',
     refusal: 'tax_invoice_counters',
   },
+  {
+    // The letter series (0086), one per direction per financial year and
+    // organisation-wide within that. Monotonic for the same reason as the
+    // rest: a cancelled letter keeps its number forever, so winding the
+    // counter back would hand the same number out twice.
+    table: 'correspondence_letter_counters',
+    scope: 'direction-financial-year',
+    refusal: 'correspondence_letter_counters',
+  },
 ] as const;
 
 /** The four that migration 0064 added the trigger to. Named here so the
@@ -152,7 +161,8 @@ let admin: Sql;
  * predicate that identifies it. */
 interface CounterShape {
   readonly table: string;
-  readonly scope: 'work' | 'financial-year' | 'organisation';
+  readonly scope:
+    'work' | 'financial-year' | 'direction-financial-year' | 'organisation';
 }
 
 async function seedCounter(
@@ -175,6 +185,13 @@ async function seedCounter(
         [tenant.organisationId, FY],
       );
       return `organisation_id = '${tenant.organisationId}' and fy_label = '${FY}'`;
+    case 'direction-financial-year':
+      await pool.unsafe(
+        `insert into ${table.table} (organisation_id, direction, fy_label, next_value)
+         values ($1, 'outward', $2, 5)`,
+        [tenant.organisationId, FY],
+      );
+      return `organisation_id = '${tenant.organisationId}' and direction = 'outward' and fy_label = '${FY}'`;
     case 'organisation':
       await pool.unsafe(
         `insert into ${table.table} (organisation_id, next_value)

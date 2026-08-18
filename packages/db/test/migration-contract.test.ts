@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 190;
+const TRIGGER_CENSUS = 194;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -999,6 +999,121 @@ describe('tenant migration contract', () => {
       'app_private.guard_tender_checklist_item_update()',
     ]) {
       const body = sql.slice(sql.indexOf(`CREATE FUNCTION ${guard}`));
+      expect(body.slice(0, body.indexOf('$$;')), guard).not.toContain(
+        'SECURITY DEFINER',
+      );
+    }
+  });
+
+  it('binds the correspondence register in 0086', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0086_correspondence_register.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // Direction is a CHECK on text, deliberately, for the reason 0079
+    // gives about its categories.
+    expect(sql).toMatch(
+      /direction text NOT NULL CHECK \(direction IN \('outward', 'inward'\)\)/,
+    );
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // The number is unique, and so is the SEQUENCE it was rendered from:
+    // gap-freeness is only provable if two rows cannot share serial 7.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX correspondence_letters_number_unique\s+ON correspondence_letters \(organisation_id, letter_number\);/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX correspondence_letters_sequence_unique\s+ON correspondence_letters \(organisation_id, direction, financial_year, sequence_number\);/,
+    );
+
+    // Legal dates are date-only (engineering rule 6). No letter date on
+    // this table is a timestamptz.
+    for (const column of [
+      'letter_date date',
+      'sender_letter_date date',
+      'response_due_on date',
+    ]) {
+      expect(sql).toContain(column);
+    }
+    expect(sql).not.toContain('letter_date timestamptz');
+
+    // Both composite foreign keys, including the self-reference that
+    // makes a thread. A bare REFERENCES on the parent letter would point
+    // across the tenant boundary without RLS ever seeing it.
+    for (const composite of [
+      'FOREIGN KEY (organisation_id, work_id) REFERENCES works(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, reply_to_letter_id)\n    REFERENCES correspondence_letters(organisation_id, id)',
+    ]) {
+      expect(sql).toContain(composite);
+    }
+
+    // The scan's object key carries the tenant prefix here as well as in
+    // packages/documents/src/storage.ts.
+    expect(sql).toContain('correspondence_letters_scan_key_tenant_prefix_check');
+    expect(sql).toMatch(
+      /CHECK \(scan_object_key IS NULL OR scan_object_key LIKE organisation_id::text \|\| '\/%'\)/,
+    );
+
+    // An inward letter without its scan is the laptop folder this module
+    // replaces; an outward letter with one is a letter we did not write.
+    expect(sql).toContain('correspondence_letters_inward_shape_check');
+    expect(sql).toContain('correspondence_letters_outward_shape_check');
+
+    // Two tables, two policies, both in the ADR-0010 InitPlan shape.
+    const initPlan =
+      'USING (organisation_id = (SELECT app_private.current_organisation_id()))';
+    expect(sql).toContain(
+      `CREATE POLICY correspondence_letters_tenant_policy ON correspondence_letters
+  ${initPlan}`,
+    );
+    expect(sql).toContain(
+      `CREATE POLICY correspondence_letter_counters_tenant_policy
+  ON correspondence_letter_counters
+  ${initPlan}`,
+    );
+
+    // No DELETE anywhere: a letter cancels and keeps its number, and a
+    // counter reset would reissue a number a cancelled letter still holds.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON correspondence_letters TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON correspondence_letter_counters TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('DELETE ON correspondence_letters');
+    expect(sql).not.toContain('DELETE ON correspondence_letter_counters');
+
+    // Every named refusal is in this migration's own 23E block, so a
+    // route can map them without matching on message text.
+    const raises = sql.match(/USING ERRCODE = '(\w+)'/g) ?? [];
+    expect(raises.length).toBeGreaterThan(0);
+    for (const raise of raises) {
+      expect(raise).toMatch(/USING ERRCODE = '23E0\d'/);
+    }
+
+    // The register is immutable except for cancellation, and a thread is
+    // unwound from its newest end.
+    expect(sql).toContain(
+      'a registered letter is immutable; cancel it and file the correct one',
+    );
+    expect(sql).toContain('a cancelled letter cannot be reinstated');
+    expect(sql).toContain('has been answered and cannot be cancelled');
+
+    // Every guard function pins its search_path, as 0067, 0077, 0079 and
+    // 0083 do, and none runs with definer rights.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBe(2);
+    for (const guard of [
+      'app_private.guard_correspondence_letter_update()',
+      'app_private.guard_correspondence_letter_thread()',
+    ]) {
+      const body = sql.slice(sql.indexOf(`CREATE FUNCTION ${guard}`));
+      expect(body.slice(0, 200), guard).toContain(
+        'SET search_path = pg_catalog, public',
+      );
       expect(body.slice(0, body.indexOf('$$;')), guard).not.toContain(
         'SECURITY DEFINER',
       );

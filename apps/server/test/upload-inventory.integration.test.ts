@@ -136,6 +136,18 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
+    // The inward letter's scan (0086). The whole querystring is the
+    // letter's metadata, so the gate has to hold before any of it is
+    // trusted and before the bytes reach the scanner.
+    key: 'POST /api/correspondence/inward',
+    sourceFile: 'routes/correspondence.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query:
+      '?filename=inward.pdf&receivedOn=2026-06-12&subject=Inventory' +
+      '&contactId=00000000-0000-4000-8000-000000000001',
+  },
+  {
     key: 'POST /api/challans/:id/signed-copy',
     sourceFile: 'routes/challans.ts',
     format: 'pdf',

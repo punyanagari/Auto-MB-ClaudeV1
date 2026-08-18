@@ -204,8 +204,10 @@ describe('the schema at head names all three shapes', () => {
     // company_document_versions.sha256 is the digest of a stored
     // credential PDF and adopts the domain from the start; 27 after 0082,
     // which adds the inspection document's; 28 after 0083 adds
-    // tender_notices.sha256, the digest of a stored NIT.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(28);
+    // tender_notices.sha256, the digest of a stored NIT; 29 after 0086
+    // adds correspondence_letters.scan_sha256, the digest of a received
+    // letter's scan.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(29);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

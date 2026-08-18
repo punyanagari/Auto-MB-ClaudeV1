@@ -266,6 +266,7 @@ describe('OperationsWorkspace mobile shell', () => {
       'Challans',
       'Invoices',
       'Quotations',
+      'Correspondence',
       // The mock HAS this screen (`app/tenders/company-documents`) but
       // reaches it only from a toolbar button on its Tenders dashboard;
       // it carries a rail entry of its own here, under Documents where
@@ -311,6 +312,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Challans', '#/challans'],
       ['Invoices', '#/invoices'],
       ['Quotations', '#/quotations'],
+      ['Correspondence', '#/correspondence'],
       ['Company documents', '#/company-documents'],
       ['Installations', '#/installations'],
       ['Inspection', '#/inspection'],

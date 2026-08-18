@@ -80,8 +80,15 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reopen nothing — a submitted bid keeps the checklist that went out; record what changed as a step on the tender instead.',
   TENDER_NOTICE_NOT_FOUND:
     'Upload the notice again from Tenders, Upload NIT; a notice already confirmed is reached through the tender it became.',
+  CORRESPONDENCE_LETTER_NOT_FOUND:
+    'Pick the letter again from the Correspondence register; a letter filed against a Work you are not assigned to is not listed there.',
   FIELD_TOO_SHORT:
     'Fill the named field in and submit again; a value of nothing but spaces is not a value.',
+  // Crossed the coverage bar when the correspondence register added a
+  // third paging cursor. An operator meets it by following a stale link,
+  // and the register they came from is the way back.
+  CURSOR_INVALID:
+    'Reload the register and page through it again; a cursor from an older list, or one naming a record outside your Works, no longer places a page.',
   // Crossed the coverage bar when P12 collapsed three spellings of "that
   // letter was discarded" into one code — which is the dedupe paying for
   // itself: one refusal now earns one reviewed sentence.
@@ -115,6 +122,16 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the correction notice and act on it in its current state.',
   EXTENSION_STATUS_CONFLICT:
     'Reload the extension; once a response is recorded the extension is a record of what the railway granted, not a draft.',
+  CORRESPONDENCE_LETTER_CANCELLED:
+    'File the correct letter as a new one; a cancelled letter keeps its number forever and is never reinstated.',
+  CORRESPONDENCE_LETTER_ANSWERED:
+    'Cancel the reply first, then this letter; a thread is unwound from its newest end.',
+  CORRESPONDENCE_LETTER_IMMUTABLE:
+    'Cancel the letter with a reason and file the corrected one; a letter that has been sent or received is a record of what was actually on the paper.',
+  CORRESPONDENCE_NUMBER_CONFLICT:
+    'File the letter again; it takes the next number in the series.',
+  CORRESPONDENCE_DATE_IN_FUTURE:
+    'Date the letter on or before today; the register keeps the day it was actually dispatched or received.',
   EWAY_BILL_STATUS_CONFLICT:
     'Reload the e-way bill and read its state before acting on it again; the portal moves it independently of this screen.',
   APPROVAL_NOT_PENDING:

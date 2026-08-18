@@ -127,6 +127,21 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // nothing but the maintained timestamp is outside the freeze.
   budgetary_quotations: ['updated_at'],
 
+  // A registered letter (0086). Everything on the paper is frozen the
+  // moment the row exists — there is no draft state and no edit path at
+  // all — so what remains mutable is the cancellation triple and the
+  // maintained timestamp. The number is NOT here: a cancelled letter
+  // keeps it forever, which is what makes the series provably gap-free.
+  correspondence_letters: [
+    // `id` is the primary key of the row the guard was handed; there is
+    // nothing for the ROW comparison to freeze it against.
+    'id',
+    'updated_at',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancellation_reason',
+  ],
+
   // A reusable company credential (0079). Its provenance is frozen; the
   // name and category stay editable so a mis-typed credential can be
   // corrected without discarding its version history, and archiving is

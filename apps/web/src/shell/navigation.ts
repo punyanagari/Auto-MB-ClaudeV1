@@ -9,6 +9,7 @@ import {
   HandCoins,
   Landmark,
   LayoutDashboard,
+  Mails,
   Receipt,
   ScanSearch,
   Settings as SettingsIcon,
@@ -27,6 +28,7 @@ export type ModuleKey =
   | 'challans'
   | 'invoices'
   | 'quotations'
+  | 'correspondence'
   | 'company-documents'
   | 'inspection'
   | 'payments'
@@ -58,8 +60,10 @@ export interface NavGroup {
  * then Documents, Operations and Administration.
  *
  * The mock draws modules this build has no route for — E-Way Bills,
- * Correspondence, Production, Inventory, Purchase orders, Maintenance,
- * Employees — and those are omitted rather than rendered as dead entries.
+ * Production, Inventory, Purchase orders, Maintenance, Employees — and
+ * those are omitted rather than rendered as dead entries. Correspondence
+ * was on that list until migration 0086; it now takes the place the mock
+ * gives it, last under Documents.
  * Quotations runs the other way: the mock draws it under Documents in its
  * own list, so it keeps its place here.
  *
@@ -105,6 +109,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'challans', label: 'Challans', icon: Truck },
       { key: 'invoices', label: 'Invoices', icon: Receipt },
       { key: 'quotations', label: 'Quotations', icon: FileText },
+      { key: 'correspondence', label: 'Correspondence', icon: Mails },
       { key: 'company-documents', label: 'Company documents', icon: FileBadge },
     ],
   },
@@ -147,6 +152,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'invoices' };
     case 'quotations':
       return { name: 'quotations' };
+    case 'correspondence':
+      return { name: 'correspondence' };
     case 'company-documents':
       return { name: 'company-documents' };
     case 'inspection':
@@ -193,10 +200,16 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'tender':
     case 'tender-new':
       return 'tenders';
+    // Writing a letter and registering one both light the register's lamp:
+    // the module is one place.
+    case 'correspondence-new':
+    case 'correspondence-inward':
+      return 'correspondence';
     case 'dashboard':
     case 'challans':
     case 'invoices':
     case 'quotations':
+    case 'correspondence':
     case 'company-documents':
     case 'inspection':
     case 'payments':
@@ -248,6 +261,12 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Tax invoice';
     case 'quotations':
       return 'Quotations';
+    case 'correspondence':
+      return 'Correspondence';
+    case 'correspondence-new':
+      return 'Write outward letter';
+    case 'correspondence-inward':
+      return 'Upload inward letter';
     case 'company-documents':
       return 'Company documents';
     case 'inspection':

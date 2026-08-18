@@ -487,6 +487,62 @@ const RECEIVABLES_REGISTER = {
 /** One tender in each of the three states the register tints, so a scan
  * sees the whole status vocabulary at once: an open bid with blocking
  * lines, one already submitted, and one that was won. */
+/* The correspondence register (migration 0086). One row in each of the
+   four statuses that carry a tint — sent, received, replied and cancelled
+   — because those chips are the only place this screen puts colour on a
+   word, and the dot beside the label is what keeps them off the
+   colour-only path in both themes. */
+function letter(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: '11111111-1111-4111-8111-111111111101',
+    source: 'letter',
+    direction: 'outward',
+    number: 'OUT/26-27/047',
+    date: '2026-07-22',
+    counterparty: 'Sr. DSTE/MMCT',
+    subject: 'Submission of approved makes and technical datasheets',
+    workId: null,
+    workCode: 'PL-281',
+    reference: null,
+    status: 'sent',
+    extensionUntil: null,
+    replyDueOn: null,
+    documentAvailable: true,
+    ...overrides,
+  };
+}
+
+const CORRESPONDENCE_REGISTER = {
+  entries: [
+    letter({}),
+    letter({
+      id: '11111111-1111-4111-8111-111111111102',
+      number: 'OUT/26-27/046',
+      status: 'replied',
+      reference: 'IN/26-27/018',
+      subject: 'Reply to clarification on UPS battery autonomy',
+    }),
+    letter({
+      id: '11111111-1111-4111-8111-111111111103',
+      number: 'IN/26-27/018',
+      direction: 'inward',
+      status: 'received',
+      workCode: null,
+      reference: 'S&T/PA/Approval/118 · 2026-07-18',
+      subject: 'Approval of IP speaker make and model',
+    }),
+    letter({
+      id: '11111111-1111-4111-8111-111111111104',
+      number: 'OUT/26-27/045',
+      status: 'cancelled',
+      subject: 'Letter filed against the wrong Work',
+    }),
+  ],
+  nextCursor: null,
+  counts: { outward: 3, inward: 1, extensions: 2, inspection: 2 },
+  awaitingExtensionResponses: 2,
+};
+
 const TENDER_LIST = {
   tenders: [
     {
@@ -642,6 +698,19 @@ export async function mockWorkspace(
      which a Work-scoped URL does not. */
   await page.route('**/api/bill-settlement', (route) =>
     route.fulfill(json(RECEIVABLES_REGISTER)),
+  );
+  // The correspondence register (migration 0086). The thread-options
+  // route is registered first for the reason the tender pair below
+  // states: Playwright matches the LAST registered handler, so the
+  // register's own pattern would otherwise swallow it.
+  await page.route('**/api/correspondence/thread-options', (route) =>
+    route.fulfill(json({ letters: [] })),
+  );
+  await page.route('**/api/correspondence?*', (route) =>
+    route.fulfill(json(CORRESPONDENCE_REGISTER)),
+  );
+  await page.route('**/api/correspondence', (route) =>
+    route.fulfill(json(CORRESPONDENCE_REGISTER)),
   );
   // The tender pipeline (migration 0083). The detail route is registered
   // first because Playwright matches the LAST registered handler, so the

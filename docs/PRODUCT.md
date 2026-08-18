@@ -1675,6 +1675,79 @@ through that letter once it is confirmed the way every other Work is. One
 letter awards one tender. There is no second path to a Work and no Work id
 stored on the tender that could disagree with the letter's.
 
+### The correspondence register
+
+A works contract is executed on paper as much as on site. Approval of the
+makes offered, a datasheet the railway asked for, the clarification it
+sent back, the reply to it, an invitation to re-quote: each is a numbered
+letter that went out or came in, and the trade keeps an inward/outward
+register because a letter nobody can produce is a letter that was never
+sent. Until migration 0086 this product modelled the Work, the goods, the
+money and the certificates, and none of the letters.
+
+**Two series, organisation-wide, restarting each financial year.**
+Outward letters take `OUT/26-27/047` and inward letters `IN/26-27/022`,
+each from its own counter. The series are organisation-scoped rather than
+per Work because the register is read across Works and a letter need not
+belong to one at all — an invitation to quote arrives before there is a
+Work to file it under. Numbers are gap-free under concurrent filing, and
+a cancelled letter keeps its number forever; nothing deletes.
+
+The inward number is OURS even though the letter is theirs. What the
+sender printed on their own paper is kept verbatim as the sender's
+reference, together with the date they put on it; the inward number is the
+register's own handle, the way an inward register in a railway office
+stamps a serial on arrival.
+
+**An outward letter is written and dispatched in one act.** There is no
+draft: everything on the paper is frozen the moment the row exists, which
+is what lets the dispatched PDF be rendered on demand from the letter's
+own columns instead of stored. An inward letter is registered with its
+scan, and the scan is required — a received-letter register whose rows may
+lack the paper is the laptop folder the register replaces.
+
+**A misrecorded letter is cancelled with a reason.** It keeps its number,
+so the series stays provably gap-free, and a reprint carries a CANCELLED
+watermark. A letter that a later letter answers cannot be cancelled until
+that reply is: a thread unwinds from its newest end.
+
+**Status is derived, never stored.** An outward letter reads `sent` and an
+inward one `received`; either reads `replied` once a later letter cites
+it, and `cancelled` overrides both. Nothing is written to a letter when it
+is answered — the answer is a fact about the register, and a stored one
+would be wrong the moment a reply arrived.
+
+**The register does not duplicate the two letter kinds that already have
+homes.** This is the whole integration decision of the module:
+
+- **Extension-of-time letters** stay in the completion-extensions module
+  (§8, migration 0011). It already numbers the letter
+  (`PL-281-Extension-01`), holds its grounds and addressee, renders its
+  PDF, stores the railway's reply and moves the Work's completion date
+  when the reply lands. The correspondence screen's Extension requests tab
+  READS that register and links back to the Work; nothing is copied. The
+  banner above the tabs counts extension requests that have been sent and
+  not yet answered, which is the one place the two modules meet on screen.
+- **Inspection call letters** stay in the inspection module (§5.10,
+  migration 0082). One call is two letters — our outward request,
+  `INS/PL-281/1`, and the agency's inward call letter under their own
+  number — and the Inspection letters tab reads both from the call.
+
+Two registers for one letter is how the two come to disagree about its
+number, its date or its state, so the correspondence register writes
+neither.
+
+**Work-scope applies.** A letter filed against a Work is visible only to
+members who reach that Work; a letter filed as general correspondence
+belongs to no Work and is visible to every member. The tab counts obey the
+same rule, because a count is otherwise a statement about the size of a
+register the reader cannot open.
+
+**Letters filed against a Work join its timeline.** The approval that
+unblocked an item and the clarification that changed a make are part of
+that Work's paper trail, and a trail that omitted the letters would leave
+those decisions unexplained.
+
 ### Standing choices on a new Issue Challan
 
 Material leaves to the same storekeeper, at the same location, movement after

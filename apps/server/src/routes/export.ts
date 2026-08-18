@@ -17,6 +17,17 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v20: the correspondence register (0086) joins the package — the
+ * inward and outward letters with their numbering counters, and the
+ * inward scans in the manifest. Outward letters carry no stored object
+ * because their PDF is rendered on demand from the frozen columns that
+ * travel here, so a restored export can reprint every letter it holds.
+ *
+ * v19 belongs to the production pack landing beside this one. The two
+ * were coded against the same base and the coordinator sequences the
+ * merges; a shared version string is the failure the v13 note below
+ * describes, and a gap is not.
+ *
  * export-v18: the tender pipeline (0083) joins the package — the tenders
  * themselves, the notices they were read from with their stored PDFs, the
  * bid checklists and the status trails. A pre-award record is the only
@@ -78,7 +89,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v18';
+const EXPORT_FORMAT_VERSION = 'export-v20';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -106,6 +117,7 @@ type ManifestBucket =
   | 'company-document'
   | 'inspection'
   | 'tender-notice'
+  | 'correspondence-scan'
   | 'issue-challan'
   | 'extension'
   | 'measurement-book'
@@ -123,6 +135,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'company-document',
   'inspection',
   'tender-notice',
+  'correspondence-scan',
   'issue-challan',
   'extension',
   'measurement-book',
@@ -602,6 +615,28 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'tenderStatusEvents',
     sql: `select * from tender_status_events order by tender_id, occurred_at, id`,
+  },
+  {
+    key: 'correspondenceLetters',
+    sql: `select * from correspondence_letters order by letter_date, id`,
+    manifest: {
+      bucket: 'correspondence-scan',
+      entries: (row) =>
+        row.scan_object_key === null
+          ? []
+          : [
+              {
+                kind: 'correspondence-scan',
+                objectKey: row.scan_object_key,
+                sha256: row.scan_sha256,
+              },
+            ],
+    },
+  },
+  {
+    key: 'correspondenceLetterCounters',
+    sql: `select * from correspondence_letter_counters
+          order by direction, fy_label`,
   },
   {
     key: 'purchaseOrders',

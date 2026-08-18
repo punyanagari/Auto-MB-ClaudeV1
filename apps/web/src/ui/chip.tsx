@@ -13,6 +13,12 @@ const CHIP_TONES = {
   issued: 'info',
   submitted: 'info',
   pending: 'info',
+  // A letter this organisation dispatched, and one that a later letter
+  // answers (0086). `docs/DESIGN.md` § Status badge semantics puts both
+  // in the primary family: an outward legal act, and a thread that has
+  // been closed by one.
+  sent: 'info',
+  replied: 'info',
 
   // A tender that was won (0083). The LOA follows, and the Work follows
   // that.
@@ -30,6 +36,9 @@ const CHIP_TONES = {
   // A company document whose newest version is inside its validity
   // window with room to spare (migration 0079).
   valid: 'success',
+  // An inward letter on file (0086). Receiving the paper is what closes
+  // the step; whether it has been answered is `replied`.
+  received: 'success',
 
   // A tender whose technical bid has been opened: the result is with
   // the railway and nobody here can do anything about it (0083).

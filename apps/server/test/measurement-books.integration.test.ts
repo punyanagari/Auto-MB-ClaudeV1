@@ -1425,7 +1425,7 @@ describe('export and timeline', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe('export-v18');
+    expect(exported.formatVersion).toBe('export-v20');
     expect(exported.measurementBooks?.length).toBeGreaterThanOrEqual(6);
     expect(exported.measurementBookLines?.length).toBeGreaterThanOrEqual(5);
     expect(exported.mbSources?.length).toBeGreaterThanOrEqual(5);

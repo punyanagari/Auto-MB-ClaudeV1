@@ -35,3 +35,4 @@ export * from './inspections.js';
 export * from './statutory.js';
 export * from './payments.js';
 export * from './tenders.js';
+export * from './correspondence.js';

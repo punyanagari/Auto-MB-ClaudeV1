@@ -196,6 +196,22 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   inspection_call_items: 'the items an inspection call covers',
   inspection_call_counters: 'numbering state, not a document',
   inspection_call_documents: 'the evidence filed against an inspection call',
+  // The correspondence register (0086). A letter is a record of what was
+  // actually sent or received about the old Work, and superseding does
+  // not un-send it: the row stays, keeps its number and keeps naming the
+  // withdrawn Work, which is what makes the trail explicable afterwards.
+  //
+  // It does not block, for the same reason the tender rows above do not.
+  // Superseding is how a Work read wrongly from its letter gets re-read,
+  // and correspondence accumulates from the day the Work is confirmed —
+  // blocking on it would mean the first letter filed against a Work
+  // closed the door on ever correcting how that Work was read. The
+  // register itself joins `works` on `deleted_at is null`, so a
+  // superseded Work's letters show as general correspondence rather than
+  // pointing at a Work nobody can open.
+  correspondence_letters:
+    'a letter sent or received about the Work; it is a record of an act, and superseding does not un-send it',
+  correspondence_letter_counters: 'numbering state, not a document',
 };
 
 /** `approval_requests` blocks only while a request is live: a pending one

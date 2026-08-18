@@ -110,6 +110,7 @@ const ENTITY_FILTERS = [
   { value: 'measurement_books', label: 'Measurement books' },
   { value: 'received_railway_bills', label: 'Railway bills' },
   { value: 'inspection_calls', label: 'Inspection calls' },
+  { value: 'correspondence_letters', label: 'Correspondence' },
   { value: 'work_items', label: 'Items' },
   { value: 'payment_matrices', label: 'Payment matrix' },
   { value: 'pac_certificates', label: 'PAC certificates' },
