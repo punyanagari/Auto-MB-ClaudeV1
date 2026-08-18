@@ -560,6 +560,63 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // of which changes what the credential IS, which is the property every
   // signature already made depends on.
   signing_agents: ['last_seen_at', 'revoked_at', 'revoked_by_user_id'],
+
+  // Notifications (0092). A channel's identity is which organisation and
+  // which channel; everything else about it is configuration an operator
+  // revises as Meta onboarding progresses, which is the whole reason the
+  // row exists before it is complete.
+  notification_channels: [
+    'enabled',
+    'waba_phone_number_id',
+    'waba_business_account_id',
+    'display_phone_number',
+    'api_base_url',
+    'from_address',
+    'reply_to_address',
+    'configured_by_user_id',
+    'updated_at',
+  ],
+  // A template's identity is the name and language Meta knows it by, and
+  // its body freezes at submission because the WABA then holds the
+  // reviewed text and it is that text which is sent. What moves is where
+  // Meta's review has got to. `body_text`, `parameter_count` and
+  // `category` are outside the ROW freeze because a DRAFT is still being
+  // written; the guard's second arm refuses them once the status leaves
+  // draft, which the freeze-column reader cannot see.
+  notification_templates: [
+    'category',
+    'status',
+    'status_reason',
+    'body_text',
+    'parameter_count',
+    'email_subject',
+    'updated_at',
+  ],
+  // Which contact and which channel a consent is about are written once.
+  // The address, the state and the evidence are revised: an agreement
+  // given for a new number is a new agreement on the same row, with its
+  // own evidence sentence.
+  notification_consents: [
+    'address',
+    'state',
+    'evidence',
+    'recorded_by_user_id',
+    'updated_at',
+  ],
+  // What was sent, to whom, through what, is frozen. What moves is the
+  // delivery ledger — forwards only, and its own guard arm proves that
+  // separately.
+  notification_messages: [
+    'status',
+    'provider_message_id',
+    'failure_code',
+    'failure_detail',
+    'sent_at',
+    'delivered_at',
+    'read_at',
+    'failed_at',
+    'updated_at',
+  ],
 };
 
 /**

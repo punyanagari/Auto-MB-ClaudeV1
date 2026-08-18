@@ -194,6 +194,13 @@ const TENANT_TABLES = [
   // request is authorised against one.
   'signing_agents',
   'signing_requests',
+  // Notifications (0092): the channel and the template before the
+  // messages that name them, and the consent before it too — a message
+  // cannot be inserted without an opted-in consent for its address.
+  'notification_channels',
+  'notification_templates',
+  'notification_consents',
+  'notification_messages',
   // Payroll (0089, 0090). The schedules first because the runs read
   // them, the employee before the lines that snapshot them, and the
   // counter before the runs it numbers.
@@ -409,6 +416,15 @@ const DELETE_REVOKED_TABLES = [
   // raised in error cancels with a reason, and an agent revokes (0091).
   'signing_requests',
   'signing_agents',
+  // Notifications (0092). "We never had their consent" and "we had it
+  // and deleted the record" are the same row absent, and only one of
+  // them is a defence; the delivery log is the answer to "did you tell
+  // us"; and both the channel and the template are what a logged message
+  // was actually sent through and rendered from. Nothing here deletes.
+  'notification_channels',
+  'notification_templates',
+  'notification_consents',
+  'notification_messages',
   // A maintenance request carries a number from the moment it is raised
   // and closes rather than disappearing; its lines are cancelled with a
   // reason rather than removed; the challan, its lines and the defective
@@ -1737,6 +1753,76 @@ async function seedTenantGraph(
         ${'d'.repeat(64)}, now(), 'INTEGRATION SIGNER',
         'Issued by the contractor', 'Nagpur', now() + interval '7 days',
         ${agent.id}, ${'A'.repeat(40)}, ${userId}
+      )
+    `;
+
+    // Notifications (0092). Both channels, because the tenancy sweep
+    // needs a row per table and the message guard needs an ENABLED
+    // channel, an approved template and an opted-in consent before it
+    // will admit anything into the log.
+    //
+    // The phone number id is GLOBALLY unique, because Meta's webhook
+    // resolves a tenant by it before any tenant is bound — so the two
+    // organisations this sweep creates must not share one.
+    const notificationPhoneNumberId =
+      `1${String(randomBytes(6).readUIntBE(0, 6)).padStart(14, '0')}`.slice(0, 15);
+    await tx`
+      insert into notification_channels (
+        organisation_id, channel, enabled, waba_phone_number_id,
+        waba_business_account_id, display_phone_number, configured_by_user_id
+      )
+      values (
+        ${organisationId}, 'whatsapp', true, ${notificationPhoneNumberId},
+        '109876543210987', '+919876543210', ${userId}
+      )
+    `;
+    const [notificationTemplate] = await tx<{ id: string }[]>`
+      insert into notification_templates (
+        organisation_id, name, language, category, body_text, parameter_count,
+        email_subject, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'tenancy_fixture', 'en', 'utility',
+        'Challan {{1}} has been issued.', 1, 'Challan issued', ${userId}
+      )
+      returning id
+    `;
+    if (!notificationTemplate) throw new Error('seed template insert returned no row');
+    // Straight to approved through the lifecycle the guard admits: a
+    // draft template cannot carry a WhatsApp message.
+    await tx`
+      update notification_templates set status = 'pending'
+      where id = ${notificationTemplate.id}
+    `;
+    await tx`
+      update notification_templates set status = 'approved'
+      where id = ${notificationTemplate.id}
+    `;
+    const [notificationContact] = await tx<{ id: string }[]>`
+      insert into contacts (organisation_id, designation, created_by_user_id)
+      values (${organisationId}, 'Notification fixture office', ${userId})
+      returning id
+    `;
+    if (!notificationContact) throw new Error('seed contact insert returned no row');
+    await tx`
+      insert into notification_consents (
+        organisation_id, contact_id, channel, address, state, evidence,
+        recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${notificationContact.id}, 'whatsapp', '+919812345678',
+        'opted_in', 'tenancy fixture', ${userId}
+      )
+    `;
+    await tx`
+      insert into notification_messages (
+        organisation_id, channel, template_id, contact_id, to_address,
+        parameters, provider, requested_by_user_id
+      )
+      values (
+        ${organisationId}, 'whatsapp', ${notificationTemplate.id},
+        ${notificationContact.id}, '+919812345678',
+        ${tx.json(['DC/2026/0001'] as never)}, 'meta_cloud', ${userId}
       )
     `;
 

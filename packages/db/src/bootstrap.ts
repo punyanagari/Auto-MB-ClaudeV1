@@ -243,6 +243,16 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // updates.
   signing_requests: 'SELECT, INSERT, UPDATE',
   signing_agents: 'SELECT, INSERT, UPDATE',
+  // Notifications (0092). None of the four deletes. A channel is what
+  // every historical message went out through, a template is what every
+  // logged message was rendered from, a consent record absent is
+  // indistinguishable from consent never given, and the delivery log is
+  // the answer to "did you tell us". Disabling, withdrawing and opting
+  // out are the operations.
+  notification_channels: 'SELECT, INSERT, UPDATE',
+  notification_templates: 'SELECT, INSERT, UPDATE',
+  notification_consents: 'SELECT, INSERT, UPDATE',
+  notification_messages: 'SELECT, INSERT, UPDATE',
   // Payroll (0089, 0090). The three schedules and the employee master
   // retire by end-dating, exactly as gst_rates does, so none of them
   // holds DELETE. Nor does a payroll run at any status: it has claimed a

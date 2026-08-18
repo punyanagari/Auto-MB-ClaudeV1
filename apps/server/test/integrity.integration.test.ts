@@ -508,6 +508,12 @@ describe('export completeness', () => {
       // export-v24: the signing trail (0091).
       'signingAgents',
       'signingRequests',
+      // export-v25: notifications (0092). The consent register is the one
+      // an organisation cannot reconstruct from anywhere else.
+      'notificationChannels',
+      'notificationTemplates',
+      'notificationConsents',
+      'notificationMessages',
     ]) {
       expect(Array.isArray(exported[section])).toBe(true);
     }

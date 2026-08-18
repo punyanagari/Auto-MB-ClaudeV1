@@ -695,6 +695,104 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
+### 17. Notifications — a screen the mock does not draw
+
+**Status: PROPOSED. Application-first, owner ruling not yet taken.**
+Numbered 17 by coordinator allocation; 14, 15 and 16 belong to the packs
+that landed ahead of it.
+
+**There is no mock citation for this screen, and this entry exists so
+that absence is a recorded decision rather than an omission a reviewer
+has to guess at.** `app/settings/page.tsx` at
+`punyanagari/Auto-MB-Vercel-du@fdfd610` has five tabs — Company,
+Documents, Digital signatures, Appearance, Account & organisations — and
+none of them is this. `components/app-topbar.tsx` draws a bell with a
+"2 notifications" tooltip, but that is an in-app alert badge and not the
+outbound messaging this pack is about; nothing in the mock models a
+channel, a template, a consent or a delivery.
+
+That puts the screen under § Design contract 4 — "behaviour the mock
+cannot express is built inside the mock's visual grammar using its
+existing components, without inventing new visual language" — and
+§ Approved divergences 4, "screens the mock does not cover", whose list
+this extends. Concretely, every element on it is one the mock already
+ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Section panels          | `Card` + `CardHeader`, one per section, as `app/settings/page.tsx` stacks its own   |
+| Templates, consent, log | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Collapsed forms         | `Disclosure`, the same anatomy the Settings number-series editor uses               |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+**Four chip words join the shared vocabulary** rather than being styled
+locally, because each means the same thing wherever it appears:
+`delivered` and `read` join the success family beside `paid` and
+`signed` — a message that reached the handset and one the recipient
+opened are both the proceed state of a delivery; `queued` joins the
+notice family beside `pending` and `sent`, because a message waiting on
+a provider is a queue and not a caution; and `paused` joins the warning
+family beside `in-production`, because a template Meta throttled for
+quality is work to do rather than something that failed. Unmapped, all
+four rendered neutral — identical to a draft, which is the one reading
+they must not have.
+
+**Three words are toned LOCALLY instead**, per `ui/chip.tsx`'s own rule
+that a word whose meaning is screen-specific must not enter the shared
+map: `enabled`/`disabled` for a channel, and `opted in`/`opted out` for a
+consent. "Enabled" is not a lifecycle stage anywhere else in the product,
+and an opted-out contact is a deliberate, correct state rather than a
+cancellation — so it is neutral, not destructive.
+
+**One thing on this screen has no precedent in the mock, and it is
+deliberate: a channel can show two lamps at once.** A channel that the
+organisation has switched on, on a deployment that has no access token or
+no mail relay, draws its green `enabled` chip AND an amber `no transport`
+chip beside it, with a sentence naming who to ask. The two facts belong
+to two different people — Meta's onboarding is the agency's, the server's
+environment is the administrator's — and they genuinely come true months
+apart. A single lamp would have to lie about one of them, and a green one
+over a server that cannot send is the worse lie.
+
+**What the screen deliberately does not do**, each because the
+alternative would be a second place to do something:
+
+- **Send a message from the register.** Sending belongs to whatever act
+  the message is about. This pack ships the send as an API surface
+  (`notify/send.ts`) for the document-delivery and MSME-alerting packs to
+  call; a compose box here would be a second way to choose a recipient,
+  and the consent rule already says the address is not the sender's to
+  choose.
+- **Record a consent from the contact master.** It sits here, beside the
+  channels it is about, because consent is per channel and per address —
+  a checkbox on a contact row could not express either.
+- **Poll Meta for template status.** The status is recorded by a member
+  reading the Meta console. There is no WABA to poll yet, and a screen
+  that pretended to poll one would be drawing a mechanism that does not
+  exist.
+
+**Where it sits.** Administration, between Members and Settings, with the
+`MessageSquare` lamp — the one icon on that rail not already spoken for.
+Administration rather than Documents because it configures how the
+organisation speaks, in the same family as who belongs to it and how it
+is set up. It is NOT a sixth tab inside Settings: the delivery log and
+the consent register are registers people go looking for, and a register
+behind a tab behind a settings page is a register nobody finds.
+
+**Gated at the screen, not at a control.** Every read this view makes
+needs the notifications authority — the consent register is a list of
+counterparties' personal telephone numbers and the delivery log says who
+was messaged — so a member without it gets a refusal panel rather than
+four failed loads. The rail door stays visible, unlike Employees': that
+door leaks that a salary register exists, and this one leaks nothing an
+ordinary member should not know the product has.
+
+**When the mock grows a notifications screen, the mock wins.** This entry
+retires the moment there is something to cite, on the § 4 iteration
+pipeline: change it in v0, merge it, diff, port the delta.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
