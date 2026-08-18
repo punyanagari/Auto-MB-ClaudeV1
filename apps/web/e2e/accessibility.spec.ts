@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   DASHBOARD,
+  MAINTENANCE_AWAITING_APPROVAL,
   ME,
   ORG,
   PICKER_ME,
@@ -166,66 +167,6 @@ test('organisation picker and members workspace pass the axe scan', async ({
     page.getByRole('button', { name: /Create draft supplier PO/ }),
   ).toBeDisabled();
   await expectNoAxeViolations(page, 'shortage procurement');
-
-  /* Maintenance (migration 0088). Scanned three times, because the three
-     screens put colour on a word in three different places.
-
-     The REGISTER carries every stage chip this module can render — the
-     two warning-tinted ones and the neutral closed — beside the
-     success-tinted `approved` the vocabulary already had, all four on
-     one screen at once. Locators are qualified by role where a bare
-     string would also match the stage strip above the table.
-
-     The JOB CARD carries three progress bars, a boxed tab rail of
-     `aria-pressed` toggles, and a numeric table whose Available column
-     is empty for the custom line — the `—` an axe scan should find
-     labelled rather than bare.
-
-     The REQUEST FORM is the only screen in the pack with a disabled
-     primary action beside the pickers that disable it. */
-  await page.getByRole('link', { name: 'Maintenance' }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Maintenance', exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Awaiting approval' })).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Dispatching' })).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Approved' })).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Closed' })).toBeVisible();
-  await expectNoAxeViolations(page, 'maintenance register');
-
-  await page.getByRole('link', { name: 'MR/26-27/00142' }).click();
-  await expect(
-    page.getByRole('heading', {
-      name: 'Replace failed platform display power supplies',
-    }),
-  ).toBeVisible();
-  await expect(page.getByText('Written off 2.000')).toBeVisible();
-  await expectNoAxeViolations(page, 'maintenance job card');
-
-  await page.getByRole('button', { name: 'Dispatch', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Record partial or full dispatch' }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: /Create dispatch & challan/ }),
-  ).toBeDisabled();
-  await expectNoAxeViolations(page, 'maintenance dispatch tab');
-
-  await page.getByRole('button', { name: 'Defective returns' }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Receive defective items' }),
-  ).toBeVisible();
-  await expectNoAxeViolations(page, 'maintenance defective returns tab');
-
-  await page.getByRole('button', { name: 'Maintenance', exact: true }).first().click();
-  await page.getByRole('button', { name: 'New material request' }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Site material request' }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: /Send for admin approval/ }),
-  ).toBeDisabled();
-  await expectNoAxeViolations(page, 'maintenance request form');
 
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
@@ -1326,6 +1267,109 @@ test.describe('mobile shell', () => {
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
     await expect(moreSheet).toBeHidden();
   });
+});
+
+/* Maintenance (migration 0088). Its own test rather than a leg of the
+   organisation-picker journey: that one is already over Playwright's 30s
+   default and carries `test.slow()` saying so, and five more scans is
+   ten more serial axe runs on it. The receivables register set the
+   precedent and the comment on that leg names it.
+
+   Six scans, because the module puts colour on a word in six places, and
+   two of them are surfaces the mock does not draw at all (`docs/UX.md`
+   § 14 rows 14o and 14d) and would otherwise be the only unscanned
+   markup in the pack. */
+test('maintenance register, job card and request form pass the axe scan', async ({
+  page,
+}) => {
+  test.slow();
+  await mockWorkspace(page);
+  await page.goto('/');
+
+  /* The REGISTER carries every stage chip this module can render — the
+     two warning-tinted ones and the neutral closed — beside the
+     success-tinted `approved` the vocabulary already had, all four on one
+     screen at once. Locators are qualified by role because a bare string
+     would also match the stage strip above the table. */
+  await page.getByRole('link', { name: 'Maintenance' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Maintenance', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Awaiting approval' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Dispatching' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Approved' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Closed' })).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance register');
+
+  /* The JOB CARD carries three progress bars, the boxed tab rail, and a
+     numeric table whose Available column is an em dash for the custom
+     line and a written-off line beneath it. */
+  await page.getByRole('link', { name: 'MR/26-27/00142' }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Replace failed platform display power supplies',
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('Written off 2.000')).toBeVisible();
+  // The operational-impact card, which the mock collects and never shows
+  // (§ 14 row 14p).
+  await expect(page.getByText('Two display boards unavailable')).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance job card');
+
+  /* THE WRITE-OFF PANEL — invented here, because the mock's own closure
+     gate reads a column nothing in the mock ever writes (§ 14 row 14d).
+     It is a labelled text field and two buttons that appear under the
+     table, and nothing else in the suite renders it. */
+  await page
+    .getByRole('row', { name: /24 V 10 A SMPS/ })
+    .getByRole('button', { name: 'Write off' })
+    .click();
+  await expect(page.getByLabel(/not being sent/)).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Write off the balance' }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance write-off panel');
+
+  await page.getByRole('button', { name: 'Dispatch', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Record partial or full dispatch' }),
+  ).toBeVisible();
+  // The delivery-instructions line, which the mock also collects and
+  // never shows (§ 14 row 14q), and the disabled primary action.
+  await expect(page.getByText('Hand over to site supervisor')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Create dispatch & challan/ }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance dispatch tab');
+
+  await page.getByRole('button', { name: 'Defective returns' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Receive defective items' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance defective returns tab');
+
+  /* THE APPROVAL CARD — the other invented surface (§ 14 row 14o). It
+     renders only for an owner on a request still awaiting approval, so it
+     needs its own fixture: the register's second row. */
+  await page.route('**/api/maintenance/*', (route) =>
+    route.fulfill(json(MAINTENANCE_AWAITING_APPROVAL)),
+  );
+  await page.getByRole('button', { name: 'Maintenance', exact: true }).first().click();
+  await page.getByRole('link', { name: 'MR/26-27/00141' }).click();
+  await expect(page.getByRole('heading', { name: 'Admin approval' })).toBeVisible();
+  await expect(page.getByLabel('Approval comment')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Approve request/ })).toBeEnabled();
+  await expectNoAxeViolations(page, 'maintenance approval card');
+
+  await page.getByRole('button', { name: 'Maintenance', exact: true }).first().click();
+  await page.getByRole('button', { name: 'New material request' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Site material request' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Send for admin approval/ }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance request form');
 });
 
 test('production register, job card and item master pass the axe scan', async ({

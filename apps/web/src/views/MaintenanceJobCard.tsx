@@ -18,9 +18,10 @@ import { cn } from '../lib/cn.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
-import { Actions, Field, FieldRow, FormError } from '../ui/form.js';
+import { Actions, Field, FieldRow, FormError, Hint } from '../ui/form.js';
 import { ProgressBar } from '../ui/progress.js';
 import { Stat } from '../ui/stat.js';
+import { TabRail } from '../ui/tab-rail.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { maintenanceChipKey } from './Maintenance.js';
@@ -30,10 +31,17 @@ import { maintenanceChipKey } from './Maintenance.js';
  *
  * Replicates `app/maintenance/[id]/page.tsx` and
  * `components/maintenance-job-card.tsx` of the frozen mock at `fdfd610`:
- * the back link over the request number, the approve action on the
- * right, three metric cards with progress bars, the Materials / Dispatch
- * / Defective returns / History tab rail, and the closure-gate card
- * under all of it.
+ * the request number over the fault summary, the priority and stage
+ * badges on the right, three metric cards with progress bars, the
+ * Materials / Dispatch / Defective returns / History tab rail, and the
+ * closure-gate card under all of it.
+ *
+ * The BACK BUTTON is this build's, not the mock's — the mock's job card
+ * has none, because the mock is a routed page with browser history behind it
+ * and this shell is one hash-routed workspace. Its sibling record
+ * screens (`views/ProductionJobCard.tsx`, `views/TenderWorkspace.tsx`)
+ * all carry the same control in the same place, so it is the house
+ * pattern rather than an invention here (`docs/UX.md` § 14).
  *
  * What the mock cannot express, each recorded in `docs/UX.md` § 14:
  *
@@ -49,6 +57,14 @@ import { maintenanceChipKey } from './Maintenance.js';
  *     `dispatched + cancelled >= quantity` and nothing in it ever writes
  *     `cancelled`, so a request whose stock never arrives can never
  *     close. The Materials tab carries the write-off the gate needs.
+ *
+ * Three surfaces the mock does not draw at all, each in its grammar and
+ * each recorded in `docs/UX.md` § 14: the **approval card** (the mock
+ * approves from a bare header button with a hard-coded comment, and an
+ * approval that goes on the permanent record has to let somebody write
+ * it), the **operational impact** card and the **delivery instructions**
+ * line (the mock collects both on its form and renders neither, so the
+ * store reads them nowhere).
  */
 
 type Tab = 'materials' | 'dispatch' | 'returns' | 'history';
@@ -261,41 +277,19 @@ export function MaintenanceJobCard({
         </Card>
       </div>
 
-      {/* The mock's boxed tab list. Four panels swapped in place, so it is
-          a `role="group"` of `aria-pressed` toggles rather than a
-          `role="tablist"` this build would then owe the roving-tabindex
-          pattern (`test/a11y-invariants`). */}
-      <div
-        className="inline-flex items-center gap-1 rounded-lg bg-muted p-1"
-        role="group"
-        aria-label="Maintenance request sections"
-      >
-        {(
+      <TabRail
+        label="Maintenance request sections"
+        tabs={
           [
             ['materials', 'Materials'],
             ['dispatch', 'Dispatch'],
             ['returns', 'Defective returns'],
             ['history', 'History'],
           ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={tab === key}
-            className={cn(
-              'h-8 rounded-md px-3 text-sm font-medium transition-colors',
-              tab === key
-                ? 'bg-card text-foreground shadow-[0_1px_2px_0_rgb(15_23_42/0.05)]'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-            onClick={() => {
-              setTab(key);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+        }
+        active={tab}
+        onSelect={setTab}
+      />
 
       {actionError !== null && <FormError>{actionError}</FormError>}
 
@@ -305,11 +299,10 @@ export function MaintenanceJobCard({
             lines={lines}
             editable={canModify && request.status !== 'closed'}
             pending={pending}
-            onWriteOff={(lineId, quantity, reason) => {
+            onWriteOff={(lineId, reason) => {
               run(
                 () =>
                   api.cancelMaintenanceLine(organisationId, requestId, lineId, {
-                    quantity,
                     reason,
                   }),
                 'The line could not be written off.',
@@ -328,6 +321,7 @@ export function MaintenanceJobCard({
             status={request.status}
             deliveryInstructions={request.deliveryInstructions}
             pending={pending}
+            dispatchedCount={dispatches.length}
             onDispatch={(body) => {
               run(
                 () => api.recordMaintenanceDispatch(organisationId, requestId, body),
@@ -447,7 +441,7 @@ function MaterialsTab({
   readonly lines: readonly MaintenanceLine[];
   readonly editable: boolean;
   readonly pending: boolean;
-  readonly onWriteOff: (lineId: string, quantity: string, reason: string) => void;
+  readonly onWriteOff: (lineId: string, reason: string) => void;
 }) {
   const [writingOff, setWritingOff] = useState<string | null>(null);
   const [reason, setReason] = useState('');
@@ -544,7 +538,10 @@ function MaterialsTab({
           <FieldRow>
             <Field>
               <label htmlFor="maintenance-writeoff-reason">
-                Why is the balance not being sent?
+                Why is the balance of{' '}
+                {lines.find((candidate) => candidate.id === writingOff)
+                  ?.outstandingQuantity ?? ''}{' '}
+                not being sent?
               </label>
               <input
                 id="maintenance-writeoff-reason"
@@ -570,7 +567,10 @@ function MaterialsTab({
               onClick={() => {
                 const line = lines.find((candidate) => candidate.id === writingOff);
                 if (line === undefined) return;
-                onWriteOff(line.id, line.outstandingQuantity, reason.trim());
+                // No quantity: a write-off takes the WHOLE outstanding
+                // balance, which the server already knows. See the
+                // contract's note on why a partial one is a dead end.
+                onWriteOff(line.id, reason.trim());
                 setWritingOff(null);
               }}
             >
@@ -589,6 +589,7 @@ function DispatchTab({
   status,
   deliveryInstructions,
   pending,
+  dispatchedCount,
   onDispatch,
 }: {
   readonly lines: readonly MaintenanceLine[];
@@ -596,8 +597,13 @@ function DispatchTab({
   readonly status: MaintenanceStatus;
   readonly deliveryInstructions: string | null;
   readonly pending: boolean;
+  /** Rises by one on every SUCCESSFUL dispatch. The quantity inputs are
+   * cleared off this rather than at click time: a refusal on line 7 of
+   * ten used to blank all ten, so the operator retyped the nine that
+   * were right. */
+  readonly dispatchedCount: number;
   readonly onDispatch: (body: {
-    dispatchDate: string;
+    dispatchDate?: string;
     stockLocation: string;
     receiverName: string;
     transporter?: string;
@@ -606,7 +612,15 @@ function DispatchTab({
   }) => void;
 }) {
   const [quantities, setQuantities] = useState<Record<string, string>>({});
-  const [dispatchDate, setDispatchDate] = useState(todayISO());
+  useEffect(() => {
+    if (dispatchedCount > 0) setQuantities({});
+  }, [dispatchedCount]);
+  // Empty until somebody types one. An unedited date field must send
+  // NOTHING, so the server dates the challan by the ORGANISATION's today
+  // — seeding it from `todayISO()` and always sending it made the
+  // browser clock the authority on a date printed on paper, and made the
+  // server's own fallback unreachable.
+  const [dispatchDate, setDispatchDate] = useState('');
   const [stockLocation, setStockLocation] = useState('');
   const [receiverName, setReceiverName] = useState('');
   const [transporter, setTransporter] = useState('');
@@ -705,11 +719,13 @@ function DispatchTab({
             type="date"
             max={todayISO()}
             value={dispatchDate}
+            aria-describedby="dispatch-date-hint"
             disabled={!enabled}
             onChange={(event) => {
               setDispatchDate(event.currentTarget.value);
             }}
           />
+          <Hint id="dispatch-date-hint">Left empty, the challan is dated today.</Hint>
         </Field>
         <Field>
           <label htmlFor="dispatch-location">Stock location</label>
@@ -767,14 +783,13 @@ function DispatchTab({
           disabled={!ready || pending}
           onClick={() => {
             onDispatch({
-              dispatchDate,
+              ...(dispatchDate === '' ? {} : { dispatchDate }),
               stockLocation: stockLocation.trim(),
               receiverName: receiverName.trim(),
               ...(transporter.trim() === '' ? {} : { transporter: transporter.trim() }),
               ...(notes.trim() === '' ? {} : { notes: notes.trim() }),
               lines: chosen,
             });
-            setQuantities({});
           }}
         >
           <Truck data-icon="inline-start" aria-hidden="true" />
@@ -797,7 +812,7 @@ function ReturnsTab({
   readonly onReceive: (body: {
     lineId: string;
     quantity: string;
-    receivedOn: string;
+    receivedOn?: string;
     serials?: string[];
     conditionNote: string;
     repairDisposition: string;
@@ -808,7 +823,8 @@ function ReturnsTab({
   const due = lines.filter((line) => Number(line.returnDueQuantity) > 0);
   const [lineId, setLineId] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [receivedOn, setReceivedOn] = useState(todayISO());
+  // Empty until edited, for the reason the dispatch date above gives.
+  const [receivedOn, setReceivedOn] = useState('');
   const [serials, setSerials] = useState('');
   const [conditionNote, setConditionNote] = useState('');
   const [repairDisposition, setRepairDisposition] = useState('');
@@ -879,11 +895,13 @@ function ReturnsTab({
                 type="date"
                 max={todayISO()}
                 value={receivedOn}
+                aria-describedby="return-date-hint"
                 disabled={!enabled}
                 onChange={(event) => {
                   setReceivedOn(event.currentTarget.value);
                 }}
               />
+              <Hint id="return-date-hint">Left empty, the receipt is dated today.</Hint>
             </Field>
             <Field>
               <label htmlFor="return-serials">Serial / asset numbers</label>
@@ -958,7 +976,7 @@ function ReturnsTab({
                 onReceive({
                   lineId,
                   quantity,
-                  receivedOn,
+                  ...(receivedOn === '' ? {} : { receivedOn }),
                   ...(parsed.length === 0 ? {} : { serials: parsed }),
                   conditionNote: conditionNote.trim(),
                   repairDisposition: repairDisposition.trim(),

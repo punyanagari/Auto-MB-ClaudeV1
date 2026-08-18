@@ -6,6 +6,7 @@ import { todayISO } from '../format.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Actions, Field, FieldRow, FormError, Hint } from '../ui/form.js';
+import { PageHeader } from '../ui/page-header.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
 /**
@@ -112,11 +113,18 @@ export function MaintenanceRequestForm({
     let cancelled = false;
     setPickers(null);
     setLoadError(null);
+    // `listProductionItems`, not `listStockItems`. The picker needs a
+    // code, a name and a unit; the stock register answers those AND
+    // explodes every open job card's bill of material through
+    // `stock_outstanding_requirement`, then computes window counts over
+    // the whole catalogue — all of it discarded here. The Production
+    // select next door already reads the master for the same three
+    // fields.
     Promise.all([
       api.listWorks(organisationId),
-      api.listStockItems(organisationId, { status: 'active' }),
+      api.listProductionItems(organisationId),
     ])
-      .then(([works, stock]) => {
+      .then(([works, catalogue]) => {
         if (cancelled) return;
         setPickers({
           works: works.map((work) => ({
@@ -124,7 +132,7 @@ export function MaintenanceRequestForm({
             code: work.workCode,
             title: work.title,
           })),
-          parts: stock.items.map((item) => ({
+          parts: catalogue.items.map((item) => ({
             id: item.id,
             code: item.itemCode,
             name: item.name,
@@ -145,6 +153,18 @@ export function MaintenanceRequestForm({
     };
   }, [api, organisationId, loadVersion]);
 
+  // Built once. Rendered inside the line loop, a catalogue of several
+  // hundred parts becomes that many option nodes PER LINE, and adding a
+  // tenth line re-creates all of them.
+  const partOptions =
+    pickers === null
+      ? null
+      : pickers.parts.map((candidate) => (
+          <option key={candidate.id} value={candidate.id}>
+            {candidate.code} · {candidate.name}
+          </option>
+        ));
+
   const update = (key: number, patch: Partial<FormLine>): void => {
     setLines((current) =>
       current.map((line) => (line.key === key ? { ...line, ...patch } : line)),
@@ -164,20 +184,12 @@ export function MaintenanceRequestForm({
   );
 
   const header = (
-    <div className="mb-7 flex min-w-0 flex-col gap-1.5">
-      <span className="section-label">Operations control</span>
-      <h1
-        id="maintenance-new-title"
-        tabIndex={-1}
-        className="text-2xl font-semibold tracking-[-0.025em] text-balance md:text-3xl"
-      >
-        Site material request
-      </h1>
-      <p className="max-w-2xl text-sm leading-6 text-pretty text-muted-foreground">
-        Submit replacement or repair material against a Work and station for
-        whole-request admin approval.
-      </p>
-    </div>
+    <PageHeader
+      eyebrow="Operations control"
+      title="Site material request"
+      titleId="maintenance-new-title"
+      description="Submit replacement or repair material against a Work and station for whole-request admin approval."
+    />
   );
 
   if (loadError !== null) {
@@ -456,11 +468,7 @@ export function MaintenanceRequestForm({
                       }}
                     >
                       <option value="">Custom material (no part)</option>
-                      {pickers.parts.map((candidate) => (
-                        <option key={candidate.id} value={candidate.id}>
-                          {candidate.code} · {candidate.name}
-                        </option>
-                      ))}
+                      {partOptions}
                     </select>
                     <Hint>
                       A catalogue part moves stock when it is dispatched; a custom

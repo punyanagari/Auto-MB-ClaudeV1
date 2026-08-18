@@ -86,7 +86,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0084_production.sql': 13,
   '0086_correspondence_register.sql': 4,
   '0087_stock_ledger.sql': 3,
-  '0088_maintenance.sql': 9,
+  '0088_maintenance.sql': 11,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -1757,7 +1757,7 @@ describe('tenant migration contract', () => {
 
     // Every function pins its search_path, and none is SECURITY DEFINER.
     const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
-    expect(functions.length).toBe(8);
+    expect(functions.length).toBe(10);
     expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
       functions.length,
     );
@@ -1768,11 +1768,43 @@ describe('tenant migration contract', () => {
       );
     }
 
-    // Every RAISE carries a named SQLSTATE from the 23G block, which this
-    // migration is the first to use, so `routes/maintenance.ts` maps it
-    // to a code instead of surfacing a bare 23514 as a 500.
+    // THE RETURN CEILING IS WHAT WENT OUT, not what was promised. Read
+    // against the gross promise, a line ordered 4 / promised 4 back /
+    // dispatched 1 / written off 3 can never be closed, because
+    // `expected_return_quantity` is frozen and nothing can lower it.
+    expect(sql).toContain('least(');
+    expect(sql).toMatch(
+      /least\(\s*l\.expected_return_quantity,\s*coalesce\(\s*\(\s*SELECT sum\(d\.quantity\)\s*FROM maintenance_dispatch_lines d/,
+    );
+
+    // A line may only be appended while the request is undecided, and
+    // the ledger's third source is validated like the other two.
+    expect(sql).toContain('CREATE TRIGGER maintenance_request_lines_guard_insert');
+    expect(sql).toContain('and takes no further material lines');
+    expect(sql).toContain('CREATE TRIGGER stock_movements_maintenance_source_guard');
+    expect(sql).toContain('carries no line for item');
+    expect(sql).toContain('serves work %, which is %');
+    // …and 0087's function is NOT replaced from here: that would leave
+    // its own file describing a function the database no longer has,
+    // which the assertions in this suite read.
+    expect(sql).not.toContain(
+      'CREATE OR REPLACE FUNCTION app_private.guard_stock_movement',
+    );
+
+    // A withdrawn Work is not a Work, on the request path as on every
+    // arm of the ledger's own guard.
+    expect(sql).toContain('AND w.deleted_at IS NULL');
+
+    // Every RAISE carries a named SQLSTATE. The module's own rules use
+    // the 23G block, which this migration is the first to claim; the
+    // four that police the STOCK LEDGER's new source deliberately reuse
+    // 0087's 23F02, because `routes/inventory.ts` already maps it and a
+    // second code for "the source document does not admit it" would be
+    // the same refusal under two names.
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(12);
-    expect(sql.match(/USING ERRCODE = '23G\d\d'/g)?.length).toBe(raises.length);
+    const named = sql.match(/USING ERRCODE = '(23[FG]\d\d)'/g) ?? [];
+    expect(named.length).toBe(raises.length);
+    expect(named.filter((code) => code.includes('23F')).length).toBe(4);
   });
 });

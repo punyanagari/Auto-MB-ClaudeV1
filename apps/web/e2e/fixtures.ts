@@ -852,6 +852,51 @@ const MAINTENANCE_LIST = {
   },
 };
 
+export const MAINTENANCE_AWAITING_APPROVAL = {
+  request: {
+    id: 'e74f0a5c-8b16-4249-8d5a-6a8f1e4b9c73',
+    requestNumber: 'MR/26-27/00141',
+    workId: WORK_ID,
+    workCode: 'PL-281',
+    station: 'Marine Lines',
+    requesterName: 'Sunita Rao',
+    requesterPhone: null,
+    priority: 'urgent',
+    requiredBy: null,
+    faultSummary: 'Announcement amplifier tripping on load',
+    operationalImpact: null,
+    deliveryInstructions: null,
+    status: 'awaiting_approval',
+    approvalComment: null,
+    createdAt: '2026-08-14T06:10:00.000Z',
+  },
+  lines: [
+    {
+      id: 'a1b2c3d4-5e6f-4708-8a19-2b3c4d5e6f70',
+      position: 1,
+      itemId: '3b7e5a91-2c48-4d6f-9a03-8e1b6c2f7d54',
+      itemCode: 'EL-CTRL-ETH',
+      description: 'Ethernet controller card',
+      unit: 'Nos',
+      purpose: null,
+      quantity: '1.000',
+      outstandingQuantity: '1.000',
+      dispatchedQuantity: '0.000',
+      cancelledQuantity: '0.000',
+      cancellationReason: null,
+      expectedReturnQuantity: '1.000',
+      receivedReturnQuantity: '0.000',
+      returnDueQuantity: '0.000',
+      onHand: '9.000',
+      assetSerials: [],
+      resolved: false,
+    },
+  ],
+  dispatches: [],
+  returns: [],
+  canClose: false,
+};
+
 const MAINTENANCE_DETAIL = {
   request: {
     id: MAINTENANCE_REQUEST_ID,

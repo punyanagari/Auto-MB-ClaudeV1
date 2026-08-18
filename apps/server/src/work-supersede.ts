@@ -27,9 +27,9 @@ import { assertWorkOperable } from './work-status.js';
  * The registers that make a Work ineligible: everything the agency issued,
  * received, or became bound by on this Work's account.
  *
- * Forty-four tables can reach `works` through a chain of foreign keys.
+ * Fifty-one tables can reach `works` through a chain of foreign keys.
  * This list holds the 17 that are documents in their own right;
- * `WORK_CHILD_TABLES_EXEMPT` holds the other 27 with the reason each is
+ * `WORK_CHILD_TABLES_EXEMPT` holds the other 34 with the reason each is
  * exempt, and the census in `test/work-supersede.integration.test.ts`
  * proves the union is exactly the catalog — TRANSITIVELY, not only over
  * direct children, because a document hanging off an exempt parent is

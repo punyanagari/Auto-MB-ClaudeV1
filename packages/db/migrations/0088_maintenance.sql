@@ -190,12 +190,22 @@ SET LOCAL statement_timeout = '5min';
 -- 0087 hangs the per-item stock counter off the far end. Maintenance
 -- takes locks in this order and no other:
 --
---   maintenance_request_counters (or maintenance_dispatch_counters)
---     -> maintenance_requests -> maintenance_request_lines
+--   maintenance_requests -> maintenance_request_counters
+--     (or maintenance_dispatch_counters) -> maintenance_request_lines
 --     -> stock_movement_counters (0087, inside the movement insert)
 --
--- The counter is always the FIRST write, as it is everywhere else in
--- this schema, and the stock counter is always the LAST — so a
+-- THE REQUEST ROW COMES FIRST, and that is deliberate rather than an
+-- accident of how the route reads. Every act after the first takes the
+-- request `FOR NO KEY UPDATE` to decide whether its state admits the
+-- act, and only then claims a number. Claiming the number first would
+-- mean a request refused for being closed had still consumed a challan
+-- serial — the rollback returns it, but only because the whole
+-- transaction unwinds, and that is a weaker guarantee than never having
+-- taken it.
+--
+-- The counters therefore sit in the MIDDLE, not the front, and the
+-- ordering is still total: nothing in this module ever takes a request
+-- row while holding a counter. The stock counter is always LAST, so a
 -- maintenance dispatch and a plain stock issue queue behind the same
 -- per-item row in the same direction and cannot deadlock against each
 -- other.
@@ -417,8 +427,13 @@ CREATE TABLE maintenance_request_lines (
   -- SNAPSHOTS, both of them, for the part lines as well as the custom
   -- ones: renaming a part next year must not rewrite what a challan said
   -- went out last year (rule 7).
+  -- 2, not 3, and the bound is copied from the master rather than
+  -- chosen: `production_items.name` admits two characters ('PS'), and
+  -- this column is a SNAPSHOT of it. A tighter floor here would turn a
+  -- legal part into a 500 on the create path, which is the CHECK
+  -- refusing a row the product told the operator to make.
   description text NOT NULL CHECK (
-    btrim(description) = description AND length(description) BETWEEN 3 AND 300
+    btrim(description) = description AND length(description) BETWEEN 2 AND 300
   ),
   unit text NOT NULL CHECK (
     btrim(unit) = unit AND length(unit) BETWEEN 1 AND 20
@@ -845,28 +860,58 @@ COMMENT ON FUNCTION app_private.maintenance_line_outstanding(uuid, uuid) IS
   'What a maintenance line still owes the site: ordered less cancelled less dispatched. The mock stores this as reservedQuantity and never reduces it; here it is derived, so it cannot disagree with the challans that are its evidence.';
 
 -- How many of a line's failed units are still owed back.
+--
+-- THE PROMISE IS CAPPED BY WHAT ACTUALLY WENT OUT, and that cap is the
+-- whole of this function's difficulty. A site owes a failed unit back
+-- for each REPLACEMENT IT RECEIVED — not for each one that was ordered.
+--
+-- Read against the gross promise instead, as the first cut did, and two
+-- things break at once. A line ordered 4, promising 4 back, dispatched 1
+-- and written off 3 has nothing left to send and four units still owed:
+-- `expected_return_quantity` is frozen by the line guard below, so
+-- nothing can lower it, and the closure gate is unreachable FOREVER. And
+-- the only way out anybody would find is recording receipts for three
+-- units that were never dispatched — which the return guard would have
+-- accepted, because it compares against the same gross promise.
+--
+-- Capping at the dispatched quantity closes both. At the moment the
+-- closure gate runs the two readings agree exactly (the gate demands
+-- nothing outstanding, so dispatched IS ordered less cancelled), and
+-- part-way through the cap is the honest number: you cannot return a
+-- unit whose replacement has not arrived.
 CREATE FUNCTION app_private.maintenance_line_return_due(org uuid, line uuid)
 RETURNS quantity_amount
 LANGUAGE sql
 STABLE
 SET search_path = pg_catalog, public
 AS $$
-  SELECT (
-    l.expected_return_quantity - coalesce(
+  SELECT greatest(
+    least(
+      l.expected_return_quantity,
+      coalesce(
+        (
+          SELECT sum(d.quantity)
+          FROM maintenance_dispatch_lines d
+          WHERE d.organisation_id = org AND d.maintenance_request_line_id = l.id
+        ),
+        0
+      )
+    ) - coalesce(
       (
         SELECT sum(r.quantity)
         FROM maintenance_returns r
         WHERE r.organisation_id = org AND r.maintenance_request_line_id = l.id
       ),
       0
-    )
+    ),
+    0
   )::quantity_amount
   FROM maintenance_request_lines l
   WHERE l.organisation_id = org AND l.id = line
 $$;
 
 COMMENT ON FUNCTION app_private.maintenance_line_return_due(uuid, uuid) IS
-  'How many failed units a maintenance line still owes back: expected less received. The closure gate and the returns form read the same expression.';
+  'How many failed units a maintenance line still owes back: the lesser of what it promised and what actually went out, less what has arrived. Capped at the dispatched quantity so a written-off balance cannot leave the closure gate permanently unreachable, and so a receipt cannot be recorded for a replacement nobody sent.';
 
 -- A request may not be raised against a Work that has stopped taking
 -- work. The same check `guard_issue_challan_insert` (0031) makes, for
@@ -880,9 +925,14 @@ AS $$
 DECLARE
   work_state text;
 BEGIN
+  -- `deleted_at IS NULL`, as every arm of the stock ledger's own guard
+  -- reads it (0087): a superseded Work has been withdrawn and is not a
+  -- Work this organisation is executing. Without the filter the refusal
+  -- this function's own message promises does not happen.
   SELECT w.status INTO work_state
   FROM works w
-  WHERE w.organisation_id = NEW.organisation_id AND w.id = NEW.work_id;
+  WHERE w.organisation_id = NEW.organisation_id AND w.id = NEW.work_id
+    AND w.deleted_at IS NULL;
 
   IF work_state IS NULL THEN
     RAISE EXCEPTION
@@ -1070,6 +1120,51 @@ CREATE TRIGGER maintenance_request_lines_guard_update
 BEFORE UPDATE ON maintenance_request_lines
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_maintenance_request_line_update();
 
+-- A LINE MAY ONLY BE APPENDED WHILE THE REQUEST IS STILL UNDECIDED.
+--
+-- The route writes every line in the same transaction as the request it
+-- belongs to, so this guard never fires on the accepted path. It exists
+-- because the application role holds INSERT on this table and the freeze
+-- above only covers UPDATE: without it, a line appended to an APPROVED
+-- request is material nobody approved, and a line appended to a CLOSED
+-- one is outstanding quantity on a request whose gate has already been
+-- passed -- permanently outstanding, because a closed request refuses
+-- every further update including the one that would write it off.
+CREATE FUNCTION app_private.guard_maintenance_request_line_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  request_status text;
+BEGIN
+  SELECT r.status INTO request_status
+  FROM maintenance_requests r
+  WHERE r.organisation_id = NEW.organisation_id
+    AND r.id = NEW.maintenance_request_id;
+
+  IF request_status IS NULL THEN
+    RAISE EXCEPTION
+      'material line names maintenance request %, which this transaction cannot read',
+      NEW.maintenance_request_id
+      USING ERRCODE = '23G01';
+  END IF;
+
+  IF request_status <> 'awaiting_approval' THEN
+    RAISE EXCEPTION
+      'maintenance request % is % and takes no further material lines',
+      NEW.maintenance_request_id, request_status
+      USING ERRCODE = '23G01';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER maintenance_request_lines_guard_insert
+BEFORE INSERT ON maintenance_request_lines
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_maintenance_request_line_insert();
+
 -- A dispatch happens against an approved request, on a real date, and
 -- never after the request has been closed.
 CREATE FUNCTION app_private.guard_maintenance_dispatch_insert()
@@ -1252,6 +1347,108 @@ BEFORE INSERT ON maintenance_returns
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_maintenance_return_insert();
 
 -- ---------------------------------------------------------------------
+-- 9a. THE LEDGER'S THIRD SOURCE, VALIDATED.
+--
+-- Section 8 taught `stock_movements` that an issue may name a
+-- maintenance challan. `app_private.guard_stock_movement` (0087)
+-- validates the other two sources arm by arm and has no arm for this
+-- one, so a movement naming a challan reached the balance arithmetic
+-- with NOTHING binding the part, the quantity or the Work -- the
+-- two-layer rule broken on the exact path this migration opened.
+--
+-- WHY A SECOND TRIGGER RATHER THAN REPLACING 0087'S FUNCTION. A
+-- `CREATE OR REPLACE` here would leave 0087's file describing a function
+-- the database no longer has, and `packages/db/test/migration-contract`
+-- asserts over that FILE -- so its assertions would keep passing while
+-- the catalog drifted away from them, which is the worst of both. The
+-- rule this migration adds belongs in this migration, where a reader
+-- looking for maintenance's rules will find it.
+--
+-- It runs AFTER `stock_movements_guard_write` (trigger names fire in
+-- alphabetical order and `g` precedes `m`). That is harmless: the route
+-- builds the movement FROM the dispatch line, so a mismatch here means a
+-- writer bypassing the route entirely, and which of the two refusals
+-- such a writer sees first does not matter. Both roll the statement back.
+-- ---------------------------------------------------------------------
+CREATE FUNCTION app_private.guard_stock_movement_maintenance_source()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  dispatched quantity_amount;
+  challan_work uuid;
+  work_status text;
+BEGIN
+  IF NEW.maintenance_dispatch_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT d.work_id INTO challan_work
+  FROM maintenance_dispatches d
+  WHERE d.organisation_id = NEW.organisation_id
+    AND d.id = NEW.maintenance_dispatch_id;
+
+  IF challan_work IS NULL THEN
+    RAISE EXCEPTION
+      'movement names maintenance challan %, which this transaction cannot read',
+      NEW.maintenance_dispatch_id
+      USING ERRCODE = '23F02';
+  END IF;
+
+  -- THE CHALLAN STATES THE QUANTITY, NOT THE MOVEMENT. Summed over the
+  -- challan's lines for this part, the same discipline 0087's
+  -- production_receipt arm applies to a despatch's serial count: the
+  -- paper is the authority and the ledger may not claim more than it.
+  SELECT coalesce(sum(dl.quantity), 0) INTO dispatched
+  FROM maintenance_dispatch_lines dl
+  JOIN maintenance_request_lines l
+    ON l.organisation_id = dl.organisation_id
+   AND l.id = dl.maintenance_request_line_id
+  WHERE dl.organisation_id = NEW.organisation_id
+    AND dl.maintenance_dispatch_id = NEW.maintenance_dispatch_id
+    AND l.production_item_id = NEW.production_item_id;
+
+  IF dispatched = 0 THEN
+    RAISE EXCEPTION
+      'maintenance challan % carries no line for item %',
+      NEW.maintenance_dispatch_id, NEW.production_item_id
+      USING ERRCODE = '23F02';
+  END IF;
+
+  -- Signed negative on an issue, so the magnitude is what left.
+  IF abs(NEW.quantity) > dispatched THEN
+    RAISE EXCEPTION
+      'maintenance challan % sent % of item %, and this movement claims %',
+      NEW.maintenance_dispatch_id, dispatched, NEW.production_item_id,
+      abs(NEW.quantity)
+      USING ERRCODE = '23F02';
+  END IF;
+
+  -- R8 through the challan, as 0087 reaches it through a job card and a
+  -- purchase order. A completed or withdrawn Work moves no stock -- see
+  -- section 10 below for what that means for a request caught mid-flight.
+  SELECT w.status INTO work_status
+  FROM works w
+  WHERE w.organisation_id = NEW.organisation_id
+    AND w.id = challan_work AND w.deleted_at IS NULL;
+
+  IF work_status IS DISTINCT FROM 'active' THEN
+    RAISE EXCEPTION
+      'maintenance challan % serves work %, which is %',
+      NEW.maintenance_dispatch_id, challan_work, coalesce(work_status, 'missing')
+      USING ERRCODE = '23F02';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER stock_movements_maintenance_source_guard
+BEFORE INSERT ON stock_movements
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_stock_movement_maintenance_source();
+
+-- ---------------------------------------------------------------------
 -- 10. WORK SUPERSESSION: all seven tables are exempt, and this is where
 --     the argument lives rather than only in the census.
 --
@@ -1275,11 +1472,21 @@ FOR EACH ROW EXECUTE FUNCTION app_private.guard_maintenance_return_insert();
 -- how that Work was read from its LOA — and re-reading a misread LOA is
 -- what supersession is FOR.
 --
--- The consequence, stated so it is not discovered later: a request whose
--- Work is withdrawn mid-flight stays dispatchable, and its challans keep
--- naming the withdrawn Work. That is deliberate. What is refused is
--- raising a NEW request against a Work that is no longer active, which
--- `app_private.guard_maintenance_request_insert` above does.
+-- The consequence, stated so it is not discovered later. A request whose
+-- Work is withdrawn mid-flight KEEPS its challans -- they name the
+-- withdrawn Work, which is the truth of what happened -- but it stops
+-- moving material: section 9a refuses a stock issue against a Work that
+-- is not active, exactly as 0087 already refuses one through a job card
+-- or a purchase order. Maintenance does not get an exemption from the
+-- ledger's own R8.
+--
+-- Such a request is therefore not stuck. Its exit is the write-off: the
+-- balance nobody is going to send is cancelled with a reason, and the
+-- closure gate opens. That is the same exit a request whose stock never
+-- arrives takes, and it is why the write-off had to exist at all.
+--
+-- Raising a NEW request against a Work that is completed or withdrawn is
+-- refused outright by `app_private.guard_maintenance_request_insert`.
 --
 -- The two counters are numbering state rather than documents, exempt for
 -- the reason 0071's header gives about the other seven per-Work

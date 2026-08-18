@@ -12,7 +12,7 @@ import type {
   MaintenanceStatus,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatDate } from '../format.js';
+import { formatDate, formatTimestampDate } from '../format.js';
 import { maintenanceRequestHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -144,6 +144,8 @@ export function Maintenance({
     api
       .listMaintenanceRequests(organisationId, { limit: PAGE_SIZE, cursor: nextCursor })
       .then((page) => {
+        // Deliberately does NOT touch `counts`: the strip describes the
+        // whole register and the server sends null on a cursor page.
         setRequests((current) => [...(current ?? []), ...page.requests]);
         setNextCursor(page.nextCursor);
       })
@@ -265,7 +267,11 @@ export function Maintenance({
                         {entry.requestNumber}
                       </a>
                       <span className="text-xs text-muted-foreground">
-                        {formatDate(entry.createdAt.slice(0, 10))}
+                        {/* A timestamp, so it goes through the helper
+                            that renders it in the reader's own day.
+                            Slicing the ISO string takes the UTC day and
+                            shows yesterday's date all evening in IST. */}
+                        {formatTimestampDate(entry.createdAt)}
                       </span>
                     </div>
                   </td>

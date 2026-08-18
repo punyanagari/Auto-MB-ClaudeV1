@@ -190,7 +190,11 @@ export const MaintenanceListResponseSchema = Type.Object(
   {
     requests: Type.Array(MaintenanceRequestSummarySchema),
     nextCursor: NextCursorSchema,
-    counts: MaintenanceStageCountsSchema,
+    /** Null on a cursor page. The strip sits above the FIRST page and
+     * describes the whole register, so it does not change as the reader
+     * pages — recomputing an aggregate over every request to throw it
+     * away is the kind of cost a register pays on every scroll. */
+    counts: Type.Union([MaintenanceStageCountsSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -289,12 +293,17 @@ export type ReceiveMaintenanceReturn = Static<typeof ReceiveMaintenanceReturnSch
 
 /** Writing off the remainder of a line nobody is going to send. The mock
  * carries the column and never writes it, which leaves its own closure
- * gate unreachable; this is the writer. */
+ * gate unreachable; this is the writer.
+ *
+ * NO QUANTITY. A write-off says "the rest of this line is not coming",
+ * and the rest is a number the server already holds. A caller-supplied
+ * quantity allowed a PARTIAL write-off, and partial plus write-once —
+ * the guard refuses a second one — is a line that can never reach zero
+ * outstanding and a request that can therefore never close. Taking the
+ * whole balance makes write-once terminal by construction rather than by
+ * hoping nobody sends a smaller number. */
 export const CancelMaintenanceLineSchema = Type.Object(
-  {
-    quantity: PositiveDecimalStringSchema,
-    reason: nonBlankString({ minLength: 3, maxLength: 500 }),
-  },
+  { reason: nonBlankString({ minLength: 3, maxLength: 500 }) },
   { additionalProperties: false },
 );
 export type CancelMaintenanceLine = Static<typeof CancelMaintenanceLineSchema>;

@@ -1674,15 +1674,12 @@ async function seedTenantGraph(
       insert into maintenance_requests (
         organisation_id, work_id, request_number, financial_year,
         sequence_number, station, requester_name, priority, fault_summary,
-        status, approval_comment, approved_by_user_id, approved_at,
         created_by_user_id
       )
       values (
         ${organisationId}, ${work.id}, ${`MR/26-27/${workCode.slice(-4)}`},
         '2026-27', 1, 'Churchgate', 'Amit Patil', 'urgent',
-        'Replace failed platform display power supplies', 'approved',
-        'Approved against available maintenance stock', ${userId}, now(),
-        ${userId}
+        'Replace failed platform display power supplies', ${userId}
       )
       returning id
     `;
@@ -1700,6 +1697,16 @@ async function seedTenantGraph(
       returning id
     `;
     if (!maintenanceLine) throw new Error('seed maintenance line returned no row');
+    // Approved AFTER its lines exist, because that is the order the
+    // lifecycle runs in and the line-insert guard enforces it: a request
+    // that is already approved takes no further material.
+    await tx`
+      update maintenance_requests
+      set status = 'approved',
+          approval_comment = 'Approved against available maintenance stock',
+          approved_by_user_id = ${userId}, approved_at = now()
+      where id = ${maintenanceRequest.id}
+    `;
     await tx`
       insert into maintenance_dispatch_counters (organisation_id, work_id, next_value)
       values (${organisationId}, ${work.id}, 2)

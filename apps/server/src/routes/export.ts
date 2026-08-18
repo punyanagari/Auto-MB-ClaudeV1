@@ -56,24 +56,6 @@ const errorResponses = {
  * identifies a format, two formats sharing one string is the failure that
  * matters, and a gap is not.
  *
- * export-v19: OEM production (0084) joins the package — the item master,
- * the recursive bill of material, the job cards, the finished serials,
- * the per-unit component genealogy, the despatches, and all three of the
- * module's counters.
- *
- * Left out, a restored organisation would come back with the contracts
- * and none of the factory: no record of what it manufactures, no bill of
- * material behind any of it, and — the loss that cannot be reconstructed
- * from anywhere else — no serial genealogy. A delivered unit's challan
- * says a number moved; only these tables say what is inside it. The
- * counters travel for the reason the standalone-challan note below
- * gives: without them a restored organisation reissues serials it has
- * already stamped on hardware.
- *
- * No manifest bucket: production stores no PDFs. Every other module here
- * that carries one does so because it accepted an upload, and this one
- * accepts none.
- *
  * export-v20: the correspondence register (0086) joins the package — the
  * inward and outward letters with their numbering counters, and the
  * inward scans in the manifest. Outward letters carry no stored object

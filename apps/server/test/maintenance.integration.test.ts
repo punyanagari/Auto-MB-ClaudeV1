@@ -75,6 +75,7 @@ let workId: string;
 let otherWorkId: string;
 let partId: string;
 let scarcePartId: string;
+let unrelatedPartId: string;
 const workCode = `MN-${runId.toUpperCase()}`;
 const otherWorkCode = `MO-${runId.toUpperCase()}`;
 
@@ -298,6 +299,7 @@ beforeAll(async () => {
   `;
   partId = await seedPart(`MP-${runId.toUpperCase()}`, 30);
   scarcePartId = await seedPart(`MS-${runId.toUpperCase()}`, 1);
+  unrelatedPartId = await seedPart(`MU-${runId.toUpperCase()}`, 50);
 }, 180_000);
 
 afterAll(async () => {
@@ -438,7 +440,11 @@ describe('the derived quantities and the stock ledger', () => {
     expect(received.statusCode, received.body).toBe(200);
     const withReturn = received.json<MaintenanceDetailResponse>();
     expect(withReturn.lines[0]?.receivedReturnQuantity).toBe('2.000');
-    expect(withReturn.lines[0]?.returnDueQuantity).toBe('2.000');
+    // ONE, not two. The line promised four back and only THREE went out,
+    // so three is the most it can owe; two have arrived. Read against the
+    // gross promise this would be 2, and a line that is later written off
+    // short would owe units whose replacements never left the store.
+    expect(withReturn.lines[0]?.returnDueQuantity).toBe('1.000');
     expect(await onHandOf(partId)).toBe(shelfBeforeReturn);
   });
 
@@ -715,6 +721,108 @@ describe('the closure gate', () => {
     ).rejects.toMatchObject({ code: '23G01' });
   });
 
+  it('closes a part-dispatched request whose balance is written off', async () => {
+    // THE DEADLOCK THIS IS HERE FOR. Default fixture: 4 asked, 4 promised
+    // back. Dispatch 1, write off the other 3, receive the 1 that
+    // actually went out — and the gate must open. Computed against the
+    // gross promise it never does: three units whose replacements were
+    // never sent stay owed forever, and `expected_return_quantity` is
+    // frozen, so nothing can lower it.
+    const id = await raiseAndApprove();
+    const lineId = (await detail(id)).lines[0]?.id ?? '';
+
+    const dispatched = await authed(office, {
+      method: 'POST',
+      url: `/api/maintenance/${id}/dispatches`,
+      organisationId,
+      payload: {
+        stockLocation: 'Central store',
+        receiverName: 'Site supervisor',
+        lines: [{ lineId, quantity: '1' }],
+      },
+    });
+    expect(dispatched.statusCode, dispatched.body).toBe(200);
+
+    const writtenOff = await authed(office, {
+      method: 'POST',
+      url: `/api/maintenance/${id}/lines/${lineId}/cancel`,
+      organisationId,
+      payload: { reason: 'The balance is not coming' },
+    });
+    expect(writtenOff.statusCode, writtenOff.body).toBe(200);
+    const afterWriteOff = writtenOff.json<MaintenanceDetailResponse>();
+    // The write-off takes the WHOLE outstanding balance — no quantity is
+    // sent, so a partial one cannot leave the line unreachable.
+    expect(afterWriteOff.lines[0]?.cancelledQuantity).toBe('3.000');
+    expect(afterWriteOff.lines[0]?.outstandingQuantity).toBe('0.000');
+    // …and the promise has collapsed to the one unit that actually left.
+    expect(afterWriteOff.lines[0]?.returnDueQuantity).toBe('1.000');
+    expect(afterWriteOff.canClose).toBe(false);
+
+    const received = await authed(office, {
+      method: 'POST',
+      url: `/api/maintenance/${id}/returns`,
+      organisationId,
+      payload: {
+        lineId,
+        quantity: '1',
+        conditionNote: 'Burnt output stage',
+        repairDisposition: 'Bench repair',
+        receivedBy: 'Store clerk',
+      },
+    });
+    expect(received.statusCode, received.body).toBe(200);
+    expect(received.json<MaintenanceDetailResponse>().canClose).toBe(true);
+
+    const closed = await authed(office, {
+      method: 'POST',
+      url: `/api/maintenance/${id}/close`,
+      organisationId,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+  });
+
+  it('refuses a receipt for a replacement that never went out', async () => {
+    // The other half of the same cap. Nothing has been dispatched, so the
+    // line owes nothing back yet however much it promised — and the guard
+    // says so with the route bypassed as well.
+    const id = await raiseAndApprove();
+    const lineId = (await detail(id)).lines[0]?.id ?? '';
+    expect((await detail(id)).lines[0]?.returnDueQuantity).toBe('0.000');
+
+    const refused = await authed(office, {
+      method: 'POST',
+      url: `/api/maintenance/${id}/returns`,
+      organisationId,
+      payload: {
+        lineId,
+        quantity: '1',
+        conditionNote: 'Burnt output stage',
+        repairDisposition: 'Bench repair',
+        receivedBy: 'Store clerk',
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'MAINTENANCE_RETURN_EXCEEDS_EXPECTED',
+    );
+
+    await expect(
+      admin`
+        insert into maintenance_returns (
+          organisation_id, maintenance_request_id, maintenance_request_line_id,
+          quantity, received_on, condition_note, repair_disposition, received_by,
+          created_by_user_id
+        )
+        values (
+          ${organisationId}, ${id}, ${lineId}, 1,
+          (select app_private.organisation_today(${organisationId})),
+          'Burnt output stage', 'Bench repair', 'Raw clerk', 'fixture'
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23G03' });
+  });
+
   it("refuses a raised request's terms being edited at all", async () => {
     const id = await raiseAndApprove();
     await expect(
@@ -722,6 +830,84 @@ describe('the closure gate', () => {
         update maintenance_requests set station = 'Somewhere else' where id = ${id}
       `,
     ).rejects.toMatchObject({ code: '23G05' });
+  });
+});
+
+describe('the append-only walls the route never reaches', () => {
+  it('refuses a material line appended to an approved or closed request', async () => {
+    // The application role holds INSERT on this table and the freeze only
+    // covers UPDATE, so without the insert guard a line appended here is
+    // material nobody approved — and on a CLOSED request it is quantity
+    // that can never be dispatched, written off or closed again.
+    const id = await raiseAndApprove();
+    await expect(
+      admin`
+        insert into maintenance_request_lines (
+          organisation_id, maintenance_request_id, description, unit, quantity,
+          expected_return_quantity, position
+        )
+        values (
+          ${organisationId}, ${id}, 'Smuggled material', 'Nos', 1, 0, 99
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23G01' });
+  });
+
+  it('refuses a stock issue naming a challan that never carried the part', async () => {
+    // 0087's guard validates a job card and a purchase order arm by arm
+    // and had no arm for the maintenance challan, so a movement could
+    // name one with nothing binding the part or the quantity to it.
+    const id = await raiseAndApprove();
+    const lineId = (await detail(id)).lines[0]?.id ?? '';
+    const dispatched = await authed(office, {
+      method: 'POST',
+      url: `/api/maintenance/${id}/dispatches`,
+      organisationId,
+      payload: {
+        stockLocation: 'Central store',
+        receiverName: 'Site supervisor',
+        lines: [{ lineId, quantity: '1' }],
+      },
+    });
+    expect(dispatched.statusCode, dispatched.body).toBe(200);
+    const [challan] = await admin<{ id: string }[]>`
+      select id from maintenance_dispatches
+      where organisation_id = ${organisationId} and maintenance_request_id = ${id}
+    `;
+
+    // A part the challan does not carry. Well stocked on purpose: 0087's
+    // own guard runs first (`g` sorts before `m`), so a part short of
+    // stock would be refused for the balance and prove nothing about the
+    // arm under test.
+    await expect(
+      admin`
+        insert into stock_movements (
+          organisation_id, production_item_id, movement_type, quantity,
+          movement_date, maintenance_dispatch_id, created_by_user_id
+        )
+        values (
+          ${organisationId}, ${unrelatedPartId}, 'issue', -1,
+          (select app_private.organisation_today(${organisationId})),
+          ${challan?.id ?? ''}, 'fixture'
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23F02' });
+
+    // …and more of a part it DOES carry than the paper says left: the
+    // challan sent one, the shelf holds plenty, and five is still a lie.
+    await expect(
+      admin`
+        insert into stock_movements (
+          organisation_id, production_item_id, movement_type, quantity,
+          movement_date, maintenance_dispatch_id, created_by_user_id
+        )
+        values (
+          ${organisationId}, ${partId}, 'issue', -5,
+          (select app_private.organisation_today(${organisationId})),
+          ${challan?.id ?? ''}, 'fixture'
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23F02' });
   });
 });
 
@@ -785,11 +971,21 @@ describe('the walls', () => {
       select count(*)::text as n from maintenance_requests
       where organisation_id = ${organisationId} and work_id = ${workId}
     `;
+    // Present on the FIRST page, which this is — a cursor page sends
+    // null, because the strip describes the register and does not change
+    // as the reader scrolls.
+    expect(body.counts).not.toBeNull();
+    const counts = body.counts ?? {
+      awaitingApproval: -1,
+      approved: 0,
+      partiallyDispatched: 0,
+      closed: 0,
+    };
     expect(
-      body.counts.awaitingApproval +
-        body.counts.approved +
-        body.counts.partiallyDispatched +
-        body.counts.closed,
+      counts.awaitingApproval +
+        counts.approved +
+        counts.partiallyDispatched +
+        counts.closed,
     ).toBe(Number(visible?.n ?? '-1'));
 
     const opened = await authed(assigned, {
@@ -798,6 +994,41 @@ describe('the walls', () => {
       organisationId,
     });
     expect(opened.statusCode, opened.body).toBe(404);
+  });
+
+  it('refuses a new request against a Work that has been withdrawn', async () => {
+    // Supersession does not change `works.status`, so a read without
+    // `deleted_at is null` answers with the withdrawn row and every
+    // status check passes it. Both layers are measured: the route's, and
+    // the insert guard's with the route bypassed.
+    const withdrawnId = await seedWork(`MW-${runId.toUpperCase()}`, organisationId);
+    // 0071 withdraws a Work only through a real supersession citing a
+    // live approval, which is that module's own several-step flow. This
+    // test is about what MAINTENANCE does with the resulting state, so
+    // the fixture writes the state directly under replica mode — the
+    // same escape `removeOrganisationResidue` uses, scoped to one row.
+    await admin.begin(async (tx) => {
+      await tx.unsafe(`set local session_replication_role = 'replica'`);
+      await tx`update works set deleted_at = now() where id = ${withdrawnId}`;
+    });
+
+    const refused = await raise({ work: withdrawnId });
+    expect(refused.statusCode, refused.body).toBe(404);
+
+    await expect(
+      admin`
+        insert into maintenance_requests (
+          organisation_id, work_id, request_number, financial_year,
+          sequence_number, station, requester_name, priority, fault_summary,
+          created_by_user_id
+        )
+        values (
+          ${organisationId}, ${withdrawnId}, ${`MR/26-27/RAW${runId.slice(0, 2)}`},
+          '2026-27', 9001, 'Churchgate', 'Amit Patil', 'urgent',
+          'Raw insert against a withdrawn Work', 'fixture'
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23G01' });
   });
 
   it('answers the other organisation with nothing at all', async () => {

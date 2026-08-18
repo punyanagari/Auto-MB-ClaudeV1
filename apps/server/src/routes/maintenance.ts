@@ -290,15 +290,21 @@ async function readLines(
            l.cancellation_reason,
            l.expected_return_quantity::text as expected_return_quantity,
            l.asset_serials,
-           coalesce(
-             (select sum(dl.quantity) from maintenance_dispatch_lines dl
-              where dl.organisation_id = l.organisation_id
-                and dl.maintenance_request_line_id = l.id), 0
+           -- DERIVED FROM THE GUARDS' OWN EXPRESSIONS, one direction
+           -- only. Both totals used to be correlated subqueries beside
+           -- the two functions that sum the same rows, which is the
+           -- second arithmetic this module exists to refuse: dispatched
+           -- is ordered less cancelled less outstanding, and received is
+           -- the capped promise less what is still due. If a guard ever
+           -- changes its mind about either, the screen changes with it.
+           (l.quantity - l.cancelled_quantity
+             - app_private.maintenance_line_outstanding(l.organisation_id, l.id)
            )::quantity_amount::text as dispatched,
-           coalesce(
-             (select sum(rt.quantity) from maintenance_returns rt
-              where rt.organisation_id = l.organisation_id
-                and rt.maintenance_request_line_id = l.id), 0
+           (least(
+              l.expected_return_quantity,
+              l.quantity - l.cancelled_quantity
+                - app_private.maintenance_line_outstanding(l.organisation_id, l.id)
+            ) - app_private.maintenance_line_return_due(l.organisation_id, l.id)
            )::quantity_amount::text as received,
            app_private.maintenance_line_outstanding(
              l.organisation_id, l.id)::text as outstanding,
@@ -518,15 +524,21 @@ export function registerMaintenanceRoutes(
         `;
         // The stage strip counts the whole visible register, not the
         // page: a stat that described one page would disagree with the
-        // list the moment anybody paged.
-        const [counts] = await tx<
-          {
-            awaiting_approval: number;
-            approved: number;
-            partially_dispatched: number;
-            closed: number;
-          }[]
-        >`
+        // list the moment anybody paged. Skipped entirely when a cursor
+        // is present — the strip is rendered above the first page and
+        // does not change as the reader scrolls, so recomputing it per
+        // page is an aggregate over the register thrown away.
+        const [counts] =
+          cursor !== undefined
+            ? []
+            : await tx<
+                {
+                  awaiting_approval: number;
+                  approved: number;
+                  partially_dispatched: number;
+                  closed: number;
+                }[]
+              >`
           select
             count(*) filter (where r.status = 'awaiting_approval')::int
               as awaiting_approval,
@@ -584,8 +596,13 @@ export function registerMaintenanceRoutes(
       const input = request.body;
       const created = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, input.workId);
+        // `deleted_at is null`: a superseded Work has been withdrawn and
+        // takes no new request. Without the filter this read answers with
+        // the withdrawn row and `assertWorkOperable` passes it, because
+        // supersession does not change `status`.
         const [work] = await tx<{ work_code: string; status: string }[]>`
-          select work_code, status from works where id = ${input.workId}
+          select work_code, status from works
+          where id = ${input.workId} and deleted_at is null
         `;
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
         assertWorkOperable(work.status, 'raising a maintenance request');
@@ -617,6 +634,21 @@ export function registerMaintenanceRoutes(
               'One of the parts on this request is not an active part.',
             );
           }
+        }
+
+        // A line cannot promise back more than it asks for: the swap is
+        // one failed unit per replacement. The CHECK on the table says
+        // the same thing, and reaching it would be a 500 on a mistake an
+        // operator can fix.
+        const overPromised = input.lines.find(
+          (line) => Number(line.expectedReturnQuantity) > Number(line.quantity),
+        );
+        if (overPromised !== undefined) {
+          throw httpError(
+            400,
+            'QUANTITY_INVALID',
+            `${overPromised.description.trim()} promises more failed units back than it asks for.`,
+          );
         }
 
         const today = await organisationToday(tx, organisationId);
@@ -799,6 +831,19 @@ export function registerMaintenanceRoutes(
 
         const lines = await readLines(tx, organisationId, id);
         const byId = new Map(lines.map((line) => [line.id, line]));
+        // One row per line per challan is a unique index, so a repeated
+        // line would otherwise lose to it and arrive as a numbering
+        // conflict — a remedy telling the operator to try again, for a
+        // body that will fail identically every time.
+        if (
+          new Set(input.lines.map((entry) => entry.lineId)).size !== input.lines.length
+        ) {
+          throw httpError(
+            400,
+            'LINE_SHAPE_INVALID',
+            'One material line appears twice on this dispatch. Send each line once, with the total going on this challan.',
+          );
+        }
         for (const requested of input.lines) {
           const line = byId.get(requested.lineId);
           if (!line) {
@@ -1017,6 +1062,12 @@ export function registerMaintenanceRoutes(
     async ({ request, user, organisationId, tenant }) => {
       const { id, lineId } = request.params;
       const reason = request.body.reason.trim();
+      // The quantity is NOT a parameter. A write-off says "the rest of
+      // this line is not coming", and the rest is a number the server
+      // already knows; letting a caller name a smaller one produced a
+      // second dead end, because the guard refuses a second write-off
+      // and a partially written-off line could then never reach zero.
+      // Whole-balance plus write-once is terminal by construction.
       return tenant(async (tx) => {
         const scope = await scopeOf(tx, user.id);
         const existing = await requireRequest(tx, scope, id, true);
@@ -1039,16 +1090,16 @@ export function registerMaintenanceRoutes(
             'That line is already written off; the cancellation is on the record.',
           );
         }
-        if (Number(request.body.quantity) > Number(line.outstanding)) {
+        if (Number(line.outstanding) <= 0) {
           throw httpError(
             409,
-            'MAINTENANCE_DISPATCH_EXCEEDS_OUTSTANDING',
-            `${line.description} has only ${line.outstanding} ${line.unit} left to write off; material already on a challan has left the store.`,
+            'MAINTENANCE_REQUEST_IMMUTABLE',
+            `${line.description} has nothing left to write off; material already on a challan has left the store.`,
           );
         }
         await tx`
           update maintenance_request_lines
-          set cancelled_quantity = ${request.body.quantity},
+          set cancelled_quantity = ${line.outstanding},
               cancellation_reason = ${reason}
           where id = ${lineId}
         `.catch(rethrowWriteRefusal);
@@ -1062,7 +1113,7 @@ export function registerMaintenanceRoutes(
           {
             requestNumber: existing.request_number,
             lineId,
-            quantity: request.body.quantity,
+            quantity: line.outstanding,
             reason,
           },
         );
@@ -1097,7 +1148,7 @@ export function registerMaintenanceRoutes(
           throw httpError(
             409,
             'MAINTENANCE_NOT_CLOSEABLE',
-            'An unapproved request has nothing to close; approve it, or write its lines off first.',
+            'An unapproved request has nothing to close. Approve it first — a request that should not be fulfilled is approved, written off line by line, and then closed.',
           );
         }
         const lines = await readLines(tx, organisationId, id);
