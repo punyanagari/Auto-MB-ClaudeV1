@@ -1,6 +1,6 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 2930,
+  "totalDeclarations": 2931,
   "fileCount": 196,
   "files": {
     "apps/server/test/amc-schedule.integration.test.ts": 20,
@@ -76,7 +76,7 @@
     "apps/server/test/pdf-signature-evidence.integration.test.ts": 7,
     "apps/server/test/pdf-signature.test.ts": 23,
     "apps/server/test/pdf-signing.test.ts": 9,
-    "apps/server/test/platform.integration.test.ts": 13,
+    "apps/server/test/platform.integration.test.ts": 14,
     "apps/server/test/positive-decimal.test.ts": 3,
     "apps/server/test/production.integration.test.ts": 49,
     "apps/server/test/purchase-orders.integration.test.ts": 23,

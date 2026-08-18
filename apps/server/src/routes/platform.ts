@@ -404,20 +404,7 @@ export function registerPlatformRoutes(
     },
     async ({ reply, organisationId, user, tenant }) => {
       const accepted = await tenant(async (tx) => {
-        // WORK SCOPE, which the authority cannot express. The package is
-        // not work-scoped — RLS scopes it to the organisation and nothing
-        // filters it to assignments — so an assigned-scope member holding
-        // the authority would receive every Work the product hides from
-        // them. Refused by name rather than by silently exporting less,
-        // because a partial package that calls itself the whole record is
-        // the worse failure.
-        if (!(await hasFullWorkScope(tx, user.id))) {
-          throw httpError(
-            403,
-            'EXPORT_SCOPE_REQUIRED',
-            'A whole-organisation export can only be requested by a member who sees every Work. Ask an owner for full Work access, or for the export itself.',
-          );
-        }
+        await requireFullWorkScope(tx, user.id);
 
         // One build at a time. Two concurrent snapshots over sixty tables
         // is a real cost for an operator who clicked twice, and the second
@@ -468,6 +455,14 @@ export function registerPlatformRoutes(
     },
     async ({ request, reply, organisationId, user, tenant }) => {
       const artefact = await tenant(async (tx) => {
+        // The SAME work-scope test the request carries, and it has to be
+        // here too rather than only there: the artefact is one file for
+        // the whole organisation, so a member who may not see every Work
+        // must not be able to fetch one somebody else built. Enforcing it
+        // only at request time would leave the download as the way round
+        // it.
+        await requireFullWorkScope(tx, user.id);
+
         const [row] = await tx<ExportRow[]>`
           select ${tx.unsafe(EXPORT_COLUMNS)} from organisation_export_requests
           where id = ${request.params.id}
@@ -620,6 +615,29 @@ async function readRuns(tx: TransactionSql): Promise<JobRun[]> {
     outcome: parseJsonbColumn(row.outcome) as Record<string, unknown> | null,
     lastError: row.last_error,
   }));
+}
+
+/**
+ * The test the export authority cannot express.
+ *
+ * The package is not work-scoped: RLS scopes it to the organisation and
+ * nothing filters it to assignments, so an assigned-scope member holding
+ * `can_export_org` would receive every Work the product hides from them.
+ * Refused by name rather than by silently exporting less, because a
+ * partial package that calls itself the whole record is the worse
+ * failure.
+ *
+ * Applied on BOTH the request and the download. One artefact serves the
+ * whole organisation, so a check only at request time would leave the
+ * download as the way round it.
+ */
+async function requireFullWorkScope(tx: TransactionSql, userId: string): Promise<void> {
+  if (await hasFullWorkScope(tx, userId)) return;
+  throw httpError(
+    403,
+    'EXPORT_SCOPE_REQUIRED',
+    'A whole-organisation export is only for a member who sees every Work. Ask an owner for full Work access, or for the export itself.',
+  );
 }
 
 function exportNotFound(): Error {

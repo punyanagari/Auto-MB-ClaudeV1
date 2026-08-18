@@ -444,6 +444,31 @@ describe('the organisation export', () => {
     `.catch(() => undefined);
   });
 
+  it('refuses the DOWNLOAD to an assigned-scope member too, not only the request', async () => {
+    // One artefact serves the whole organisation, so a scope test only at
+    // request time would leave the download as the way round it — a member
+    // who may not see every Work could fetch the package somebody else
+    // built. The 404-vs-403 order matters here: the scope refusal comes
+    // first, so it answers the same way for a real id and a guessed one.
+    const cookie = await member('assigned-download', {
+      canExportOrg: true,
+      workScope: 'assigned',
+    });
+    const [ready] = await admin<{ id: string }[]>`
+      select id from organisation_export_requests
+      where organisation_id = ${organisationId}
+      order by requested_at desc limit 1
+    `;
+    expect(ready, 'no artefact to attempt').toBeDefined();
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/platform/exports/${ready?.id ?? ''}/download`,
+      headers: { cookie, 'x-organisation-id': organisationId },
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.json<{ code: string }>().code).toBe('EXPORT_SCOPE_REQUIRED');
+  });
+
   it('answers 404 for another organisation artefact, not 403', async () => {
     const accepted = await app.inject({
       method: 'POST',
