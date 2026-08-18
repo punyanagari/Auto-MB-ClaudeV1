@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Download } from 'lucide-react';
 import type {
   AuditEvent,
   AuditFacetsResponse,
@@ -13,13 +12,13 @@ import {
   humaniseAction,
   humaniseEntityType,
 } from '../lib/audit-text.js';
-import { downloadFile } from '../lib/download.js';
 import { describeLoadFailure, describeRefusal } from '../lib/load-failure.js';
-import { useAction, useReload } from '../lib/view-state.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { DateField } from '../ui/date-field.js';
-import { FormError, FormNotice } from '../ui/form.js';
+import { DownloadButton } from '../ui/download-button.js';
+import { FormError } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Sheet } from '../ui/sheet.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -106,7 +105,6 @@ export function AuditTrail({ api, organisationId }: AuditTrailProps) {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const [loadVersion, retry] = useReload();
-  const { pending, notice, actionError, act } = useAction();
 
   const fetchPage = useCallback(
     (cursor?: string) =>
@@ -182,23 +180,15 @@ export function AuditTrail({ api, organisationId }: AuditTrailProps) {
       titleId="audit-title"
       description="Every recorded action across the organisation, with the before and after of each change."
       action={
-        <Button
-          variant="outline"
-          disabled={pending}
-          onClick={() => {
-            void act(
-              () =>
-                downloadFile(
-                  () => api.downloadAuditWorkbook(organisationId, asQuery(filters)),
-                  'audit-trail.xlsx',
-                ),
-              'The audit trail was downloaded as a workbook.',
-            );
-          }}
-        >
-          <Download aria-hidden="true" className="size-4" />
-          Export .xlsx
-        </Button>
+        /* The SAME control every other register's export uses, and the
+           only one whose filters travel: the workbook is the register as
+           filtered, clamped to the same retention window. `docs/UX.md`
+           § 19 records why this export is the exception. */
+        <DownloadButton
+          label="Export .xlsx"
+          filename={`audit-trail-${windowFrom ?? 'all'}-to-${filters.to === '' ? 'now' : filters.to}.xlsx`}
+          fetchBlob={() => api.downloadAuditWorkbook(organisationId, asQuery(filters))}
+        />
       }
     />
   );
@@ -236,9 +226,6 @@ export function AuditTrail({ api, organisationId }: AuditTrailProps) {
   return (
     <section aria-labelledby="audit-title" className="flex flex-col gap-5">
       {header}
-
-      {notice !== null && <FormNotice>{notice}</FormNotice>}
-      {actionError !== null && <FormError>{actionError}</FormError>}
 
       <Card className="flex flex-col gap-4">
         <form

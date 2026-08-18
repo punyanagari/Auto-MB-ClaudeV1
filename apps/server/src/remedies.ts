@@ -150,6 +150,12 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // came from is the way back.
   CURSOR_INVALID:
     'Reload the register and page through it again; a cursor from an older list, or one naming a record outside your Works, no longer places a page.',
+  // One code for three refusals, all of them about the same thing: the
+  // dates an export was asked for. Two of them are the audit register's
+  // and the Tally file's "starts after it ends"; the third is the Tally
+  // file's span cap.
+  EXPORT_WINDOW_INVALID:
+    'Set the start of the window on or before its end, and keep a Tally export to one financial year at a time.',
   // Crossed the coverage bar when P12 collapsed three spellings of "that
   // letter was discarded" into one code — which is the dedupe paying for
   // itself: one refusal now earns one reviewed sentence.

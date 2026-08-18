@@ -369,6 +369,9 @@ export function InvoicesRegister({
             fetchBlob={() =>
               api.downloadRegisterWorkbook(organisationId, 'tax-invoices')
             }
+            {...(dateWindow.from !== '' || dateWindow.to !== ''
+              ? { note: 'Exports every invoice, not the dates on screen.' }
+              : {})}
           />
         }
       />

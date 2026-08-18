@@ -4,7 +4,7 @@ import type { MisSummaryResponse } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
 import { formatCompactInr, formatInr, todayIso } from '../format.js';
 import { downloadFile } from '../lib/download.js';
-import { describeLoadFailure, describeRefusal } from '../lib/load-failure.js';
+import { describeRefusal } from '../lib/load-failure.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -72,6 +72,24 @@ function monthLabel(month: string): string {
   const [year, index] = month.split('-');
   const name = MONTH_NAMES[Number(index) - 1];
   return name === undefined ? month : `${name} ${String(year)}`;
+}
+
+/**
+ * The first day of the Indian financial year that `today` falls in.
+ *
+ * April to March, so January, February and March belong to the year that
+ * STARTED the previous April. The naive `${currentYear}-04-01` produced a
+ * window whose start was after its end for the whole of the fourth quarter,
+ * and the Tally form then refused itself on first submit with a 400 nobody
+ * had touched anything to cause.
+ *
+ * String arithmetic on a date-only value, per `AGENTS.md` rule 6: nothing
+ * here round-trips through a timezone.
+ */
+export function financialYearStart(today: string): string {
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  return `${String(month < 4 ? year - 1 : year)}-04-01`;
 }
 
 export function Mis({ api, organisationId, isOwner }: MisProps) {
@@ -169,17 +187,19 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
           />
         </div>
         <div className="bg-card p-4 sm:p-5">
+          {/* `gstTotal` is CGST + SGST + IGST summed by PostgreSQL. This
+              tile used to print the invoice TOTAL as "GST" whenever the
+              month held an intra-state invoice, which overstated the tax
+              by the taxable value — and the alternative the screen is
+              forbidden is adding the three arms up here. A month can hold
+              both kinds of invoice, so no single arm is "the GST" either. */}
           <Stat
             label="Taxable value"
             value={latest === undefined ? '—' : formatCompactInr(latest.taxableValue)}
             hint={
               latest === undefined
                 ? 'Nothing declared'
-                : `GST ${formatCompactInr(
-                    latest.cgst === '0.00' && latest.sgst === '0.00'
-                      ? latest.igst
-                      : latest.total,
-                  )} on the face of the invoices`
+                : `GST ${formatCompactInr(latest.gstTotal)} on the face of the invoices`
             }
           />
         </div>
@@ -207,10 +227,11 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
           <div className="flex flex-col gap-1">
             <h2 className="text-base leading-snug font-medium">Output tax by month</h2>
             <p className="text-sm text-muted-foreground">
-              Submitted invoices and issued credit notes, on the frozen figures each
-              document was raised with. Credit notes are shown as their own column
-              rather than netted, because “invoiced this, credited that” is the pair an
-              accountant checks.
+              Invoices that declared a liability — submitted and superseded — and the
+              credit notes that reverse them, on the frozen figures each document was
+              raised with. Credit notes are shown as their own column rather than
+              netted, because “invoiced this, credited that” is the pair an accountant
+              checks. A month with neither is not listed.
             </p>
           </div>
         </CardHeader>
@@ -381,6 +402,11 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
                 import envelope. Every figure is the frozen one on the document, never
                 recomputed. Import it into the company your accountant already keeps.
               </p>
+              <p className="text-sm text-muted-foreground">
+                One way only. Nothing comes back: edits made in Tally are not read here,
+                and re-exporting a period already imported offers the same vouchers
+                again. Export at most one financial year at a time.
+              </p>
             </div>
           </CardHeader>
           <form
@@ -405,7 +431,7 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
               name="tally-from"
               label="From"
               required
-              defaultValue={`${todayIso().slice(0, 4)}-04-01`}
+              defaultValue={financialYearStart(todayIso())}
               fieldClassName="my-0"
             />
             <DateField

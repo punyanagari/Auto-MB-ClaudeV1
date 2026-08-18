@@ -161,15 +161,20 @@ export function Works({
             Every awarded contract, from LOA to delivery evidence.
           </p>
         </div>
-        {/* The export is open to every member who can read the register:
-            it hands back exactly the rows the screen is showing, narrowed
-            to the caller's assigned Works by the server. Uploading an LOA
-            is a write and stays behind the writer role. */}
+        {/* The export is open to every member who can read the register.
+            It hands back the WHOLE register under the caller's own scope —
+            narrowed to their assigned Works by the server, never by the
+            search box or the status filter on this screen — and the note
+            below says so while either is set. Uploading an LOA is a write
+            and stays behind the writer role. */}
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <DownloadButton
             label="Export .xlsx"
             filename="works.xlsx"
             fetchBlob={() => api.downloadRegisterWorkbook(organisationId, 'works')}
+            {...(query !== '' || filter !== 'all'
+              ? { note: 'Exports the whole register, not the current filters.' }
+              : {})}
           />
           {canModify && (
             <Button onClick={onUpload}>

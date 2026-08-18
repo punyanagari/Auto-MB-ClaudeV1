@@ -777,17 +777,41 @@ worse than no setting at all.
 
 #### Export on a register is one control with one meaning
 
-`ui/download-button.tsx` is on Works, Challans, Invoices, Inventory,
-Payments and Employees, and on the audit register itself. It is always the
-same control in the same place — the page header's action slot — and it
-always hands back exactly the rows that register is showing, under the same
-scope the screen was served with.
+`ui/download-button.tsx` is on Works, Challans (the delivery tab only — the
+issue-challan register has no workbook, and one button serving two
+registers handed an operator the wrong file), Invoices, Inventory, Payments
+and Employees, and on the audit register itself. It is always the same
+control in the same place: the page header's action slot.
 
-It prints its own refusal beside itself rather than staying silent, and that
-is the case worth reviewing: a work-scoped register narrows for an
+**A register export is the WHOLE register under the caller's own scope, not
+the screen's current filter state.** The filters do not travel, and the
+control says so — a register with an active search, status or date filter
+renders a line under its button naming what the file will actually contain.
+That is a recorded decision rather than a limitation nobody noticed: wiring
+six different filter shapes into the export is one querystring schema and
+one WHERE fragment per register, and it will be done when an operator asks
+for a filtered workbook rather than pre-emptively.
+
+**The audit register is the one export whose filters travel**, and it is not
+an inconsistency. Its window is clamped by the organisation's retention
+policy, so a trail exported without its window would claim to reach further
+back than the register may look. There, the filters are part of what the
+document IS.
+
+Both kinds say what they are in the filename: an audit workbook carries its
+applied window, a Tally file carries its period. A workbook cut short by the
+row cap says so in its own last row, not only in a response header.
+
+The control prints its own refusal beside itself rather than staying silent,
+and that is the case worth reviewing: a work-scoped register narrows for an
 assigned-scope member, but an organisation-wide one (vendor payments,
 employees) refuses them outright, and a button that quietly did nothing
 would read as broken rather than as a wall.
+
+The Tally card states, on the screen, that the integration is ONE WAY:
+nothing is read back, and re-exporting a period offers the same vouchers
+again. An export that looked like a sync would invite somebody to expect
+their Tally edits to return.
 
 **When the mock grows either screen, the mock wins.** This entry retires the
 moment there is something to cite, on the § 4 iteration pipeline: change it

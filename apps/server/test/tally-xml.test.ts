@@ -57,7 +57,7 @@ function amountsIn(voucher: string): readonly string[] {
 
 describe('the Tally import envelope', () => {
   it('is generated from the fixture version it pins', () => {
-    expect(SAMPLE.fixtureVersion).toBe('tally-vouchers-v1');
+    expect(SAMPLE.fixtureVersion).toBe('tally-vouchers-v2');
   });
 
   it('matches the golden file byte for byte', () => {
@@ -107,10 +107,22 @@ describe('double entry', () => {
     expect(creditNote).toContain('<AMOUNT>1475000.00</AMOUNT>');
   });
 
-  it('debits the bank on a receipt', () => {
-    const receipt = vouchers(buildTallyXml(SAMPLE)).at(-1) ?? '';
+  it('debits the bank on a receipt and credits the party the sale debited', () => {
+    const xml = buildTallyXml(SAMPLE);
+    const receipt = vouchers(xml).at(-1) ?? '';
     expect(receipt).toContain('<LEDGERNAME>Bank</LEDGERNAME>');
     expect(receipt).toContain('<AMOUNT>-250000.50</AMOUNT>');
+    // The property that makes the file reconcile, and the one the first
+    // cut of this got wrong: the party credited by a receipt must be the
+    // party debited by a sale. A receipt posted to a ledger no sale
+    // touches leaves that account open in the accountant's books forever.
+    const [sale] = vouchers(xml);
+    const partyOf = (voucher: string): string =>
+      /<PARTYLEDGERNAME>([^<]*)<\/PARTYLEDGERNAME>/.exec(voucher)?.[1] ?? '';
+    expect(partyOf(receipt)).toBe(partyOf(sale ?? ''));
+    expect(receipt).toContain(
+      '<LEDGERNAME>North Western Railway &amp; Co</LEDGERNAME>',
+    );
   });
 });
 

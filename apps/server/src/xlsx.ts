@@ -79,9 +79,31 @@ export interface XlsxColumn {
 /** A cell value: the register's own string, or null for an empty cell. */
 export type XlsxValue = string | null;
 
-/** Plain decimals only — no exponent, no thousands separators, no currency
- * symbol. Anything else is written as text. */
-const DECIMAL = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+/**
+ * Whether a value is a plain decimal — no exponent, no thousands
+ * separator, no currency symbol — and therefore safe to write into a
+ * NUMERIC cell. Anything else becomes text.
+ *
+ * Written as a scan rather than as a pattern. The obvious regex
+ * (`^-?[0-9]+(\.[0-9]+)?$`) is linear and perfectly safe, and the security
+ * linter flags it anyway on a heuristic about a quantifier next to an
+ * optional group. Ten boring lines settle that argument permanently and
+ * bound both halves besides: eighteen integer digits and six decimals
+ * reach past the widest column this schema has (`numeric(18,3)`).
+ */
+function isDigits(text: string): boolean {
+  return text.length > 0 && /^[0-9]+$/.test(text);
+}
+
+function isPlainDecimal(value: string): boolean {
+  const body = value.startsWith('-') ? value.slice(1) : value;
+  const parts = body.split('.');
+  if (parts.length > 2) return false;
+  const [whole, fraction] = parts;
+  if (whole === undefined || whole.length > 18 || !isDigits(whole)) return false;
+  if (fraction === undefined) return true;
+  return fraction.length <= 6 && isDigits(fraction);
+}
 
 /** XML text escaping, plus the control characters XML 1.0 cannot carry at
  * all. Tab, newline and carriage return are legal and are kept; the rest of
@@ -116,7 +138,7 @@ export function columnName(index: number): string {
 
 function cellXml(reference: string, value: XlsxValue, numeric: boolean): string {
   if (value === null || value === '') return '';
-  if (numeric && DECIMAL.test(value)) {
+  if (numeric && isPlainDecimal(value)) {
     return `<c r="${reference}"><v>${value}</v></c>`;
   }
   return `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`;

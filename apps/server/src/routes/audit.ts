@@ -103,6 +103,11 @@ interface ResolvedWindow {
   /** The newest day it may reach, or null for "up to now". */
   readonly to: string | null;
   readonly retentionMonths: number;
+  /** The window's two boundary INSTANTS, resolved once against the
+   * organisation's timezone. The predicate compares against these scalars
+   * rather than re-deriving them per row; see `registerPredicate`. */
+  readonly fromAt: Date;
+  readonly toAt: Date | null;
 }
 
 /**
@@ -118,6 +123,13 @@ interface ResolvedWindow {
  *
  * `greatest` does the clamp: a `from` inside the window is honoured, a
  * `from` older than it — or absent — falls back to the retention floor.
+ *
+ * The two boundary INSTANTS come back from the same statement. They used to
+ * be re-derived inside the register's WHERE clause as a correlated
+ * subselect against `organisations` — once per candidate row, which made the
+ * predicate non-sargable and cost the register the very index
+ * `audit_events_timeline_idx` exists to give it. Resolved here they are
+ * plain scalars, so the range is a seek.
  */
 async function resolveWindow(
   tx: TransactionSql,
@@ -127,20 +139,41 @@ async function resolveWindow(
   if (from !== undefined && to !== undefined && from > to) {
     throw httpError(
       400,
-      'AUDIT_WINDOW_INVALID',
+      'EXPORT_WINDOW_INVALID',
       'The register window starts after it ends.',
     );
   }
-  const [row] = await tx<{ window_from: string; retention_months: number }[]>`
+  const [row] = await tx<
+    {
+      window_from: string;
+      retention_months: number;
+      from_at: Date;
+      to_at: Date | null;
+    }[]
+  >`
+    with resolved as (
+      select
+        greatest(
+          ${from ?? null}::date,
+          ((now() at time zone o.timezone)::date
+            - make_interval(months => o.audit_retention_months))::date
+        ) as window_from,
+        o.audit_retention_months as retention_months,
+        o.timezone as timezone
+      from organisations o
+      where o.id = app_private.current_organisation_id()
+    )
     select
-      greatest(
-        ${from ?? null}::date,
-        ((now() at time zone o.timezone)::date
-          - make_interval(months => o.audit_retention_months))::date
-      )::text as window_from,
-      o.audit_retention_months as retention_months
-    from organisations o
-    where o.id = app_private.current_organisation_id()
+      window_from::text as window_from,
+      retention_months,
+      (window_from::timestamp at time zone timezone) as from_at,
+      case
+        when ${to ?? null}::date is null then null
+        -- Inclusive: the day AFTER the requested one, at its own local
+        -- midnight, compared with a strict less-than below.
+        else ((${to ?? null}::date + 1)::timestamp at time zone timezone)
+      end as to_at
+    from resolved
   `;
   if (!row) {
     // Unreachable through the tenant binding, which proves membership of
@@ -153,6 +186,8 @@ async function resolveWindow(
     from: row.window_from,
     to: to ?? null,
     retentionMonths: Number(row.retention_months),
+    fromAt: row.from_at,
+    toAt: row.to_at,
   };
 }
 
@@ -161,11 +196,10 @@ async function resolveWindow(
  * workbook export so the two can never disagree about which events the
  * register contains.
  *
- * `from`/`to` are compared as the organisation's own days: the date is cast
- * to a local timestamp and then interpreted in `organisations.timezone`, so
- * "8 August" means the eight-hour-behind operator's 8 August rather than
- * UTC's. `to` is inclusive, which is why it compares against the START of
- * the following day rather than against the day itself.
+ * The window arrives as two resolved INSTANTS — `resolveWindow` turned the
+ * organisation's own days into them once — so this compares `occurred_at`
+ * against scalars and seeks inside `audit_events_timeline_idx` rather than
+ * running a correlated subselect per row.
  */
 function registerPredicate(
   tx: TransactionSql,
@@ -178,12 +212,8 @@ function registerPredicate(
   },
 ) {
   return tx`
-    ae.occurred_at >= (
-      select (${window.from}::date::timestamp) at time zone o.timezone
-      from organisations o where o.id = ae.organisation_id)
-    and (${window.to === null} or ae.occurred_at < (
-      select ((${window.to}::date + 1)::timestamp) at time zone o.timezone
-      from organisations o where o.id = ae.organisation_id))
+    ae.occurred_at >= ${window.fromAt}
+    and (${window.toAt === null} or ae.occurred_at < ${window.toAt})
     and (${filters.actorUserId === undefined}
       or ae.actor_user_id = ${filters.actorUserId ?? null})
     and (${filters.entityType === undefined}
@@ -343,10 +373,18 @@ export function registerAuditRoutes(app: AppInstance, auth: Auth, database: Sql)
    *
    * Capped at `EXPORT_ROW_CAP` rows rather than paged: an export is one
    * file an operator opens, and a workbook that silently held the first
-   * page of a trail would be worse than one that says it is truncated.
-   * The response header names the applied window so the file is
-   * self-describing, and the export itself is audited — reading every
-   * colleague's actions in one download is an act worth recording.
+   * page of a trail would be worse than one that says it is truncated. So
+   * it does not silently hold it — the cap is over-fetched by one, a final
+   * row in the sheet says the file was cut, and two response headers carry
+   * the same fact for a machine. The FILENAME carries the applied window,
+   * so a workbook on a desktop still says which days it covers.
+   *
+   * `limit` and `cursor` are accepted by the shared query schema and
+   * deliberately IGNORED here: an export is the whole filtered register,
+   * not one page of it, and the cap above is the only bound that applies.
+   *
+   * The export itself is audited — reading every colleague's actions in
+   * one download is an act worth recording.
    */
   tenantRoute(
     {
@@ -357,10 +395,10 @@ export function registerAuditRoutes(app: AppInstance, auth: Auth, database: Sql)
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const query = request.query;
-      const bytes = await tenant(async (tx) => {
+      const result = await tenant(async (tx) => {
         await requireFullScope(tx, user.id);
         const window = await resolveWindow(tx, query.from, query.to);
-        const rows = await tx<EventRow[]>`
+        const fetched = await tx<EventRow[]>`
           select ae.id, ae.occurred_at, ae.actor_user_id,
                  u."name" as actor_name, ae.action, ae.entity_type,
                  ae.entity_id, ae.details
@@ -368,8 +406,10 @@ export function registerAuditRoutes(app: AppInstance, auth: Auth, database: Sql)
           left join auth_users u on u."id" = ae.actor_user_id
           where ${registerPredicate(tx, window, query)}
           order by ae.occurred_at desc, ae.id desc
-          limit ${EXPORT_ROW_CAP}
+          limit ${EXPORT_ROW_CAP + 1}
         `;
+        const capped = fetched.length > EXPORT_ROW_CAP;
+        const rows = fetched.slice(0, EXPORT_ROW_CAP);
         await audit(
           tx,
           organisationId,
@@ -377,28 +417,52 @@ export function registerAuditRoutes(app: AppInstance, auth: Auth, database: Sql)
           'audit_trail.exported',
           'organisations',
           organisationId,
-          { rows: rows.length, windowFrom: window.from, windowTo: window.to },
+          {
+            rows: rows.length,
+            capped,
+            windowFrom: window.from,
+            windowTo: window.to,
+          },
         );
-        return buildXlsx(
-          'Audit trail',
-          AUDIT_COLUMNS,
-          rows.map((row) => [
-            row.occurred_at.toISOString(),
-            row.actor_name,
-            row.actor_user_id,
-            row.action,
-            row.entity_type,
-            row.entity_id,
-            detailText(parseJsonbColumn(row.details)),
-          ]),
-        );
+        const cells: (string | null)[][] = rows.map((row) => [
+          row.occurred_at.toISOString(),
+          row.actor_name,
+          row.actor_user_id,
+          row.action,
+          row.entity_type,
+          row.entity_id,
+          detailText(parseJsonbColumn(row.details)),
+        ]);
+        if (capped) {
+          cells.push([
+            `… truncated at ${String(EXPORT_ROW_CAP)} rows. Narrow the window or the filters and export again.`,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+          ]);
+        }
+        return {
+          capped,
+          window,
+          bytes: buildXlsx('Audit trail', AUDIT_COLUMNS, cells),
+        };
       });
       void reply.type(XLSX_CONTENT_TYPE);
+      // The window in the NAME, so a file sitting on a desktop a month
+      // later still says which days it covers — the same reason the Tally
+      // export carries its own.
       void reply.header(
         'content-disposition',
-        'attachment; filename="audit-trail.xlsx"',
+        `attachment; filename="audit-trail-${result.window.from}-to-${result.window.to ?? 'now'}.xlsx"`,
       );
-      return reply.send(bytes);
+      void reply.header('x-auto-mb-export-window-from', result.window.from);
+      void reply.header('x-auto-mb-export-window-to', result.window.to ?? 'now');
+      void reply.header('x-auto-mb-export-rows-cap', String(EXPORT_ROW_CAP));
+      void reply.header('x-auto-mb-export-truncated', String(result.capped));
+      return reply.send(result.bytes);
     },
   );
 }

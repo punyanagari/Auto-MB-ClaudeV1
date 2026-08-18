@@ -4,7 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
-import type { AuditFacetsResponse, AuditRegisterResponse } from '@auto-mb/contracts';
+import {
+  EXPORTABLE_REGISTERS,
+  type AuditFacetsResponse,
+  type AuditRegisterResponse,
+  type MisSummaryResponse,
+} from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { removeOrganisationResidue } from '@auto-mb/db/testing';
@@ -55,6 +60,9 @@ const migrationsDirectory = path.resolve(
 );
 
 const runId = randomBytes(5).toString('hex');
+/** The party every seeded invoice is raised on, and therefore the ledger
+ * every Tally voucher must name. */
+const BUYER_NAME = 'North Eastern Railway & Sons';
 const ownerEmail = `aud-owner-${runId}@integration.test`;
 const auditorEmail = `aud-auditor-${runId}@integration.test`;
 const scopedEmail = `aud-scoped-${runId}@integration.test`;
@@ -172,6 +180,11 @@ async function workbook(
   };
 }
 
+/** The `code` of a refusal envelope, typed rather than read off `any`. */
+function refusalCode(body: string): string {
+  return (JSON.parse(body) as { code: string }).code;
+}
+
 async function seedWork(code: string): Promise<string> {
   const id = randomUUID();
   await admin`
@@ -209,6 +222,158 @@ async function seedEvent(event: {
       ${organisationId}, ${event.actor ?? ownerUserId}, ${event.action},
       ${event.entityType}, ${event.entityId ?? null}, ${event.occurredAt},
       ${admin.json((event.details ?? {}) as never)}
+    )
+  `;
+}
+
+/**
+ * Real accounting records, so the aggregates and the Tally envelope are
+ * tested against data rather than against an empty organisation.
+ *
+ * Written with the admin pool rather than driven through the routes: this
+ * suite is about the READ side, and issuing an invoice properly takes a
+ * finalized Measurement Book, a railway bill and a numbering series that
+ * five other suites already prove. The shapes below are the ones the
+ * database's own CHECKs accept, which is the part that matters here.
+ *
+ * DIRECT invoices (0039) — no Work, no Measurement Book, a stated taxable
+ * value — because that shape is seedable and it doubles as the proof that
+ * the tax-invoice workbook keeps a work-less row.
+ *
+ * Three documents and one bill:
+ *
+ *   * an intra-state SUBMITTED invoice, CGST+SGST, no IGST;
+ *   * an inter-state SUPERSEDED invoice, IGST alone;
+ *   * the full-value credit note that superseded it;
+ *   * a bill submitted 95 days ago, which lands in the 90+ ageing band.
+ *
+ * The first two share a month, so that month carries all three tax arms —
+ * which is the mixed month `gstTotal` exists for.
+ */
+async function seedAccountingRecords(): Promise<void> {
+  // The split guard refuses a money-carrying invoice in an organisation
+  // with no state of its own.
+  await admin`
+    update organisations set state_code = '08' where id = ${organisationId}
+  `;
+  const [buyer] = await admin<{ id: string }[]>`
+    insert into contacts (organisation_id, designation, is_client, created_by_user_id)
+    values (${organisationId}, ${BUYER_NAME}, true, ${ownerUserId})
+    returning id
+  `;
+  if (!buyer) throw new Error('buyer contact missing');
+
+  const insertInvoice = async (invoice: {
+    readonly number: string;
+    readonly sequence: number;
+    readonly date: string;
+    readonly placeOfSupply: string;
+    readonly taxable: string;
+    readonly cgst: string;
+    readonly sgst: string;
+    readonly igst: string;
+    readonly total: string;
+  }): Promise<string> => {
+    const [row] = await admin<{ id: string }[]>`
+      insert into tax_invoices (
+        organisation_id, status, invoice_number, sequence_number, fy_label,
+        invoice_date, sac_code, service_description, gst_rate,
+        place_of_supply, buyer_contact_id, reverse_charge_applicable,
+        stated_taxable_value, buyer_snapshot, taxable_value, cgst_amount,
+        sgst_amount, igst_amount, total_amount, round_off, issued_snapshot,
+        submitted_at, submitted_by_user_id, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'submitted', ${invoice.number}, ${invoice.sequence},
+        '2026-27', ${invoice.date}, '995461', 'Signalling works',
+        '18.00', ${invoice.placeOfSupply}, ${buyer.id}, false,
+        ${invoice.taxable},
+        ${admin.json({ designation: BUYER_NAME, gstin: '08AAACR1234M1ZK' })},
+        ${invoice.taxable}, ${invoice.cgst}, ${invoice.sgst}, ${invoice.igst},
+        ${invoice.total}, '0.00', ${admin.json({})}, now(), ${ownerUserId},
+        ${ownerUserId}
+      )
+      returning id
+    `;
+    if (!row) throw new Error('invoice not seeded');
+    return row.id;
+  };
+
+  await insertInvoice({
+    number: `${runId}/INTRA`,
+    sequence: 9001,
+    date: '2026-05-14',
+    placeOfSupply: '08',
+    taxable: '100000.00',
+    cgst: '9000.00',
+    sgst: '9000.00',
+    igst: '0.00',
+    total: '118000.00',
+  });
+  const superseded = await insertInvoice({
+    number: `${runId}/INTER`,
+    sequence: 9002,
+    date: '2026-05-20',
+    placeOfSupply: '29',
+    taxable: '50000.00',
+    cgst: '0.00',
+    sgst: '0.00',
+    igst: '9000.00',
+    total: '59000.00',
+  });
+  await admin`
+    insert into credit_notes (
+      organisation_id, tax_invoice_id, status, note_number, sequence_number,
+      fy_label, note_date, reason, taxable_value, cgst_amount, sgst_amount,
+      igst_amount, round_off, total_amount, issued_snapshot, issued_at,
+      issued_by_user_id, created_by_user_id
+    )
+    values (
+      ${organisationId}, ${superseded}, 'issued', ${`${runId}/CN`}, 9001,
+      '2026-27', '2026-05-25', 'Re-measured after joint inspection',
+      '50000.00', '0.00', '0.00', '9000.00', '0.00', '59000.00',
+      ${admin.json({})}, now(), ${ownerUserId}, ${ownerUserId}
+    )
+  `;
+  // Superseded only AFTER its credit note exists, which is the order
+  // 0051's guards require and the order the product performs.
+  await admin`
+    update tax_invoices set status = 'superseded' where id = ${superseded}
+  `;
+
+  // A stock movement that belongs to NO Work. 0087's shape CHECK allows
+  // one (an opening adjustment, a production receipt), and the workbook's
+  // join used to drop every one of them.
+  const [item] = await admin<{ id: string }[]>`
+    insert into production_items (
+      organisation_id, item_code, name, category, unit, created_by_user_id
+    )
+    values (
+      ${organisationId}, ${`AUD-${runId}`}, 'Audit fixture item', 'component',
+      'Nos', ${ownerUserId}
+    )
+    returning id
+  `;
+  if (!item) throw new Error('production item missing');
+  await admin`
+    insert into stock_movements (
+      organisation_id, production_item_id, sequence_number, movement_type,
+      quantity, balance_after, movement_date, reason, created_by_user_id
+    )
+    values (
+      ${organisationId}, ${item.id}, 1, 'adjustment_in', '10.000', '10.000',
+      current_date, 'Opening stock, no Work', ${ownerUserId}
+    )
+  `;
+
+  await admin`
+    insert into bills (
+      organisation_id, work_id, bill_number, status, lines_snapshot,
+      total_amount, prepared_by_user_id, submitted_at
+    )
+    values (
+      ${organisationId}, ${sharedWorkId}, 9001, 'submitted', ${admin.json([])},
+      '250000.00', ${ownerUserId}, now() - interval '95 days'
     )
   `;
 }
@@ -302,6 +467,7 @@ beforeAll(async () => {
 
   sharedWorkId = await seedWork(`AUD-${runId.toUpperCase()}`);
   privateWorkId = await seedWork(`AUDP-${runId.toUpperCase()}`);
+  await seedAccountingRecords();
   await admin`
     insert into work_assignments (
       organisation_id, work_id, user_id, created_by_user_id
@@ -470,7 +636,7 @@ describe('the retention window', () => {
       organisationId,
     });
     expect(response.statusCode, response.body).toBe(400);
-    expect(response.json<{ code: string }>().code).toBe('AUDIT_WINDOW_INVALID');
+    expect(response.json<{ code: string }>().code).toBe('EXPORT_WINDOW_INVALID');
   });
 });
 
@@ -549,7 +715,14 @@ describe('the audit workbook', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     expect(response.headers['content-type']).toContain('spreadsheetml');
-    expect(response.headers['content-disposition']).toContain('audit-trail.xlsx');
+    // The applied window is in the NAME, so a file on a desktop a month
+    // later still says which days it covers, and the headers say whether
+    // the cap cut it short.
+    expect(response.headers['content-disposition']).toMatch(
+      /filename="audit-trail-\d{4}-\d{2}-\d{2}-to-now\.xlsx"/,
+    );
+    expect(response.headers['x-auto-mb-export-truncated']).toBe('false');
+    expect(response.headers['x-auto-mb-export-window-to']).toBe('now');
     expect(sheetText(response.rawPayload)).toContain('challan.issued');
     // Downloading every colleague's actions in one file is itself an act
     // worth recording.
@@ -596,7 +769,7 @@ describe('register workbooks and work scope', () => {
     // "there are none" rather than "this is not yours".
     const sheet = await workbook('payments', scoped);
     expect(sheet.status).toBe(403);
-    expect(JSON.parse(sheet.body).code).toBe('WORK_SCOPE_FORBIDDEN');
+    expect(refusalCode(sheet.body)).toBe('WORK_SCOPE_FORBIDDEN');
   });
 
   it('requires the register’s own authority on top of scope', async () => {
@@ -606,7 +779,7 @@ describe('register workbooks and work scope', () => {
     expect(withoutPayroll.status).toBe(200);
     const refused = await workbook('employees', plain);
     expect(refused.status).toBe(403);
-    expect(JSON.parse(refused.body).code).toBe('AUTHORITY_REQUIRED');
+    expect(refusalCode(refused.body)).toBe('AUTHORITY_REQUIRED');
   });
 
   it('refuses a register name it does not know before the handler runs', async () => {
@@ -622,14 +795,67 @@ describe('register workbooks and work scope', () => {
 
   it('does not export the audit trail through the shared register route', async () => {
     // It has its own route, its own retention clamp and its own authority.
-    // Reaching it through the generic one would bypass all three.
+    // Reaching it through the generic one would bypass all three, so the
+    // name is not in the shared route's enum at all and validation
+    // refuses it before the handler runs.
     const response = await authed(owner, {
       method: 'GET',
       url: '/api/registers/audit-events/workbook.xlsx',
       organisationId,
     });
-    expect(response.statusCode, response.body).toBe(404);
-    expect(response.json<{ code: string }>().code).toBe('REGISTER_UNKNOWN');
+    expect(response.statusCode, response.body).toBe(400);
+  });
+
+  it('RUNS every register statement, not just the two the walls exercise', async () => {
+    // Four of the six statements were never executed by any test, so a
+    // typo in one would have shipped: a workbook route answers 500 and
+    // the operator sees a broken button. Every name in the contract's
+    // own list is exercised here, so adding a register without a working
+    // statement fails rather than waiting to be clicked.
+    for (const register of EXPORTABLE_REGISTERS) {
+      const response = await authed(owner, {
+        method: 'GET',
+        url: `/api/registers/${register}/workbook.xlsx`,
+        organisationId,
+      });
+      expect(response.statusCode, `${register}: ${response.body}`).toBe(200);
+      // Not merely bytes: the sheet's own header row, so a statement
+      // whose column count drifted from its descriptor fails here.
+      expect(sheetText(response.rawPayload)).toContain('<row r="1">');
+      expect(response.headers['x-auto-mb-export-truncated']).toBe('false');
+    }
+  });
+
+  it('keeps a work-less stock movement, which an inner join dropped', async () => {
+    const sheet = await workbook('stock-movements', owner);
+    expect(sheet.status).toBe(200);
+    expect(sheet.sheet).toContain(`AUD-${runId}`);
+  });
+
+  it('keeps a DIRECT invoice, which belongs to no Work', async () => {
+    // The same shape as the work-less stock movement: an inner join to
+    // `works` silently dropped every direct invoice (0039) from the
+    // workbook while the register's own screen listed them.
+    const sheet = await workbook('tax-invoices', owner);
+    expect(sheet.status).toBe(200);
+    expect(sheet.sheet).toContain(`${runId}/INTRA`);
+  });
+
+  it('withholds a work-less row from an assigned-scope member', async () => {
+    // A direct invoice is an organisation-level fact, so the row-level
+    // scope predicate must withhold it rather than the join dropping it.
+    const sheet = await workbook('tax-invoices', scoped);
+    expect(sheet.status).toBe(200);
+    expect(sheet.sheet).not.toContain(`${runId}/INTRA`);
+  });
+
+  it('lets a member who can READ the vendor ledger export it', async () => {
+    // GET /api/vendor-invoices — the read behind the screen this button
+    // sits on — declares no authority, and the founder of a new
+    // organisation is not granted can_manage_payments at bootstrap. An
+    // export must not be harder to obtain than the screen it exports.
+    const sheet = await workbook('payments', owner);
+    expect(sheet.status).toBe(200);
   });
 
   it('records every register export in the trail', async () => {
@@ -679,7 +905,9 @@ describe('the management summary', () => {
     for (const bucket of body.receivablesAgeing) {
       expect(bucket.outstanding).toMatch(/^-?\d+\.\d{2}$/);
     }
-    expect(body.indeterminateBills).toBe(0);
+    // The one seeded bill: submitted, but its Measurement Book is not
+    // closed by a railway bill, so no amount is certified against it yet.
+    expect(body.indeterminateBills).toBe(1);
   });
 
   it('answers the payroll panel only for a member who may read payroll', async () => {
@@ -709,9 +937,127 @@ describe('the management summary', () => {
     });
     expect(response.statusCode, response.body).toBe(403);
   });
+
+  it('counts a SUPERSEDED invoice beside its credit note', async () => {
+    // The pair the first cut of this dropped: a superseded invoice
+    // declared its liability and was reported, and its full-value credit
+    // note reverses it. Counting the note without the invoice showed the
+    // month as a credit against nothing.
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/mis/summary',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const may = response
+      .json<MisSummaryResponse>()
+      .outputTax.find((month) => month.month === '2026-05');
+    expect(may, 'the seeded month is missing from the series').toBeDefined();
+    expect(may?.invoiceCount).toBe(2);
+    expect(may?.taxableValue).toBe('150000.00');
+    expect(may?.creditNoteCount).toBe(1);
+    expect(may?.creditTotal).toBe('59000.00');
+  });
+
+  it('sums the three tax arms server-side for a mixed month', async () => {
+    // May carries one intra-state invoice and one inter-state one, so all
+    // three arms are non-zero and no single one of them is "the GST".
+    // The screen may not add them, so the server does.
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/mis/summary',
+      organisationId,
+    });
+    const may = response
+      .json<MisSummaryResponse>()
+      .outputTax.find((month) => month.month === '2026-05');
+    expect(may?.cgst).toBe('9000.00');
+    expect(may?.sgst).toBe('9000.00');
+    expect(may?.igst).toBe('9000.00');
+    expect(may?.gstTotal).toBe('27000.00');
+    // And it is NOT the invoice total, which is what the screen printed
+    // as "GST" before this field existed.
+    expect(may?.total).toBe('177000.00');
+  });
+
+  it('ages a bill submitted 95 days ago into the 90+ band', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/mis/summary',
+      organisationId,
+    });
+    const body = response.json<MisSummaryResponse>();
+    const overdue = body.receivablesAgeing.find((band) => band.bucket === '90+');
+    // The bill's Measurement Book is not closed, so its outstanding
+    // amount is UNKNOWN rather than zero: it is counted apart and does
+    // not inflate a band with an amount nobody knows.
+    expect(overdue?.billCount).toBe(0);
+    expect(body.indeterminateBills).toBe(1);
+  });
 });
 
 describe('the Tally export', () => {
+  async function envelope(): Promise<string> {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/exports/tally.xml?from=2026-04-01&to=2027-03-31',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.body;
+  }
+
+  it('names the party the invoice named, from the snapshot', async () => {
+    // The defect this pins: `buyer_snapshot` has never carried a `name`
+    // key — the party is `designation`, as `routes/search.ts` and the
+    // invoice register both read it — so the first cut of this file
+    // posted every voucher to the "Unregistered" fallback. Asserted
+    // against REAL snapshot JSON rather than a hand-built object,
+    // because the bug was in the shape of the stored value.
+    const xml = await envelope();
+    expect(xml).toContain(
+      `<PARTYLEDGERNAME>North Eastern Railway &amp; Sons</PARTYLEDGERNAME>`,
+    );
+    expect(xml).not.toContain('Unregistered');
+  });
+
+  it('emits the superseded sale as well as its credit note', async () => {
+    const xml = await envelope();
+    expect(xml).toContain(`<VOUCHERNUMBER>${runId}/INTER</VOUCHERNUMBER>`);
+    expect(xml).toContain(`<VOUCHERNUMBER>${runId}/CN</VOUCHERNUMBER>`);
+    expect(xml).toContain('<VOUCHERTYPENAME>Credit Note</VOUCHERTYPENAME>');
+  });
+
+  it('splits the tax arms the way each invoice was raised', async () => {
+    const xml = await envelope();
+    // The intra-state sale carries CGST and SGST; the inter-state one
+    // carries IGST. Both come off the frozen columns, never a rate.
+    expect(xml).toContain('<LEDGERNAME>Output CGST</LEDGERNAME>');
+    expect(xml).toContain('<LEDGERNAME>Output SGST</LEDGERNAME>');
+    expect(xml).toContain('<LEDGERNAME>Output IGST</LEDGERNAME>');
+  });
+
+  it('refuses a window wider than a financial year', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/exports/tally.xml?from=2024-01-01&to=2027-03-31',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('EXPORT_WINDOW_INVALID');
+  });
+
+  it('refuses a date that looks like one and is not', async () => {
+    // 2026-02-31 matches a shape-only pattern and reaches PostgreSQL as a
+    // cast, which is a 500 for what is a caller's typo.
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/exports/tally.xml?from=2026-02-31&to=2026-03-31',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(400);
+  });
+
   it('is owner-only', async () => {
     const response = await authed(auditor, {
       method: 'GET',

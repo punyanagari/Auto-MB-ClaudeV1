@@ -102,17 +102,30 @@ export function Challans({
         description="Create and control outward delivery and issue challans from one register. An issued challan is locked, and the number it holds is never reused."
         action={
           <div className="flex flex-wrap items-center gap-2">
-            {/* The delivery register's workbook. The issue-challan tab has
-                no export of its own yet: `EXPORTABLE_REGISTERS` names the
-                registers the server can produce, and adding one is an
-                entry there plus a descriptor, not a new screen. */}
-            <DownloadButton
-              label="Export .xlsx"
-              filename="delivery-challans.xlsx"
-              fetchBlob={() =>
-                api.downloadRegisterWorkbook(organisationId, 'delivery-challans')
-              }
-            />
+            {/* DELIVERY TAB ONLY. This screen carries two registers behind
+                one header, and the server can produce a workbook for one of
+                them — so the button belongs to that tab rather than to the
+                header. Rendered on both, it handed an operator reading
+                ISSUE challans a file of DELIVERY challans, with nothing on
+                screen or in the file saying so.
+
+                The issue-challan register has no workbook yet:
+                `EXPORTABLE_REGISTERS` names what the server can produce,
+                and adding one is an entry there plus a descriptor. */}
+            {tab === 'delivery' && (
+              <DownloadButton
+                label="Export .xlsx"
+                filename="delivery-challans.xlsx"
+                fetchBlob={() =>
+                  api.downloadRegisterWorkbook(organisationId, 'delivery-challans')
+                }
+                {...(workId !== null
+                  ? {
+                      note: 'Exports every delivery challan, not just this Work’s.',
+                    }
+                  : {})}
+              />
+            )}
             {!creating ? null : tab === 'delivery' ? (
               /* The mock holds this button and explains it in a tooltip
                (`components/document-register`). The bubble is

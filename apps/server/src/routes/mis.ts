@@ -71,12 +71,18 @@ async function requireFullScope(tx: TransactionSql, userId: string): Promise<voi
 /* --- the three aggregates ------------------------------------------------- */
 
 /**
- * Output tax by month, from the FROZEN columns of submitted invoices and
- * issued credit notes.
+ * Output tax by month, from the FROZEN columns of invoices that DECLARED a
+ * liability and of the credit notes that reverse them.
  *
- * Cancelled documents are excluded on both sides: a cancelled invoice
- * declares no liability, and 0035's `tax_invoices_cancel_shape` makes the
- * status the whole answer to whether it stands.
+ * `submitted` AND `superseded`, which is the distinction the first cut of
+ * this got wrong. Only `cancelled` is excluded: a cancelled invoice
+ * declares nothing, and 0035's `tax_invoices_cancel_shape` makes the status
+ * the whole answer. A SUPERSEDED invoice is the opposite case — it was
+ * submitted, it declared its liability, it was reported to the IRP, and it
+ * is now reversed by a full-value credit note (0051). Dropping it while
+ * keeping its credit note would have shown every superseded pair as a
+ * credit against nothing, which reads as a month the organisation gave
+ * money away in.
  *
  * The month key is derived from `invoice_date` / `note_date`, which are
  * date-only legal values — so the month is the document's own month, not a
@@ -90,7 +96,7 @@ async function requireFullScope(tx: TransactionSql, userId: string): Promise<voi
 export const MIS_OUTPUT_TAX_SQL = `
   with spine as (
     select to_char(invoice_date, 'YYYY-MM') as month
-    from tax_invoices where status = 'submitted'
+    from tax_invoices where status in ('submitted', 'superseded')
     union
     select to_char(note_date, 'YYYY-MM') as month
     from credit_notes where status = 'issued'
@@ -102,8 +108,13 @@ export const MIS_OUTPUT_TAX_SQL = `
            sum(cgst_amount) as cgst,
            sum(sgst_amount) as sgst,
            sum(igst_amount) as igst,
+           -- The three arms added HERE, in exact numerics, because the
+           -- screen may not add them: a month carrying both intra-state
+           -- and inter-state invoices has all three non-zero, so no one
+           -- column is "the GST".
+           sum(cgst_amount + sgst_amount + igst_amount) as gst_total,
            sum(total_amount) as total
-    from tax_invoices where status = 'submitted'
+    from tax_invoices where status in ('submitted', 'superseded')
     group by 1
   ),
   credited as (
@@ -121,6 +132,7 @@ export const MIS_OUTPUT_TAX_SQL = `
     coalesce(invoiced.cgst, 0)::numeric(18,2)::text as cgst,
     coalesce(invoiced.sgst, 0)::numeric(18,2)::text as sgst,
     coalesce(invoiced.igst, 0)::numeric(18,2)::text as igst,
+    coalesce(invoiced.gst_total, 0)::numeric(18,2)::text as gst_total,
     coalesce(invoiced.total, 0)::numeric(18,2)::text as total,
     coalesce(credited.credit_note_count, 0)::text as credit_note_count,
     coalesce(credited.taxable_value, 0)::numeric(18,2)::text as credit_taxable_value,
@@ -129,6 +141,8 @@ export const MIS_OUTPUT_TAX_SQL = `
   left join invoiced on invoiced.month = spine.month
   left join credited on credited.month = spine.month
   order by spine.month desc
+  -- Months WITH DATA, not calendar months: a quiet quarter does not
+  -- consume three of the caller's rows. The screen's own hint says so.
   limit $1
 `;
 
@@ -160,15 +174,25 @@ export const MIS_AGEING_SQL = `
       p.outstanding_amount,
       case
         when b.submitted_at is null then 'unsubmitted'
-        when (today.day - b.submitted_at::date) <= 30 then '0-30'
-        when (today.day - b.submitted_at::date) <= 60 then '31-60'
-        when (today.day - b.submitted_at::date) <= 90 then '61-90'
+        -- BOTH sides of the subtraction in the organisation's own
+        -- timezone. A bare submitted_at::date casts in the SESSION
+        -- timezone, which is UTC here, so a bill submitted at 09:00 IST
+        -- read against an IST today was a day out for five and a half
+        -- hours of every day -- and a day out is a bucket out at every
+        -- boundary.
+        when (today.day - submitted.day) <= 30 then '0-30'
+        when (today.day - submitted.day) <= 60 then '31-60'
+        when (today.day - submitted.day) <= 90 then '61-90'
         else '90+'
       end as bucket
     from bill_settlement_positions p
     join bills b
       on b.organisation_id = p.organisation_id and b.id = p.bill_id
     cross join today
+    left join lateral (
+      select (b.submitted_at at time zone o.timezone)::date as day
+      from organisations o where o.id = b.organisation_id
+    ) submitted on true
     where p.status in ('prepared', 'submitted')
   )
   select
@@ -188,7 +212,10 @@ export const MIS_PAYROLL_SQL = `
   select
     to_char(r.period_month, 'YYYY-MM') as month,
     count(distinct r.id)::text as run_count,
-    count(l.id)::text as headcount,
+    -- DISTINCT: two finalised runs paying the same month (a supplementary
+    -- run beside the regular one) would otherwise count every employee
+    -- twice.
+    count(distinct l.employee_id)::text as headcount,
     coalesce(sum(l.gross_earnings), 0)::numeric(18,2)::text as gross_pay,
     coalesce(sum(l.gross_earnings) - sum(l.net_pay), 0)::numeric(18,2)::text
       as deductions,
@@ -229,6 +256,29 @@ const AGEING_ORDER: readonly MisAgeingBucket['bucket'][] = [
  * route, one writer, one descriptor per register — not six endpoints, six
  * schemas and six client methods that would drift apart the first time a
  * column was renamed.
+ *
+ * ## WHAT A WORKBOOK CONTAINS, stated once and true of all six
+ *
+ * THE WHOLE REGISTER, under the caller's own scope — never the screen's
+ * current filter state. None of the six statements below takes a filter,
+ * and the button that offers them says so whenever a filter is active
+ * (`ui/download-button.tsx`, `docs/UX.md` § 19).
+ *
+ * The first cut of this file claimed the opposite — "the export shows
+ * exactly what the screen showed" — while taking no filters at all, which
+ * is the worst of the three options: an operator who has narrowed a
+ * register to one Work and exports it gets every Work, and nothing on the
+ * screen or in the file says so.
+ *
+ * The audit register is the ONE export whose filters travel, and it is not
+ * an inconsistency: its window is clamped by the organisation's retention
+ * policy, so a trail exported without its window is not a bigger version of
+ * the same document — it is one that claims to reach further back than the
+ * register may look. Filters there are part of what the document IS.
+ *
+ * ponytail: no per-register filter schemas. Add them when an operator
+ * actually asks for a filtered workbook — it is one querystring schema and
+ * one WHERE fragment per descriptor, and the button's hint retires with it.
  */
 interface RegisterDescriptor {
   readonly sheet: string;
@@ -247,15 +297,13 @@ const VISIBLE_WORK = `($1::boolean or exists (
   where wa.work_id = w.id and wa.user_id = $2))`;
 
 /**
- * Every register this route can produce.
- *
- * `audit-events` is deliberately ABSENT: it is exported by
- * `routes/audit.ts`, which owns its filters, its retention clamp and its
- * own authority. It stays in `EXPORTABLE_REGISTERS` so one client-side
- * list renders every export button in the product, and a second descriptor
- * for it here would be a second definition of the same file.
+ * Every register this route can produce — TOTAL over `ExportableRegister`,
+ * so a name added to the contract without a descriptor fails to compile
+ * rather than 404ing at runtime. That totality is why the route needs no
+ * "unknown register" refusal at all: the parameter is the same union, so
+ * schema validation refuses anything else before the handler runs.
  */
-const REGISTERS: Readonly<Partial<Record<ExportableRegister, RegisterDescriptor>>> = {
+const REGISTERS: Readonly<Record<ExportableRegister, RegisterDescriptor>> = {
   works: {
     sheet: 'Works',
     filename: 'works',
@@ -332,8 +380,17 @@ const REGISTERS: Readonly<Partial<Record<ExportableRegister, RegisterDescriptor>
              ti.total_amount::text as total_amount,
              ti.irn
       from tax_invoices ti
-      join works w on w.id = ti.work_id and w.deleted_at is null
-      where ${VISIBLE_WORK}
+      -- LEFT, for the same reason the stock ledger's join is: an invoice
+      -- need not belong to a Work. A DIRECT invoice (0039) is raised
+      -- against a private customer with no Work and no Measurement Book,
+      -- the register's own screen lists it, and an inner join dropped
+      -- every one of them from the workbook without saying so.
+      left join works w on w.id = ti.work_id and w.deleted_at is null
+      where (ti.work_id is null or ${VISIBLE_WORK})
+        -- A direct invoice belongs to the organisation rather than to a
+        -- Work, so it travels for a full-scope member and is withheld
+        -- from an assigned-scope one.
+        and (ti.work_id is not null or $1::boolean)
       order by ti.invoice_date desc, ti.created_at desc
     `,
   },
@@ -358,8 +415,19 @@ const REGISTERS: Readonly<Partial<Record<ExportableRegister, RegisterDescriptor>
       from stock_movements sm
       join production_items pi
         on pi.organisation_id = sm.organisation_id and pi.id = sm.production_item_id
-      join works w on w.id = sm.work_id and w.deleted_at is null
-      where ${VISIBLE_WORK}
+      -- LEFT, because a movement need not belong to a Work at all: 0087's
+      -- shape CHECK explicitly allows a production receipt or a job-card
+      -- issue that names no Work, and an inner join silently dropped every
+      -- one of them from the workbook. The scope predicate below therefore
+      -- has to say what happens to a work-less row rather than relying on
+      -- the join to have removed it.
+      left join works w on w.id = sm.work_id and w.deleted_at is null
+      where (sm.work_id is null or ${VISIBLE_WORK})
+        -- A work-less movement is an organisation-level fact, so it is
+        -- visible to a full-scope member and withheld from an
+        -- assigned-scope one — the same posture the organisation-wide
+        -- registers take, applied per row.
+        and (sm.work_id is not null or $1::boolean)
       order by sm.movement_date desc, sm.created_at desc
     `,
   },
@@ -376,7 +444,15 @@ const REGISTERS: Readonly<Partial<Record<ExportableRegister, RegisterDescriptor>
       { header: 'Vendor PAN' },
     ],
     scope: 'organisation',
-    authority: 'payments',
+    // NO authority, and that is an alignment rather than an omission.
+    // `GET /api/vendor-invoices` — the read behind the screen this button
+    // sits on — declares none either: any member may READ the vendor
+    // ledger, and `payments` gates recording and paying, which are writes.
+    // Declaring it here made the export refuse the founder of a new
+    // organisation, who is not granted `can_manage_payments` at bootstrap
+    // (0080 withholds it deliberately) and who can nonetheless see every
+    // row on the screen. An export must not be harder to obtain than the
+    // screen it exports.
     sql: `
       select vp.paid_on::text as paid_on, vi.invoice_number,
              vp.gross_amount::text as gross_amount,
@@ -434,17 +510,58 @@ const RegisterParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-function descriptorOf(name: string): RegisterDescriptor {
-  const descriptor = REGISTERS[name as ExportableRegister];
-  if (descriptor === undefined) {
-    throw httpError(
-      404,
-      'REGISTER_UNKNOWN',
-      'No register of that name can be exported here.',
-    );
-  }
-  return descriptor;
+/**
+ * A row's cells, in the descriptor's declared column ORDER.
+ *
+ * `Object.values(row)` alone would have coupled the sheet to the order
+ * PostgreSQL happened to return columns in, and to the descriptor's column
+ * list agreeing with it by eye. It does today; the assertion below is what
+ * keeps it true after somebody adds a column to a SELECT and not to the
+ * header list, which produces a workbook whose data is one column to the
+ * left of its headings and reads as plausible.
+ */
+function cellsOf(
+  register: RegisterDescriptor,
+): (row: Record<string, string | null>) => (string | null)[] {
+  return (row) => {
+    const cells = Object.values(row);
+    if (cells.length !== register.columns.length) {
+      throw new Error(
+        `${register.sheet}: the statement returns ${String(cells.length)} columns and the descriptor declares ${String(register.columns.length)}`,
+      );
+    }
+    return cells;
+  };
 }
+
+/** The last row of a truncated workbook, saying so in the sheet itself.
+ * The response headers carry the same fact for a machine; this is for the
+ * person who opens the file, scrolls to the bottom and would otherwise
+ * believe they had the whole register. */
+function truncationRow(
+  register: RegisterDescriptor,
+  capped: boolean,
+): (string | null)[][] {
+  if (!capped) return [];
+  const row: (string | null)[] = Array.from(
+    { length: register.columns.length },
+    () => null,
+  );
+  row[0] = `… truncated at ${String(EXPORT_ROW_CAP)} rows. Narrow the register and export again.`;
+  return [row];
+}
+
+/**
+ * How wide a Tally window may be.
+ *
+ * One financial year plus a month of slack, which is the period an
+ * accountant imports. The bound is not politeness: the three statements
+ * below have no keyset and no page, so an unbounded window is an unbounded
+ * result set held in one string in memory. The header comment used to
+ * claim the export was "bounded by a financial-year window" while nothing
+ * enforced one.
+ */
+const TALLY_MAX_WINDOW_DAYS = 400;
 
 export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
@@ -471,6 +588,7 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
           cgst: string;
           sgst: string;
           igst: string;
+          gst_total: string;
           total: string;
           credit_note_count: string;
           credit_taxable_value: string;
@@ -518,6 +636,7 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
             cgst: row.cgst,
             sgst: row.sgst,
             igst: row.igst,
+            gstTotal: row.gst_total,
             total: row.total,
             creditNoteCount: Number(row.credit_note_count),
             creditTaxableValue: row.credit_taxable_value,
@@ -550,11 +669,14 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
       // and no caller can address — `test/route-inventory` found it by
       // synthesising a request the route could not answer.
       url: '/api/registers/:register/workbook.xlsx',
-      schema: { params: RegisterParamsSchema },
+      // No 200 in the response map: the payload is bytes, not JSON, the
+      // same shape every PDF route in this tree declares. The refusals
+      // still are declared, so a client knows what it can be told.
+      schema: { params: RegisterParamsSchema, response: { ...errorResponses } },
     },
     async ({ request, reply, user, organisationId, tenant }) => {
-      const register = descriptorOf(request.params.register);
-      const bytes = await tenant(async (tx) => {
+      const register = REGISTERS[request.params.register];
+      const result = await tenant(async (tx) => {
         if (register.authority !== undefined) {
           await requireAuthority(tx, user.id, register.authority);
         }
@@ -573,10 +695,15 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
         // refuses outright rather than ignoring.
         const parameters: (boolean | string)[] =
           register.scope === 'work' ? [full, user.id] : [];
-        const rows = (await tx.unsafe(
-          `${register.sql} limit ${EXPORT_ROW_CAP}`,
+        // One row over the cap, so the file can SAY it was truncated
+        // instead of quietly ending. `capped` below is the difference
+        // between "this is the register" and "this is the start of it".
+        const fetched = (await tx.unsafe(
+          `${register.sql} limit ${EXPORT_ROW_CAP + 1}`,
           parameters,
         )) as unknown as Record<string, string | null>[];
+        const capped = fetched.length > EXPORT_ROW_CAP;
+        const rows = fetched.slice(0, EXPORT_ROW_CAP);
         await audit(
           tx,
           organisationId,
@@ -584,20 +711,24 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
           'register.exported',
           'organisations',
           organisationId,
-          { register: request.params.register, rows: rows.length },
+          { register: request.params.register, rows: rows.length, capped },
         );
-        return buildXlsx(
-          register.sheet,
-          register.columns,
-          rows.map((row) => Object.values(row)),
-        );
+        return {
+          capped,
+          bytes: buildXlsx(register.sheet, register.columns, [
+            ...rows.map(cellsOf(register)),
+            ...truncationRow(register, capped),
+          ]),
+        };
       });
       void reply.type(XLSX_CONTENT_TYPE);
       void reply.header(
         'content-disposition',
         `attachment; filename="${register.filename}.xlsx"`,
       );
-      return reply.send(bytes);
+      void reply.header('x-auto-mb-export-rows-cap', String(EXPORT_ROW_CAP));
+      void reply.header('x-auto-mb-export-truncated', String(result.capped));
+      return reply.send(result.bytes);
     },
   );
 
@@ -620,8 +751,20 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
       if (from > to) {
         throw httpError(
           400,
-          'AUDIT_WINDOW_INVALID',
+          'EXPORT_WINDOW_INVALID',
           'The export window starts after it ends.',
+        );
+      }
+      // Compared as UTC midnights on two date-only values, which is a
+      // span in days and never a wall-clock question — no timezone can
+      // change how many days lie between two dates.
+      const spanDays =
+        (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+      if (spanDays > TALLY_MAX_WINDOW_DAYS) {
+        throw httpError(
+          400,
+          'EXPORT_WINDOW_INVALID',
+          `A Tally export covers at most ${String(TALLY_MAX_WINDOW_DAYS)} days. Export one financial year at a time.`,
         );
       }
       const xml = await tenant(async (tx) => {
@@ -634,9 +777,16 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
                  ti.total_amount::text as total_amount,
                  ti.service_description
           from tax_invoices ti
-          where ti.status = 'submitted'
+          -- Superseded as well as submitted, for the reason
+          -- MIS_OUTPUT_TAX_SQL states: a superseded invoice declared its
+          -- liability and was reported, and its full-value credit note —
+          -- which this export already emits — reverses it. Emitting the
+          -- reversal without the sale would post a credit against a
+          -- voucher the accountant's company does not hold.
+          where ti.status in ('submitted', 'superseded')
             and ti.invoice_date between ${from}::date and ${to}::date
           order by ti.invoice_date asc, ti.invoice_number asc
+          limit ${EXPORT_ROW_CAP}
         `;
         const creditNotes = await tx<TallyCreditNoteRow[]>`
           select cn.note_number, cn.note_date::text as note_date,
@@ -652,18 +802,44 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
           where cn.status = 'issued'
             and cn.note_date between ${from}::date and ${to}::date
           order by cn.note_date asc, cn.note_number asc
+          limit ${EXPORT_ROW_CAP}
         `;
+        /**
+         * A receipt credits the party its Work was INVOICED to.
+         *
+         * The first cut hardcoded 'Railway', which made every receipt
+         * credit a ledger no sales voucher ever debits — the party's
+         * account never cleared, and the whole point of handing an
+         * accountant vouchers is that they reconcile. The party is
+         * resolved the only way the data allows: a bill belongs to a
+         * Work, and a Work's invoices name the buyer, so the receipt
+         * takes the buyer of that Work's most recent invoice that
+         * declared anything. The fallback is the Work code rather than a
+         * placeholder, so an unreconciled receipt at least names
+         * something an accountant can map by hand.
+         */
         const receipts = await tx<TallyReceiptRow[]>`
           select p.reference, p.received_on::text as received_on,
                  p.received_amount::text as received_amount,
-                 w.work_code, b.bill_number
+                 w.work_code, b.bill_number,
+                 party.designation as party_name
           from bill_payments p
           join bills b
             on b.organisation_id = p.organisation_id and b.id = p.bill_id
           join works w on w.id = b.work_id
+          left join lateral (
+            select ti.buyer_snapshot->>'designation' as designation
+            from tax_invoices ti
+            where ti.organisation_id = b.organisation_id
+              and ti.work_id = b.work_id
+              and ti.status in ('submitted', 'superseded')
+            order by ti.invoice_date desc, ti.created_at desc
+            limit 1
+          ) party on true
           where p.voided_at is null
             and p.received_on between ${from}::date and ${to}::date
           order by p.received_on asc, p.created_at asc
+          limit ${EXPORT_ROW_CAP}
         `;
         await audit(
           tx,
@@ -698,11 +874,21 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
 
 /* --- snapshot rows to voucher inputs -------------------------------------- */
 
-/** The buyer as INVOICED. `buyer_snapshot` is written once at submit
- * (0035) and never again, so the voucher names the party the invoice named
- * even after the contact master was renamed. */
+/**
+ * The buyer as INVOICED. `buyer_snapshot` is written once at submit (0035)
+ * and never again, so the voucher names the party the invoice named even
+ * after the contact master was renamed.
+ *
+ * THE PARTY'S NAME IS `designation`, not `name`, and the first cut of this
+ * file read a key the snapshot has never carried — so every voucher posted
+ * to the fallback ledger. `routes/tax-invoices/submit.ts` writes the
+ * snapshot; `routes/search.ts` and `routes/tax-invoices/register.ts` both
+ * read `->>'designation'`, and this now agrees with them. The `contacts`
+ * table calls the party's name `designation` and its person `contact_person`
+ * (0028), which is the naming this inherits.
+ */
 interface BuyerSnapshot {
-  readonly name?: unknown;
+  readonly designation?: unknown;
   readonly gstin?: unknown;
 }
 
@@ -736,13 +922,16 @@ interface TallyReceiptRow {
   received_amount: string;
   work_code: string;
   bill_number: number;
+  /** The buyer of the Work's most recent declaring invoice, or null when
+   * the Work has never been invoiced. */
+  party_name: string | null;
 }
 
 /** The snapshot's own party name, or the placeholder Tally uses for a sale
  * to an unidentified party. Never the contact master's current name: the
  * voucher must say what the invoice said. */
 function buyerName(snapshot: unknown): string {
-  const name = (snapshot as BuyerSnapshot | null)?.name;
+  const name = (snapshot as BuyerSnapshot | null)?.designation;
   return typeof name === 'string' && name.trim().length > 0 ? name : 'Unregistered';
 }
 
@@ -788,7 +977,11 @@ function toTallyReceipt(row: TallyReceiptRow): TallyReceipt {
     // record carries that an accountant would recognise.
     reference: row.reference ?? subject,
     receivedOn: row.received_on,
-    payerName: 'Railway',
+    // The same ledger the Work's sales voucher debits, so the party's
+    // account clears. The Work code is the fallback for a Work that has
+    // never been invoiced — a real case while a bill is prepared ahead of
+    // its invoice — and it names something rather than inventing a party.
+    payerName: row.party_name ?? row.work_code,
     amount: row.received_amount,
     narration: `Receipt against ${subject}`,
   };

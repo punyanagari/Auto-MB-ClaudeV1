@@ -113,12 +113,22 @@ interface LedgerEntry {
   readonly isDeemedPositive: boolean;
 }
 
-/** Prefixes a minus sign without doing arithmetic: `'0.00'` stays `'0.00'`
- * so a zero leg never reads as `-0.00`, and a value already carrying a sign
- * is not double-negated. */
+/**
+ * Flips a decimal string's SIGN without doing arithmetic on it.
+ *
+ * A negative value comes back positive, a positive one comes back
+ * negative, and a zero of any spelling (`0`, `0.00`) stays as it is — so a
+ * zero leg never reads as `-0.00`, which Tally accepts and an accountant
+ * reads twice. String editing, not maths: the digits that reach the
+ * voucher are the digits the database stored.
+ */
+function isZero(amount: string): boolean {
+  return !/[1-9]/.test(amount);
+}
+
 function negated(amount: string): string {
   if (amount.startsWith('-')) return amount.slice(1);
-  if (/^0(?:\.0+)?$/.test(amount)) return amount;
+  if (isZero(amount)) return amount;
   return `-${amount}`;
 }
 
@@ -169,7 +179,7 @@ function taxLegs(
 ): LedgerEntry[] {
   const legs: LedgerEntry[] = [];
   const push = (name: string, amount: string): void => {
-    if (/^0(?:\.0+)?$/.test(amount)) return;
+    if (isZero(amount)) return;
     legs.push({
       ledger: `${prefix} ${name}`,
       amount: credit ? amount : negated(amount),
@@ -330,5 +340,12 @@ export function buildTallyXml(data: TallyExport): string {
   ].join('\n');
 }
 
+/**
+ * ONE-WAY. Nothing in this product reads a Tally file, reconciles against
+ * one, or learns that a voucher was imported — the header above says so and
+ * the operator is told the same thing on the Reports screen, because an
+ * export that looks like an integration invites somebody to expect their
+ * Tally edits to come back.
+ */
 /** The media type a Tally import file answers with. */
 export const TALLY_CONTENT_TYPE = 'application/xml; charset=utf-8';

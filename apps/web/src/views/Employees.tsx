@@ -159,6 +159,9 @@ export function Employees({
             label="Export .xlsx"
             filename="employees.xlsx"
             fetchBlob={() => api.downloadRegisterWorkbook(organisationId, 'employees')}
+            {...(search !== ''
+              ? { note: 'Exports every employee, not the search on screen.' }
+              : {})}
           />
           {/* A real anchor with a hash href, not a button with a handler:
               `docs/UX.md` § navigation asks that every mock Link become

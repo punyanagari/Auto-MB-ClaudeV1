@@ -152,20 +152,44 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * How many elements of a collection a diff cell prints before summarising
+ * the rest.
+ *
+ * An audit detail is not always small. A challan revision carries its whole
+ * `items` array on both sides of the diff, and a five-hundred-line challan
+ * therefore renders one string of several hundred kilobytes into a single
+ * table cell — which is not a readable diff at any length, and is a
+ * render the browser does badly. Twenty is enough to recognise WHAT
+ * changed; the record itself is one click away and is where anyone reading
+ * five hundred lines should be.
+ */
+const MAX_LISTED = 20;
+
+function summarise(shown: readonly string[], total: number): string {
+  if (total <= MAX_LISTED) return shown.join('; ');
+  return `${shown.join('; ')}; … ${String(total - MAX_LISTED)} more`;
+}
+
 /** Compact human text for a diff side: scalars verbatim, objects as
- * "key: value" pairs, arrays summarised per element — never raw JSON. */
+ * "key: value" pairs, arrays summarised per element — never raw JSON, and
+ * never unbounded (see `MAX_LISTED`). */
 export function displayValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'string') return value.length > 0 ? value : '—';
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
     if (value.length === 0) return 'none';
-    return value.map(displayValue).join('; ');
+    return summarise(value.slice(0, MAX_LISTED).map(displayValue), value.length);
   }
   if (isPlainObject(value)) {
-    return Object.entries(value)
-      .map(([key, entry]) => `${humaniseField(key)}: ${displayValue(entry)}`)
-      .join(', ');
+    const entries = Object.entries(value);
+    return summarise(
+      entries
+        .slice(0, MAX_LISTED)
+        .map(([key, entry]) => `${humaniseField(key)}: ${displayValue(entry)}`),
+      entries.length,
+    );
   }
   return '—';
 }

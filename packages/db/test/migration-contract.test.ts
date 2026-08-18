@@ -2224,13 +2224,30 @@ describe('the audit register and its retention policy (0095)', () => {
     // hazard 0091's own comment records: CREATE OR REPLACE states the
     // whole body rather than amending it, so a grant left out here is a
     // founder who silently cannot use a feature in the organisation they
-    // just created. All five columns, all five values.
+    // just created. All five columns this pack knows, all five values.
     expect(sql).toContain(
       'can_issue_documents, can_cancel_documents, can_sign_documents,\n    can_manage_payroll, can_view_audit_trail, status',
     );
     expect(sql).toContain(
       "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, true, 'active');",
     );
+
+    // AND THE TWO GRANTS THAT ARE NOT THIS PACK'S. Migrations 0092
+    // (can_manage_notifications) and 0094 (can_import_data) replace the
+    // same function earlier in this wave and 0095 runs after both, so its
+    // body is the one that survives: without these, creating an
+    // organisation after this migration applied would silently withhold
+    // two authorities their own packs had granted. They are set through a
+    // guarded loop rather than named in the INSERT above, so this file
+    // also applies to a database that has neither column — its own branch
+    // before the train is assembled, and any rollback that drops one.
+    expect(sql).toContain("ARRAY['can_manage_notifications', 'can_import_data']");
+    expect(sql).toContain("attrelid = 'public.organisation_memberships'::regclass");
+    // A CLOSED LITERAL list, never the catalog. Granting whatever `can_%`
+    // columns happen to exist would make a NEW authority granted-by-default
+    // merely by existing, which is the opposite of the rule
+    // `apps/server/src/authz.ts` states about silent defaults.
+    expect(sql).not.toMatch(/attname LIKE '?can/);
     // A definer function that silently changed hands would be a privilege
     // change nobody reviewed, so ownership and the grant are restated
     // explicitly rather than relied on.

@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DecimalStringSchema } from './primitives.js';
+import { DateOnlySchema, DecimalStringSchema } from './primitives.js';
 
 /**
  * The management summary: three aggregates the landing dashboard does not
@@ -50,6 +50,14 @@ const TaxMonthSchema = Type.Object(
     cgst: DecimalStringSchema,
     sgst: DecimalStringSchema,
     igst: DecimalStringSchema,
+    /** CGST + SGST + IGST, summed by PostgreSQL.
+     *
+     * It exists because the screen may not add the three arms up itself.
+     * A month holding both intra-state and inter-state invoices has a
+     * non-zero figure in all three columns, so no single one of them is
+     * "the GST" and picking one is wrong for the mixed month — which is
+     * exactly the month a management summary is read for. */
+    gstTotal: DecimalStringSchema,
     total: DecimalStringSchema,
     /** Issued credit notes in the same month, as POSITIVE figures. The
      * screen prints them as a deduction; the payload does not pre-net
@@ -75,6 +83,10 @@ export type MisTaxMonth = Static<typeof TaxMonthSchema>;
  */
 const AgeingBucketSchema = Type.Object(
   {
+    /* Read the bands as DAYS SINCE SUBMISSION, inclusive on both ends:
+       '0-30' is up to and including the thirtieth day, and '90+' is the
+       ninety-FIRST day onwards. The screen prints them as "Over 90 days",
+       which is the same statement in words. */
     bucket: Type.Union([
       Type.Literal('unsubmitted'),
       Type.Literal('0-30'),
@@ -125,7 +137,11 @@ export type MisSummaryResponse = Static<typeof MisSummaryResponseSchema>;
 
 export const MisSummaryQuerySchema = Type.Object(
   {
-    /** How many months of history the monthly series carry. */
+    /** How many months of history the monthly series carry.
+     *
+     * Months WITH DATA, not calendar months: a quiet quarter does not
+     * consume three of them. Asking for twelve on a young organisation
+     * returns every month it has ever invoiced in, not the last year. */
     months: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })),
   },
   { additionalProperties: false },
@@ -140,6 +156,20 @@ export type MisSummaryQuery = Static<typeof MisSummaryQuerySchema>;
  * the name appears. Adding a register is one entry here and one entry in
  * the server's map — not a new route, a new schema and a new API method
  * each time, which is what six separate export endpoints would have been.
+ *
+ * The audit trail is NOT here. It is exported by its own route, which
+ * carries its own authority, its retention clamp and its filters; naming
+ * it here would have put a value in the shared route's parameter that the
+ * shared route refuses by design.
+ *
+ * ## What an export contains
+ *
+ * THE WHOLE REGISTER, not the screen's current filter state. The screen's
+ * filters do not travel: the button says so wherever a filter is active,
+ * and `docs/UX.md` § 19 records the decision. The audit register is the
+ * one export whose filters DO travel, because a trail without its
+ * retention clamp and its date window is not a smaller version of the
+ * same document — it is a different one.
  */
 export const EXPORTABLE_REGISTERS = [
   'works',
@@ -148,7 +178,6 @@ export const EXPORTABLE_REGISTERS = [
   'stock-movements',
   'payments',
   'employees',
-  'audit-events',
 ] as const;
 export type ExportableRegister = (typeof EXPORTABLE_REGISTERS)[number];
 
@@ -162,8 +191,13 @@ export type ExportableRegister = (typeof EXPORTABLE_REGISTERS)[number];
  */
 export const TallyExportQuerySchema = Type.Object(
   {
-    from: Type.String({ pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }),
-    to: Type.String({ pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }),
+    // `DateOnlySchema`, not a shape-only pattern. `primitives.ts` states
+    // the reason at length: a `\d{4}-\d{2}-\d{2}` pattern admits
+    // 2026-02-31, which reaches PostgreSQL as a cast and raises 22008 —
+    // a 500 for what is a caller's typo. The shared schema knows the
+    // month lengths and the leap years.
+    from: DateOnlySchema,
+    to: DateOnlySchema,
   },
   { additionalProperties: false },
 );

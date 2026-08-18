@@ -20,6 +20,13 @@ import { Button } from './button.js';
  * did nothing would look like a broken control rather than a wall. The
  * server's own sentence is what appears.
  *
+ * `note` is the other honesty this control owes. A register export is the
+ * WHOLE register under the caller's scope — the screen's filters do NOT
+ * travel — so a register that is currently filtered says so beside its own
+ * button rather than handing back a file the operator will assume matches
+ * what they were looking at. `docs/UX.md` § 19 records the posture and
+ * `apps/server/src/routes/mis.ts` states it over the statements.
+ *
  * `role="alert"` and the inline placement follow `docs/UX.md` § Shared
  * states: a failed action states itself and stays until it is fixed, where
  * a success would toast.
@@ -28,6 +35,7 @@ export function DownloadButton({
   label,
   filename,
   fetchBlob,
+  note,
   className,
 }: {
   /** The control's text. Registers say "Export .xlsx"; a differently
@@ -36,6 +44,9 @@ export function DownloadButton({
   /** What the saved file is called on the operator's machine. */
   readonly filename: string;
   readonly fetchBlob: () => Promise<Blob>;
+  /** A standing caveat about what the file will contain, shown under the
+   * control. Registers pass it while a filter is active. */
+  readonly note?: string;
   readonly className?: string;
 }) {
   const [pending, setPending] = useState(false);
@@ -61,6 +72,9 @@ export function DownloadButton({
         <Download aria-hidden="true" className="size-4" />
         {label}
       </Button>
+      {note !== undefined && failure === null && (
+        <p className="m-0 mt-1 text-xs text-muted-foreground">{note}</p>
+      )}
       {failure !== null && (
         <p role="alert" className="m-0 mt-1 text-sm font-medium text-destructive">
           {failure}

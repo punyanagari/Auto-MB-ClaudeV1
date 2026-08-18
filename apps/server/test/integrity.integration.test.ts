@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -730,6 +730,58 @@ describe('export completeness is catalog-driven', () => {
       stale,
       `NOT_ORGANISATION_SCOPED names a table that is gone or is now ` +
         `organisation-scoped: ${stale.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  /**
+   * The census one level down: every AUTHORITY COLUMN, not just every
+   * table.
+   *
+   * The table census above passes whether or not `members` lists all of
+   * its columns, because `organisation_memberships` has a section either
+   * way — and that is exactly the hole `can_sign_documents` fell through.
+   * 0091 added the column and never added it to `export.ts`'s hand-written
+   * list, so from export-v24 onwards a restored organisation came back
+   * with its signing authority revoked and nothing said so. Migration
+   * 0095 restores it; this is the guard that stops the eighth column
+   * repeating it.
+   *
+   * Asserted against `export.ts`'s SOURCE rather than against a produced
+   * package, deliberately: a package proves only the columns the fixture's
+   * one membership happens to exercise, while the source is where the
+   * omission actually lives. The section enumerates its columns precisely
+   * so that dropping one is a visible edit, and this makes it a failing
+   * one.
+   */
+  it('exports every membership authority column', async () => {
+    const source = await readFile(
+      fileURLToPath(new URL('../src/routes/export.ts', import.meta.url)),
+      'utf8',
+    );
+    const membersSection =
+      /key: 'members',[\s\S]*?order by created_at`/.exec(source)?.[0] ?? '';
+    expect(membersSection, 'the members export section was not found').not.toBe('');
+
+    const columns = await admin<{ column_name: string }[]>`
+      select column_name from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'organisation_memberships'
+        and column_name like 'can\\_%'
+      order by column_name
+    `;
+    expect(columns.length).toBeGreaterThanOrEqual(7);
+
+    const missing = columns
+      .map((row) => row.column_name)
+      .filter((column) => !membersSection.includes(column));
+
+    expect(
+      missing,
+      `organisation_memberships grants missing from the export's members ` +
+        `section: ${missing.join(', ')}. A restored organisation would come ` +
+        'back with each of these revoked, and nothing would say so — add ' +
+        'them to the column list in routes/export.ts and bump the format ' +
+        'version.',
     ).toEqual([]);
   });
 });
