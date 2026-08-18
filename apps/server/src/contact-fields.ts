@@ -5,8 +5,10 @@ import { httpError } from './http.js';
  * address, and — since migration 0078 — the bank account a payment goes
  * to. The Contacts master (routes/masters.ts) writes them for railway
  * offices and vendors; the organisation profile and its own bank accounts
- * (routes/organisation.ts) write the contractor's. They live here so both
- * writers prove the same thing rather than one imitating the other — the
+ * (routes/organisation.ts) write the contractor's; and since migration
+ * 0094 the spreadsheet importer (import-targets.ts) writes them a
+ * thousand at a time. They live here so all three writers prove the same
+ * thing rather than one imitating the other — the
  * organisation's values are read live at every render and printed on the
  * letterhead of every generated document (Delivery Challan, Issue
  * Challan, MB, extension letter, correction notice), so a junk value
@@ -153,6 +155,71 @@ export function assertBankDetailsComplete(fields: {
       400,
       'BANK_DETAILS_INCOMPLETE',
       'Bank details need the account holder, the bank name, the account number and the IFSC together — a partial set cannot be paid to. Fill all four, or clear them all.',
+    );
+  }
+}
+
+/**
+ * The bank beneficiary block of a contact save, normalised and proved
+ * before any transaction opens (migration 0078).
+ *
+ * Written once because create, full-update and — since 0094 — the
+ * spreadsheet importer all take the same field set and all must answer
+ * the same way. The completeness rule is asserted here rather than left
+ * to the database so the operator gets the sentence rather than a
+ * constraint name; 0078's `contacts_bank_details_shape_check` refuses the
+ * same partial row against a writer that never came this way.
+ *
+ * These values are never audited and never logged. `contact.created` and
+ * `contact.updated` record the designation and the roles, and the audit
+ * payload deliberately does not gain an account number.
+ */
+export function normaliseContactBankDetails(body: {
+  readonly bankAccountHolder?: string;
+  readonly bankName?: string;
+  readonly bankAccountNumber?: string;
+  readonly bankIfsc?: string;
+  readonly bankBranch?: string;
+  readonly bankAccountType?: string;
+}) {
+  const holder = body.bankAccountHolder?.trim() ?? null;
+  const bankName = body.bankName?.trim() ?? null;
+  const accountNumber = normaliseBankAccountNumber(body.bankAccountNumber);
+  const ifsc = normaliseIfsc(body.bankIfsc);
+  assertBankDetailsComplete({ holder, bankName, accountNumber, ifsc });
+  return {
+    holder,
+    bankName,
+    accountNumber,
+    ifsc,
+    branch: body.bankBranch?.trim() ?? null,
+    accountType: body.bankAccountType?.trim() ?? null,
+  };
+}
+
+/** Legacy rule R16: bill-paying authorities (Sr.DFM / DFM / ADFM) and
+ * awarding authorities (Sr.DSTE) are NEVER consignees. The designation is
+ * normalised (uppercase, dots and extra spaces removed) and matched
+ * against those documented tokens as whole words; "Sr. DEE (G)" and the
+ * other legitimate consignee designations pass. The pattern list is
+ * exactly the spec's: DFM, ADFM (any prefix) and the SR-prefixed DSTE —
+ * a plain DSTE post can legitimately receive material. */
+const CONSIGNEE_AUTHORITY_PATTERNS: readonly RegExp[] = [
+  /(^|[^A-Z])A?DFM([^A-Z]|$)/, // Sr.DFM, DFM, ADFM — bill-paying
+  /(^|[^A-Z])SR ?DSTE([^A-Z]|$)/, // Sr.DSTE — awarding
+];
+
+export function assertNotAuthorityDesignation(designation: string): void {
+  const normalised = designation
+    .toUpperCase()
+    .replaceAll('.', ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (CONSIGNEE_AUTHORITY_PATTERNS.some((pattern) => pattern.test(normalised))) {
+    throw httpError(
+      400,
+      'CONSIGNEE_AUTHORITY_FORBIDDEN',
+      'Bill-paying authorities (Sr.DFM/DFM/ADFM) and awarding authorities (Sr.DSTE) are never consignees (rule R16); record the consignee named on the document instead.',
     );
   }
 }
