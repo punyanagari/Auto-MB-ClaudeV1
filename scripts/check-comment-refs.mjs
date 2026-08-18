@@ -180,6 +180,19 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
     'the v0 mock’s module-scope seed data, cited where a constant here takes its value from the mock rather than inventing one',
   ],
   ['app/inspection/page.tsx', 'the v0 mock screen the Inspection workspace replicates'],
+  ['app/inventory/page.tsx', 'the v0 mock screen the stock register replicates'],
+  [
+    'app/inventory/purchase-orders/page.tsx',
+    'the v0 mock screen the shortage-procurement screen replicates',
+  ],
+  [
+    'components/inventory-manager.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the stock register for the stat strip, item table and movement table it replicates',
+  ],
+  [
+    'app/actions/inventory.ts',
+    'the v0 mock’s inventory data layer, cited by migration 0087 as the evidence for a refused field: it reads `location` and `description` off a `StockItem` type that has neither',
+  ],
   ['app/payments/page.tsx', 'the v0 mock screen the payments workspace replicates'],
   [
     'app/correspondence/page.tsx',

@@ -85,6 +85,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0083_tenders.sql': 7,
   '0084_production.sql': 13,
   '0086_correspondence_register.sql': 4,
+  '0087_stock_ledger.sql': 3,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -1443,5 +1444,168 @@ describe('tenant migration contract', () => {
         'SECURITY DEFINER',
       );
     }
+  });
+
+  it('binds the stock ledger in 0087', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0087_stock_ledger.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // THE BALANCE IS NEVER A COLUMN ON THE ITEM. The mock stores a
+    // mutable `onHand` beside a per-movement `balanceAfter`, which is two
+    // writers for one number; the whole pack rests on there being one.
+    expect(sql).not.toMatch(/ADD COLUMN\s+on_hand|ADD COLUMN\s+reserved/i);
+    expect(sql).not.toMatch(/CREATE TABLE stock_items/i);
+    // The one column Inventory adds to the item master, and only that
+    // one.
+    expect(sql).toContain('ALTER TABLE production_items\n  ADD COLUMN reorder_level');
+
+    // THE CACHED BALANCE IS GUARDED THREE WAYS, and each is asserted
+    // because dropping any one of them turns a reconcilable cache into a
+    // number that can drift: a CHECK that it is never negative, a trigger
+    // that computes it, and no UPDATE grant to move it afterwards.
+    expect(sql).toContain(
+      'balance_after quantity_amount NOT NULL CHECK (balance_after >= 0)',
+    );
+    expect(sql).toContain('NEW.balance_after := previous + NEW.quantity;');
+    expect(sql).toContain('GRANT SELECT, INSERT ON stock_movements TO auto_mb_app;');
+    expect(sql).not.toContain('UPDATE ON stock_movements TO auto_mb_app');
+    expect(sql).not.toContain('DELETE ON stock_movements TO auto_mb_app');
+
+    // THE MUTEX IS THE COUNTER. That it is claimed FIRST is proved at
+    // runtime, by watching a second writer actually block on the lock —
+    // `stock-ledger.integration.test.ts`, "serialises two writers on one
+    // part before either reads a balance". It used to be asserted here by
+    // comparing substring POSITIONS in the file, which is not the same
+    // claim: reordering two statements would have failed it, and moving
+    // the balance read into a helper called from the top would have
+    // passed it while breaking the lock. A file offset cannot see a lock.
+    expect(sql).toContain('INSERT INTO stock_movement_counters');
+    expect(sql).toContain('RETURNING next_value INTO NEW.sequence_number;');
+    expect(sql).not.toMatch(/max\(sequence_number\)/);
+    // 0064's rule: the ledger position may only ever climb.
+    expect(sql).toContain('CREATE TRIGGER stock_movement_counters_guard_decrease');
+
+    // TIME ONLY RUNS FORWARD, PER PART. The whole readability of
+    // `balance_after` rests on this: a movement posted after another and
+    // dated before it leaves a running total that skips a movement
+    // earlier than itself.
+    expect(sql).toContain("USING ERRCODE = '23F04'");
+    expect(sql).toMatch(/SELECT max\(m\.movement_date\) INTO latest_date/);
+    expect(sql).toContain('cannot be posted behind it');
+    // …and the register's key is the POSTING order, not the wall clock:
+    // created_at defaults to transaction start and is not monotonic with
+    // respect to commit order.
+    expect(sql).toContain(
+      'ON stock_movements (organisation_id, movement_date, sequence_number, id);',
+    );
+    expect(sql).not.toContain('movement_date, created_at');
+
+    // ONE LINE, ONE RECEIPT CHANNEL: a challan item may not claim a line
+    // that is received into stock, or its quantity would be counted by
+    // neither channel.
+    expect(sql).toContain('app_private.guard_challan_line_receipt_channel()');
+    expect(sql).toContain('CREATE TRIGGER delivery_challan_items_receipt_channel');
+    expect(sql).toContain("USING ERRCODE = '23F05'");
+
+    // R8 reaches through BOTH indirect arms, or they become the way
+    // round the direct one.
+    expect(sql).toContain('purchase order line % belongs to work %, which is %');
+    expect(sql).toContain('job card % serves work %, which is %');
+    // The purchase order's status is share-locked while it is depended on.
+    expect(sql).toContain('FOR SHARE OF po;');
+
+    // The requirement function nets what the card already holds, and
+    // laterals 0084's helper rather than walking the edges again.
+    expect(sql).toContain('app_private.production_bom_requirements(org, c.item_id)');
+    expect(sql).toContain('SELECT -sum(m.quantity) AS net_out');
+    expect(sql).not.toMatch(/WITH RECURSIVE/);
+
+    // The sign belongs to the movement type, and the shape to the source
+    // document. Both are CHECKs rather than conventions, so a writer
+    // reaching the table another way cannot record an issue that adds
+    // stock or a receipt that names nothing.
+    expect(sql).toContain('stock_movements_direction_check');
+    expect(sql).toContain('stock_movements_source_shape_check');
+    for (const type of [
+      'production_receipt',
+      'purchase_receipt',
+      'issue',
+      'return',
+      'adjustment_in',
+      'adjustment_out',
+    ]) {
+      expect(sql, type).toContain(`'${type}'`);
+    }
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // 0084 § 7's interface, taken exactly as it was offered — and the
+    // key that closes the despatch delete path.
+    expect(sql).toContain(
+      'FOREIGN KEY (organisation_id, production_dispatch_id)\n    REFERENCES production_dispatches(organisation_id, id)',
+    );
+    // A despatch reaches the shelf once. Non-partial so the foreign key
+    // can use it (fk-index-coverage's rule), which NULL-distinctness
+    // makes possible without excluding every other movement.
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX stock_movements_dispatch_once\n  ON stock_movements (organisation_id, production_dispatch_id);',
+    );
+    // The despatch's unit count is production's statement, counted here
+    // rather than typed.
+    expect(sql).toContain('SELECT count(*) INTO released');
+
+    // The procurement module is EXTENDED, not duplicated: no second
+    // purchase-order concept, and the two new columns are nullable so
+    // every line that predates this migration behaves as it did.
+    expect(sql).not.toMatch(
+      /CREATE TABLE supplier_purchase_orders|CREATE TABLE supplier_pos/i,
+    );
+    expect(sql).toContain('ALTER TABLE purchase_order_lines');
+    expect(sql).toContain('ADD COLUMN production_item_id uuid,');
+    expect(sql).toContain('ADD COLUMN production_job_card_id uuid,');
+    expect(sql).toContain('purchase_order_lines_shortage_shape_check');
+
+    // The explosion terminates because it DELEGATES: 0084's helper is
+    // iterative and carries the depth bound itself, so this migration
+    // walks no edges of its own. The first cut had a recursive CTE with a
+    // CYCLE clause here, which re-walked a shared sub-assembly once per
+    // job card that reached it and enumerated a path array per row.
+    expect(sql).toContain('app_private.stock_outstanding_requirement');
+    expect(sql).toContain('app_private.production_bom_requirements(org, c.item_id)');
+    expect(sql).not.toMatch(/CYCLE \w+ SET is_cycle/);
+    expect(sql).not.toMatch(/WITH RECURSIVE/);
+
+    // Both tables in the ADR-0010 InitPlan policy shape.
+    for (const table of ['stock_movements', 'stock_movement_counters']) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    }
+
+    // Every function pins its search_path, and none is SECURITY DEFINER.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(3);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    // Bodies only: the header explains in prose why none of them is a
+    // definer, and a naive substring search would find that sentence.
+    for (const declaration of functions) {
+      const source = sql.slice(sql.indexOf(declaration));
+      expect(source.slice(0, source.indexOf('$$;')), declaration).not.toContain(
+        'SECURITY DEFINER',
+      );
+    }
+
+    // Every RAISE carries a named SQLSTATE from the 23F block, which this
+    // migration is the first to use, so `routes/inventory.ts` maps it to
+    // a code instead of surfacing a bare 23514 as a 500.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(10);
+    expect(sql.match(/USING ERRCODE = '23F\d\d'/g)?.length).toBe(raises.length);
   });
 });

@@ -17,6 +17,41 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v21: the stock ledger (0087) joins the package — every movement
+ * of every part, with the source document that caused it, and the
+ * per-item ledger position that orders them. It is exported as ROWS and
+ * not as balances, because the balance is not a stored fact: it is the
+ * last movement's running total, so an export carrying the ledger can
+ * rebuild every balance, while one carrying balances could not explain a
+ * single one of them. The two columns Inventory added to
+ * `purchase_order_lines` ride along inside that section's existing
+ * `select *`.
+ *
+ * v19 (production) and v20 (correspondence) are the two packs of this
+ * wave that landed ahead of it, and both notes are below. The numbers
+ * were ALLOCATED by the coordinator rather than claimed on merge, for the
+ * reason the v15 and v17 notes record at length: a version string
+ * identifies a format, two formats sharing one string is the failure that
+ * matters, and a gap is not.
+ *
+ * export-v19: OEM production (0084) joins the package — the item master,
+ * the recursive bill of material, the job cards, the finished serials,
+ * the per-unit component genealogy, the despatches, and all three of the
+ * module's counters.
+ *
+ * Left out, a restored organisation would come back with the contracts
+ * and none of the factory: no record of what it manufactures, no bill of
+ * material behind any of it, and — the loss that cannot be reconstructed
+ * from anywhere else — no serial genealogy. A delivered unit's challan
+ * says a number moved; only these tables say what is inside it. The
+ * counters travel for the reason the standalone-challan note below
+ * gives: without them a restored organisation reissues serials it has
+ * already stamped on hardware.
+ *
+ * No manifest bucket: production stores no PDFs. Every other module here
+ * that carries one does so because it accepted an upload, and this one
+ * accepts none.
+ *
  * export-v20: the correspondence register (0086) joins the package — the
  * inward and outward letters with their numbering counters, and the
  * inward scans in the manifest. Outward letters carry no stored object
@@ -102,7 +137,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v20';
+const EXPORT_FORMAT_VERSION = 'export-v21';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -784,6 +819,30 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select * from production_dispatch_serials order by production_dispatch_id, production_serial_id`,
   },
   {
+    // The stock ledger (0087), placed AFTER the production tables it
+    // points at. Sections stream in the order they are listed, so a
+    // movement naming a despatch follows that despatch — the
+    // parents-before-children ordering every other section here keeps,
+    // and the reason this one is not up beside the purchase orders that
+    // its other foreign key names.
+    //
+    // Ordered by the part and its ledger position, which is the order the
+    // balances were built in. Note what that does and does not promise:
+    // NO IMPORTER EXISTS for this format, and a naive one would not
+    // simply replay these rows — every insert re-enters
+    // `app_private.guard_stock_movement`, which re-derives
+    // `balance_after`, re-reads the CURRENT status of the purchase order
+    // or job card each movement names, and refuses a date behind the
+    // part's last. A restore is a rebuild against today's state, not a
+    // replay of yesterday's, and an importer will have to say so — most
+    // likely by loading as the owner role with the trigger disabled, the
+    // way 0043 handled the same problem. What this export guarantees is
+    // that every row needed to do that is present.
+    key: 'stockMovements',
+    sql: `select * from stock_movements
+          order by production_item_id, sequence_number`,
+  },
+  {
     key: 'deliveryChallanCounters',
     sql: `select * from delivery_challan_counters order by work_id`,
   },
@@ -807,6 +866,14 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'purchaseOrderCounters',
     sql: `select * from purchase_order_counters order by work_id`,
+  },
+  {
+    // Not a document series, but exported for the same reason every
+    // other counter is: a restore that replayed the ledger without it
+    // would start the next movement's position back at one and put two
+    // rows at the same point in an item's history (0087).
+    key: 'stockMovementCounters',
+    sql: `select * from stock_movement_counters order by production_item_id`,
   },
   {
     key: 'budgetaryQuotationCounters',

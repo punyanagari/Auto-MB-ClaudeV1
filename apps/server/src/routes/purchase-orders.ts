@@ -150,14 +150,35 @@ interface LineRow {
 
 /**
  * Every line with its receipt balance, computed in exact SQL numeric
- * arithmetic from the live delivery challan items that point at it.
+ * arithmetic from the live rows that point at it.
  *
- * Only ISSUED challans count: a draft challan has delivered nothing, and
- * a cancelled one releases what it had claimed — exactly the rule the
- * Work balance already applies to awarded quantities. `pending` floors at
- * zero so an over-receipt reads as "nothing still owed" rather than as a
- * negative debt; the ordered and received quantities are both on the row,
- * so an over-receipt is still visible.
+ * TWO WAYS MATERIAL ARRIVES, and a line's received quantity is their sum.
+ *
+ *   * A DELIVERY CHALLAN item naming the line — material the contractor
+ *     passed on to the site. Only ISSUED challans count: a draft challan
+ *     has delivered nothing, and a cancelled one releases what it had
+ *     claimed, exactly the rule the Work balance already applies to
+ *     awarded quantities.
+ *   * A STOCK RECEIPT naming the line (migration 0087) — material that
+ *     went onto a shelf instead. A line raised from a production
+ *     shortage is never delivered anywhere: its parts are consumed in
+ *     the factory, so before Inventory such an order could never reach
+ *     "fully received" and could never be closed.
+ *
+ * Only a line carrying `production_item_id` can be stock-received, and
+ * the stock ledger refuses a receipt whose item is not that one, so the
+ * two sums are always in the line's own unit. Every line that existed
+ * before Inventory carries no such column and no such movement, so this
+ * changes no existing order's balance by so much as a digit.
+ *
+ * `pending` floors at zero so an over-receipt reads as "nothing still
+ * owed" rather than as a negative debt; the ordered and received
+ * quantities are both on the row, so an over-receipt is still visible.
+ *
+ * The two are summed in SEPARATE subqueries rather than by joining both
+ * tables: joined, each challan item would be multiplied by the number of
+ * stock movements and vice versa, which is the classic fan-out that turns
+ * two receipts into four.
  */
 async function readLines(tx: TransactionSql, purchaseOrderId: string) {
   return tx<LineRow[]>`
@@ -165,19 +186,25 @@ async function readLines(tx: TransactionSql, purchaseOrderId: string) {
            pol.hsn_code, pol.unit_code, pol.quantity::text as quantity,
            pol.rate::text as rate, pol.gst_rate::text as gst_rate,
            pol.line_amount::text as line_amount,
-           coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)
-             ::numeric(18,3)::text as received_quantity,
-           greatest(
-             pol.quantity
-               - coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0),
-             0
-           )::numeric(18,3)::text as pending_quantity
+           received.quantity::numeric(18,3)::text as received_quantity,
+           greatest(pol.quantity - received.quantity, 0)
+             ::numeric(18,3)::text as pending_quantity
     from purchase_order_lines pol
-    left join delivery_challan_items dci
-      on dci.purchase_order_line_id = pol.id
-    left join delivery_challans dc on dc.id = dci.delivery_challan_id
+    cross join lateral (
+      select
+        coalesce((
+          select sum(dci.quantity)
+          from delivery_challan_items dci
+          join delivery_challans dc on dc.id = dci.delivery_challan_id
+          where dci.purchase_order_line_id = pol.id and dc.status = 'issued'
+        ), 0)
+        + coalesce((
+          select sum(sm.quantity)
+          from stock_movements sm
+          where sm.purchase_order_line_id = pol.id
+        ), 0) as quantity
+    ) received
     where pol.purchase_order_id = ${purchaseOrderId}
-    group by pol.id
     order by pol.line_number
   `;
 }
@@ -199,7 +226,7 @@ function toLine(row: LineRow): PurchaseOrderLine {
   };
 }
 
-async function readDetail(
+export async function readDetail(
   tx: TransactionSql,
   purchaseOrderId: string,
 ): Promise<PurchaseOrderDetailResponse> {
@@ -287,7 +314,7 @@ function trimmedText(
  * the Work's LOA letter date — a contractor cannot buy against an award
  * that did not exist yet. "Today" is the organisation's own timezone, not
  * the server clock. */
-async function assertPurchaseOrderDate(
+export async function assertPurchaseOrderDate(
   tx: TransactionSql,
   workId: string,
   poDate: string,
@@ -317,7 +344,7 @@ async function assertPurchaseOrderDate(
   }
 }
 
-interface VendorRow {
+export interface VendorRow {
   id: string;
   designation: string;
   contact_person: string | null;
@@ -339,7 +366,7 @@ interface VendorRow {
  * contact of another tenant is invisible under RLS and answers exactly
  * like an unknown id.
  */
-async function requireVendor(
+export async function requireVendor(
   tx: TransactionSql,
   contactId: string,
 ): Promise<VendorRow> {
@@ -662,6 +689,13 @@ export function registerPurchaseOrderRoutes(
                          on dc.id = dci.delivery_challan_id
                        where dci.purchase_order_line_id = pol.id
                          and dc.status = 'issued'
+                     ), 0) + coalesce((
+                       -- The stock ledger's half of the same balance; see
+                       -- readLines for why an order can be received onto a
+                       -- shelf rather than onto a challan (0087).
+                       select sum(sm.quantity)
+                       from stock_movements sm
+                       where sm.purchase_order_line_id = pol.id
                      ), 0)
                  )
                )
@@ -1163,6 +1197,12 @@ export function registerPurchaseOrderRoutes(
         // cancelled AFTER this commits; the balance is therefore
         // recomputed live on every read, and a closed order whose receipt
         // was later released shows its lines pending again.
+        //
+        // The stock half of the balance (0087) needs no lock of its own:
+        // the ledger is append-only and a movement is never released, so
+        // a receipt landing beside this transaction can only make a line
+        // MORE received, and the only decision made here is whether every
+        // line already is.
         await tx`
           select dc.id from delivery_challans dc
           where dc.id in (
