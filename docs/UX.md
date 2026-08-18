@@ -321,6 +321,7 @@ of the mock's own Operations group (`docs/UX.md` § Settled information
 architecture), and it left the omitted list this wave. Inventory,
 Purchase orders and Maintenance stay omitted rather than drawn as dead
 entries.
+
 ### 13. Inventory screens — the fakes the stock ledger refused
 
 The two screens are ported (`app/inventory/page.tsx`,

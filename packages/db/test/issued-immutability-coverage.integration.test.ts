@@ -89,6 +89,10 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     // open — and a one-way rule is not a freeze.
     'manufactured',
     'active',
+    // The stock ledger's one column on this master (0087). Editable by
+    // design and by nothing else here: it is a threshold an operator
+    // tunes as consumption changes, and the guard has no opinion on it.
+    'reorder_level',
   ],
 
   // The amendment decision ledger: everything proposed is frozen, the
