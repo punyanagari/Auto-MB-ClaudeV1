@@ -111,9 +111,7 @@ describe('the recurring statutory scheduler', () => {
     // grew a read-then-write shape.
     expect(await enqueueDueStatutoryJobs(app, 50)).toBe(0);
 
-    const [advanced] = await admin<
-      { future: boolean; last_job_id: string | null }[]
-    >`
+    const [advanced] = await admin<{ future: boolean; last_job_id: string | null }[]>`
       select next_run_at > now() as future, last_job_id
       from statutory_job_schedules where id = ${scheduleId}
     `;
@@ -258,15 +256,16 @@ describe('the organisation export artefact', () => {
       values (${tenant.organisationId}, ${tenant.userId})
       returning id
     `;
+    const id = row?.id ?? '';
     await admin`
       update organisation_export_requests
-         set state = 'running', started_at = now() where id = ${row?.id}
+         set state = 'running', started_at = now() where id = ${id}
     `;
     const failure = await refused(
       admin`
         update organisation_export_requests
            set state = 'ready', completed_at = now()
-         where id = ${row?.id}
+         where id = ${id}
       `,
     );
     expect(failure.code).toBe('23514');

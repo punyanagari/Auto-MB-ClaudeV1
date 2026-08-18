@@ -1538,3 +1538,31 @@ test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   ).toBeVisible();
   await expectNoAxeViolations(page, 'signing kiosk revoke dialog');
 });
+
+test('the platform settings pass the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/settings');
+
+  /* The owner-only operator controls (0096). Their own scan rather than a
+     leg of another journey, because between them they draw four things a
+     register never does: a chip whose meaning is "off" rather than
+     "cancelled", a dense run-history table with an outcome column, a
+     64-character digest printed in full and wrapped, and a primary action
+     that is DISABLED while a build is in flight — which is a contrast
+     state nothing else on the page reaches. */
+  await expect(page.getByRole('heading', { name: 'Platform' })).toBeVisible();
+  await expect(page.getByText('E-way bill', { exact: true })).toBeVisible();
+  await expect(page.getByText(/never configured/)).toBeVisible();
+  await expect(page.getByText('Guarantee and certificate expiry')).toBeVisible();
+  // The refused-bind run's remedy, which is the one sentence on this
+  // screen an operator has to act on.
+  await expect(page.getByText(/no longer in the organisation/)).toBeVisible();
+  await expectNoAxeViolations(page, 'platform settings');
+
+  await expect(
+    page.getByRole('heading', { name: 'Organisation export' }),
+  ).toBeVisible();
+  await expect(page.getByText('f'.repeat(64))).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download' })).toBeVisible();
+  await expectNoAxeViolations(page, 'organisation export panel');
+});

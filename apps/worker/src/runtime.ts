@@ -244,10 +244,13 @@ export async function runWorkerLoop(
   const tickIntervalMs = options.tickIntervalMs ?? 60_000;
   let consecutiveClaimFailures = 0;
   let consecutiveOutcomeFailures = 0;
-  // Zero, so the first tick happens at start-up rather than a minute in: a
-  // worker that has just been restarted after being down is exactly when a
-  // due schedule is most likely to be waiting.
-  let lastTickAt = 0;
+  // Negative infinity, so the FIRST iteration ticks rather than waiting a
+  // minute: a worker that has just been restarted after being down is
+  // exactly when a due schedule is most likely to be waiting. Zero would
+  // read the same and would not be — a fake clock starting at zero, and a
+  // real one immediately after an epoch reset, both make `now() - 0` less
+  // than the interval.
+  let lastTickAt = Number.NEGATIVE_INFINITY;
 
   while (!options.signal.aborted) {
     // BEFORE the claim, so a schedule that comes due is picked up by the

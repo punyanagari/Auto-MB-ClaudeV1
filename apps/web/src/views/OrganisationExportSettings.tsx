@@ -138,8 +138,8 @@ export function OrganisationExportSettings({
       </CardHeader>
       <p className="mt-1 text-xs text-muted-foreground">
         A complete copy of this organisation&rsquo;s record — every Work, challan,
-        invoice, bill, payslip and audit event — as one JSON file. It is built in
-        the background and stays downloadable for{' '}
+        invoice, bill, payslip and audit event — as one JSON file. It is built in the
+        background and stays downloadable for{' '}
         {retentionHours === 0 ? 'a limited period' : `${retentionHours / 24} days`},
         after which the file is deleted.
       </p>
@@ -167,9 +167,7 @@ export function OrganisationExportSettings({
         <>
           <div className="mt-3">
             <DataTable>
-              <caption className="sr-only">
-                Exports taken of this organisation
-              </caption>
+              <caption className="sr-only">Exports taken of this organisation</caption>
               <thead>
                 <tr>
                   <th scope="col">Requested</th>

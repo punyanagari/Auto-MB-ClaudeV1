@@ -227,9 +227,7 @@ export function registerPlatformRoutes(
       schema: {
         params: Type.Object(
           {
-            key: Type.Union(
-              ENTITLEMENT_FLAGS.map((flag) => Type.Literal(flag.key)),
-            ),
+            key: Type.Union(ENTITLEMENT_FLAGS.map((flag) => Type.Literal(flag.key))),
           },
           { additionalProperties: false },
         ),

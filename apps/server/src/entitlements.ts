@@ -104,19 +104,6 @@ export async function entitlementEnabled(
   return (await pending).get(flag) ?? DEFAULTS.get(flag) ?? true;
 }
 
-/** Every flag's effective value for the bound organisation, for the
- * management screen. Shares the same per-transaction cache. */
-export async function effectiveEntitlements(
-  tx: TransactionSql,
-): Promise<ReadonlyMap<string, boolean>> {
-  let pending = cache.get(tx);
-  if (pending === undefined) {
-    pending = readEntitlements(tx);
-    cache.set(tx, pending);
-  }
-  return pending;
-}
-
 /**
  * Refuses when the module is switched off for this organisation.
  *

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
   Entitlement,
-  EntitlementFlagKey,
   JobRun,
   JobSchedule,
   ScheduledJobKind,
@@ -77,9 +76,7 @@ export function PlatformSettings({
   canManageEntitlements,
 }: PlatformSettingsProps) {
   const visible = isOwner && canManageEntitlements;
-  const [entitlements, setEntitlements] = useState<readonly Entitlement[] | null>(
-    null,
-  );
+  const [entitlements, setEntitlements] = useState<readonly Entitlement[] | null>(null);
   const [schedules, setSchedules] = useState<readonly JobSchedule[] | null>(null);
   const [runs, setRuns] = useState<readonly JobRun[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -113,21 +110,27 @@ export function PlatformSettings({
 
   const toggleFlag = useCallback(
     (flag: Entitlement) =>
-      act(async () => {
-        await api.setEntitlement(organisationId, flag.key as EntitlementFlagKey, {
-          enabled: !flag.enabled,
-        });
-        reload();
-      }, `${flag.label} is now ${flag.enabled ? 'switched off' : 'switched on'}.`),
+      act(
+        async () => {
+          await api.setEntitlement(organisationId, flag.key, {
+            enabled: !flag.enabled,
+          });
+          reload();
+        },
+        `${flag.label} is now ${flag.enabled ? 'switched off' : 'switched on'}.`,
+      ),
     [act, api, organisationId, reload],
   );
 
   const saveSchedule = useCallback(
     (kind: ScheduledJobKind, enabled: boolean, label: string) =>
-      act(async () => {
-        await api.setJobSchedule(organisationId, kind, { enabled });
-        reload();
-      }, `${label} is now ${enabled ? 'running' : 'switched off'}.`),
+      act(
+        async () => {
+          await api.setJobSchedule(organisationId, kind, { enabled });
+          reload();
+        },
+        `${label} is now ${enabled ? 'running' : 'switched off'}.`,
+      ),
     [act, api, organisationId, reload],
   );
 
@@ -165,9 +168,8 @@ export function PlatformSettings({
 
       <h3 className="mt-2 text-sm font-medium">Modules</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        Whether this organisation may use a module at all. This is not a
-        permission: a member still needs their own authority for anything a
-        module does.
+        Whether this organisation may use a module at all. This is not a permission: a
+        member still needs their own authority for anything a module does.
       </p>
       <ul className="m-0 mt-3 flex list-none flex-col gap-3 p-0">
         {entitlements.map((flag) => (
@@ -203,10 +205,9 @@ export function PlatformSettings({
 
       <h3 className="mt-6 text-sm font-medium">Recurring checks</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        Each check runs under the authority of the member who last saved it. If
-        that member leaves the organisation the run is refused rather than
-        carried out on their behalf — save the check again to put your own
-        membership behind it.
+        Each check runs under the authority of the member who last saved it. If that
+        member leaves the organisation the run is refused rather than carried out on
+        their behalf — save the check again to put your own membership behind it.
       </p>
       {schedules.length === 0 ? (
         <div className="mt-3">
@@ -256,11 +257,7 @@ export function PlatformSettings({
                   size="sm"
                   disabled={pending}
                   onClick={() => {
-                    void saveSchedule(
-                      schedule.kind,
-                      !schedule.enabled,
-                      schedule.label,
-                    );
+                    void saveSchedule(schedule.kind, !schedule.enabled, schedule.label);
                   }}
                 >
                   {schedule.enabled ? 'Switch off' : 'Switch on'}
@@ -275,8 +272,8 @@ export function PlatformSettings({
       {runs.length === 0 ? (
         <div className="mt-3">
           <EmptyState>
-            No check has run yet. The worker picks up a due schedule within a
-            minute of it falling due.
+            No check has run yet. The worker picks up a due schedule within a minute of
+            it falling due.
           </EmptyState>
         </div>
       ) : (
@@ -299,7 +296,9 @@ export function PlatformSettings({
             <tbody>
               {runs.map((run) => (
                 <tr key={run.id}>
-                  <td>{run.kind === 'instrument_expiry_review' ? 'Expiry' : run.kind}</td>
+                  <td>
+                    {run.kind === 'instrument_expiry_review' ? 'Expiry' : run.kind}
+                  </td>
                   <td className={numericCell}>{formatTimestamp(run.createdAt)}</td>
                   <td>
                     <StatusChip status={RUN_CHIP[run.state]} />

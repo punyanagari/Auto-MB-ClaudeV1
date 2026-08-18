@@ -1313,9 +1313,7 @@ export async function writeExportPackage(
   // hashes, so an offboarding or incident package can fetch and verify
   // the bytes (external re-audit). Emitted in a fixed bucket order, so
   // streaming the sections did not reorder it.
-  const objectManifest = MANIFEST_ORDER.flatMap(
-    (bucket) => manifest.get(bucket) ?? [],
-  );
+  const objectManifest = MANIFEST_ORDER.flatMap((bucket) => manifest.get(bucket) ?? []);
   await write(`"objectManifest":${JSON.stringify(objectManifest)},`);
 
   // Recorded before the audit section is read, so the package contains

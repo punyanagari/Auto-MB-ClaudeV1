@@ -4811,13 +4811,10 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async downloadOrganisationExport(organisationId, exportId) {
-      const response = await fetchImpl(
-        `/api/platform/exports/${exportId}/download`,
-        {
-          credentials: 'same-origin',
-          headers: { 'x-organisation-id': organisationId },
-        },
-      );
+      const response = await fetchImpl(`/api/platform/exports/${exportId}/download`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
       if (!response.ok) throw await parseError(response);
       return response.blob();
     },

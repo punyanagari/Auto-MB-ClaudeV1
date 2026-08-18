@@ -84,7 +84,7 @@ export function createInstrumentExpiryReviewHandler(): JobHandler {
         values (
           ${job.organisationId}, ${job.userId},
           'instrument_expiry.reviewed', 'work_instruments',
-          ${tx.json({ horizonDays, expiring: rows.length, lapsed } as never)}
+          ${tx.json({ horizonDays, expiring: rows.length, lapsed })}
         )
       `;
 

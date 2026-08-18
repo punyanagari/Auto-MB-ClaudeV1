@@ -94,10 +94,7 @@ async function createOrganisation(cookie: string, slug: string): Promise<string>
 }
 
 /** A member of the main organisation, with exactly the grants named. */
-async function member(
-  label: string,
-  grants: Record<string, unknown>,
-): Promise<string> {
+async function member(label: string, grants: Record<string, unknown>): Promise<string> {
   const email = `platform-${label}-${runId}@integration.test`;
   const cookie = await signUp(email, `Platform ${label}`);
   const added = await app.inject({
@@ -107,9 +104,11 @@ async function member(
     payload: { email, role: 'viewer' },
   });
   expect(added.statusCode, added.body).toBe(201);
-  const [{ id: userId }] = await admin<{ id: string }[]>`
+  const [account] = await admin<{ id: string }[]>`
     select id from auth_users where email = ${email}
   `;
+  expect(account, `no account for ${email}`).toBeDefined();
+  const userId = account?.id ?? '';
   if (Object.keys(grants).length > 0) {
     const patched = await app.inject({
       method: 'PATCH',
@@ -368,7 +367,11 @@ async function settledExport(
       }>()
       .exports.find((row) => row.id === exportId);
     expect(record, 'the export disappeared from the list').toBeDefined();
-    if (record !== undefined && record.state !== 'queued' && record.state !== 'running') {
+    if (
+      record !== undefined &&
+      record.state !== 'queued' &&
+      record.state !== 'running'
+    ) {
       return record;
     }
     await new Promise((resolve) => setTimeout(resolve, 250));

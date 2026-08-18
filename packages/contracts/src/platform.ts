@@ -89,9 +89,12 @@ const ScheduledJobKindSchema = Type.Union(
 export type ScheduledJobKind = Static<typeof ScheduledJobKindSchema>;
 
 const CADENCES = ['daily', 'weekly', 'monthly'] as const;
-const CadenceSchema = Type.Union(CADENCES.map((value) => Type.Literal(value)), {
-  description: 'How often the check runs.',
-});
+const CadenceSchema = Type.Union(
+  CADENCES.map((value) => Type.Literal(value)),
+  {
+    description: 'How often the check runs.',
+  },
+);
 export type ScheduleCadence = Static<typeof CadenceSchema>;
 
 export const JobScheduleSchema = Type.Object(
