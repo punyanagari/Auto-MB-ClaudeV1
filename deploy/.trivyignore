@@ -31,3 +31,9 @@ CVE-2026-56858
 CVE-2026-56859
 CVE-2026-56860
 CVE-2026-56862
+# Same acceptance block, GHSA-form id (the first pass extracted only
+# CVE-prefixed ids and missed this row): gRPC-Go xDS RBAC / HTTP/2
+# advisories compiled into the caddy binary. Our Caddyfile terminates TLS
+# for static files and a /api reverse proxy — no gRPC, no xDS — and only
+# a caddy release built against grpc-go >= 1.82.1 can take the fix.
+GHSA-hrxh-6v49-42gf
