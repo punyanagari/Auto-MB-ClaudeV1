@@ -176,7 +176,12 @@ SET LOCAL statement_timeout = '5min';
 --   23G03  the return exceeds what the line still owes back
 --   23G04  closure is blocked: material or defects are outstanding
 --   23G05  the request's terms are frozen once it is raised
---   23G06  the record is append-only
+--
+-- There is no code for "this record is append-only": the dispatch, its
+-- lines and the returns hold no UPDATE or DELETE grant at all, so the
+-- refusal is a 42501 from the privilege system rather than a guard, and
+-- inventing a SQLSTATE for a rule no RAISE can reach would be a code
+-- nothing raises.
 --
 -- ---------------------------------------------------------------------
 -- LOCK ORDER. `routes/inspections.ts` declares the product's ordering as
