@@ -212,8 +212,8 @@ export function Maintenance({
         <CardHeader>
           <h2 className="text-base font-semibold">Maintenance job cards</h2>
           <p className="m-0 text-sm text-muted-foreground">
-            Open jobs remain visible until all material and defective-return
-            obligations are resolved.
+            Open jobs remain visible until all material and defective-return obligations
+            are resolved.
           </p>
         </CardHeader>
 
@@ -221,7 +221,9 @@ export function Maintenance({
           <LoadingState label="the maintenance register" rows={5} columns={5} />
         ) : requests.length === 0 ? (
           <EmptyState
-            {...(canModify ? { action: { label: 'New material request', onClick: onNewRequest } } : {})}
+            {...(canModify
+              ? { action: { label: 'New material request', onClick: onNewRequest } }
+              : {})}
           >
             No maintenance request has been raised yet. Create the first site material
             request to begin.

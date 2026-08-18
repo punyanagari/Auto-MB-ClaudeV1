@@ -22,7 +22,12 @@ import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
 import { financialYearLabel } from '../financial-year.js';
 import { httpError } from '../http.js';
-import { keysetPage, sqlLimit, workScopedCursorRowId, type WorkScope } from '../pagination.js';
+import {
+  keysetPage,
+  sqlLimit,
+  workScopedCursorRowId,
+  type WorkScope,
+} from '../pagination.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema, optionalTrimmed } from './shared.js';
@@ -558,12 +563,7 @@ export function registerMaintenanceRoutes(
     },
     async ({ request, user, organisationId, tenant }) =>
       tenant(async (tx) =>
-        readDetail(
-          tx,
-          await scopeOf(tx, user.id),
-          organisationId,
-          request.params.id,
-        ),
+        readDetail(tx, await scopeOf(tx, user.id), organisationId, request.params.id),
       ),
   );
 

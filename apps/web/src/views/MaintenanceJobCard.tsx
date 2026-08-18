@@ -1031,7 +1031,10 @@ function HistoryTab({
           </li>
         ))}
         {returns.map((entry) => (
-          <li key={entry.id} className="rounded-lg p-3 text-sm ring-1 ring-foreground/10">
+          <li
+            key={entry.id}
+            className="rounded-lg p-3 text-sm ring-1 ring-foreground/10"
+          >
             <RotateCcw
               className="mr-2 inline size-4 align-text-bottom"
               aria-hidden="true"

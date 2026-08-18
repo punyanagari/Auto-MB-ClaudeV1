@@ -167,6 +167,64 @@ test('organisation picker and members workspace pass the axe scan', async ({
   ).toBeDisabled();
   await expectNoAxeViolations(page, 'shortage procurement');
 
+  /* Maintenance (migration 0088). Scanned three times, because the three
+     screens put colour on a word in three different places.
+
+     The REGISTER carries every stage chip this module can render — the
+     two warning-tinted ones and the neutral closed — beside the
+     success-tinted `approved` the vocabulary already had, all four on
+     one screen at once. Locators are qualified by role where a bare
+     string would also match the stage strip above the table.
+
+     The JOB CARD carries three progress bars, a boxed tab rail of
+     `aria-pressed` toggles, and a numeric table whose Available column
+     is empty for the custom line — the `—` an axe scan should find
+     labelled rather than bare.
+
+     The REQUEST FORM is the only screen in the pack with a disabled
+     primary action beside the pickers that disable it. */
+  await page.getByRole('link', { name: 'Maintenance' }).click();
+  await expect(page.getByRole('heading', { name: 'Maintenance' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Awaiting approval' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Dispatching' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Approved' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Closed' })).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance register');
+
+  await page.getByRole('link', { name: 'MR/26-27/00142' }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Replace failed platform display power supplies',
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('Written off 2.000')).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance job card');
+
+  await page.getByRole('button', { name: 'Dispatch', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Record partial or full dispatch' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Create dispatch & challan/ }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance dispatch tab');
+
+  await page.getByRole('button', { name: 'Defective returns' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Receive defective items' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance defective returns tab');
+
+  await page.getByRole('button', { name: 'Maintenance' }).first().click();
+  await page.getByRole('button', { name: 'New material request' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Site material request' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Send for admin approval/ }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance request form');
+
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();

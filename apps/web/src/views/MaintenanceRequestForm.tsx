@@ -55,15 +55,21 @@ function blankLine(): FormLine {
   };
 }
 
-const PRIORITIES: readonly { readonly value: MaintenancePriority; readonly label: string }[] =
-  [
-    { value: 'routine', label: 'Routine' },
-    { value: 'urgent', label: 'Urgent' },
-    { value: 'critical', label: 'Critical outage' },
-  ];
+const PRIORITIES: readonly {
+  readonly value: MaintenancePriority;
+  readonly label: string;
+}[] = [
+  { value: 'routine', label: 'Routine' },
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'critical', label: 'Critical outage' },
+];
 
 interface Pickers {
-  readonly works: readonly { readonly id: string; readonly code: string; readonly title: string }[];
+  readonly works: readonly {
+    readonly id: string;
+    readonly code: string;
+    readonly title: string;
+  }[];
   readonly parts: readonly {
     readonly id: string;
     readonly code: string;
@@ -426,7 +432,9 @@ export function MaintenanceRequestForm({
 
         <div className="flex flex-col gap-4">
           {lines.map((line, index) => {
-            const part = pickers.parts.find((candidate) => candidate.id === line.itemId);
+            const part = pickers.parts.find(
+              (candidate) => candidate.id === line.itemId,
+            );
             return (
               <div key={line.key} className="rounded-xl p-3 ring-1 ring-foreground/10">
                 <FieldRow>
@@ -474,7 +482,9 @@ export function MaintenanceRequestForm({
                     />
                   </Field>
                   <Field>
-                    <label htmlFor={`line-quantity-${String(line.key)}`}>Quantity</label>
+                    <label htmlFor={`line-quantity-${String(line.key)}`}>
+                      Quantity
+                    </label>
                     <input
                       id={`line-quantity-${String(line.key)}`}
                       type="number"
