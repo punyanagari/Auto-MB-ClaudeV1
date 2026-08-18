@@ -133,6 +133,7 @@ SET LOCAL statement_timeout = '5min';
 --     23D01  the edge would close a cycle in the bill of material
 --     23D02  the edge's parent or component is not a legal end of one
 --     23D03  the item master row cannot change this way
+--     23D04  the item master row is still referenced and cannot be retired
 --
 --   Job cards, serials and despatch
 --     23D11  the job card cannot move between these two states
@@ -319,9 +320,19 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  IF NEW.organisation_id <> OLD.organisation_id THEN
+  -- Provenance is a fact about an act that already happened, and the
+  -- tenant is not a property anything may edit: re-pointing
+  -- `organisation_id` would move a part number and every job card behind
+  -- it into another organisation in one statement, which RLS cannot
+  -- catch because the row passes the policy on the way out and on the
+  -- way in. The ROW form is 0079's, and `issued-immutability-coverage`
+  -- reads it out of the stored function body to prove that every column
+  -- of this table is either frozen here or declared mutable there.
+  IF ROW(NEW.organisation_id, NEW.created_at, NEW.created_by_user_id)
+     IS DISTINCT FROM ROW(OLD.organisation_id, OLD.created_at, OLD.created_by_user_id)
+  THEN
     RAISE EXCEPTION
-      'a production item''s tenant is immutable'
+      'a production item''s tenant and provenance are immutable'
       USING ERRCODE = '23D03';
   END IF;
 
@@ -362,7 +373,7 @@ BEGIN
     RAISE EXCEPTION
       'item % has open job cards and cannot be retired',
       OLD.item_code
-      USING ERRCODE = '23D03';
+      USING ERRCODE = '23D04';
   END IF;
 
   RETURN NEW;
@@ -748,13 +759,18 @@ COMMENT ON CONSTRAINT production_job_cards_source_shape_check ON production_job_
 CREATE UNIQUE INDEX production_job_cards_number_per_year
   ON production_job_cards (organisation_id, fy_label, sequence_number);
 
--- The register reads newest first across every Work in reach; the
+-- The register reads soonest-due first across every Work in reach; the
 -- keyset predicate seeks on (due_date, id).
 CREATE INDEX production_job_cards_register_idx
   ON production_job_cards (organisation_id, due_date, id);
+-- The two foreign-key indexes. Not partial on `work_id`, even though a
+-- private order leaves it null and the `?work=` filter never reads those
+-- rows: a partial index does not cover the foreign key, and covering the
+-- key is what stops a Work delete scanning this table.
 CREATE INDEX production_job_cards_work_idx
-  ON production_job_cards (organisation_id, work_id)
-  WHERE work_id IS NOT NULL;
+  ON production_job_cards (organisation_id, work_id);
+CREATE INDEX production_job_cards_item_idx
+  ON production_job_cards (organisation_id, item_id);
 
 ALTER TABLE production_job_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE production_job_cards FORCE ROW LEVEL SECURITY;
@@ -969,8 +985,14 @@ COMMENT ON TABLE production_serials IS
 COMMENT ON COLUMN production_serials.item_id IS
   'Carried rather than joined for. The composite foreign key proves this unit and its job card name one item, and the component guard reads the bill of material from it without a second hop.';
 
+-- Leads with the composite foreign key's own columns, which is what
+-- `test/fk-index-coverage` demands of every key in this schema: an
+-- unindexed key turns a parent delete or update into a sequential scan
+-- of the child. `item_id` is fixed within a job card (the key itself
+-- guarantees it), so `sequence_number` behind it still orders the units
+-- of one card.
 CREATE INDEX production_serials_job_card_idx
-  ON production_serials (organisation_id, job_card_id, sequence_number);
+  ON production_serials (organisation_id, job_card_id, item_id, sequence_number);
 
 ALTER TABLE production_serials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE production_serials FORCE ROW LEVEL SECURITY;
@@ -1166,12 +1188,9 @@ BEGIN
     RETURN OLD;
   END IF;
 
-  -- The lock orders concurrent scans against the same unit, so the
-  -- per-unit requirement below is counted once rather than twice.
   SELECT item_id, job_card_id INTO parent_item, parent_card
   FROM production_serials
-  WHERE organisation_id = NEW.organisation_id AND id = NEW.finished_serial_id
-  FOR UPDATE;
+  WHERE organisation_id = NEW.organisation_id AND id = NEW.finished_serial_id;
 
   IF parent_item IS NULL THEN
     RAISE EXCEPTION
@@ -1179,6 +1198,24 @@ BEGIN
       NEW.finished_serial_id
       USING ERRCODE = '23D15';
   END IF;
+
+  -- The lock orders concurrent scans against the same unit, so the
+  -- per-unit requirement below is counted once rather than twice.
+  --
+  -- It is taken on the JOB CARD rather than on the unit, and that is not
+  -- a convenience. `SELECT ... FOR UPDATE` needs the UPDATE privilege on
+  -- the table it locks, and § 4 deliberately withholds UPDATE on
+  -- production_serials — a serial number is stamped on hardware and is
+  -- never corrected. The job card is the row the route locks before it
+  -- reaches here (`routes/production.ts`, lockJobCard), so both layers
+  -- queue on the same row in the same order and cannot deadlock against
+  -- each other. It is coarser than a per-unit lock: two operators
+  -- scanning two DIFFERENT units of one card serialise. That is the
+  -- right trade for a bench operation, and a finer lock would need an
+  -- UPDATE grant this table must not have.
+  PERFORM 1 FROM production_job_cards
+  WHERE organisation_id = NEW.organisation_id AND id = parent_card
+  FOR UPDATE;
 
   IF EXISTS (
     SELECT 1 FROM production_dispatch_serials d
@@ -1382,6 +1419,12 @@ CREATE TABLE production_dispatch_serials (
   FOREIGN KEY (organisation_id, production_serial_id, job_card_id)
     REFERENCES production_serials(organisation_id, id, job_card_id)
 );
+
+-- Covers the despatch-side composite key; the unit-side one is covered
+-- by the UNIQUE above.
+CREATE INDEX production_dispatch_serials_dispatch_idx
+  ON production_dispatch_serials
+     (organisation_id, production_dispatch_id, job_card_id);
 
 COMMENT ON TABLE production_dispatch_serials IS
   'Which units a despatch released. The two composite foreign keys share job_card_id, so a unit from one job card cannot be released on another card''s despatch — proved by the keys rather than by a trigger.';

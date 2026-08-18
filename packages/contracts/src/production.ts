@@ -220,8 +220,16 @@ export const JobCardSummarySchema = Type.Object(
      * order. */
     workId: Type.Union([UuidSchema, Type.Null()]),
     workCode: Type.Union([Type.String(), Type.Null()]),
-    /** The Work's party, or the typed name on a private order. */
-    customer: Type.String(),
+    /** The typed customer on a private purchase order, and NULL for a
+     * Work-sourced card.
+     *
+     * The mock prints a customer on every plan; a Work in this product
+     * does not carry one. `works` holds the letter, the title and the
+     * money, and the railway's own name is on the consignee snapshot of
+     * each challan rather than on the contract row — so a Work-sourced
+     * card would have to guess, and the header shows its Work code
+     * instead, which is the identifier an operator actually uses. */
+    customer: Type.Union([Type.String(), Type.Null()]),
     itemId: UuidSchema,
     itemCode: Type.String(),
     itemName: Type.String(),

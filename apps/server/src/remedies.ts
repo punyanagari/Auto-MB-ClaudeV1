@@ -120,6 +120,10 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Open the job card's Dispatch tab again; a release deleted there is no longer reachable by its old id.",
   PRODUCTION_DISPATCH_INVALID:
     'Release only units of this job card that are still in the factory and have every required component serial captured.',
+  // Crossed the three-throw coverage bar when the production register
+  // added a third keyset list of its own.
+  CURSOR_INVALID:
+    'Reload the register and page again from the start; a cursor from an older result set no longer names a row in it.',
   FIELD_TOO_SHORT:
     'Fill the named field in and submit again; a value of nothing but spaces is not a value.',
   // Crossed the coverage bar when P12 collapsed three spellings of "that

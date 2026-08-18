@@ -1160,10 +1160,14 @@ describe('tenant migration contract', () => {
     expect(sql).toMatch(
       /SELECT status, quantity INTO card_status, card_quantity[\s\S]*?FOR UPDATE;/,
     );
-    // The same shape guards per-unit component capture.
+    // Per-unit component capture takes the same lock, on the same row —
+    // the JOB CARD, not the unit. Locking the unit would need an UPDATE
+    // privilege that § 4 deliberately withholds, and locking a different
+    // row from the route's would be a deadlock waiting for two operators.
     expect(sql).toMatch(
-      /SELECT item_id, job_card_id INTO parent_item, parent_card[\s\S]*?FOR UPDATE;/,
+      /PERFORM 1 FROM production_job_cards\s+WHERE organisation_id = NEW\.organisation_id AND id = parent_card\s+FOR UPDATE;/,
     );
+    expect(sql).not.toMatch(/FROM production_serials[\s\S]{0,200}?FOR UPDATE;/);
 
     // Every trigger function pins its search_path, and there are no
     // exceptions to count against.

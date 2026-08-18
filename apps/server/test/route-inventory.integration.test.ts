@@ -130,6 +130,30 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     "one tender's own checklist and status trail, both bounded by the tender",
   ],
 
+  [
+    'GET /api/production/items',
+    'the OEM item master: what the agency manufactures and the parts it buys to build them, curated by hand like every other master. Both production screens read it whole — the job-card form needs every manufactured item in one select, and the bill-of-material editor needs every part',
+  ],
+  [
+    // Not a register at all: a TREE, flattened for the wire. A keyset
+    // cursor positions a row in a sort order, and half a bill of
+    // material is not a bill of material — a page boundary falling
+    // inside a sub-assembly would render children with no parent. It is
+    // bounded instead by `app_private.production_bom_max_depth()`, which
+    // the recursive read enforces.
+    'GET /api/production/items/:id/bom',
+    "one item's exploded bill of material, bounded by the depth limit the schema enforces",
+  ],
+  [
+    // A detail response whose arrays are all bounded by the job card
+    // itself: its material requirement (one row per distinct part in the
+    // bill), its units (capped by the planned quantity, which the schema
+    // caps at 100000 and the trigger holds as a ceiling), its per-unit
+    // component slots, and its releases.
+    'GET /api/production/job-cards/:id',
+    "one job card's own materials, units, component slots and releases, all bounded by the card",
+  ],
+
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],
   [

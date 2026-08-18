@@ -120,6 +120,28 @@ const COUNTER_TABLES = [
     scope: 'financial-year',
     refusal: 'tax_invoice_counters',
   },
+  {
+    // The job-card sequence (0084), per organisation and per financial
+    // year like the payment requests above it. Monotonic: a cancelled
+    // job card keeps its number, so rewinding would re-issue one.
+    table: 'production_job_card_counters',
+    scope: 'financial-year',
+    refusal: 'production_job_card_counters',
+  },
+  {
+    // The finished-serial sequence (0084), per manufactured item. The
+    // strictest of the family: its numbers are stamped on hardware, and
+    // a unit deleted in error does NOT release its number.
+    table: 'production_serial_counters',
+    scope: 'production-item',
+    refusal: 'production_serial_counters',
+  },
+  {
+    // The despatch sequence (0084), per job card.
+    table: 'production_dispatch_counters',
+    scope: 'job-card',
+    refusal: 'production_dispatch_counters',
+  },
 ] as const;
 
 /** The four that migration 0064 added the trigger to. Named here so the
@@ -152,7 +174,48 @@ let admin: Sql;
  * predicate that identifies it. */
 interface CounterShape {
   readonly table: string;
-  readonly scope: 'work' | 'financial-year' | 'organisation';
+  readonly scope:
+    'work' | 'financial-year' | 'organisation' | 'production-item' | 'job-card';
+}
+
+/**
+ * The manufactured item and the job card the 0084 counters hang off.
+ *
+ * Seeded here rather than in the shared `seedTenant`, because these two
+ * rows are this file's business alone and every other suite that takes a
+ * tenant would otherwise pay for them. The job card is created `planned`,
+ * which is the only state its own transition guard admits at birth.
+ */
+async function seedProductionAnchors(
+  pool: Sql,
+  tenant: Tenant,
+): Promise<{ itemId: string; jobCardId: string }> {
+  const suffix = randomBytes(4).toString('hex').toUpperCase();
+  const [item] = await pool<{ id: string }[]>`
+    insert into production_items (
+      organisation_id, item_code, name, category, unit, manufactured,
+      serial_prefix, serial_controlled, created_by_user_id
+    )
+    values (
+      ${tenant.organisationId}, ${`INV-${suffix}`}, 'Invariant fixture board',
+      'Display boards', 'Nos', true, ${`INV${suffix}`}, true, 'invariant-test'
+    )
+    returning id
+  `;
+  if (!item) throw new Error('production item seed failed');
+  const [jobCard] = await pool<{ id: string }[]>`
+    insert into production_job_cards (
+      organisation_id, fy_label, sequence_number, item_id, quantity, work_id,
+      source_reference, due_date, created_by_user_id
+    )
+    values (
+      ${tenant.organisationId}, ${FY}, 1, ${item.id}, 1, ${tenant.workId},
+      'invariant fixture', '2026-12-31', 'invariant-test'
+    )
+    returning id
+  `;
+  if (!jobCard) throw new Error('production job card seed failed');
+  return { itemId: item.id, jobCardId: jobCard.id };
 }
 
 async function seedCounter(
@@ -182,6 +245,24 @@ async function seedCounter(
         [tenant.organisationId],
       );
       return `organisation_id = '${tenant.organisationId}'`;
+    case 'production-item': {
+      const { itemId } = await seedProductionAnchors(pool, tenant);
+      await pool.unsafe(
+        `insert into ${table.table} (organisation_id, production_item_id, next_value)
+         values ($1, $2, 5)`,
+        [tenant.organisationId, itemId],
+      );
+      return `organisation_id = '${tenant.organisationId}' and production_item_id = '${itemId}'`;
+    }
+    case 'job-card': {
+      const { jobCardId } = await seedProductionAnchors(pool, tenant);
+      await pool.unsafe(
+        `insert into ${table.table} (organisation_id, job_card_id, next_value)
+         values ($1, $2, 5)`,
+        [tenant.organisationId, jobCardId],
+      );
+      return `organisation_id = '${tenant.organisationId}' and job_card_id = '${jobCardId}'`;
+    }
   }
 }
 
