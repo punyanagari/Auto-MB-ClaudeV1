@@ -592,7 +592,17 @@ describe('posting a movement', () => {
     expect(tooMuch.statusCode, tooMuch.body).toBe(409);
     expect(tooMuch.json<{ code: string }>().code).toBe('STOCK_INSUFFICIENT');
 
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    /* Tomorrow in the ORGANISATION's own calendar, which is what the
+       ledger judges a movement date against — not tomorrow in UTC.
+       `new Date(Date.now() + 86_400_000).toISOString()` is the UTC day,
+       and between 18:30 and 24:00 UTC the organisation (Asia/Kolkata by
+       default) is already on that date, so the assertion below failed
+       every evening on a true-to-the-rule server. Read from the same
+       helper the guard reads. */
+    const [organisationTomorrow] = await admin<{ day: string }[]>`
+      select (app_private.organisation_today(${organisationId}) + 1)::text as day
+    `;
+    const tomorrow = organisationTomorrow?.day ?? '';
     const dated = await postMovement({
       productionItemId: smpsItemId,
       movementType: 'adjustment_in',

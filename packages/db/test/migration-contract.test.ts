@@ -2201,7 +2201,7 @@ describe('tenant migration contract', () => {
     // Statuses are a CHECK on text, for the reason 0079 gives about its
     // categories; nothing here is an enum type.
     expect(sql).toMatch(
-      /status text NOT NULL DEFAULT 'active'\n    CHECK \(status IN \('active', 'closed', 'voided'\)\)/,
+      /status text NOT NULL DEFAULT 'active'\n {4}CHECK \(status IN \('active', 'closed', 'voided'\)\)/,
     );
     expect(sql).not.toContain('CREATE TYPE');
 

@@ -164,6 +164,26 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   challan_item_serials: 'serials on a delivery challan line, which blocks',
   issue_challan_lines: 'lines of an issue challan, which blocks',
   installation_serials: 'serials on an installation record, which blocks',
+  // The defect liability period (0099). It reaches `works` directly AND
+  // through the installation it runs on, and the second route is what
+  // makes it exempt: a period cannot exist without a recorded
+  // installation, `installations` is a blocker above, and the 0099 guard
+  // additionally refuses to cancel an installation carrying one. There is
+  // no arrangement of rows in which a Work carries a warranty period and
+  // is eligible — it is refused by `installations` before this question
+  // is asked.
+  installation_warranties:
+    'the defect liability period of an installation record, which blocks — and which cannot be cancelled while the period stands',
+  // The Work's warranty TERM is a clause read off the contract, not a
+  // record of anything that happened, and it is the one table here that a
+  // Work can carry with nothing else populated. It is exempt anyway, and
+  // deliberately: superseding a Work is what happens when its letter was
+  // misread, and the term is exactly the kind of thing that was misread.
+  // Blocking on it would trap the correction behind the mistake. The row
+  // survives the soft delete, harmless — nothing reads a superseded
+  // Work's term, and the successor records its own.
+  work_warranty_terms:
+    'a contract clause recorded against the Work, not a document — and the misreading a supersede exists to correct',
   pac_certificate_items: 'lines of a PAC certificate, which blocks',
   measurement_book_lines: 'lines of a Measurement Book, which blocks',
   mb_sources: 'the measurements a Measurement Book claims, which blocks',

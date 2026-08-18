@@ -430,13 +430,6 @@ export function installationsHash(workId?: string): string {
   });
 }
 
-/** `#/warranties`, or the register narrowed to one Work. */
-export function warrantiesHash(workId?: string): string {
-  return workspaceHashOf({
-    view: { name: 'warranties', workId: workId ?? null },
-  });
-}
-
 /** Click handler for a real `<a href="#/…">`: a plain left click stays
  * in-app through the given handler (synchronous state navigation, and
  * the workspace's dirty-editor guard where the handler routes through

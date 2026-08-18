@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Sql } from 'postgres';
+import type { Sql, TransactionSql } from 'postgres';
 import { createDatabasePool } from '../src/pool.js';
 import { withTenant } from '../src/tenant.js';
 import {
@@ -108,7 +108,7 @@ async function startPeriod(
   );
 }
 
-function asTenant<T>(work: (tx: Parameters<typeof withTenant>[2]) => Promise<T>) {
+function asTenant<T>(work: (tx: TransactionSql) => Promise<T>): Promise<T> {
   return withTenant(
     database.appPool,
     { organisationId: tenant.organisationId, userId: tenant.userId },

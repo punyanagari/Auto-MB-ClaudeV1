@@ -42,6 +42,7 @@ function warranty(overrides: Partial<Warranty> = {}): Warranty {
     closedOn: null,
     closureNote: null,
     voidNote: null,
+    createdAt: '2026-02-03T05:00:00.000Z',
     ...overrides,
   };
 }
