@@ -49,6 +49,63 @@ const errorResponses = {
  * rather than claimed on merge, for the reason the v15, v17 and v21 notes
  * record at length: a version string identifies a format, two formats
  * sharing one string is the failure that matters, and a gap is not.
+ * export-v23: the employee master, the dated statutory schedules and the
+ * payroll runs (0089, 0090) join the package.
+ *
+ * Six sections and a counter, and the reason all of them travel is one
+ * sentence: an organisation restored without its payroll history cannot
+ * answer a provident-fund inspector. The payslips are the primary record
+ * of every contribution the agency deducted and every one it owed, and
+ * unlike a challan or an invoice they exist nowhere else — there is no
+ * counterparty holding a copy.
+ *
+ * The THREE SCHEDULE TABLES travel too, and that is not decoration. A run
+ * snapshots the rates it used onto each line, so a restore can still read
+ * what was deducted; what it could not do without the schedules is
+ * compute the NEXT month, and it could not show an inspector the
+ * notification the organisation was relying on. They are also editable
+ * per organisation, so a restore that re-seeded them from the migration
+ * would silently discard an owner's own corrections.
+ *
+ * `employees` carries the PAN, the UAN, the ESIC number and — through the
+ * `contacts` section that has done so since v13 — the salary bank
+ * account. That is the same posture v13 recorded for the bank accounts:
+ * the API withholds those columns because no screen needs them back,
+ * while this export is the contractor's own portability snapshot and an
+ * export you cannot restore a payroll from is not one. No Aadhaar exists
+ * anywhere in the schema to travel.
+ *
+ * v22 (maintenance) is the pack of this wave that landed ahead of it. The
+ * numbers were ALLOCATED by the coordinator rather than claimed on merge,
+ * for the reason the v15 and v17 notes record at length: a version string
+ * identifies a format, two formats sharing one string is the failure that
+ * matters, and a gap is not.
+ *
+ * No manifest bucket: payroll stores no PDFs. A payslip is rendered from
+ * the frozen columns that travel here, so a restored export can reprint
+ * every one it holds — the same reasoning the v20 note gives for outward
+ * letters.
+ * export-v22: maintenance (0088) joins the package — the site material
+ * requests, what each asked for, the dispatch challans that answered
+ * them, the quantities each challan carried, the defective units
+ * received back, and both numbering counters.
+ *
+ * All seven tables travel, because six of the module's numbers are
+ * DERIVED from rows rather than stored: how much of a line is reserved,
+ * dispatched and received back is the sum of its dispatch lines and its
+ * returns, so an export carrying only the requests would restore an
+ * organisation whose every maintenance line read as untouched. The
+ * counters travel for the reason the standalone-challan note below
+ * gives: without them a restored organisation reissues a challan number
+ * a site receiver has already signed for.
+ *
+ * No manifest bucket: maintenance stores no PDFs. The dispatch challan
+ * is a pure function of columns frozen at insert, like the outward
+ * letter in the v20 note below, and nothing here accepts an upload.
+ *
+ * The one column 0088 adds to another module's table — the stock
+ * ledger's `maintenance_dispatch_id` — rides along inside that section's
+ * existing `select *`.
  *
  * export-v21: the stock ledger (0087) joins the package — every movement
  * of every part, with the source document that caused it, and the
@@ -66,24 +123,6 @@ const errorResponses = {
  * reason the v15 and v17 notes record at length: a version string
  * identifies a format, two formats sharing one string is the failure that
  * matters, and a gap is not.
- *
- * export-v19: OEM production (0084) joins the package — the item master,
- * the recursive bill of material, the job cards, the finished serials,
- * the per-unit component genealogy, the despatches, and all three of the
- * module's counters.
- *
- * Left out, a restored organisation would come back with the contracts
- * and none of the factory: no record of what it manufactures, no bill of
- * material behind any of it, and — the loss that cannot be reconstructed
- * from anywhere else — no serial genealogy. A delivered unit's challan
- * says a number moved; only these tables say what is inside it. The
- * counters travel for the reason the standalone-challan note below
- * gives: without them a restored organisation reissues serials it has
- * already stamped on hardware.
- *
- * No manifest bucket: production stores no PDFs. Every other module here
- * that carries one does so because it accepted an upload, and this one
- * accepts none.
  *
  * export-v20: the correspondence register (0086) joins the package — the
  * inward and outward letters with their numbering counters, and the
@@ -266,7 +305,7 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 status, created_at
+                 can_manage_payroll, status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -925,6 +964,36 @@ const SECTIONS: readonly ExportSection[] = [
     },
   },
   {
+    // Maintenance (0088). Five sections, and every one of them is load
+    // bearing: the request states what was asked for, but how much of it
+    // is reserved, has gone out and has come back is DERIVED from the
+    // dispatch lines and the returns. An export carrying the requests
+    // alone would restore an organisation whose every maintenance line
+    // read as untouched, with challan numbers already signed for.
+    key: 'maintenanceRequests',
+    sql: `select * from maintenance_requests
+          order by financial_year, sequence_number`,
+  },
+  {
+    key: 'maintenanceRequestLines',
+    sql: `select * from maintenance_request_lines
+          order by maintenance_request_id, position`,
+  },
+  {
+    key: 'maintenanceDispatches',
+    sql: `select * from maintenance_dispatches order by work_id, sequence_number`,
+  },
+  {
+    key: 'maintenanceDispatchLines',
+    sql: `select * from maintenance_dispatch_lines
+          order by maintenance_dispatch_id, maintenance_request_line_id`,
+  },
+  {
+    key: 'maintenanceReturns',
+    sql: `select * from maintenance_returns
+          order by maintenance_request_id, received_on, id`,
+  },
+  {
     key: 'deliveryChallanCounters',
     sql: `select * from delivery_challan_counters order by work_id`,
   },
@@ -956,6 +1025,18 @@ const SECTIONS: readonly ExportSection[] = [
     // rows at the same point in an item's history (0087).
     key: 'stockMovementCounters',
     sql: `select * from stock_movement_counters order by production_item_id`,
+  },
+  {
+    // Both maintenance series (0088), for the reason every counter here
+    // travels: without them a restored organisation reissues a request
+    // number somebody has quoted and a challan number a site receiver
+    // has already signed for.
+    key: 'maintenanceRequestCounters',
+    sql: `select * from maintenance_request_counters order by fy_label`,
+  },
+  {
+    key: 'maintenanceDispatchCounters',
+    sql: `select * from maintenance_dispatch_counters order by work_id`,
   },
   {
     key: 'budgetaryQuotationCounters',
@@ -991,6 +1072,48 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'productionDispatchCounters',
     sql: `select * from production_dispatch_counters order by job_card_id`,
+  },
+  // Payroll (0089, 0090). Ordered parents before children, and the
+  // schedules before the runs that read them, so a restore replaying
+  // this package in section order never references a row it has not
+  // written yet.
+  {
+    key: 'payrollStatutoryRates',
+    sql: `select * from payroll_statutory_rates
+          order by parameter, effective_from, id`,
+  },
+  {
+    key: 'professionalTaxSlabs',
+    sql: `select * from professional_tax_slabs
+          order by state_code, payee_category, effective_from,
+                   monthly_wage_from, id`,
+  },
+  {
+    key: 'incomeTaxSlabs',
+    sql: `select * from income_tax_slabs
+          order by regime, payee_category, effective_from,
+                   annual_income_from, id`,
+  },
+  {
+    key: 'employees',
+    sql: `select * from employees order by employee_code, id`,
+  },
+  {
+    key: 'payrollRuns',
+    sql: `select * from payroll_runs order by fy_label, sequence_number, id`,
+  },
+  {
+    key: 'payrollRunLines',
+    sql: `select * from payroll_run_lines
+          order by payroll_run_id, employee_code, id`,
+  },
+  // The payroll counter, for the reason the production note above gives:
+  // a restore that reset it would hand out a run number the organisation
+  // has already used, and a gap-free series a provident-fund inspector
+  // reads is the one thing a payroll number is for.
+  {
+    key: 'payrollRunCounters',
+    sql: `select * from payroll_run_counters order by fy_label`,
   },
 ];
 

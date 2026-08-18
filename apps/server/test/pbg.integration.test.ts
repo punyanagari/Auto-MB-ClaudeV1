@@ -15,6 +15,7 @@ import {
   createDatabasePool,
   ensureClusterRoles,
   jsonb,
+  removeOrganisationResidue,
   runMigrations,
 } from '@auto-mb/db';
 import {
@@ -326,25 +327,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    for (const orgId of [organisationId, otherOrganisationId]) {
-      if (!orgId) continue;
-      for (const table of [
-        'audit_events',
-        'work_instruments',
-        'work_items',
-        'work_schedules',
-        'loa_documents',
-        'works',
-        'gst_rates',
-        'organisation_memberships',
-        'organisations',
-      ]) {
-        await admin.unsafe(
-          `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-          [orgId],
-        );
-      }
-    }
+    // The catalog-driven cleanup rather than a hand list. Every list this
+    // replaced went stale the moment migration 0089 seeded a new tenant
+    // table at organisation creation, which is the exact failure
+    // `removeOrganisationResidue` was written to end.
+    await removeOrganisationResidue(admin, [organisationId, otherOrganisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

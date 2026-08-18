@@ -84,6 +84,7 @@ const FIXTURE_JOB_CARD: JobCardDetail = {
   manufactured: 0,
   dispatched: 0,
   materialLines: 0,
+  materialShortParts: 0,
   status: 'planned',
   dueDate: '2026-12-31',
   completedOn: null,
@@ -674,6 +675,46 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     cancelSigningRequest: vi.fn<ApiClient['cancelSigningRequest']>(),
     registerSigningAgent: vi.fn<ApiClient['registerSigningAgent']>(),
     revokeSigningAgent: vi.fn<ApiClient['revokeSigningAgent']>(),
+    listEmployees: vi.fn<ApiClient['listEmployees']>().mockResolvedValue({
+      employees: [],
+      nextCursor: null,
+      currentCount: 0,
+      currentMonthlyGross: '0',
+    }),
+    getEmployee: vi.fn<ApiClient['getEmployee']>(),
+    createEmployee: vi.fn<ApiClient['createEmployee']>(),
+    updateEmployee: vi.fn<ApiClient['updateEmployee']>(),
+    listPayrollRuns: vi
+      .fn<ApiClient['listPayrollRuns']>()
+      .mockResolvedValue({ runs: [], nextCursor: null }),
+    getPayrollRun: vi.fn<ApiClient['getPayrollRun']>(),
+    openPayrollRun: vi.fn<ApiClient['openPayrollRun']>(),
+    calculatePayrollRun: vi.fn<ApiClient['calculatePayrollRun']>(),
+    setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
+    finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
+    cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
+    // Maintenance (0088). The register answers empty by default, for the
+    // reason the stock reads above do: a view that opens it renders its
+    // own empty state rather than hanging on an unresolved mock.
+    listMaintenanceRequests: vi
+      .fn<ApiClient['listMaintenanceRequests']>()
+      .mockResolvedValue({
+        requests: [],
+        nextCursor: null,
+        counts: {
+          awaitingApproval: 0,
+          approved: 0,
+          partiallyDispatched: 0,
+          closed: 0,
+        },
+      }),
+    getMaintenanceRequest: vi.fn<ApiClient['getMaintenanceRequest']>(),
+    createMaintenanceRequest: vi.fn<ApiClient['createMaintenanceRequest']>(),
+    approveMaintenanceRequest: vi.fn<ApiClient['approveMaintenanceRequest']>(),
+    recordMaintenanceDispatch: vi.fn<ApiClient['recordMaintenanceDispatch']>(),
+    receiveMaintenanceReturn: vi.fn<ApiClient['receiveMaintenanceReturn']>(),
+    cancelMaintenanceLine: vi.fn<ApiClient['cancelMaintenanceLine']>(),
+    closeMaintenanceRequest: vi.fn<ApiClient['closeMaintenanceRequest']>(),
     ...overrides,
   };
 }
@@ -770,6 +811,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canManageStatutoryReporting: false,
     canManagePayments: false,
     canSignDocuments: false,
+    canManagePayroll: true,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,

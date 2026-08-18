@@ -125,6 +125,16 @@ const COUNTER_TABLES = [
     refusal: 'stock_movement_counters',
   },
   {
+    // The payroll-run sequence (0090), per organisation and per financial
+    // year like the payment requests above it — and keyed by the month
+    // being PAID rather than by today, so March's run opened in April
+    // belongs to the year it pays for. Monotonic: a cancelled run keeps
+    // its number, so rewinding would hand one out twice.
+    table: 'payroll_run_counters',
+    scope: 'financial-year',
+    refusal: 'payroll_run_counters',
+  },
+  {
     table: 'tax_invoice_counters',
     scope: 'financial-year',
     refusal: 'tax_invoice_counters',
@@ -159,6 +169,23 @@ const COUNTER_TABLES = [
     table: 'production_dispatch_counters',
     scope: 'job-card',
     refusal: 'production_dispatch_counters',
+  },
+  {
+    // The maintenance request series (0088), per organisation and per
+    // financial year: a store clerk's queue is read across Works, so the
+    // number is organisation-wide. Monotonic because a closed request
+    // keeps its number and there is no delete path to release one.
+    table: 'maintenance_request_counters',
+    scope: 'financial-year',
+    refusal: 'maintenance_request_counters',
+  },
+  {
+    // The maintenance dispatch challan series (0088), per Work like every
+    // other challan counter here. The paper carries the Work's code, and
+    // rewinding would print one challan number on two consignments.
+    table: 'maintenance_dispatch_counters',
+    scope: 'work',
+    refusal: 'maintenance_dispatch_counters',
   },
 ] as const;
 

@@ -194,6 +194,27 @@ const TENANT_TABLES = [
   // request is authorised against one.
   'signing_agents',
   'signing_requests',
+  // Payroll (0089, 0090). The schedules first because the runs read
+  // them, the employee before the lines that snapshot them, and the
+  // counter before the runs it numbers.
+  'payroll_statutory_rates',
+  'professional_tax_slabs',
+  'income_tax_slabs',
+  'employees',
+  'payroll_run_counters',
+  'payroll_runs',
+  'payroll_run_lines',
+  // Maintenance (0088): the request, what it asked for, the dispatch
+  // challans that answered it and the defective units that came back.
+  // Counters precede the documents they number, and the request precedes
+  // everything that hangs off it.
+  'maintenance_request_counters',
+  'maintenance_requests',
+  'maintenance_request_lines',
+  'maintenance_dispatch_counters',
+  'maintenance_dispatches',
+  'maintenance_dispatch_lines',
+  'maintenance_returns',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -252,7 +273,16 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // edited is not a ledger. The application role holds no UPDATE, so a
     // cross-tenant one raises 42501 rather than matching zero rows
     // (0087).
-    table !== 'stock_movements',
+    table !== 'stock_movements' &&
+    // The dispatch challan, its lines and a defective-unit receipt all
+    // record something that physically happened: material left a store,
+    // a receiver signed, a broken unit arrived at a bench. The
+    // application role holds no UPDATE on any of the three, so a
+    // cross-tenant one raises 42501 rather than matching zero rows
+    // (0088).
+    table !== 'maintenance_dispatches' &&
+    table !== 'maintenance_dispatch_lines' &&
+    table !== 'maintenance_returns',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -379,11 +409,28 @@ const DELETE_REVOKED_TABLES = [
   // raised in error cancels with a reason, and an agent revokes (0091).
   'signing_requests',
   'signing_agents',
+  // A maintenance request carries a number from the moment it is raised
+  // and closes rather than disappearing; its lines are cancelled with a
+  // reason rather than removed; the challan, its lines and the defective
+  // receipts are the record of material that moved. Nothing here deletes
+  // (0088).
+  'maintenance_request_counters',
+  'maintenance_requests',
+  'maintenance_request_lines',
+  'maintenance_dispatch_counters',
+  'maintenance_dispatches',
+  'maintenance_dispatch_lines',
+  'maintenance_returns',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // A payslip is cleared and rewritten every time a DRAFT run is
+  // recalculated, which is the only reason DELETE exists on the table at
+  // all; the 0090 guard refuses every delete once the run is finalised
+  // or cancelled.
+  'payroll_run_lines',
   // A bid-checklist line is draft working material while the bid is
   // being assembled, so it deletes; the route refuses it from submission
   // onwards, when the list becomes the record of what went out (0083).
@@ -1691,6 +1738,199 @@ async function seedTenantGraph(
         'Issued by the contractor', 'Nagpur', now() + interval '7 days',
         ${agent.id}, ${'A'.repeat(40)}, ${userId}
       )
+    `;
+
+    // Payroll (0089, 0090). A whole chain rather than seven bare rows:
+    // the schedules a run reads, an employee hanging off a contact, and
+    // a draft run calculated by the real function — which is what seeds
+    // `payroll_run_lines` and, through the route's own upsert shape,
+    // gives `payroll_run_counters` a row to sweep.
+    for (const [parameter, value] of [
+      ['epf_employee_percent', '12'],
+      ['epf_employer_total_percent', '12'],
+      ['eps_employer_percent', '8.33'],
+      ['eps_monthly_wage_ceiling_rupees', '15000'],
+      ['epf_monthly_wage_ceiling_rupees', '15000'],
+      ['esi_employee_percent', '0.75'],
+      ['esi_employer_percent', '3.25'],
+      ['esi_monthly_gross_ceiling_rupees', '21000'],
+      ['income_tax_cess_percent', '4'],
+      ['income_tax_surcharge_floor_rupees', '5000000'],
+      ['standard_deduction_new_rupees', '75000'],
+      ['rebate_87a_new_income_limit_rupees', '1200000'],
+      ['rebate_87a_new_cap_rupees', '60000'],
+    ] as const) {
+      await tx`
+        insert into payroll_statutory_rates (
+          organisation_id, parameter, value, effective_from, notification
+        )
+        values (
+          ${organisationId}, ${parameter}, ${value}::numeric(14,4),
+          '2014-09-01'::date, 'tenancy fixture'
+        )
+      `;
+    }
+    for (const [from, to, amount] of [
+      ['0', '10000.01', '0'],
+      ['10000.01', null, '200'],
+    ] as const) {
+      await tx`
+        insert into professional_tax_slabs (
+          organisation_id, state_code, payee_category, effective_from,
+          monthly_wage_from, monthly_wage_to, monthly_amount, notification
+        )
+        values (
+          ${organisationId}, '27', 'male', '2023-04-01'::date,
+          ${from}::numeric(18,2), ${to}::numeric(18,2),
+          ${amount}::numeric(18,2), 'tenancy fixture'
+        )
+      `;
+    }
+    for (const [from, to, rate] of [
+      ['0', '400000', '0'],
+      ['400000', null, '5'],
+    ] as const) {
+      await tx`
+        insert into income_tax_slabs (
+          organisation_id, regime, payee_category, effective_from,
+          annual_income_from, annual_income_to, rate, notification
+        )
+        values (
+          ${organisationId}, 'new', 'general', '2025-04-01'::date,
+          ${from}::numeric(18,2), ${to}::numeric(18,2),
+          ${rate}::numeric(5,2), 'tenancy fixture'
+        )
+      `;
+    }
+    const [payrollContact] = await tx<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, is_employee, created_by_user_id
+      )
+      values (${organisationId}, 'Payroll fixture person', true, ${userId})
+      returning id
+    `;
+    if (!payrollContact) throw new Error('seed payroll contact returned no row');
+    const [employee] = await tx<{ id: string }[]>`
+      insert into employees (
+        organisation_id, contact_id, employee_code, date_of_joining,
+        date_of_birth, pf_covered, pf_wage_basis, esi_applicable,
+        professional_tax_state_code, professional_tax_category, tax_regime,
+        basic_monthly, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${payrollContact.id}, 'FIX-001', '2024-04-01',
+        '1990-01-01', true, 'ceiling', true, '27', 'male', 'new',
+        30000.00, ${userId}
+      )
+      returning id
+    `;
+    if (!employee) throw new Error('seed employee returned no row');
+    await tx`
+      insert into payroll_run_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    const [payrollRun] = await tx<{ id: string }[]>`
+      insert into payroll_runs (
+        organisation_id, fy_label, sequence_number, run_number, period_month,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, '2026-27', 1, 'PAY/2026-27/001', '2026-07-01',
+        ${userId}
+      )
+      returning id
+    `;
+    if (!payrollRun) throw new Error('seed payroll run returned no row');
+    await tx`select app_private.calculate_payroll_run(${payrollRun.id})`;
+    // Maintenance (0088): one request, one material line naming the part
+    // seeded above, one dispatch challan against it, and one defective
+    // unit received back. A real chain rather than seven bare rows —
+    // every guard in the module runs over this seed, so a rule that
+    // contradicts its own lifecycle fails here rather than in review.
+    await tx`
+      insert into maintenance_request_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    const [maintenanceRequest] = await tx<{ id: string }[]>`
+      insert into maintenance_requests (
+        organisation_id, work_id, request_number, financial_year,
+        sequence_number, station, requester_name, priority, fault_summary,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${`MR/26-27/${workCode.slice(-4)}`},
+        '2026-27', 1, 'Churchgate', 'Amit Patil', 'urgent',
+        'Replace failed platform display power supplies', ${userId}
+      )
+      returning id
+    `;
+    if (!maintenanceRequest)
+      throw new Error('seed maintenance request returned no row');
+    const [maintenanceLine] = await tx<{ id: string }[]>`
+      insert into maintenance_request_lines (
+        organisation_id, maintenance_request_id, production_item_id,
+        description, unit, quantity, expected_return_quantity, position
+      )
+      values (
+        ${organisationId}, ${maintenanceRequest.id}, ${component.id},
+        '24V industrial SMPS', 'Nos', 2, 2, 1
+      )
+      returning id
+    `;
+    if (!maintenanceLine) throw new Error('seed maintenance line returned no row');
+    // Approved AFTER its lines exist, because that is the order the
+    // lifecycle runs in and the line-insert guard enforces it: a request
+    // that is already approved takes no further material.
+    await tx`
+      update maintenance_requests
+      set status = 'approved',
+          approval_comment = 'Approved against available maintenance stock',
+          approved_by_user_id = ${userId}, approved_at = now()
+      where id = ${maintenanceRequest.id}
+    `;
+    await tx`
+      insert into maintenance_dispatch_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 2)
+    `;
+    const [maintenanceDispatch] = await tx<{ id: string }[]>`
+      insert into maintenance_dispatches (
+        organisation_id, maintenance_request_id, work_id, challan_number,
+        sequence_number, dispatch_date, stock_location, receiver_name,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${maintenanceRequest.id}, ${work.id},
+        ${`${workCode}/MNT/001`}, 1,
+        -- The dispatch guard refuses a date after the organisation's own
+        -- today, so the seed dates it in the past.
+        current_date - 1, 'Central store', 'Site supervisor', ${userId}
+      )
+      returning id
+    `;
+    if (!maintenanceDispatch) {
+      throw new Error('seed maintenance dispatch returned no row');
+    }
+    await tx`
+      insert into maintenance_dispatch_lines (
+        organisation_id, maintenance_dispatch_id, maintenance_request_line_id,
+        quantity
+      )
+      values (
+        ${organisationId}, ${maintenanceDispatch.id}, ${maintenanceLine.id}, 2
+      )
+    `;
+    await tx`
+      insert into maintenance_returns (
+        organisation_id, maintenance_request_id, maintenance_request_line_id,
+        quantity, received_on, condition_note, repair_disposition, received_by,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${maintenanceRequest.id}, ${maintenanceLine.id}, 1,
+        current_date - 1, 'Burnt output stage', 'Bench repair',
+        'Store clerk', ${userId}
+      )
+      returning id
     `;
 
     return {

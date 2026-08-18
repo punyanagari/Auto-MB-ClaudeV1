@@ -24,12 +24,12 @@ how operators move through them.
 
 ## The frozen mock
 
-|                            |                                                                          |
-| -------------------------- | ------------------------------------------------------------------------ |
-| Repository                 | `github.com/punyanagari/Auto-MB-Vercel-du`                               |
-| Freeze commit              | `a8e1fde` (`Merge pull request #6 from punyanagari/fix/freeze-blockers`) |
-| Local clone at that commit | `C:\Users\agast\Downloads\Auto-MB-Vercel-du`                             |
-| Live render                | `https://satyakosh.vercel.app`                                           |
+|                            |                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| Repository                 | `github.com/punyanagari/Auto-MB-Vercel-du`                                    |
+| Freeze commit              | `fdfd610` (`Merge pull request #10 from punyanagari/v0/43saps-3469-f4d692dc`) |
+| Local clone at that commit | `C:\Users\agast\Downloads\Auto-MB-Vercel-du`                                  |
+| Live render                | `https://satyakosh.vercel.app`                                                |
 
 Advancing the freeze commit is an owner action recorded in `docs/DESIGN.md`
 § Freeze pointer, taken only after the delta has been diffed and ported.
@@ -275,36 +275,78 @@ mock in v0 and each entry retires. One ruling came with work attached:
 11a was argued from a stock ledger that did not exist, and the same
 ruling that approved it commissioned the follow-up now that 0087 exists —
 wire Available and Shortage into the production register's Material
-column and the job card's Materials tab from the real ledger. The 11a row
-below stands until that lands, then retires.
+column and the job card's Materials tab from the real ledger. **That work
+has landed and 11a is retired**; what replaced it is recorded under the
+table below, and the rows are numbered from 11b so nothing that cited
+them has to be renumbered.
 
 The screens themselves are ported (`app/production/page.tsx`,
 `app/production/items/page.tsx`, `components/production-job-card-page.tsx`
 at `fdfe5ef`). What is listed here is behaviour inside them the mock
-implements as a `useState` fiction over `lib/data.ts`, plus one whole
-column family that depends on a table this wave has not built yet.
+implements as a `useState` fiction over `lib/data.ts`.
 
 The test applied throughout is the same one § 10 states: would
 replicating the pixel make the product claim something untrue?
 
-| #   | The mock draws                                                                                        | The application ships                                                                                                | Why                                                                                                                                                                                                                                                                                                       |
-| --- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11a | A Material column badging "2277 units short", and a Materials tab with Available and Shortage columns | A Material column counting the bill of material, and a Materials tab with Required only, captioned as such           | Shortage is required minus on-hand, and on-hand is the Inventory pack's stock ledger, which does not exist yet. Computed against no stock it reads zero for everything — "nothing is short" — and would flip to alarming the day stock arrived. The requirement half is real and is shipped.              |
-| 11b | Six job-card statuses, three of them derived (`material-short`, `material-ready`, `dispatch-ready`)   | Four stored states — planned, in production, completed, cancelled — with readiness derived on read                   | The mock's own fixture disagrees with itself: two of its three plans carry a `status` its `planMaterial` contradicts, so its "Ready" branch is dead and every card renders "Material blocked". A stored copy of a computed fact is a field that can disagree with the fact.                               |
-| 11c | Component serials as a bag of strings per PLAN, keyed by bill-of-material node                        | Component serials captured per FINISHED UNIT, with the unit chosen on the Serials tab                                | The mock can say a batch of twelve boards consumed twelve power supplies and cannot say which board holds which. That is the question a field failure asks — this board is dead, whose supply is in it, what else has one from that batch — and it is the whole point of traceability.                    |
-| 11d | A "Create delivery challan" button on the Dispatch tab                                                | A "Release to stock" action, and copy saying the Delivery Challan is raised separately                               | A Delivery Challan is a statutory document with a consignee, a number series, an e-way bill and an inspection interlock behind it. A button on the factory floor that appeared to issue one would claim an act it does not perform. Production releases units; the challan is a later act against a Work. |
-| 11e | "Complete one unit" and "Generate next serial" as two independent controls                            | One act: recording a unit mints its serial from the item's counter                                                   | In the mock the counter and the serial list can disagree, and its own `canComplete` has to compare them. A unit that exists and is unnameable is not a unit this product can trace, deliver or install.                                                                                                   |
-| 11f | `BomNode.type` ('raw' / 'sub-assembly'), `unit` and `serialControlled` stored per NODE                | All three derived or moved to the item: type from whether the node has a bill, unit and serial control from the part | The same bolt would otherwise be Nos in one assembly and Kg in another, and serialised in one place and not in another. They are facts about the PART, and `type` is precisely "has children or does not".                                                                                                |
-| 11g | A `nextSerial` figure printed in the item's serial-series well                                        | The series SHAPE (`IPDB6-00000`) and the words "Claimed per unit, gap-free"                                          | The next number is claimed from a counter at the moment a unit is built. Any figure rendered here is stale the instant a second operator builds one, and a wrong next-serial on a screen an operator plans labels from is worse than no figure.                                                           |
-| 11h | A status-free register, with state encoded in the Material badge                                      | The product's status chip, plus the Material badge                                                                   | `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label chip the single vocabulary for record state, and the mock's own fixture shows why one badge cannot carry both readings at once.                                                                                                        |
+| #   | The mock draws                                                                                      | The application ships                                                                                                | Why                                                                                                                                                                                                                                                                                                       |
+| --- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11b | Six job-card statuses, three of them derived (`material-short`, `material-ready`, `dispatch-ready`) | Four stored states — planned, in production, completed, cancelled — with readiness derived on read                   | The mock's own fixture disagrees with itself: two of its three plans carry a `status` its `planMaterial` contradicts, so its "Ready" branch is dead and every card renders "Material blocked". A stored copy of a computed fact is a field that can disagree with the fact.                               |
+| 11c | Component serials as a bag of strings per PLAN, keyed by bill-of-material node                      | Component serials captured per FINISHED UNIT, with the unit chosen on the Serials tab                                | The mock can say a batch of twelve boards consumed twelve power supplies and cannot say which board holds which. That is the question a field failure asks — this board is dead, whose supply is in it, what else has one from that batch — and it is the whole point of traceability.                    |
+| 11d | A "Create delivery challan" button on the Dispatch tab                                              | A "Release to stock" action, and copy saying the Delivery Challan is raised separately                               | A Delivery Challan is a statutory document with a consignee, a number series, an e-way bill and an inspection interlock behind it. A button on the factory floor that appeared to issue one would claim an act it does not perform. Production releases units; the challan is a later act against a Work. |
+| 11e | "Complete one unit" and "Generate next serial" as two independent controls                          | One act: recording a unit mints its serial from the item's counter                                                   | In the mock the counter and the serial list can disagree, and its own `canComplete` has to compare them. A unit that exists and is unnameable is not a unit this product can trace, deliver or install.                                                                                                   |
+| 11f | `BomNode.type` ('raw' / 'sub-assembly'), `unit` and `serialControlled` stored per NODE              | All three derived or moved to the item: type from whether the node has a bill, unit and serial control from the part | The same bolt would otherwise be Nos in one assembly and Kg in another, and serialised in one place and not in another. They are facts about the PART, and `type` is precisely "has children or does not".                                                                                                |
+| 11g | A `nextSerial` figure printed in the item's serial-series well                                      | The series SHAPE (`IPDB6-00000`) and the words "Claimed per unit, gap-free"                                          | The next number is claimed from a counter at the moment a unit is built. Any figure rendered here is stale the instant a second operator builds one, and a wrong next-serial on a screen an operator plans labels from is worse than no figure.                                                           |
+| 11h | A status-free register, with state encoded in the Material badge                                    | The product's status chip, plus the Material badge                                                                   | `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label chip the single vocabulary for record state, and the mock's own fixture shows why one badge cannot carry both readings at once.                                                                                                        |
 
-Two more the review of this pack settled, recorded so the reasoning is
+**What replaced 11a.** The Material column and the Materials tab say
+_shortage_ now, because shortage is real: the stock ledger of migration
+0087 holds the shelf, and both figures are derived on read from it and
+from `app_private.stock_outstanding_requirement`. Nothing is stored. The
+mock is followed with two deliberate differences, neither of them new
+visual language:
+
+- **The badge counts PARTS short, not units.** The mock's "2277 units
+  short" is a sum of quantities across parts measured in Nos, Mtr and Kg,
+  which is the arithmetic § 13a already refuses for the stock register's
+  tiles. A count of parts is the same question asked in a unit that
+  exists. The mock's grammar is otherwise kept: `N parts short`, or
+  `Ready`, or `No bill of material` where the product has none.
+- **The badge is in the WARNING family, not the mock's destructive.**
+  `docs/DESIGN.md` § Status badge semantics keeps destructive for
+  cancelled, rejected and declined. Material still to buy is a thing to
+  do, exactly as § 13h settled for the register's low-stock badge.
+
+The Materials tab gains Available and Shortage beside Required, untinted
+in the numeric columns the way the stock register leaves its own negative
+Available untinted.
+
+**Required** is the card's gross bill. **Available** is this card's share
+of the shelf — what is on hand, less every OTHER open job card's
+outstanding claim on the same part, so two cards cannot each be promised
+the same reel of cable, while the card's own claim is left in so it is
+never told it cannot have what it itself reserved.
+
+**Shortage** is what still has to be bought, and it is measured on a
+different basis on purpose: not the gross bill, but the card's
+_outstanding_ requirement — the bill times the units not yet serialised,
+less what has already been issued to the card. Material issued to the
+bench has left the shelf, so a gross requirement measured against that
+shelf would report a card short of the parts lying in front of the
+operator. From that, the shelf and the outstanding balance of every open
+purchase order come off, both after the other cards' claim, through the
+same fragment the shortage screen reads.
+
+So `Required − Available` is deliberately not the shortage — two bases
+and one term the pair does not carry — and the caption under the table
+says so. Two cards competing for one part with a single order covering
+one of them BOTH read short: neither may assume the order is theirs, and
+the organisation-wide shortage screen stays the authority on how much to
+buy. Allocating one order across competing cards is the planning pass
+migration 0087 § 7 refuses to hide inside a list.
+
+One more the review of this pack settled, recorded so the reasoning is
 not re-litigated:
 
-- **The Material column counts parts, and the Materials tab is captioned
-  as a requirement rather than a shortage.** Both say what they are
-  instead of showing an empty Available column that reads as "nothing is
-  short".
 - **The serial trace gains an Origin column** (§ Approved divergences 7's
   table, extended): a production unit and a delivered one are different
   kinds of answer, and a unit still on the factory floor has no Work,
@@ -390,6 +432,179 @@ One thing the application draws that the mock does not: a
 grammar. The mock has no production despatch to receive, and a released
 despatch nobody takes in leaves the register quietly understating the shelf.
 The quantity is the despatch's own unit count and there is no field for it.
+
+### 14. Maintenance screens — PROPOSED
+
+**Status: PROPOSED, owner ruling pending** (nineteen rows; the two notes
+below the table are ANSWERED by the owner rulings of 2026-08-18). Same
+convergence path as § 9–§ 13: change the mock in v0 and each entry
+retires.
+
+The three screens are ported (`app/maintenance/page.tsx`,
+`app/maintenance/new`, `app/maintenance/[id]` at `fdfd610`) inside the
+mock's own grammar: its eyebrowed header and single primary action, its
+four-across stage strip, its metric cards over progress bars, its boxed
+four-tab rail, its two-card details-then-materials form, and its closure
+gate. What is listed here is data the mock DRAWS that its own code cannot
+mean — in five of the nineteen cases `app/actions/maintenance.ts`
+contradicts itself — plus the four places the real product has modules
+the mock's flat arrays do not.
+
+**Read row 14a first.** Four of the mock's six per-line quantities have no
+writer, and every other quantity row below follows from fixing that one.
+
+| #   | The mock draws                                                                      | The application ships                                                                                                             | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 14a | Seven stored quantities per material line                                           | Three stored — asked, owed back, written off — and four DERIVED: available, reserved, dispatched, received back                   | Only `quantity` and `expectedReturnQuantity` are facts anybody states. The other four have writers that cannot keep them true: `availableQuantity` is `max(quantity, 2)` in the fixture; `reservedQuantity` is written once at approval and never reduced, so a fully dispatched line still reads as holding stock; `dispatchedQuantity` and `receivedReturnQuantity` are mutated alongside the challans and receipts that are their own evidence, which is two writers for one number. Derived, each IS the evidence. |
+| 14b | An "Available" column computed from the fixture                                     | The real shelf, `app_private.stock_on_hand` (0087), read when the screen asks — and blank for a line that names no catalogue part | The stock ledger exists now. A line with no part has nothing on a shelf to read, and an em dash says so rather than printing a zero that would read as "out of stock".                                                                                                                                                                                                                                                                                                                                                 |
+| 14c | Approval sets `reservedQuantity = min(quantity, available)`                         | Approval reserves nothing; reserved IS the line's outstanding approved quantity                                                   | Migration 0087 refused a stored `reserved` on the item for the same reason and in almost the same words (§ 13b). This is that rule one table further out.                                                                                                                                                                                                                                                                                                                                                              |
+| 14d | A `cancelledQuantity` column that no action ever writes                             | A per-line write-off, with a reason, on the Materials tab                                                                         | The mock's own closure gate reads `dispatched + cancelled >= quantity`, so a request whose stock never arrives can never be closed and never leaves the list. The column needed a writer or the gate needed deleting; the writer is the smaller lie.                                                                                                                                                                                                                                                                   |
+| 14e | Dispatch moves nothing but a counter                                                | A dispatch line naming a catalogue part posts a real `issue` movement against the stock ledger, naming this challan               | Material leaving the store IS a stock issue, and 0087 is the only place this product records one. Without it the Inventory register would overstate the shelf by everything maintenance has ever sent out.                                                                                                                                                                                                                                                                                                             |
+| 14f | The defective return is a quantity going back                                       | The return posts NO stock movement                                                                                                | A broken unit on a repair bench is not available material; adding it to the balance would let somebody dispatch it again. The mock's own words are "receive defective items … repair disposition".                                                                                                                                                                                                                                                                                                                     |
+| 14g | `status: 'high'` on the seed request, and `routine / urgent / critical` on the form | The form's three, and only those                                                                                                  | The mock's own fixture uses a fourth word its own form cannot produce. Two vocabularies for one field is one of them being wrong.                                                                                                                                                                                                                                                                                                                                                                                      |
+| 14h | A challan number `PL-281/MNT/DC/1234` from `Date.now()`                             | `PL-281/MNT/001`, from a gap-free per-Work counter                                                                                | `DC` is the delivery challan's token in this product and a maintenance issue borrowing it would read as one in every register that shows both. The serial comes from a counter claimed by upsert, so a rolled-back dispatch rolls its number back.                                                                                                                                                                                                                                                                     |
+| 14i | Bordered link cards with a numbered tile and a per-row progress bar                 | A dense sticky-header table                                                                                                       | The mock's `Progress` value is a literal per status — 15, 38, 66, 100 — and measures nothing; the stage chip already says which of four stages a request is in. Every other register here is a table, and an operator scanning twenty requests reads columns.                                                                                                                                                                                                                                                          |
+| 14j | A `secondary` badge for the stage and a `destructive` one for critical priority     | The shared status chip for the stage; priority as plain capitalised text                                                          | `docs/DESIGN.md` § Status badge semantics reserves the dot-plus-label vocabulary for record state, and keeps destructive for cancelled/rejected/declined. A critical fault is urgent, not failed.                                                                                                                                                                                                                                                                                                                      |
+| 14k | Two hard-coded Works in the form's picker                                           | The Works the caller may see                                                                                                      | Work-scope: a user without `all_works_access` gets only the Works assigned to them, here as everywhere.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 14l | A free-text item code beside a free-text description                                | A catalogue-part picker, with custom material still allowed                                                                       | A code that resolves to nothing cannot move stock or read a balance. Picking the part is what makes 14b and 14e true; a line with no part is the mock's custom item and still works.                                                                                                                                                                                                                                                                                                                                   |
+| 14m | `ClipboardCheck` as the rail icon                                                   | `Hammer`                                                                                                                          | `ClipboardCheck` is already Inspection's lamp on this rail. Two identical icons in one nav group is worse than one substituted.                                                                                                                                                                                                                                                                                                                                                                                        |
+| 14n | An approval with no refusal, and a dispatch with no cancellation                    | The same — neither is built                                                                                                       | Stated rather than half-built. A request that should not be fulfilled exits by writing every line off with a reason and closing, which is the evidence a rejection would carry. Cancelling a dispatch means reversing its stock movements, which the ledger deliberately makes somebody justify; it needs its own pack.                                                                                                                                                                                                |
+| 14o | An "Approve request" button in the header, sending a hard-coded comment             | An approval CARD with the comment as an editable field                                                                            | The comment is written once and frozen on the record forever — it is the only account of why the store committed its material. A button that files a constant reads as an approval nobody made. The card is the mock’s own `Card` + `Field` + `Actions`, in the place its header button stood.                                                                                                                                                                                                                         |
+| 14p | `operationalImpact` collected on the form and rendered nowhere                      | A card under the job card’s header                                                                                                | The mock’s form asks for "services affected, fallback arrangements, passenger impact" and its job card never shows the answer, so whoever approves the request cannot read why it is urgent. Rendered in the mock’s own single-sentence card, the shape `views/ProductionJobCard.tsx` uses for a cancellation reason.                                                                                                                                                                                                  |
+| 14q | `deliveryInstructions` collected on the form and rendered nowhere                   | A line above the dispatch form                                                                                                    | The same fault as 14p, and worse placed: access windows and handover points are read by the person filling in the dispatch, so the line sits on that tab rather than in the header.                                                                                                                                                                                                                                                                                                                                    |
+| 14r | No back control on the job card                                                     | A back button over the request number                                                                                             | The mock is a Next route with browser history behind it; this shell is one hash-routed workspace. Its sibling record screens (`views/ProductionJobCard.tsx`, `views/TenderWorkspace.tsx`) all carry the same control in the same place.                                                                                                                                                                                                                                                                                |
+| 14s | The request form’s own hand-rolled heading block                                    | The shared `PageHeader`, with an eyebrow the mock’s form does not have                                                            | Every register in this build opens with one primitive, and the eyebrow ("Operations control") is what the mock’s own register page puts above this module’s name. A second heading implementation is how the two drift.                                                                                                                                                                                                                                                                                                |
+
+Two things the application does that the mock has no place for, both
+following from the same fact — that this build has a real Work register
+behind the requests:
+
+- **The dispatch is NOT an issue challan**, though it very nearly is.
+  `issue_challans` (0014) is already "material issued out to site" with a
+  gap-free per-Work number and a cancellation that retains it. Reusing it
+  was the first design and was dropped because `issue_challans_one_draft_per_work`
+  holds one draft per Work and 0031's insert guard admits a row only as a
+  draft: a maintenance dispatch would be refused for any Work that already
+  has an issue challan open on somebody else's screen. Relaxing that index
+  is a uniqueness-and-numbering change to an issued-document surface and
+  belongs in its own pack. **Owner question: should the two registers
+  merge later?** Nothing here forecloses it.
+- **The Inventory register's `Committed` column does not yet include
+  approved maintenance reservations.** `app_private.stock_outstanding_requirement`
+  (0087) explodes open job cards only, so a part reserved by an approved
+  maintenance request still reads as available on the stock register. The
+  dispatch itself is safe — the ledger refuses a balance below zero — so
+  this is a display that is optimistic, not a number that can go wrong.
+  The fix is one `UNION ALL` inside that function; it is left out here
+  because it changes another module's screen. **Owner question: fold it
+  in?**
+
+### 15. Employee and payroll screens — PROPOSED
+
+**Status: PROPOSED, owner ruling pending.** Every other numbered entry in
+this list is APPROVED; this one is the first written before its ruling,
+because the pack it belongs to landed inside one wave rather than after
+one. The convergence path is the same as § 9–§ 13's: change the mock in
+v0 and each entry retires.
+
+**The section number is allocated, not sequential.** § 14 belongs to the
+maintenance pack of this wave and lands with it, exactly as the export
+format versions are allocated by the coordinator rather than claimed on
+merge. A gap here is not a defect; two sections sharing a number would
+be.
+
+The two screens are ported (`app/employees/page.tsx` and
+`app/hr/payroll/page.tsx` at **`fdfd610`**, through
+`components/hr/employee-workspace.tsx` and
+`components/payroll-run-workspace.tsx`) inside the mock's own grammar:
+its page header, its stat tiles, its dense tables, its expandable
+computation row, its status badge.
+
+There are more entries here than in any previous section, and the reason
+is on the mock's own screen rather than in this build's reading of it.
+The employee workspace carries a banner saying what it is — "**Functional
+prototype:** sensitive HR data, photos and attendance are stored only on
+this browser. Do not use real employee or banking data until secure
+authentication, database and private storage are connected" — and four of
+its six tabs are behind features the product does not have and this pack
+was not scoped to build.
+
+The test applied throughout is the one § 10 states: would replicating the
+pixel make the product claim something untrue?
+
+| #   | The mock draws                                                                                    | The application ships                                                                                                                                                                                                                                                                 | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15a | A six-tab employee workspace: Directory, Attendance, Leave, Payroll, Payslips, ID cards           | Two screens — the Directory as the Employees register, and Payroll as a workspace of its own                                                                                                                                                                                          | The remaining four are whole features, not tabs. Each is listed below rather than swept into one row, because each is refused for its own reason and each would retire on its own.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 15b | Attendance clocked against a geofence, with a distance and an accuracy per punch                  | Loss-of-pay DAYS, typed per payslip on the draft run                                                                                                                                                                                                                                  | Attendance is a product: a device policy, a punch record, an exception queue, a correction trail. What a monthly payroll actually consumes is a number of unpaid days, and that is what is collected. The mock's own store keeps every punch in the browser, which is what its banner is warning about.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 15c | A leave request form, a balance, and an admin approval queue                                      | Absent                                                                                                                                                                                                                                                                                | Same reason as 15b, plus one the mock's own arithmetic supplies: its loss-of-pay figure subtracts a leave BALANCE from an approved leave's length, which double-counts every leave already inside the balance. A leave ledger that fed payroll would have to be right about this, and it is a pack of its own.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 15d | An ID-photo upload with an approval state, and printable ID cards                                 | Absent                                                                                                                                                                                                                                                                                | A photograph of an employee is the most sensitive object the product would hold, and the mock stores it as a data URI in the browser. Storing one properly means a private bucket, an access rule per viewer, and a retention answer. None of that is payroll, and half of it would be worse than not having it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 15e | A "Reset sample" button and an admin/employee role switch in the page header                      | Neither                                                                                                                                                                                                                                                                               | Both are the prototype driving itself. The role switch is the product's own membership and authority; the reset button empties a browser store this build does not have.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 15f | A new-employee dialog collecting name, email, phone, bank name, account number and IFSC           | A dialog collecting the EMPLOYMENT facts, against a contact chosen from Masters                                                                                                                                                                                                       | The name, phone, email, PAN and bank details live on the `contacts` row (0028, 0078, 0080), edited in Masters, and a second form writing those columns is how two masters start disagreeing. Not everything the mock collects is a contact field, though: department is an employment fact on the `employees` table and IS collected in the composer, and the mock's `designation` is not stored as an employee column at all — it is the contact's. It is also load-bearing: `payment_requests` pays a CONTACT, so an employee who is not one could not be paid at all.                                                                                                                                                                                                                                                                      |
+| 15g | Bank account and salary shown in the directory table, for the admin view                          | The monthly gross ships — a column and a register-wide stat tile; the account, PAN, UAN and ESIC number do not, and the detail shows the account masked to its last four digits                                                                                                       | The projection rule is deliberate on both sides. The list payload carries NO PAN, UAN, ESIC number or bank account — those are on the detail, the account masked (the mock masks it too, `maskAccount`) — because a register is the payload most likely to reach a log, a cache or a screenshot. But it DOES carry the monthly gross, because a payroll register that hid the pay could not answer the question a payroll clerk opens it to ask. The real divergence is who sees it: the mock gates the salary cell behind an in-page admin/employee role toggle (`isAdmin`); the port has no such toggle — that toggle was the prototype driving itself (15e) — and shows the gross to every holder of the new `can_manage_payroll` authority instead. So the salary is visible to a narrower, authority-gated audience, not hidden per-row. |
+| 15h | Four stat tiles: active employees, present today, leave queue, month payroll                      | Two — people on the payroll, and the monthly gross                                                                                                                                                                                                                                    | The middle two are 15b and 15c. The payroll figure moves to the run, where it is a computed total rather than an estimate of one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 15i | A payroll page its own sidebar cannot reach                                                       | The same page, reached from a "Monthly payroll" action on the Employees register                                                                                                                                                                                                      | `components/app-sidebar.tsx` at fdfd610 lists Employees under Administration and nothing under it. The screen exists and has no door. The Inventory pack's register-to-shortage link is the precedent, and it keeps one rail lamp for one module the mock lists once.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 15j | An "Income-tax regime" card comparing the old and new regimes, one badged **Recommended**         | The regime the employee ELECTED, with the year this run estimated under it                                                                                                                                                                                                            | Telling a named person which tax regime to choose is advice. The counterfactual also depends on declarations that employee may not have made — the old regime's figure is only meaningful once a Form 12BB exists — so the product would be badging a recommendation it has no basis for.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 15k | A "Statutory filings" card: Generate a PF ECR, an ESI file, a PT return and a 24Q, and Mark filed | A "What is remitted" table and a "Statutory basis" table                                                                                                                                                                                                                              | The mock's Generate produces nothing. A button that appears to have written a Government return is the § 10c entry with teeth, on a document whose deadline carries interest. What ships instead is the two things a filing actually needs: the figures, both halves, and the notification each rate came from.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 15l | Six employees' worth of hard-coded rows, and a month picker over three literal months             | The register, and a month opened deliberately                                                                                                                                                                                                                                         | The mock's payroll is seed data. Opening a month here CLAIMS A NUMBER off a counter, which is not something a select should do as a side effect of being changed — so the picker chooses among runs that exist and a separate control opens a new one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 15m | `esi: null` on every row, rendered as an em dash                                                  | A covered/not-covered fact per month, and where not covered the breakdown names the true reason for the case — below the ceiling but the establishment is not covered, the establishment not covered, or the gross above the ceiling — rather than always reading "above the ceiling" | The mock's own fixture has nobody under the ESI ceiling, so its ESI column is dead. Here coverage is a real per-month answer — the gross against the ceiling, plus the rule that keeps a mid-period riser contributing to the end of the contribution period — and a dash could not say which of the two it meant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+Four things the application draws that the mock does not, each because
+the mock had no server to need it:
+
+- **The employer's own contributions**, beside the employee's. A payroll
+  screen that showed only what is deducted cannot tell an operator what
+  the organisation owes the EPFO and the ESIC this month, which is the
+  figure the remittance is actually made for.
+- **A statutory-basis table** on every run: each rate and ceiling in
+  force in that month, with the notification it comes from. It is also
+  what the pre-production CA sign-off reads.
+- **A cancel action with a required reason.** A payroll run is an issued
+  document and the table takes no DELETE, so a run opened against the
+  wrong month would otherwise be permanent.
+- **A refusal where the surcharge starts.** An employee whose projected
+  income passes ₹50,00,000 is refused by name rather than computed
+  without surcharge, because an under-deduction under section 192 is the
+  employer's liability with interest.
+
+**Two decisions the owner has since ruled on (2026-08-18).**
+
+- **Payroll gets its own authority `can_manage_payroll`, not a reuse of
+  `can_manage_payments`.** Owner ruling of 2026-08-18, settled. The
+  argument that carried it: this authority also reveals what every
+  colleague is paid, which is a different kind of secret from a travel
+  advance, so a vendor-payment manager must not hold it by default. The
+  salary DISBURSEMENT still flows through the `payment_requests`
+  machinery that grant was created for (0080) — only VISIBILITY and RUN
+  authority are separated. The employee register and the payroll run,
+  reads included, are gated on `can_manage_payroll` (0089); a
+  `can_manage_payments` holder without it is refused every payroll route
+  and sees no Employees door. The owner of a new organisation holds it
+  implicitly, and it requires MFA.
+- **The editor for other States' profession-tax schedules is deferred,
+  not open.** Owner ruling of 2026-08-18: only Maharashtra's schedule is
+  seeded, an organisation in another State meets a named
+  `PAYROLL_SCHEDULE_MISSING` refusal rather than Maharashtra's figures,
+  and whether such an editor belongs to this product or to its support
+  desk is a DEFERRED decision — not an open question. The composer's
+  State select stays "Maharashtra + none" for now; that is the known
+  bound.
+
+**One divergence recorded for the owner to rule on.** ESI monthly
+eligibility is re-tested each month on the loss-of-pay-PRORATED gross,
+not on the un-prorated full-month entitlement. The consequence, stated
+plainly: an employee whose full entitlement sits just above the ₹21,000
+ceiling can be pulled INTO ESI for a month in which unpaid leave drops
+their prorated gross to or below the ceiling — and the mid-period
+continuation rule then keeps them contributing to the end of the
+contribution period. This is recorded as a divergence to be ruled on
+rather than hidden.
+
+**The Employees rail entry is not a divergence.** It is the first item of
+the mock's own Administration group, and it left the omitted list this
+wave. E-Way Bills, Purchase orders and Maintenance stay omitted rather
+than drawn as dead entries. Its icon is `Users`, which is also Members'
+two rows down — that is the mock's own choice, and a different icon here
+would be pixel drift rather than a fix.
 
 ### 16. Signing queue — a screen the mock does not draw at all
 
@@ -922,7 +1137,7 @@ matrix dialog · PAC certificate issuance · Completion extensions · Measuremen
 Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invoice
 IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
 recovery · Password recovery · Account security · Organisation access settings ·
-Appearance settings
+Appearance settings · Monthly payroll
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.

@@ -93,6 +93,10 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // classification is stated rather than defaulted: a stolen session that
   // can queue a signature can get a signer to sign something.
   sign: true,
+  // Payroll sees every colleague's salary, PAN, UAN and bank account, and
+  // finalising a run authorises the salaries — worth stealing on both
+  // counts, so it joins the wall beside payments.
+  payroll: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -104,6 +108,7 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   statutory: 'can_manage_statutory_reporting',
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
+  payroll: 'can_manage_payroll',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

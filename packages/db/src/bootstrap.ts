@@ -245,6 +245,34 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // updates.
   signing_requests: 'SELECT, INSERT, UPDATE',
   signing_agents: 'SELECT, INSERT, UPDATE',
+  // Payroll (0089, 0090). The three schedules and the employee master
+  // retire by end-dating, exactly as gst_rates does, so none of them
+  // holds DELETE. Nor does a payroll run at any status: it has claimed a
+  // number by the time it exists, and an abandoned draft is cancelled
+  // with a reason rather than removed. Its LINES are the one exception,
+  // and a narrow one — a draft is recalculated by clearing them and
+  // writing them again, and the 0090 guard refuses every delete the
+  // moment the run is finalised or cancelled.
+  payroll_statutory_rates: 'SELECT, INSERT, UPDATE',
+  professional_tax_slabs: 'SELECT, INSERT, UPDATE',
+  income_tax_slabs: 'SELECT, INSERT, UPDATE',
+  employees: 'SELECT, INSERT, UPDATE',
+  payroll_run_counters: 'SELECT, INSERT, UPDATE',
+  payroll_runs: 'SELECT, INSERT, UPDATE',
+  payroll_run_lines: 'SELECT, INSERT, UPDATE, DELETE',
+  // Maintenance: the site material request and everything it produces
+  // (0088). The request and its lines take UPDATE for exactly two acts —
+  // the status walk, and writing a line off — and no DELETE, because a
+  // request carries a number from the moment it is raised. The dispatch
+  // challan, its lines and the defective returns are append-only in the
+  // ledger's sense: they record something that physically happened.
+  maintenance_request_counters: 'SELECT, INSERT, UPDATE',
+  maintenance_requests: 'SELECT, INSERT, UPDATE',
+  maintenance_request_lines: 'SELECT, INSERT, UPDATE',
+  maintenance_dispatch_counters: 'SELECT, INSERT, UPDATE',
+  maintenance_dispatches: 'SELECT, INSERT',
+  maintenance_dispatch_lines: 'SELECT, INSERT',
+  maintenance_returns: 'SELECT, INSERT',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

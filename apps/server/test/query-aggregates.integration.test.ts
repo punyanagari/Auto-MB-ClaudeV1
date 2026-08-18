@@ -423,39 +423,34 @@ describe('the Measurement Book loader is one grouped statement', () => {
     expect(aggregateLoops(current)).toBe(1);
     expect(aggregateLoops(retired)).toBe(fixture.itemCount);
 
-    // Buffer ratchet. Two forms, because each catches something the
-    // other does not: a relative one that calibrates itself against the
-    // retired shape on whatever machine and PostgreSQL version is
-    // running, and a committed absolute ceiling that catches a
-    // regression the retired statement would share.
+    // Buffer ceiling. There used to be a relative ratchet here too —
+    // `sharedBlocks(current) * K < sharedBlocks(retired)` — and its
+    // history is the argument for its absence, so it stays told.
     //
-    // The relative multiplier was 4x, and pack P17 (migration 0069) moved
-    // it to 2x. Not because anything regressed — both statements got much
-    // cheaper — but because part of what the 4x was measuring turned out
-    // not to be the lateral re-execution at all.
+    // The multiplier started at 4x. Pack P17 (migration 0069) moved it
+    // to 2x: before 0069 every RLS policy called the SECURITY DEFINER
+    // membership helper in bare filter position, so the executor ran it
+    // per candidate row. The retired six-lateral shape re-scans per work
+    // item, so it paid that per-row cost N times over while the grouped
+    // shape paid it once — which flattered the gap the 4x was measuring.
+    // 0069 evaluates the helper once per statement in BOTH shapes, the
+    // measured ratio fell to a data-dependent ~3x (2026-08-14,
+    // PostgreSQL 18.4: current 3,448-4,387 vs retired 13,426-15,782),
+    // and 4x "fails on a loaded database" became the recorded reason for
+    // 2x.
     //
-    // Before 0069 every RLS policy called the SECURITY DEFINER membership
-    // helper in bare filter position, so the executor ran it per candidate
-    // row. The retired six-lateral shape re-scans per work item, so it was
-    // paying that per-row cost N times over and the grouped shape was
-    // paying it once — which flattered the gap. 0069 evaluates the helper
-    // once per statement in BOTH shapes, and what is left is the lateral
-    // penalty on its own.
+    // Then 2x failed the same way: 2026-08-18, a loaded CI runner
+    // measured 1.89x on a change that does not touch this loader (run
+    // 32119786980's verify, PR #130). A threshold that has to chase
+    // machine load downward is not measuring the regression it was
+    // written to refuse — a grouped statement that quietly became the
+    // retired one re-runs its aggregates per item and reads the SAME
+    // buffers, and both of those are caught above, structurally, by the
+    // loop-count assertions, which do not vary with load at all.
     //
-    // Measured on one database, one fixture, flipping only the policy
-    // shape (2026-08-14, PostgreSQL 18.4, 40 items x 3 challans, three
-    // runs each):
-    //
-    //   bare policies:     current 9,418-9,939   retired 46,066-55,396  (4.9-5.6x)
-    //   InitPlan policies: current 3,448-4,387   retired 13,426-15,782  (3.1-4.6x)
-    //
-    // So the ratio is now data-dependent around 3x and the old threshold
-    // fails on a loaded database. 2x still refuses the shape this guard
-    // exists to refuse — a grouped statement that quietly became the
-    // retired one reads the SAME buffers, not half of them — and the two
-    // assertions above, which are structural rather than measured, are
-    // what actually hold the loop count at one.
-    expect(sharedBlocks(current) * 2).toBeLessThan(sharedBlocks(retired));
+    // What the ratio could catch that structure cannot — the grouped
+    // shape staying grouped but becoming absolutely expensive — is the
+    // committed ceiling's job, and that stays.
     expect(sharedBlocks(current)).toBeLessThan(MB_BLOCK_CEILING);
   });
 });

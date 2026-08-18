@@ -212,8 +212,52 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
     'the v0 mock screen the OEM item master replicates',
   ],
   [
+    'app/employees/page.tsx',
+    'the v0 mock screen the employee register replicates (fdfd610)',
+  ],
+  [
+    'app/hr/payroll/page.tsx',
+    'the v0 mock screen the monthly payroll workspace replicates (fdfd610)',
+  ],
+  [
+    'components/hr/employee-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the employee register, and by migration 0089, for the six-tab workspace whose Directory tab it replicates',
+  ],
+  [
+    'components/payroll-run-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the payroll screen, and by migration 0090, for the grouped deduction table and expandable computation it replicates',
+  ],
+  [
     'production-job-card-page.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the production job card for the four-tab layout it replicates',
+  ],
+  [
+    'app/maintenance/page.tsx',
+    'the v0 mock screen the maintenance register replicates',
+  ],
+  [
+    'app/maintenance/new/page.tsx',
+    'the v0 mock screen the site material request form replicates',
+  ],
+  [
+    'app/maintenance/[id]/page.tsx',
+    'the v0 mock screen the maintenance job card replicates',
+  ],
+  [
+    'components/maintenance-dashboard.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the maintenance register for the stage strip and job-card list it replicates',
+  ],
+  [
+    'components/maintenance-job-card.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the maintenance job card for the metric cards, four-tab rail and closure gate it replicates',
+  ],
+  [
+    'components/maintenance-request-form.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the request form for the two-card details-then-materials layout it replicates',
+  ],
+  [
+    'app/actions/maintenance.ts',
+    'the v0 mock’s maintenance data layer, cited by migration 0088 as the evidence for four refused columns: it stores `availableQuantity`, `reservedQuantity`, `dispatchedQuantity` and `receivedReturnQuantity` and writes only one of them, once',
   ],
   [
     'work-controls.tsx',

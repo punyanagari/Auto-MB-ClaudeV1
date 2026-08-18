@@ -35,9 +35,14 @@ import {
 } from '../../src/views/CorrespondenceComposer.js';
 import { Production } from '../../src/views/Production.js';
 import { ProductionItems } from '../../src/views/ProductionItems.js';
+import { Maintenance } from '../../src/views/Maintenance.js';
+import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
+import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
 import { SigningKioskSettings } from '../../src/views/SigningKioskSettings.js';
 import { SigningQueue } from '../../src/views/SigningQueue.js';
+import { Employees } from '../../src/views/Employees.js';
+import { PayrollRun } from '../../src/views/PayrollRun.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
 import { StockShortages } from '../../src/views/StockShortages.js';
 import { Tenders } from '../../src/views/Tenders.js';
@@ -613,6 +618,36 @@ export const STATE_CASES: readonly StateCase[] = [
     empty: { text: /No document has been sent for signature yet/ },
   },
   {
+    view: 'Employees.tsx',
+    name: 'the employee register',
+    loads: ['listEmployees'],
+    render: (api) => (
+      <Employees
+        api={api}
+        organisationId={ORG_ID}
+        canManagePayroll
+        canModify
+        onOpenPayroll={noop}
+      />
+    ),
+    retry: /Retry the employee register/,
+    empty: { text: /Nobody is on the payroll yet/ },
+  },
+  {
+    view: 'PayrollRun.tsx',
+    name: 'the payroll run workspace',
+    // One read on mount. The run detail is a SECOND request made only
+    // once the register has answered, so a failed register is the
+    // screen's failure and a failed detail is an inline one — which is
+    // why only the register read is listed here.
+    loads: ['listPayrollRuns'],
+    render: (api) => (
+      <PayrollRun api={api} organisationId={ORG_ID} canModify onOpenEmployees={noop} />
+    ),
+    retry: /Retry the payroll register/,
+    empty: { text: /No payroll run has been opened/ },
+  },
+  {
     view: 'StockRegister.tsx',
     name: 'the stock register',
     // Three reads on mount, and the failure of any one of them is the
@@ -629,6 +664,65 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry the stock register/,
     empty: { text: /No part is in the item master yet/ },
+  },
+  {
+    view: 'Maintenance.tsx',
+    name: 'the maintenance register',
+    loads: ['listMaintenanceRequests'],
+    render: (api) => (
+      <Maintenance
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onNewRequest={noop}
+        onOpenRequest={noop}
+      />
+    ),
+    retry: /Retry maintenance/,
+    empty: { text: /No maintenance request has been raised yet/ },
+  },
+  {
+    view: 'MaintenanceJobCard.tsx',
+    name: 'one maintenance job card',
+    loads: ['getMaintenanceRequest'],
+    render: (api) => (
+      <MaintenanceJobCard
+        api={api}
+        organisationId={ORG_ID}
+        requestId={WORK_ID}
+        canModify
+        canApprove
+        canIssue
+        onBack={noop}
+      />
+    ),
+    retry: /Retry the maintenance request/,
+    empty: {
+      notApplicable:
+        'A job card shows one request or none at all; the emptiness inside it — nothing dispatched, nothing owed back — belongs to its tabs, and each of those says so in its own words.',
+    },
+  },
+  {
+    view: 'MaintenanceRequestForm.tsx',
+    name: 'the site material request form',
+    // Two pickers, and the failure of either is the screen's failure: a
+    // form that offered no Work cannot be submitted, and one that
+    // silently offered no catalogue part would push every line to a
+    // custom material that moves no stock.
+    loads: ['listWorks', 'listStockItems'],
+    render: (api) => (
+      <MaintenanceRequestForm
+        api={api}
+        organisationId={ORG_ID}
+        onDone={noop}
+        onCancel={noop}
+      />
+    ),
+    retry: /Retry/,
+    empty: {
+      notApplicable:
+        'A request form has no register to be empty: an organisation with no catalogue parts still gets the form, and every line becomes a custom material.',
+    },
   },
   {
     view: 'StockShortages.tsx',

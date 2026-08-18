@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  ensureClusterRoles,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 import { configureMfaEnforcement } from '../src/mfa-policy.js';
 
@@ -237,21 +242,11 @@ beforeAll(async () => {
 afterAll(async () => {
   configureMfaEnforcement(false);
   if (admin) {
-    if (organisationId) {
-      for (const table of [
-        'audit_events',
-        'organisation_memberships',
-        // Organisation creation seeds the GST rate master (0048); the
-        // rows must go before the organisation they reference.
-        'gst_rates',
-        'organisations',
-      ]) {
-        await admin.unsafe(
-          `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-          [organisationId],
-        );
-      }
-    }
+    // The catalog-driven cleanup rather than a hand list. Every list this
+    // replaced went stale the moment migration 0089 seeded a new tenant
+    // table at organisation creation, which is the exact failure
+    // `removeOrganisationResidue` was written to end.
+    await removeOrganisationResidue(admin, [organisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (

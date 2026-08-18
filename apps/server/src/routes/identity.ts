@@ -14,6 +14,7 @@ import { jsonb, withUserContext } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { seedDefaultGstRates } from '../gst-rates.js';
+import { seedDefaultPayrollSchedules } from '../payroll-rates.js';
 import { httpError } from '../http.js';
 import { mfaEnforcementEnabled, mfaGate } from '../mfa-policy.js';
 import { requireUser } from '../session.js';
@@ -32,6 +33,7 @@ interface MembershipRow {
   can_manage_statutory_reporting: boolean;
   can_manage_payments: boolean;
   can_sign_documents: boolean;
+  can_manage_payroll: boolean;
   /** From auth_users."twoFactorEnabled" (nullable there; coalesced in SQL).
    * Surfaced so owners can see enrolment BEFORE granting authority —
    * granting to an unenrolled account walls them off on their next
@@ -52,6 +54,7 @@ function toMembership(row: MembershipRow): Membership {
     canManageStatutoryReporting: row.can_manage_statutory_reporting,
     canManagePayments: row.can_manage_payments,
     canSignDocuments: row.can_sign_documents,
+    canManagePayroll: row.can_manage_payroll,
     twoFactorEnabled: row.two_factor_enabled,
     status: row.status,
   };
@@ -79,6 +82,7 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
+                   m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -157,6 +161,25 @@ export function registerIdentityRoutes(
             ${jsonb(tx, { count: seeded, source: 'notified GST rate history (0048)' })}
           )
         `;
+        // The payroll schedules, for the same reason and in the same
+        // transaction (migration 0089 seeded the organisations that
+        // already existed). Without them the first payroll run refuses
+        // every employee by name, which is a true refusal and a useless
+        // first experience.
+        const payrollSeeded = await seedDefaultPayrollSchedules(tx, row.id);
+        await tx`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, details
+          )
+          values (
+            ${row.id}, ${user.id}, 'payroll_schedule.defaults_seeded',
+            'payroll_statutory_rates',
+            ${jsonb(tx, {
+              count: payrollSeeded,
+              source: 'payroll statutory schedules (0089)',
+            })}
+          )
+        `;
         return row.id;
       }).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === '23505') {
@@ -188,6 +211,7 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
+                   m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -242,7 +266,8 @@ export function registerIdentityRoutes(
               organisation_id, user_id, role, work_scope,
               can_issue_documents, can_cancel_documents,
               can_approve_amendments, can_manage_statutory_reporting,
-              can_manage_payments, can_sign_documents, status
+              can_manage_payments, can_sign_documents,
+              can_manage_payroll, status
             )
             values (
               ${organisationId}, ${target.id}, ${body.role},
@@ -253,6 +278,7 @@ export function registerIdentityRoutes(
               ${body.canManageStatutoryReporting ?? false},
               ${body.canManagePayments ?? false},
               ${body.canSignDocuments ?? false},
+              ${body.canManagePayroll ?? false},
               'active'
             )
           `.catch((error: unknown) => {
@@ -282,6 +308,7 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
+                   m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -342,12 +369,13 @@ export function registerIdentityRoutes(
             can_manage_statutory_reporting: boolean;
             can_manage_payments: boolean;
             can_sign_documents: boolean;
+            can_manage_payroll: boolean;
           }[]
         >`
             select role, status, work_scope, can_issue_documents,
                    can_cancel_documents, can_approve_amendments,
                    can_manage_statutory_reporting, can_manage_payments,
-                   can_sign_documents
+                   can_sign_documents, can_manage_payroll
             from organisation_memberships
             where user_id = ${memberUserId}
               and organisation_id = app_private.current_organisation_id()
@@ -404,6 +432,8 @@ export function registerIdentityRoutes(
                 coalesce(${body.canManagePayments ?? null}, can_manage_payments),
               can_sign_documents =
                 coalesce(${body.canSignDocuments ?? null}, can_sign_documents),
+              can_manage_payroll =
+                coalesce(${body.canManagePayroll ?? null}, can_manage_payroll),
               status = coalesce(${body.status ?? null}, status),
               updated_at = now()
             where user_id = ${memberUserId}
@@ -426,6 +456,7 @@ export function registerIdentityRoutes(
             canManageStatutoryReporting: current.can_manage_statutory_reporting,
             canManagePayments: current.can_manage_payments,
             canSignDocuments: current.can_sign_documents,
+            canManagePayroll: current.can_manage_payroll,
             status: current.status,
           },
           {
@@ -440,6 +471,7 @@ export function registerIdentityRoutes(
               current.can_manage_statutory_reporting,
             canManagePayments: body.canManagePayments ?? current.can_manage_payments,
             canSignDocuments: body.canSignDocuments ?? current.can_sign_documents,
+            canManagePayroll: body.canManagePayroll ?? current.can_manage_payroll,
             status: body.status ?? current.status,
           },
         );
@@ -458,6 +490,7 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
+                   m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m

@@ -95,6 +95,36 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'reorder_level',
   ],
 
+  // A payroll run (0090). Its identity is frozen from the first write —
+  // the number, the month it pays, and who opened it — and everything
+  // below is the lifecycle it is allowed to move through: calculated
+  // while it is a draft, finalised once, cancelled with a reason and
+  // never reopened. `updated_at` is maintained by the shared trigger.
+  //
+  // The lifecycle columns are DECLARED rather than frozen because the
+  // guard holds them by STATUS rather than by column: a finalised run
+  // takes exactly one further write, the cancel, so nothing needs to
+  // compare `calculated_at` or `finalized_at` to protect them.
+  //
+  // The PAYSLIPS are not here because their guard freezes them wholesale
+  // rather than column by column: after the run is issued the only write
+  // a line takes is the payment-request stamp, and the guard compares
+  // every other column as one row.
+  payroll_runs: [
+    'id',
+    'updated_at',
+    'status',
+    'calculated_at',
+    // The frozen basis snapshot moves at calculate time, beside
+    // calculated_at, and is held by the same status rule after that (0090).
+    'statutory_basis',
+    'finalized_at',
+    'finalized_by_user_id',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancel_reason',
+  ],
+
   // The amendment decision ledger: everything proposed is frozen, the
   // decision is what gets written.
   approval_requests: [
@@ -172,6 +202,34 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'id',
     'updated_at',
   ],
+
+  // A site material request (0088). There is no draft state, so the whole
+  // of what was asked for — the Work, the station, the requester, the
+  // priority, the fault, the number — is frozen from the moment the row
+  // exists. The approval triple is write-once on the same terms as a
+  // letter's cancellation above: the first comparison exempts it so the
+  // approving UPDATE can write it, and the second refuses any change once
+  // `approved_at` is set, which the freeze detector reads as frozen.
+  //
+  // What is genuinely mutable is the lifecycle and the closure evidence.
+  // The closure pair is write-once in practice — the guard's first
+  // statement refuses every update to a closed request — but it is
+  // declared here rather than left to the detector, because "no update at
+  // all once closed" is a rule about the ROW and not a comparison of
+  // those two columns.
+  maintenance_requests: [
+    'id',
+    'updated_at',
+    'status',
+    'closed_by_user_id',
+    'closed_at',
+  ],
+
+  // A material line (0088). Everything asked for is frozen; the write-off
+  // is the one later fact, and it is write-once — the guard refuses a
+  // second one outright rather than comparing the columns, so both are
+  // declared here.
+  maintenance_request_lines: ['id', 'cancelled_quantity', 'cancellation_reason'],
 
   // A reusable company credential (0079). Its provenance is frozen; the
   // name and category stay editable so a mis-typed credential can be

@@ -9,6 +9,7 @@ export interface MembershipRow {
   can_manage_statutory_reporting: boolean;
   can_manage_payments: boolean;
   can_sign_documents: boolean;
+  can_manage_payroll: boolean;
 }
 
 export async function membershipOf(
@@ -19,6 +20,7 @@ export async function membershipOf(
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
            can_sign_documents
+           can_manage_payroll
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -139,7 +141,13 @@ export type DocumentAuthority =
    * bytes nobody authorised, and this makes it impossible for the wrong
    * member to put a correctly-bound request in front of a signer who is
    * about to type their PIN because the queue said to. */
-  | 'sign';
+  | 'sign'
+  /** Seeing the employee register and running the monthly payroll (0089,
+   * owner ruling 2026-08-18). Separate from `payments` because the
+   * register carries every colleague's salary, PAN, UAN and bank
+   * account, and a member who may approve a vendor payment has no
+   * business reading any of that by default. */
+  | 'payroll';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -152,6 +160,8 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
   payments:
     'Your membership does not carry the payments authority, which is required to approve employee payment requests and to record or pay vendor invoices.',
   sign: 'Your membership does not carry the signing authority, which is required to send an issued document for the organisation’s digital signature or to withdraw a request for one.',
+  payroll:
+    'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -166,6 +176,7 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_manage_statutory_reporting'
     | 'can_manage_payments'
     | 'can_sign_documents'
+    | 'can_manage_payroll'
   >
 > = {
   issue: 'can_issue_documents',
@@ -173,6 +184,7 @@ const AUTHORITY_COLUMNS: Record<
   statutory: 'can_manage_statutory_reporting',
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
+  payroll: 'can_manage_payroll',
 };
 
 function authorityGranted(

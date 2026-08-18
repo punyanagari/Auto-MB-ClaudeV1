@@ -86,6 +86,9 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0084_production.sql': 13,
   '0086_correspondence_register.sql': 4,
   '0087_stock_ledger.sql': 3,
+  '0088_maintenance.sql': 11,
+  '0089_employees.sql': 4,
+  '0090_payroll.sql': 6,
   '0091_signing_requests.sql': 2,
 };
 
@@ -1608,6 +1611,386 @@ describe('tenant migration contract', () => {
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(10);
     expect(sql.match(/USING ERRCODE = '23F\d\d'/g)?.length).toBe(raises.length);
+  });
+
+  it('binds maintenance in 0088', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0088_maintenance.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // FOUR OF THE MOCK'S SIX LINE QUANTITIES HAVE NO WRITER. Only the
+    // ordered quantity, the promised return and the write-off are stored;
+    // available, reserved, dispatched and received-back are derived, and
+    // a column for any of them is the drift this module refused.
+    for (const column of [
+      'quantity quantity_amount NOT NULL CHECK (quantity > 0)',
+      'expected_return_quantity quantity_amount NOT NULL DEFAULT 0',
+      'cancelled_quantity quantity_amount NOT NULL DEFAULT 0',
+    ]) {
+      expect(sql, column).toContain(column);
+    }
+    expect(sql).not.toMatch(/ADD COLUMN\s+available_quantity/i);
+    expect(sql).not.toMatch(/reserved_quantity\s+quantity_amount/i);
+    expect(sql).not.toMatch(/dispatched_quantity\s+quantity_amount/i);
+    expect(sql).not.toMatch(/received_return_quantity\s+quantity_amount/i);
+    // The two functions the derivations go through, so the dispatch
+    // ceiling and the closure gate cannot be computed two different ways.
+    expect(sql).toContain(
+      'app_private.maintenance_line_outstanding(org uuid, line uuid)',
+    );
+    expect(sql).toContain(
+      'app_private.maintenance_line_return_due(org uuid, line uuid)',
+    );
+
+    // States are CHECKed text, not an enum, for the reason 0079 and 0086
+    // give about theirs.
+    expect(sql).toMatch(
+      /status IN \('awaiting_approval', 'approved', 'partially_dispatched', 'closed'\)/,
+    );
+    expect(sql).toMatch(/priority IN \('routine', 'urgent', 'critical'\)/);
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // Both numbers are unique, and so is each SEQUENCE they were rendered
+    // from: gap-freeness is only provable if two rows cannot share
+    // serial 7.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX maintenance_requests_number_unique\s+ON maintenance_requests \(organisation_id, request_number\);/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX maintenance_requests_sequence_unique\s+ON maintenance_requests \(organisation_id, financial_year, sequence_number\);/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX maintenance_dispatches_sequence_per_work\s+ON maintenance_dispatches \(organisation_id, work_id, sequence_number\);/,
+    );
+    expect(sql).not.toMatch(/max\(sequence_number\)/);
+    for (const counter of [
+      'maintenance_request_counters',
+      'maintenance_dispatch_counters',
+    ]) {
+      expect(sql, counter).toContain(`CREATE TRIGGER ${counter}_guard_decrease`);
+    }
+
+    // Legal dates are date-only (engineering rule 6), and the two that
+    // bound against the ORGANISATION's today do so through 0082's helper
+    // rather than the server's clock.
+    for (const column of [
+      'required_by date',
+      'dispatch_date date NOT NULL',
+      'received_on date NOT NULL',
+    ]) {
+      expect(sql, column).toContain(column);
+    }
+    expect(sql).not.toContain('dispatch_date timestamptz');
+    expect(
+      sql.match(/app_private\.organisation_today\(NEW\.organisation_id\)/g)?.length,
+    ).toBe(2);
+
+    // Every foreign key is composite, so none can point across the tenant
+    // boundary with RLS never seeing it.
+    for (const composite of [
+      'FOREIGN KEY (organisation_id, work_id) REFERENCES works(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, maintenance_request_id)\n    REFERENCES maintenance_requests(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, production_item_id)\n    REFERENCES production_items(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, maintenance_request_id, work_id)\n    REFERENCES maintenance_requests(organisation_id, id, work_id)',
+      'FOREIGN KEY (organisation_id, maintenance_dispatch_id)\n    REFERENCES maintenance_dispatches(organisation_id, id)',
+    ]) {
+      expect(sql, composite).toContain(composite);
+    }
+
+    // THE LEDGER LEARNS A THIRD SOURCE. An issue may name a job card, a
+    // Work, or — from this migration — the maintenance challan that took
+    // the material off the shelf. Counted rather than paired, so a fourth
+    // source is one more term.
+    expect(sql).toContain('ADD COLUMN maintenance_dispatch_id uuid,');
+    expect(sql).toContain('DROP CONSTRAINT stock_movements_source_shape_check;');
+    expect(sql).toContain('+ (maintenance_dispatch_id IS NOT NULL)::int = 1');
+    // The non-partial leading index the new foreign key needs.
+    expect(sql).toContain(
+      'CREATE INDEX stock_movements_maintenance_dispatch_idx\n  ON stock_movements (organisation_id, maintenance_dispatch_id);',
+    );
+
+    // Seven tables, seven policies, all in the ADR-0010 InitPlan shape,
+    // and none of them grants DELETE: a request keeps its number, a
+    // challan records material that physically left.
+    const tables = [
+      'maintenance_request_counters',
+      'maintenance_requests',
+      'maintenance_request_lines',
+      'maintenance_dispatch_counters',
+      'maintenance_dispatches',
+      'maintenance_dispatch_lines',
+      'maintenance_returns',
+    ];
+    for (const table of tables) {
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).toContain(`${table}_tenant_policy`);
+      expect(sql, table).not.toContain(`DELETE ON ${table}`);
+    }
+    // Both arms of all seven policies wrap the helper in a scalar
+    // subquery, which is the whole of ADR-0010.
+    expect(
+      sql.match(
+        /organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)/g,
+      )?.length,
+    ).toBe(tables.length * 2);
+    for (const appendOnly of [
+      'maintenance_dispatches',
+      'maintenance_dispatch_lines',
+      'maintenance_returns',
+    ]) {
+      expect(sql, appendOnly).toContain(
+        `GRANT SELECT, INSERT ON ${appendOnly} TO auto_mb_app;`,
+      );
+      expect(sql, appendOnly).not.toContain(`UPDATE ON ${appendOnly} TO auto_mb_app`);
+    }
+
+    // The closure gate is a rule, not a disabled button, and the terms
+    // are frozen from the moment the request is raised.
+    expect(sql).toContain('material still to dispatch or cancel');
+    expect(sql).toContain('defective units still owed back');
+    expect(sql).toContain(
+      'a raised maintenance request is immutable; close it and raise the corrected one',
+    );
+    expect(sql).toContain(
+      "a maintenance request''s approval is immutable once recorded",
+    );
+
+    // Every function pins its search_path, and none is SECURITY DEFINER.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBe(10);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    for (const declaration of functions) {
+      const source = sql.slice(sql.indexOf(declaration));
+      expect(source.slice(0, source.indexOf('$$;')), declaration).not.toContain(
+        'SECURITY DEFINER',
+      );
+    }
+
+    // THE RETURN CEILING IS WHAT WENT OUT, not what was promised. Read
+    // against the gross promise, a line ordered 4 / promised 4 back /
+    // dispatched 1 / written off 3 can never be closed, because
+    // `expected_return_quantity` is frozen and nothing can lower it.
+    expect(sql).toContain('least(');
+    expect(sql).toMatch(
+      /least\(\s*l\.expected_return_quantity,\s*coalesce\(\s*\(\s*SELECT sum\(d\.quantity\)\s*FROM maintenance_dispatch_lines d/,
+    );
+
+    // A line may only be appended while the request is undecided, and
+    // the ledger's third source is validated like the other two.
+    expect(sql).toContain('CREATE TRIGGER maintenance_request_lines_guard_insert');
+    expect(sql).toContain('and takes no further material lines');
+    expect(sql).toContain('CREATE TRIGGER stock_movements_maintenance_source_guard');
+    expect(sql).toContain('carries no line for item');
+    expect(sql).toContain('serves work %, which is %');
+    // …and 0087's function is NOT replaced from here: that would leave
+    // its own file describing a function the database no longer has,
+    // which the assertions in this suite read.
+    expect(sql).not.toContain(
+      'CREATE OR REPLACE FUNCTION app_private.guard_stock_movement',
+    );
+
+    // A withdrawn Work is not a Work, on the request path as on every
+    // arm of the ledger's own guard.
+    expect(sql).toContain('AND w.deleted_at IS NULL');
+
+    // Every RAISE carries a named SQLSTATE. The module's own rules use
+    // the 23G block, which this migration is the first to claim; the
+    // four that police the STOCK LEDGER's new source deliberately reuse
+    // 0087's 23F02, because `routes/inventory.ts` already maps it and a
+    // second code for "the source document does not admit it" would be
+    // the same refusal under two names.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(12);
+    const named = sql.match(/USING ERRCODE = '(23[FG]\d\d)'/g) ?? [];
+    expect(named.length).toBe(raises.length);
+    expect(named.filter((code) => code.includes('23F')).length).toBe(4);
+  });
+
+  it('binds the employee master and the statutory schedules in 0089', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0089_employees.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // Four tenant tables, all in the ADR-0010 InitPlan policy shape.
+    for (const table of [
+      'employees',
+      'payroll_statutory_rates',
+      'professional_tax_slabs',
+      'income_tax_slabs',
+    ]) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      // Masters retire by end-dating and an employee is end-dated by an
+      // exit date; nothing here is ever removed.
+      expect(sql, table).toContain(
+        `GRANT SELECT, INSERT, UPDATE ON ${table} TO auto_mb_app;`,
+      );
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+
+    // THE WHOLE POINT OF THE PACK'S SCHEDULE DESIGN, asserted rather than
+    // left to review: a statutory value is a dated ROW, never a constant.
+    // Each of the three tables carries the range of dates it was in force
+    // for, and the arithmetic resolves it at the run's own month.
+    for (const table of [
+      'payroll_statutory_rates',
+      'professional_tax_slabs',
+      'income_tax_slabs',
+    ]) {
+      const body = sql.slice(sql.indexOf(`CREATE TABLE ${table} (`));
+      const columns = body.slice(0, body.indexOf('\n);'));
+      expect(columns, table).toContain('effective_from date NOT NULL');
+      expect(columns, table).toContain('effective_to date CHECK');
+    }
+
+    // No Aadhaar column, ever. Checked against the SQL with its comments
+    // stripped, because the migration's own prose explains at length why
+    // the number is not here, and a bare substring search would find that
+    // explanation and pass on it.
+    const code = sql.replace(/--.*$/gm, '').toLowerCase();
+    expect(code).not.toContain('aadhaar');
+    expect(code).not.toContain('aadhar');
+
+    // The employee is a satellite of the party master, not a second one.
+    expect(sql).toContain('FOREIGN KEY (organisation_id, contact_id)');
+    expect(sql).toContain('REFERENCES contacts(organisation_id, id)');
+    // ...which is only workable because the designation-duplicate rule
+    // was narrowed off people: two employees of one name is not a
+    // duplicate, it is Tuesday.
+    expect(sql).toContain('WHERE active AND NOT is_employee;');
+
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(1);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    for (const declaration of functions) {
+      const source = sql.slice(sql.indexOf(declaration));
+      // Comments stripped first. Each of these functions carries a
+      // comment saying WHY it is not a definer — exactly the trap 0087's
+      // own test warns about — and a naive substring search finds that
+      // sentence rather than a defect.
+      expect(
+        source.slice(0, source.indexOf('$$;')).replace(/--.*$/gm, ''),
+        declaration,
+      ).not.toContain('SECURITY DEFINER');
+    }
+
+    // Every RAISE carries a named SQLSTATE, and every one that is a
+    // payroll refusal is from the 23H block this pack opened, so
+    // `routes/hr.ts` maps it to a code instead of surfacing a bare 23514
+    // as a 500. The one exception is the bootstrap function this file
+    // re-states to grant the owner the payroll authority (create_
+    // organisation_with_owner, 0004): its single RAISE keeps 0004's own
+    // 28000 "no authenticated user" code, which is not a payroll refusal.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    const namedPayroll = sql.match(/USING ERRCODE = '23H\d\d'/g) ?? [];
+    const bootstrapRaise = sql.match(/USING ERRCODE = '28000'/g) ?? [];
+    expect(namedPayroll.length).toBeGreaterThanOrEqual(2);
+    expect(namedPayroll.length + bootstrapRaise.length).toBe(raises.length);
+  });
+
+  it('binds the payroll run in 0090', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0090_payroll.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    for (const table of ['payroll_runs', 'payroll_run_lines', 'payroll_run_counters']) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    }
+
+    // A run is an issued document: no DELETE at any status, not even a
+    // draft. It has claimed a number by the time it exists, and a gap in
+    // the series is what a provident-fund inspector reads.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON payroll_runs TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('DELETE ON payroll_runs TO auto_mb_app');
+    // Its LINES do delete, for the recalculation of a draft and nothing
+    // else — the guard is what closes that path the moment the run is
+    // finalised or cancelled.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON payroll_run_lines TO auto_mb_app;',
+    );
+    expect(sql).toContain('BEFORE INSERT OR UPDATE OR DELETE ON payroll_run_lines');
+
+    // The number comes off a counter claimed by upsert. NEVER max()+1.
+    expect(sql).toContain('CREATE TABLE payroll_run_counters');
+    expect(sql).toContain('CREATE TRIGGER payroll_run_counters_guard_decrease');
+    expect(sql).not.toMatch(/max\(sequence_number\)/);
+
+    // MONEY ENFORCED TWICE. The arithmetic is a CHECK as well as a
+    // computation: the four heads sum to the gross, and the gross less
+    // the four EMPLOYEE-side deductions is the net. A payslip that took
+    // an employer contribution off somebody's pay is impossible here,
+    // not merely unlikely.
+    expect(sql).toContain('CONSTRAINT payroll_run_lines_gross_check');
+    expect(sql).toContain('CONSTRAINT payroll_run_lines_net_check');
+
+    // The pension share is capped by its OWN ceiling and the employer's
+    // fund share is the remainder — a subtraction, never a third rate.
+    // The widely quoted 3.67% is only exactly 3.67% at or below the
+    // ceiling, so the number must not appear in the arithmetic at all.
+    expect(sql).toContain('v_epf_employer := v_epf_total - v_eps_employer;');
+    // Matched against ASSIGNMENTS rather than the whole file: the header
+    // and two column comments explain the 3.67% figure at length, and a
+    // bare search would find the explanation instead of the defect.
+    expect(sql).not.toMatch(/:=[^;]*3\.67/);
+
+    // ESI rounds UP, both shares: regulation 40, and rounding an
+    // insurance contribution down is a short remittance.
+    expect(sql).toContain('v_esi_employee := ceil(');
+    expect(sql).toContain('v_esi_employer := ceil(');
+
+    // Surcharge is refused rather than approximated. An under-deduction
+    // under section 192 is the employer's own liability, with interest.
+    expect(sql).toContain("USING ERRCODE = '23H05'");
+    expect(sql).toContain('v_total_income > v_surcharge_floor');
+
+    // Includes the CREATE OR REPLACE of 0080's payment-request guard,
+    // which this file re-states to exempt a salary request from
+    // maker-checker (§ 4b). Every function here pins its search_path and
+    // none is a definer.
+    const functions =
+      sql.match(/CREATE (?:OR REPLACE )?FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(5);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    for (const declaration of functions) {
+      const source = sql.slice(sql.indexOf(declaration));
+      // Comments stripped, for the reason the 0089 test above gives.
+      expect(
+        source.slice(0, source.indexOf('$$;')).replace(/--.*$/gm, ''),
+        declaration,
+      ).not.toContain('SECURITY DEFINER');
+    }
+
+    // Every RAISE carries a named SQLSTATE. The payroll refusals use the
+    // 23H block this pack opened; the re-stated 0080 payment-request
+    // guard (§ 4b) keeps 0080's own 23B codes, since those are payments
+    // refusals `routes/payments.ts` already maps, not payroll ones.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    const namedPayroll = sql.match(/USING ERRCODE = '23H\d\d'/g) ?? [];
+    const namedPayments = sql.match(/USING ERRCODE = '23B\d\d'/g) ?? [];
+    expect(namedPayroll.length).toBeGreaterThanOrEqual(15);
+    expect(namedPayroll.length + namedPayments.length).toBe(raises.length);
   });
 
   it('binds the signing queue in 0091', async () => {

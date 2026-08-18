@@ -40,6 +40,7 @@ import {
   audit,
   errorResponses,
   IdParamsSchema,
+  onOrderQuantitySql,
   optionalTrimmed,
   receivedQuantitySql,
 } from './shared.js';
@@ -141,6 +142,13 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
  * never be computed against a different idea of received than the order
  * it is about to be added to. */
 const RECEIVED_ON_LINE = receivedQuantitySql();
+
+/** The other half, bound once for the same reason: the list, the
+ * quantity a draft order is written for, and the predicate that decides
+ * a part is still short all have to agree about what is already coming.
+ * Production's job card reads the same fragment. */
+const ON_ORDER_FOR_ITEM = onOrderQuantitySql('requirement.component_item_id');
+const ON_ORDER_FOR_SELECTED_ITEM = onOrderQuantitySql('i.id');
 
 /** How many shortage-raised orders the column returns. Over-fetched by
  * one so the screen can say the list is not the whole of it. */
@@ -436,6 +444,11 @@ const MOVEMENTS_SQL = `
                  || lpad(card.sequence_number::text, 3, '0')
                else null
              end
+           when m.maintenance_dispatch_id is not null then
+             case when ${workVisibleSql('$2', '$1', 'maintenance.work_id')}
+               then maintenance.challan_number
+               else null
+             end
            when m.work_id is not null then
              case when ${workVisibleSql('$2', '$1', 'm.work_id')}
                then work.work_code
@@ -446,6 +459,8 @@ const MOVEMENTS_SQL = `
          m.created_at
   from stock_movements m
   join production_items i on i.id = m.production_item_id
+  left join maintenance_dispatches maintenance
+    on maintenance.id = m.maintenance_dispatch_id
   left join production_dispatches dispatch on dispatch.id = m.production_dispatch_id
   left join production_job_cards dispatch_card
     on dispatch_card.id = dispatch.job_card_id
@@ -1090,13 +1105,7 @@ export function registerInventoryRoutes(
                     app_private.stock_on_hand(
                       $3::uuid, requirement.component_item_id
                     ) as on_hand,
-                    coalesce((
-                      select sum(greatest(pol.quantity - ${RECEIVED_ON_LINE}, 0))
-                      from purchase_order_lines pol
-                      join purchase_orders po on po.id = pol.purchase_order_id
-                      where pol.production_item_id = requirement.component_item_id
-                        and po.status in ('draft', 'issued')
-                    ), 0)::quantity_amount as on_order
+                    ${ON_ORDER_FOR_ITEM}::quantity_amount as on_order
              from requirement
              group by requirement.component_item_id
            )
@@ -1341,25 +1350,13 @@ export function registerInventoryRoutes(
            select i.id as item_id, i.item_code, i.unit, i.name,
                   (requirement.required
                     - app_private.stock_on_hand($1::uuid, i.id)
-                    - coalesce((
-                        select sum(greatest(pol.quantity - ${RECEIVED_ON_LINE}, 0))
-                        from purchase_order_lines pol
-                        join purchase_orders po on po.id = pol.purchase_order_id
-                        where pol.production_item_id = i.id
-                          and po.status in ('draft', 'issued')
-                      ), 0))::text as shortage
+                    - ${ON_ORDER_FOR_SELECTED_ITEM})::text as shortage
            from requirement
            join production_items i on i.id = requirement.component_item_id
            where i.id = any($2::uuid[])
              and requirement.required
                  > app_private.stock_on_hand($1::uuid, i.id)
-                   + coalesce((
-                       select sum(greatest(pol.quantity - ${RECEIVED_ON_LINE}, 0))
-                       from purchase_order_lines pol
-                       join purchase_orders po on po.id = pol.purchase_order_id
-                       where pol.production_item_id = i.id
-                         and po.status in ('draft', 'issued')
-                     ), 0)
+                   + ${ON_ORDER_FOR_SELECTED_ITEM}
            order by i.item_code`,
           [organisationId, body.productionItemIds],
         )) as unknown as {

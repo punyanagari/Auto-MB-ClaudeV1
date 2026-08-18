@@ -7,6 +7,7 @@ import {
   FileText,
   FolderKanban,
   Gavel,
+  Hammer,
   HandCoins,
   Landmark,
   LayoutDashboard,
@@ -42,6 +43,8 @@ export type ModuleKey =
   | 'production'
   | 'stock'
   | 'signing'
+  | 'employees'
+  | 'maintenance'
   | 'masters'
   | 'members'
   | 'settings';
@@ -66,11 +69,19 @@ export interface NavGroup {
  * then Documents, Operations and Administration.
  *
  * The mock draws modules this build has no route for — E-Way Bills,
- * Purchase orders, Maintenance, Employees — and those are omitted rather
- * than rendered as dead entries. Production (migration 0084),
- * Correspondence (0086) and Inventory (0087) all left that list this
- * wave: Production and Inventory take the places the mock gives them
- * under Operations, and Correspondence the last under Documents.
+ * Purchase orders, Maintenance — and those are omitted rather than
+ * rendered as dead entries. Production (migration 0084), Correspondence
+ * (0086) and Inventory (0087) all left that list in the previous wave:
+ * Production and Inventory take the places the mock gives them under
+ * Operations, and Correspondence the last under Documents. Employees
+ * (0089, 0090) leaves it in this one, taking the mock's own first place
+ * under Administration.
+ * Purchase orders, Employees — and those are omitted rather than
+ * rendered as dead entries. Production (migration 0084), Correspondence
+ * (0086), Inventory (0087) and Maintenance (0088) have all left that
+ * list: Production, Inventory and Maintenance take the places the mock
+ * gives them under Operations, and Correspondence the last under
+ * Documents.
  * Quotations runs the other way: the mock draws it under Documents in its
  * own list, so it keeps its place here.
  *
@@ -131,12 +142,22 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'installations', label: 'Installations', icon: Wrench },
       { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
       { key: 'stock', label: 'Inventory', icon: Boxes },
+      // The mock gives Maintenance `ClipboardCheck`, which is already
+      // Inspection's lamp on this rail. Two identical icons in one group
+      // is worse than one substituted, so it takes `Hammer` — recorded
+      // in `docs/UX.md` § 14.
+      { key: 'maintenance', label: 'Maintenance', icon: Hammer },
       { key: 'search', label: 'Global search', icon: ScanSearch },
     ],
   },
   {
     label: 'Administration',
     items: [
+      // `Users`, which is also Members' icon two rows down. That is the
+      // mock's own choice (`components/app-sidebar.tsx` at fdfd610 gives
+      // both entries `Users`), and the design contract makes the mock
+      // binding: a different icon here would be pixel drift, not a fix.
+      { key: 'employees', label: 'Employees', icon: Users },
       { key: 'approvals', label: 'Approvals', icon: CircleCheckBig },
       { key: 'masters', label: 'Masters', icon: Database },
       { key: 'members', label: 'Members', icon: Users },
@@ -169,6 +190,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'correspondence' };
     case 'company-documents':
       return { name: 'company-documents' };
+    case 'maintenance':
+      return { name: 'maintenance' };
     case 'inspection':
       return { name: 'inspection' };
     case 'payments':
@@ -187,6 +210,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'stock' };
     case 'signing':
       return { name: 'signing' };
+    case 'employees':
+      return { name: 'employees' };
     case 'masters':
       return { name: 'masters' };
     case 'members':
@@ -233,6 +258,16 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'stock':
     case 'stock-shortages':
       return 'stock';
+    // The employee register and the payroll workspace under it are one
+    // place too. The mock's own rail reaches only the first of them.
+    case 'employees':
+    case 'payroll':
+      return 'employees';
+    // The register, the request form and an opened job card are one
+    // place, so all three light one lamp (0088).
+    case 'maintenance-new':
+    case 'maintenance-request':
+      return 'maintenance';
     case 'dashboard':
     case 'challans':
     case 'invoices':
@@ -245,6 +280,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'tenders':
     case 'approvals':
     case 'search':
+    case 'maintenance':
     case 'installations':
     case 'production':
     case 'masters':
@@ -329,6 +365,12 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Manufactured items';
     case 'production-job-card':
       return 'Job card';
+    case 'maintenance':
+      return 'Maintenance';
+    case 'maintenance-new':
+      return 'Site material request';
+    case 'maintenance-request':
+      return 'Maintenance job card';
     case 'payments':
       return 'Payments';
     case 'tenders':
@@ -351,6 +393,10 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Shortage procurement';
     case 'signing':
       return 'Signing queue';
+    case 'employees':
+      return 'Employees';
+    case 'payroll':
+      return 'Monthly payroll';
     case 'masters':
       return 'Masters';
     case 'members':

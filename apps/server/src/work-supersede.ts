@@ -27,9 +27,9 @@ import { assertWorkOperable } from './work-status.js';
  * The registers that make a Work ineligible: everything the agency issued,
  * received, or became bound by on this Work's account.
  *
- * Forty-four tables can reach `works` through a chain of foreign keys.
+ * Fifty-one tables can reach `works` through a chain of foreign keys.
  * This list holds the 17 that are documents in their own right;
- * `WORK_CHILD_TABLES_EXEMPT` holds the other 27 with the reason each is
+ * `WORK_CHILD_TABLES_EXEMPT` holds the other 34 with the reason each is
  * exempt, and the census in `test/work-supersede.integration.test.ts`
  * proves the union is exactly the catalog — TRANSITIVELY, not only over
  * direct children, because a document hanging off an exempt parent is
@@ -138,6 +138,27 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   vendor_invoices:
     'a third party’s bill against this organisation, attributed to a Work but not a record of it',
   vendor_payments: 'a payment against a vendor invoice, which is itself exempt',
+  // Payroll (0090). It reaches `works` only through the salary payment
+  // request its finalise raised, and that route is exempt above — but
+  // the exemption here rests on something stronger than inheritance, so
+  // it is argued rather than borrowed.
+  //
+  // A PAYROLL RUN IS ORGANISATION-SCOPED, NOT WORK-SCOPED, and that is a
+  // decision of the schema and not an omission: a salary is paid by the
+  // agency, the same site engineer works on three Works in a month, and
+  // no honest apportionment of one payslip across them exists. So
+  // `payroll_runs`, `payroll_run_lines` and the employee master carry no
+  // `work_id` at all, and the salary requests the handoff raises carry
+  // `work_id = NULL`. Withdrawing a Work cannot make a month's salaries
+  // unpaid, and nothing in this module could name the withdrawn Work
+  // even if it wanted to.
+  //
+  // The three schedule tables and `payroll_run_counters` never appear in
+  // this census because nothing links them to `works` in either
+  // direction; they are listed nowhere for the same reason `gst_rates`
+  // is not.
+  payroll_run_lines:
+    'a payslip, which reaches a Work only through the salary payment request it raised — payroll is organisation-scoped and a supersede cannot unpay a month',
   delivery_challan_items: 'lines of a delivery challan, which blocks',
   challan_receipts: 'receipts against a delivery challan, which blocks',
   challan_item_serials: 'serials on a delivery challan line, which blocks',
@@ -280,6 +301,40 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
     'a handoff from the factory floor to this organisation’s own stock; the OUTWARD act is the delivery challan, which blocks',
   production_dispatch_serials: 'the units a despatch released, which does not block',
   production_dispatch_counters: 'numbering state, not a document',
+  // Maintenance (0088). All seven exempt, and — like the production block
+  // above, unlike the inspection call — this is the answer rather than a
+  // deferral.
+  //
+  // A maintenance request records a fault that exists on a platform, and
+  // superseding a Work does not repair it: the dead display is still
+  // dead and the store still owes it a power supply. Blocking would mean
+  // the first spare part ordered against a Work closed the door on ever
+  // correcting how that Work was read from its letter, which is the same
+  // deadlock the correspondence and tender entries above describe.
+  //
+  // The dispatch challan is the entry worth pausing on, because it is
+  // numbered and it goes to a site receiver. It is still not the outward
+  // contractual act: the Delivery Challan is, and that one blocks — so a
+  // Work whose contracted material has gone to the railway is already
+  // refused before this question is asked. A maintenance challan hands
+  // over a replacement part against a fault, and the fault outlives the
+  // paperwork.
+  //
+  // The consequence is deliberate and is stated in migration 0088 § 10: a
+  // request whose Work is withdrawn mid-flight stays dispatchable, and
+  // its challans keep naming the withdrawn Work. What is refused is
+  // raising a NEW request against a Work that is no longer active.
+  maintenance_requests:
+    'a fault on a platform that superseding the Work does not repair; the obligation to put material there outlives the letter being re-read',
+  maintenance_request_lines:
+    'what a maintenance request asked for, which does not block',
+  maintenance_dispatches:
+    'a replacement part handed to a site receiver against a fault; the OUTWARD contractual act is the delivery challan, which blocks',
+  maintenance_dispatch_lines: 'the quantities one maintenance challan carried',
+  maintenance_returns:
+    'a defective unit received back for repair, which does not block',
+  maintenance_request_counters: 'numbering state, not a document',
+  maintenance_dispatch_counters: 'numbering state, not a document',
 };
 
 /** `approval_requests` blocks only while a request is live: a pending one

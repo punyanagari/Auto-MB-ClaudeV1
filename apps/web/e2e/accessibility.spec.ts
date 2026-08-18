@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   DASHBOARD,
+  MAINTENANCE_AWAITING_APPROVAL,
   ME,
   ORG,
   PICKER_ME,
@@ -275,6 +276,60 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expectNoAxeViolations(page, 'collapsed rail');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+});
+
+/* People and payroll (0089, 0090) — its OWN test, not another leg of the
+   picker journey above, which was already close to the 30s budget and
+   tipped over it when these two scans were appended (the receivables
+   precedent below).
+
+   The two screens put colour on a word in different places. The REGISTER
+   carries the employed/left status chips; the "Include people who have
+   left" toggle is exercised, because the default view hides the leaver
+   and the "Left" chip has to be brought on screen honestly rather than
+   by a fixture that ignores the status filter. The PAYROLL run is
+   finalised, so its SUCCESS-toned status chip, the salary-requests link,
+   the WARNING-toned loss-of-pay line, the grouped two-row deduction
+   header and the CA-facing basis table are all on screen at once. The
+   computation is expanded before the scan — a collapsed row proves
+   nothing about the panel inside it. */
+test('the employee register and the finalised payroll run pass the axe scan', async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await page.getByRole('link', { name: 'Employees' }).click();
+  await expect(page.getByRole('heading', { name: 'Employees' })).toBeVisible();
+  await expect(page.getByText('Anita Deshmukh')).toBeVisible();
+  await expect(page.getByText('Employed', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Provident fund · ESI').first()).toBeVisible();
+  // Bring the leaver on screen through the real toggle, so the neutral
+  // "Left" chip is scanned in the state it actually renders in.
+  await page.getByRole('checkbox', { name: 'Include people who have left' }).check();
+  await expect(page.getByText('Left', { exact: true })).toBeVisible();
+  await expectNoAxeViolations(page, 'employee register');
+
+  await page.getByRole('link', { name: 'Monthly payroll' }).click();
+  await expect(page.getByRole('heading', { name: 'Monthly payroll' })).toBeVisible();
+  // The run number is on screen twice — the header's own mono span (its
+  // whole text) and the picker option (embedded in a longer label). An
+  // exact match takes the header span, not the option, which is inside a
+  // closed select and never visible anyway.
+  await expect(page.getByText('PAY/2026-27/001', { exact: true })).toBeVisible();
+  // The success-toned finalised chip and the door to its salary requests.
+  await expect(page.getByText('Finalised', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: /salary requests are on the Payments register/ }),
+  ).toBeVisible();
+  await expect(page.getByText('Not covered')).toBeVisible();
+  // The warning-toned loss-of-pay line.
+  await expect(page.getByText('Loss of pay 2.00')).toBeVisible();
+  await page.getByRole('button', { name: /Anita Deshmukh/ }).click();
+  await expect(page.getByText('Monthly computation')).toBeVisible();
+  await expect(page.getByText('Statutory basis')).toBeVisible();
+  await expectNoAxeViolations(page, 'finalised monthly payroll run');
 });
 
 /* Its own test rather than another leg of the picker journey above, which
@@ -1268,6 +1323,109 @@ test.describe('mobile shell', () => {
   });
 });
 
+/* Maintenance (migration 0088). Its own test rather than a leg of the
+   organisation-picker journey: that one is already over Playwright's 30s
+   default and carries `test.slow()` saying so, and five more scans is
+   ten more serial axe runs on it. The receivables register set the
+   precedent and the comment on that leg names it.
+
+   Six scans, because the module puts colour on a word in six places, and
+   two of them are surfaces the mock does not draw at all (`docs/UX.md`
+   § 14 rows 14o and 14d) and would otherwise be the only unscanned
+   markup in the pack. */
+test('maintenance register, job card and request form pass the axe scan', async ({
+  page,
+}) => {
+  test.slow();
+  await mockWorkspace(page);
+  await page.goto('/');
+
+  /* The REGISTER carries every stage chip this module can render — the
+     two warning-tinted ones and the neutral closed — beside the
+     success-tinted `approved` the vocabulary already had, all four on one
+     screen at once. Locators are qualified by role because a bare string
+     would also match the stage strip above the table. */
+  await page.getByRole('link', { name: 'Maintenance' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Maintenance', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Awaiting approval' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Dispatching' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Approved' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Closed' })).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance register');
+
+  /* The JOB CARD carries three progress bars, the boxed tab rail, and a
+     numeric table whose Available column is an em dash for the custom
+     line and a written-off line beneath it. */
+  await page.getByRole('link', { name: 'MR/26-27/00142' }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Replace failed platform display power supplies',
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('Written off 2.000')).toBeVisible();
+  // The operational-impact card, which the mock collects and never shows
+  // (§ 14 row 14p).
+  await expect(page.getByText('Two display boards unavailable')).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance job card');
+
+  /* THE WRITE-OFF PANEL — invented here, because the mock's own closure
+     gate reads a column nothing in the mock ever writes (§ 14 row 14d).
+     It is a labelled text field and two buttons that appear under the
+     table, and nothing else in the suite renders it. */
+  await page
+    .getByRole('row', { name: /24 V 10 A SMPS/ })
+    .getByRole('button', { name: 'Write off' })
+    .click();
+  await expect(page.getByLabel(/not being sent/)).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Write off the balance' }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance write-off panel');
+
+  await page.getByRole('button', { name: 'Dispatch', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Record partial or full dispatch' }),
+  ).toBeVisible();
+  // The delivery-instructions line, which the mock also collects and
+  // never shows (§ 14 row 14q), and the disabled primary action.
+  await expect(page.getByText('Hand over to site supervisor')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Create dispatch & challan/ }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance dispatch tab');
+
+  await page.getByRole('button', { name: 'Defective returns' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Receive defective items' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'maintenance defective returns tab');
+
+  /* THE APPROVAL CARD — the other invented surface (§ 14 row 14o). It
+     renders only for an owner on a request still awaiting approval, so it
+     needs its own fixture: the register's second row. */
+  await page.route('**/api/maintenance/*', (route) =>
+    route.fulfill(json(MAINTENANCE_AWAITING_APPROVAL)),
+  );
+  await page.getByRole('button', { name: 'Maintenance', exact: true }).first().click();
+  await page.getByRole('link', { name: 'MR/26-27/00141' }).click();
+  await expect(page.getByRole('heading', { name: 'Admin approval' })).toBeVisible();
+  await expect(page.getByLabel('Approval comment')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Approve request/ })).toBeEnabled();
+  await expectNoAxeViolations(page, 'maintenance approval card');
+
+  await page.getByRole('button', { name: 'Maintenance', exact: true }).first().click();
+  await page.getByRole('button', { name: 'New material request' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Site material request' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Send for admin approval/ }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'maintenance request form');
+});
+
 test('production register, job card and item master pass the axe scan', async ({
   page,
 }) => {
@@ -1278,8 +1436,11 @@ test('production register, job card and item master pass the axe scan', async ({
   await expect(page.getByRole('heading', { name: 'Production' })).toBeVisible();
   // Scanned with a row on screen: the register's tints — the status chip,
   // the Material badge and the progress bar — live in the row and would
-  // never be scanned against an empty table.
+  // never be scanned against an empty table. The badge is the pack's one
+  // warning-tinted word, and it is the shortage the stock ledger makes
+  // real, so it is asserted rather than left to chance.
   await expect(page.getByText('PP-26-081')).toBeVisible();
+  await expect(page.getByText('part short')).toBeVisible();
   await expectNoAxeViolations(page, 'production register');
 
   await page.getByRole('link', { name: 'PP-26-081' }).click();
@@ -1287,6 +1448,14 @@ test('production register, job card and item master pass the axe scan', async ({
     page.getByRole('heading', { name: 'IP Display Board · 6 line' }),
   ).toBeVisible();
   await expectNoAxeViolations(page, 'production job card overview');
+
+  // The Materials tab: Required, Available and Shortage in three numeric
+  // columns, none of them tinted, so the figures have to hold contrast on
+  // the plain table surface in both themes.
+  await page.getByRole('button', { name: 'Materials' }).click();
+  await expect(page.getByRole('columnheader', { name: 'Shortage' })).toBeVisible();
+  await expect(page.getByText('8.000')).toBeVisible();
+  await expectNoAxeViolations(page, 'production job card materials');
 
   // The Serials tab is the one place this module colour-codes a figure —
   // the captured/required count goes destructive short and success

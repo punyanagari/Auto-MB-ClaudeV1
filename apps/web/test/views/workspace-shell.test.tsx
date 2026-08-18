@@ -274,8 +274,8 @@ describe('OperationsWorkspace mobile shell', () => {
       'Company documents',
       'Signing queue',
       // Production takes the first place the mock's Operations group
-      // gives it (migration 0084); Inventory, Purchase orders and
-      // Maintenance are still omitted rather than drawn as dead entries.
+      // gives it (migration 0084); Purchase orders is still omitted
+      // rather than drawn as a dead entry.
       'Production',
       'Installations',
       // The mock's own rail carries Inspection in its main list
@@ -286,7 +286,12 @@ describe('OperationsWorkspace mobile shell', () => {
       // its rail and this build had no route for it until the ledger
       // landed.
       'Inventory',
+      // Maintenance (migration 0088). The mock draws it in its rail and
+      // this build had no route for it until the site material request
+      // landed.
+      'Maintenance',
       'Global search',
+      'Employees',
       'Approvals',
       'Masters',
       'Members',
@@ -328,7 +333,9 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Installations', '#/installations'],
       ['Inspection', '#/inspection'],
       ['Inventory', '#/inventory'],
+      ['Maintenance', '#/maintenance'],
       ['Global search', '#/search'],
+      ['Employees', '#/employees'],
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],
       ['Members', '#/members'],

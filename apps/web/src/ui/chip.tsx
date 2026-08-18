@@ -69,6 +69,17 @@ const CHIP_TONES = {
   // `pending` is already mapped above and stays there — a request
   // waiting for a kiosk is a queue, not a caution.
   claimed: 'warning',
+  // A maintenance request nobody has decided yet, and one part-way
+  // through its dispatches (0088). `docs/DESIGN.md` § Status badge
+  // semantics puts both in the warning family — the first is waiting on
+  // somebody, the second is work in hand, which is what `pending` and
+  // `partial` already read as. Their siblings `approved` and `closed`
+  // are above and below: `approved` is already mapped success, and
+  // `closed` is neutral for the reason `completed` is — a finished job
+  // is not currently good news.
+  'awaiting-approval': 'warning',
+  'partially-dispatched': 'warning',
+  closed: 'neutral',
 
   review: 'warning',
   prepared: 'warning',
@@ -95,6 +106,14 @@ const CHIP_TONES = {
   // neutral by accident — and an accident is exactly what somebody
   // "fixes" later.
   draft: 'neutral',
+
+  // A finalised payroll run (0090) is an issued document — numbered,
+  // immutable, the record of what was paid. `docs/DESIGN.md` § Status
+  // badge semantics gives a completed, correct, proceed-state record the
+  // success family, and the v0 mock tints its finalised run the same way;
+  // unmapped it rendered neutral, identical to a draft, which is the one
+  // reading it must not have.
+  finalized: 'success',
 
   // A tender that was not won, or was not pursued (0083). Not a system
   // failure, but the end of that pipeline either way.

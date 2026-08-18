@@ -57,6 +57,13 @@ export const MembershipSchema = Type.Object(
      * the same act as issuing a document it is owed for. */
     canManagePayments: Type.Boolean(),
     canSignDocuments: Type.Boolean(),
+    /** The payroll authority (migration 0089): may see the employee
+     * register and run payroll. Separate from canManagePayments because
+     * reading what every colleague earns is a different secret from
+     * approving a vendor payment — a vendor-payment manager must not see
+     * salaries, PAN, UAN or bank details by default. Defaults false; the
+     * owner of a new organisation holds it implicitly. */
+    canManagePayroll: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -91,6 +98,7 @@ export const AddMemberRequestSchema = Type.Object(
     canManageStatutoryReporting: Type.Optional(Type.Boolean()),
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
+    canManagePayroll: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -415,6 +423,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canManageStatutoryReporting: Type.Optional(Type.Boolean()),
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
+    canManagePayroll: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

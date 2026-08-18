@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   Contact,
   PaymentRequest,
+  CreatablePaymentRequestCategory,
+  CreatablePaymentRequestKind,
   PaymentRequestCategory,
   PaymentRequestKind,
   TdsPreviewResponse,
@@ -65,6 +67,9 @@ interface PaymentsProps {
 const KIND_LABELS: Record<PaymentRequestKind, string> = {
   advance: 'Advance',
   reimbursement: 'Reimbursement',
+  // Raised only by a finalised payroll run (migration 0090), so it is
+  // rendered on rows here and never offered in the composer below.
+  salary: 'Salary',
 };
 
 const STATUS_LABELS: Record<PaymentRequest['status'], string> = {
@@ -81,6 +86,24 @@ const CATEGORY_LABELS: Record<PaymentRequestCategory, string> = {
   labour: 'Labour',
   site_expenses: 'Site expenses',
   general: 'General',
+  payroll: 'Payroll',
+};
+
+/**
+ * The categories the composer offers, which is not the same list.
+ *
+ * `payroll` is reachable only through a finalised payroll run. Offering
+ * it here would let somebody file a salary with no payslip behind it —
+ * money out of the bank with nothing to reconcile against the provident
+ * fund and tax actually remitted — and the server refuses it anyway, so
+ * the option would be a control that cannot work.
+ */
+const CREATABLE_CATEGORY_LABELS: Record<CreatablePaymentRequestCategory, string> = {
+  travel: CATEGORY_LABELS.travel,
+  materials: CATEGORY_LABELS.materials,
+  labour: CATEGORY_LABELS.labour,
+  site_expenses: CATEGORY_LABELS.site_expenses,
+  general: CATEGORY_LABELS.general,
 };
 
 const REGISTER_TABS: readonly {
@@ -572,10 +595,10 @@ function NewRequestForm({
     () => contacts.filter((contact) => contact.isEmployee || contact.isVendor),
     [contacts],
   );
-  const [kind, setKind] = useState<PaymentRequestKind>('reimbursement');
+  const [kind, setKind] = useState<CreatablePaymentRequestKind>('reimbursement');
   const [beneficiary, setBeneficiary] = useState('');
   const [purpose, setPurpose] = useState('');
-  const [category, setCategory] = useState<PaymentRequestCategory>('travel');
+  const [category, setCategory] = useState<CreatablePaymentRequestCategory>('travel');
   const [amount, setAmount] = useState('');
   const [proof, setProof] = useState('');
 
@@ -600,7 +623,7 @@ function NewRequestForm({
           className="input"
           value={kind}
           onChange={(event) => {
-            setKind(event.target.value as PaymentRequestKind);
+            setKind(event.target.value as CreatablePaymentRequestKind);
           }}
         >
           <option value="reimbursement">Reimbursement</option>
@@ -649,10 +672,10 @@ function NewRequestForm({
           className="input"
           value={category}
           onChange={(event) => {
-            setCategory(event.target.value as PaymentRequestCategory);
+            setCategory(event.target.value as CreatablePaymentRequestCategory);
           }}
         >
-          {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+          {Object.entries(CREATABLE_CATEGORY_LABELS).map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>

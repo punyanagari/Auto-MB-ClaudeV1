@@ -14,6 +14,8 @@ export interface AppSidebarProps {
   readonly activeModule: ModuleKey;
   readonly pendingApprovals: number;
   readonly subItems: Partial<Record<ModuleKey, readonly NavSubItem[]>>;
+  /** Modules this member may not reach; the rail renders no door to them. */
+  readonly hiddenModules?: ReadonlySet<ModuleKey> | undefined;
   readonly collapsed: boolean;
   readonly canModify: boolean;
   readonly canSwitchOrganisation: boolean;
@@ -137,6 +139,7 @@ export function AppSidebar({
   activeModule,
   pendingApprovals,
   subItems,
+  hiddenModules,
   collapsed,
   canModify,
   canSwitchOrganisation,
@@ -168,6 +171,7 @@ export function AppSidebar({
           activeModule={activeModule}
           pendingApprovals={pendingApprovals}
           subItems={subItems}
+          hiddenModules={hiddenModules}
           onOpenModule={onOpenModule}
           collapsed={collapsed}
           scope="rail"

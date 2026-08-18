@@ -20,6 +20,7 @@ import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FormError } from '../ui/form.js';
 import { ProgressBar } from '../ui/progress.js';
 import { Stat } from '../ui/stat.js';
+import { TabRail } from '../ui/tab-rail.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell } from '../ui/table.js';
 
@@ -32,13 +33,9 @@ import { DataTable, numericCell } from '../ui/table.js';
  * cards and a progress bar, a four-column material grid, a two-card
  * serial panel, and a checkbox list over a dispatch action.
  *
- * Four things the mock cannot express, each built with its own
+ * Three things the mock cannot express, each built with its own
  * components and each recorded in `docs/UX.md` § 11:
  *
- *   * **The Materials tab has no Available or Shortage column.** Both
- *     read `stockItems.onHand`, which is the Inventory pack's ledger and
- *     does not exist yet. The requirement is real and is shown; the two
- *     columns arrive with the ledger rather than as columns of zeroes.
  *   * **Serials are captured PER UNIT.** The mock's component serials are
  *     a bag of strings per plan, so it can say a batch consumed twelve
  *     power supplies and not which board each went into — which is the
@@ -182,41 +179,19 @@ export function ProductionJobCard({
         </Card>
       )}
 
-      {/* The mock's boxed tab list. Four panels swapped in place, so it is
-          a `role="group"` of `aria-pressed` toggles rather than a
-          `role="tablist"` this build would then owe the roving-tabindex
-          pattern (`test/a11y-invariants`). */}
-      <div
-        className="inline-flex items-center gap-1 rounded-lg bg-muted p-1"
-        role="group"
-        aria-label="Job card sections"
-      >
-        {(
+      <TabRail
+        label="Job card sections"
+        tabs={
           [
             ['overview', 'Overview'],
             ['materials', 'Materials'],
             ['serials', 'Serials'],
             ['dispatch', 'Dispatch'],
           ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={tab === key}
-            className={cn(
-              'h-8 rounded-md px-3 text-sm font-medium transition-colors',
-              tab === key
-                ? 'bg-card text-foreground shadow-[0_1px_2px_0_rgb(15_23_42/0.05)]'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-            onClick={() => {
-              setTab(key);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+        }
+        active={tab}
+        onSelect={setTab}
+      />
 
       {actionError !== null && <FormError>{actionError}</FormError>}
 
@@ -437,13 +412,20 @@ function MaterialsTab({ card }: { readonly card: JobCardDetail }) {
     <>
       <DataTable>
         <caption className="sr-only">
-          Material required for this job card, by part
+          Material for this job card, by part: what it requires, what is on the shelf
+          for it, and what is still short
         </caption>
         <thead>
           <tr>
             <th scope="col">Material</th>
             <th scope="col" className={numericCell}>
               Required
+            </th>
+            <th scope="col" className={numericCell}>
+              Available
+            </th>
+            <th scope="col" className={numericCell}>
+              Shortage
             </th>
             <th scope="col">Unit</th>
             <th scope="col">Serials</th>
@@ -459,6 +441,12 @@ function MaterialsTab({ card }: { readonly card: JobCardDetail }) {
                 </p>
               </th>
               <td className={numericCell}>{material.required}</td>
+              <td className={numericCell}>{material.available}</td>
+              {/* Untinted, exactly as the stock register leaves its own
+                  negative Available untinted: the figure has to be
+                  legible on its own in both themes, and the word that
+                  says a card is short is the badge on the register. */}
+              <td className={numericCell}>{material.shortage}</td>
               <td>{material.unit}</td>
               <td>
                 {material.serialControlled ? (
@@ -471,12 +459,12 @@ function MaterialsTab({ card }: { readonly card: JobCardDetail }) {
           ))}
         </tbody>
       </DataTable>
-      {/* The mock's Available and Shortage columns are absent, and saying
-          so beats leaving two columns of zeroes an operator would read as
-          "nothing is short". */}
       <p className="mt-3 text-xs text-muted-foreground">
-        Stock on hand is not held yet, so this is the requirement rather than a
-        shortage. What is available and what is short arrive with the stock ledger.
+        Required is the whole card's bill. Available is what the shelf holds for this
+        card, after every other open job card's claim on the same part. Shortage is what
+        is left to buy for the units still to build: material already issued to this
+        card and material already on order are both counted, so it is not Required less
+        Available.
       </p>
     </>
   );

@@ -61,6 +61,19 @@ export const TIMELINE_ENTITY_TYPES = [
   // its cancellation and its outcome all land here; the kiosk credential
   // that fulfilled it does not, being organisation-level.
   'signing_requests',
+  // The site material request (0088). Raising one, approving it,
+  // dispatching against it and closing it are acts on the Work: a
+  // platform on this contract failed and the store answered it. A trail
+  // that omitted them would leave the Work's own spare-part history
+  // nowhere.
+  //
+  // ONE entity type for the whole module, deliberately. Every act —
+  // approval, each dispatch challan, each defective receipt, the
+  // closure — is audited against the REQUEST, because the request is
+  // what a reader opens and the challan is read on it. Nothing here
+  // writes `maintenance_dispatches` or `maintenance_returns` as an
+  // entity type, so neither needs a line in the census either way.
+  'maintenance_requests',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

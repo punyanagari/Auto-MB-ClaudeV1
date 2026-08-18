@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
-import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  ensureClusterRoles,
+  removeOrganisationResidue,
+  runMigrations,
+} from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -102,19 +107,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (admin) {
-    if (organisationId) {
-      for (const table of [
-        'audit_events',
-        'gst_rates',
-        'organisation_memberships',
-        'organisations',
-      ]) {
-        await admin.unsafe(
-          `delete from ${table} where ${table === 'organisations' ? 'id' : 'organisation_id'} = $1`,
-          [organisationId],
-        );
-      }
-    }
+    // The catalog-driven cleanup rather than a hand list. The list this
+    // replaced named four tables and went stale the moment migration
+    // 0089 seeded a fifth at organisation creation — which is the exact
+    // failure `removeOrganisationResidue` was written to end, and its own
+    // doc comment says so.
+    await removeOrganisationResidue(admin, [organisationId]);
     await admin`
       delete from identity_audit_events
       where user_id in (
@@ -263,6 +261,11 @@ describe('identity and organisation flow', () => {
       'gst_rate.defaults_seeded',
       'membership.added',
       'organisation.created',
+      // The payroll schedules (0089), seeded in the same transaction and
+      // audited beside the GST rates for the same reason: an
+      // organisation that arrived without them would refuse its first
+      // payroll run by name.
+      'payroll_schedule.defaults_seeded',
     ]);
   });
 

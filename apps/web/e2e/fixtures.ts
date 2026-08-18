@@ -32,6 +32,10 @@ export const ME = {
       // workspace renders its write controls under the axe scan — a
       // read-only register would not exercise the buttons.
       canManagePayments: true,
+      // The payroll authority (0089), distinct from payments: without it
+      // the rail carries no Employees door and both payroll screens
+      // refuse. The owner of a new organisation holds it implicitly.
+      canManagePayroll: true,
       status: 'active',
     },
   ],
@@ -543,14 +547,20 @@ const CORRESPONDENCE_REGISTER = {
   awaitingExtensionResponses: 2,
 };
 
-/* OEM production (migration 0084).
+/* OEM production (migration 0084), with the material position the stock
+ * ledger of 0087 makes real.
  *
  * The job card carries every tint this module puts on a word, because
  * the axe scan is the only place they are checked together in both
- * themes: the `in-production` chip, the neutral Material badge, the
- * progress bar, the success "Dispatch ready" badge, and — on the Serials
- * tab — the destructive/success component count, which is the one figure
- * here that is colour-coded at all.
+ * themes: the `in-production` chip, the WARNING "1 part short" Material
+ * badge, the progress bar, the success "Dispatch ready" badge, and — on
+ * the Serials tab — the destructive/success component count.
+ *
+ * `materialShortParts` is 1 on purpose. A fixture with nothing short
+ * would render the neutral "Ready" badge and the warning tint — the one
+ * this pack adds — would never be scanned in either theme. The two
+ * material rows below carry the two readings the tab has to hold: one
+ * part short, and one covered by the shelf.
  */
 const PRODUCTION_JOB_CARD_ID = '9f2c1b7a-4e58-4d31-9b2a-7c1e5d8a3046';
 const PRODUCTION_ITEM_ID = '2a7e9c14-6b83-4f52-9d07-1e4b8a6c2f35';
@@ -572,6 +582,7 @@ const PRODUCTION_JOB_CARD = {
   manufactured: 5,
   dispatched: 2,
   materialLines: 2,
+  materialShortParts: 1,
   status: 'in_production',
   dueDate: '2026-11-30',
   completedOn: null,
@@ -583,6 +594,8 @@ const PRODUCTION_JOB_CARD = {
       name: '24 V 10 A SMPS',
       unit: 'Nos',
       required: '12.000',
+      available: '4.000',
+      shortage: '8.000',
       serialControlled: true,
     },
     {
@@ -591,6 +604,8 @@ const PRODUCTION_JOB_CARD = {
       name: 'Powder-coated cabinet',
       unit: 'Nos',
       required: '12.000',
+      available: '12.000',
+      shortage: '0.000',
       serialControlled: false,
     },
   ],
@@ -657,6 +672,7 @@ const PRODUCTION_JOB_CARD_LIST = {
       manufactured: PRODUCTION_JOB_CARD.manufactured,
       dispatched: PRODUCTION_JOB_CARD.dispatched,
       materialLines: PRODUCTION_JOB_CARD.materialLines,
+      materialShortParts: PRODUCTION_JOB_CARD.materialShortParts,
       status: PRODUCTION_JOB_CARD.status,
       dueDate: PRODUCTION_JOB_CARD.dueDate,
       completedOn: null,
@@ -829,6 +845,222 @@ const STOCK_REGISTER = {
   summary: { partsTracked: 3, partsBelowReorderLevel: 1, partsShort: 1 },
 };
 
+/* Maintenance (migration 0088). Three requests, one in each of the
+   stages that carries a tint — awaiting approval (warning), dispatching
+   (warning) and closed (neutral) — plus an approved one, so the axe scan
+   sees every chip this module can render at once. The detail fixture is
+   the dispatching request, with one line part-dispatched and owing a
+   defective unit back and one line written off, which is every state the
+   Materials table draws. */
+const MAINTENANCE_REQUEST_ID = 'b41c7d29-5e83-4f16-9a27-3d5c8b1e6f40';
+const MAINTENANCE_LINE_ID = 'c52d8e3a-6f94-4027-8b38-4e6d9c2f7a51';
+const MAINTENANCE_LINE_TWO_ID = 'd63e9f4b-7a05-4138-9c49-5f7e0d3a8b62';
+
+const MAINTENANCE_LIST = {
+  requests: [
+    {
+      id: MAINTENANCE_REQUEST_ID,
+      requestNumber: 'MR/26-27/00142',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Churchgate',
+      requesterName: 'Amit Patil',
+      priority: 'critical',
+      requiredBy: '2026-08-20',
+      faultSummary: 'Replace failed platform display power supplies',
+      status: 'partially_dispatched',
+      createdAt: '2026-08-15T08:30:00.000Z',
+    },
+    {
+      id: 'e74f0a5c-8b16-4249-8d5a-6a8f1e4b9c73',
+      requestNumber: 'MR/26-27/00141',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Marine Lines',
+      requesterName: 'Sunita Rao',
+      priority: 'urgent',
+      requiredBy: null,
+      faultSummary: 'Announcement amplifier tripping on load',
+      status: 'awaiting_approval',
+      createdAt: '2026-08-14T06:10:00.000Z',
+    },
+    {
+      id: 'f85a1b6d-9c27-435a-9e6b-7b9a2f5c0d84',
+      requestNumber: 'MR/26-27/00140',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Grant Road',
+      requesterName: 'Imran Shaikh',
+      priority: 'routine',
+      requiredBy: null,
+      faultSummary: 'Spare Ethernet controller for display cabinet',
+      status: 'approved',
+      createdAt: '2026-08-12T09:45:00.000Z',
+    },
+    {
+      id: '096b2c7e-0d38-446b-8f7c-8c0b3a6d1e95',
+      requestNumber: 'MR/26-27/00139',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Charni Road',
+      requesterName: 'Amit Patil',
+      priority: 'routine',
+      requiredBy: null,
+      faultSummary: 'Replaced cabinet lock set',
+      status: 'closed',
+      createdAt: '2026-08-05T11:20:00.000Z',
+    },
+  ],
+  nextCursor: null,
+  counts: {
+    awaitingApproval: 1,
+    approved: 1,
+    partiallyDispatched: 1,
+    closed: 1,
+  },
+};
+
+export const MAINTENANCE_AWAITING_APPROVAL = {
+  request: {
+    id: 'e74f0a5c-8b16-4249-8d5a-6a8f1e4b9c73',
+    requestNumber: 'MR/26-27/00141',
+    workId: WORK_ID,
+    workCode: 'PL-281',
+    station: 'Marine Lines',
+    requesterName: 'Sunita Rao',
+    requesterPhone: null,
+    priority: 'urgent',
+    requiredBy: null,
+    faultSummary: 'Announcement amplifier tripping on load',
+    operationalImpact: null,
+    deliveryInstructions: null,
+    status: 'awaiting_approval',
+    approvalComment: null,
+    createdAt: '2026-08-14T06:10:00.000Z',
+  },
+  lines: [
+    {
+      id: 'a1b2c3d4-5e6f-4708-8a19-2b3c4d5e6f70',
+      position: 1,
+      itemId: '3b7e5a91-2c48-4d6f-9a03-8e1b6c2f7d54',
+      itemCode: 'EL-CTRL-ETH',
+      description: 'Ethernet controller card',
+      unit: 'Nos',
+      purpose: null,
+      quantity: '1.000',
+      outstandingQuantity: '1.000',
+      dispatchedQuantity: '0.000',
+      cancelledQuantity: '0.000',
+      cancellationReason: null,
+      expectedReturnQuantity: '1.000',
+      receivedReturnQuantity: '0.000',
+      returnDueQuantity: '0.000',
+      onHand: '9.000',
+      assetSerials: [],
+      resolved: false,
+    },
+  ],
+  dispatches: [],
+  returns: [],
+  canClose: false,
+};
+
+const MAINTENANCE_DETAIL = {
+  request: {
+    id: MAINTENANCE_REQUEST_ID,
+    requestNumber: 'MR/26-27/00142',
+    workId: WORK_ID,
+    workCode: 'PL-281',
+    station: 'Churchgate',
+    requesterName: 'Amit Patil',
+    requesterPhone: '+91 98765 41021',
+    priority: 'critical',
+    requiredBy: '2026-08-20',
+    faultSummary: 'Replace failed platform display power supplies',
+    operationalImpact: 'Two display boards unavailable',
+    deliveryInstructions: 'Hand over to site supervisor',
+    status: 'partially_dispatched',
+    approvalComment: 'Approved for issue against available maintenance stock',
+    createdAt: '2026-08-15T08:30:00.000Z',
+  },
+  lines: [
+    {
+      id: MAINTENANCE_LINE_ID,
+      position: 1,
+      itemId: '9f2c1d84-6b3a-4e57-8c10-2a5d7e9f4b31',
+      itemCode: 'EL-SMPS-2410',
+      description: '24 V 10 A SMPS',
+      unit: 'Nos',
+      purpose: 'Replacement',
+      quantity: '4.000',
+      outstandingQuantity: '2.000',
+      dispatchedQuantity: '2.000',
+      cancelledQuantity: '0.000',
+      cancellationReason: null,
+      expectedReturnQuantity: '4.000',
+      receivedReturnQuantity: '1.000',
+      returnDueQuantity: '3.000',
+      onHand: '30.000',
+      assetSerials: ['SMPS-2019-4471'],
+      resolved: false,
+    },
+    {
+      id: MAINTENANCE_LINE_TWO_ID,
+      position: 2,
+      itemId: null,
+      itemCode: null,
+      description: 'Weatherproof gland kit',
+      unit: 'Set',
+      purpose: null,
+      quantity: '2.000',
+      outstandingQuantity: '0.000',
+      dispatchedQuantity: '0.000',
+      cancelledQuantity: '2.000',
+      cancellationReason: 'Site sourced locally',
+      expectedReturnQuantity: '0.000',
+      receivedReturnQuantity: '0.000',
+      returnDueQuantity: '0.000',
+      onHand: null,
+      assetSerials: [],
+      resolved: true,
+    },
+  ],
+  dispatches: [
+    {
+      id: '1a7c3d8e-2b49-4c5a-9d6b-3e8f0a1b2c4d',
+      challanNumber: 'PL-281/MNT/001',
+      dispatchDate: '2026-08-16',
+      stockLocation: 'Central store',
+      receiverName: 'Site supervisor',
+      transporter: 'MH-01-AB-4412',
+      notes: null,
+      lines: [
+        {
+          lineId: MAINTENANCE_LINE_ID,
+          description: '24 V 10 A SMPS',
+          unit: 'Nos',
+          quantity: '2.000',
+        },
+      ],
+    },
+  ],
+  returns: [
+    {
+      id: '2b8d4e9f-3c50-4d6b-8e7c-4f9a1b2c3d5e',
+      lineId: MAINTENANCE_LINE_ID,
+      lineDescription: '24 V 10 A SMPS',
+      quantity: '1.000',
+      receivedOn: '2026-08-17',
+      serials: ['SMPS-2019-4471'],
+      conditionNote: 'Burnt output stage',
+      repairDisposition: 'Bench repair',
+      receivedBy: 'Store clerk',
+      notes: null,
+    },
+  ],
+  canClose: false,
+};
+
 const STOCK_MOVEMENTS = {
   movements: [
     {
@@ -934,6 +1166,184 @@ const STOCK_SHORTAGES = {
       ],
     },
   ],
+};
+
+/* People and payroll (migrations 0089, 0090). Populated on purpose: an
+   empty register scans the EmptyState and proves nothing about the row,
+   the status chip or the numeric columns, which is where a contrast or
+   target-size failure would actually be.
+
+   The three employees are chosen to put every tinted word and every
+   awkward figure on the screen at once — one employed and one who has
+   left, one covered by insurance and one above the ceiling, and a
+   profession tax of zero beside one of ₹200. */
+const EMPLOYEE_REGISTER = {
+  employees: [
+    {
+      id: 'ee000001-1111-4111-8111-aaaaaaaaaaaa',
+      employeeCode: 'EMP-001',
+      name: 'Anita Deshmukh',
+      designation: 'Project coordinator',
+      department: 'Projects',
+      dateOfJoining: '2022-04-11',
+      dateOfExit: null,
+      employed: true,
+      monthlyGross: '68200.00',
+      pfCovered: true,
+      esiApplicable: true,
+    },
+    {
+      id: 'ee000002-1111-4111-8111-aaaaaaaaaaaa',
+      employeeCode: 'EMP-005',
+      name: 'Kavita More',
+      designation: 'Office assistant',
+      department: 'Administration',
+      dateOfJoining: '2024-01-08',
+      dateOfExit: null,
+      employed: true,
+      monthlyGross: '19800.00',
+      pfCovered: true,
+      esiApplicable: true,
+    },
+    {
+      id: 'ee000003-1111-4111-8111-aaaaaaaaaaaa',
+      employeeCode: 'EMP-011',
+      name: 'Suresh Patil',
+      designation: 'Senior technician',
+      department: 'Installation',
+      dateOfJoining: '2021-06-01',
+      dateOfExit: '2026-05-31',
+      employed: false,
+      monthlyGross: '32600.00',
+      pfCovered: false,
+      esiApplicable: false,
+    },
+  ],
+  nextCursor: null,
+  currentCount: 2,
+  currentMonthlyGross: '88000.00',
+};
+
+const PAYROLL_LINES = [
+  {
+    id: 'll000001-1111-4111-8111-aaaaaaaaaaaa',
+    employeeId: 'ee000001-1111-4111-8111-aaaaaaaaaaaa',
+    employeeCode: 'EMP-001',
+    employeeName: 'Anita Deshmukh',
+    calendarDays: 31,
+    lopDays: '0.00',
+    paidDays: '31.00',
+    basic: '34100.00',
+    dearnessAllowance: '0.00',
+    houseRentAllowance: '17050.00',
+    otherAllowances: '17050.00',
+    grossEarnings: '68200.00',
+    pfWages: '15000.00',
+    epfEmployee: '1800.00',
+    epfEmployer: '550.00',
+    epsEmployer: '1250.00',
+    esiCovered: false,
+    esiEmployee: '0.00',
+    esiEmployer: '0.00',
+    professionalTax: '200.00',
+    taxRegime: 'new' as const,
+    projectedAnnualIncome: '818400.00',
+    projectedAnnualTax: '18408.00',
+    tds: '1534.00',
+    netPay: '64666.00',
+    paymentRequestId: 'pr000001-1111-4111-8111-aaaaaaaaaaaa',
+    paymentRequestNumber: 'PR/2026-27/007',
+    paymentRequestStatus: 'submitted',
+  },
+  {
+    id: 'll000002-1111-4111-8111-aaaaaaaaaaaa',
+    employeeId: 'ee000002-1111-4111-8111-aaaaaaaaaaaa',
+    employeeCode: 'EMP-005',
+    employeeName: 'Kavita More',
+    calendarDays: 31,
+    /* A loss of pay, so the warning-toned attendance line is on screen
+       rather than only its neutral sibling. */
+    lopDays: '2.00',
+    paidDays: '29.00',
+    basic: '9261.29',
+    dearnessAllowance: '0.00',
+    houseRentAllowance: '4630.65',
+    otherAllowances: '4630.65',
+    grossEarnings: '18522.59',
+    pfWages: '9261.29',
+    epfEmployee: '1111.00',
+    epfEmployer: '340.00',
+    epsEmployer: '771.00',
+    esiCovered: true,
+    esiEmployee: '139.00',
+    esiEmployer: '603.00',
+    professionalTax: '0.00',
+    taxRegime: 'new' as const,
+    projectedAnnualIncome: '222271.08',
+    projectedAnnualTax: '0.00',
+    tds: '0.00',
+    netPay: '17272.59',
+    paymentRequestId: 'pr000002-1111-4111-8111-aaaaaaaaaaaa',
+    paymentRequestNumber: 'PR/2026-27/008',
+    paymentRequestStatus: 'submitted',
+  },
+];
+
+const PAYROLL_RUN = {
+  run: {
+    id: 'rr000001-1111-4111-8111-aaaaaaaaaaaa',
+    runNumber: 'PAY/2026-27/001',
+    periodMonth: '2026-07-01',
+    status: 'finalized' as const,
+    calculatedAt: '2026-08-01T06:30:00.000Z',
+    finalizedAt: '2026-08-01T07:00:00.000Z',
+    cancelledAt: null,
+    cancelReason: null,
+    employeeCount: 2,
+    totalGross: '86722.59',
+    totalNet: '81938.59',
+    lines: PAYROLL_LINES,
+    totalEpfEmployee: '2911.00',
+    totalEpfEmployer: '890.00',
+    totalEpsEmployer: '2021.00',
+    totalEsiEmployee: '139.00',
+    totalEsiEmployer: '603.00',
+    totalProfessionalTax: '200.00',
+    totalTds: '1534.00',
+    statutoryBasis: [
+      {
+        parameter: 'epf_employee_percent',
+        value: '12.0000',
+        effectiveFrom: '2014-09-01',
+        notification: "Paragraph 29, Employees' Provident Funds Scheme, 1952",
+      },
+      {
+        parameter: 'esi_employee_percent',
+        value: '0.7500',
+        effectiveFrom: '2019-07-01',
+        notification: 'G.S.R. 423(E) dated 13 June 2019, effective 1 July 2019',
+      },
+    ],
+  },
+};
+
+const PAYROLL_RUN_LIST = {
+  runs: [
+    {
+      id: PAYROLL_RUN.run.id,
+      runNumber: PAYROLL_RUN.run.runNumber,
+      periodMonth: PAYROLL_RUN.run.periodMonth,
+      status: PAYROLL_RUN.run.status,
+      calculatedAt: PAYROLL_RUN.run.calculatedAt,
+      finalizedAt: PAYROLL_RUN.run.finalizedAt,
+      cancelledAt: null,
+      cancelReason: null,
+      employeeCount: PAYROLL_RUN.run.employeeCount,
+      totalGross: PAYROLL_RUN.run.totalGross,
+      totalNet: PAYROLL_RUN.run.totalNet,
+    },
+  ],
+  nextCursor: null,
 };
 
 const TENDER_LIST = {
@@ -1110,6 +1520,29 @@ export async function mockWorkspace(
   // bare-register pattern would otherwise swallow the one with an id.
   await page.route('**/api/tenders/*', (route) => route.fulfill(json(TENDER_DETAIL)));
   await page.route('**/api/tenders', (route) => route.fulfill(json(TENDER_LIST)));
+  // People and payroll (0089, 0090). The run detail is registered BEFORE
+  // the bare register, for the reason the production routes above give.
+  await page.route('**/api/payroll-runs/*', (route) =>
+    route.fulfill(json(PAYROLL_RUN)),
+  );
+  await page.route('**/api/payroll-runs*', (route) =>
+    route.fulfill(json(PAYROLL_RUN_LIST)),
+  );
+  // Honours the `status` query the register sends: the default view
+  // (`current`) hides the one employee who has left, and ticking "Include
+  // people who have left" (`all`) shows them — so the "Left" chip and the
+  // toggle actually exercise the path rather than always rendering.
+  await page.route('**/api/employees*', async (route) => {
+    const status = new URL(route.request().url()).searchParams.get('status');
+    const current = EMPLOYEE_REGISTER.employees.filter((employee) => employee.employed);
+    const employees = status === 'all' ? EMPLOYEE_REGISTER.employees : current;
+    await route.fulfill(
+      json({
+        ...EMPLOYEE_REGISTER,
+        employees,
+      }),
+    );
+  });
   // OEM production (migration 0084). The detail routes are registered
   // BEFORE the bare registers, because Playwright matches the last
   // registered handler and a bare pattern would otherwise swallow the
@@ -1145,6 +1578,16 @@ export async function mockWorkspace(
   );
   await page.route('**/api/stock/shortages*', (route) =>
     route.fulfill(json(STOCK_SHORTAGES)),
+  );
+  /* Maintenance (0088). The detail route is registered BEFORE the bare
+     register for the reason the production handlers above give:
+     Playwright matches the last registered handler, so a bare pattern
+     would swallow the one carrying an id. */
+  await page.route('**/api/maintenance/*', (route) =>
+    route.fulfill(json(MAINTENANCE_DETAIL)),
+  );
+  await page.route('**/api/maintenance*', (route) =>
+    route.fulfill(json(MAINTENANCE_LIST)),
   );
   await page.route('**/api/masters/contacts*', (route) =>
     route.fulfill(json({ contacts: [] })),
