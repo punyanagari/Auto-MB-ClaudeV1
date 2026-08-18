@@ -1336,12 +1336,26 @@ the stock ledger, and all three are derived on read.
 
 Available is the card's share of the shelf: what is on hand, less every
 other open job card's outstanding claim on the same part, with the card's
-own claim added back so it is never told it cannot have the material it
+own claim left in so it is never told it cannot have the material it
 itself reserved. Two cards therefore cannot each be promised the same
-reel of cable. Shortage takes off what is already on an open purchase
-order as well — the same netting the shortage screen and the order it
-drafts use — so a part covered by material in transit is not bought
-twice, and `Required − Available` is deliberately not the shortage.
+reel of cable.
+
+Shortage is measured against the card's OUTSTANDING requirement, not its
+gross bill: the bill times the units not yet serialised, less the
+material already issued to the card and not returned. That distinction is
+the difference between a true figure and a false alarm — material issued
+to the bench has left the shelf, so a gross requirement measured against
+the shelf reports a card short of the parts the operator is holding. From
+the outstanding figure the shelf and the outstanding balance of every
+open purchase order come off, both after the other cards' claim and both
+through the netting the shortage screen and the order it drafts use, so a
+part covered by material in transit is not bought twice.
+
+`Required − Available` is therefore deliberately not the shortage. And
+two cards competing for one part with a single order covering one of them
+both read short: neither may assume the order is theirs, and the
+organisation-wide shortage screen remains the authority on how much to
+buy.
 
 The job card's Materials tab shows the three side by side. The production
 register shows one figure per card: how many distinct PARTS it is short

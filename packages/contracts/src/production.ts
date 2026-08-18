@@ -200,18 +200,30 @@ export type JobCardStatus = Static<typeof JobCardStatusSchema>;
  *
  * `available` is THIS CARD'S share of the shelf — what is on hand, less
  * every OTHER open job card's outstanding claim on the same part. The
- * card's own claim is added back, because a card must not be told it
- * cannot have what it itself reserved, and the other cards are taken off
- * because two cards each subtracting nothing would each be promised the
- * same reel of cable.
+ * card's own claim is not taken off, because a card must not be told it
+ * cannot have what it itself reserved, and the other cards are, because
+ * two cards each subtracting nothing would each be promised the same reel
+ * of cable.
  *
- * `shortage` then takes off what is already coming: the requirement, less
- * that share of the shelf, less the outstanding balance of every open
- * purchase order for the part. So a part with a shortage covered by an
- * order in transit reads zero, which is the honest answer to "what still
- * has to be bought" — and it is why `required - available` is not always
- * `shortage`. A card that is completed or cancelled needs nothing and its
- * shortage is zero whatever the shelf says. */
+ * `shortage` is what still has to be BOUGHT, and it is measured on a
+ * different basis on purpose: not `required`, but the card's outstanding
+ * requirement — the bill times the units not yet serialised, less what
+ * has already been issued to the card and not returned. Material issued
+ * to the bench has left the shelf, so measuring a gross requirement
+ * against the shelf would report a card short of the parts lying in front
+ * of the operator. From that it takes off the shelf and the outstanding
+ * balance of every open purchase order for the part, both after the other
+ * cards' claim.
+ *
+ * So `required - available` is deliberately not `shortage`: different
+ * bases, and one term the pair does not carry. A card that is completed,
+ * cancelled or fully serialised is short of nothing whatever the shelf
+ * says, because it needs nothing more.
+ *
+ * Two cards competing for one part with a single purchase order covering
+ * one of them BOTH read short. Neither may assume the order is theirs,
+ * and the organisation-wide shortage screen stays the authority on how
+ * much to buy. */
 export const MaterialRequirementSchema = Type.Object(
   {
     itemId: UuidSchema,
@@ -265,14 +277,17 @@ export const JobCardSummarySchema = Type.Object(
     manufactured: Type.Integer({ minimum: 0 }),
     /** Units that have left production on a despatch. Counted. */
     dispatched: Type.Integer({ minimum: 0 }),
-    /** How many distinct parts the bill of material asks for. Zero means
-     * the product has no bill at all, which the register says in those
-     * words rather than reporting nothing short. */
+    /** How many lines the product's bill of material has at its TOP
+     * level — not the exploded part count, which is what the Materials
+     * tab lists. It is asked one question only: zero means the product
+     * has no bill at all, which the register says in those words rather
+     * than reporting nothing short. */
     materialLines: Type.Integer({ minimum: 0 }),
-    /** How many distinct parts this card is short of — the register's
-     * Material badge, and the same arithmetic as
-     * `MaterialRequirementSchema.shortage` on the card's own Materials
-     * tab.
+    /** How many EXPLODED parts this card is short of: one per row of the
+     * Materials tab whose `shortage` is above zero, so the register's
+     * Material badge and the tab cannot answer differently. Unrelated to
+     * `materialLines`, which counts top-level bill lines — a card can be
+     * short of a part nested three sub-assemblies down.
      *
      * A COUNT OF PARTS, not the mock's sum of quantities. The mock badges
      * "2277 units short" by adding cabinets in Nos to cable in Mtr to

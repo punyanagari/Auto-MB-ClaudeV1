@@ -481,9 +481,11 @@ function MaterialsTab({ card }: { readonly card: JobCardDetail }) {
         </tbody>
       </DataTable>
       <p className="mt-3 text-xs text-muted-foreground">
-        Available is what the shelf holds for this card, after every other open job
-        card's claim on the same part. Shortage takes off what is already on order as
-        well, so a part covered by a purchase order in transit reads nothing to buy.
+        Required is the whole card's bill. Available is what the shelf holds for this
+        card, after every other open job card's claim on the same part. Shortage is what
+        is left to buy for the units still to build: material already issued to this
+        card and material already on order are both counted, so it is not Required less
+        Available.
       </p>
     </>
   );

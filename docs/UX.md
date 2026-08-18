@@ -318,15 +318,31 @@ visual language:
 
 The Materials tab gains Available and Shortage beside Required, untinted
 in the numeric columns the way the stock register leaves its own negative
-Available untinted. **Available** is this card's share of the shelf —
-what is on hand, less every OTHER open job card's outstanding claim on
-the same part, so two cards cannot each be promised the same reel of
-cable, and the card's own claim is added back so it is never told it
-cannot have what it itself reserved. **Shortage** takes off what is
-already on order as well, through the same fragment the shortage screen
-reads, so a part covered by a purchase order in transit reads nothing to
-buy. That is why `Required − Available` is not always the shortage, and
-the caption under the table says so.
+Available untinted.
+
+**Required** is the card's gross bill. **Available** is this card's share
+of the shelf — what is on hand, less every OTHER open job card's
+outstanding claim on the same part, so two cards cannot each be promised
+the same reel of cable, while the card's own claim is left in so it is
+never told it cannot have what it itself reserved.
+
+**Shortage** is what still has to be bought, and it is measured on a
+different basis on purpose: not the gross bill, but the card's
+_outstanding_ requirement — the bill times the units not yet serialised,
+less what has already been issued to the card. Material issued to the
+bench has left the shelf, so a gross requirement measured against that
+shelf would report a card short of the parts lying in front of the
+operator. From that, the shelf and the outstanding balance of every open
+purchase order come off, both after the other cards' claim, through the
+same fragment the shortage screen reads.
+
+So `Required − Available` is deliberately not the shortage — two bases
+and one term the pair does not carry — and the caption under the table
+says so. Two cards competing for one part with a single order covering
+one of them BOTH read short: neither may assume the order is theirs, and
+the organisation-wide shortage screen stays the authority on how much to
+buy. Allocating one order across competing cards is the planning pass
+migration 0087 § 7 refuses to hide inside a list.
 
 One more the review of this pack settled, recorded so the reasoning is
 not re-litigated:

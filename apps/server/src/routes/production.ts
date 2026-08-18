@@ -71,11 +71,12 @@ import {
  * works -> work_items -> production_job_cards -> production_serials. No
  * path here takes a Work lock after a job-card lock.
  *
- * ponytail: no material SHORTAGE is computed. Shortage is requirement
- * minus on-hand, on-hand is the Inventory pack's stock ledger, and it
- * does not exist yet. The requirement — the honest half — is served;
- * subtract the other half when the ledger lands rather than shipping a
- * column of zeroes that reads as "nothing is short".
+ * MATERIAL SHORTAGE is computed here now. It was deferred while the
+ * Inventory pack's stock ledger did not exist — the requirement was the
+ * honest half and a column of zeroes would have read as "nothing is
+ * short" — and migration 0087 settled that. `MATERIAL_POSITION_SQL`
+ * below is the arithmetic, and `docs/UX.md` § 11 records the divergences
+ * from the mock that survive it.
  */
 
 /**
@@ -508,29 +509,54 @@ async function readBom(
  * job card under that card's row lock. A ten-level shared lattice
  * measured 1022 rows against the function's 18, for the same arithmetic.
  *
- * ## The shelf, and whose it is
+ * ## Two bases, and the one the shortage uses
  *
- * `available` is this card's SHARE of the shelf: what is on hand, less
- * every other open job card's outstanding claim on the same part. That
- * claim is `app_private.stock_outstanding_requirement` (0087 § 7), which
- * is called ONCE per statement and grouped, never once per card — and the
- * card's own contribution is added straight back, because a card must not
- * be told it cannot have the material it itself reserved. Netted the
- * naive way, two cards wanting one reel of cable would each be promised
- * it.
+ * `required` is GROSS — the whole card's bill, which is what the
+ * Materials tab is a statement of. The SHORTAGE is computed against
+ * `app_private.stock_outstanding_requirement` instead: the same explosion
+ * times the units not yet serialised, less the material already issued to
+ * this card and not returned (0087 § 7).
  *
- * ## What is already coming
+ * Those two must never appear in one subtraction. Issuing material to the
+ * bench takes it off the shelf, so a card whose parts are all issued has
+ * on-hand back at zero — and a gross requirement measured against that
+ * shelf reads short of material that is sitting in front of the operator.
+ * That is the whole point of the netting 0087 § 7 argues for, and it is
+ * why the arithmetic below reads `mine.required` and never
+ * `req.quantity_per_unit * j.quantity`.
  *
- * `shortage` takes the outstanding balance of every open purchase order
- * off as well, through the shared `onOrderQuantitySql` — the same
- * fragment the shortage list and the order it drafts read, so a job card
- * can never disagree with the procurement screen about what is short.
- * That is also why `required - available` is not the shortage: material
- * in transit closes a shortage without being on the shelf yet.
+ * A card that is completed, cancelled or fully serialised has no row in
+ * that function at all, so its shortage falls out as zero without a
+ * status test.
  *
- * A card that is completed or cancelled asks for nothing more, so its
- * shortage is zero whatever the shelf holds. Its `required` still shows
- * what the card took, which is what the Materials tab is for.
+ * ## Whose shelf, and whose lorry
+ *
+ * On-hand and on-order are facts about the PART, and 0087 § 7 nets them
+ * ONCE against the summed requirement rather than once per card —
+ * otherwise two cards each subtract the same shelf and the same lorry.
+ * `other_claim` is what every OTHER open card still wants, so both
+ * subtractions here are against a supply this card can actually reach:
+ *
+ *   * `available` is the shelf, less the other cards' claim — what this
+ *     card could pick right now;
+ *   * the shortage additionally counts what is on order, through the
+ *     shared `onOrderQuantitySql`, which is the same fragment the
+ *     shortage list and the order it drafts read.
+ *
+ * Two cards competing for one part with a single order covering one of
+ * them therefore BOTH read short, and deliberately: neither may assume
+ * the lorry is theirs, and the organisation-wide shortage screen — which
+ * is where material is actually bought — remains the authority on how
+ * much to order. Allocating one order across competing cards needs the
+ * planning pass 0087 § 7 explicitly refuses to hide inside a list.
+ *
+ * That is also why `required - available` is not the shortage: two
+ * different bases and one extra term.
+ *
+ * `$3` asks for OPEN cards only. The register wants a badge, and a
+ * completed card's badge is zero whatever the shelf holds, so it is not
+ * worth an explosion; the Materials tab passes false because a completed
+ * card still renders its bill.
  *
  * All the arithmetic is `numeric`; nothing here touches floating point
  * (AGENTS.md rule 5).
@@ -548,13 +574,8 @@ const MATERIAL_POSITION_SQL = `
          i.serial_controlled,
          (req.quantity_per_unit * j.quantity)::quantity_amount as required,
          shelf.available,
-         case when j.status in ('planned', 'in_production') then
-           greatest(
-             req.quantity_per_unit * j.quantity - shelf.available - shelf.on_order,
-             0
-           )::quantity_amount
-         else 0::quantity_amount
-         end as shortage
+         greatest(coalesce(mine.required, 0) - shelf.reachable, 0)::quantity_amount
+           as shortage
   from production_job_cards j
   cross join lateral app_private.production_bom_requirements($1::uuid, j.item_id)
     as req(item_id, quantity_per_unit)
@@ -564,14 +585,16 @@ const MATERIAL_POSITION_SQL = `
   left join claim mine
     on mine.job_card_id = j.id and mine.component_item_id = req.item_id
   cross join lateral (
-    select greatest(
-             app_private.stock_on_hand($1::uuid, req.item_id)
-               - (coalesce(committed.total, 0) - coalesce(mine.required, 0)),
-             0
-           )::quantity_amount as available,
-           ${onOrderQuantitySql('req.item_id')}::quantity_amount as on_order
+    select app_private.stock_on_hand($1::uuid, req.item_id) as on_hand,
+           ${onOrderQuantitySql('req.item_id')} as on_order,
+           coalesce(committed.total, 0) - coalesce(mine.required, 0) as other_claim
+  ) part
+  cross join lateral (
+    select greatest(part.on_hand - part.other_claim, 0)::quantity_amount as available,
+           greatest(part.on_hand + part.on_order - part.other_claim, 0) as reachable
   ) shelf
-  where j.id = any($2::uuid[])`;
+  where j.id = any($2::uuid[])
+    and ($3::boolean = false or j.status in ('planned', 'in_production'))`;
 
 async function readMaterials(
   tx: TransactionSql,
@@ -586,7 +609,9 @@ async function readMaterials(
             parts.shortage::text as shortage
      from (${MATERIAL_POSITION_SQL}) parts
      order by parts.name`,
-    [organisationId, [jobCardId]],
+    // false: a completed card still renders its bill of material, with
+    // its gross requirement and a shortage of nothing.
+    [organisationId, [jobCardId], false],
   )) as unknown as {
     item_id: string;
     item_code: string;
@@ -617,6 +642,17 @@ async function readMaterials(
  * answer differently. A count of PARTS rather than the mock's sum of
  * quantities, for the reason `docs/UX.md` § 13a gives: adding cabinets in
  * Nos to cable in Mtr prints a number in no unit at all.
+ *
+ * COST, stated rather than assumed. This is one round trip, not one per
+ * row, but it is still one bill-of-material explosion per OPEN card in
+ * the set — the explosion is per product and there is no page-wide
+ * shortcut for it. `$3 = true` is what bounds it: a register's history of
+ * completed and cancelled cards grows without limit, its open workload
+ * does not, and a closed card's badge is zero anyway. A caller that omits
+ * `limit` still reads the whole register, which is the compatibility
+ * default `packages/contracts` § pagination describes and is the same
+ * exposure the row read already carries; this adds a constant to it
+ * rather than a new unbounded dimension. The web sends `limit=50`.
  */
 async function readShortPartCounts(
   tx: TransactionSql,
@@ -629,7 +665,7 @@ async function readShortPartCounts(
             count(*) filter (where parts.shortage > 0)::int as short_parts
      from (${MATERIAL_POSITION_SQL}) parts
      group by parts.job_card_id`,
-    [organisationId, [...jobCardIds]],
+    [organisationId, [...jobCardIds], true],
   )) as unknown as { job_card_id: string; short_parts: number }[];
   return new Map(rows.map((row) => [row.job_card_id, row.short_parts]));
 }
@@ -1231,9 +1267,10 @@ export function registerProductionRoutes(
           limit ${sqlLimit(query.limit)}
         `;
         const page = keysetPage(rows, query.limit, (row) => row.id);
-        // One statement for the whole page, not one per row: the
-        // requirement explosion is the expensive part of this read and a
-        // register of fifty cards must not pay for it fifty times over.
+        // One round trip for the whole page rather than one per row. It
+        // is still one explosion per OPEN card — see `readShortPartCounts`
+        // for what bounds that and what does not. A card missing from the
+        // answer is a closed one, and reads zero below.
         const shortParts = await readShortPartCounts(
           tx,
           organisationId,

@@ -224,6 +224,6 @@ describe("the job card's Materials tab", () => {
     expect(within(row).getByText('0.000')).toBeTruthy();
     // The caption is what stops the three columns reading as arithmetic
     // that does not add up.
-    expect(screen.getByText(/already on order/)).toBeTruthy();
+    expect(screen.getByText(/not\s+Required less Available/)).toBeTruthy();
   });
 });
