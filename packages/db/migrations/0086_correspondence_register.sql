@@ -377,6 +377,24 @@ BEGIN
       USING ERRCODE = '23E02';
   END IF;
 
+  -- And once written, the cancellation is as frozen as everything else.
+  -- The comparison above deliberately excludes the triple so that the ONE
+  -- legal update can write it; without this, that exemption would stay
+  -- open forever and the reason, the actor and the moment of a
+  -- cancellation could all be rewritten afterwards — on a record whose
+  -- whole purpose is to explain why a retained number stands for nothing.
+  -- The route's own re-cancel refusal is the first layer; this is the one
+  -- that holds against a writer that never went through it.
+  IF OLD.cancelled_at IS NOT NULL
+     AND ROW(NEW.cancelled_at, NEW.cancelled_by_user_id, NEW.cancellation_reason)
+         IS DISTINCT FROM
+         ROW(OLD.cancelled_at, OLD.cancelled_by_user_id, OLD.cancellation_reason)
+  THEN
+    RAISE EXCEPTION
+      'a letter''s cancellation is immutable once recorded'
+      USING ERRCODE = '23E01';
+  END IF;
+
   RETURN NEW;
 END
 $$;

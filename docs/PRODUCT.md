@@ -1709,7 +1709,11 @@ lack the paper is the laptop folder the register replaces.
 **A misrecorded letter is cancelled with a reason.** It keeps its number,
 so the series stays provably gap-free, and a reprint carries a CANCELLED
 watermark. A letter that a later letter answers cannot be cancelled until
-that reply is: a thread unwinds from its newest end.
+that reply is: a thread unwinds from its newest end. Cancelling is the
+cancel authority's act, the same authority that cancels a challan or an
+invoice, and once recorded the reason, the actor and the moment are as
+frozen as the letter — they are the record that explains what a retained
+number now stands for.
 
 **Status is derived, never stored.** An outward letter reads `sent` and an
 inward one `received`; either reads `replied` once a later letter cites
@@ -1725,23 +1729,39 @@ homes.** This is the whole integration decision of the module:
   (`PL-281-Extension-01`), holds its grounds and addressee, renders its
   PDF, stores the railway's reply and moves the Work's completion date
   when the reply lands. The correspondence screen's Extension requests tab
-  READS that register and links back to the Work; nothing is copied. The
-  banner above the tabs counts extension requests that have been sent and
-  not yet answered, which is the one place the two modules meet on screen.
+  READS that register and links back to the Work; nothing is copied. One
+  request is up to two rows there — the request that went out, and the
+  railway's answer once it lands — and the request itself then reads
+  `replied` while the ANSWER carries the outcome, because it is the answer
+  that was accepted or refused, not the letter that asked.
 - **Inspection call letters** stay in the inspection module (§5.10,
   migration 0082). One call is two letters — our outward request,
   `INS/PL-281/1`, and the agency's inward call letter under their own
   number — and the Inspection letters tab reads both from the call.
+  Withdrawing the call withdraws the letter that answered it: both rows
+  read cancelled together.
+
+The banner above the tabs counts extension requests that have been sent
+and not yet answered, which is the one place the two modules meet on
+screen. It counts what THIS product sent: a manual back-fill of a paper
+letter (§5.5) is finalised on arrival because it was posted years ago, and
+an amber prompt to chase letters nobody can chase is a prompt an operator
+learns to ignore.
 
 Two registers for one letter is how the two come to disagree about its
 number, its date or its state, so the correspondence register writes
 neither.
 
-**Work-scope applies.** A letter filed against a Work is visible only to
-members who reach that Work; a letter filed as general correspondence
-belongs to no Work and is visible to every member. The tab counts obey the
-same rule, because a count is otherwise a statement about the size of a
-register the reader cannot open.
+**Work-scope applies, including to what a letter says about other
+letters.** A letter filed against a Work is visible only to members who
+reach that Work; a letter filed as general correspondence belongs to no
+Work and is visible to every member. The tab counts obey the same rule,
+because a count is otherwise a statement about the size of a register the
+reader cannot open — and so does the `replied` reading and the reference
+cell, because a reply filed on a hidden Work must not change how a visible
+letter reads. A letter whose Work is later superseded stays in the
+register and loses its link: it is a record of what was sent, not a
+pointer to a Work nobody can open.
 
 **Letters filed against a Work join its timeline.** The approval that
 unblocked an item and the clarification that changed a make are part of

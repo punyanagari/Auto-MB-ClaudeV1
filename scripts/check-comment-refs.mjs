@@ -181,6 +181,18 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
   ],
   ['app/inspection/page.tsx', 'the v0 mock screen the Inspection workspace replicates'],
   ['app/payments/page.tsx', 'the v0 mock screen the payments workspace replicates'],
+  [
+    'app/correspondence/page.tsx',
+    'the v0 mock screen the correspondence register replicates',
+  ],
+  [
+    'app/correspondence/new/page.tsx',
+    'the v0 mock screen the outward letter composer replicates',
+  ],
+  [
+    'app/correspondence/new/inward/page.tsx',
+    'the v0 mock screen the inward letter upload replicates',
+  ],
 ]);
 
 /** Whether a reference names something deliberately outside this tree. */

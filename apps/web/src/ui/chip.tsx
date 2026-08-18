@@ -61,6 +61,15 @@ const CHIP_TONES = {
   // failure, but no longer the live document either.
   superseded: 'warning',
 
+  // Neutral by DECISION, not by falling off the end of the map.
+  // `docs/DESIGN.md` § Status badge semantics puts `draft` in the inert
+  // family and records why: a record being assembled is not in progress
+  // and not good news, and an amber lamp on every draft is a lamp that is
+  // always lit. It was previously unmapped, which rendered the same
+  // neutral by accident — and an accident is exactly what somebody
+  // "fixes" later.
+  draft: 'neutral',
+
   // A tender that was not won, or was not pursued (0083). Not a system
   // failure, but the end of that pipeline either way.
   lost: 'destructive',

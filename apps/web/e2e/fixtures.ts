@@ -507,7 +507,6 @@ function letter(overrides: Record<string, unknown>): Record<string, unknown> {
     status: 'sent',
     extensionUntil: null,
     replyDueOn: null,
-    documentAvailable: true,
     ...overrides,
   };
 }
@@ -530,6 +529,7 @@ const CORRESPONDENCE_REGISTER = {
       workCode: null,
       reference: 'S&T/PA/Approval/118 · 2026-07-18',
       subject: 'Approval of IP speaker make and model',
+      replyDueOn: '2026-08-18',
     }),
     letter({
       id: '11111111-1111-4111-8111-111111111104',

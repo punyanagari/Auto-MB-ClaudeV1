@@ -32,7 +32,6 @@ function entry(overrides: Partial<CorrespondenceEntry> = {}): CorrespondenceEntr
     status: 'sent',
     extensionUntil: null,
     replyDueOn: null,
-    documentAvailable: true,
     ...overrides,
   };
 }
@@ -59,12 +58,16 @@ function answer(
 
 const noop = (): void => undefined;
 
-function renderRegister(api: ReturnType<typeof stubApi>) {
+function renderRegister(
+  api: ReturnType<typeof stubApi>,
+  options: { readonly canCancel?: boolean } = {},
+) {
   return render(
     <Correspondence
       api={api}
       organisationId={ORG_ID}
       canModify
+      canCancel={options.canCancel ?? false}
       onWriteLetter={noop}
       onUploadInward={noop}
     />,
@@ -93,11 +96,17 @@ describe('the correspondence register', () => {
     renderRegister(stubApi({ listCorrespondence }));
 
     await screen.findByRole('button', { name: /Outward/ });
-    expect(listCorrespondence).toHaveBeenCalledWith(ORG_ID, { tab: 'outward' });
+    expect(listCorrespondence).toHaveBeenCalledWith(ORG_ID, {
+      tab: 'outward',
+      limit: 50,
+    });
 
     fireEvent.click(screen.getByRole('button', { name: /Extension requests/ }));
     await waitFor(() => {
-      expect(listCorrespondence).toHaveBeenCalledWith(ORG_ID, { tab: 'extensions' });
+      expect(listCorrespondence).toHaveBeenCalledWith(ORG_ID, {
+        tab: 'extensions',
+        limit: 50,
+      });
     });
   });
 
@@ -168,7 +177,6 @@ describe('the correspondence register', () => {
               id: '99999999-9999-4999-8999-999999999999',
               source: 'inspection',
               number: 'INS/PL-281/1',
-              documentAvailable: false,
             }),
           ]),
         ),
@@ -219,6 +227,7 @@ describe('the correspondence register', () => {
         })}
         organisationId={ORG_ID}
         canModify={false}
+        canCancel={false}
         onWriteLetter={noop}
         onUploadInward={noop}
       />,
@@ -226,6 +235,126 @@ describe('the correspondence register', () => {
     await screen.findByText('OUT/26-27/047');
     expect(screen.queryByRole('button', { name: /New letter/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Upload inward/ })).toBeNull();
+  });
+  it('shows the reply-due column on the inward tab only', async () => {
+    const listCorrespondence = vi
+      .fn<ApiClient['listCorrespondence']>()
+      .mockImplementation((_org, options) =>
+        Promise.resolve(
+          options?.tab === 'inward'
+            ? answer([
+                entry({
+                  direction: 'inward',
+                  number: 'IN/26-27/018',
+                  status: 'received',
+                  replyDueOn: '2026-08-18',
+                }),
+              ])
+            : answer([entry()]),
+        ),
+      );
+    renderRegister(stubApi({ listCorrespondence }));
+
+    await screen.findByText('OUT/26-27/047');
+    expect(screen.queryByRole('columnheader', { name: 'Reply due' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Inward/ }));
+    await screen.findByRole('columnheader', { name: 'Reply due' });
+    expect(screen.getByText('18 Aug 2026')).toBeTruthy();
+  });
+
+  it('pages with the cursor the server hands back, appending rather than replacing', async () => {
+    const listCorrespondence = vi
+      .fn<ApiClient['listCorrespondence']>()
+      .mockImplementation((_org, options) =>
+        Promise.resolve(
+          options?.cursor === undefined
+            ? {
+                ...answer([entry()]),
+                nextCursor: '77777777-7777-4777-8777-777777777777',
+              }
+            : answer([
+                entry({
+                  id: '66666666-6666-4666-8666-666666666666',
+                  number: 'OUT/26-27/046',
+                }),
+              ]),
+        ),
+      );
+    renderRegister(stubApi({ listCorrespondence }));
+
+    await screen.findByText('OUT/26-27/047');
+    fireEvent.click(screen.getByRole('button', { name: 'Load more letters' }));
+
+    await screen.findByText('OUT/26-27/046');
+    // The first page is still on screen: a register that replaced it would
+    // have lost the rows the operator was reading.
+    expect(screen.getByText('OUT/26-27/047')).toBeTruthy();
+    expect(listCorrespondence).toHaveBeenLastCalledWith(ORG_ID, {
+      tab: 'outward',
+      limit: 50,
+      cursor: '77777777-7777-4777-8777-777777777777',
+    });
+    // Exhausted: no second button.
+    expect(screen.queryByRole('button', { name: 'Load more letters' })).toBeNull();
+  });
+
+  it('cancels a letter only with the authority, and only with a reason', async () => {
+    const cancelCorrespondenceLetter = vi.fn().mockResolvedValue(undefined);
+    const api = stubApi({
+      listCorrespondence: vi.fn().mockResolvedValue(answer([entry()])),
+      cancelCorrespondenceLetter,
+    });
+
+    const { unmount } = renderRegister(api);
+    await screen.findByText('OUT/26-27/047');
+    expect(screen.queryByRole('button', { name: 'Cancel…' })).toBeNull();
+    unmount();
+
+    renderRegister(api, { canCancel: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel…' }));
+
+    const confirm = await screen.findByRole('button', { name: 'Cancel letter' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Why is it being cancelled?'), {
+      target: { value: 'Filed against the wrong Work.' },
+    });
+    expect((confirm as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(confirm);
+    await waitFor(() => {
+      expect(cancelCorrespondenceLetter).toHaveBeenCalledWith(
+        ORG_ID,
+        '77777777-7777-4777-8777-777777777777',
+        'Filed against the wrong Work.',
+      );
+    });
+  });
+
+  it('offers no cancel on a projected row or one already cancelled', async () => {
+    renderRegister(
+      stubApi({
+        listCorrespondence: vi.fn().mockResolvedValue(
+          answer([
+            entry({ status: 'cancelled' }),
+            entry({
+              id: '55555555-5555-4555-8555-555555555555',
+              source: 'inspection',
+              number: 'INS/PL-281/1',
+            }),
+            entry({
+              id: '44444444-4444-4444-8444-444444444444',
+              number: 'OUT/26-27/044',
+            }),
+          ]),
+        ),
+      }),
+      { canCancel: true },
+    );
+    await screen.findByText('OUT/26-27/044');
+    // One cancellable row of the three.
+    expect(screen.getAllByRole('button', { name: 'Cancel…' })).toHaveLength(1);
   });
 });
 

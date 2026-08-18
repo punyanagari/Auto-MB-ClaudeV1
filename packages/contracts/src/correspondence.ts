@@ -36,7 +36,14 @@ export const CorrespondenceTabSchema = Type.Union(
 export type CorrespondenceTab = Static<typeof CorrespondenceTabSchema>;
 
 /** Which register a row was read from. Not a synonym for the tab: the
- * `outward` and `inward` tabs both read `letter`. */
+ * `outward` and `inward` tabs both read `letter`, and `extension` and
+ * `inspection` each produce up to TWO entries from one record — the
+ * request or call that went out, and the answer that came back — which
+ * is why a row is keyed on `(id, direction)` rather than on `id`.
+ *
+ * It is also what decides whether the register's number cell is a link:
+ * only a `letter` has a document this module's own route can serve. The
+ * other two are reached through the module that owns them. */
 export const CORRESPONDENCE_SOURCES = ['letter', 'extension', 'inspection'] as const;
 export const CorrespondenceSourceSchema = Type.Union(
   CORRESPONDENCE_SOURCES.map((source) => Type.Literal(source)),
@@ -103,13 +110,12 @@ export const CorrespondenceEntrySchema = Type.Object(
     /** Extensions tab: the completion date asked for, or granted once the
      * railway has answered. */
     extensionUntil: Type.Union([DateOnlySchema, Type.Null()]),
-    /** Inward tab: when a reply is owed. */
+    /** Inward tab: when a reply is owed, as the register captured it.
+     * Rendered as the Inward tab's own conditional column, the way the
+     * Extensions tab renders `extensionUntil` — the banner above the tabs
+     * promises due-date tracking, and a due date the register stores and
+     * never shows is a promise it does not keep. */
     replyDueOn: Type.Union([DateOnlySchema, Type.Null()]),
-    /** Whether the paper behind this row can be produced — the rendered
-     * outward letter, the inward scan, the extension letter's PDF, the
-     * inspection call letter's scan. False makes the number plain text
-     * instead of a link. */
-    documentAvailable: Type.Boolean(),
   },
   { additionalProperties: false },
 );
@@ -139,9 +145,20 @@ export const CorrespondenceListResponseSchema = Type.Object(
     entries: Type.Array(CorrespondenceEntrySchema),
     nextCursor: NextCursorSchema,
     counts: CorrespondenceCountsSchema,
-    /** Extension requests finalised and not yet answered. The register's
-     * banner counts them, which is the one place the two modules meet on
-     * screen. */
+    /**
+     * Extension requests this product sent and the railway has not
+     * answered: `status = 'finalised'` AND `source <> 'manual'`.
+     *
+     * The manual exclusion is the definition worth stating. A manual
+     * back-fill (migration 0029) is a paper letter transcribed into the
+     * register long after it was posted, often years of correspondence
+     * entered in one sitting; it is finalised on arrival because it
+     * already went out. Counting those would light an amber banner
+     * saying "chase these" over letters nobody can chase and whose
+     * answers, where they came, were never going to be recorded here.
+     * The banner is a prompt, so it counts only what the product itself
+     * sent and can still be told the answer to.
+     */
     awaitingExtensionResponses: Type.Integer({ minimum: 0 }),
   },
   { additionalProperties: false },

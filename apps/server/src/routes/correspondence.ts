@@ -95,6 +95,10 @@ import {
  * which is why it is one word. */
 const STORAGE_AREA = 'letters';
 
+/** How many letters the composer's "reply to" picker offers. A select is
+ * not pageable, so it gets a bound rather than the whole register. */
+const THREAD_OPTION_LIMIT = 200;
+
 /** `2026-27` -> `26-27`. The design contract's letter numbers abbreviate
  * the financial year to its two two-digit halves (`OUT/26-27/047` at
  * `fdfe5ef`); the counter and the stored column keep the unambiguous
@@ -165,34 +169,49 @@ function toLetterEntry(row: LetterRow): CorrespondenceEntry {
     status: letterStatusOf(row),
     extensionUntil: null,
     replyDueOn: row.response_due_on,
-    // Both directions always have a document: the outward letter renders
-    // on demand from frozen columns, and 0086 refuses an inward row
-    // without its scan.
-    documentAvailable: true,
   };
 }
 
-/** The work-scope predicate, in one place so the register, the counts and
- * the cursor cannot drift apart. A letter with no Work is everyone's. */
-function visibleLetters(tx: TransactionSql, scope: WorkScope) {
+/**
+ * The work-scope predicate, in one place so the rows, the counts, the
+ * cursor and every dependent subquery cannot drift apart.
+ *
+ * `generalIsVisible` is the whole difference between the two call sites
+ * below. A LETTER may belong to no Work — an invitation to quote arrives
+ * before there is one — and such a letter is organisation-wide by nature,
+ * so a null `work_id` passes. An extension request or an inspection call
+ * always belongs to a Work, so a null there is not a general record, it is
+ * a row that should not exist, and it must not pass.
+ */
+function workVisible(
+  tx: TransactionSql,
+  scope: WorkScope,
+  column: string,
+  generalIsVisible: boolean,
+) {
   return tx`(
     ${scope.full}
-    or l.work_id is null
-    or exists (
-      select 1 from work_assignments wa
-      where wa.work_id = l.work_id and wa.user_id = ${scope.userId}
-    )
-  )`;
-}
-
-function visibleWorkRows(tx: TransactionSql, scope: WorkScope, column: string) {
-  return tx`(
-    ${scope.full}
+    or (${generalIsVisible} and ${tx.unsafe(column)} is null)
     or exists (
       select 1 from work_assignments wa
       where wa.work_id = ${tx.unsafe(column)} and wa.user_id = ${scope.userId}
     )
   )`;
+}
+
+/** A letter row the caller may read. The alias is a parameter because the
+ * predicate is needed on the register's own rows AND on the two
+ * correlated reads that depend on other letters — the "has this been
+ * answered" EXISTS and the parent self-join. Without it, a reply filed on
+ * a Work the caller cannot see would change the status chip and the
+ * reference of a letter they can: an inference channel out of a register
+ * that is otherwise correctly scoped. */
+function visibleLetters(tx: TransactionSql, scope: WorkScope, alias = 'l') {
+  return workVisible(tx, scope, `${alias}.work_id`, true);
+}
+
+function visibleWorkRows(tx: TransactionSql, scope: WorkScope, column: string) {
+  return workVisible(tx, scope, column, false);
 }
 
 /**
@@ -222,16 +241,28 @@ async function letterCursorRowId(
     select l.id from correspondence_letters l
     where l.id = ${cursor} and ${visibleLetters(tx, scope)}
   `;
-  if (!row) {
-    throw httpError(
-      400,
-      'CURSOR_INVALID',
-      'The pagination cursor does not name a row in this register.',
-    );
-  }
+  if (!row) throw cursorInvalid();
   return row.id;
 }
 
+function cursorInvalid(): Error {
+  return httpError(
+    400,
+    'CURSOR_INVALID',
+    'The pagination cursor does not name a row in this register.',
+  );
+}
+
+/**
+ * The letters, newest first.
+ *
+ * The `works` join carries `deleted_at is null` and the Work id is taken
+ * FROM the join rather than from the letter, so the two move together: a
+ * letter filed against a Work that has since been superseded renders as
+ * general correspondence rather than as a link to a Work nobody can open.
+ * The letter keeps its `work_id` in the database — it is a record of what
+ * the letter was about — and `work-supersede.ts` says so.
+ */
 async function readLetters(
   tx: TransactionSql,
   scope: WorkScope,
@@ -247,7 +278,7 @@ async function readLetters(
       l.letter_date::text as letter_date,
       l.subject,
       l.counterparty_name,
-      l.work_id,
+      w.id as work_id,
       w.work_code,
       l.sender_reference,
       l.sender_letter_date::text as sender_letter_date,
@@ -256,11 +287,15 @@ async function readLetters(
       l.cancelled_at,
       exists (
         select 1 from correspondence_letters reply
-        where reply.reply_to_letter_id = l.id and reply.cancelled_at is null
+        where reply.reply_to_letter_id = l.id
+          and reply.cancelled_at is null
+          and ${visibleLetters(tx, scope, 'reply')}
       ) as answered
     from correspondence_letters l
-    left join works w on w.id = l.work_id
-    left join correspondence_letters parent on parent.id = l.reply_to_letter_id
+    left join works w on w.id = l.work_id and w.deleted_at is null
+    left join correspondence_letters parent
+      on parent.id = l.reply_to_letter_id
+      and ${visibleLetters(tx, scope, 'parent')}
     where l.direction = ${direction}
       and ${visibleLetters(tx, scope)}
       and (${cursor === null} or
@@ -282,10 +317,10 @@ interface ExtensionEntryRow {
   manual_reference: string | null;
   addressee: string;
   letter_date: string | null;
-  created_on: string;
+  sort_date: string;
+  responded_on: string | null;
   proposed_completion_date: string;
   granted_completion_date: string | null;
-  rendered: boolean;
 }
 
 /**
@@ -296,10 +331,12 @@ interface ExtensionEntryRow {
  * every one of these letters is, because the extensions module stores the
  * grounds and no subject line.
  *
- * A draft has no number yet and no letter date, so the register orders by
- * `created_at` — which is also what its cursor is proven against — and
- * falls back to the creation date in the date column. Both are stated
- * here rather than in SQL so the ordering and the display agree.
+ * A draft has no letter date, so the row renders — and the page is
+ * ORDERED and CURSORED by — `coalesce(letter_date, the creation date in
+ * the organisation's timezone)`. The three have to be one expression: a
+ * register sorted by a date it does not print is a register whose rows
+ * look shuffled, and a keyset cursor proven against a different key from
+ * the one the rows are sorted by skips and repeats them.
  */
 async function readExtensionEntries(
   tx: TransactionSql,
@@ -318,50 +355,89 @@ async function readExtensionEntries(
       e.manual_reference,
       e.addressee,
       e.letter_date::text as letter_date,
-      (e.created_at at time zone o.timezone)::date::text as created_on,
+      coalesce(
+        e.letter_date, (e.created_at at time zone o.timezone)::date
+      )::text as sort_date,
+      (e.responded_at at time zone o.timezone)::date::text as responded_on,
       e.proposed_completion_date::text as proposed_completion_date,
-      e.granted_completion_date::text as granted_completion_date,
-      (e.rendered_object_key is not null) as rendered
+      e.granted_completion_date::text as granted_completion_date
     from extension_requests e
-    join works w on w.id = e.work_id
+    join works w on w.id = e.work_id and w.deleted_at is null
     join organisations o on o.id = e.organisation_id
     where ${visibleWorkRows(tx, scope, 'e.work_id')}
       and (${cursor === null} or
-        (e.created_at, e.id) < (
-          select c.created_at, c.id from extension_requests c
+        (coalesce(e.letter_date, (e.created_at at time zone o.timezone)::date), e.id) < (
+          select
+            coalesce(c.letter_date, (c.created_at at time zone co.timezone)::date),
+            c.id
+          from extension_requests c
+          join organisations co on co.id = c.organisation_id
           where c.id = ${cursor}))
-    order by e.created_at desc, e.id desc
+    order by
+      coalesce(e.letter_date, (e.created_at at time zone o.timezone)::date) desc,
+      e.id desc
     limit ${sqlLimit(limit)}
   `;
 }
 
-function extensionStatusOf(row: ExtensionEntryRow): CorrespondenceStatus {
-  if (row.status === 'draft') return 'draft';
-  if (row.status === 'finalised') return 'sent';
-  return row.response_outcome === 'rejected' ? 'rejected' : 'approved';
-}
-
-function toExtensionEntry(row: ExtensionEntryRow): CorrespondenceEntry {
-  return {
+/**
+ * One extension request is up to TWO letters, on the same footing as an
+ * inspection call: the request that went out, and the railway's answer
+ * once it lands. The outward row reads `replied` when the answer is in —
+ * the same derived vocabulary the letters register uses — and the ANSWER
+ * carries the outcome, because it is the answer that was accepted or
+ * refused, not the letter that asked.
+ */
+function extensionEntriesOf(row: ExtensionEntryRow): CorrespondenceEntry[] {
+  const number = row.request_number ?? 'Not yet numbered';
+  const outward: CorrespondenceEntry = {
     id: row.id,
     source: 'extension',
-    // Always outward: the extensions module records the railway's answer
-    // as an outcome on this same row, not as a letter of its own.
     direction: 'outward',
-    number: row.request_number ?? 'Not yet numbered',
-    date: row.letter_date ?? row.created_on,
+    number,
+    date: row.sort_date,
     counterparty: row.addressee,
     subject: 'Request for extension of the completion period',
     workId: row.work_id,
     workCode: row.work_code,
     reference: row.manual_reference,
-    status: extensionStatusOf(row),
+    status:
+      row.status === 'draft'
+        ? 'draft'
+        : row.status === 'finalised'
+          ? 'sent'
+          : 'replied',
     // The date actually granted once the railway has answered, otherwise
     // the date asked for. A modified grant is the fact that matters.
     extensionUntil: row.granted_completion_date ?? row.proposed_completion_date,
     replyDueOn: null,
-    documentAvailable: row.rendered,
   };
+  if (row.response_outcome === null || row.responded_on === null) return [outward];
+  return [
+    outward,
+    {
+      // Both entries carry the request's id: it is the record the row
+      // leads to, and the register keys its rows on the id AND the
+      // direction for exactly this reason.
+      id: row.id,
+      source: 'extension',
+      direction: 'inward',
+      // The railway's letter carries a number of its own that this
+      // product does not record — the extensions module stores the
+      // decision and the scanned reply, not a reference. Saying so beats
+      // printing the request's number twice.
+      number: 'No reference recorded',
+      date: row.responded_on,
+      counterparty: row.addressee,
+      subject: 'Railway response on the extension request',
+      workId: row.work_id,
+      workCode: row.work_code,
+      reference: number,
+      status: row.response_outcome === 'rejected' ? 'rejected' : 'approved',
+      extensionUntil: row.granted_completion_date ?? row.proposed_completion_date,
+      replyDueOn: null,
+    },
+  ];
 }
 
 interface InspectionEntryRow {
@@ -374,7 +450,6 @@ interface InspectionEntryRow {
   requested_on: string;
   agency_call_number: string | null;
   call_letter_received_on: string | null;
-  call_letter_available: boolean;
 }
 
 /**
@@ -384,6 +459,12 @@ interface InspectionEntryRow {
  * agency's inward call letter once it arrives — and the register shows
  * both, which is why one row here can become two entries. The design
  * contract draws exactly that pair.
+ *
+ * The page is ordered and cursored by `requested_on`, which is the
+ * outward row's own rendered date and the anchor of the pair: the inward
+ * letter rides with the call it answers rather than being sorted away
+ * from it, which is how the mock draws them and the only ordering under
+ * which a page boundary cannot split a call in half.
  */
 async function readInspectionEntries(
   tx: TransactionSql,
@@ -401,27 +482,22 @@ async function readInspectionEntries(
       ic.status,
       ic.requested_on::text as requested_on,
       ic.agency_call_number,
-      ic.call_letter_received_on::text as call_letter_received_on,
-      exists (
-        select 1 from inspection_call_documents d
-        where d.inspection_call_id = ic.id
-          and d.kind = 'call_letter'
-          and d.object_key is not null
-      ) as call_letter_available
+      ic.call_letter_received_on::text as call_letter_received_on
     from inspection_calls ic
-    join works w on w.id = ic.work_id
+    join works w on w.id = ic.work_id and w.deleted_at is null
     where ${visibleWorkRows(tx, scope, 'ic.work_id')}
       and (${cursor === null} or
-        (ic.created_at, ic.id) < (
-          select c.created_at, c.id from inspection_calls c
+        (ic.requested_on, ic.id) < (
+          select c.requested_on, c.id from inspection_calls c
           where c.id = ${cursor}))
-    order by ic.created_at desc, ic.id desc
+    order by ic.requested_on desc, ic.id desc
     limit ${sqlLimit(limit)}
   `;
 }
 
 function inspectionEntriesOf(row: InspectionEntryRow): CorrespondenceEntry[] {
   const callReference = `INS/${row.work_code}/${String(row.sequence_number)}`;
+  const cancelled = row.status === 'cancelled';
   const outward: CorrespondenceEntry = {
     id: row.id,
     source: 'inspection',
@@ -433,12 +509,9 @@ function inspectionEntriesOf(row: InspectionEntryRow): CorrespondenceEntry[] {
     workId: row.work_id,
     workCode: row.work_code,
     reference: null,
-    status: row.status === 'cancelled' ? 'cancelled' : 'sent',
+    status: cancelled ? 'cancelled' : 'sent',
     extensionUntil: null,
     replyDueOn: null,
-    // The outward request is a record of an act, not a document this
-    // product renders: 0082 stores no letter for it.
-    documentAvailable: false,
   };
   if (row.agency_call_number === null || row.call_letter_received_on === null) {
     return [outward];
@@ -456,27 +529,41 @@ function inspectionEntriesOf(row: InspectionEntryRow): CorrespondenceEntry[] {
       workId: row.work_id,
       workCode: row.work_code,
       reference: callReference,
-      status: 'received',
+      // A withdrawn call withdraws the letter that answered it: both rows
+      // of the pair read cancelled, or the register would show a live
+      // inward letter belonging to a call that no longer stands.
+      status: cancelled ? 'cancelled' : 'received',
       extensionUntil: null,
       replyDueOn: null,
-      documentAvailable: row.call_letter_available,
     },
   ];
 }
 
-/** Every tab's count, on every request. The design contract draws all
- * four numbers in the tab list whichever tab is open, so answering only
- * the open tab's count would leave three of them stale or absent. */
+/**
+ * Every tab's count and the banner's, in ONE statement.
+ *
+ * The design contract draws all four numbers in the tab list whichever
+ * tab is open, so answering only the open tab's count would leave three
+ * of them stale. The banner rides along because it is a fifth count over
+ * the same table as the third: two round trips for two aggregates of one
+ * table is a round trip too many.
+ *
+ * Every count carries the same work-scope predicate the rows do — a tab
+ * label is otherwise a statement about the size of a register the reader
+ * cannot open — and the same `deleted_at is null` join, so a superseded
+ * Work's records leave the counts exactly as they leave the pages.
+ */
 async function readCounts(
   tx: TransactionSql,
   scope: WorkScope,
-): Promise<CorrespondenceCounts> {
+): Promise<{ counts: CorrespondenceCounts; awaitingExtensionResponses: number }> {
   const [row] = await tx<
     {
       outward: string;
       inward: string;
       extensions: string;
       inspection: string;
+      awaiting: string;
     }[]
   >`
     select
@@ -484,30 +571,30 @@ async function readCounts(
         where l.direction = 'outward' and ${visibleLetters(tx, scope)}) as outward,
       (select count(*) from correspondence_letters l
         where l.direction = 'inward' and ${visibleLetters(tx, scope)}) as inward,
-      (select count(*) from extension_requests e
+      -- A request the railway has answered shows as two rows, so the
+      -- count adds the answers rather than the requests.
+      (select count(*) + count(e.response_outcome) from extension_requests e
+        join works ew on ew.id = e.work_id and ew.deleted_at is null
         where ${visibleWorkRows(tx, scope, 'e.work_id')}) as extensions,
-      -- A call with its inward letter recorded shows as two rows, so the
-      -- count adds the letters rather than the calls.
+      -- Same shape, for the call and the agency's letter.
       (select count(*) + count(ic.agency_call_number) from inspection_calls ic
-        where ${visibleWorkRows(tx, scope, 'ic.work_id')}) as inspection
+        join works iw on iw.id = ic.work_id and iw.deleted_at is null
+        where ${visibleWorkRows(tx, scope, 'ic.work_id')}) as inspection,
+      (select count(*) from extension_requests e
+        join works aw on aw.id = e.work_id and aw.deleted_at is null
+        where e.status = 'finalised'
+          and e.source <> 'manual'
+          and ${visibleWorkRows(tx, scope, 'e.work_id')}) as awaiting
   `;
   return {
-    outward: Number(row?.outward ?? 0),
-    inward: Number(row?.inward ?? 0),
-    extensions: Number(row?.extensions ?? 0),
-    inspection: Number(row?.inspection ?? 0),
+    counts: {
+      outward: Number(row?.outward ?? 0),
+      inward: Number(row?.inward ?? 0),
+      extensions: Number(row?.extensions ?? 0),
+      inspection: Number(row?.inspection ?? 0),
+    },
+    awaitingExtensionResponses: Number(row?.awaiting ?? 0),
   };
-}
-
-async function readAwaitingExtensionResponses(
-  tx: TransactionSql,
-  scope: WorkScope,
-): Promise<number> {
-  const [row] = await tx<{ awaiting: string }[]>`
-    select count(*) as awaiting from extension_requests e
-    where e.status = 'finalised' and ${visibleWorkRows(tx, scope, 'e.work_id')}
-  `;
-  return Number(row?.awaiting ?? 0);
 }
 
 async function scopeOf(tx: TransactionSql, userId: string): Promise<WorkScope> {
@@ -537,6 +624,43 @@ function assertNotFuture(date: string, today: string, what: string): void {
   }
 }
 
+/**
+ * The two date-order rules 0086 constrains, checked HERE as well.
+ *
+ * Both are CHECK constraints on the table, which is where they belong: a
+ * writer that reached the table some other way is still refused. But a
+ * CHECK refusal arrives as SQLSTATE 23514, which this route has no named
+ * mapping for and would answer as a 500 — and on the inward path it would
+ * be raised AFTER the scan has been stored, leaving an orphan object
+ * behind. So the same two rules are stated at the trust boundary, before
+ * the malware scan and before `storePdfUpload`, with codes an operator's
+ * screen can act on. Date-only string comparison, per engineering rule 6:
+ * `YYYY-MM-DD` sorts lexically, and nothing round-trips a timezone.
+ */
+function assertLetterDateOrder(input: {
+  readonly letterDate: string;
+  readonly responseDueOn?: string;
+  readonly senderLetterDate?: string;
+}): void {
+  if (input.responseDueOn !== undefined && input.responseDueOn < input.letterDate) {
+    throw httpError(
+      400,
+      'CORRESPONDENCE_RESPONSE_DUE_BEFORE_LETTER',
+      `A reply cannot be due on ${input.responseDueOn}, before the letter arrived on ${input.letterDate}.`,
+    );
+  }
+  if (
+    input.senderLetterDate !== undefined &&
+    input.senderLetterDate > input.letterDate
+  ) {
+    throw httpError(
+      400,
+      'CORRESPONDENCE_SENDER_DATE_AFTER_LETTER',
+      `The sender dated their letter ${input.senderLetterDate}, after it was received on ${input.letterDate}.`,
+    );
+  }
+}
+
 /** The chosen addressee, snapshotted. Masters are PICKERS: the contact's
  * lifecycle is checked HERE, where the operator chooses it, and the NAME
  * is copied onto the letter so a later rename cannot readdress it. */
@@ -558,8 +682,20 @@ async function snapshotCounterparty(
   return contact.designation;
 }
 
-/** The Work the letter is filed under, if any. Work-scope is proven the
- * same way every other Work-bearing write proves it. */
+/**
+ * The Work the letter is filed under, if any. Work-scope is proven the
+ * same way every other Work-bearing write proves it.
+ *
+ * `assertWorkOperable` is deliberately NOT called, and this is the same
+ * carve-out `routes/inspections.ts` makes for withdrawal (R8 gates the
+ * acts that ADVANCE a Work, not every act that mentions one). A letter is
+ * not an operational act on the Work: the defect-liability period, the
+ * PBG release, the final-bill correspondence and the completion
+ * certificate chase all happen AFTER the Work is completed, and a
+ * register that refused to file them would push exactly the letters that
+ * matter most back into the laptop folder. Nothing here moves a quantity,
+ * a date or a rupee.
+ */
 async function assertLetterWork(
   tx: TransactionSql,
   userId: string,
@@ -704,10 +840,11 @@ export function registerCorrespondenceRoutes(
       const { limit, cursor } = request.query;
       return tenant(async (tx) => {
         const scope = await scopeOf(tx, user.id);
-        const [counts, awaitingExtensionResponses] = await Promise.all([
-          readCounts(tx, scope),
-          readAwaitingExtensionResponses(tx, scope),
-        ]);
+        // One statement for all five aggregates. `Promise.all` over two
+        // reads on ONE postgres.js transaction is not concurrency — the
+        // connection serialises them — so it was two round trips wearing
+        // the costume of one.
+        const { counts, awaitingExtensionResponses } = await readCounts(tx, scope);
 
         if (tab === 'extensions') {
           const proven = await workScopedCursorRowId(
@@ -719,7 +856,10 @@ export function registerCorrespondenceRoutes(
           const rows = await readExtensionEntries(tx, scope, limit, proven);
           const page = keysetPage(rows, limit, (row) => row.id);
           return {
-            entries: page.rows.map(toExtensionEntry),
+            // One request can be two letters — the ask and the answer —
+            // so a page of REQUESTS is what the cursor walks, for the
+            // same reason the inspection tab pages calls.
+            entries: page.rows.flatMap(extensionEntriesOf),
             nextCursor: page.nextCursor,
             counts,
             awaitingExtensionResponses,
@@ -775,11 +915,17 @@ export function registerCorrespondenceRoutes(
     async ({ user, tenant }) =>
       tenant(async (tx) => {
         const scope = await scopeOf(tx, user.id);
+        // Bounded rather than unbounded: a picker cannot page, so the
+        // honest cap is "the letters anybody would actually answer",
+        // which is the recent end of the register. An older letter is
+        // answered by quoting its number in the body — the thread
+        // pointer is a convenience, not the record.
         const letters = await tx<{ id: string; number: string; subject: string }[]>`
           select l.id, l.letter_number as number, l.subject
           from correspondence_letters l
           where l.cancelled_at is null and ${visibleLetters(tx, scope)}
           order by l.letter_date desc, l.id desc
+          limit ${THREAD_OPTION_LIMIT}
         `;
         return { letters };
       }),
@@ -792,7 +938,10 @@ export function registerCorrespondenceRoutes(
       role: 'writer',
       schema: {
         body: WriteOutwardLetterRequestSchema,
-        response: { 201: Type.Object({ id: Type.String(), number: Type.String() }) },
+        response: {
+          201: Type.Object({ id: Type.String(), number: Type.String() }),
+          ...errorResponses,
+        },
       },
     },
     async ({ request, reply, user, organisationId, tenant }) => {
@@ -806,6 +955,7 @@ export function registerCorrespondenceRoutes(
       const created = await tenant(async (tx) => {
         const today = await organisationToday(tx);
         assertNotFuture(input.letterDate, today, 'The letter date');
+        assertLetterDateOrder(input);
         const scope = await scopeOf(tx, user.id);
         const workId = await assertLetterWork(tx, user.id, input.workId);
         const replyTo = await assertReplyTarget(tx, scope, input.replyToLetterId);
@@ -875,12 +1025,33 @@ export function registerCorrespondenceRoutes(
       const subject = requireTrimmed(input.subject, 'Give the letter a subject.');
       const senderReference = optionalTrimmed(input.senderReference);
 
+      // The pre-flight, and it has exactly two jobs: keep an ill-formed or
+      // unauthorised request away from the scanner, and make sure no
+      // refusal is raised AFTER `storePdfUpload` has written an object
+      // that would then belong to no row. Every check here is one indexed
+      // read, which is why they are all cheap enough to take twice.
+      //
+      // It is NOT the authority. Whatever it proves can be untrue by the
+      // time the writing transaction opens — a Work unassigned, a contact
+      // retired, a parent letter cancelled — so every one of them is
+      // re-taken below, and the second answer is the one that decides.
+      // `routes/company-documents.ts` makes the same split for the same
+      // two reasons.
       await tenant(async (tx) => {
         const today = await organisationToday(tx);
         assertNotFuture(input.receivedOn, today, 'The received date');
         if (input.senderLetterDate !== undefined) {
           assertNotFuture(input.senderLetterDate, today, "The sender's letter date");
         }
+        assertLetterDateOrder({
+          letterDate: input.receivedOn,
+          ...(input.responseDueOn === undefined
+            ? {}
+            : { responseDueOn: input.responseDueOn }),
+          ...(input.senderLetterDate === undefined
+            ? {}
+            : { senderLetterDate: input.senderLetterDate }),
+        });
         const scope = await scopeOf(tx, user.id);
         await assertLetterWork(tx, user.id, input.workId);
         await assertReplyTarget(tx, scope, input.replyToLetterId);
@@ -891,9 +1062,9 @@ export function registerCorrespondenceRoutes(
       const stored = await storePdfUpload(storage, organisationId, STORAGE_AREA, bytes);
 
       const created = await tenant(async (tx) => {
-        // Re-proven inside the writing transaction: the checks above ran
-        // in a transaction that has since committed, and a Work
-        // unassigned or a contact retired in between must not land.
+        // The single authority. Everything above was a pre-flight that has
+        // since committed, so a Work unassigned, a contact retired or a
+        // parent letter cancelled in between is caught here.
         const scope = await scopeOf(tx, user.id);
         const workId = await assertLetterWork(tx, user.id, input.workId);
         const replyTo = await assertReplyTarget(tx, scope, input.replyToLetterId);
@@ -947,7 +1118,12 @@ export function registerCorrespondenceRoutes(
     {
       method: 'POST',
       url: '/api/correspondence/:id/cancel',
-      role: 'writer',
+      // The cancel authority, like every other document this organisation
+      // puts its name to. Writing a letter is ordinary office work
+      // (`role: 'writer'` above); withdrawing one that has been sent, and
+      // burning its number forever, is the act migration 0086's UPDATE
+      // grant exists for and the one the authority guards.
+      authority: 'cancel',
       schema: {
         params: IdParamsSchema,
         body: CancelCorrespondenceLetterRequestSchema,

@@ -716,6 +716,257 @@ describe('the inward scan', () => {
   });
 });
 
+describe('the date-order rules', () => {
+  it('accepts a reply due on the day the letter arrived and refuses the day before', async () => {
+    const received = daysAgo(7);
+    const boundary = await registerInward({
+      filename: 'due-today.pdf',
+      receivedOn: received,
+      contactId,
+      subject: 'A letter whose reply is due the day it arrived',
+      responseDueOn: received,
+    });
+    expect(boundary.statusCode, boundary.body).toBe(201);
+
+    const before = await storedObjectCount();
+    const refused = await registerInward({
+      filename: 'due-yesterday.pdf',
+      receivedOn: received,
+      contactId,
+      subject: 'A letter whose reply was due before it arrived',
+      responseDueOn: daysAgo(8),
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'CORRESPONDENCE_RESPONSE_DUE_BEFORE_LETTER',
+    );
+    // Refused BEFORE the scan is stored: a 400 raised after the object
+    // was written would leave an orphan behind, which is the whole reason
+    // the rule is repeated at the route.
+    expect(await storedObjectCount()).toBe(before);
+  });
+
+  it("accepts a sender's date equal to the received date and refuses the day after", async () => {
+    const received = daysAgo(6);
+    const boundary = await registerInward({
+      filename: 'same-day.pdf',
+      receivedOn: received,
+      contactId,
+      subject: 'A letter received the day it was written',
+      senderLetterDate: received,
+    });
+    expect(boundary.statusCode, boundary.body).toBe(201);
+
+    const before = await storedObjectCount();
+    const refused = await registerInward({
+      filename: 'future-sender.pdf',
+      receivedOn: daysAgo(6),
+      contactId,
+      subject: 'A letter dated after it arrived',
+      senderLetterDate: daysAgo(5),
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.json<{ code: string }>().code).toBe(
+      'CORRESPONDENCE_SENDER_DATE_AFTER_LETTER',
+    );
+    expect(await storedObjectCount()).toBe(before);
+  });
+
+  it('carries neither date on the outward route, which has no sender and asks nothing', async () => {
+    // The other direction's route cannot hold them: the schema declares
+    // neither field, Fastify strips what it does not declare, and 0086's
+    // outward shape CHECK refuses a row that somehow carried one. So the
+    // assertion is that they never reach the record — an outward letter
+    // has no sender to date it and asks for no reply of its own, and the
+    // two guards above have nothing to bite on here.
+    const written = await writeOutward({
+      letterDate: daysAgo(2),
+      contactId,
+      subject: 'An outward letter carrying inward fields',
+      body: 'Both inward-only dates should be dropped on the way in.',
+      responseDueOn: daysAgo(1),
+      senderLetterDate: daysAgo(1),
+    });
+    expect(written.statusCode, written.body).toBe(201);
+    const { id } = written.json<{ id: string }>();
+    const [stored] = await admin<
+      { response_due_on: string | null; sender_letter_date: string | null }[]
+    >`
+      select response_due_on::text, sender_letter_date::text
+      from correspondence_letters where id = ${id}
+    `;
+    expect(stored?.response_due_on).toBeNull();
+    expect(stored?.sender_letter_date).toBeNull();
+
+    const listed = await register('outward');
+    expect(listed.entries.find((row) => row.id === id)?.replyDueOn).toBeNull();
+  });
+});
+
+describe('work-scope on the dependent reads', () => {
+  it('does not change a visible letter when a hidden Work replies to it', async () => {
+    const question = await registerInward({
+      filename: 'scoped-question.pdf',
+      receivedOn: daysAgo(45),
+      contactId,
+      workId: openWorkId,
+      subject: 'A question filed on the assigned Work',
+    });
+    expect(question.statusCode, question.body).toBe(201);
+    const questionId = question.json<{ id: string }>().id;
+
+    const [assignedUser] = await admin<{ id: string }[]>`
+      select "id" from auth_users where "email" = ${assignedEmail}
+    `;
+    await admin`
+      insert into work_assignments (organisation_id, work_id, user_id, created_by_user_id)
+      values (${organisationId}, ${openWorkId}, ${assignedUser?.id ?? ''}, 'fixture')
+      on conflict do nothing
+    `;
+
+    const seenBefore = await register('inward', assigned);
+    const before = seenBefore.entries.find((row) => row.id === questionId);
+    expect(before?.status).toBe('received');
+    expect(before?.reference).toBeNull();
+
+    // The reply is filed on the Work this member is NOT on.
+    const answer = await writeOutward({
+      letterDate: daysAgo(44),
+      contactId,
+      workId: closedWorkId,
+      replyToLetterId: questionId,
+      subject: 'A reply filed on a Work the assigned member cannot see',
+      body: 'Answered from a Work outside the reader scope.',
+    });
+    expect(answer.statusCode, answer.body).toBe(201);
+
+    // The owner sees the thread close.
+    const owned = await register('inward');
+    expect(owned.entries.find((row) => row.id === questionId)?.status).toBe('replied');
+
+    // The assigned member's register is UNCHANGED. A status chip that
+    // moved, or a reference cell that filled in, would be an inference
+    // channel out of a Work they were deliberately not assigned to.
+    const seenAfter = await register('inward', assigned);
+    const after = seenAfter.entries.find((row) => row.id === questionId);
+    expect(after?.status).toBe('received');
+    expect(after?.reference).toBeNull();
+  });
+
+  it('renders a letter of a superseded Work as general correspondence', async () => {
+    const written = await writeOutward({
+      letterDate: daysAgo(43),
+      contactId,
+      workId: closedWorkId,
+      subject: 'A letter about a Work that is about to be withdrawn',
+      body: 'The letter survives the supersession; the link does not.',
+    });
+    const { id } = written.json<{ id: string }>();
+    expect(
+      (await register('outward')).entries.find((row) => row.id === id)?.workCode,
+    ).not.toBeNull();
+
+    // 0071 refuses a hand-written soft delete: a Work is withdrawn only
+    // by a real supersession. That guard is correct and is not what this
+    // test is about — the register's READ is — so it is stepped around
+    // for exactly one statement rather than staging a whole successor
+    // Work, and restored immediately.
+    await admin`alter table works disable trigger works_supersede_guard`;
+    await admin`update works set deleted_at = now() where id = ${closedWorkId}`;
+    await admin`alter table works enable trigger works_supersede_guard`;
+    try {
+      const row = (await register('outward')).entries.find((entry) => entry.id === id);
+      expect(row?.workCode).toBeNull();
+      expect(row?.workId).toBeNull();
+      // The row is still THERE — the letter is a record of what was sent.
+      expect(row?.number).toBe(written.json<{ number: string }>().number);
+    } finally {
+      await admin`alter table works disable trigger works_supersede_guard`;
+      await admin`update works set deleted_at = null where id = ${closedWorkId}`;
+      await admin`alter table works enable trigger works_supersede_guard`;
+    }
+  });
+});
+
+describe('the cancellation is a record of its own', () => {
+  it('refuses a raw rewrite of the cancellation triple', async () => {
+    const written = await writeOutward({
+      letterDate: daysAgo(42),
+      contactId,
+      subject: 'A letter cancelled once and for all',
+      body: 'The reason recorded here cannot be edited afterwards.',
+    });
+    const { id } = written.json<{ id: string }>();
+    await authed(owner, {
+      method: 'POST',
+      url: `/api/correspondence/${id}/cancel`,
+      organisationId,
+      payload: { reason: 'Recorded in error.' },
+    });
+
+    for (const rewrite of ['reason', 'actor'] as const) {
+      await expect(
+        admin.begin(async (tx) => {
+          await tx`select app_private.bind_tenant(${organisationId}::uuid, ${ownerUserId})`;
+          if (rewrite === 'reason') {
+            await tx`
+              update correspondence_letters
+              set cancellation_reason = 'A different story'
+              where id = ${id}
+            `;
+          } else {
+            await tx`
+              update correspondence_letters set cancelled_by_user_id = 'someone-else'
+              where id = ${id}
+            `;
+          }
+        }),
+      ).rejects.toMatchObject({ code: '23E01' });
+    }
+  });
+
+  it('lets exactly one of a simultaneous reply and cancellation win', async () => {
+    const target = await writeOutward({
+      letterDate: daysAgo(41),
+      contactId,
+      subject: 'A letter answered and cancelled at the same moment',
+      body: 'The FOR SHARE lock decides which of the two orderings happened.',
+    });
+    const targetId = target.json<{ id: string }>().id;
+
+    const [reply, cancelled] = await Promise.all([
+      registerInward({
+        filename: 'racing-reply.pdf',
+        receivedOn: daysAgo(40),
+        contactId,
+        replyToLetterId: targetId,
+        subject: 'The racing reply',
+      }),
+      authed(owner, {
+        method: 'POST',
+        url: `/api/correspondence/${targetId}/cancel`,
+        organisationId,
+        payload: { reason: 'Cancelled in the same instant.' },
+      }),
+    ]);
+
+    // Both orderings are legal and both are consistent; what must never
+    // happen is BOTH succeeding, which would leave a live reply citing a
+    // cancelled letter. The parent's FOR SHARE lock in the insert guard
+    // and the FOR UPDATE in the cancel route are what serialise them.
+    const wins = [reply.statusCode, cancelled.statusCode].filter(
+      (status) => status < 400,
+    );
+    expect(wins, `${reply.body} / ${cancelled.body}`).toHaveLength(1);
+
+    const loser = reply.statusCode < 400 ? cancelled : reply;
+    expect([
+      'CORRESPONDENCE_LETTER_ANSWERED',
+      'CORRESPONDENCE_LETTER_CANCELLED',
+    ]).toContain(loser.json<{ code: string }>().code);
+  });
+});
+
 describe('the projections', () => {
   it('reads extension requests from the extensions module and writes none', async () => {
     const created = await authed(owner, {
@@ -761,6 +1012,88 @@ describe('the projections', () => {
     expect(after.awaitingExtensionResponses).toBeGreaterThanOrEqual(1);
   });
 
+  it('reads the railway response as the second half of the extension pair', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${openWorkId}/extension-requests`,
+      organisationId,
+      payload: {
+        proposedCompletionDate: daysAgo(-320),
+        reason: 'A second request, this one answered by the railway.',
+        addressee: 'Sr. DSTE/MMCT',
+        letterDate: daysAgo(4),
+      },
+    });
+    const extensionId = created.json<{ extensionRequest: { id: string } }>()
+      .extensionRequest.id;
+    await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${extensionId}/finalise`,
+      organisationId,
+    });
+
+    const beforeReply = await register('extensions');
+    expect(beforeReply.entries.filter((row) => row.id === extensionId)).toHaveLength(1);
+
+    const responded = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${extensionId}/response-document`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: pdfBytes(),
+    });
+    expect(responded.statusCode, responded.body).toBe(200);
+    const answered = await authed(owner, {
+      method: 'POST',
+      url: `/api/extension-requests/${extensionId}/respond`,
+      organisationId,
+      payload: { outcome: 'accepted' },
+    });
+    expect(answered.statusCode, answered.body).toBe(200);
+
+    const listed = await register('extensions');
+    const pair = listed.entries.filter((row) => row.id === extensionId);
+    expect(pair).toHaveLength(2);
+    const [request, reply] = pair;
+    // The request now reads `replied`, the same derived word a letter
+    // gets: it is the ANSWER that was accepted, not the letter that asked.
+    expect(request?.direction).toBe('outward');
+    expect(request?.status).toBe('replied');
+    expect(reply?.direction).toBe('inward');
+    expect(reply?.status).toBe('approved');
+    expect(reply?.reference).toBe(request?.number);
+    expect(reply?.extensionUntil).toBe(daysAgo(-320));
+
+    // A request the railway has answered counts as the two rows it is.
+    expect(listed.counts.extensions).toBe(listed.entries.length);
+  });
+
+  it('excludes a back-filled paper letter from the awaiting-response banner', async () => {
+    const before = (await register('extensions')).awaitingExtensionResponses;
+    const backfilled = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${openWorkId}/extension-requests/backfill`,
+      organisationId,
+      payload: {
+        reference: 'PL-281/EOT/PAPER/1',
+        letterDate: daysAgo(3),
+        proposedCompletionDate: daysAgo(-330),
+        reason: 'A paper letter posted before this product was adopted.',
+        addressee: 'Sr. DSTE/MMCT',
+      },
+    });
+    expect(backfilled.statusCode, backfilled.body).toBe(201);
+
+    const after = await register('extensions');
+    // It IS a row on the tab — it is a real letter that went out.
+    expect(after.entries.some((row) => row.reference === 'PL-281/EOT/PAPER/1')).toBe(
+      true,
+    );
+    // It is NOT a prompt to chase anybody: the banner counts what this
+    // product sent and can still be told the answer to.
+    expect(after.awaitingExtensionResponses).toBe(before);
+  });
+
   it('reads an inspection call as its outward request and its inward letter', async () => {
     const [call] = await admin<{ id: string }[]>`
       insert into inspection_calls (
@@ -791,6 +1124,22 @@ describe('the projections', () => {
     expect(inward?.status).toBe('received');
     // A call with an inward letter counts as the two letters it is.
     expect(listed.counts.inspection).toBe(2);
+
+    // Withdrawing the call withdraws the letter that answered it: BOTH
+    // rows read cancelled, or the register would show a live inward
+    // letter belonging to a call that no longer stands.
+    await admin`
+      update inspection_calls
+      set status = 'cancelled',
+          cancelled_at = now(),
+          cancelled_by_user_id = 'fixture',
+          cancellation_reason = 'Withdrawn for the test'
+      where id = ${call?.id ?? ''}
+    `;
+    const withdrawn = (await register('inspection')).entries.filter(
+      (entry) => entry.id === call?.id,
+    );
+    expect(withdrawn.map((entry) => entry.status)).toEqual(['cancelled', 'cancelled']);
   });
 });
 

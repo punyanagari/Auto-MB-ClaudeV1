@@ -1082,6 +1082,7 @@ export function OperationsWorkspace({
                 api={api}
                 organisationId={organisation.id}
                 canModify={canModify}
+                canCancel={canCancel}
                 onWriteLetter={() => {
                   navigate({ name: 'correspondence-new' });
                 }}

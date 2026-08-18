@@ -1296,7 +1296,11 @@ export interface ApiClient {
    * is. */
   readonly listCorrespondence: (
     organisationId: string,
-    options?: { readonly tab?: CorrespondenceTab; readonly cursor?: string },
+    options?: {
+      readonly tab?: CorrespondenceTab;
+      readonly limit?: number;
+      readonly cursor?: string;
+    },
   ) => Promise<CorrespondenceListResponse>;
   readonly listCorrespondenceThreadOptions: (
     organisationId: string,
@@ -1999,14 +2003,27 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     return response.text();
   }
 
-  /** Both company-document uploads post the same thing — a PDF body with
-   * its metadata already in the path's querystring — and answer the same
-   * refreshed credential, so they share one send. */
-  async function uploadCompanyDocumentPdf(
+  /**
+   * The one PDF upload in this client: a raw PDF body with every fact
+   * already in the path's querystring, under the tenant header.
+   *
+   * Every upload route in the product takes exactly this shape, and the
+   * client had grown a copy of it per module — same headers, same
+   * `parseError`, same cast, three times over — each of which is a place
+   * the `credentials` or the content type can be forgotten. The response
+   * type is the caller's, because that is the only thing that actually
+   * differs between them.
+   *
+   * ponytail: the remaining callers still go through the two named
+   * wrappers below rather than being rewritten here; that is a mechanical
+   * follow-up over `routes/company-documents` and `routes/inspections`
+   * with no behaviour in it, and it is not this pack's diff to make.
+   */
+  async function uploadPdf<T>(
     path: string,
     organisationId: string,
     file: Blob,
-  ): Promise<CompanyDocument> {
+  ): Promise<T> {
     const response = await fetchImpl(path, {
       method: 'POST',
       credentials: 'same-origin',
@@ -2017,29 +2034,40 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       body: file,
     });
     if (!response.ok) throw await parseError(response);
-    return (await response.json()) as CompanyDocument;
+    return (await response.json()) as T;
+  }
+
+  /** The one stored-document download: a GET under the tenant header
+   * answering bytes rather than JSON. */
+  async function downloadBlob(path: string, organisationId: string): Promise<Blob> {
+    const response = await fetchImpl(path, {
+      credentials: 'same-origin',
+      headers: { 'x-organisation-id': organisationId },
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.blob();
+  }
+
+  /** Both company-document uploads post the same thing and answer the same
+   * refreshed credential. */
+  function uploadCompanyDocumentPdf(
+    path: string,
+    organisationId: string,
+    file: Blob,
+  ): Promise<CompanyDocument> {
+    return uploadPdf<CompanyDocument>(path, organisationId, file);
   }
 
   /** The same send for every inspection upload — the inward call letter,
    * a checklist paper, the certificate — because they differ only in the
    * facts already encoded in the path, and every one of them answers the
    * refreshed call. */
-  async function uploadInspectionPdf(
+  function uploadInspectionPdf(
     path: string,
     organisationId: string,
     file: Blob,
   ): Promise<InspectionCall> {
-    const response = await fetchImpl(path, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'content-type': 'application/pdf',
-        'x-organisation-id': organisationId,
-      },
-      body: file,
-    });
-    if (!response.ok) throw await parseError(response);
-    return (await response.json()) as InspectionCall;
+    return uploadPdf<InspectionCall>(path, organisationId, file);
   }
 
   return {
@@ -3519,6 +3547,7 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     async listCorrespondence(organisationId, options) {
       const query = uploadQuery({
         tab: options?.tab,
+        limit: options?.limit === undefined ? undefined : String(options.limit),
         cursor: options?.cursor,
       });
       return request<CorrespondenceListResponse>(
@@ -3540,20 +3569,11 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async registerInwardLetter(organisationId, file, details) {
-      const response = await fetchImpl(
+      return uploadPdf<{ id: string; number: string }>(
         `/api/correspondence/inward?${uploadQuery(details)}`,
-        {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'content-type': 'application/pdf',
-            'x-organisation-id': organisationId,
-          },
-          body: file,
-        },
+        organisationId,
+        file,
       );
-      if (!response.ok) throw await parseError(response);
-      return (await response.json()) as { id: string; number: string };
     },
     async cancelCorrespondenceLetter(organisationId, letterId, reason) {
       await request(`/api/correspondence/${letterId}/cancel`, {
@@ -3563,12 +3583,7 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async downloadCorrespondenceLetter(organisationId, letterId) {
-      const response = await fetchImpl(`/api/correspondence/${letterId}/document`, {
-        credentials: 'same-origin',
-        headers: { 'x-organisation-id': organisationId },
-      });
-      if (!response.ok) throw await parseError(response);
-      return response.blob();
+      return downloadBlob(`/api/correspondence/${letterId}/document`, organisationId);
     },
     async listTenders(organisationId) {
       return request<TenderListResponse>('/api/tenders', { organisationId });

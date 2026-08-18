@@ -495,6 +495,7 @@ export const STATE_CASES: readonly StateCase[] = [
         api={api}
         organisationId={ORG_ID}
         canModify
+        canCancel
         onWriteLetter={noop}
         onUploadInward={noop}
       />

@@ -13,18 +13,83 @@ const migrationsDirectory = path.resolve(here, '..', 'migrations');
 let allSql = '';
 let createdTables: string[] = [];
 let createdTriggers: string[] = [];
+let triggersByMigration: Record<string, number> = {};
 
 /**
- * The number of CREATE TRIGGER statements the migration series contains.
+ * How many triggers each migration creates.
  *
  * The panel's coverage reading was "131 triggers, 4 named in tests": the
  * trigger population grows silently because nothing counts it. This census
- * makes each addition an explicit edit. Raising the number is a normal
- * part of adding a trigger â€” the value of the constant is that it cannot
- * happen without somebody typing the new total and, in doing so, asking
- * whether the trigger has a test.
+ * makes each addition an explicit edit, and the value of it is that a
+ * trigger cannot arrive without somebody typing a number and, in doing so,
+ * asking whether it has a test.
+ *
+ * PER MIGRATION rather than one shared total, and that shape is the point.
+ * A single integer is a line every concurrent pack has to edit, so three
+ * packs adding triggers in one wave produce three conflicts on one line,
+ * each resolved by re-deriving a number nobody can check by reading the
+ * diff. A map is a key ADD: two packs touch different lines, git merges
+ * them, and the sum stays exact because a merged migration file never
+ * changes again. Migrations that create no trigger are simply absent.
  */
-const TRIGGER_CENSUS = 194;
+const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
+  '0001_core.sql': 3,
+  '0003_integrity_guards.sql': 8,
+  '0006_retention.sql': 5,
+  '0008_integrity_hardening.sql': 2,
+  '0010_challan_date_guard.sql': 1,
+  '0011_completion_extensions.sql': 6,
+  '0012_amendments_approvals.sql': 2,
+  '0013_masters_profile.sql': 4,
+  '0014_issue_challans.sql': 7,
+  '0015_serial_enforcement.sql': 1,
+  '0017_installation_records.sql': 5,
+  '0019_correction_flow.sql': 6,
+  '0021_payment_categories.sql': 1,
+  '0022_pac_certificates.sql': 5,
+  '0023_wave2_hardening.sql': 1,
+  '0024_measurement_books.sql': 9,
+  '0027_review_hardening_and_rates.sql': 2,
+  '0028_contacts_master.sql': 2,
+  '0030_amendment_floors.sql': 3,
+  '0031_work_completion.sql': 5,
+  '0033_procurement_and_tax.sql': 6,
+  '0035_tax_invoices_eway.sql': 5,
+  '0039_number_series_and_direct_invoices.sql': 1,
+  '0040_contract_source_documents.sql': 1,
+  '0041_statutory_provider_evidence.sql': 5,
+  '0044_tax_invoice_truth_and_render_history.sql': 7,
+  '0045_audit_integrity_followup.sql': 5,
+  '0046_quantity_ceilings_and_fk_indexes.sql': 2,
+  '0048_gst_rate_master.sql': 2,
+  '0051_credit_notes.sql': 6,
+  '0052_tax_money_backstops.sql': 2,
+  '0055_loa_document_discard.sql': 1,
+  '0056_delivery_challan_module.sql': 3,
+  '0057_itemised_invoices.sql': 5,
+  '0058_omission_variation_orders.sql': 2,
+  '0060_pdf_signature_verdicts.sql': 1,
+  '0064_counter_and_invoice_number_guards.sql': 4,
+  '0065_value_domains_and_live_items.sql': 3,
+  '0066_received_railway_bills.sql': 4,
+  '0067_bill_payments.sql': 4,
+  '0068_amc_payment_category.sql': 3,
+  '0071_work_supersession.sql': 4,
+  '0072_worker_job_queue.sql': 2,
+  '0076_eway_bill_source_documents.sql': 4,
+  '0077_installation_variation.sql': 3,
+  '0078_masters_bank_details_and_canonical_items.sql': 2,
+  '0079_company_document_library.sql': 3,
+  '0080_payments_workspace.sql': 7,
+  '0082_inspection_lifecycle.sql': 8,
+  '0083_tenders.sql': 7,
+  '0086_correspondence_register.sql': 4,
+};
+
+const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
+  (total, count) => total + count,
+  0,
+);
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -47,6 +112,12 @@ beforeAll(async () => {
     files.map((name) => readFile(path.join(migrationsDirectory, name), 'utf8')),
   );
   allSql = contents.join('\n');
+  triggersByMigration = {};
+  files.forEach((name, index) => {
+    const created = [...(contents[index] ?? '').matchAll(/^\s*create trigger (\w+)/gim)]
+      .length;
+    if (created > 0) triggersByMigration[name] = created;
+  });
   createdTables = [...allSql.matchAll(/^create table (\w+)/gim)].map(
     (match) => match[1] ?? '',
   );
@@ -384,13 +455,32 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('budgetary_quotations_update_guard');
   });
 
-  it('counts the triggers the series creates', () => {
+  it('counts the triggers the series creates, per migration', () => {
     expect(
       createdTriggers.length,
       'the migration series creates a different number of triggers than the ' +
-        'census records. Update TRIGGER_CENSUS in this file, and give the new ' +
-        'trigger a test that attacks it with raw SQL.',
+        'census records. Add or correct your migration key in ' +
+        'MIGRATION_TRIGGERS in this file, and give the new trigger a test ' +
+        'that attacks it with raw SQL.',
     ).toBe(TRIGGER_CENSUS);
+
+    // WHICH migration is wrong, not only that the total is. The per-file
+    // numbers exist to make a merge a key-add; they earn their keep again
+    // by making a mistake local to the file that made it.
+    const wrong = Object.entries(triggersByMigration)
+      .filter(([file, count]) => (MIGRATION_TRIGGERS[file] ?? 0) !== count)
+      .map(([file, count]) => `${file}: ${String(count)} created`);
+    const stale = Object.keys(MIGRATION_TRIGGERS).filter(
+      (file) => triggersByMigration[file] === undefined,
+    );
+    expect(
+      wrong,
+      'migrations whose trigger count is not what MIGRATION_TRIGGERS says',
+    ).toEqual([]);
+    expect(
+      stale,
+      'MIGRATION_TRIGGERS names a migration that creates no trigger',
+    ).toEqual([]);
   });
 
   it('guards every counter table against a decreasing counter (0064)', () => {
@@ -1101,6 +1191,15 @@ describe('tenant migration contract', () => {
     );
     expect(sql).toContain('a cancelled letter cannot be reinstated');
     expect(sql).toContain('has been answered and cannot be cancelled');
+    // The cancellation itself is frozen once written. The freeze above
+    // has to exempt the triple so the ONE legal update can write it, and
+    // this is the guard that closes that exemption behind it — otherwise
+    // the reason, the actor and the moment of a cancellation stay
+    // rewritable forever on the record that explains a retained number.
+    expect(sql).toContain("a letter''s cancellation is immutable once recorded");
+    expect(sql).toMatch(
+      /IF OLD\.cancelled_at IS NOT NULL\s+AND ROW\(NEW\.cancelled_at, NEW\.cancelled_by_user_id, NEW\.cancellation_reason\)/,
+    );
 
     // Every guard function pins its search_path, as 0067, 0077, 0079 and
     // 0083 do, and none runs with definer rights.

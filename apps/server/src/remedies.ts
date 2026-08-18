@@ -132,6 +132,10 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'File the letter again; it takes the next number in the series.',
   CORRESPONDENCE_DATE_IN_FUTURE:
     'Date the letter on or before today; the register keeps the day it was actually dispatched or received.',
+  CORRESPONDENCE_RESPONSE_DUE_BEFORE_LETTER:
+    'Set the reply-due date on or after the day the letter arrived, or leave it empty when the letter asks for nothing.',
+  CORRESPONDENCE_SENDER_DATE_AFTER_LETTER:
+    "Check the date printed on the received letter against the day it was registered; the sender's date cannot be later.",
   EWAY_BILL_STATUS_CONFLICT:
     'Reload the e-way bill and read its state before acting on it again; the portal moves it independently of this screen.',
   APPROVAL_NOT_PENDING:
