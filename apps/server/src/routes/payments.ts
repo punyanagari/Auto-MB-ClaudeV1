@@ -702,7 +702,14 @@ export function registerPaymentsWorkspaceRoutes(
         // it. An advance was paid against an estimate and stays open
         // until the final bills are recorded — which is exactly what
         // blocks the next advance.
-        const settlesImmediately = existing.kind === 'reimbursement';
+        //
+        // Written as "anything but an advance" rather than as a list of
+        // the kinds that settle: `salary` (migration 0090) has no later
+        // bills either, and a list would have left every salary request
+        // in this organisation sitting at `paid` forever, one release
+        // after the kind was added. The advance is the exception, so the
+        // advance is what the condition names.
+        const settlesImmediately = existing.kind !== 'advance';
         // `and status = 'approved'` is the double-pay guard: a retried
         // request that finds the row already paid matches no row and is
         // told so, instead of moving the money twice or overwriting the

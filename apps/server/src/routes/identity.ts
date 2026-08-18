@@ -14,6 +14,7 @@ import { jsonb, withUserContext } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { seedDefaultGstRates } from '../gst-rates.js';
+import { seedDefaultPayrollSchedules } from '../payroll-rates.js';
 import { httpError } from '../http.js';
 import { mfaEnforcementEnabled, mfaGate } from '../mfa-policy.js';
 import { requireUser } from '../session.js';
@@ -153,6 +154,25 @@ export function registerIdentityRoutes(
           values (
             ${row.id}, ${user.id}, 'gst_rate.defaults_seeded', 'gst_rates',
             ${jsonb(tx, { count: seeded, source: 'notified GST rate history (0048)' })}
+          )
+        `;
+        // The payroll schedules, for the same reason and in the same
+        // transaction (migration 0089 seeded the organisations that
+        // already existed). Without them the first payroll run refuses
+        // every employee by name, which is a true refusal and a useless
+        // first experience.
+        const payrollSeeded = await seedDefaultPayrollSchedules(tx, row.id);
+        await tx`
+          insert into audit_events (
+            organisation_id, actor_user_id, action, entity_type, details
+          )
+          values (
+            ${row.id}, ${user.id}, 'payroll_schedule.defaults_seeded',
+            'payroll_statutory_rates',
+            ${jsonb(tx, {
+              count: payrollSeeded,
+              source: 'payroll statutory schedules (0089)',
+            })}
           )
         `;
         return row.id;

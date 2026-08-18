@@ -69,6 +69,7 @@ import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
+import { registerHrRoutes } from './routes/hr.js';
 import { registerMeasurementBookRoutes } from './routes/measurement-books/index.js';
 import { registerTaxInvoiceRoutes } from './routes/tax-invoices/index.js';
 import { registerCreditNoteRoutes } from './routes/credit-notes.js';
@@ -919,6 +920,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerCompanyDocumentRoutes(app, authInstance, database, storage, scanner);
     registerInspectionRoutes(app, authInstance, database, storage, scanner);
     registerPaymentsWorkspaceRoutes(app, authInstance, database);
+    registerHrRoutes(app, authInstance, database);
     registerTenderRoutes(app, authInstance, database, storage, scanner);
     registerProductionRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
