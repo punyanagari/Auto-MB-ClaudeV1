@@ -14,16 +14,16 @@ import {
 // turns a contract line into physical units, the serial genealogy of
 // those units, and the despatch that hands them to stock.
 //
-// Two things this module deliberately does not carry, both recorded in
-// migration 0084's header and in `docs/UX.md` § 11:
+// One thing this module deliberately does not carry, recorded in
+// migration 0084's header and in `docs/UX.md` § 11: no stored readiness.
+// `material-short`, `material-ready` and `dispatch-ready` are the mock's
+// derived facts stored as a status field, and its own fixture disagrees
+// with itself on two of three plans as a result.
 //
-//   * no material SHORTAGE. Shortage is required minus on-hand, and
-//     on-hand is the Inventory pack's stock ledger, which does not exist
-//     yet. `MaterialRequirementSchema` carries the half that is real.
-//   * no stored readiness. `material-short`, `material-ready` and
-//     `dispatch-ready` are the mock's derived facts stored as a status
-//     field, and its own fixture disagrees with itself on two of three
-//     plans as a result.
+// Material SHORTAGE was the second such omission until the Inventory
+// pack's stock ledger landed (migration 0087). It is here now, and it is
+// DERIVED ON READ from that ledger — nothing below is a column anyone can
+// type into.
 
 /* --- The item master ---------------------------------------------------- */
 
@@ -191,13 +191,27 @@ export const JobCardStatusSchema = Type.Union(
 );
 export type JobCardStatus = Static<typeof JobCardStatusSchema>;
 
-/** What the bill of material asks of one job card, one part at a time.
+/** What the bill of material asks of one job card, one part at a time,
+ * and how much of it this card can actually have.
  *
- * `available` and `shortage` are absent, not zeroed: on-hand stock is the
- * Inventory pack's ledger and does not exist yet, and a shortage computed
- * against no stock reads zero for everything. Adding the two fields when
- * the ledger lands is additive; shipping them empty would be a number
- * that says something untrue. */
+ * All three quantities are derived on read. `required` is 0084's
+ * explosion; `available` and `shortage` come off the stock ledger of
+ * migration 0087 and no column stores either.
+ *
+ * `available` is THIS CARD'S share of the shelf — what is on hand, less
+ * every OTHER open job card's outstanding claim on the same part. The
+ * card's own claim is added back, because a card must not be told it
+ * cannot have what it itself reserved, and the other cards are taken off
+ * because two cards each subtracting nothing would each be promised the
+ * same reel of cable.
+ *
+ * `shortage` then takes off what is already coming: the requirement, less
+ * that share of the shelf, less the outstanding balance of every open
+ * purchase order for the part. So a part with a shortage covered by an
+ * order in transit reads zero, which is the honest answer to "what still
+ * has to be bought" — and it is why `required - available` is not always
+ * `shortage`. A card that is completed or cancelled needs nothing and its
+ * shortage is zero whatever the shelf says. */
 export const MaterialRequirementSchema = Type.Object(
   {
     itemId: UuidSchema,
@@ -207,6 +221,11 @@ export const MaterialRequirementSchema = Type.Object(
     /** For the whole job card: the exploded per-unit quantity times the
      * planned quantity. */
     required: NonNegativeDecimalStringSchema,
+    /** On the shelf and unclaimed by any other open job card. */
+    available: NonNegativeDecimalStringSchema,
+    /** What still has to be bought, net of the shelf and of what is on
+     * order. Zero, never negative: a surplus is not a shortage. */
+    shortage: NonNegativeDecimalStringSchema,
     serialControlled: Type.Boolean(),
   },
   { additionalProperties: false },
@@ -246,10 +265,21 @@ export const JobCardSummarySchema = Type.Object(
     manufactured: Type.Integer({ minimum: 0 }),
     /** Units that have left production on a despatch. Counted. */
     dispatched: Type.Integer({ minimum: 0 }),
-    /** How many distinct parts the bill of material asks for. The
-     * register's Material column, which is the honest half of the mock's
-     * shortage badge until the stock ledger lands. */
+    /** How many distinct parts the bill of material asks for. Zero means
+     * the product has no bill at all, which the register says in those
+     * words rather than reporting nothing short. */
     materialLines: Type.Integer({ minimum: 0 }),
+    /** How many distinct parts this card is short of — the register's
+     * Material badge, and the same arithmetic as
+     * `MaterialRequirementSchema.shortage` on the card's own Materials
+     * tab.
+     *
+     * A COUNT OF PARTS, not the mock's sum of quantities. The mock badges
+     * "2277 units short" by adding cabinets in Nos to cable in Mtr to
+     * solder in Kg, which `docs/UX.md` § 13a refuses for the stock
+     * register's tiles and refuses here for the same reason: a count of
+     * parts is the same question asked in a unit that exists. */
+    materialShortParts: Type.Integer({ minimum: 0 }),
     status: JobCardStatusSchema,
     dueDate: DateOnlySchema,
     completedOn: Type.Union([DateOnlySchema, Type.Null()]),

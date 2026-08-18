@@ -1329,10 +1329,24 @@ contract. It may be revised down, but never below what has already been
 built — which is how a short run is closed honestly rather than by
 inventing units.
 
-Material READINESS is not modelled. What one job card requires of each
-part is computed from the exploded bill; what is available and what is
-short need a stock ledger, and until one exists the product states the
-requirement and says that is what it is (§9).
+Material READINESS is not a stored state, but the position behind it is
+now real. What one job card requires of each part is computed from the
+exploded bill; what is AVAILABLE to it and what is still SHORT come off
+the stock ledger, and all three are derived on read.
+
+Available is the card's share of the shelf: what is on hand, less every
+other open job card's outstanding claim on the same part, with the card's
+own claim added back so it is never told it cannot have the material it
+itself reserved. Two cards therefore cannot each be promised the same
+reel of cable. Shortage takes off what is already on an open purchase
+order as well — the same netting the shortage screen and the order it
+drafts use — so a part covered by material in transit is not bought
+twice, and `Required − Available` is deliberately not the shortage.
+
+The job card's Materials tab shows the three side by side. The production
+register shows one figure per card: how many distinct PARTS it is short
+of. A count of parts, never a sum of quantities, because adding cabinets
+in Nos to cable in Mtr to solder in Kg prints a number in no unit at all.
 
 **Serial traceability** is the part with teeth, and it is two records.
 

@@ -41,6 +41,7 @@ import {
   audit,
   errorResponses,
   IdParamsSchema,
+  onOrderQuantitySql,
   optionalTrimmed,
   requireTrimmed,
 } from './shared.js';
@@ -364,7 +365,7 @@ const JOB_CARD_SELECT = `
   left join works w on w.organisation_id = j.organisation_id and w.id = j.work_id
 `;
 
-function toSummary(row: JobCardRow): JobCardSummary {
+function toSummary(row: JobCardRow, materialShortParts: number): JobCardSummary {
   return {
     id: row.id,
     number: jobCardNumberOf(row.fy_label, row.sequence_number),
@@ -382,6 +383,7 @@ function toSummary(row: JobCardRow): JobCardSummary {
     manufactured: row.manufactured_count,
     dispatched: row.dispatched_count,
     materialLines: row.material_lines,
+    materialShortParts,
     status: row.status,
     dueDate: row.due_date,
     completedOn: row.completed_on,
@@ -490,53 +492,146 @@ async function readBom(
 }
 
 /**
- * What the whole job card asks of each distinct part.
+ * What each distinct part costs a job card, and how much of it the card
+ * can actually have — one row per part, for any set of job cards.
  *
- * The explosion is `app_private.production_bom_requirements`, which
- * aggregates per LEVEL rather than enumerating paths. The recursive CTE
- * that used to live here walked one row per path, so a bill of material
- * where two sub-assemblies share a part — the ordinary case, not a
- * pathological one — doubled its row count at every level the part
- * reappeared, and it ran on every read of a job card under that card's
- * row lock. A ten-level shared lattice measured 1022 rows against the
- * function's 18, for the same arithmetic.
+ * `$1` organisation, `$2` the job-card ids. Every figure is derived: no
+ * column stores a requirement, a shelf position or a shortage.
  *
- * The multiplication by the planned quantity stays in SQL over
- * `numeric`; nothing here touches floating point (AGENTS.md rule 5).
+ * ## The explosion
+ *
+ * `app_private.production_bom_requirements` aggregates per LEVEL rather
+ * than enumerating paths. The recursive CTE that used to live here walked
+ * one row per path, so a bill of material where two sub-assemblies share
+ * a part — the ordinary case, not a pathological one — doubled its row
+ * count at every level the part reappeared, and it ran on every read of a
+ * job card under that card's row lock. A ten-level shared lattice
+ * measured 1022 rows against the function's 18, for the same arithmetic.
+ *
+ * ## The shelf, and whose it is
+ *
+ * `available` is this card's SHARE of the shelf: what is on hand, less
+ * every other open job card's outstanding claim on the same part. That
+ * claim is `app_private.stock_outstanding_requirement` (0087 § 7), which
+ * is called ONCE per statement and grouped, never once per card — and the
+ * card's own contribution is added straight back, because a card must not
+ * be told it cannot have the material it itself reserved. Netted the
+ * naive way, two cards wanting one reel of cable would each be promised
+ * it.
+ *
+ * ## What is already coming
+ *
+ * `shortage` takes the outstanding balance of every open purchase order
+ * off as well, through the shared `onOrderQuantitySql` — the same
+ * fragment the shortage list and the order it drafts read, so a job card
+ * can never disagree with the procurement screen about what is short.
+ * That is also why `required - available` is not the shortage: material
+ * in transit closes a shortage without being on the shelf yet.
+ *
+ * A card that is completed or cancelled asks for nothing more, so its
+ * shortage is zero whatever the shelf holds. Its `required` still shows
+ * what the card took, which is what the Materials tab is for.
+ *
+ * All the arithmetic is `numeric`; nothing here touches floating point
+ * (AGENTS.md rule 5).
  */
+const MATERIAL_POSITION_SQL = `
+  with claim as (
+    select r.job_card_id, r.component_item_id, r.required
+    from app_private.stock_outstanding_requirement($1::uuid) r
+  ),
+  committed as (
+    select claim.component_item_id, sum(claim.required) as total
+    from claim group by claim.component_item_id
+  )
+  select j.id as job_card_id, req.item_id, i.item_code, i.name, i.unit,
+         i.serial_controlled,
+         (req.quantity_per_unit * j.quantity)::quantity_amount as required,
+         shelf.available,
+         case when j.status in ('planned', 'in_production') then
+           greatest(
+             req.quantity_per_unit * j.quantity - shelf.available - shelf.on_order,
+             0
+           )::quantity_amount
+         else 0::quantity_amount
+         end as shortage
+  from production_job_cards j
+  cross join lateral app_private.production_bom_requirements($1::uuid, j.item_id)
+    as req(item_id, quantity_per_unit)
+  join production_items i
+    on i.organisation_id = j.organisation_id and i.id = req.item_id
+  left join committed on committed.component_item_id = req.item_id
+  left join claim mine
+    on mine.job_card_id = j.id and mine.component_item_id = req.item_id
+  cross join lateral (
+    select greatest(
+             app_private.stock_on_hand($1::uuid, req.item_id)
+               - (coalesce(committed.total, 0) - coalesce(mine.required, 0)),
+             0
+           )::quantity_amount as available,
+           ${onOrderQuantitySql('req.item_id')}::quantity_amount as on_order
+  ) shelf
+  where j.id = any($2::uuid[])`;
+
 async function readMaterials(
   tx: TransactionSql,
   organisationId: string,
-  itemId: string,
-  quantity: number,
+  jobCardId: string,
 ): Promise<readonly MaterialRequirement[]> {
-  const rows = await tx<
-    {
-      item_id: string;
-      item_code: string;
-      name: string;
-      unit: string;
-      required: string;
-      serial_controlled: boolean;
-    }[]
-  >`
-    select requirement.item_id, item.item_code, item.name, item.unit,
-           (requirement.quantity_per_unit * ${quantity})::text as required,
-           item.serial_controlled
-    from app_private.production_bom_requirements(${organisationId}, ${itemId})
-      as requirement
-    join production_items item
-      on item.organisation_id = ${organisationId} and item.id = requirement.item_id
-    order by item.name
-  `;
+  const rows = (await tx.unsafe(
+    `select position.item_id, position.item_code, position.name, position.unit,
+            position.serial_controlled,
+            position.required::text as required,
+            position.available::text as available,
+            position.shortage::text as shortage
+     from (${MATERIAL_POSITION_SQL}) position
+     order by position.name`,
+    [organisationId, [jobCardId]],
+  )) as unknown as {
+    item_id: string;
+    item_code: string;
+    name: string;
+    unit: string;
+    required: string;
+    available: string;
+    shortage: string;
+    serial_controlled: boolean;
+  }[];
   return rows.map((row) => ({
     itemId: row.item_id,
     itemCode: row.item_code,
     name: row.name,
     unit: row.unit,
     required: row.required,
+    available: row.available,
+    shortage: row.shortage,
     serialControlled: row.serial_controlled,
   }));
+}
+
+/**
+ * How many distinct parts each of these job cards is short of.
+ *
+ * The register's Material badge, counted in SQL over the same expression
+ * the card's own Materials tab renders, so the badge and the tab cannot
+ * answer differently. A count of PARTS rather than the mock's sum of
+ * quantities, for the reason `docs/UX.md` § 13a gives: adding cabinets in
+ * Nos to cable in Mtr prints a number in no unit at all.
+ */
+async function readShortPartCounts(
+  tx: TransactionSql,
+  organisationId: string,
+  jobCardIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (jobCardIds.length === 0) return new Map();
+  const rows = (await tx.unsafe(
+    `select position.job_card_id,
+            count(*) filter (where position.shortage > 0)::int as short_parts
+     from (${MATERIAL_POSITION_SQL}) position
+     group by position.job_card_id`,
+    [organisationId, [...jobCardIds]],
+  )) as unknown as { job_card_id: string; short_parts: number }[];
+  return new Map(rows.map((row) => [row.job_card_id, row.short_parts]));
 }
 
 /**
@@ -699,12 +794,12 @@ async function readJobCardDetail(
   if (!row) {
     throw httpError(404, 'PRODUCTION_JOB_CARD_NOT_FOUND', 'No such job card.');
   }
-  const summary = toSummary(row);
+  const number = jobCardNumberOf(row.fy_label, row.sequence_number);
   const [materials, serials, slots, dispatches] = await Promise.all([
-    readMaterials(tx, organisationId, row.item_id, row.quantity),
+    readMaterials(tx, organisationId, jobCardId),
     readSerials(tx, organisationId, jobCardId),
     readComponentSlots(tx, organisationId, row.item_id),
-    readDispatches(tx, organisationId, jobCardId, summary.number),
+    readDispatches(tx, organisationId, jobCardId, number),
   ]);
   // Readiness comes from `app_private.production_job_card_dispatch_ready`,
   // the SAME expression the register's tile counts with. It used to be
@@ -718,6 +813,13 @@ async function readJobCardDetail(
     ) as ready
   `;
   const dispatchReady = readiness?.ready ?? false;
+  // Counted off the rows the tab renders rather than asked for a second
+  // time: the badge on the register and the Shortage column here are the
+  // same fact, and a second statement is a second chance to disagree.
+  const summary = toSummary(
+    row,
+    materials.filter((material) => Number(material.shortage) > 0).length,
+  );
   return {
     ...summary,
     materials: [...materials],
@@ -1108,7 +1210,7 @@ export function registerProductionRoutes(
         response: { 200: JobCardListResponseSchema, ...errorResponses },
       },
     },
-    async ({ request, user, tenant }) => {
+    async ({ request, user, organisationId, tenant }) => {
       const query = request.query;
       return tenant(async (tx) => {
         const full = await hasFullWorkScope(tx, user.id);
@@ -1129,6 +1231,14 @@ export function registerProductionRoutes(
           limit ${sqlLimit(query.limit)}
         `;
         const page = keysetPage(rows, query.limit, (row) => row.id);
+        // One statement for the whole page, not one per row: the
+        // requirement explosion is the expensive part of this read and a
+        // register of fifty cards must not pay for it fifty times over.
+        const shortParts = await readShortPartCounts(
+          tx,
+          organisationId,
+          page.rows.map((row) => row.id),
+        );
         // The tiles count the whole register, not the page: a keyset page
         // is a window, and a stat that changed as an operator paged would
         // be reporting the window rather than the workload.
@@ -1148,7 +1258,7 @@ export function registerProductionRoutes(
           where ${scope}
         `;
         return {
-          jobCards: page.rows.map(toSummary),
+          jobCards: page.rows.map((row) => toSummary(row, shortParts.get(row.id) ?? 0)),
           nextCursor: page.nextCursor,
           openCount: counts?.open_count ?? 0,
           inProductionCount: counts?.in_production_count ?? 0,

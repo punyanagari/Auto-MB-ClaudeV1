@@ -543,14 +543,20 @@ const CORRESPONDENCE_REGISTER = {
   awaitingExtensionResponses: 2,
 };
 
-/* OEM production (migration 0084).
+/* OEM production (migration 0084), with the material position the stock
+ * ledger of 0087 makes real.
  *
  * The job card carries every tint this module puts on a word, because
  * the axe scan is the only place they are checked together in both
- * themes: the `in-production` chip, the neutral Material badge, the
- * progress bar, the success "Dispatch ready" badge, and — on the Serials
- * tab — the destructive/success component count, which is the one figure
- * here that is colour-coded at all.
+ * themes: the `in-production` chip, the WARNING "1 part short" Material
+ * badge, the progress bar, the success "Dispatch ready" badge, and — on
+ * the Serials tab — the destructive/success component count.
+ *
+ * `materialShortParts` is 1 on purpose. A fixture with nothing short
+ * would render the neutral "Ready" badge and the warning tint — the one
+ * this pack adds — would never be scanned in either theme. The two
+ * material rows below carry the two readings the tab has to hold: one
+ * part short, and one covered by the shelf.
  */
 const PRODUCTION_JOB_CARD_ID = '9f2c1b7a-4e58-4d31-9b2a-7c1e5d8a3046';
 const PRODUCTION_ITEM_ID = '2a7e9c14-6b83-4f52-9d07-1e4b8a6c2f35';
@@ -572,6 +578,7 @@ const PRODUCTION_JOB_CARD = {
   manufactured: 5,
   dispatched: 2,
   materialLines: 2,
+  materialShortParts: 1,
   status: 'in_production',
   dueDate: '2026-11-30',
   completedOn: null,
@@ -583,6 +590,8 @@ const PRODUCTION_JOB_CARD = {
       name: '24 V 10 A SMPS',
       unit: 'Nos',
       required: '12.000',
+      available: '4.000',
+      shortage: '8.000',
       serialControlled: true,
     },
     {
@@ -591,6 +600,8 @@ const PRODUCTION_JOB_CARD = {
       name: 'Powder-coated cabinet',
       unit: 'Nos',
       required: '12.000',
+      available: '12.000',
+      shortage: '0.000',
       serialControlled: false,
     },
   ],
@@ -657,6 +668,7 @@ const PRODUCTION_JOB_CARD_LIST = {
       manufactured: PRODUCTION_JOB_CARD.manufactured,
       dispatched: PRODUCTION_JOB_CARD.dispatched,
       materialLines: PRODUCTION_JOB_CARD.materialLines,
+      materialShortParts: PRODUCTION_JOB_CARD.materialShortParts,
       status: PRODUCTION_JOB_CARD.status,
       dueDate: PRODUCTION_JOB_CARD.dueDate,
       completedOn: null,
