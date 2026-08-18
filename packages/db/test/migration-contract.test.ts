@@ -2175,3 +2175,68 @@ describe('tenant migration contract', () => {
     expect(guards.match(/USING ERRCODE = '23J\d\d'/g)?.length).toBe(raises.length);
   });
 });
+
+describe('the audit register and its retention policy (0095)', () => {
+  it('adds two columns, no table, and no trigger', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0095_audit_trail_and_retention.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+
+    // NO NEW TABLE and NO NEW TRIGGER, which is why 0095 is absent from
+    // MIGRATION_TRIGGERS above rather than present with a zero — the
+    // census refuses a key naming a migration that creates none. The
+    // register reads `audit_events` as 0001 left it, through the index
+    // 0001 built for the per-Work timeline.
+    expect(sql).not.toContain('CREATE TABLE');
+    expect(sql).not.toContain('CREATE TRIGGER');
+    expect(MIGRATION_TRIGGERS['0095_audit_trail_and_retention.sql']).toBeUndefined();
+
+    // The authority, in the 0080/0089/0091 shape: per-member, default
+    // false, not backfilled.
+    expect(sql).toContain(
+      'ALTER TABLE organisation_memberships\n  ADD COLUMN can_view_audit_trail boolean NOT NULL DEFAULT false;',
+    );
+
+    // The retention floor is the statutory one rather than a taste.
+    // Section 128 of the Companies Act 2013 sets eight financial years for
+    // the books of account, and Rule 3(1) of the Companies (Accounts)
+    // Rules carries the audit trail with them, so 96 is a minimum an
+    // organisation cannot configure its way below.
+    expect(sql).toContain('audit_retention_months integer NOT NULL DEFAULT 96');
+    expect(sql).toContain('CHECK (audit_retention_months BETWEEN 96 AND 600)');
+
+    // AND NOTHING DELETES, which is the whole argument of the migration's
+    // second half: a purge would need the application role to hold DELETE
+    // on a table 0002 deliberately revoked it from — the code being
+    // audited handed the ability to edit its own trail.
+    expect(sql).not.toMatch(/DELETE FROM audit_events/i);
+    expect(sql).not.toMatch(/GRANT[^;]*DELETE[^;]*audit_events/i);
+  });
+
+  it('restates every grant the definer function already carried', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0095_audit_trail_and_retention.sql'),
+      'utf8',
+    );
+    // The fourth restatement of `create_organisation_with_owner`, and the
+    // hazard 0091's own comment records: CREATE OR REPLACE states the
+    // whole body rather than amending it, so a grant left out here is a
+    // founder who silently cannot use a feature in the organisation they
+    // just created. All five columns, all five values.
+    expect(sql).toContain(
+      'can_issue_documents, can_cancel_documents, can_sign_documents,\n    can_manage_payroll, can_view_audit_trail, status',
+    );
+    expect(sql).toContain(
+      "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, true, 'active');",
+    );
+    // A definer function that silently changed hands would be a privilege
+    // change nobody reviewed, so ownership and the grant are restated
+    // explicitly rather than relied on.
+    expect(sql).toContain(
+      'ALTER FUNCTION app_private.create_organisation_with_owner(text, text, uuid)\n  OWNER TO auto_mb_definer;',
+    );
+    expect(sql).toContain('SET search_path = public, app_private, pg_temp');
+  });
+});

@@ -403,7 +403,7 @@ const REGISTERS: Readonly<Partial<Record<ExportableRegister, RegisterDescriptor>
     scope: 'organisation',
     authority: 'payroll',
     sql: `
-      select e.employee_code, c.name, e.department,
+      select e.employee_code, c.designation as name, e.department,
              e.date_of_joining::text as date_of_joining,
              e.date_of_exit::text as date_of_exit,
              e.pf_covered::text as pf_covered,
@@ -550,10 +550,16 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
         if (register.scope === 'organisation' && !full) {
           await requireFullScope(tx, user.id);
         }
-        const rows = (await tx.unsafe(`${register.sql} limit ${EXPORT_ROW_CAP}`, [
-          full,
-          user.id,
-        ])) as unknown as Record<string, string | null>[];
+        // Only a work-scoped statement names $1 and $2; an
+        // organisation-wide one has no Work to narrow by and would be
+        // handed two parameters it never declared, which PostgreSQL
+        // refuses outright rather than ignoring.
+        const parameters =
+          register.scope === 'work' ? [full, user.id] : ([] as unknown[]);
+        const rows = (await tx.unsafe(
+          `${register.sql} limit ${EXPORT_ROW_CAP}`,
+          parameters,
+        )) as unknown as Record<string, string | null>[];
         await audit(
           tx,
           organisationId,
