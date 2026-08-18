@@ -814,6 +814,35 @@ export function registerInstallationRoutes(
             `Cancelling this installation would leave PAC-certified quantity ${coverage.certified} above the remaining installed quantity ${coverage.remaining} for ${existing.item_number} (R18). Cancel the covering PAC certificate(s) first: ${names}.`,
           );
         }
+        // A live defect liability period rests on this record: cancelling
+        // it would remove the ground the period stands on while the
+        // railway is still holding a Performance Bank Guarantee measured
+        // against its expiry. The own-row lock taken above serialises this
+        // against a period being started concurrently — the 0099 insert
+        // guard takes a share lock on the same installation row — and the
+        // 0099 cancel guard backstops the refusal against every writer.
+        const [warranty] = await tx<
+          { status: string; dlp_expires_on: string; closed_on: string | null }[]
+        >`
+          select status, dlp_expires_on::text as dlp_expires_on,
+                 closed_on::text as closed_on
+          from installation_warranties
+          where installation_id = ${id} and status <> 'voided'
+        `;
+        if (warranty) {
+          // A DISCHARGED period is a completed legal cycle, and there is
+          // deliberately no way back through it: the record it rests on
+          // is permanent from that point, exactly as an issued document
+          // is. The message says so rather than pointing at a void that
+          // the 0099 guard would refuse.
+          throw httpError(
+            409,
+            'INSTALLATION_HAS_LIVE_WARRANTY',
+            warranty.status === 'closed'
+              ? `This installation's defect liability period was discharged on ${warranty.closed_on ?? warranty.dlp_expires_on}; the record it rests on is permanent and is not cancelled.`
+              : `This installation carries a defect liability period running to ${warranty.dlp_expires_on}. Void the period on the Work's Instruments tab first.`,
+          );
+        }
         await tx`
           update installations
           set status = 'cancelled', cancellation_note = ${body.note},

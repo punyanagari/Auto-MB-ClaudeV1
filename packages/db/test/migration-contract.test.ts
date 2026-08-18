@@ -90,6 +90,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0089_employees.sql': 4,
   '0090_payroll.sql': 6,
   '0091_signing_requests.sql': 2,
+  '0099_warranty_dlp.sql': 6,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -2173,5 +2174,138 @@ describe('tenant migration contract', () => {
     const raises = guards.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(6);
     expect(guards.match(/USING ERRCODE = '23J\d\d'/g)?.length).toBe(raises.length);
+  });
+  it('binds the defect liability period in 0099', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0099_warranty_dlp.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET lock_timeout = '2s';");
+    expect(sql).toContain("SET statement_timeout = '5min';");
+
+    // ONE definition of when a period ends, and the off-by-one that a
+    // "last covered day" attracts has one place to be wrong in. Both the
+    // insert derivation and the extension ceiling call it, so they cannot
+    // drift apart.
+    expect(sql).toContain('CREATE FUNCTION app_private.warranty_expiry(');
+    expect(sql).toContain(
+      'SELECT (start_on + make_interval(months => months))::date - 1',
+    );
+    expect(sql).toContain('NEW.dlp_expires_on := app_private.warranty_expiry(');
+    expect(sql).toContain(
+      'app_private.warranty_expiry(NEW.dlp_start_on, 120)',
+    );
+
+    // The end date is DERIVED, never taken from the writer: the guard
+    // overwrites both columns on insert, the 0077 posture.
+    expect(sql).toContain('NEW.original_expires_on := NEW.dlp_expires_on;');
+
+    // Statuses are a CHECK on text, for the reason 0079 gives about its
+    // categories; nothing here is an enum type.
+    expect(sql).toMatch(
+      /status text NOT NULL DEFAULT 'active'\n    CHECK \(status IN \('active', 'closed', 'voided'\)\)/,
+    );
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // Neither "expiring" nor "elapsed" is stored anywhere: both are facts
+    // about today and are computed on read (routes/warranty.ts).
+    expect(sql).not.toContain("'expiring'");
+    expect(sql).not.toContain("'elapsed'");
+
+    // Legal dates are date-only (engineering rule 6). No timestamptz
+    // stands in for one: the three timestamps are the two act instants
+    // and the touch column.
+    for (const column of [
+      'dlp_start_on date NOT NULL',
+      'original_expires_on date NOT NULL',
+      'dlp_expires_on date NOT NULL',
+      'closed_on date',
+    ]) {
+      expect(sql, column).toContain(column);
+    }
+
+    // A voided period releases the slot, which is what makes "void and
+    // start again" the correction path; a discharged one does not.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX installation_warranties_one_live_per_installation\s+ON installation_warranties \(organisation_id, installation_id\)\s+WHERE status <> 'voided';/,
+    );
+
+    // Every child key is composite through the Work, so no row can name
+    // an installation or a certificate of another Work — or another
+    // tenant.
+    for (const composite of [
+      'FOREIGN KEY (organisation_id, installation_id, work_id)\n    REFERENCES installations(organisation_id, id, work_id)',
+      'FOREIGN KEY (organisation_id, pac_certificate_id, work_id)\n    REFERENCES pac_certificates(organisation_id, id, work_id)',
+    ]) {
+      expect(sql).toContain(composite);
+    }
+
+    // Referential integrity cannot use a partial index, so the two keys
+    // the partial indexes above would otherwise appear to cover get plain
+    // ones of their own.
+    expect(sql).toContain(
+      'CREATE INDEX installation_warranties_installation_idx',
+    );
+    expect(sql).toContain('CREATE INDEX installation_warranties_pac_idx');
+
+    // Every guard function pins its search_path.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(5);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+
+    // Every RAISE carries a named SQLSTATE from the 23Q block, which this
+    // migration is the first to use, so `routes/warranty.ts` maps each to
+    // a refusal instead of surfacing a bare 23514 as a 500.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(12);
+    expect(sql.match(/USING ERRCODE = '23Q\d\d'/g)?.length).toBe(raises.length);
+
+    // The installations arm is WHEN-gated on the one transition it has
+    // anything to say about; ungated it would run its EXISTS on every
+    // installation write.
+    expect(sql).toMatch(
+      /CREATE TRIGGER installations_guard_warranty_cancel\nBEFORE UPDATE ON installations\nFOR EACH ROW\nWHEN \(OLD\.status = 'recorded' AND NEW\.status = 'cancelled'\)/,
+    );
+
+    // Guards sort alphabetically before the touch trigger, so a refused
+    // write raises before updated_at moves (the 0003 ordering note).
+    expect(
+      sql.indexOf('CREATE TRIGGER installation_warranties_guard_transition'),
+    ).toBeLessThan(
+      sql.indexOf('CREATE TRIGGER installation_warranties_touch_updated_at'),
+    );
+    expect(sql.indexOf('CREATE TRIGGER work_warranty_terms_guard_update')).toBeLessThan(
+      sql.indexOf('CREATE TRIGGER work_warranty_terms_touch_updated_at'),
+    );
+
+    // Both policies arrive in the ADR-0010 InitPlan shape, and both
+    // tables force RLS on their owner too.
+    for (const table of ['work_warranty_terms', 'installation_warranties']) {
+      expect(sql).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    }
+
+    // A period is the record that a warranty ran: it is voided with a
+    // note, never removed, so neither table hands out a DELETE.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON work_warranty_terms TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON installation_warranties TO auto_mb_app;',
+    );
+    // Matched against the GRANT clause specifically: the file also
+    // carries `BEFORE DELETE ON installation_warranties`, which is the
+    // guard that says the same thing to a writer holding the privilege
+    // some other way.
+    expect(sql).not.toMatch(/GRANT[^;]*DELETE[^;]*ON work_warranty_terms/);
+    expect(sql).not.toMatch(/GRANT[^;]*DELETE[^;]*ON installation_warranties/);
+
+    // No counter and no numbering: the module issues no document, so
+    // nothing here can gain a series by accident.
+    expect(sql).not.toContain('_counters');
   });
 });

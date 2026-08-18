@@ -189,6 +189,13 @@ function workEventPredicate(tx: TransactionSql, workId: string) {
       select id from signing_requests where work_id = ${workId}))
     or (ae.entity_type = 'maintenance_requests' and ae.entity_id in (
       select id from maintenance_requests where work_id = ${workId}))
+    or (ae.entity_type = 'installation_warranties' and ae.entity_id in (
+      select id from installation_warranties where work_id = ${workId}))
+    -- The warranty term is audited against the WORK's own id, not
+    -- against the term row: an operator reading the trail asks what
+    -- happened to this Work, and the term has no life of its own to
+    -- open (migration 0099).
+    or (ae.entity_type = 'work_warranty_terms' and ae.entity_id = ${workId})
   )`;
 }
 

@@ -346,6 +346,28 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .mockResolvedValue({ installations: [], nextCursor: null }),
     recordWorkInstallation: vi.fn<ApiClient['recordWorkInstallation']>(),
     cancelWorkInstallation: vi.fn<ApiClient['cancelWorkInstallation']>(),
+    getWorkWarranty: vi.fn<ApiClient['getWorkWarranty']>().mockResolvedValue({
+      terms: null,
+      pbgCover: {
+        requiredByLetter: false,
+        dlpCoverUntil: null,
+        instrumentReference: null,
+        instrumentExpiresOn: null,
+        shortfallDays: null,
+      },
+      candidates: [],
+      candidatesTruncated: false,
+      warranties: [],
+      nextCursor: null,
+    }),
+    saveWarrantyTerms: vi.fn<ApiClient['saveWarrantyTerms']>(),
+    startInstallationWarranty: vi.fn<ApiClient['startInstallationWarranty']>(),
+    extendWarranty: vi.fn<ApiClient['extendWarranty']>(),
+    closeWarranty: vi.fn<ApiClient['closeWarranty']>(),
+    voidWarranty: vi.fn<ApiClient['voidWarranty']>(),
+    listWarranties: vi
+      .fn<ApiClient['listWarranties']>()
+      .mockResolvedValue({ warranties: [], nextCursor: null }),
     challanCorrectionEligibility: vi
       .fn<ApiClient['challanCorrectionEligibility']>()
       .mockResolvedValue({

@@ -348,6 +348,44 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // itself is frozen by the guard, so only the key is outside it.
   installation_serials: ['id'],
 
+  // The defect liability period (0099). What is frozen is what the
+  // railway's guarantee is measured against: the installation it runs
+  // on, the term it was started under, the day it started, and the day
+  // it ORIGINALLY ran to.
+  //
+  // `dlp_expires_on` reads as FROZEN here and is absent from this list on
+  // purpose. It is the one business date that moves — a defect rectified
+  // inside the period extends it — but it moves only through the guard's
+  // own arm, which compares it against OLD and admits exactly one shape
+  // of change: forward, never past ten years from the start, and never in
+  // the same write that ends the period. That comparison is what this
+  // census reads, and it is the honest answer: the column does not change
+  // without the guard's say-so.
+  //
+  // What is left is the lifecycle group — the status, and the two
+  // complete-or-absent evidence sets written once at discharge and once
+  // at void.
+  installation_warranties: [
+    'id',
+    'updated_at',
+    'status',
+    'closed_on',
+    'closure_note',
+    'closed_by_user_id',
+    'closed_at',
+    'void_note',
+    'voided_by_user_id',
+    'voided_at',
+  ],
+
+  // The Work's warranty term (0099). Its guard is narrow on purpose: a
+  // term is a CLAUSE somebody read off a contract, and reading it wrong
+  // is exactly the mistake an operator has to be able to correct. What it
+  // freezes is the tenant, the Work and the provenance. Correcting the
+  // term never reaches a period already running, because each period
+  // froze its own copy.
+  work_warranty_terms: ['id', 'updated_at', 'dlp_months', 'start_basis', 'notes'],
+
   // Same created_at note as delivery_challans.
   issue_challans: [
     'id',

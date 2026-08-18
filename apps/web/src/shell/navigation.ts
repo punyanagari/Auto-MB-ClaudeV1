@@ -15,6 +15,7 @@ import {
   PenTool,
   Receipt,
   ScanSearch,
+  ShieldCheck,
   Settings as SettingsIcon,
   Factory,
   Truck,
@@ -40,6 +41,7 @@ export type ModuleKey =
   | 'approvals'
   | 'search'
   | 'installations'
+  | 'warranties'
   | 'production'
   | 'stock'
   | 'signing'
@@ -140,6 +142,12 @@ export const NAVIGATION: readonly NavGroup[] = [
     items: [
       { key: 'production', label: 'Production', icon: Factory },
       { key: 'installations', label: 'Installations', icon: Wrench },
+      // The warranty register (0099). Next to Installations, because a
+      // defect liability period IS an installation seen from the far end
+      // of the contract, and the mock draws no cell for it at all —
+      // recorded in `docs/UX.md` § 22, on the same footing as the signing
+      // queue's own missing cell in § 16.
+      { key: 'warranties', label: 'Warranties', icon: ShieldCheck },
       { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
       { key: 'stock', label: 'Inventory', icon: Boxes },
       // The mock gives Maintenance `ClipboardCheck`, which is already
@@ -204,6 +212,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'search', query: '' };
     case 'installations':
       return { name: 'installations', workId: null };
+    case 'warranties':
+      return { name: 'warranties', workId: null };
     case 'production':
       return { name: 'production', workId: null };
     case 'stock':
@@ -282,6 +292,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'search':
     case 'maintenance':
     case 'installations':
+    case 'warranties':
     case 'production':
     case 'masters':
     case 'members':
@@ -387,6 +398,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Global search';
     case 'installations':
       return 'Installations';
+    case 'warranties':
+      return 'Warranties';
     case 'stock':
       return 'Inventory';
     case 'stock-shortages':

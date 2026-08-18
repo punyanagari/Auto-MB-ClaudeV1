@@ -215,6 +215,10 @@ const TENANT_TABLES = [
   'maintenance_dispatches',
   'maintenance_dispatch_lines',
   'maintenance_returns',
+  // The defect liability period (0099): the Work's contract term first,
+  // because a period freezes the term it was started under.
+  'work_warranty_terms',
+  'installation_warranties',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -421,6 +425,11 @@ const DELETE_REVOKED_TABLES = [
   'maintenance_dispatches',
   'maintenance_dispatch_lines',
   'maintenance_returns',
+  // A defect liability period is the record that a warranty ran, and the
+  // term is the clause it ran under: the period is voided with a note and
+  // both stay (0099).
+  'work_warranty_terms',
+  'installation_warranties',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -887,6 +896,27 @@ async function seedTenantGraph(
       select ${organisationId}, ${installation.id}, ${work.id}, s.id
       from challan_item_serials s
       where s.work_id = ${work.id} and s.serial_number = ${`SN-${workCode}`}
+    `;
+
+    // Wave E defect liability (0099): the Work's term, and a period
+    // running on the installation seeded above. The expiry is NOT sent —
+    // the 0099 insert guard derives it — so this fixture proves the
+    // derivation as well as the isolation.
+    await tx`
+      insert into work_warranty_terms (
+        organisation_id, work_id, dlp_months, start_basis, recorded_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 24, 'installation', ${userId})
+    `;
+    await tx`
+      insert into installation_warranties (
+        organisation_id, work_id, installation_id, dlp_months, start_basis,
+        dlp_start_on, original_expires_on, dlp_expires_on, started_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${installation.id}, 24, 'installation',
+        '2026-02-03', '2026-02-03', '2026-02-03', ${userId}
+      )
     `;
 
     // Milestone 8 payment matrix: one row.

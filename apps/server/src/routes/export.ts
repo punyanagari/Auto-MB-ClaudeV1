@@ -17,6 +17,35 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v30: the defect liability periods (0099) join the package — the
+ * Work's warranty term, and one row per installation whose warranty
+ * clock has been started.
+ *
+ * Both tables travel, and the reason is the Performance Bank Guarantee.
+ * A restored organisation that could not say when each installation
+ * comes out of warranty could not say when its guarantees may be
+ * released either, and a guarantee left standing after the liability
+ * ended is money the agency's bank is holding for nothing. The expiry is
+ * a STORED legal date rather than a derivation from the term, which is
+ * what makes the export self-sufficient: a period extended after a
+ * defect, or started under a term the Work has since corrected, restores
+ * as the date the railway is actually holding cover against rather than
+ * as whatever the current term would recompute.
+ *
+ * The reason each extension was granted does NOT live in these tables —
+ * it lives in `audit_events`, which this package has exported since v1 —
+ * so an extended period restores with both its date and its explanation.
+ *
+ * No manifest bucket: the module stores no PDFs. It issues no document
+ * and mints no number, so there is nothing to render and no counter to
+ * carry.
+ *
+ * v25 through v29 belong to the other packs of this wave. The numbers
+ * were ALLOCATED by the coordinator rather than claimed on merge, for
+ * the reason the v15, v17 and v21 notes record at length: a version
+ * string identifies a format, two formats sharing one string is the
+ * failure that matters, and a gap is not.
+ *
  * export-v24: the signing trail (0091, ADR-0012) joins the package — the
  * kiosk credentials, and every request to put the organisation's own
  * Class 3 certificate on an issued document.
@@ -209,7 +238,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v24';
+const EXPORT_FORMAT_VERSION = 'export-v30';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -501,6 +530,19 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'installationSerials',
     sql: `select * from installation_serials order by created_at, id`,
+  },
+  // The defect liability period that runs on an installation, and the
+  // Work term it was started under (0099). Ordered by the Work first so
+  // a restored package reads a contract's warranty position in one
+  // stretch.
+  {
+    key: 'workWarrantyTerms',
+    sql: `select * from work_warranty_terms order by work_id`,
+  },
+  {
+    key: 'installationWarranties',
+    sql: `select * from installation_warranties
+          order by work_id, dlp_expires_on, id`,
   },
   {
     key: 'approvalRequests',

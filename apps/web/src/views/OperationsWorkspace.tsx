@@ -171,6 +171,9 @@ const SigningKioskSettings = lazy(() =>
 const SigningQueue = lazy(() =>
   import('./SigningQueue.js').then((module) => ({ default: module.SigningQueue })),
 );
+const Warranties = lazy(() =>
+  import('./Warranties.js').then((module) => ({ default: module.Warranties })),
+);
 const StockRegister = lazy(() =>
   import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
 );
@@ -1253,6 +1256,28 @@ export function OperationsWorkspace({
                 api={api}
                 organisationId={organisation.id}
                 canModify={canModify}
+              />
+            )}
+
+            {view.name === 'warranties' && (
+              <Warranties
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                onOpenWork={(openWorkId) => {
+                  navigate(
+                    { name: 'work', workId: openWorkId },
+                    {
+                      workTab: 'instruments',
+                    },
+                  );
+                }}
+                onOpenWorks={() => {
+                  navigate({ name: 'works' });
+                }}
+                onClearWorkFilter={() => {
+                  navigate({ name: 'warranties', workId: null });
+                }}
               />
             )}
 

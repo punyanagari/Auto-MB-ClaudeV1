@@ -65,6 +65,15 @@ export type WorkspaceView =
    * at fdfe5ef): present, the register reads one Work and says so with a
    * dismissible chip; absent, it reads across every Work in reach. */
   | { name: 'installations'; workId: string | null }
+  /** The warranty register (migration 0099): every defect liability
+   * period across the Works the caller may see, soonest expiry first.
+   * Reading only — a period is started, extended and discharged on its
+   * Work's Instruments tab, which is what holds the contract term it runs
+   * under.
+   *
+   * `workId` is the mock's `?work=` deep link, taken the way every other
+   * cross-Work register takes it. */
+  | { name: 'warranties'; workId: string | null }
   /** The tax-invoice module's own register: every invoice the caller may
    * see, work-backed and direct alike. A DIRECT invoice — raised against
    * a private customer, so belonging to no Work — has no Work to open
@@ -273,6 +282,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return view.workId === null
         ? '#/installations'
         : `#/installations/${view.workId}`;
+    case 'warranties':
+      return view.workId === null ? '#/warranties' : `#/warranties/${view.workId}`;
     case 'invoices':
       return '#/invoices';
     case 'invoice':
@@ -419,6 +430,13 @@ export function installationsHash(workId?: string): string {
   });
 }
 
+/** `#/warranties`, or the register narrowed to one Work. */
+export function warrantiesHash(workId?: string): string {
+  return workspaceHashOf({
+    view: { name: 'warranties', workId: workId ?? null },
+  });
+}
+
 /** Click handler for a real `<a href="#/…">`: a plain left click stays
  * in-app through the given handler (synchronous state navigation, and
  * the workspace's dirty-editor guard where the handler routes through
@@ -553,6 +571,14 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       }
       if (!isRecordId(workId) || extra.length > 0) return null;
       return { view: { name: 'installations', workId } };
+    }
+    case 'warranties': {
+      const [workId, ...extra] = rest;
+      if (workId === undefined) {
+        return { view: { name: 'warranties', workId: null } };
+      }
+      if (!isRecordId(workId) || extra.length > 0) return null;
+      return { view: { name: 'warranties', workId } };
     }
     case 'inventory': {
       const [first, ...extra] = rest;

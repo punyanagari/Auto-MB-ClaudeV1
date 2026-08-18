@@ -479,6 +479,33 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   SIGNED_OUTPUT_REJECTED:
     'Check that the certificate chain the kiosk holds reaches a trust anchor installed on this server, then raise the request again.',
 
+  // ---- Defect liability periods (0099) ------------------------------------
+  //
+  // The module has no document to open and no number to quote, so every
+  // remedy here names the SCREEN the act happens on: the Work's
+  // Instruments tab holds the term and the periods, and the Warranties
+  // register reads them across Works.
+  WARRANTY_TERMS_NOT_SET:
+    "Record the contract's defect liability term on the Work's Instruments tab first — how many months it runs and whether the clock starts at installation or at provisional acceptance.",
+  WARRANTY_ALREADY_STARTED:
+    "Reload the Work's Instruments tab; an installation carries one defect liability period, and a period already started is extended or ended rather than started again.",
+  WARRANTY_INSTALLATION_NOT_RECORDED:
+    "Record the installation again on the Work's Installations tab, then start its defect liability period; a cancelled record has nothing to warrant.",
+  WARRANTY_NOT_FOUND:
+    "Open the period from the Warranties register or from the Work's Instruments tab; a link can outlive the record it named.",
+  WARRANTY_PAC_BASIS_INVALID:
+    "Pick a recorded PAC certificate that certifies this item, or change the Work's term to run the period from the installation date instead.",
+  WARRANTY_START_OUT_OF_RANGE:
+    'Check the date the period starts from: it is the installation date, or the issue date of a PAC certificate that followed it, and never a day in the future.',
+  WARRANTY_EXTENSION_INVALID:
+    'Enter a date after the expiry the period already runs to, and within ten years of its start; a defect rectified during the period extends it forward.',
+  WARRANTY_END_INVALID:
+    'Discharge the period on or after the day it expires and on or before today; a period that has not run out yet is voided rather than closed.',
+  WARRANTY_STATE:
+    "Reload the Work's Instruments tab; a discharged or voided defect liability period is a finished record and takes no further changes.",
+  INSTALLATION_HAS_LIVE_WARRANTY:
+    "Void the installation's defect liability period on the Work's Instruments tab before cancelling the record; a period already discharged makes the record permanent.",
+
   // ---- The envelope's own codes -------------------------------------------
   //
   // These three are minted by the error handler in `app.ts` rather than by
