@@ -59,6 +59,7 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'tenders' } },
   { view: { name: 'tender-new' } },
   { view: { name: 'tender', tenderId: TENDER_ID } },
+  { view: { name: 'receivables' } },
   { view: { name: 'members' } },
   { view: { name: 'settings' } },
 ];

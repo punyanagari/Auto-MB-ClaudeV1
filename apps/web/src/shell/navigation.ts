@@ -7,6 +7,7 @@ import {
   FolderKanban,
   Gavel,
   HandCoins,
+  Landmark,
   LayoutDashboard,
   Receipt,
   ScanSearch,
@@ -29,6 +30,7 @@ export type ModuleKey =
   | 'company-documents'
   | 'inspection'
   | 'payments'
+  | 'receivables'
   | 'approvals'
   | 'search'
   | 'installations'
@@ -94,6 +96,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'works', label: 'Works', icon: FolderKanban },
       { key: 'tenders', label: 'Tenders', icon: Gavel },
       { key: 'payments', label: 'Payments', icon: HandCoins },
+      { key: 'receivables', label: 'Receivables', icon: Landmark },
     ],
   },
   {
@@ -150,6 +153,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'inspection' };
     case 'payments':
       return { name: 'payments', tab: 'employee' };
+    case 'receivables':
+      return { name: 'receivables' };
     case 'approvals':
       return { name: 'approvals' };
     case 'search':
@@ -195,6 +200,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'company-documents':
     case 'inspection':
     case 'payments':
+    case 'receivables':
     case 'tenders':
     case 'approvals':
     case 'search':
@@ -254,6 +260,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Upload tender NIT';
     case 'tender':
       return 'Tender workspace';
+    case 'receivables':
+      return 'Receivables';
     case 'approvals':
       return 'Approvals';
     case 'search':

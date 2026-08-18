@@ -23,6 +23,7 @@ import { PacCertificates } from '../../src/views/PacCertificates.js';
 import { PaymentMatrix } from '../../src/views/PaymentMatrix.js';
 import { Payments } from '../../src/views/Payments.js';
 import { Quotations } from '../../src/views/Quotations.js';
+import { Receivables } from '../../src/views/Receivables.js';
 import { ReviewLoa } from '../../src/views/ReviewLoa.js';
 import { Search } from '../../src/views/Search.js';
 import { SerialTrace } from '../../src/views/SerialTrace.js';
@@ -469,6 +470,16 @@ export const STATE_CASES: readonly StateCase[] = [
     render: (api) => <CompanyDocuments api={api} organisationId={ORG_ID} canModify />,
     retry: /Retry company documents/,
     empty: { text: /Nothing in the library yet/ },
+  },
+  {
+    view: 'Receivables.tsx',
+    name: 'the railway receivables register',
+    loads: ['listReceivables'],
+    render: (api) => (
+      <Receivables api={api} organisationId={ORG_ID} onOpenWork={noop} />
+    ),
+    retry: /Retry receivables/,
+    empty: { text: /No bill has been prepared yet/ },
   },
   {
     view: 'Tenders.tsx',

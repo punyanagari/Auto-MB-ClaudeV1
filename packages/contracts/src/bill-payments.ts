@@ -168,3 +168,104 @@ export const BillSettlementResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 export type BillSettlementResponse = Static<typeof BillSettlementResponseSchema>;
+
+/**
+ * One head's share of everything the railway kept against one bill.
+ *
+ * Aggregated in SQL across the bill's live receipts, because the register
+ * draws a waterfall from the passed amount down to what is outstanding and
+ * a waterfall is a sequence of TOTALS. The per-receipt breakup already
+ * travels on `BillPayment.deductions`; summing those by head in the browser
+ * to draw this would be exactly the money arithmetic engineering rule 5
+ * forbids, and it would be wrong the first time a bill is settled by two
+ * receipts that both withheld security deposit.
+ */
+export const BillDeductionHeadTotalSchema = Type.Object(
+  {
+    category: BillDeductionCategorySchema,
+    amount: NonNegativeMoneyStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type BillDeductionHeadTotal = Static<typeof BillDeductionHeadTotalSchema>;
+
+/**
+ * A settlement position as the organisation-wide receivables register
+ * reads it.
+ *
+ * The per-Work position plus the four things a register needs that a
+ * Work's own screen already knows from context: whose Work the row is,
+ * when the bill went in, which financial year it lands in, and the two
+ * derived money figures the waterfall draws. Composed over
+ * `BillSettlementPositionSchema` rather than restated beside it, so the
+ * two surfaces cannot drift into reporting one bill differently.
+ */
+export const ReceivablesRegisterEntrySchema = Type.Composite(
+  [
+    BillSettlementPositionSchema,
+    Type.Object({
+      workCode: Type.String(),
+      workTitle: Type.String(),
+      /** When the agency's own bill was submitted. The first step of the
+       * register's lifecycle strip; null while the bill is only prepared. */
+      submittedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+      /**
+       * The financial year this receivable belongs to, `2026-27`.
+       *
+       * Derived from the RAILWAY bill's date, not the agency's — the year a
+       * receivable falls in is the year the railway acknowledged it — and
+       * therefore null for exactly as long as `railwayBillAmount` is null.
+       * A bill the railway has not yet passed is not yet a receivable in
+       * any year, and stamping it with the year it was prepared in would
+       * put it in the wrong one every March.
+       */
+      financialYear: Type.Union([
+        Type.String({ pattern: '^[0-9]{4}-[0-9]{2}$' }),
+        Type.Null(),
+      ]),
+      /** `railwayBillAmount - deductionTotal`: what the railway owed after
+       * what it kept, which is the figure the credits are measured against.
+       * Null with `railwayBillAmount`, and computed in SQL for the same
+       * reason every other figure here is. */
+      netPayableAmount: Type.Union([DecimalStringSchema, Type.Null()]),
+      deductionsByHead: Type.Array(BillDeductionHeadTotalSchema),
+    }),
+  ],
+  { additionalProperties: false },
+);
+export type ReceivablesRegisterEntry = Static<typeof ReceivablesRegisterEntrySchema>;
+
+/**
+ * The register's four figures, over every row the caller may see.
+ *
+ * Over the whole scoped register and never over a page of it: totals on
+ * screen have to be the organisation's totals, or the tiles quietly answer
+ * a different question than the table below them.
+ */
+export const ReceivablesRegisterSummarySchema = Type.Object(
+  {
+    /** What the agency prepared, summed over `preparedAmount`. */
+    claimedTotal: DecimalStringSchema,
+    /** What the railway acknowledged, summed over `railwayBillAmount`.
+     * Bills it has not passed contribute nothing rather than their
+     * prepared figure. */
+    passedTotal: DecimalStringSchema,
+    receivedTotal: DecimalStringSchema,
+    outstandingTotal: DecimalStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type ReceivablesRegisterSummary = Static<
+  typeof ReceivablesRegisterSummarySchema
+>;
+
+export const ReceivablesRegisterResponseSchema = Type.Object(
+  {
+    entries: Type.Array(ReceivablesRegisterEntrySchema),
+    summary: ReceivablesRegisterSummarySchema,
+  },
+  { additionalProperties: false },
+);
+export type ReceivablesRegisterResponse = Static<
+  typeof ReceivablesRegisterResponseSchema
+>;

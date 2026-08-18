@@ -126,6 +126,25 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByText('Tracking only')).toBeVisible();
   await expectNoAxeViolations(page, 'tender iREPS submission panel');
 
+  /* The receivables register. Scanned twice: the table, where three status
+     chips and three right-aligned money columns are on screen at once, and
+     the opened bill's sheet, where the deduction waterfall puts a success
+     tint on one figure and the lifecycle strip carries dots that must not
+     be the only thing distinguishing a done step from a pending one. */
+  await page.getByRole('link', { name: 'Receivables' }).click();
+  await expect(page.getByRole('heading', { name: 'Receivables' })).toBeVisible();
+  await expect(page.getByText('FY 2026-27')).toBeVisible();
+  await expectNoAxeViolations(page, 'receivables register');
+
+  await page
+    .getByRole('button', { name: /Open bill 8/ })
+    .first()
+    .click();
+  await expect(page.getByText('Deduction waterfall')).toBeVisible();
+  await expect(page.getByText('Net payable')).toBeVisible();
+  await expectNoAxeViolations(page, 'receivables bill sheet');
+  await page.keyboard.press('Escape');
+
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();

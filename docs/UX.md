@@ -155,18 +155,25 @@ adjustment is the minimum that clears the gate, applied at token level so it
 propagates everywhere rather than being patched per screen. Ideally the owner
 then feeds the corrected value back into v0, which retires the divergence.
 
-### 6. Mobile bar: the More cell keeps `MoreHorizontal`
+### 6. Mobile bar: the More cell keeps `MoreHorizontal` — RESOLVED UPSTREAM
 
-The mock's bottom bar draws its fourth cell with `Menu`
+**Status: resolved by the mock at `fdfd610` (2026-08-18). No longer a
+divergence.** Kept on the list rather than deleted, because the list is the
+record of what was decided and why; an entry that disappears takes its
+reasoning with it.
+
+The mock's bottom bar drew its fourth cell with `Menu`
 (`components/mobile-navigation.tsx`), the same icon its topbar uses to open the
-navigation drawer. The application draws it with `MoreHorizontal` instead.
+navigation drawer. The application drew it with `MoreHorizontal` instead.
 
 Two identical hamburgers on one screen is an ambiguity, not a style: below `lg`
 both are visible at once, and a pointer landing on either has no way to tell the
 drawer from the overflow sheet. Everything else about the cell — its label, its
-`min-h-14` target, its sheet — is the mock's. The convergence path is upstream:
-change the icon in v0 and the application follows it back, which retires this
-entry.
+`min-h-14` target, its sheet — was already the mock's.
+
+The convergence path was upstream, and it has now been taken: `fdfd610` changes
+that cell to `MoreHorizontal` in v0. The application's icon is unchanged and is
+now a replication rather than a divergence.
 
 ### 7. Serial traceability renders as a data table, not the mock's Sheet
 

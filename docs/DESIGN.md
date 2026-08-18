@@ -14,7 +14,7 @@ the mock wins and this document is wrong.
 |                            |                                              |
 | -------------------------- | -------------------------------------------- |
 | Repository                 | `github.com/punyanagari/Auto-MB-Vercel-du`   |
-| Freeze commit              | `fdfe5ef`                                    |
+| Freeze commit              | `fdfd610`                                    |
 | Local clone at that commit | `C:\Users\agast\Downloads\Auto-MB-Vercel-du` |
 | Live render                | `https://satyakosh.vercel.app`               |
 | Design source              | `app/globals.css`, `components/**`           |

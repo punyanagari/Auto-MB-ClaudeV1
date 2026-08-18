@@ -899,6 +899,41 @@ the position beside them; the fourth carries none, because there are none to
 carry. All of them are read from the settlement position itself — the
 dashboard states the position, it does not compute a second one.
 
+**The receivables register asks the question across every Work.** The
+settlement position above is a Work's own screen, and it answers "where is
+this bill". Whoever chases payment is asking something else — "what is the
+railway holding of ours, anywhere" — and answering that a Work at a time was
+what kept the spreadsheet alive. The Receivables module is that register: one
+row per prepared bill across every Work the member may see, carrying the
+Work, the measurement, the bill's status, and the three figures of its
+position, over four totals for the whole register — claimed, passed,
+received and outstanding.
+
+Four things about it are deliberate:
+
+- **The totals are the organisation's, not the page's, and not the
+  filters'.** They are summed in SQL over every row the member's work scope
+  admits, in the same statement that reads the rows, so the authorization
+  predicate is written once and the tiles cannot report money from Works the
+  table is hiding. The status, Work and financial-year filters narrow the
+  table and leave the tiles alone: a tile that moved with a filter would be
+  answering a different question than its label.
+- **A bill the railway has not passed carries no financial year.** The year
+  a receivable falls in is the year the railway acknowledged it, derived
+  from the On-Account Bill's date. Before that there is no year to file it
+  under, and stamping it with the year it was prepared in would put it in
+  the wrong one every March. Such rows are reachable through the filter's
+  own "not yet passed" option.
+- **The deduction waterfall is server arithmetic.** Opening a bill shows the
+  reconciliation from the passed amount, through one line per deduction head,
+  to the net payable and what is still outstanding. Each head is summed in
+  SQL across that bill's live receipts — a withdrawn receipt drops out of the
+  heads exactly as it drops out of the totals — and the net payable is
+  computed there too. Nothing on the screen subtracts money.
+- **Money is recorded where it always was.** The register reads; the receipt
+  form, with its heads and its withdrawal path, stays on the Work's Bills
+  tab, and the register links to it. One money form, one place to review it.
+
 **`paid` stops being a word.** A prepared bill moves to `paid` only when the
 receipts and their deductions between them reach the railway's figure exactly.
 The status stays a MANUAL act — every state change in this product is an

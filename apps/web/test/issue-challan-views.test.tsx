@@ -254,6 +254,15 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listReceivedRailwayBills: vi.fn(),
     discardReceivedRailwayBill: vi.fn(),
     listBillSettlement: vi.fn().mockResolvedValue([]),
+    listReceivables: vi.fn().mockResolvedValue({
+      entries: [],
+      summary: {
+        claimedTotal: '0.00',
+        passedTotal: '0.00',
+        receivedTotal: '0.00',
+        outstandingTotal: '0.00',
+      },
+    }),
     recordBillPayment: vi.fn(),
     voidBillPayment: vi.fn(),
     closeMeasurementBook: vi.fn(),
