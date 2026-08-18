@@ -1082,6 +1082,11 @@ behaviours an operator should not meet for the first time in the ledger:
 - **the rate is snapshotted on the payment**, not looked up when the return
   is drawn. Finance Acts move rates, and a return re-derived from today's
   table would restate last quarter's deductions.
+- **the table awaits a practitioner's sign-off, as a pre-production gate.**
+  The owner approved the exclusive-threshold reading as implemented on
+  2026-08-18; the statutory values themselves are still to be verified by a
+  chartered accountant before the product is used for production TDS filings,
+  on the same footing as the external certifications §9 lists.
 
 A quarterly CSV export lists the deductions of one financial-year quarter —
 Q1 is April to June — for a practitioner's return-preparation utility.
@@ -1171,6 +1176,9 @@ cumulative and per item:
 - **live** is a call that is `closed` (which the schema makes mean
   inspected and certified) whose validity window has not passed, measured
   against the **organisation's** today rather than UTC's.
+
+This quantity-aware reading — cumulative despatched never exceeding
+cumulative certified, per item — is the owner-ratified rule (2026-08-18).
 
 Existence is not enough, and that is the point: a single call for 10 units
 must not release the despatch of 500. It is the same arithmetic shape as

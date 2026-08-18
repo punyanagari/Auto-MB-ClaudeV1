@@ -210,14 +210,13 @@ belongs in v0, where that one screen adopts `StatusBadge` like every other
 register. When it does, the port drops to a byte-for-byte replication and this
 entry retires.
 
-### 9. Inspection screen — PROPOSED, owner ruling pending
+### 9. Inspection screen
 
-**Status: PROPOSED, not approved.** Every entry below is a visual
+**Status: APPROVED — owner decision, 2026-08-18.** Every entry below is a visual
 departure this pack shipped because the behaviour behind the mock's
 control does not exist, or because the control would have to lie. None of
-them is an implementation liberty and none should be read as settled: they
-are listed here so the owner can rule on each, and the convergence path
-for all of them is the same — change the mock in v0, then the divergence
+them is an implementation liberty: the owner ruled on each, and the convergence
+path for all of them is the same — change the mock in v0, then the divergence
 retires.
 
 Category: this is § 4 territory (screens and behaviour the mock does not
@@ -239,10 +238,10 @@ gate and which is the point of the pack; and a **"Save as organisation
 default"** action beside "Save for this Work", which is how a new Work
 inherits a checklist instead of starting with an empty one.
 
-### 10. Tender screens — PROPOSED, owner ruling pending
+### 10. Tender screens
 
-**Status: PROPOSED, not approved.** Same footing as § 9 above, and the same
-convergence path: change the mock in v0 and each entry retires.
+**Status: APPROVED — owner decision, 2026-08-18.** Same footing as § 9 above,
+and the same convergence path: change the mock in v0 and each entry retires.
 
 The screens themselves are ported (`app/tenders/page.tsx`,
 `app/tenders/new`, `app/tenders/[id]` at `fdfe5ef`). What is listed here is
