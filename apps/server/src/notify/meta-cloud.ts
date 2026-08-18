@@ -76,7 +76,9 @@ export function readWhatsAppConfig(env: NodeJS.ProcessEnv): WhatsAppConfig | nul
   if (enabled === 'false') return null;
   if (enabled === undefined || enabled === '') {
     if (related) {
-      throw new Error('WHATSAPP_* configuration is present but WHATSAPP_ENABLED is not true');
+      throw new Error(
+        'WHATSAPP_* configuration is present but WHATSAPP_ENABLED is not true',
+      );
     }
     return null;
   }
@@ -113,12 +115,17 @@ export function readWhatsAppConfig(env: NodeJS.ProcessEnv): WhatsAppConfig | nul
 /** Meta's send response, the only part of it this adapter reads. */
 function messageIdOf(payload: unknown): string {
   if (typeof payload !== 'object' || payload === null) {
-    throw new NotificationTransportError('malformed_response', 'The provider answered with something that is not an object.');
+    throw new NotificationTransportError(
+      'malformed_response',
+      'The provider answered with something that is not an object.',
+    );
   }
   const messages = (payload as { messages?: unknown }).messages;
   const first = Array.isArray(messages) ? (messages[0] as unknown) : undefined;
   const id =
-    typeof first === 'object' && first !== null ? (first as { id?: unknown }).id : undefined;
+    typeof first === 'object' && first !== null
+      ? (first as { id?: unknown }).id
+      : undefined;
   if (typeof id !== 'string' || id === '') {
     throw new NotificationTransportError(
       'malformed_response',
@@ -134,8 +141,7 @@ function refusalOf(status: number, payload: unknown): NotificationTransportError
   const error =
     typeof payload === 'object' && payload !== null
       ? ((payload as { error?: unknown }).error as
-          | { code?: unknown; message?: unknown; error_data?: unknown }
-          | undefined)
+          { code?: unknown; message?: unknown; error_data?: unknown } | undefined)
       : undefined;
   const code =
     typeof error?.code === 'number' || typeof error?.code === 'string'
@@ -143,7 +149,8 @@ function refusalOf(status: number, payload: unknown): NotificationTransportError
       : `http_${String(status)}`;
   // Meta's `message` is a short English sentence about the API call
   // ("Template name does not exist in the translation"), not the payload.
-  const message = typeof error?.message === 'string' ? error.message.slice(0, 500) : null;
+  const message =
+    typeof error?.message === 'string' ? error.message.slice(0, 500) : null;
   return new NotificationTransportError(code, message, status);
 }
 
@@ -161,7 +168,10 @@ export class MetaCloudWhatsAppTransport implements WhatsAppTransport {
     return this.config.verifyToken;
   }
 
-  verifyWebhookSignature(rawBody: Buffer, signatureHeader: string | undefined): boolean {
+  verifyWebhookSignature(
+    rawBody: Buffer,
+    signatureHeader: string | undefined,
+  ): boolean {
     return verifyMetaSignature(this.config.appSecret, rawBody, signatureHeader);
   }
 
@@ -185,7 +195,10 @@ export class MetaCloudWhatsAppTransport implements WhatsAppTransport {
               components: [
                 {
                   type: 'body',
-                  parameters: message.parameters.map((text) => ({ type: 'text', text })),
+                  parameters: message.parameters.map((text) => ({
+                    type: 'text',
+                    text,
+                  })),
                 },
               ],
             }),

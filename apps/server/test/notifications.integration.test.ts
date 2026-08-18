@@ -82,14 +82,10 @@ const APP_SECRET = `webhook-app-secret-${'0'.repeat(32)}`;
 const VERIFY_TOKEN = `verify-${runId}`;
 /** Globally unique: the webhook resolves a tenant by it before any tenant
  * is bound, so two organisations must never share one. */
-const phoneNumberId = `1${String(randomBytes(6).readUIntBE(0, 6)).padStart(14, '0')}`.slice(
-  0,
-  15,
-);
-const foreignPhoneNumberId = `2${String(randomBytes(6).readUIntBE(0, 6)).padStart(14, '0')}`.slice(
-  0,
-  15,
-);
+const phoneNumberId =
+  `1${String(randomBytes(6).readUIntBE(0, 6)).padStart(14, '0')}`.slice(0, 15);
+const foreignPhoneNumberId =
+  `2${String(randomBytes(6).readUIntBE(0, 6)).padStart(14, '0')}`.slice(0, 15);
 
 /** Every call the doubles were asked to make, so a test can assert what
  * reached the wire without the wire existing. */
@@ -232,9 +228,7 @@ function statusPayload(
                 {
                   id: providerMessageId,
                   status,
-                  timestamp: String(
-                    Math.floor((options.at ?? Date.now()) / 1000),
-                  ),
+                  timestamp: String(Math.floor((options.at ?? Date.now()) / 1000)),
                   recipient_id: '919812345678',
                 },
               ],
@@ -396,7 +390,11 @@ beforeAll(async () => {
   expect(foreignChannel.statusCode, foreignChannel.body).toBe(200);
 
   for (const [name, body, subject] of [
-    ['challan_issued', 'Challan {{1}} for work {{2}} has been issued.', 'Challan issued'],
+    [
+      'challan_issued',
+      'Challan {{1}} for work {{2}} has been issued.',
+      'Challan issued',
+    ],
     ['draft_note', 'Nothing has happened yet.', undefined],
     ['email_only', 'A note about {{1}}.', 'A note'],
   ] as const) {
@@ -745,9 +743,7 @@ describe('channel configuration', () => {
       payload: { enabled: true },
     });
     expect(route.statusCode, route.body).toBe(409);
-    expect(route.json<{ code: string }>().code).toBe(
-      'NOTIFICATION_CHANNEL_INCOMPLETE',
-    );
+    expect(route.json<{ code: string }>().code).toBe('NOTIFICATION_CHANNEL_INCOMPLETE');
 
     await expect(
       admin`

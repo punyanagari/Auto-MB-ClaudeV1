@@ -30,9 +30,9 @@ function signatureFor(body: string, secret = SECRET): string {
 describe('verifyMetaSignature', () => {
   it('accepts the digest Meta computes', () => {
     const body = Buffer.from('{"object":"whatsapp_business_account"}', 'utf8');
-    expect(
-      verifyMetaSignature(SECRET, body, signatureFor(body.toString('utf8'))),
-    ).toBe(true);
+    expect(verifyMetaSignature(SECRET, body, signatureFor(body.toString('utf8')))).toBe(
+      true,
+    );
   });
 
   it('refuses everything it cannot verify, with no in-between', () => {
@@ -136,7 +136,9 @@ describe('receiptsOf', () => {
       { entry: [{ changes: {} }] },
       { entry: [{ changes: [{ value: null }] }] },
       // A status array with no phone number id to resolve a tenant from.
-      { entry: [{ changes: [{ value: { statuses: [{ id: 'x', status: 'read' }] } }] }] },
+      {
+        entry: [{ changes: [{ value: { statuses: [{ id: 'x', status: 'read' }] } }] }],
+      },
       // A status this product does not model.
       {
         entry: [
@@ -167,7 +169,9 @@ describe('receiptsOf', () => {
             {
               value: {
                 metadata: { phone_number_id: '1' },
-                statuses: [{ id: 'wamid.C', status: 'sent', timestamp: 'not a number' }],
+                statuses: [
+                  { id: 'wamid.C', status: 'sent', timestamp: 'not a number' },
+                ],
               },
             },
           ],
@@ -249,9 +253,10 @@ describe('MetaCloudWhatsAppTransport', () => {
     viaBsp: false,
   };
 
-  function transportWith(
-    responder: (url: string, init: RequestInit) => Response,
-  ): { transport: MetaCloudWhatsAppTransport; calls: { url: string; body: unknown }[] } {
+  function transportWith(responder: (url: string, init: RequestInit) => Response): {
+    transport: MetaCloudWhatsAppTransport;
+    calls: { url: string; body: unknown }[];
+  } {
     const calls: { url: string; body: unknown }[] = [];
     const transport = new MetaCloudWhatsAppTransport(config, (input, init) => {
       const url = String(input);
@@ -311,7 +316,9 @@ describe('MetaCloudWhatsAppTransport', () => {
   it('sends NO body component for a template that takes no parameters', async () => {
     const { transport, calls } = transportWith(
       () =>
-        new Response(JSON.stringify({ messages: [{ id: 'wamid.Q' }] }), { status: 200 }),
+        new Response(JSON.stringify({ messages: [{ id: 'wamid.Q' }] }), {
+          status: 200,
+        }),
     );
     await transport.send(
       { phoneNumberId: '1', apiBaseUrl: null },
@@ -328,7 +335,9 @@ describe('MetaCloudWhatsAppTransport', () => {
   it('routes through a BSP base URL when the organisation has one', async () => {
     const { transport, calls } = transportWith(
       () =>
-        new Response(JSON.stringify({ messages: [{ id: 'wamid.B' }] }), { status: 200 }),
+        new Response(JSON.stringify({ messages: [{ id: 'wamid.B' }] }), {
+          status: 200,
+        }),
     );
     await transport.send(
       { phoneNumberId: '77', apiBaseUrl: 'https://bsp.example/wa/' },

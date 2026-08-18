@@ -1517,6 +1517,44 @@ test('the signing queue passes the axe scan', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open signed PDF' })).toBeVisible();
 });
 
+test('the notifications screen passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/notifications');
+
+  /* Notifications (0092). Its own top-level test rather than a leg of an
+     existing journey, for the reason the signing queue took its own: the
+     big picker journey is already budgeted with test.slow().
+
+     Scanned with every tint on screen at once. Four sections, and the
+     colour is entirely in their chips: an ENABLED channel whose
+     deployment has no transport draws a success lamp and a warning lamp
+     side by side — the one state on this screen with no precedent in the
+     mock — and the template list and the delivery log carry every status
+     word that tints, including the two that deliberately read neutral. */
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  await expect(page.getByText('+919000000001')).toBeVisible();
+  await expect(page.getByText('no transport')).toBeVisible();
+  for (const label of ['approved', 'pending', 'rejected', 'paused', 'draft']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  for (const label of ['queued', 'sent', 'delivered', 'read', 'failed']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByText('opted in').first()).toBeVisible();
+  await expect(page.getByText('opted out').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'notifications registers');
+
+  /* The two forms, opened together. A form is where label association and
+     focus order actually fail, and these two are different shapes: the
+     channel form is a field row plus a checkbox, the template form is a
+     select and a textarea. */
+  await page.getByRole('button', { name: 'Change WhatsApp settings' }).click();
+  await page.getByRole('button', { name: 'Write a template' }).click();
+  await expect(page.getByLabel('Phone number id')).toBeVisible();
+  await expect(page.getByLabel('Body')).toBeVisible();
+  await expectNoAxeViolations(page, 'notifications forms');
+});
+
 test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/settings');

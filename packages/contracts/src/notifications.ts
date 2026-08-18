@@ -52,7 +52,9 @@ const NotificationTemplateStatusSchema = Type.Union(
   NOTIFICATION_TEMPLATE_STATUSES.map((value) => Type.Literal(value)),
   { description: "Where a template has got to in Meta's review." },
 );
-export type NotificationTemplateStatus = Static<typeof NotificationTemplateStatusSchema>;
+export type NotificationTemplateStatus = Static<
+  typeof NotificationTemplateStatusSchema
+>;
 
 const NOTIFICATION_TEMPLATE_CATEGORIES = [
   'utility',
@@ -61,10 +63,19 @@ const NOTIFICATION_TEMPLATE_CATEGORIES = [
 ] as const;
 const NotificationTemplateCategorySchema = Type.Union(
   NOTIFICATION_TEMPLATE_CATEGORIES.map((value) => Type.Literal(value)),
-  { description: "Meta's template category, which decides how it is priced and reviewed." },
+  {
+    description:
+      "Meta's template category, which decides how it is priced and reviewed.",
+  },
 );
 
-const NOTIFICATION_STATUSES = ['queued', 'sent', 'delivered', 'read', 'failed'] as const;
+const NOTIFICATION_STATUSES = [
+  'queued',
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+] as const;
 const NotificationStatusSchema = Type.Union(
   NOTIFICATION_STATUSES.map((value) => Type.Literal(value)),
   { description: 'How far a message got. Forward only.' },
@@ -224,7 +235,9 @@ export const CreateNotificationTemplateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type CreateNotificationTemplate = Static<typeof CreateNotificationTemplateSchema>;
+export type CreateNotificationTemplate = Static<
+  typeof CreateNotificationTemplateSchema
+>;
 
 /**
  * Moving a template along Meta's lifecycle.
@@ -237,8 +250,8 @@ export type CreateNotificationTemplate = Static<typeof CreateNotificationTemplat
 export const SetNotificationTemplateStatusSchema = Type.Object(
   {
     status: Type.Union(
-      (['pending', 'approved', 'rejected', 'paused', 'disabled'] as const).map((value) =>
-        Type.Literal(value),
+      (['pending', 'approved', 'rejected', 'paused', 'disabled'] as const).map(
+        (value) => Type.Literal(value),
       ),
     ),
     reason: Type.Optional(nonBlankString({ minLength: 2, maxLength: 500 })),

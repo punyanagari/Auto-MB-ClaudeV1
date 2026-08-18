@@ -95,7 +95,9 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setChannelError(describeLoadFailure(cause, 'The notification channels').message);
+          setChannelError(
+            describeLoadFailure(cause, 'The notification channels').message,
+          );
         }
       });
     return () => {
@@ -114,9 +116,7 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setTemplateError(
-            describeLoadFailure(cause, 'The message templates').message,
-          );
+          setTemplateError(describeLoadFailure(cause, 'The message templates').message);
         }
       });
     return () => {
@@ -402,7 +402,9 @@ function ChannelsSection({
                               />
                             </Field>
                             <Field>
-                              <label htmlFor={`${channel}-base`}>Provider base URL</label>
+                              <label htmlFor={`${channel}-base`}>
+                                Provider base URL
+                              </label>
                               <input
                                 id={`${channel}-base`}
                                 name="apiBaseUrl"
@@ -568,7 +570,9 @@ function TemplatesSection({
                 pattern="[a-z0-9_]{1,512}"
                 placeholder="delivery_challan_issued"
               />
-              <Hint>Meta&rsquo;s rules: lowercase letters, digits and underscores.</Hint>
+              <Hint>
+                Meta&rsquo;s rules: lowercase letters, digits and underscores.
+              </Hint>
             </Field>
             <Field>
               <label htmlFor="template-language">Language</label>
@@ -667,7 +671,9 @@ function ConsentSection({
               <tr key={consent.id}>
                 <td>{consent.contactDesignation}</td>
                 <td>{CHANNEL_LABELS[consent.channel]}</td>
-                <td className="font-mono text-[13px] tabular-nums">{consent.address}</td>
+                <td className="font-mono text-[13px] tabular-nums">
+                  {consent.address}
+                </td>
                 <td className={wrapCell}>{consent.evidence}</td>
                 <td>
                   <span className="tabular-nums">

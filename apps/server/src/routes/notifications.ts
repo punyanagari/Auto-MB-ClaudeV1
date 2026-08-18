@@ -163,7 +163,10 @@ interface MessageRow {
   failed_at: Date | null;
 }
 
-function toChannel(row: ChannelRow, transports: NotificationTransports): NotificationChannel {
+function toChannel(
+  row: ChannelRow,
+  transports: NotificationTransports,
+): NotificationChannel {
   return {
     id: row.id,
     channel: row.channel,
@@ -224,7 +227,9 @@ function toMessage(row: MessageRow): NotificationMessage {
     contactId: row.contact_id,
     contactDesignation: row.contact_designation,
     toAddress: row.to_address,
-    parameters: Array.isArray(parameters) ? parameters.map((value) => String(value)) : [],
+    parameters: Array.isArray(parameters)
+      ? parameters.map((value) => String(value))
+      : [],
     status: row.status,
     provider: row.provider,
     providerMessageId: row.provider_message_id,
@@ -247,7 +252,10 @@ const MESSAGE_COLUMNS = `
   m.requested_by_user_id, m.queued_at, m.sent_at, m.delivered_at, m.read_at,
   m.failed_at`;
 
-async function readMessage(tx: TransactionSql, id: string): Promise<NotificationMessage> {
+async function readMessage(
+  tx: TransactionSql,
+  id: string,
+): Promise<NotificationMessage> {
   const [row] = await tx<MessageRow[]>`
     select ${tx.unsafe(MESSAGE_COLUMNS)}
     from notification_messages m
@@ -261,13 +269,14 @@ async function readMessage(tx: TransactionSql, id: string): Promise<Notification
 
 /* --- Meta's webhook payload ------------------------------------------------ */
 
-const WEBHOOK_STATUS_MAP: Readonly<Record<string, 'sent' | 'delivered' | 'read' | 'failed'>> =
-  {
-    sent: 'sent',
-    delivered: 'delivered',
-    read: 'read',
-    failed: 'failed',
-  };
+const WEBHOOK_STATUS_MAP: Readonly<
+  Record<string, 'sent' | 'delivered' | 'read' | 'failed'>
+> = {
+  sent: 'sent',
+  delivered: 'delivered',
+  read: 'read',
+  failed: 'failed',
+};
 
 interface Receipt {
   readonly phoneNumberId: string;
@@ -327,7 +336,9 @@ export function receiptsOf(payload: unknown): readonly Receipt[] {
         // Meta sends a UNIX second count as a decimal string.
         const seconds = Number(readString(status.timestamp) ?? '');
         const occurredAt =
-          Number.isFinite(seconds) && seconds > 0 ? new Date(seconds * 1000) : new Date();
+          Number.isFinite(seconds) && seconds > 0
+            ? new Date(seconds * 1000)
+            : new Date();
         const errors = status.errors;
         const firstError = Array.isArray(errors) ? record(errors[0]) : null;
         const failureCode =
@@ -636,7 +647,8 @@ export function registerNotificationRoutes(
           returning id, name, language, category, status, status_reason, body_text,
                     parameter_count, email_subject, created_at, updated_at
         `.catch(rethrowNotificationWriteRefusal);
-        if (!row) throw new Error(`notification template ${id} disappeared while locked`);
+        if (!row)
+          throw new Error(`notification template ${id} disappeared while locked`);
         await audit(
           tx,
           organisationId,

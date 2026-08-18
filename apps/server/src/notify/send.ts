@@ -97,7 +97,8 @@ export function rethrowNotificationWriteRefusal(error: unknown): never {
     typeof error === 'object' && error !== null && 'code' in error
       ? error.code
       : undefined;
-  const refusal = typeof code === 'string' ? NOTIFICATION_DATABASE_REFUSALS[code] : undefined;
+  const refusal =
+    typeof code === 'string' ? NOTIFICATION_DATABASE_REFUSALS[code] : undefined;
   if (refusal) throw httpError(409, refusal[0], refusal[1]);
   throw error;
 }
@@ -310,9 +311,7 @@ export async function sendTemplatedNotification(
       }
 
       const provider =
-        chosen === 'email'
-          ? 'smtp'
-          : (transports.whatsapp?.provider ?? 'meta_cloud');
+        chosen === 'email' ? 'smtp' : (transports.whatsapp?.provider ?? 'meta_cloud');
 
       const [row] = await tx<{ id: string }[]>`
         insert into notification_messages (
@@ -345,7 +344,8 @@ export async function sendTemplatedNotification(
   try {
     if (prepared.channel === 'whatsapp') {
       const transport = transports.whatsapp;
-      if (transport === undefined) throw new Error('the WhatsApp transport disappeared');
+      if (transport === undefined)
+        throw new Error('the WhatsApp transport disappeared');
       const target: WhatsAppTarget = {
         // Both are non-null: the channel could not have been enabled
         // without them (0092's guard), and the row was read inside the
