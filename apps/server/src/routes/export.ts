@@ -17,6 +17,27 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v27: the audit authority and the retention policy (0095) join the
+ * package.
+ *
+ * `can_view_audit_trail` joins the members section's explicit grant list.
+ * Three packs of this wave reached that line independently and two of them
+ * arrived carrying the SAME omission — `can_sign_documents` (0091) had been
+ * on the column and off this list since export-v24, and
+ * `can_manage_notifications` (0092) repeated it. 0094's column-level census
+ * is what caught both, and it is why this one cannot go missing.
+ *
+ * `organisations` exports with `select *`, so `audit_retention_months`
+ * travels without an edit — which is the point of the difference between
+ * the two sections rather than an inconsistency: a membership's grants are
+ * enumerated precisely so that dropping one is a visible edit.
+ *
+ * The audit EVENTS themselves already travelled: `auditEvents` has been a
+ * section since the first version, and 0095's retention policy deliberately
+ * does not narrow it. The package is the organisation's own portability
+ * snapshot, and a viewing window that quietly truncated the exported trail
+ * would make the package disagree with the table it was taken from.
+ *
  * export-v26: the spreadsheet importer (0094) joins the package — every
  * batch an organisation staged and every row of every sheet it uploaded,
  * with the verdict each row was given and the record it became.
@@ -263,7 +284,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v26';
+const EXPORT_FORMAT_VERSION = 'export-v27';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -373,7 +394,7 @@ const SECTIONS: readonly ExportSection[] = [
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
                  can_manage_payroll, can_sign_documents, can_import_data,
-                 can_manage_notifications,
+                 can_manage_notifications, can_view_audit_trail,
                  status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()

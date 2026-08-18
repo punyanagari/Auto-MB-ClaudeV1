@@ -1,8 +1,9 @@
-import { crc32, deflateRawSync } from 'node:zlib';
+import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   XLSX_LIMITS,
   XlsxParseError,
+  buildXlsx,
   readXlsxRows,
   writeXlsxWorkbook,
 } from '../src/xlsx.js';
@@ -442,5 +443,133 @@ describe('the template it writes', () => {
     const rows = readXlsxRows(bytes);
     expect(rows.map((row) => row.rowNumber)).toEqual([1, 2]);
     expect(rows[1]?.cells).toEqual(['Acme & Co <Ltd>', 'Bhusawal']);
+  });
+});
+
+/* --- the register writer ---------------------------------------------------- */
+
+/**
+ * The worksheet part of a workbook this module just produced, as text.
+ *
+ * `readXlsxRows` above answers what a cell SAYS, and for the register
+ * writer that is not enough: the property under test is what a cell IS. A
+ * money cell must be a typed number the operator can sum, and a remark cell
+ * must be an inline string Excel will never parse as a formula — and both
+ * read back through the reader as the same string. So this one assertion
+ * family looks at the XML.
+ */
+function sheetXml(archive: Buffer): string {
+  const end = archive.lastIndexOf(Buffer.from('504b0506', 'hex'));
+  expect(end, 'no end-of-central-directory record').toBeGreaterThan(-1);
+  const count = archive.readUInt16LE(end + 8);
+  let cursor = archive.readUInt32LE(end + 16);
+  for (let index = 0; index < count; index += 1) {
+    expect(archive.readUInt32LE(cursor)).toBe(0x02014b50);
+    const compressedSize = archive.readUInt32LE(cursor + 20);
+    const nameLength = archive.readUInt16LE(cursor + 28);
+    const localOffset = archive.readUInt32LE(cursor + 42);
+    const name = archive.toString('utf8', cursor + 46, cursor + 46 + nameLength);
+    if (name === 'xl/worksheets/sheet1.xml') {
+      const start =
+        localOffset +
+        30 +
+        archive.readUInt16LE(localOffset + 26) +
+        archive.readUInt16LE(localOffset + 28);
+      return inflateRawSync(archive.subarray(start, start + compressedSize)).toString(
+        'utf8',
+      );
+    }
+    cursor += 46 + nameLength;
+  }
+  throw new Error('no worksheet part');
+}
+
+describe('the register it writes', () => {
+  it('writes a numeric column as a number and everything else as text', () => {
+    const sheet = sheetXml(
+      buildXlsx(
+        'Invoices',
+        [{ header: 'Number' }, { header: 'Total', numeric: true }],
+        [['INV/1', '184610.50']],
+      ),
+    );
+    // The money cell carries the server's own decimal string verbatim,
+    // with no type attribute — which is what makes it a number Excel will
+    // sum. Nothing in this process parsed or re-formatted it.
+    expect(sheet).toContain('<c r="B2"><v>184610.50</v></c>');
+    expect(sheet).toContain('<c r="A2" t="inlineStr">');
+  });
+
+  it('falls back to text when a numeric column holds something that is not a number', () => {
+    // A register legitimately prints a dash for "not applicable", and a
+    // `<v>—</v>` cell makes the whole workbook unreadable rather than that
+    // one cell wrong.
+    const sheet = sheetXml(
+      buildXlsx('Invoices', [{ header: 'Total', numeric: true }], [['—']]),
+    );
+    expect(sheet).toContain('t="inlineStr"');
+    expect(sheet).not.toContain('<v>');
+  });
+
+  it('round-trips its values through the reader', () => {
+    const rows = readXlsxRows(
+      buildXlsx(
+        'Works',
+        [{ header: 'Code' }, { header: 'Value', numeric: true }],
+        [['Acme & Co <Ltd>', '1250000.00']],
+      ),
+    );
+    expect(rows.map((row) => row.rowNumber)).toEqual([1, 2]);
+    expect(rows[1]?.cells).toEqual(['Acme & Co <Ltd>', '1250000.00']);
+  });
+
+  it('drops the control characters XML cannot carry', () => {
+    // A NUL reaches a text column through a pasted document more often
+    // than anyone would like, and one of them anywhere in the sheet makes
+    // the WHOLE workbook unreadable rather than that one cell wrong.
+    const nul = String.fromCodePoint(0);
+    const sheet = sheetXml(
+      buildXlsx(
+        'Correspondence',
+        [{ header: 'Subject' }],
+        [[`Rates <revised> & agreed${nul} today`]],
+      ),
+    );
+    expect(sheet).toContain('Rates &lt;revised&gt; &amp; agreed today');
+    expect(sheet).not.toContain(nul);
+  });
+
+  it('leaves a null cell out rather than writing an empty one', () => {
+    const sheet = sheetXml(
+      buildXlsx(
+        'Works',
+        [{ header: 'Code' }, { header: 'Note' }],
+        [['W-1', null], ['W-2']],
+      ),
+    );
+    expect(sheet).toContain('<row r="2"><c r="A2" t="inlineStr"');
+    expect(sheet).not.toContain('r="B2"');
+    // A short row is a normal register row, not a programming error.
+    expect(sheet).toContain('<row r="3">');
+  });
+
+  it('repairs a sheet name Excel would refuse to open', () => {
+    const bytes = buildXlsx(
+      'Delivery challans / receipts and everything else',
+      [{ header: 'A' }],
+      [],
+    );
+    const name = /name="([^"]*)"/.exec(bytes.toString('latin1'))?.[1] ?? '';
+    expect(name.length).toBeLessThanOrEqual(31);
+    expect(name).not.toContain('/');
+  });
+
+  it('produces the same bytes for the same contents', () => {
+    // What lets a golden file exist, and what stops two exports of an
+    // unchanged register differing. Both writers share `buildZip`, whose
+    // entries carry no timestamp at all.
+    const once = buildXlsx('Works', [{ header: 'Code' }], [['W-1']]);
+    const twice = buildXlsx('Works', [{ header: 'Code' }], [['W-1']]);
+    expect(once.equals(twice)).toBe(true);
   });
 });

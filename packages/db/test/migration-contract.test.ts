@@ -2498,3 +2498,84 @@ describe('tenant migration contract', () => {
     );
   });
 });
+
+describe('the audit register and its retention policy (0095)', () => {
+  it('adds two columns, no table, and no trigger', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0095_audit_trail_and_retention.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+
+    // NO NEW TABLE and NO NEW TRIGGER, which is why 0095 is absent from
+    // MIGRATION_TRIGGERS above rather than present with a zero — the
+    // census refuses a key naming a migration that creates none. The
+    // register reads `audit_events` as 0001 left it, through the index
+    // 0001 built for the per-Work timeline.
+    expect(sql).not.toContain('CREATE TABLE');
+    expect(sql).not.toContain('CREATE TRIGGER');
+    expect(MIGRATION_TRIGGERS['0095_audit_trail_and_retention.sql']).toBeUndefined();
+
+    // The authority, in the 0080/0089/0091 shape: per-member, default
+    // false, not backfilled.
+    expect(sql).toContain(
+      'ALTER TABLE organisation_memberships\n  ADD COLUMN can_view_audit_trail boolean NOT NULL DEFAULT false;',
+    );
+
+    // The retention floor is the statutory one rather than a taste.
+    // Section 128 of the Companies Act 2013 sets eight financial years for
+    // the books of account, and Rule 3(1) of the Companies (Accounts)
+    // Rules carries the audit trail with them, so 96 is a minimum an
+    // organisation cannot configure its way below.
+    expect(sql).toContain('audit_retention_months integer NOT NULL DEFAULT 96');
+    expect(sql).toContain('CHECK (audit_retention_months BETWEEN 96 AND 600)');
+
+    // AND NOTHING DELETES, which is the whole argument of the migration's
+    // second half: a purge would need the application role to hold DELETE
+    // on a table 0002 deliberately revoked it from — the code being
+    // audited handed the ability to edit its own trail.
+    expect(sql).not.toMatch(/DELETE FROM audit_events/i);
+    expect(sql).not.toMatch(/GRANT[^;]*DELETE[^;]*audit_events/i);
+  });
+
+  it('restates every grant the definer function already carried', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0095_audit_trail_and_retention.sql'),
+      'utf8',
+    );
+    // The SIXTH restatement of `create_organisation_with_owner` and the
+    // third in this wave alone, which is why it is pinned: CREATE OR
+    // REPLACE states the whole body rather than amending it, so a grant
+    // left out here is a founder who silently cannot use a feature in the
+    // organisation they just created. 0094's header records that the
+    // hazard already fired once, between itself and 0092.
+    //
+    // ALL SEVEN, and only one of them is this pack's — the other six are
+    // 0004's issue and cancel, 0089's payroll, 0091's signing, 0092's
+    // notifications and 0094's import.
+    expect(sql).toContain(
+      'can_issue_documents, can_cancel_documents, can_sign_documents,\n    can_manage_payroll, can_manage_notifications, can_import_data,\n    can_view_audit_trail, status',
+    );
+    expect(sql).toContain(
+      "p_id, v_user_id, 'owner', 'all', true, true, true, true, true, true, true,",
+    );
+
+    // Written out rather than swept from the catalog. Granting whatever
+    // `can_%` columns happen to exist would make a NEW authority
+    // granted-by-default merely by existing — the opposite of the rule
+    // `apps/server/src/authz.ts` states about silent defaults — and it
+    // would hand the founder `can_manage_payments`, which 0080 withholds
+    // on purpose because sending money out of the bank is the one act it
+    // refuses to make automatic.
+    expect(sql).not.toMatch(/attname LIKE '?can/);
+    expect(sql).not.toContain('can_manage_payments,');
+    expect(sql).not.toContain('can_approve_amendments,');
+    // A definer function that silently changed hands would be a privilege
+    // change nobody reviewed, so ownership and the grant are restated
+    // explicitly rather than relied on.
+    expect(sql).toContain(
+      'ALTER FUNCTION app_private.create_organisation_with_owner(text, text, uuid)\n  OWNER TO auto_mb_definer;',
+    );
+    expect(sql).toContain('SET search_path = public, app_private, pg_temp');
+  });
+});

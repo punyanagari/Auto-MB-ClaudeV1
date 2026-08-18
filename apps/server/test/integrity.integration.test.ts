@@ -735,6 +735,7 @@ describe('export completeness is catalog-driven', () => {
       'can_manage_payroll',
       'can_manage_statutory_reporting',
       'can_sign_documents',
+      'can_view_audit_trail',
     ]);
 
     const response = await authed(owner, {
@@ -807,23 +808,7 @@ describe('export completeness is catalog-driven', () => {
         `organisation-scoped: ${stale.join(', ')}`,
     ).toEqual([]);
   });
-});
 
-describe('the export is one consistent snapshot', () => {
-  /**
-   * The export runs about forty-five sequential SELECTs. Under READ
-   * COMMITTED each takes its own snapshot, so a writer that commits
-   * midway is invisible to the earlier queries and visible to the later
-   * ones — and the package comes out referentially broken.
-   *
-   * The race is made deterministic with a table lock. `loa_documents` is
-   * read after `works` and before `delivery_challans`, so an ACCESS
-   * EXCLUSIVE lock on it parks the export exactly between the parent read
-   * and the child read. A Work and a challan on it then commit into that
-   * window. Under READ COMMITTED the package would carry the challan
-   * without its Work; on the transaction's own snapshot it carries
-   * neither.
-   */
   it('excludes a Work and its challan that commit mid-export, rather than splitting them', async () => {
     const locker = createDatabasePool({
       url: adminUrl,

@@ -73,6 +73,8 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   // exhaustiveness proof had a hole exactly the size of one view.
   { view: { name: 'signing' } },
   { view: { name: 'notifications' } },
+  { view: { name: 'audit' } },
+  { view: { name: 'mis' } },
   { view: { name: 'settings' } },
 ];
 

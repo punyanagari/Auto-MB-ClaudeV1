@@ -212,6 +212,13 @@ describe('MFA authority census', () => {
     // half catches an authority being REMOVED from the union without the
     // wall being reconsidered.
     expect(Object.keys(MFA_REQUIRING_AUTHORITIES).sort()).toEqual([
+      // The audit authority (migration 0095). The first grant on the wall
+      // that authorises no WRITE at all, and it belongs there on the
+      // payroll precedent: a stolen session holding it can read every
+      // action every colleague took, with the before and after of each
+      // change, and export the lot in one request. A read can be worth
+      // stealing an account for.
+      'audit',
       'cancel',
       // The import authority (migration 0094). Its damage is measured in
       // rows: a stolen session holding it can commit a prepared workbook

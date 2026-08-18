@@ -11,6 +11,7 @@ import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
 import { Modal } from '../ui/dialog.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
+import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -154,6 +155,14 @@ export function Employees({
       description="Who is on the payroll, what they are paid, and how the statute treats them. Attendance and leave are not recorded here."
       action={
         <div className="flex flex-wrap items-center gap-2">
+          <DownloadButton
+            label="Export .xlsx"
+            filename="employees.xlsx"
+            fetchBlob={() => api.downloadRegisterWorkbook(organisationId, 'employees')}
+            {...(search !== ''
+              ? { note: 'Exports every employee, not the search on screen.' }
+              : {})}
+          />
           {/* A real anchor with a hash href, not a button with a handler:
               `docs/UX.md` § navigation asks that every mock Link become
               an address middle-click and open-in-new-tab can use. */}

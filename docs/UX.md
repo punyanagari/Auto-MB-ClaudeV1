@@ -952,6 +952,128 @@ carried five thousand rows. A batch's rows are never sent in full.
 the moment there is something to cite, on the § 4 iteration pipeline:
 change it in v0, merge it, diff, port the delta.
 
+### 19. Audit trail, Reports, and an export on every register — PROPOSED
+
+**Status: application-first, owner ruling not yet taken.** Numbered 19 by
+coordinator allocation; 17 and 18 belong to the two packs of this wave that
+land beside it.
+
+**There is no mock citation for either screen.** `punyanagari/Auto-MB-Vercel-du@fdfd610`
+draws no audit register and no reports page: `components/app-sidebar.tsx` at
+that commit ends its Administration group at Settings. Both screens are
+therefore § Design contract 4 — behaviour the mock cannot express, built
+inside the mock's visual grammar with its existing components — and they
+extend § Approved divergences 4's list of screens the mock does not cover.
+This entry exists so the absence is a recorded decision rather than an
+omission a reviewer has to guess at, exactly as § 16 does for the signing
+queue.
+
+#### What is on them, and what each element is taken from
+
+| Element                 | Taken from                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it                  |
+| Filter row              | The `Receivables` filter bar: `sr-only` labels over bare selects, and `DateField` pairs |
+| The register            | `DataTable`, with the `sr-only` caption `test/a11y-invariants` requires                 |
+| Event detail            | `Sheet`, side `right` — the same anatomy the receivables bill sheet uses                |
+| Before / after          | The Timeline's own diff list, shared verbatim through `lib/audit-text.ts`               |
+| Tiles                   | The dashboard's `data-surface` hairline grid of `Stat`s                                 |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares     |
+
+**No chip words are added.** Neither screen has a status vocabulary: an
+audit event is a fact that already happened, and a month's output tax is a
+number. Nothing on either page carries a lamp.
+
+**Two rail lamps are added**, both under Administration and both new to
+this rail: `History` for Audit trail and `ChartColumn` for Reports. Neither
+collides with an icon already on it. The mock's own rail gives `Users` to
+both Employees and Members (§ 15 records that), so a collision here would
+have been tolerable; there is none.
+
+#### Three decisions a reviewer should be able to disagree with
+
+**Reports is a separate screen, not more panels on the Dashboard.** The
+landing dashboard is the screen every session opens with, it already
+pre-aggregates four evidence tables, and `routes/dashboard.ts` records the
+881 ms it once cost to get that wrong. Month-by-month roll-ups over the
+whole invoice and payroll history are read at month end by one or two
+people. They do not belong on the loader every sign-in waits for.
+
+**Both doors stay on the rail, and the refusal is at the screen.**
+Employees is the only module in this build whose rail entry is hidden by
+authority (§ 15), and the reason there is specific: a register of salaries
+is not something to advertise a way into. It does not transfer. That an
+audit trail EXISTS is not a secret — every member should know their actions
+are recorded — so the door stays and the screen says which authority opens
+it. The management summary is the same: the figures are private, the
+existence of a reports page is not.
+
+**The audit register refuses an assigned-scope member rather than
+narrowing.** Every other cross-Work register in the product narrows to the
+member's assignments. This one cannot do so honestly: `audit_events` carries
+no `work_id`, the entity-to-Work mapping `routes/timeline.ts` maintains
+covers only the entity types a Work has, and the organisation-level events —
+a member added, a rate changed, the profile edited — are much of what the
+register exists to show. A narrowed register would look complete and be a
+slice, with nothing on it saying so. The refusal names the Work's own
+Timeline tab, which serves that member completely.
+
+#### The retention window is worded as a window, everywhere it appears
+
+The Settings card is headed "Audit register", its field is "Window
+(months)", and both its hint and its read-only line say that nothing older
+is deleted. The register itself repeats the sentence under its filters, with
+the date it actually reached back to.
+
+That wording is load-bearing rather than cautious. "Retention policy"
+normally implies a purge, and this one has none — migration 0095 argues why
+at length, and the short version is that Rule 3(1) of the Companies
+(Accounts) Rules requires the trail to be KEPT for the section 128 period.
+A screen that let an owner believe they had configured a deletion would be
+worse than no setting at all.
+
+#### Export on a register is one control with one meaning
+
+`ui/download-button.tsx` is on Works, Challans (the delivery tab only — the
+issue-challan register has no workbook, and one button serving two
+registers handed an operator the wrong file), Invoices, Inventory, Payments
+and Employees, and on the audit register itself. It is always the same
+control in the same place: the page header's action slot.
+
+**A register export is the WHOLE register under the caller's own scope, not
+the screen's current filter state.** The filters do not travel, and the
+control says so — a register with an active search, status or date filter
+renders a line under its button naming what the file will actually contain.
+That is a recorded decision rather than a limitation nobody noticed: wiring
+six different filter shapes into the export is one querystring schema and
+one WHERE fragment per register, and it will be done when an operator asks
+for a filtered workbook rather than pre-emptively.
+
+**The audit register is the one export whose filters travel**, and it is not
+an inconsistency. Its window is clamped by the organisation's retention
+policy, so a trail exported without its window would claim to reach further
+back than the register may look. There, the filters are part of what the
+document IS.
+
+Both kinds say what they are in the filename: an audit workbook carries its
+applied window, a Tally file carries its period. A workbook cut short by the
+row cap says so in its own last row, not only in a response header.
+
+The control prints its own refusal beside itself rather than staying silent,
+and that is the case worth reviewing: a work-scoped register narrows for an
+assigned-scope member, but an organisation-wide one (vendor payments,
+employees) refuses them outright, and a button that quietly did nothing
+would read as broken rather than as a wall.
+
+The Tally card states, on the screen, that the integration is ONE WAY:
+nothing is read back, and re-exporting a period offers the same vouchers
+again. An export that looked like a sync would invite somebody to expect
+their Tally edits to return.
+
+**When the mock grows either screen, the mock wins.** This entry retires the
+moment there is something to cite, on the § 4 iteration pipeline: change it
+in v0, merge it, diff, port the delta.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

@@ -773,3 +773,189 @@ export function writeXlsxWorkbook(
     ],
   ]);
 }
+
+/* --- writing a register ---------------------------------------------------- */
+
+/**
+ * ONE ZIP LAYER, TWO WRITERS, and the difference between them is the point.
+ *
+ * `writeXlsxWorkbook` above builds an import TEMPLATE: every cell an inline
+ * string, every column declared Text, because an operator is about to type a
+ * bank account and a telephone code into it and Excel must not reinterpret
+ * either. `buildXlsx` below builds a register EXPORT: the operator is going
+ * to sum the money column, so a money column has to arrive as a number.
+ *
+ * One function with a flag is worse than two: the template's Text `<cols>`
+ * span would fight the numeric cells, and the two writers have opposite
+ * defaults for exactly the reason each exists. They share what is genuinely
+ * shared — `buildZip`, `escapeXml`, `columnName` — and nothing else.
+ *
+ * This module arrived TWICE in one wave, hand-rolled on `node:zlib` by two
+ * packs independently (the importer needed a reader, the registers needed a
+ * writer). This is the reconciliation, and most of it was deletion: one ZIP
+ * writer, one XML escaper and one column-name helper went away.
+ */
+
+/** One column of an exported register. */
+export interface XlsxColumn {
+  /** The header cell's text. */
+  readonly header: string;
+  /**
+   * Whether the column's values are written as NUMBERS rather than text.
+   *
+   * Set it for money, quantities and counts — the columns an operator will
+   * sum in the sheet. The value written is the server's own decimal string,
+   * verbatim, straight into `<v>`; nothing in this process parses or
+   * re-formats it, so the file carries exactly the digits the register
+   * printed. A value that is not a plain decimal (a dash, an empty cell, a
+   * range) falls back to a text cell rather than producing a corrupt one.
+   *
+   * A text cell here is an `inlineStr` exactly as the template writer's is,
+   * so the spreadsheet-injection hazard is closed the same way: Excel has
+   * nothing to parse, because the XML says the value is a string.
+   */
+  readonly numeric?: boolean;
+}
+
+/** A cell value: the register's own string, or null for an empty cell. */
+export type XlsxValue = string | null;
+
+/**
+ * Whether a value is a plain decimal — no exponent, no thousands separator,
+ * no currency symbol — and therefore safe to write into a NUMERIC cell.
+ * Anything else becomes text.
+ *
+ * Written as a scan rather than as a pattern. The obvious regex is linear
+ * and perfectly safe, and the security linter flags it anyway on a heuristic
+ * about a quantifier beside an optional group. Ten boring lines settle that
+ * argument permanently, and bound both halves besides: eighteen integer
+ * digits and six decimals reach past the widest column this schema has.
+ */
+function isDigits(text: string): boolean {
+  return text.length > 0 && /^[0-9]+$/.test(text);
+}
+
+function isPlainDecimal(value: string): boolean {
+  const body = value.startsWith('-') ? value.slice(1) : value;
+  const parts = body.split('.');
+  if (parts.length > 2) return false;
+  const [whole, fraction] = parts;
+  if (whole === undefined || whole.length > 18 || !isDigits(whole)) return false;
+  if (fraction === undefined) return true;
+  return fraction.length <= 6 && isDigits(fraction);
+}
+
+/**
+ * The C0 controls XML 1.0 cannot carry in any form. Tab, newline and
+ * carriage return are legal and survive; a stray 0x00 in a free-text remark
+ * would otherwise make the whole workbook unreadable rather than that one
+ * cell wrong.
+ *
+ * Only the register writer needs it: a template's cells are this
+ * repository's own header strings, while a register's are whatever an
+ * operator once pasted into a remark field.
+ */
+function withoutControlCharacters(value: string): string {
+  let text = '';
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue;
+    text += character;
+  }
+  return text;
+}
+
+function cellXml(reference: string, value: XlsxValue, numeric: boolean): string {
+  if (value === null || value === '') return '';
+  if (numeric && isPlainDecimal(value)) {
+    return `<c r="${reference}"><v>${value}</v></c>`;
+  }
+  const text = escapeXml(withoutControlCharacters(value));
+  return `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${text}</t></is></c>`;
+}
+
+/** Sheet names may not exceed 31 characters and may not contain any of
+ * `: \ / ? * [ ]`. Excel refuses to open a workbook that breaks either rule,
+ * so the name is repaired here rather than trusted. */
+function safeSheetName(name: string): string {
+  const cleaned = name.replaceAll(/[:\\/?*[\]]/g, ' ').trim();
+  const trimmed = cleaned.slice(0, 31).trim();
+  return trimmed.length === 0 ? 'Sheet1' : trimmed;
+}
+
+/**
+ * One register, one sheet, as .xlsx bytes.
+ *
+ * `rows` is positional against `columns`: a short row leaves its trailing
+ * cells empty rather than throwing, because a register whose optional tail
+ * columns are absent is a normal register and not a programming error.
+ *
+ * No styles part and no `<cols>` span, unlike the template above: an
+ * exported register is read and summed rather than typed into, so the
+ * reader's own widths and formats are the right ones.
+ */
+export function buildXlsx(
+  sheetName: string,
+  columns: readonly XlsxColumn[],
+  rows: readonly (readonly XlsxValue[])[],
+): Buffer {
+  const header = columns
+    .map((column, index) => cellXml(`${columnName(index)}1`, column.header, false))
+    .join('');
+  const body = rows
+    .map((row, rowIndex) => {
+      const number = rowIndex + 2;
+      const cells = columns
+        .map((column, index) =>
+          cellXml(
+            `${columnName(index)}${String(number)}`,
+            row[index] ?? null,
+            column.numeric === true,
+          ),
+        )
+        .join('');
+      return `<row r="${String(number)}">${cells}</row>`;
+    })
+    .join('');
+
+  return buildZip([
+    [
+      '[Content_Types].xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        `<Override PartName="/xl/workbook.xml" ContentType="${XLSX_MEDIA_TYPE}.main+xml"/>` +
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '</Types>',
+    ],
+    [
+      '_rels/.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+        '</Relationships>',
+    ],
+    [
+      'xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        `<sheets><sheet name="${escapeXml(safeSheetName(sheetName))}" sheetId="1" r:id="rId1"/></sheets>` +
+        '</workbook>',
+    ],
+    [
+      'xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>',
+    ],
+    [
+      'xl/worksheets/sheet1.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        `<sheetData><row r="1">${header}</row>${body}</sheetData>` +
+        '</worksheet>',
+    ],
+  ]);
+}
