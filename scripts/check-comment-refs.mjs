@@ -192,6 +192,7 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
   [
     'app/correspondence/new/inward/page.tsx',
     'the v0 mock screen the inward letter upload replicates',
+  ],
   ['app/production/page.tsx', 'the v0 mock screen the production register replicates'],
   [
     'app/production/items/page.tsx',

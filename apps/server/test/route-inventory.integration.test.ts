@@ -133,6 +133,8 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   [
     'GET /api/correspondence/thread-options',
     'the letters a new one may answer, for a single select on the composer: the same visible register the paged list renders, read in one round trip because a picker cannot page. It grows with the correspondence of one organisation, which is the bound to watch — add a search parameter before it outgrows a select',
+  ],
+  [
     'GET /api/production/items',
     'the OEM item master: what the agency manufactures and the parts it buys to build them, curated by hand like every other master. Both production screens read it whole — the job-card form needs every manufactured item in one select, and the bill-of-material editor needs every part',
   ],

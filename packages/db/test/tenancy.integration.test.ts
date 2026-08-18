@@ -1482,6 +1482,9 @@ async function seedTenantGraph(
         ${organisationId}, ${work.id}, 'outward', 'OUT/26-27/001', '2026-27',
         1, '2026-06-12', 'Submission of approved makes',
         'Sr. DSTE/MMCT', 'Seed letter body.', ${userId}
+      )
+    `;
+
     // OEM production (0084): a manufactured board, one serial-controlled
     // component, the bill-of-material edge between them, a job card
     // against the Work, one finished unit with one component consumed

@@ -500,6 +500,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (first !== 'new') return null;
       if (second === undefined) return { view: { name: 'correspondence-new' } };
       return second === 'inward' ? { view: { name: 'correspondence-inward' } } : null;
+    }
     case 'production': {
       const [first, second, ...extra] = rest;
       if (first === undefined) return { view: { name: 'production', workId: null } };

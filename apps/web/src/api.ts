@@ -3667,6 +3667,11 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     },
     async writeOutwardLetter(organisationId, body) {
       return request<{ id: string; number: string }>('/api/correspondence/outward', {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
     async listProductionItems(organisationId, includeRetired = false) {
       return request<ProductionItemListResponse>(
         `/api/production/items?includeRetired=${String(includeRetired)}`,
@@ -3714,6 +3719,7 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     },
     async downloadCorrespondenceLetter(organisationId, letterId) {
       return downloadBlob(`/api/correspondence/${letterId}/document`, organisationId);
+    },
     async updateProductionBomLine(organisationId, lineId, quantity) {
       return request<BomResponse>(`/api/production/bom-lines/${lineId}`, {
         method: 'PUT',

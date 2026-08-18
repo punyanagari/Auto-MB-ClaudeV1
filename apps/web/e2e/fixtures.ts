@@ -541,6 +541,8 @@ const CORRESPONDENCE_REGISTER = {
   nextCursor: null,
   counts: { outward: 3, inward: 1, extensions: 2, inspection: 2 },
   awaitingExtensionResponses: 2,
+};
+
 /* OEM production (migration 0084).
  *
  * The job card carries every tint this module puts on a word, because
