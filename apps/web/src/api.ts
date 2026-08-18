@@ -32,6 +32,7 @@ import type {
   Bill,
   BillListResponse,
   CancelChallanRequest,
+  BomResponse,
   CanonicalItem,
   CanonicalItemListResponse,
   ChallanDetailResponse,
@@ -92,7 +93,18 @@ import type {
   EndDateGstRateRequest,
   GstRateMaster,
   OrganisationBankAccount,
+  CancelJobCardRequest,
+  CreateDispatchRequest,
+  CreateJobCardRequest,
+  JobCardDetail,
+  JobCardListResponse,
+  ProductionItem,
+  ProductionItemListResponse,
+  RecordComponentSerialRequest,
+  SaveBomLineRequest,
   SaveCanonicalItemRequest,
+  SaveProductionItemRequest,
+  UpdateJobCardRequest,
   SaveChallanRequest,
   SaveContactRequest,
   SaveStandaloneChallanRequest,
@@ -1249,6 +1261,98 @@ export interface ApiClient {
     noticeId: string,
     body: ConfirmTenderRequest,
   ) => Promise<TenderDetail>;
+  // --- OEM production (migration 0084) --------------------------------------
+  readonly listProductionItems: (
+    organisationId: string,
+    includeRetired?: boolean,
+  ) => Promise<ProductionItemListResponse>;
+  readonly saveProductionItem: (
+    organisationId: string,
+    id: string | null,
+    body: SaveProductionItemRequest,
+  ) => Promise<ProductionItem>;
+  readonly setProductionItemActive: (
+    organisationId: string,
+    id: string,
+    active: boolean,
+  ) => Promise<ProductionItem>;
+  readonly getProductionBom: (
+    organisationId: string,
+    itemId: string,
+  ) => Promise<BomResponse>;
+  readonly addProductionBomLine: (
+    organisationId: string,
+    itemId: string,
+    body: SaveBomLineRequest,
+  ) => Promise<BomResponse>;
+  readonly updateProductionBomLine: (
+    organisationId: string,
+    lineId: string,
+    quantity: string,
+  ) => Promise<BomResponse>;
+  readonly removeProductionBomLine: (
+    organisationId: string,
+    lineId: string,
+  ) => Promise<BomResponse>;
+  readonly listJobCards: (
+    organisationId: string,
+    /** `URLSearchParams` escapes every value, so an id is never
+     * interpolated raw into the path. */
+    query?: {
+      readonly workId?: string;
+      readonly limit?: number;
+      readonly cursor?: string;
+    },
+  ) => Promise<JobCardListResponse>;
+  readonly getJobCard: (
+    organisationId: string,
+    jobCardId: string,
+  ) => Promise<JobCardDetail>;
+  readonly createJobCard: (
+    organisationId: string,
+    body: CreateJobCardRequest,
+  ) => Promise<JobCardDetail>;
+  readonly updateJobCard: (
+    organisationId: string,
+    jobCardId: string,
+    body: UpdateJobCardRequest,
+  ) => Promise<JobCardDetail>;
+  readonly completeJobCard: (
+    organisationId: string,
+    jobCardId: string,
+  ) => Promise<JobCardDetail>;
+  readonly cancelJobCard: (
+    organisationId: string,
+    jobCardId: string,
+    body: CancelJobCardRequest,
+  ) => Promise<JobCardDetail>;
+  readonly recordProductionSerial: (
+    organisationId: string,
+    jobCardId: string,
+  ) => Promise<JobCardDetail>;
+  readonly removeProductionSerial: (
+    organisationId: string,
+    serialId: string,
+  ) => Promise<JobCardDetail>;
+  readonly recordComponentSerial: (
+    organisationId: string,
+    serialId: string,
+    body: RecordComponentSerialRequest,
+  ) => Promise<JobCardDetail>;
+  readonly removeComponentSerial: (
+    organisationId: string,
+    componentSerialId: string,
+  ) => Promise<JobCardDetail>;
+  readonly createProductionDispatch: (
+    organisationId: string,
+    jobCardId: string,
+    body: CreateDispatchRequest,
+  ) => Promise<JobCardDetail>;
+  readonly withdrawProductionDispatch: (
+    organisationId: string,
+    dispatchId: string,
+  ) => Promise<JobCardDetail>;
+
   readonly listTenders: (organisationId: string) => Promise<TenderListResponse>;
   readonly getTender: (
     organisationId: string,
@@ -3469,6 +3573,129 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         method: 'POST',
         organisationId,
         body,
+      });
+    },
+    async listProductionItems(organisationId, includeRetired = false) {
+      return request<ProductionItemListResponse>(
+        `/api/production/items?includeRetired=${String(includeRetired)}`,
+        { organisationId },
+      );
+    },
+    async saveProductionItem(organisationId, id, body) {
+      return request<ProductionItem>(
+        id === null ? '/api/production/items' : `/api/production/items/${id}`,
+        { method: id === null ? 'POST' : 'PUT', organisationId, body },
+      );
+    },
+    async setProductionItemActive(organisationId, id, active) {
+      return request<ProductionItem>(`/api/production/items/${id}/active`, {
+        method: 'PATCH',
+        organisationId,
+        body: { active },
+      });
+    },
+    async getProductionBom(organisationId, itemId) {
+      return request<BomResponse>(`/api/production/items/${itemId}/bom`, {
+        organisationId,
+      });
+    },
+    async addProductionBomLine(organisationId, itemId, body) {
+      return request<BomResponse>(`/api/production/items/${itemId}/bom`, {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async updateProductionBomLine(organisationId, lineId, quantity) {
+      return request<BomResponse>(`/api/production/bom-lines/${lineId}`, {
+        method: 'PUT',
+        organisationId,
+        body: { quantity },
+      });
+    },
+    async removeProductionBomLine(organisationId, lineId) {
+      return request<BomResponse>(`/api/production/bom-lines/${lineId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async listJobCards(organisationId, query = {}) {
+      const search = new URLSearchParams();
+      if (query.workId !== undefined) search.set('workId', query.workId);
+      if (query.limit !== undefined) search.set('limit', String(query.limit));
+      if (query.cursor !== undefined) search.set('cursor', query.cursor);
+      const suffix = search.size === 0 ? '' : `?${search.toString()}`;
+      return request<JobCardListResponse>(`/api/production/job-cards${suffix}`, {
+        organisationId,
+      });
+    },
+    async getJobCard(organisationId, jobCardId) {
+      return request<JobCardDetail>(`/api/production/job-cards/${jobCardId}`, {
+        organisationId,
+      });
+    },
+    async createJobCard(organisationId, body) {
+      return request<JobCardDetail>('/api/production/job-cards', {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async updateJobCard(organisationId, jobCardId, body) {
+      return request<JobCardDetail>(`/api/production/job-cards/${jobCardId}`, {
+        method: 'PUT',
+        organisationId,
+        body,
+      });
+    },
+    async completeJobCard(organisationId, jobCardId) {
+      return request<JobCardDetail>(`/api/production/job-cards/${jobCardId}/complete`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelJobCard(organisationId, jobCardId, body) {
+      return request<JobCardDetail>(`/api/production/job-cards/${jobCardId}/cancel`, {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async recordProductionSerial(organisationId, jobCardId) {
+      return request<JobCardDetail>(`/api/production/job-cards/${jobCardId}/serials`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async removeProductionSerial(organisationId, serialId) {
+      return request<JobCardDetail>(`/api/production/serials/${serialId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async recordComponentSerial(organisationId, serialId, body) {
+      return request<JobCardDetail>(`/api/production/serials/${serialId}/components`, {
+        method: 'POST',
+        organisationId,
+        body,
+      });
+    },
+    async removeComponentSerial(organisationId, componentSerialId) {
+      return request<JobCardDetail>(
+        `/api/production/component-serials/${componentSerialId}`,
+        { method: 'DELETE', organisationId },
+      );
+    },
+    async createProductionDispatch(organisationId, jobCardId, body) {
+      return request<JobCardDetail>(
+        `/api/production/job-cards/${jobCardId}/dispatches`,
+        { method: 'POST', organisationId, body },
+      );
+    },
+    async withdrawProductionDispatch(organisationId, dispatchId) {
+      return request<JobCardDetail>(`/api/production/dispatches/${dispatchId}`, {
+        method: 'DELETE',
+        organisationId,
       });
     },
     async listTenders(organisationId) {

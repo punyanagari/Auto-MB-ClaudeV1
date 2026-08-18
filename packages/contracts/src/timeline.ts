@@ -35,6 +35,18 @@ export const TIMELINE_ENTITY_TYPES = [
   // paper trail — and a despatch this Work could not make without the
   // certificate is unexplainable from a trail that never mentions it.
   'inspection_calls',
+  // The production job card (0084). Raising, revising, completing and
+  // cancelling an order to BUILD what the Work will be delivered are
+  // acts on the Work's paper trail, and a delivery whose units were
+  // manufactured is unexplainable from a trail that starts at despatch.
+  //
+  // Only the card. The units it produces, their component genealogy and
+  // their releases stay off the timeline deliberately: a job card for
+  // five hundred boards would otherwise put five hundred rows on the
+  // Work's history, and the place to read a unit is the job card. The
+  // census in `apps/server/test/audit-timeline-census.test.ts` records
+  // the same reasoning against each of them.
+  'production_job_cards',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

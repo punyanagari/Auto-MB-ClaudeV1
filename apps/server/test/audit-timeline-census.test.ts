@@ -57,6 +57,16 @@ const NON_TIMELINE: Record<string, string> = {
   gst_rates: 'Organisation-level master data (notified rate history).',
   organisation_signatories: 'Organisation-level master data.',
   canonical_items: 'Organisation-level master data (the item catalogue).',
+  production_items:
+    'Organisation-level master data (0084): the OEM item master describes what the factory can build, not anything one Work did.',
+  production_bom_lines:
+    'Organisation-level master data (0084): a bill of material is a product design, and it outlives every Work built against it.',
+  production_serials:
+    'Deliberately off the Work timeline (0084): a job card for five hundred boards would put five hundred rows on the Work’s history. The card itself IS on the timeline (production_job_cards), and a unit is read on the card.',
+  production_component_serials:
+    'Deliberately off the Work timeline (0084): one row per component per unit, for the same flooding reason as production_serials. The genealogy is read on the unit.',
+  production_dispatches:
+    'Deliberately off the Work timeline (0084): a release from the factory floor is an internal handoff to stock, not an act on the contract. The Work’s trail picks the units up again at the Delivery Challan.',
   organisation_bank_accounts:
     'Organisation-level: the company’s own accounts, not anything a Work did.',
   document_number_series: 'Organisation-level numbering configuration.',

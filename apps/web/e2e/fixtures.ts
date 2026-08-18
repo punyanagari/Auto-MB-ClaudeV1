@@ -487,6 +487,181 @@ const RECEIVABLES_REGISTER = {
 /** One tender in each of the three states the register tints, so a scan
  * sees the whole status vocabulary at once: an open bid with blocking
  * lines, one already submitted, and one that was won. */
+/* OEM production (migration 0084).
+ *
+ * The job card carries every tint this module puts on a word, because
+ * the axe scan is the only place they are checked together in both
+ * themes: the `in-production` chip, the neutral Material badge, the
+ * progress bar, the success "Dispatch ready" badge, and — on the Serials
+ * tab — the destructive/success component count, which is the one figure
+ * here that is colour-coded at all.
+ */
+const PRODUCTION_JOB_CARD_ID = '9f2c1b7a-4e58-4d31-9b2a-7c1e5d8a3046';
+const PRODUCTION_ITEM_ID = '2a7e9c14-6b83-4f52-9d07-1e4b8a6c2f35';
+const PRODUCTION_COMPONENT_ID = 'b41d7f60-38a2-4c19-85e7-90f3c2d6a1b8';
+const PRODUCTION_SERIAL_ID = 'c58e2a91-7d43-4b60-9f18-25a7e3c40b6d';
+
+const PRODUCTION_JOB_CARD = {
+  id: PRODUCTION_JOB_CARD_ID,
+  number: 'PP-26-081',
+  sourceType: 'work',
+  sourceReference: 'WR-MMCT-SnT-STTD-34-2025 · A2/1',
+  workId: null,
+  workCode: 'PL270-CRB',
+  customer: null,
+  itemId: PRODUCTION_ITEM_ID,
+  itemCode: 'PEB-IPDB-6L',
+  itemName: 'IP Display Board · 6 line',
+  quantity: 12,
+  manufactured: 5,
+  dispatched: 2,
+  materialLines: 2,
+  status: 'in_production',
+  dueDate: '2026-11-30',
+  completedOn: null,
+  cancellationReason: null,
+  materials: [
+    {
+      itemId: PRODUCTION_COMPONENT_ID,
+      itemCode: 'SMPS-24-10',
+      name: '24 V 10 A SMPS',
+      unit: 'Nos',
+      required: '12.000',
+      serialControlled: true,
+    },
+    {
+      itemId: '7e3a1c85-92d6-4b07-8f41-6c2b5d9e30a7',
+      itemCode: 'CAB-PC-6L',
+      name: 'Powder-coated cabinet',
+      unit: 'Nos',
+      required: '12.000',
+      serialControlled: false,
+    },
+  ],
+  serials: [
+    {
+      id: PRODUCTION_SERIAL_ID,
+      serialNumber: 'IPDB6-00129',
+      dispatchedOn: null,
+      components: [],
+      createdAt: '2026-08-14T06:20:00.000Z',
+    },
+    {
+      id: 'd6b3f847-1a92-4e50-b7c8-34f9a2e615c0',
+      serialNumber: 'IPDB6-00130',
+      dispatchedOn: '2026-08-16',
+      components: [
+        {
+          id: 'e17c4b93-5d28-4a61-9f30-8b6d2a4e70f1',
+          componentItemId: PRODUCTION_COMPONENT_ID,
+          componentItemCode: 'SMPS-24-10',
+          componentName: '24 V 10 A SMPS',
+          serialNumber: 'SMPS-2026-88214',
+        },
+      ],
+      createdAt: '2026-08-13T06:20:00.000Z',
+    },
+  ],
+  componentSlots: [
+    {
+      componentItemId: PRODUCTION_COMPONENT_ID,
+      componentItemCode: 'SMPS-24-10',
+      name: '24 V 10 A SMPS',
+      required: 1,
+      captured: 0,
+    },
+  ],
+  dispatches: [
+    {
+      id: 'f92a6d15-8c37-4be0-a541-7d3e9b2c60f4',
+      number: 'PP-26-081/D1',
+      dispatchedOn: '2026-08-16',
+      remarks: null,
+      serialNumbers: ['IPDB6-00130'],
+      createdAt: '2026-08-16T09:00:00.000Z',
+    },
+  ],
+  dispatchReady: false,
+};
+
+const PRODUCTION_JOB_CARD_LIST = {
+  jobCards: [
+    {
+      id: PRODUCTION_JOB_CARD.id,
+      number: PRODUCTION_JOB_CARD.number,
+      sourceType: PRODUCTION_JOB_CARD.sourceType,
+      sourceReference: PRODUCTION_JOB_CARD.sourceReference,
+      workId: PRODUCTION_JOB_CARD.workId,
+      workCode: PRODUCTION_JOB_CARD.workCode,
+      customer: PRODUCTION_JOB_CARD.customer,
+      itemId: PRODUCTION_JOB_CARD.itemId,
+      itemCode: PRODUCTION_JOB_CARD.itemCode,
+      itemName: PRODUCTION_JOB_CARD.itemName,
+      quantity: PRODUCTION_JOB_CARD.quantity,
+      manufactured: PRODUCTION_JOB_CARD.manufactured,
+      dispatched: PRODUCTION_JOB_CARD.dispatched,
+      materialLines: PRODUCTION_JOB_CARD.materialLines,
+      status: PRODUCTION_JOB_CARD.status,
+      dueDate: PRODUCTION_JOB_CARD.dueDate,
+      completedOn: null,
+      cancellationReason: null,
+    },
+  ],
+  nextCursor: null,
+  openCount: 3,
+  inProductionCount: 1,
+  dispatchReadyCount: 1,
+};
+
+const PRODUCTION_ITEMS = {
+  items: [
+    {
+      id: PRODUCTION_ITEM_ID,
+      itemCode: 'PEB-IPDB-6L',
+      name: 'IP Display Board · 6 line',
+      category: 'Display boards',
+      unit: 'Nos',
+      manufactured: true,
+      serialPrefix: 'IPDB6',
+      serialControlled: true,
+      specifications: [{ attribute: 'Display size', value: '1200 × 600 mm' }],
+      active: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+    {
+      id: PRODUCTION_COMPONENT_ID,
+      itemCode: 'SMPS-24-10',
+      name: '24 V 10 A SMPS',
+      category: 'Power supplies',
+      unit: 'Nos',
+      manufactured: false,
+      serialPrefix: null,
+      serialControlled: true,
+      specifications: [],
+      active: true,
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+  ],
+};
+
+const PRODUCTION_BOM = {
+  nodes: [
+    {
+      lineId: 'a3f8c250-6d19-4b74-8e02-5c7a1f9b3d48',
+      parentLineId: null,
+      depth: 0,
+      itemId: PRODUCTION_COMPONENT_ID,
+      itemCode: 'SMPS-24-10',
+      name: '24 V 10 A SMPS',
+      unit: 'Nos',
+      quantity: '1.000',
+      effectiveQuantity: '1.000',
+      serialControlled: true,
+      hasChildren: false,
+    },
+  ],
+};
+
 const TENDER_LIST = {
   tenders: [
     {
@@ -648,6 +823,22 @@ export async function mockWorkspace(
   // bare-register pattern would otherwise swallow the one with an id.
   await page.route('**/api/tenders/*', (route) => route.fulfill(json(TENDER_DETAIL)));
   await page.route('**/api/tenders', (route) => route.fulfill(json(TENDER_LIST)));
+  // OEM production (migration 0084). The detail routes are registered
+  // BEFORE the bare registers, because Playwright matches the last
+  // registered handler and a bare pattern would otherwise swallow the
+  // one carrying an id.
+  await page.route('**/api/production/items/*/bom', (route) =>
+    route.fulfill(json(PRODUCTION_BOM)),
+  );
+  await page.route('**/api/production/items*', (route) =>
+    route.fulfill(json(PRODUCTION_ITEMS)),
+  );
+  await page.route('**/api/production/job-cards/*', (route) =>
+    route.fulfill(json(PRODUCTION_JOB_CARD)),
+  );
+  await page.route('**/api/production/job-cards*', (route) =>
+    route.fulfill(json(PRODUCTION_JOB_CARD_LIST)),
+  );
   await page.route('**/api/masters/contacts*', (route) =>
     route.fulfill(json({ contacts: [] })),
   );

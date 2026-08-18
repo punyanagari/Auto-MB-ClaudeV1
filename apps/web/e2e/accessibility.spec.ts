@@ -1202,3 +1202,44 @@ test.describe('mobile shell', () => {
     await expect(moreSheet).toBeHidden();
   });
 });
+
+test('production register, job card and item master pass the axe scan', async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+  await page.goto('/');
+
+  await page.getByRole('link', { name: 'Production', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Production' })).toBeVisible();
+  // Scanned with a row on screen: the register's tints — the status chip,
+  // the Material badge and the progress bar — live in the row and would
+  // never be scanned against an empty table.
+  await expect(page.getByText('PP-26-081')).toBeVisible();
+  await expectNoAxeViolations(page, 'production register');
+
+  await page.getByRole('link', { name: 'PP-26-081' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'IP Display Board · 6 line' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'production job card overview');
+
+  // The Serials tab is the one place this module colour-codes a figure —
+  // the captured/required count goes destructive short and success
+  // complete — so it is scanned in its own right.
+  await page.getByRole('button', { name: 'Serials' }).click();
+  await expect(page.getByText('Serialized components')).toBeVisible();
+  await expectNoAxeViolations(page, 'production job card serials');
+
+  await page.getByRole('button', { name: 'Dispatch' }).click();
+  await expect(page.getByRole('heading', { name: 'Releases' })).toBeVisible();
+  await expectNoAxeViolations(page, 'production job card dispatch');
+
+  await page.goto('/#/production/items');
+  await expect(page.getByRole('heading', { name: 'Manufactured items' })).toBeVisible();
+  // By role, not text: while the BOM is still loading, the sr-only
+  // "Loading the bill of material…" line also matches the bare text and
+  // strict mode refuses the ambiguity — which only reproduces on a
+  // runner slow enough for the loading state to still be on screen.
+  await expect(page.getByRole('heading', { name: 'Bill of material' })).toBeVisible();
+  await expectNoAxeViolations(page, 'production item master');
+});

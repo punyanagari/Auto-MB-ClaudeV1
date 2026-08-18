@@ -65,6 +65,32 @@ import {
  *     of it.
  */
 const DECLARED_MUTABLE: Record<string, readonly string[]> = {
+  // The OEM item master (0084). Its guard is narrow on purpose: it is a
+  // MASTER, and a master is meant to be edited. What it freezes is the
+  // three things a physical object depends on — the tenant and
+  // provenance, the serial series once it has minted a unit, and the
+  // manufactured flag once job cards exist — plus the retirement, which
+  // is refused while a job card is open rather than frozen outright.
+  // Everything below is ordinary master data an operator may correct.
+  production_items: [
+    'id',
+    'updated_at',
+    'item_code',
+    'name',
+    'category',
+    'unit',
+    'serial_controlled',
+    'specifications',
+    // Both of these DO change, which is why they are here rather than in
+    // the freeze: an item stops being manufactured when the agency stops
+    // making it, and retiring one is the masters delete. Each carries a
+    // one-way rule instead — the guard refuses clearing `manufactured`
+    // once job cards exist, and refuses clearing `active` while one is
+    // open — and a one-way rule is not a freeze.
+    'manufactured',
+    'active',
+  ],
+
   // The amendment decision ledger: everything proposed is frozen, the
   // decision is what gets written.
   approval_requests: [

@@ -88,6 +88,14 @@ export type WorkspaceView =
    * level, so none of the three carries a Work: the register, the NIT
    * intake wizard, and one tender's bid workspace. */
   | { name: 'tenders' }
+  /** OEM production. Three addresses, exactly as the mock draws three
+   * screens: the job-card register, the item master, and one job card.
+   *
+   * `workId` on the register is the mock's `?work=` deep link, taken the
+   * way every other cross-Work register takes it. */
+  | { name: 'production'; workId: string | null }
+  | { name: 'production-items' }
+  | { name: 'production-job-card'; jobCardId: string }
   | { name: 'tender-new' }
   | { name: 'tender'; tenderId: string }
   /** The railway receivables register: every prepared bill's position with
@@ -242,6 +250,12 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/inspection';
     case 'tenders':
       return '#/tenders';
+    case 'production':
+      return view.workId === null ? '#/production' : `#/production/work/${view.workId}`;
+    case 'production-items':
+      return '#/production/items';
+    case 'production-job-card':
+      return `#/production/${view.jobCardId}`;
     case 'tender-new':
       return '#/tenders/new';
     case 'tender':
@@ -300,6 +314,19 @@ export function mastersHash(tab?: MastersTab): string {
 /** `#/tenders/<id>` as a plain href — what a register row links to. */
 export function tenderHash(tenderId: string): string {
   return workspaceHashOf({ view: { name: 'tender', tenderId } });
+}
+
+/** The production register as a plain href, and the mock's `?work=` deep
+ * link where a Work is named. The chip's clear control is the same
+ * helper with no Work, which is what makes dismissing the filter a real
+ * link rather than a state reset. */
+export function productionHash(workId: string | null = null): string {
+  return workspaceHashOf({ view: { name: 'production', workId } });
+}
+
+/** `#/production/<id>` — what a register row links to. */
+export function productionJobCardHash(jobCardId: string): string {
+  return workspaceHashOf({ view: { name: 'production-job-card', jobCardId } });
 }
 
 export const SETTINGS_HASH = '#/settings';
@@ -453,6 +480,24 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (first === undefined) return { view: { name: 'tenders' } };
       if (first === 'new') return { view: { name: 'tender-new' } };
       return isRecordId(first) ? { view: { name: 'tender', tenderId: first } } : null;
+    }
+    case 'production': {
+      const [first, second, ...extra] = rest;
+      if (first === undefined) return { view: { name: 'production', workId: null } };
+      if (first === 'items') {
+        return extra.length === 0 && second === undefined
+          ? { view: { name: 'production-items' } }
+          : null;
+      }
+      if (first === 'work') {
+        return extra.length === 0 && second !== undefined && isRecordId(second)
+          ? { view: { name: 'production', workId: second } }
+          : null;
+      }
+      if (second !== undefined || extra.length > 0) return null;
+      return isRecordId(first)
+        ? { view: { name: 'production-job-card', jobCardId: first } }
+        : null;
     }
     case 'quotations':
     case 'approvals':

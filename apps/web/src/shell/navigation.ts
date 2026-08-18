@@ -12,6 +12,7 @@ import {
   Receipt,
   ScanSearch,
   Settings as SettingsIcon,
+  Factory,
   Truck,
   Users,
   Wrench,
@@ -34,6 +35,7 @@ export type ModuleKey =
   | 'approvals'
   | 'search'
   | 'installations'
+  | 'production'
   | 'masters'
   | 'members'
   | 'settings';
@@ -58,8 +60,10 @@ export interface NavGroup {
  * then Documents, Operations and Administration.
  *
  * The mock draws modules this build has no route for — E-Way Bills,
- * Correspondence, Production, Inventory, Purchase orders, Maintenance,
- * Employees — and those are omitted rather than rendered as dead entries.
+ * Correspondence, Inventory, Purchase orders, Maintenance, Employees —
+ * and those are omitted rather than rendered as dead entries. Production
+ * (migration 0084) left that list this wave and takes the first place
+ * the mock gives it under Operations.
  * Quotations runs the other way: the mock draws it under Documents in its
  * own list, so it keeps its place here.
  *
@@ -111,6 +115,7 @@ export const NAVIGATION: readonly NavGroup[] = [
   {
     label: 'Operations',
     items: [
+      { key: 'production', label: 'Production', icon: Factory },
       { key: 'installations', label: 'Installations', icon: Wrench },
       { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
       { key: 'search', label: 'Global search', icon: ScanSearch },
@@ -161,6 +166,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'search', query: '' };
     case 'installations':
       return { name: 'installations', workId: null };
+    case 'production':
+      return { name: 'production', workId: null };
     case 'masters':
       return { name: 'masters' };
     case 'members':
@@ -193,6 +200,11 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'tender':
     case 'tender-new':
       return 'tenders';
+    // The register, the item master and an opened job card are one
+    // place, so all three light one lamp.
+    case 'production-items':
+    case 'production-job-card':
+      return 'production';
     case 'dashboard':
     case 'challans':
     case 'invoices':
@@ -205,6 +217,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'approvals':
     case 'search':
     case 'installations':
+    case 'production':
     case 'masters':
     case 'members':
     case 'settings':
@@ -252,6 +265,12 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Company documents';
     case 'inspection':
       return 'Inspection';
+    case 'production':
+      return 'Production';
+    case 'production-items':
+      return 'Manufactured items';
+    case 'production-job-card':
+      return 'Job card';
     case 'payments':
       return 'Payments';
     case 'tenders':

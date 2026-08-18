@@ -1272,6 +1272,134 @@ inspection certificate is evidence about specific items of one contract.
 A call's evidence is replaceable while the call is open and frozen the
 moment it closes.
 
+### 5.11 The factory before the challan
+
+Everything else in this contract models work the agency EXECUTES: a
+letter arrives, material is delivered, quantities are measured, money is
+billed. This section models the half before it. The agency is an OEM. It
+builds what it delivers, and between the LOA and the Delivery Challan
+there is a factory whose output has to be accounted for unit by unit.
+
+**The item master** is what the factory names: the products the
+organisation manufactures and the parts it buys to build them, in one
+list because a bill of material joins one to the other and a sub-assembly
+is both. A part carries a part number — unique per organisation, case
+insensitively, and never reissued even after retirement, because it is
+printed on physical labels. An item marked `manufactured` may carry a job
+card, and always carries a serial series; one not manufactured may still
+be serial controlled, meaning its supplier's serials are captured when it
+is consumed.
+
+This is deliberately NOT the canonical item catalogue of §8. A canonical
+item's identity is a WORDING — it exists to say that three differently
+worded schedule lines mean one thing — and its mapping to schedule lines
+is derived from its aliases. A production item's identity is a part
+number, and it is the anchor of a bill-of-material edge and a serial
+series. The relation between the two is a mapping, not an identity, and
+the product does not yet draw it.
+
+**The bill of material** is one row per parent-component edge, with the
+quantity per single unit of the parent. It is recursive: a component may
+be a manufactured item with a bill of its own, and the explosion
+multiplies quantities down every level. A bill that reached itself would
+have no bottom, so a cycle is refused at the database — under a
+per-organisation lock, because two sessions adding opposite edges at the
+same moment cannot see each other's uncommitted row and no row lock can
+be taken on a row that does not exist yet. Depth is bounded as well.
+
+**The job card** is one production order: build this many of this item,
+for this Work's schedule line or this private purchase order, by this
+date. It serves exactly one of the two — never both, never neither — and
+it moves through four states and no others:
+
+- `planned` — raised, nothing built;
+- `in_production` — the first unit has been serialised, which is what
+  moves it here; there is no separate "start" act, because a button
+  saying "I am about to start" beside the act of starting is a button
+  that can lie;
+- `completed` — every planned unit exists as a serial;
+- `cancelled` — abandoned, with a reason.
+
+Job cards are numbered per organisation per financial year (`PP-26-081`),
+gap-free, and a cancelled number is never reused. The planned quantity is
+a ceiling on units built, held under the card's own row lock, for the
+same reason the LOA quantity is a ceiling on delivery: building more than
+was ordered is not a bonus, it is stock nobody asked for charged to a
+contract. It may be revised down, but never below what has already been
+built — which is how a short run is closed honestly rather than by
+inventing units.
+
+Material READINESS is not modelled. What one job card requires of each
+part is computed from the exploded bill; what is available and what is
+short need a stock ledger, and until one exists the product states the
+requirement and says that is what it is (§9).
+
+**Serial traceability** is the part with teeth, and it is two records.
+
+A _finished serial_ is one physical unit the factory made, named from its
+item's own series and claimed from a counter, so two operators
+serialising at the same moment cannot mint one number twice. Its
+uniqueness scope is the ORGANISATION, which is a deliberate departure
+from the per-Work scope of delivery-challan serials: a challan serial is
+a claim about what was delivered under one contract, and two contracts
+may legitimately carry unrelated equipment whose supplier numbering
+collides, whereas a production serial is minted here, from a series this
+organisation owns, before any contract has been chosen for it — a job
+card may have no Work at all. Two units of one factory bearing one number
+is the failure a nameplate exists to prevent.
+
+A _component serial_ records which supplier-numbered part was consumed
+into which finished unit. Per UNIT, not per batch: "this board is dead,
+whose power supply is in it, and which other boards carry one from the
+same batch" is the question a field failure asks, and a batch-level
+record cannot answer it. One physical component is consumed into exactly
+one unit, and no more of a part may be scanned into a unit than its bill
+of material calls for.
+
+A serial typed into the global search finds a unit whether or not it has
+reached a Delivery Challan. Before production existed every serial in
+the product came from a challan line and therefore had a Work; a unit
+the factory has built and not yet despatched has neither, and the trace
+says so — its origin, its job card, how much of its genealogy is
+recorded, and whether it has been released — rather than matching
+nothing, which reads exactly like "no such unit".
+
+Neither record is ever UPDATEd — a serial number is stamped on hardware,
+not corrected. A unit recorded in error, and a mis-scanned component, are
+removed while the unit is still in the factory; once it has been
+despatched, nothing is removed, because the unit is somewhere else and
+the record is the only account of what is inside it. The refusal comes
+from the reference itself rather than from a guard that has to remember
+to look.
+
+**Dispatch readiness** is derived, never stored, and it is one
+expression: a job card has units ready to leave when it is not
+cancelled, every planned unit has been built, at least one of them is
+still in the factory, and none of those is missing a component serial
+its bill of material calls for. A `completed` card still counts —
+completing means every planned unit was BUILT, which says nothing about
+whether it has shipped, and a completed card holding twelve unreleased
+boards is exactly what the register should surface. A card with nothing
+left to release does not count, because there is nothing to be ready
+for. The register's tile and the job card's own badge read that one
+expression, so the count and the badge it links to cannot disagree.
+
+**Despatch** is the boundary. Named finished units leave the factory on a
+date, and that is all it is: not a Delivery Challan, no consignee, no
+money, no statutory claim. It is the moment production stops being
+responsible for a unit and finished goods become despatchable stock. A
+unit leaves once, only on its own job card's release, and only when every
+serial-controlled component its bill calls for has been captured. A
+release raised in error can be withdrawn today; when a stock ledger
+references it, the reference is what refuses the withdrawal, because
+stock will have moved on the strength of it.
+
+Releasing is not issuing. The Delivery Challan that eventually carries
+these units is a statutory document raised against a Work, with its own
+number series, its consignee snapshot, its e-way bill and the inspection
+interlock of §5.10 — and it is raised from the Challans register, not
+from the factory floor.
+
 ## 6. Data conventions
 
 - Calendar dates are stored as PostgreSQL `date` and represented as `YYYY-MM-DD` in APIs.
@@ -1319,6 +1447,11 @@ The current product also includes:
   it settles by measurement sequence, with every fact extracted from the PDF
   and a three-signature verdict that gates measurement closure and payment
   (§5.4);
+- OEM production — the manufactured-item master, its recursive bill of
+  material with cycle refusal at the database, job cards numbered per
+  financial year, per-unit serial genealogy of finished goods and the
+  components consumed into them, and the despatch that hands finished
+  units to stock (§5.11);
 - vendor contacts, purchase orders, and budgetary quotations;
 - the RDSO/RITES inspection lifecycle — per-item inspection clauses, the
   per-Work document checklist, and calls carrying their inward call letter,

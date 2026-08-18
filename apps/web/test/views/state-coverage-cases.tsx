@@ -28,6 +28,9 @@ import { ReviewLoa } from '../../src/views/ReviewLoa.js';
 import { Search } from '../../src/views/Search.js';
 import { SerialTrace } from '../../src/views/SerialTrace.js';
 import { Settings } from '../../src/views/Settings.js';
+import { Production } from '../../src/views/Production.js';
+import { ProductionItems } from '../../src/views/ProductionItems.js';
+import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
 import { Tenders } from '../../src/views/Tenders.js';
 import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
@@ -462,6 +465,51 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry the inspection clause/,
     empty: { text: /nothing to map for\s+inspection/ },
+  },
+  {
+    view: 'Production.tsx',
+    name: 'the production register',
+    loads: ['listJobCards'],
+    render: (api) => (
+      <Production
+        api={api}
+        organisationId={ORG_ID}
+        workId={null}
+        canRecord
+        onOpenJobCard={noop}
+        onOpenItemMaster={noop}
+      />
+    ),
+    retry: /Retry job cards/,
+    empty: { text: /No job card has been raised yet/ },
+  },
+  {
+    view: 'ProductionItems.tsx',
+    name: 'the OEM item master',
+    loads: ['listProductionItems'],
+    render: (api) => <ProductionItems api={api} organisationId={ORG_ID} canModify />,
+    retry: /Retry the item master/,
+    empty: { text: /Nothing in the catalogue yet/ },
+  },
+  {
+    view: 'ProductionJobCard.tsx',
+    name: 'one production job card',
+    loads: ['getJobCard'],
+    render: (api) => (
+      <ProductionJobCard
+        api={api}
+        organisationId={ORG_ID}
+        jobCardId={WORK_ID}
+        canRecord
+        canCancel
+        onBack={noop}
+      />
+    ),
+    retry: /Retry the job card/,
+    empty: {
+      notApplicable:
+        'A job card shows one record or none at all; the emptiness inside it — no bill of material, no unit built, nothing released — belongs to its tabs, and each of those renders its own EmptyState.',
+    },
   },
   {
     view: 'CompanyDocuments.tsx',
