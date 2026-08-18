@@ -17,6 +17,39 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v24: the signing trail (0091, ADR-0012) joins the package — the
+ * kiosk credentials, and every request to put the organisation's own
+ * Class 3 certificate on an issued document.
+ *
+ * The requirement this section answers is narrower and harder than "the
+ * table is exported": a restored organisation must be able to prove WHAT
+ * was signed, WHEN, and BY WHICH CERTIFICATE, years after the token
+ * expired and the kiosk was scrapped. All three travel.
+ *
+ *   what      `source_object_key` and `source_sha256` name the exact bytes
+ *             the signature covers, `signed_object_key` and
+ *             `signed_sha256` the result, and both keys are in
+ *             `objectManifest` so the archive carries the files.
+ *   when      `completed_at`, beside `signature_verified_at` and the
+ *             verifier's own stored verdict — so the export says not just
+ *             that it was signed but on what evidence it was accepted.
+ *   which     `certificate_thumbprint` on the request, joining to
+ *             `signingAgents.certificate_chain_pem`, which is the whole
+ *             chain in PEM. This is the part a naive export loses: a
+ *             thumbprint alone is a fingerprint of a certificate nobody
+ *             kept, and the CCA hierarchy is not something a restore can
+ *             re-fetch offline years later.
+ *
+ * One column is deliberately withheld — `signing_agents.token_hash`. See
+ * that section for why: it proves nothing and is the one value an offline
+ * attacker could grind.
+ *
+ * v22 (maintenance) and v23 (HR payroll) are the two packs of this wave
+ * that landed ahead of it. The numbers were ALLOCATED by the coordinator
+ * rather than claimed on merge, for the reason the v15, v17 and v21 notes
+ * record at length: a version string identifies a format, two formats
+ * sharing one string is the failure that matters, and a gap is not.
+ *
  * export-v21: the stock ledger (0087) joins the package — every movement
  * of every part, with the source document that caused it, and the
  * per-item ledger position that orders them. It is exported as ROWS and
@@ -137,7 +170,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v21';
+const EXPORT_FORMAT_VERSION = 'export-v24';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -171,7 +204,8 @@ type ManifestBucket =
   | 'measurement-book'
   | 'credit-note'
   | 'tax-invoice-render'
-  | 'eway-bill-render';
+  | 'eway-bill-render'
+  | 'signed-document';
 
 const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'organisation-logo',
@@ -190,6 +224,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'credit-note',
   'tax-invoice-render',
   'eway-bill-render',
+  'signed-document',
 ];
 
 type ExportRow = Record<string, unknown>;
@@ -841,6 +876,53 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'stockMovements',
     sql: `select * from stock_movements
           order by production_item_id, sequence_number`,
+  },
+  {
+    // The kiosk credentials (0091), before the requests that name them.
+    //
+    // WHAT IS AND IS NOT IN THIS SECTION. `select *` would publish
+    // `token_hash`, and a signing credential's hash has no business in a
+    // file the organisation downloads and mails to its accountant: it is
+    // not evidence of anything — a signature is proved by its
+    // certificate, never by the bearer token that requested it — and it
+    // is the one value an offline attacker could grind. The columns are
+    // therefore named, not starred, and the certificate travels in full
+    // because that IS the evidence.
+    key: 'signingAgents',
+    sql: `select id, organisation_id, label, certificate_thumbprint,
+                 certificate_subject, certificate_serial, certificate_not_after,
+                 certificate_chain_pem, operator_user_id, created_by_user_id,
+                 created_at, last_seen_at, revoked_at, revoked_by_user_id
+          from signing_agents order by created_at, id`,
+  },
+  {
+    // The signing trail (0091, ADR-0012). A restored organisation must be
+    // able to prove WHAT was signed, WHEN, and BY WHICH CERTIFICATE, and
+    // all three are here: the source key and its digest say what, the
+    // completion timestamp and the verifier's own verdict say when and on
+    // what evidence, and the thumbprint joins to the chain in the section
+    // above.
+    //
+    // The signed BYTES are not here, for the reason no other section
+    // carries bytes either: stored objects travel in `objectManifest`,
+    // which already lists every key this package references, and
+    // `signed_object_key` is one of them.
+    key: 'signingRequests',
+    sql: `select * from signing_requests order by requested_at, id`,
+    jsonbColumns: ['signature_verdict'],
+    manifest: {
+      bucket: 'signed-document',
+      entries: (row) =>
+        row.signed_object_key !== null
+          ? [
+              {
+                kind: 'signed-document-pdf',
+                objectKey: row.signed_object_key,
+                sha256: row.signed_sha256 ?? null,
+              },
+            ]
+          : [],
+    },
   },
   {
     key: 'deliveryChallanCounters',

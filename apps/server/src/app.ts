@@ -69,6 +69,7 @@ import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
+import { registerSigningRoutes } from './routes/signing.js';
 import { registerMeasurementBookRoutes } from './routes/measurement-books/index.js';
 import { registerTaxInvoiceRoutes } from './routes/tax-invoices/index.js';
 import { registerCreditNoteRoutes } from './routes/credit-notes.js';
@@ -939,6 +940,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       scanner,
       pdfTrustAnchors,
     );
+    // The third consumer of the trust anchors, and the first that verifies
+    // a document this server produced rather than one it received
+    // (0091, ADR-0012): the kiosk lane refuses to store a signature its
+    // own verifier does not read as signed_and_intact.
+    registerSigningRoutes(app, authInstance, database, storage, pdfTrustAnchors);
     registerChallanRoutes(
       app,
       authInstance,

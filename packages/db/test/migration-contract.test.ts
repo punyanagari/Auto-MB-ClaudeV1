@@ -86,6 +86,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0084_production.sql': 13,
   '0086_correspondence_register.sql': 4,
   '0087_stock_ledger.sql': 3,
+  '0091_signing_requests.sql': 2,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -1607,5 +1608,126 @@ describe('tenant migration contract', () => {
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(10);
     expect(sql.match(/USING ERRCODE = '23F\d\d'/g)?.length).toBe(raises.length);
+  });
+
+  it('binds the signing queue in 0091', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0091_signing_requests.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // THE AUTHORISATION IS A DIGEST OVER NAMED BYTES, and all three parts
+    // of it are NOT NULL columns rather than a convention the route keeps.
+    // ADR-0012 § "The approval is the authority, and it must be bound to
+    // the bytes" is unimplementable if any of them can be absent.
+    expect(sql).toContain(
+      "authorised_digest text NOT NULL CHECK (authorised_digest ~ '^[0-9a-f]{64}$')",
+    );
+    expect(sql).toContain(
+      "source_sha256 text NOT NULL CHECK (source_sha256 ~ '^[0-9a-f]{64}$')",
+    );
+    expect(sql).toContain('expires_at timestamptz NOT NULL');
+    // …and the entries that go INSIDE the signed bytes are stored, not
+    // recomputed. A preparation taken from the clock at completion time
+    // would differ from the one that was authorised, which would make the
+    // re-derivation check unpassable rather than strict.
+    expect(sql).toContain('claimed_signing_time timestamptz NOT NULL');
+
+    // THE TOKEN IS NEVER STORED. Only its digest, in the one shape the
+    // resolver can look up.
+    expect(sql).toContain("token_hash text NOT NULL CHECK (token_hash ~ '^[0-9a-f]{64}$')");
+    expect(sql).not.toMatch(/^\s*(token|secret|bearer_token) text\b/im);
+
+    // THE CERTIFICATE IS PINNED BY THUMBPRINT AND NOTHING ELSE. A
+    // subject-name column that a query could match on is exactly the
+    // selection mistake the pin exists to prevent, so the subject is
+    // stored for display and the uniqueness lives on the thumbprint's
+    // shape.
+    expect(sql).toContain(
+      "certificate_thumbprint text NOT NULL\n    CHECK (certificate_thumbprint ~ '^[0-9A-F]{40}$')",
+    );
+
+    // ONE OPEN REQUEST PER DOCUMENT, per register, as partial unique
+    // indexes — the same mechanism as one draft challan per Work. Two
+    // live authorisations over one document produce two "the" signed
+    // copies and no answer to which is the record.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX signing_requests_one_open_per_challan\s+ON signing_requests \(organisation_id, delivery_challan_id\)\s+WHERE delivery_challan_id IS NOT NULL AND status IN \('pending', 'claimed'\);/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX signing_requests_one_open_per_invoice\s+ON signing_requests \(organisation_id, tax_invoice_id\)\s+WHERE tax_invoice_id IS NOT NULL AND status IN \('pending', 'claimed'\);/,
+    );
+
+    // THE DOCUMENT IS A REAL FOREIGN KEY, not a (type, id) pair the
+    // database cannot check, and the shape CHECK is what ties the two
+    // nullable arms to the declared type.
+    expect(sql).toContain('signing_requests_document_shape');
+    expect(sql).toContain(
+      'FOREIGN KEY (organisation_id, delivery_challan_id)\n    REFERENCES delivery_challans (organisation_id, id)',
+    );
+    expect(sql).toContain(
+      'FOREIGN KEY (organisation_id, tax_invoice_id)\n    REFERENCES tax_invoices (organisation_id, id)',
+    );
+
+    // SIGNED BYTES EXIST EXACTLY WHEN THE VERDICT SAYS SO. The outcome
+    // CHECK is the database's copy of the route's acceptance rule: bytes
+    // and a `signed_and_intact` verdict arrive together or not at all.
+    expect(sql).toContain('signing_requests_outcome_shape');
+    expect(sql).toContain("signature_status = 'signed_and_intact'");
+
+    // Both tables in the ADR-0010 InitPlan policy shape, and neither
+    // grants DELETE: a signature is a record of an act.
+    for (const table of ['signing_requests', 'signing_agents']) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).toContain(
+        `GRANT SELECT, INSERT, UPDATE ON ${table} TO auto_mb_app;`,
+      );
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+
+    // EXACTLY ONE SECURITY DEFINER, and it is the token resolver — the
+    // one read that must cross tenancy because the tenant is what the
+    // token is being read to discover. Both guards are invoker-rights and
+    // every function pins its search_path.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions).toHaveLength(3);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(
+      functions.length,
+    );
+    // Bodies only, in the sibling migrations' idiom: the header explains
+    // in prose why the guards are not definers, and a naive substring
+    // search would find that sentence.
+    const definers = functions.filter((declaration) => {
+      const source = sql.slice(sql.indexOf(declaration));
+      return source.slice(0, source.indexOf('$$;')).includes('SECURITY DEFINER');
+    });
+    expect(definers).toEqual(['CREATE FUNCTION app_private.resolve_signing_agent']);
+    expect(sql).toContain('CREATE FUNCTION app_private.resolve_signing_agent(p_token_hash text)');
+    expect(sql).toContain(
+      'ALTER FUNCTION app_private.resolve_signing_agent(text) OWNER TO auto_mb_definer;',
+    );
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION app_private.resolve_signing_agent(text) FROM PUBLIC;',
+    );
+    // It answers with three values and no more: an agent that could read
+    // its siblings, or a caller that could enumerate agents by anything
+    // other than a 64-hex digest, would make the definer a door.
+    expect(sql).toContain(
+      'RETURNS TABLE (agent_id uuid, organisation_id uuid, operator_user_id text)',
+    );
+    expect(sql).toContain('WHERE a.token_hash = p_token_hash');
+    expect(sql).toContain('AND a.revoked_at IS NULL');
+
+    // Every RAISE carries a named SQLSTATE from the 23J block, which this
+    // migration is the first to use, so `routes/signing.ts` maps it to a
+    // code instead of surfacing a bare 23514 as a 500.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(6);
+    expect(sql.match(/USING ERRCODE = '23J\d\d'/g)?.length).toBe(raises.length);
   });
 });

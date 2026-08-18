@@ -185,6 +185,8 @@ function workEventPredicate(tx: TransactionSql, workId: string) {
       select id from correspondence_letters where work_id = ${workId}))
     or (ae.entity_type = 'production_job_cards' and ae.entity_id in (
       select id from production_job_cards where work_id = ${workId}))
+    or (ae.entity_type = 'signing_requests' and ae.entity_id in (
+      select id from signing_requests where work_id = ${workId}))
   )`;
 }
 

@@ -38,3 +38,4 @@ export * from './tenders.js';
 export * from './correspondence.js';
 export * from './production.js';
 export * from './inventory.js';
+export * from './signing.js';

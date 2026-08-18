@@ -20,5 +20,6 @@
 export * from './storage.js';
 export * from './loa-extract.js';
 export * from './pdf-signature.js';
+export * from './pdf-signing.js';
 export * from './document-signature-evidence.js';
 export * from './pdf-signature/trust-anchors.js';

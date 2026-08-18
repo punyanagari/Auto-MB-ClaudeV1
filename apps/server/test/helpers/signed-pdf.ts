@@ -26,81 +26,21 @@ import {
   type KeyObject,
 } from 'node:crypto';
 
-/* --- DER encoding ---------------------------------------------------- */
+/* --- DER encoding ----------------------------------------------------
+ *
+ * Imported, not re-implemented. This file used to carry its own encoder;
+ * it moved to `@auto-mb/documents` when the product gained a real signer,
+ * so the fixture builder and the signer emit identical encodings instead
+ * of two encoders drifting apart.
+ *
+ * The independence this file’s header insists on is unaffected, and it is
+ * worth being precise about which independence that is: the VERIFIER has
+ * its own reader (`src/pdf-signature/asn1.ts`) and imports nothing from
+ * the writing side, so a fixture is still never checked by the code that
+ * built it. Sharing a writer between two writers proves nothing and
+ * costs nothing. */
 
-function length(size: number): Buffer {
-  if (size < 0x80) return Buffer.from([size]);
-  const octets: number[] = [];
-  let remaining = size;
-  while (remaining > 0) {
-    octets.unshift(remaining & 0xff);
-    remaining = Math.floor(remaining / 256);
-  }
-  return Buffer.from([0x80 | octets.length, ...octets]);
-}
-
-function tlv(tag: number, content: Buffer): Buffer {
-  return Buffer.concat([Buffer.from([tag]), length(content.length), content]);
-}
-
-const der = {
-  sequence: (...items: Buffer[]) => tlv(0x30, Buffer.concat(items)),
-  set: (...items: Buffer[]) => tlv(0x31, Buffer.concat(items)),
-  context: (tag: number, ...items: Buffer[]) => tlv(0xa0 | tag, Buffer.concat(items)),
-  /** Context tag with the constructed bit cleared, for IMPLICIT primitives. */
-  contextPrimitive: (tag: number, content: Buffer) => tlv(0x80 | tag, content),
-  integer(value: number | Buffer): Buffer {
-    if (Buffer.isBuffer(value)) {
-      const first = value[0] ?? 0;
-      return tlv(
-        0x02,
-        (first & 0x80) !== 0 ? Buffer.concat([Buffer.from([0]), value]) : value,
-      );
-    }
-    if (value === 0) return tlv(0x02, Buffer.from([0]));
-    const octets: number[] = [];
-    let remaining = value;
-    while (remaining > 0) {
-      octets.unshift(remaining & 0xff);
-      remaining = Math.floor(remaining / 256);
-    }
-    if (((octets[0] ?? 0) & 0x80) !== 0) octets.unshift(0);
-    return tlv(0x02, Buffer.from(octets));
-  },
-  octetString: (content: Buffer) => tlv(0x04, content),
-  bitString: (content: Buffer) => tlv(0x03, Buffer.concat([Buffer.from([0]), content])),
-  null: () => tlv(0x05, Buffer.alloc(0)),
-  boolean: (value: boolean) => tlv(0x01, Buffer.from([value ? 0xff : 0x00])),
-  utf8String: (text: string) => tlv(0x0c, Buffer.from(text, 'utf8')),
-  printableString: (text: string) => tlv(0x13, Buffer.from(text, 'ascii')),
-  utcTime(at: Date): Buffer {
-    const pad = (value: number) => String(value).padStart(2, '0');
-    const text =
-      pad(at.getUTCFullYear() % 100) +
-      pad(at.getUTCMonth() + 1) +
-      pad(at.getUTCDate()) +
-      pad(at.getUTCHours()) +
-      pad(at.getUTCMinutes()) +
-      pad(at.getUTCSeconds()) +
-      'Z';
-    return tlv(0x17, Buffer.from(text, 'ascii'));
-  },
-  objectIdentifier(dotted: string): Buffer {
-    const parts = dotted.split('.').map(Number);
-    const [first = 0, second = 0, ...rest] = parts;
-    const octets: number[] = [first * 40 + second];
-    for (const part of rest) {
-      const chunks: number[] = [part & 0x7f];
-      let remaining = Math.floor(part / 128);
-      while (remaining > 0) {
-        chunks.unshift((remaining & 0x7f) | 0x80);
-        remaining = Math.floor(remaining / 128);
-      }
-      octets.push(...chunks);
-    }
-    return tlv(0x06, Buffer.from(octets));
-  },
-};
+import { algorithmIdentifier as algorithm, der, tlv } from '@auto-mb/documents';
 
 const OID = {
   commonName: '2.5.4.3',
@@ -117,10 +57,6 @@ const OID = {
   contentType: '1.2.840.113549.1.9.3',
   messageDigest: '1.2.840.113549.1.9.4',
 } as const;
-
-function algorithm(oid: string): Buffer {
-  return der.sequence(der.objectIdentifier(oid), der.null());
-}
 
 function distinguishedName(common: string, organisation: string): Buffer {
   return der.sequence(

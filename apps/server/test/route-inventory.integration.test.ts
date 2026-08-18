@@ -49,6 +49,24 @@ import {
  *   picker and bootstrap — authenticated, but they exist precisely for
  *   users who cannot yet send an organisation header.
  *
+ * - `POST /api/signing/agent/claim`,
+ *   `POST /api/signing/agent/requests/:id/result`: the kiosk signing
+ *   agent's two calls (0091, ADR-0012). They authenticate with a scoped
+ *   bearer credential rather than a browser session, so there is no
+ *   session for `requireUser` to prove and the registrar cannot wrap
+ *   them. They are NOT unbound in the sense that matters:
+ *   `resolveAgent` turns the token into an organisation and an operator,
+ *   and every statement afterwards runs inside `withBoundTenant` under
+ *   that operator — the same `app_private.bind_tenant` membership floor,
+ *   re-proved on every poll.
+ *
+ *   Being listed here exempts them from the 401 and 403 sweeps below, so
+ *   the replacements are standing tests of their own in
+ *   `test/signing.integration.test.ts`: a tokenless request, a malformed
+ *   header, an unknown token and a revoked agent are each proved to be
+ *   refused, and a kiosk of one organisation is proved unable to see
+ *   another's queue.
+ *
  * (`/metrics` and `/documentation` sit outside /api and outside this
  * test's scope; /metrics additionally only exists when a token is set.)
  */
@@ -60,6 +78,8 @@ const UNBOUND_ROUTES = new Set([
   'GET /api/me',
   'GET /api/organisations',
   'POST /api/organisations',
+  'POST /api/signing/agent/claim',
+  'POST /api/signing/agent/requests/:id/result',
 ]);
 
 /**
@@ -308,6 +328,7 @@ const STRING_CANDIDATES = [
   '2026-01-15T10:30:00+05:30', // ack timestamps
   '2026-27', // financial-year labels (fy_label, the TDS return query)
   '2026-01-15T10:30', // organisation-local wall clocks (a tender's closing moment)
+  'AB'.repeat(20), // Windows certificate thumbprints (SHA-1 DER, uppercase hex)
 ];
 
 interface JsonSchemaLike {
