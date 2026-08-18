@@ -149,6 +149,14 @@ const ALLOWED_EXTERNAL = new Map([
  */
 const ALLOWED_EXTERNAL_PATHS = new Map([
   [
+    'app/receivables/page.tsx',
+    'a screen of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Receivables view for the register it replicates',
+  ],
+  [
+    'railway-receivables-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Receivables view for the table, tiles and deduction waterfall it replicates',
+  ],
+  [
     'tender-dashboard.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the tender register for the stat cards, search row and Upcoming/Expired tab pair it replicates',
   ],
