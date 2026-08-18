@@ -1319,3 +1319,367 @@ describe('the shortage conversion, raced by two vendors', () => {
     }
   });
 });
+
+/**
+ * The production screens, reading the same ledger.
+ *
+ * The job card's Materials tab and the register's Material badge are the
+ * last two consumers of this pack's arithmetic (`docs/UX.md` § 11 row
+ * 11a, which this work retires). They are proved HERE rather than in
+ * `production.integration.test.ts` because everything the numbers are
+ * made of lives in this file: a shelf to receive onto, a bill of material
+ * to explode, and a purchase order that puts material in transit.
+ *
+ * Each case owns its part, its product and its card. A shelf is an
+ * organisation-wide thing and this suite moves it about, so a case
+ * sharing a part with another would be proving whichever ran last.
+ */
+describe("a job card's own view of the shelf", () => {
+  let materialVendorId: string;
+  /** A vendor of its own, because 0033 holds one draft per Work and
+   * vendor and two cases here each draft an order on this suite's Work. */
+  let competingVendorId: string;
+  let sequence = 90;
+
+  /** A job card for `product`, `units` planned, on this suite's Work. */
+  async function seedCardFor(product: string, units: number): Promise<string> {
+    sequence += 1;
+    const card = randomUUID();
+    await admin`
+      insert into production_job_cards (
+        id, organisation_id, fy_label, sequence_number, item_id, quantity,
+        work_id, source_reference, due_date, created_by_user_id
+      )
+      values (
+        ${card}, ${organisationId}, '2026-27', ${sequence}, ${product},
+        ${units}, ${workId}, 'Schedule A2/1', '2026-12-01', ${ownerUserId}
+      )
+    `;
+    return card;
+  }
+
+  async function seedProductAndCard(
+    label: string,
+    options: { readonly perUnit: number; readonly units: number },
+  ): Promise<{ partId: string; productId: string; jobCardId: string }> {
+    const part = await seedItem(
+      organisationId,
+      ownerUserId,
+      `${label}P${runId.slice(0, 3)}`,
+    );
+    const product = await seedItem(
+      organisationId,
+      ownerUserId,
+      `${label}M${runId.slice(0, 3)}`,
+      { manufactured: true },
+    );
+    await admin`
+      insert into production_bom_lines (
+        organisation_id, parent_item_id, component_item_id, quantity,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${product.id}, ${part.id}, ${options.perUnit},
+        ${ownerUserId}
+      )
+    `;
+    return {
+      partId: part.id,
+      productId: product.id,
+      jobCardId: await seedCardFor(product.id, options.units),
+    };
+  }
+
+  /** Material off the shelf and onto the bench, against this card. */
+  async function issueToCard(part: string, card: string, quantity: string) {
+    const response = await postMovement({
+      productionItemId: part,
+      movementType: 'issue',
+      quantity,
+      movementDate: MOVEMENT_DATE,
+      productionJobCardId: card,
+    });
+    expect(response.statusCode, response.body).toBe(201);
+  }
+
+  /** One finished unit, through the route, so the card moves to
+   * `in_production` the way it does in the factory. */
+  async function mintUnit(card: string) {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/production/job-cards/${card}/serials`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(201);
+  }
+
+  async function registerRow(card: string) {
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: '/api/production/job-cards',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    return listed
+      .json<{ jobCards: readonly { id: string; materialShortParts: number }[] }>()
+      .jobCards.find((entry) => entry.id === card);
+  }
+
+  async function materialPosition(card: string) {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/production/job-cards/${card}`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json<{
+      materialShortParts: number;
+      materials: readonly {
+        itemId: string;
+        required: string;
+        available: string;
+        shortage: string;
+      }[];
+    }>();
+  }
+
+  beforeAll(async () => {
+    const [vendor] = await admin<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, address, gstin, pincode, state_code,
+        is_vendor, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'Material Position Supplies', 'Foundry Road',
+        '27AAAGM0289C1ZL', '400003', '27', true, ${ownerUserId}
+      )
+      returning id
+    `;
+    if (!vendor) throw new Error('material-position vendor seed failed');
+    materialVendorId = vendor.id;
+
+    const [competing] = await admin<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, address, gstin, pincode, state_code,
+        is_vendor, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'Competing Claim Traders', 'Dock Road',
+        '27AAAGM0289C1ZL', '400004', '27', true, ${ownerUserId}
+      )
+      returning id
+    `;
+    if (!competing) throw new Error('competing-claim vendor seed failed');
+    competingVendorId = competing.id;
+  });
+
+  it('reports the whole requirement short when the shelf is empty', async () => {
+    const { partId, jobCardId: card } = await seedProductAndCard('SHRT', {
+      perUnit: 2,
+      units: 3,
+    });
+
+    const detail = await materialPosition(card);
+    const row = detail.materials.find((material) => material.itemId === partId);
+    if (!row) throw new Error('the part should be on the Materials tab');
+    expect(row.required).toBe('6.000');
+    expect(row.available).toBe('0.000');
+    expect(row.shortage).toBe('6.000');
+    expect(detail.materialShortParts).toBe(1);
+
+    // The register's badge is the same count off the same expression: an
+    // operator who reads "1 part short" on the row and opens the card
+    // must not find a different answer inside it.
+    expect((await registerRow(card))?.materialShortParts).toBe(1);
+  });
+
+  it('reports nothing short once the shelf holds the whole requirement', async () => {
+    const { partId, jobCardId: card } = await seedProductAndCard('FULL', {
+      perUnit: 2,
+      units: 3,
+    });
+    await receiveInto(partId, '6.000');
+
+    const detail = await materialPosition(card);
+    const row = detail.materials.find((material) => material.itemId === partId);
+    if (!row) throw new Error('the part should be on the Materials tab');
+    expect(row.required).toBe('6.000');
+    // The card's OWN claim is added back. The requirement function has
+    // already committed these six to this card, and a card told it cannot
+    // have the material it itself reserved would be short of nothing.
+    expect(row.available).toBe('6.000');
+    expect(row.shortage).toBe('0.000');
+    expect(detail.materialShortParts).toBe(0);
+  });
+
+  it('closes the shortage against material on order, without it reaching the shelf', async () => {
+    const { partId, jobCardId: card } = await seedProductAndCard('ORDR', {
+      perUnit: 2,
+      units: 3,
+    });
+
+    const before = await materialPosition(card);
+    expect(before.materials.find((row) => row.itemId === partId)?.shortage).toBe(
+      '6.000',
+    );
+
+    const drafted = await authed(owner, {
+      method: 'POST',
+      url: '/api/stock/shortages/purchase-order',
+      organisationId,
+      payload: {
+        jobCardId: card,
+        vendorContactId: materialVendorId,
+        poDate: MOVEMENT_DATE,
+        productionItemIds: [partId],
+      },
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+
+    const after = await materialPosition(card);
+    const row = after.materials.find((material) => material.itemId === partId);
+    if (!row) throw new Error('the part should still be on the Materials tab');
+    // Nothing has been received, so the shelf is untouched and Required
+    // less Available is still six. The shortage is nothing, because the
+    // six are bought — which is exactly why those two figures do not
+    // subtract to the third.
+    expect(row.required).toBe('6.000');
+    expect(row.available).toBe('0.000');
+    expect(row.shortage).toBe('0.000');
+    expect(after.materialShortParts).toBe(0);
+  });
+
+  /**
+   * THE TWO BASES. `required` is the card's gross bill; the shortage is
+   * measured against its OUTSTANDING requirement — the bill times the
+   * units not yet serialised, less what has been issued to the card.
+   *
+   * Subtracting a shelf from a gross requirement is the defect these two
+   * cases exist for. Both of them read Ready with the netting, and both
+   * of them report the card short of material it is holding without it.
+   */
+  it('reads Ready once the material has been issued to the bench', async () => {
+    const { partId, jobCardId: card } = await seedProductAndCard('ISSD', {
+      perUnit: 2,
+      units: 3,
+    });
+    await receiveInto(partId, '6.000');
+    await issueToCard(partId, card, '6.000');
+
+    // The shelf is back to nothing, because the six are on the bench.
+    expect((await itemRow(partId)).onHand).toBe('0.000');
+
+    const detail = await materialPosition(card);
+    const row = detail.materials.find((material) => material.itemId === partId);
+    if (!row) throw new Error('the part should be on the Materials tab');
+    // The gross bill is unchanged — the tab still states what the card
+    // takes — but nothing more has to be bought.
+    expect(row.required).toBe('6.000');
+    expect(row.shortage).toBe('0.000');
+    expect(detail.materialShortParts).toBe(0);
+    expect((await registerRow(card))?.materialShortParts).toBe(0);
+  });
+
+  it('reads Ready when the units left to build are covered by the shelf', async () => {
+    const { partId, jobCardId: card } = await seedProductAndCard('PART', {
+      perUnit: 2,
+      units: 3,
+    });
+    // Two of the six went into the unit already built and are gone; the
+    // remaining two units need four, and four are on the shelf.
+    await receiveInto(partId, '6.000');
+    await issueToCard(partId, card, '2.000');
+    await mintUnit(card);
+
+    const detail = await materialPosition(card);
+    const row = detail.materials.find((material) => material.itemId === partId);
+    if (!row) throw new Error('the part should be on the Materials tab');
+    expect(row.required).toBe('6.000');
+    expect(row.available).toBe('4.000');
+    expect(row.shortage).toBe('0.000');
+    expect(detail.materialShortParts).toBe(0);
+  });
+
+  /**
+   * ONE ORDER, TWO CLAIMANTS. On-hand and on-order are facts about the
+   * PART and are netted once against the summed requirement (0087 § 7).
+   * Netted per card instead, both cards subtract the whole lorry and both
+   * read Ready while the organisation is genuinely ten short.
+   *
+   * Both cards reading short is the deliberate answer: neither may assume
+   * the order is theirs, and the shortage screen stays the authority on
+   * how much to buy.
+   */
+  it('does not let two cards each claim the same purchase order', async () => {
+    const {
+      partId,
+      productId,
+      jobCardId: firstCard,
+    } = await seedProductAndCard('COMP', { perUnit: 1, units: 10 });
+
+    // Ordered while ONE card wants the part, so the order is for ten and
+    // not for twenty.
+    const drafted = await authed(owner, {
+      method: 'POST',
+      url: '/api/stock/shortages/purchase-order',
+      organisationId,
+      payload: {
+        jobCardId: firstCard,
+        vendorContactId: competingVendorId,
+        poDate: MOVEMENT_DATE,
+        productionItemIds: [partId],
+      },
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+
+    const secondCard = await seedCardFor(productId, 10);
+
+    // Twenty wanted, nothing on the shelf, ten coming. The organisation
+    // is ten short and the screen that buys material says so.
+    const organisationWide = (await shortages()).shortages.find(
+      (row) => row.itemId === partId,
+    );
+    expect(organisationWide?.required).toBe('20.000');
+    expect(organisationWide?.onHand).toBe('0.000');
+    expect(organisationWide?.onOrder).toBe('10.000');
+    expect(organisationWide?.shortage).toBe('10.000');
+
+    // Neither card may treat the one order as its own. Both read short,
+    // and neither reads Ready while the organisation is short — which is
+    // what netting the order once per card would have produced.
+    for (const card of [firstCard, secondCard]) {
+      const detail = await materialPosition(card);
+      const row = detail.materials.find((material) => material.itemId === partId);
+      if (!row) throw new Error('the part should be on the Materials tab');
+      expect(row.shortage, `card ${card}`).toBe('10.000');
+      expect(detail.materialShortParts, `card ${card}`).toBe(1);
+      expect((await registerRow(card))?.materialShortParts).toBe(1);
+    }
+  });
+
+  it('answers a completed card with its bill and no shortage', async () => {
+    const { partId, jobCardId: card } = await seedProductAndCard('DONE', {
+      perUnit: 2,
+      units: 1,
+    });
+    await mintUnit(card);
+    const completed = await authed(owner, {
+      method: 'POST',
+      url: `/api/production/job-cards/${card}/complete`,
+      organisationId,
+    });
+    expect(completed.statusCode, completed.body).toBe(200);
+
+    // The shelf is empty and the card's gross bill is two, but a
+    // completed card needs nothing more — it is outside the outstanding
+    // requirement entirely, so it is short of nothing and the register
+    // does not explode its bill of material to find that out.
+    const detail = await materialPosition(card);
+    const row = detail.materials.find((material) => material.itemId === partId);
+    if (!row) throw new Error('a completed card still states its bill');
+    expect(row.required).toBe('2.000');
+    expect(row.shortage).toBe('0.000');
+    expect(detail.materialShortParts).toBe(0);
+    expect((await registerRow(card))?.materialShortParts).toBe(0);
+  });
+});
