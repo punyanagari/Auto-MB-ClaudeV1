@@ -189,7 +189,8 @@ function readCell(
   }
 
   if (text.length === 0) {
-    if (column.required === true) return { error: 'This column is required and is empty.' };
+    if (column.required === true)
+      return { error: 'This column is required and is empty.' };
     return { value: '' };
   }
   if (column.minLength !== undefined && text.length < column.minLength) {
@@ -203,7 +204,9 @@ function readCell(
     };
   }
   if (column.pattern !== undefined && !column.pattern.test(text)) {
-    return { error: column.patternMessage ?? 'This value is not in the expected format.' };
+    return {
+      error: column.patternMessage ?? 'This value is not in the expected format.',
+    };
   }
   return { value: text };
 }
@@ -234,7 +237,10 @@ export function readCells(
  * attributes whatever it says to one column. The validators are written
  * for a route, where the message becomes a 400; here the same message
  * becomes a row's error, unchanged. */
-function attribute<T>(column: string | null, run: () => T): { value: T } | { error: RowError } {
+function attribute<T>(
+  column: string | null,
+  run: () => T,
+): { value: T } | { error: RowError } {
   try {
     return { value: run() };
   } catch (cause: unknown) {

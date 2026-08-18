@@ -243,6 +243,13 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // updates.
   signing_requests: 'SELECT, INSERT, UPDATE',
   signing_agents: 'SELECT, INSERT, UPDATE',
+  // The spreadsheet importer's staging area (0094). No DELETE: a batch
+  // is the answer to "where did these eight hundred contacts come from",
+  // and an abandoned one is cancelled with a reason rather than removed.
+  // The rows go with it — they are the only surviving record of what the
+  // uploaded file said, because the workbook itself is never stored.
+  spreadsheet_import_batches: 'SELECT, INSERT, UPDATE',
+  spreadsheet_import_rows: 'SELECT, INSERT, UPDATE',
   // Payroll (0089, 0090). The three schedules and the employee master
   // retire by end-dating, exactly as gst_rates does, so none of them
   // holds DELETE. Nor does a payroll run at any status: it has claimed a

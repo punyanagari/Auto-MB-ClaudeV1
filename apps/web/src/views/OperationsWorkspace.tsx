@@ -171,6 +171,9 @@ const SigningKioskSettings = lazy(() =>
 const SigningQueue = lazy(() =>
   import('./SigningQueue.js').then((module) => ({ default: module.SigningQueue })),
 );
+const Imports = lazy(() =>
+  import('./Imports.js').then((module) => ({ default: module.Imports })),
+);
 const StockRegister = lazy(() =>
   import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
 );
@@ -461,6 +464,12 @@ export function OperationsWorkspace({
   // gates the employee register and the payroll run — a vendor-payment
   // manager must not see salaries, PAN, UAN or bank details by default.
   const canManagePayroll = membership?.canManagePayroll ?? false;
+  // The import authority (migration 0094). The screen stays on the rail
+  // for every writer, because reading which imports an organisation ran
+  // — and why eleven rows were refused — is ordinary register history.
+  // What the authority gates is the half that WRITES: the upload panel
+  // and the button that commits. The server refuses either way.
+  const canImport = membership?.canImportData ?? false;
   // Without it the rail carries no door to Employees at all — a register
   // of salaries is not something to advertise a way into. The server
   // refuses the route regardless; this only spares the useless attempt.
@@ -1253,6 +1262,13 @@ export function OperationsWorkspace({
                 api={api}
                 organisationId={organisation.id}
                 canModify={canModify}
+              />
+            )}
+            {view.name === 'imports' && (
+              <Imports
+                api={api}
+                organisationId={organisation.id}
+                canImport={canImport}
               />
             )}
 

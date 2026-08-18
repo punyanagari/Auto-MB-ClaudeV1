@@ -29,8 +29,19 @@ import {
   assertNotMalware,
   consumeUpload,
 } from '../upload-guards.js';
-import { XLSX_LIMITS, XLSX_MEDIA_TYPE, XlsxParseError, readXlsxRows, writeXlsxWorkbook } from '../xlsx.js';
-import { audit, errorResponses, requireTrimmed, upstreamErrorResponses } from './shared.js';
+import {
+  XLSX_LIMITS,
+  XLSX_MEDIA_TYPE,
+  XlsxParseError,
+  readXlsxRows,
+  writeXlsxWorkbook,
+} from '../xlsx.js';
+import {
+  audit,
+  errorResponses,
+  requireTrimmed,
+  upstreamErrorResponses,
+} from './shared.js';
 
 /**
  * Bringing a register in from a spreadsheet (migration 0094).
@@ -162,7 +173,9 @@ interface SheetMapping {
  * a verdict, it is noise.
  */
 function mapHeaders(target: ImportTarget, header: readonly string[]): SheetMapping {
-  const wanted = new Map(target.columns.map((column) => [headerKey(column.header), column]));
+  const wanted = new Map(
+    target.columns.map((column) => [headerKey(column.header), column]),
+  );
   const byIndex = new Map<number, string>();
   const seen = new Set<string>();
   header.forEach((cell, index) => {
@@ -185,7 +198,9 @@ function mapHeaders(target: ImportTarget, header: readonly string[]): SheetMappi
       'IMPORT_SHEET_HEADERS_UNRECOGNISED',
       `The sheet is missing these required columns: ${missing
         .map((column) => column.header)
-        .join(', ')}. Download the template for this register and copy your rows into it.`,
+        .join(
+          ', ',
+        )}. Download the template for this register and copy your rows into it.`,
     );
   }
   return { byIndex };
@@ -287,8 +302,10 @@ function toBatch(row: BatchRow) {
     importedRowCount: row.imported_row_count,
     createdByUserId: row.created_by_user_id,
     createdAt: new Date(row.created_at).toISOString(),
-    completedAt: row.completed_at === null ? null : new Date(row.completed_at).toISOString(),
-    cancelledAt: row.cancelled_at === null ? null : new Date(row.cancelled_at).toISOString(),
+    completedAt:
+      row.completed_at === null ? null : new Date(row.completed_at).toISOString(),
+    cancelledAt:
+      row.cancelled_at === null ? null : new Date(row.cancelled_at).toISOString(),
     cancelledReason: row.cancelled_reason,
   };
 }
@@ -394,7 +411,11 @@ export function registerImportRoutes(
     async ({ request, tenant }) => {
       const query = request.query;
       const { rows, limit } = await tenant(async (tx) => {
-        const cursor = await cursorRowId(tx, 'spreadsheet_import_batches', query.cursor);
+        const cursor = await cursorRowId(
+          tx,
+          'spreadsheet_import_batches',
+          query.cursor,
+        );
         const pageSize = query.limit ?? BATCH_PAGE_LIMIT;
         const loaded = await tx<BatchRow[]>`
           select * from spreadsheet_import_batches
@@ -441,12 +462,15 @@ export function registerImportRoutes(
       authority: 'import',
     },
     async ({ request, reply, tenant }) => {
-      const target = requireTarget(request.params.target);
-      // The membership floor is what makes this a tenant route rather
-      // than a static asset: the template is not secret, but an endpoint
-      // that answers without proving a membership is an endpoint that
-      // enumerates which registers exist to anyone with a session.
+      // The membership floor FIRST, before the target is even looked up.
+      // The template is not secret, but an endpoint that answers before
+      // proving a membership enumerates which registers exist to anyone
+      // holding a session — and a non-member who gets 400 for an unknown
+      // register and 403 for a known one has been told which is which.
+      // `test/route-inventory.integration.test.ts` sweeps every tenant
+      // route for exactly this and caught the original ordering.
       await tenant(async () => undefined);
+      const target = requireTarget(request.params.target);
       const bytes = writeXlsxWorkbook(target.sheetName, [
         target.columns.map((column) => column.header),
         target.columns.map((column) => column.example),
@@ -487,6 +511,21 @@ export function registerImportRoutes(
         request.query.filename,
         'Name the file being imported.',
       ).replaceAll(/[\p{Cc}\p{Cf}]/gu, '');
+
+      // AUTHORISE BEFORE ANYTHING EXPENSIVE TOUCHES THE BYTES, which is
+      // the order every other upload route in this application keeps and
+      // which this one originally got wrong. An empty bound transaction
+      // is the whole check — `tenant-route.ts` runs the role and
+      // authority guard inside every one, and the registrar's comment
+      // records that a route legitimately opening more than one is why
+      // the handler is handed a closure rather than an open transaction.
+      //
+      // Without it an unauthenticated stranger's workbook reached the
+      // malware scanner and the parser before the membership wall,
+      // which is a denial-of-service surface and a scanner bill.
+      // `test/route-inventory.integration.test.ts` sweeps every tenant
+      // route for a non-member 403 and caught it.
+      await tenant(async () => undefined);
       await assertNotMalware(malwareScanner, bytes);
 
       let sheet: string[][];
@@ -611,8 +650,7 @@ export function registerImportRoutes(
         params: Type.Object(
           {
             id: Type.String({
-              pattern:
-                '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
             }),
           },
           { additionalProperties: false },
@@ -648,8 +686,7 @@ export function registerImportRoutes(
         params: Type.Object(
           {
             id: Type.String({
-              pattern:
-                '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
             }),
           },
           { additionalProperties: false },
@@ -817,8 +854,7 @@ export function registerImportRoutes(
         params: Type.Object(
           {
             id: Type.String({
-              pattern:
-                '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
             }),
           },
           { additionalProperties: false },

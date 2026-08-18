@@ -294,6 +294,7 @@ describe('OperationsWorkspace mobile shell', () => {
       'Employees',
       'Approvals',
       'Masters',
+      'Imports',
       'Members',
       'Settings',
     ]);
@@ -338,6 +339,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Employees', '#/employees'],
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],
+      ['Imports', '#/imports'],
       ['Members', '#/members'],
       ['Settings', '#/settings'],
     ]);

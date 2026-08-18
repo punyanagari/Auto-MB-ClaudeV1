@@ -222,8 +222,11 @@ describe('the schema at head names all three shapes', () => {
     // letter's scan; 33 after 0091 adds four — the signing queue's
     // source and signed digests, the digest the token is authorised to
     // sign, and the kiosk credential's own token hash, which is a
-    // password-equivalent stored only as its SHA-256.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(33);
+    // password-equivalent stored only as its SHA-256; 34 after 0094 adds
+    // the import batch's source_sha256, the digest of the uploaded
+    // workbook — which is what the bytes were kept for, since the file
+    // itself is not stored.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(34);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

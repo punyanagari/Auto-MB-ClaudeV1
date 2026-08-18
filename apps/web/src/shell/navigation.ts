@@ -18,6 +18,7 @@ import {
   Settings as SettingsIcon,
   Factory,
   Truck,
+  Upload,
   Users,
   Wrench,
 } from 'lucide-react';
@@ -43,6 +44,7 @@ export type ModuleKey =
   | 'production'
   | 'stock'
   | 'signing'
+  | 'imports'
   | 'employees'
   | 'maintenance'
   | 'masters'
@@ -160,6 +162,12 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'employees', label: 'Employees', icon: Users },
       { key: 'approvals', label: 'Approvals', icon: CircleCheckBig },
       { key: 'masters', label: 'Masters', icon: Database },
+      // Imports (0094) sits directly beneath Masters, because the two
+      // registers it fills are the two Masters owns and an operator who
+      // has just found the Contacts screen is one row from the way to
+      // fill it eight hundred at a time. `Upload` is new to this rail —
+      // checked against every icon already on it (docs/UX.md § 18).
+      { key: 'imports', label: 'Imports', icon: Upload },
       { key: 'members', label: 'Members', icon: Users },
       { key: 'settings', label: 'Settings', icon: SettingsIcon },
     ],
@@ -210,6 +218,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'stock' };
     case 'signing':
       return { name: 'signing' };
+    case 'imports':
+      return { name: 'imports' };
     case 'employees':
       return { name: 'employees' };
     case 'masters':
@@ -289,6 +299,8 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
       return view.name;
     case 'signing':
       return 'signing';
+    case 'imports':
+      return 'imports';
     // Everything the WORKS module owns: the register, one Work, and every
     // screen that is really a step inside one — LOA upload and review, the
     // challan and issue-challan editors, an opened challan.
@@ -393,6 +405,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Shortage procurement';
     case 'signing':
       return 'Signing queue';
+    case 'imports':
+      return 'Imports';
     case 'employees':
       return 'Employees';
     case 'payroll':

@@ -152,7 +152,10 @@ function readZipParts(bytes: Buffer, wanted: (name: string) => boolean) {
   let at = bytes.readUInt32LE(end + 16);
 
   for (let index = 0; index < entryCount; index++) {
-    if (at + 46 > bytes.length || bytes.readUInt32LE(at) !== SIGNATURE_CENTRAL_FILE_HEADER) {
+    if (
+      at + 46 > bytes.length ||
+      bytes.readUInt32LE(at) !== SIGNATURE_CENTRAL_FILE_HEADER
+    ) {
       throw new XlsxParseError('The file is not a readable .xlsx workbook.');
     }
     const method = bytes.readUInt16LE(at + 10);
@@ -197,7 +200,9 @@ function readZipParts(bytes: Buffer, wanted: (name: string) => boolean) {
         throw new XlsxParseError('A part of the workbook could not be read.');
       }
     } else {
-      throw new XlsxParseError('The workbook uses a compression this reader cannot read.');
+      throw new XlsxParseError(
+        'The workbook uses a compression this reader cannot read.',
+      );
     }
   }
   return parts;
@@ -209,20 +214,23 @@ function readZipParts(bytes: Buffer, wanted: (name: string) => boolean) {
  * DOCTYPE never reaches here — `partText` refuses it — so there is no
  * entity table to expand and nothing to resolve. */
 function decodeXmlText(value: string): string {
-  return value.replace(/&(#\d+|#x[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g, (whole, name: string) => {
-    if (name === 'amp') return '&';
-    if (name === 'lt') return '<';
-    if (name === 'gt') return '>';
-    if (name === 'quot') return '"';
-    if (name === 'apos') return "'";
-    const code = name.startsWith('#x')
-      ? Number.parseInt(name.slice(2), 16)
-      : Number.parseInt(name.slice(1), 10);
-    // Only characters XML itself admits, so a reference cannot smuggle a
-    // control character or a lone surrogate into a validated value.
-    if (!Number.isInteger(code) || code < 0x20 || code > 0x10ffff) return '';
-    return String.fromCodePoint(code);
-  });
+  return value.replace(
+    /&(#\d+|#x[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g,
+    (whole, name: string) => {
+      if (name === 'amp') return '&';
+      if (name === 'lt') return '<';
+      if (name === 'gt') return '>';
+      if (name === 'quot') return '"';
+      if (name === 'apos') return "'";
+      const code = name.startsWith('#x')
+        ? Number.parseInt(name.slice(2), 16)
+        : Number.parseInt(name.slice(1), 10);
+      // Only characters XML itself admits, so a reference cannot smuggle a
+      // control character or a lone surrogate into a validated value.
+      if (!Number.isInteger(code) || code < 0x20 || code > 0x10ffff) return '';
+      return String.fromCodePoint(code);
+    },
+  );
 }
 
 /** A part's text, with the one construct that turns an XML reader into a
@@ -243,7 +251,8 @@ function textRuns(fragment: string): string {
   let out = '';
   const scanner = /<t\b[^>]*\/>|<t\b[^>]*>([\s\S]*?)<\/t>/g;
   let match: RegExpExecArray | null;
-  while ((match = scanner.exec(fragment)) !== null) out += decodeXmlText(match[1] ?? '');
+  while ((match = scanner.exec(fragment)) !== null)
+    out += decodeXmlText(match[1] ?? '');
   return out;
 }
 

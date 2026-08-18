@@ -693,6 +693,35 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
     finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
     cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
+    // Spreadsheet imports (0094). Empty batches by default, for the same
+    // reason the signing read above answers empty — but the TARGETS are
+    // never empty, because they are a property of the build rather than
+    // of the organisation, and a screen that offered no register to
+    // import into would be untestable in exactly the state a new
+    // organisation is in.
+    listImportBatches: vi.fn<ApiClient['listImportBatches']>().mockResolvedValue({
+      batches: [],
+      nextCursor: null,
+      targets: [
+        {
+          key: 'contacts',
+          label: 'Contacts',
+          columns: [
+            {
+              key: 'designation',
+              header: 'Designation',
+              required: true,
+              note: 'Required. The office or firm as it is written on the paperwork.',
+            },
+          ],
+        },
+      ],
+    }),
+    readImportBatch: vi.fn<ApiClient['readImportBatch']>(),
+    uploadImportWorkbook: vi.fn<ApiClient['uploadImportWorkbook']>(),
+    commitImportBatch: vi.fn<ApiClient['commitImportBatch']>(),
+    cancelImportBatch: vi.fn<ApiClient['cancelImportBatch']>(),
+    downloadImportTemplate: vi.fn<ApiClient['downloadImportTemplate']>(),
     // Maintenance (0088). The register answers empty by default, for the
     // reason the stock reads above do: a view that opens it renders its
     // own empty state rather than hanging on an unresolved mock.

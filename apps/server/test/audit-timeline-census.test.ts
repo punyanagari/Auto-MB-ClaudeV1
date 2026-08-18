@@ -71,6 +71,8 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level (0087): one shelf serves every contract, so a movement is not a fact about a Work even when it names one. The ledger is its own trail, read on the part.',
   signing_agents:
     'Organisation-level (0091): a kiosk credential belongs to the company and outlives every Work it signs for. What it did to a Work IS on the timeline, as signing_requests.',
+  spreadsheet_import_batches:
+    'Organisation-level (0094): an import fills a master register — contacts, the item catalogue — and both are already organisation-level here. A batch names no Work and could not; if a Work-scoped register ever gains an importer, the batch gains a work_id and this entry goes with it.',
   organisation_bank_accounts:
     'Organisation-level: the company’s own accounts, not anything a Work did.',
   document_number_series: 'Organisation-level numbering configuration.',

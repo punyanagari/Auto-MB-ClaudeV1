@@ -131,6 +131,14 @@ export type WorkspaceView =
    * the kiosk is one machine and the person watching it watches one
    * list. No mock screen — see docs/UX.md § 16. */
   | { name: 'signing' }
+  /** Bringing a register in from a spreadsheet (migration 0094).
+   * Organisation-level, because the registers it fills are: a party
+   * master and an item catalogue belong to the agency, not to a
+   * contract. One address, and the batch it is looking at is state
+   * inside the screen rather than a route — an import is a conversation
+   * that lasts one sitting, not a record anybody links to. No mock
+   * screen — see docs/UX.md § 18. */
+  | { name: 'imports' }
   /** The employee master and the monthly payroll run (0089, 0090).
    * Organisation-level, and deliberately: a salary is paid by the agency
    * and not by a contract, so neither carries a Work.
@@ -290,6 +298,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/inspection';
     case 'signing':
       return '#/signing';
+    case 'imports':
+      return '#/imports';
     case 'stock':
       return '#/inventory';
     case 'stock-shortages':
@@ -620,6 +630,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'inspection':
     case 'receivables':
     case 'signing':
+    case 'imports':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;

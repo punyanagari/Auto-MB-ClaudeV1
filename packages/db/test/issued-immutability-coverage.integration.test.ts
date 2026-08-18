@@ -560,6 +560,37 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // of which changes what the credential IS, which is the property every
   // signature already made depends on.
   signing_agents: ['last_seen_at', 'revoked_at', 'revoked_by_user_id'],
+  // An import batch's identity — the file it was, its digest, and the
+  // register it aims at — is written once, because the rows beneath it
+  // were judged against that answer. What moves is where it has got to
+  // and the census of what happened there.
+  spreadsheet_import_batches: [
+    'status',
+    'row_count',
+    'valid_row_count',
+    'error_row_count',
+    'imported_row_count',
+    'completed_at',
+    'completed_by_user_id',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancelled_reason',
+    'updated_at',
+  ],
+  // A staged row's CELLS are evidence: they are what the sheet
+  // contained, and a row whose content could be corrected in place is one
+  // where nobody can tell what was uploaded from what was fixed
+  // afterwards. The verdict written over them is the outcome.
+  //
+  // `imported_record_id` is deliberately NOT here, and the reason is
+  // worth stating because it looks like an omission. It is WRITE-ONCE
+  // rather than mutable: null until the row reaches the register, and
+  // frozen from that moment, because re-pointing it at a second record
+  // would leave the first orphaned from the row that explains it. The
+  // scan above reads that rule as a freeze — it sees `NEW.x IS DISTINCT
+  // FROM OLD.x` and cannot see the `OLD.x IS NOT NULL` in front of it —
+  // and for this census's purpose that reading is the correct one.
+  spreadsheet_import_rows: ['status', 'errors'],
 };
 
 /**

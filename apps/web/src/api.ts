@@ -31,6 +31,9 @@ import type {
   RegisterSigningAgent,
   RegisterSigningAgentResponse,
   SigningAgentResponse,
+  ImportBatchDetail,
+  ImportBatchList,
+  ImportTargetKey,
   SigningQueueResponse,
   SigningRequestResponse,
   SigningRequestStatus,
@@ -1998,6 +2001,37 @@ export interface ApiClient {
     organisationId: string,
     body: RegisterSigningAgent,
   ) => Promise<RegisterSigningAgentResponse>;
+  /** Bringing a register in from a spreadsheet (migration 0094). The
+   * listing carries the registers that accept one alongside the batches,
+   * because the screen needs them on an organisation's first day. */
+  readonly listImportBatches: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<ImportBatchList>;
+  readonly readImportBatch: (
+    organisationId: string,
+    batchId: string,
+  ) => Promise<ImportBatchDetail>;
+  /** Stages a workbook. Writes nothing to the register — that is
+   * `commitImportBatch`, and the separation is the whole feature. */
+  readonly uploadImportWorkbook: (
+    organisationId: string,
+    target: ImportTargetKey,
+    file: File,
+  ) => Promise<ImportBatchDetail>;
+  readonly commitImportBatch: (
+    organisationId: string,
+    batchId: string,
+  ) => Promise<ImportBatchDetail>;
+  readonly cancelImportBatch: (
+    organisationId: string,
+    batchId: string,
+    body: { readonly reason: string },
+  ) => Promise<ImportBatchDetail>;
+  readonly downloadImportTemplate: (
+    organisationId: string,
+    target: ImportTargetKey,
+  ) => Promise<Blob>;
   readonly revokeSigningAgent: (
     organisationId: string,
     agentId: string,
@@ -4705,6 +4739,50 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/signing-requests/${requestId}/cancel`,
         { method: 'POST', body, organisationId },
       );
+    },
+    async listImportBatches(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchList>(`/api/imports${suffix}`, { organisationId });
+    },
+    async readImportBatch(organisationId, batchId) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}`, { organisationId });
+    },
+    async uploadImportWorkbook(organisationId, target, file) {
+      // The raw Blob, exactly as `uploadPdf` sends a PDF — there is no
+      // FormData anywhere in this client. The file's own name rides the
+      // querystring because it is what the operator calls the import.
+      const query = uploadQuery({ target, filename: file.name });
+      const response = await fetchImpl(`/api/imports?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ImportBatchDetail;
+    },
+    async commitImportBatch(organisationId, batchId) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/import`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelImportBatch(organisationId, batchId, body) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async downloadImportTemplate(organisationId, target) {
+      return downloadBlob(`/api/imports/templates/${target}`, organisationId);
     },
     async downloadSignedPdf(organisationId, requestId) {
       // Fetched rather than linked, like every other PDF here: the

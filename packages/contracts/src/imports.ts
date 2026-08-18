@@ -29,7 +29,6 @@ import { UuidSchema, nonBlankString } from './primitives.js';
 export const ImportTargetKeySchema = Type.Union(
   [Type.Literal('contacts'), Type.Literal('canonical_items')],
   {
-    $id: 'ImportTargetKey',
     description: 'The register an uploaded sheet is aimed at.',
   },
 );
@@ -38,21 +37,19 @@ export type ImportTargetKey = Static<typeof ImportTargetKeySchema>;
 /** `pending` staged but unjudged, `validated` judged and awaiting a
  * decision, `completed` and `cancelled` terminal. Migration 0094's guard
  * walks these forwards only. */
-export const ImportBatchStatusSchema = Type.Union(
-  [
-    Type.Literal('pending'),
-    Type.Literal('validated'),
-    Type.Literal('completed'),
-    Type.Literal('cancelled'),
-  ],
-  { $id: 'ImportBatchStatus' },
-);
+export const ImportBatchStatusSchema = Type.Union([
+  Type.Literal('pending'),
+  Type.Literal('validated'),
+  Type.Literal('completed'),
+  Type.Literal('cancelled'),
+]);
 export type ImportBatchStatus = Static<typeof ImportBatchStatusSchema>;
 
-export const ImportRowStatusSchema = Type.Union(
-  [Type.Literal('pending'), Type.Literal('valid'), Type.Literal('error')],
-  { $id: 'ImportRowStatus' },
-);
+export const ImportRowStatusSchema = Type.Union([
+  Type.Literal('pending'),
+  Type.Literal('valid'),
+  Type.Literal('error'),
+]);
 export type ImportRowStatus = Static<typeof ImportRowStatusSchema>;
 
 /* --- What a template promises ---------------------------------------------- */
@@ -62,22 +59,22 @@ export type ImportRowStatus = Static<typeof ImportRowStatusSchema>;
  * template, so the screen and the workbook cannot disagree. */
 export const ImportColumnSchema = Type.Object(
   {
-    key: nonBlankString({ minLength: 1, maxLength: 60 }),
-    header: nonBlankString({ minLength: 1, maxLength: 120 }),
+    key: nonBlankString({ minLength: 2, maxLength: 60 }),
+    header: nonBlankString({ minLength: 2, maxLength: 120 }),
     required: Type.Boolean(),
-    note: nonBlankString({ minLength: 1, maxLength: 400 }),
+    note: nonBlankString({ minLength: 2, maxLength: 400 }),
   },
-  { $id: 'ImportColumn', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportColumn = Static<typeof ImportColumnSchema>;
 
 export const ImportTargetSchema = Type.Object(
   {
     key: ImportTargetKeySchema,
-    label: nonBlankString({ minLength: 1, maxLength: 120 }),
+    label: nonBlankString({ minLength: 2, maxLength: 120 }),
     columns: Type.Array(ImportColumnSchema),
   },
-  { $id: 'ImportTarget', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportTarget = Static<typeof ImportTargetSchema>;
 
@@ -88,9 +85,9 @@ export type ImportTarget = Static<typeof ImportTargetSchema>;
 export const ImportRowErrorSchema = Type.Object(
   {
     column: Type.Union([Type.String({ maxLength: 60 }), Type.Null()]),
-    message: nonBlankString({ minLength: 1, maxLength: 1000 }),
+    message: nonBlankString({ minLength: 2, maxLength: 1000 }),
   },
-  { $id: 'ImportRowError', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportRowError = Static<typeof ImportRowErrorSchema>;
 
@@ -106,7 +103,7 @@ export const ImportRowSchema = Type.Object(
     errors: Type.Array(ImportRowErrorSchema),
     importedRecordId: Type.Union([UuidSchema, Type.Null()]),
   },
-  { $id: 'ImportRow', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportRow = Static<typeof ImportRowSchema>;
 
@@ -117,7 +114,7 @@ export const ImportBatchSchema = Type.Object(
     id: UuidSchema,
     target: ImportTargetKeySchema,
     status: ImportBatchStatusSchema,
-    originalFilename: nonBlankString({ minLength: 1, maxLength: 255 }),
+    originalFilename: Type.String({ minLength: 1, maxLength: 255 }),
     sourceSha256: Type.String({ minLength: 64, maxLength: 64 }),
     rowCount: Type.Integer({ minimum: 0 }),
     validRowCount: Type.Integer({ minimum: 0 }),
@@ -131,7 +128,7 @@ export const ImportBatchSchema = Type.Object(
     cancelledAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     cancelledReason: Type.Union([Type.String({ maxLength: 500 }), Type.Null()]),
   },
-  { $id: 'ImportBatch', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportBatch = Static<typeof ImportBatchSchema>;
 
@@ -143,9 +140,13 @@ export type ImportBatch = Static<typeof ImportBatchSchema>;
 export const ImportUploadQuerySchema = Type.Object(
   {
     target: ImportTargetKeySchema,
-    filename: nonBlankString({ minLength: 1, maxLength: 255 }),
+    /** Plain `Type.String`, not `nonBlankString`: 0094's CHECK admits a
+     * one-character filename and `nonBlankString` cannot express a floor
+     * below two. The route's `requireTrimmed` is the blank guard here,
+     * exactly as it is for every other upload's metadata. */
+    filename: Type.String({ minLength: 1, maxLength: 255 }),
   },
-  { $id: 'ImportUploadQuery', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportUploadQuery = Static<typeof ImportUploadQuerySchema>;
 
@@ -160,7 +161,7 @@ export const ImportBatchDetailSchema = Type.Object(
      * cells in sheet order and label the errors without a second call. */
     columns: Type.Array(ImportColumnSchema),
   },
-  { $id: 'ImportBatchDetail', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportBatchDetail = Static<typeof ImportBatchDetailSchema>;
 
@@ -173,12 +174,12 @@ export const ImportBatchListSchema = Type.Object(
      * screen an organisation sees on its first day. */
     targets: Type.Array(ImportTargetSchema),
   },
-  { $id: 'ImportBatchList', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type ImportBatchList = Static<typeof ImportBatchListSchema>;
 
 export const CancelImportBatchSchema = Type.Object(
   { reason: nonBlankString({ minLength: 3, maxLength: 500 }) },
-  { $id: 'CancelImportBatch', additionalProperties: false },
+  { additionalProperties: false },
 );
 export type CancelImportBatch = Static<typeof CancelImportBatchSchema>;

@@ -194,6 +194,10 @@ const TENANT_TABLES = [
   // request is authorised against one.
   'signing_agents',
   'signing_requests',
+  // The spreadsheet importer's staging area (0094). The batch precedes
+  // its rows, which name it with a composite tenant reference.
+  'spreadsheet_import_batches',
+  'spreadsheet_import_rows',
   // Payroll (0089, 0090). The schedules first because the runs read
   // them, the employee before the lines that snapshot them, and the
   // counter before the runs it numbers.
@@ -409,6 +413,12 @@ const DELETE_REVOKED_TABLES = [
   // raised in error cancels with a reason, and an agent revokes (0091).
   'signing_requests',
   'signing_agents',
+  // An import batch records where hundreds of live records came from, so
+  // an abandoned one is cancelled with a reason rather than removed; its
+  // staged rows are the only surviving copy of what the uploaded file
+  // said, because the workbook itself is never stored (0094).
+  'spreadsheet_import_batches',
+  'spreadsheet_import_rows',
   // A maintenance request carries a number from the moment it is raised
   // and closes rather than disappearing; its lines are cancelled with a
   // reason rather than removed; the challan, its lines and the defective
@@ -1737,6 +1747,33 @@ async function seedTenantGraph(
         ${'d'.repeat(64)}, now(), 'INTEGRATION SIGNER',
         'Issued by the contractor', 'Nagpur', now() + interval '7 days',
         ${agent.id}, ${'A'.repeat(40)}, ${userId}
+      )
+    `;
+
+    // The spreadsheet importer (0094). A batch that has been judged and
+    // one staged row beneath it, which is enough for both sweeps: the
+    // row names its batch with a composite tenant reference, so a
+    // cross-tenant read that leaked either would leak both.
+    const [batch] = await tx<{ id: string }[]>`
+      insert into spreadsheet_import_batches (
+        organisation_id, target, status, original_filename, source_sha256,
+        row_count, valid_row_count, error_row_count, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'contacts', 'validated', 'seed-contacts.xlsx',
+        ${'e'.repeat(64)}, 1, 1, 0, ${userId}
+      )
+      returning id
+    `;
+    if (!batch) throw new Error('seed import batch insert returned no row');
+
+    await tx`
+      insert into spreadsheet_import_rows (
+        organisation_id, batch_id, row_number, cells, status
+      )
+      values (
+        ${organisationId}, ${batch.id}, 2,
+        ${tx.json({ designation: 'Seed consignee' })}, 'valid'
       )
     `;
 

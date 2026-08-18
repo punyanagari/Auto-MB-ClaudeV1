@@ -90,6 +90,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0089_employees.sql': 4,
   '0090_payroll.sql': 6,
   '0091_signing_requests.sql': 2,
+  '0094_data_imports.sql': 2,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -2173,5 +2174,129 @@ describe('tenant migration contract', () => {
     const raises = guards.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(6);
     expect(guards.match(/USING ERRCODE = '23J\d\d'/g)?.length).toBe(raises.length);
+  });
+
+  it('stages the spreadsheet importer in 0094', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0094_data_imports.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // THE NAME. Migration 0025 owns `import_batches` and `import_records`
+    // for the v1 cutover CLI, which is a different feature entirely. The
+    // prefix is what keeps a recovery package's two import sections from
+    // reading as a duplicate of each other, so it is pinned rather than
+    // left to whoever edits this next.
+    expect(sql).toContain('CREATE TABLE spreadsheet_import_batches (');
+    expect(sql).toContain('CREATE TABLE spreadsheet_import_rows (');
+    expect(sql).not.toMatch(/CREATE TABLE import_(batches|records|rows)/);
+
+    // NOTHING REACHES A LIVE REGISTER UNTIL A PERSON SAYS SO, and the
+    // schema's half of that is negative: the staging rows carry no
+    // foreign key into the registers they feed, so a staged row can hold
+    // anything and commit is the only moment it becomes a claim.
+    const rowsTable = sql.slice(
+      sql.indexOf('CREATE TABLE spreadsheet_import_rows ('),
+      sql.indexOf('COMMENT ON TABLE spreadsheet_import_rows'),
+    );
+    expect(rowsTable).not.toMatch(/REFERENCES (contacts|canonical_items)/);
+    // The one reference it does carry is the composite tenant key 0087
+    // and 0091 both use, so a row cannot be attached to another tenant's
+    // batch even by a writer that arrives another way.
+    expect(rowsTable).toContain(
+      'FOREIGN KEY (organisation_id, batch_id)\n    REFERENCES spreadsheet_import_batches (organisation_id, id)',
+    );
+
+    // CELLS ARE INERT TEXT. A jsonb object, and the CHECK says so — a
+    // cell coerced to a number or a date before the target's validator
+    // has seen it is a second, weaker validator upstream of the real one.
+    expect(rowsTable).toContain(
+      "cells jsonb NOT NULL CHECK (jsonb_typeof(cells) = 'object')",
+    );
+    // A verdict and its evidence agree in BOTH directions: a row in error
+    // says why, and a row that is not in error carries no complaint.
+    expect(rowsTable).toContain(
+      "(status = 'error') = (jsonb_array_length(errors) > 0)",
+    );
+
+    // The batch's census cannot claim more imported rows than it judged
+    // valid, and the two terminal states each require their own timestamp
+    // — so a 'completed' row with no completion is refused by the table
+    // rather than by whoever reads it later.
+    expect(sql).toContain('imported_row_count <= valid_row_count');
+    expect(sql).toContain(
+      "(status = 'completed') = (completed_at IS NOT NULL)",
+    );
+    expect(sql).toContain("(status = 'cancelled') = (cancelled_at IS NOT NULL)");
+
+    // RLS, FORCE and the ADR-0010 InitPlan shape on both tables, and no
+    // DELETE grant on either: a batch is the provenance of hundreds of
+    // live records and cancels rather than disappearing.
+    for (const table of ['spreadsheet_import_batches', 'spreadsheet_import_rows']) {
+      expect(sql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      expect(sql).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}
+  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql).toContain(`GRANT SELECT, INSERT, UPDATE ON ${table} TO auto_mb_app;`);
+    }
+    expect(sql).not.toMatch(/GRANT[^;]*DELETE[^;]*spreadsheet_import/);
+
+    // THE IMPORT AUTHORITY, in 0061's, 0080's, 0089's and 0091's shape: a
+    // per-member column, default false, not backfilled.
+    expect(sql).toContain(
+      'ALTER TABLE organisation_memberships\n  ADD COLUMN can_import_data boolean NOT NULL DEFAULT false;',
+    );
+
+    // FIVE TRUES, and only the last is this migration's own.
+    //
+    // `CREATE OR REPLACE` states the whole body, so 0004's two, 0089's
+    // payroll grant and 0091's signing grant must all be restated here or
+    // they are silently revoked from every founder — with no error
+    // anywhere, because nothing refuses a column left false. This
+    // assertion is what makes a dropped grant fail in CI rather than in
+    // somebody's first import, and it is the reason the line is pinned
+    // character for character.
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(',
+    );
+    expect(sql).toContain(
+      'can_manage_payroll, can_import_data, status',
+    );
+    expect(sql).toContain(
+      "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, true, 'active');",
+    );
+
+    // Both guards are invoker-rights with a pinned search_path, and this
+    // migration adds NO definer function of its own — every table its
+    // guards touch is one the caller may already read under RLS, so a
+    // definer here would read across tenants for no gain.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions).toEqual([
+      'CREATE FUNCTION app_private.guard_spreadsheet_import_batch',
+      'CREATE FUNCTION app_private.guard_spreadsheet_import_row',
+    ]);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(
+      functions.length,
+    );
+    const guardBodies = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.guard_spreadsheet_import_batch'),
+    );
+    expect(guardBodies).not.toContain('SECURITY DEFINER');
+
+    // Every refusal carries a SQLSTATE from this migration's own 23L
+    // block, so a guard that fires because the route lost a race reaches
+    // the caller as a named 409 rather than an unexplained 500. Scoped to
+    // the guards, because the file also re-creates
+    // `create_organisation_with_owner` and that function carries 0004's
+    // own 28000.
+    const importRaises = guardBodies.match(/RAISE EXCEPTION/g) ?? [];
+    expect(importRaises.length).toBeGreaterThanOrEqual(5);
+    expect(guardBodies.match(/USING ERRCODE = '23L\d\d'/g)?.length).toBe(
+      importRaises.length,
+    );
   });
 });
