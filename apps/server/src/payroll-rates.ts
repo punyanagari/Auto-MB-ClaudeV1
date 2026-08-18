@@ -12,11 +12,16 @@ import type { TransactionSql } from '@auto-mb/db';
  *
  * WHY THE LISTS ARE HERE AND NOT ONLY IN THE MIGRATION. A migration runs
  * once. An organisation created tomorrow has to arrive with the same
- * schedules, and it cannot get them by re-running a migration. The
- * duplication is real and is the price of that; the guard against drift
- * is `packages/db/test/payroll-statutory.integration.test.ts`, which
- * asserts that a migration-seeded organisation and a server-seeded one
- * hold exactly the same rows.
+ * schedules, and it cannot get them by re-running a migration.
+ *
+ * THE DUPLICATION IS REAL AND IS NOT GUARDED BY A TEST, which is worth
+ * saying plainly rather than leaving for somebody to discover. It is the
+ * same duplication `gst-rates.ts` has carried against migration 0048
+ * since that pack landed, and the same bar: the migration's own seed is
+ * asserted by `packages/db/test/migration-contract.test.ts`, this one by
+ * the payroll suite in `apps/server/test`, and nothing compares the two
+ * lists to each other. A parity census is the obvious next step and it
+ * belongs to both pairs at once, not to this file alone.
  *
  * ─────────────────────────────────────────────────────────────────────
  * EVERY VALUE BELOW IS UNVERIFIED AND AWAITS A PRACTITIONER'S SIGN-OFF,

@@ -286,6 +286,7 @@ describe('OperationsWorkspace mobile shell', () => {
       // landed.
       'Inventory',
       'Global search',
+      'Employees',
       'Approvals',
       'Masters',
       'Members',
@@ -327,6 +328,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Inspection', '#/inspection'],
       ['Inventory', '#/inventory'],
       ['Global search', '#/search'],
+      ['Employees', '#/employees'],
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],
       ['Members', '#/members'],

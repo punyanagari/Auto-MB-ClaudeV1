@@ -138,6 +138,27 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   vendor_invoices:
     'a third party’s bill against this organisation, attributed to a Work but not a record of it',
   vendor_payments: 'a payment against a vendor invoice, which is itself exempt',
+  // Payroll (0090). It reaches `works` only through the salary payment
+  // request its finalise raised, and that route is exempt above — but
+  // the exemption here rests on something stronger than inheritance, so
+  // it is argued rather than borrowed.
+  //
+  // A PAYROLL RUN IS ORGANISATION-SCOPED, NOT WORK-SCOPED, and that is a
+  // decision of the schema and not an omission: a salary is paid by the
+  // agency, the same site engineer works on three Works in a month, and
+  // no honest apportionment of one payslip across them exists. So
+  // `payroll_runs`, `payroll_run_lines` and the employee master carry no
+  // `work_id` at all, and the salary requests the handoff raises carry
+  // `work_id = NULL`. Withdrawing a Work cannot make a month's salaries
+  // unpaid, and nothing in this module could name the withdrawn Work
+  // even if it wanted to.
+  //
+  // The three schedule tables and `payroll_run_counters` never appear in
+  // this census because nothing links them to `works` in either
+  // direction; they are listed nowhere for the same reason `gst_rates`
+  // is not.
+  payroll_run_lines:
+    'a payslip, which reaches a Work only through the salary payment request it raised — payroll is organisation-scoped and a supersede cannot unpay a month',
   delivery_challan_items: 'lines of a delivery challan, which blocks',
   challan_receipts: 'receipts against a delivery challan, which blocks',
   challan_item_serials: 'serials on a delivery challan line, which blocks',

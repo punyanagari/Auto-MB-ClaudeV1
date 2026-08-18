@@ -86,6 +86,8 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0084_production.sql': 13,
   '0086_correspondence_register.sql': 4,
   '0087_stock_ledger.sql': 3,
+  '0089_employees.sql': 4,
+  '0090_payroll.sql': 6,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -1607,5 +1609,169 @@ describe('tenant migration contract', () => {
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(10);
     expect(sql.match(/USING ERRCODE = '23F\d\d'/g)?.length).toBe(raises.length);
+  });
+  it('binds the employee master and the statutory schedules in 0089', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0089_employees.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // Four tenant tables, all in the ADR-0010 InitPlan policy shape.
+    for (const table of [
+      'employees',
+      'payroll_statutory_rates',
+      'professional_tax_slabs',
+      'income_tax_slabs',
+    ]) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      // Masters retire by end-dating and an employee is end-dated by an
+      // exit date; nothing here is ever removed.
+      expect(sql, table).toContain(
+        `GRANT SELECT, INSERT, UPDATE ON ${table} TO auto_mb_app;`,
+      );
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+
+    // THE WHOLE POINT OF THE PACK'S SCHEDULE DESIGN, asserted rather than
+    // left to review: a statutory value is a dated ROW, never a constant.
+    // Each of the three tables carries the range of dates it was in force
+    // for, and the arithmetic resolves it at the run's own month.
+    for (const table of [
+      'payroll_statutory_rates',
+      'professional_tax_slabs',
+      'income_tax_slabs',
+    ]) {
+      const body = sql.slice(sql.indexOf(`CREATE TABLE ${table} (`));
+      const columns = body.slice(0, body.indexOf('\n);'));
+      expect(columns, table).toContain('effective_from date NOT NULL');
+      expect(columns, table).toContain('effective_to date CHECK');
+    }
+
+    // No Aadhaar column, ever. Checked against the SQL with its comments
+    // stripped, because the migration's own prose explains at length why
+    // the number is not here, and a bare substring search would find that
+    // explanation and pass on it.
+    const code = sql.replace(/--.*$/gm, '').toLowerCase();
+    expect(code).not.toContain('aadhaar');
+    expect(code).not.toContain('aadhar');
+
+    // The employee is a satellite of the party master, not a second one.
+    expect(sql).toContain('FOREIGN KEY (organisation_id, contact_id)');
+    expect(sql).toContain('REFERENCES contacts(organisation_id, id)');
+    // ...which is only workable because the designation-duplicate rule
+    // was narrowed off people: two employees of one name is not a
+    // duplicate, it is Tuesday.
+    expect(sql).toContain('WHERE active AND NOT is_employee;');
+
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(1);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    for (const declaration of functions) {
+      const source = sql.slice(sql.indexOf(declaration));
+      // Comments stripped first. Each of these functions carries a
+      // comment saying WHY it is not a definer — exactly the trap 0087's
+      // own test warns about — and a naive substring search finds that
+      // sentence rather than a defect.
+      expect(
+        source.slice(0, source.indexOf('$$;')).replace(/--.*$/gm, ''),
+        declaration,
+      ).not.toContain('SECURITY DEFINER');
+    }
+
+    // Every RAISE carries a named SQLSTATE from the 23H block, which this
+    // pack is the first to use, so `routes/hr.ts` maps it to a code
+    // instead of surfacing a bare 23514 as a 500.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(2);
+    expect(sql.match(/USING ERRCODE = '23H\d\d'/g)?.length).toBe(raises.length);
+  });
+
+  it('binds the payroll run in 0090', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0090_payroll.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    for (const table of ['payroll_runs', 'payroll_run_lines', 'payroll_run_counters']) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    }
+
+    // A run is an issued document: no DELETE at any status, not even a
+    // draft. It has claimed a number by the time it exists, and a gap in
+    // the series is what a provident-fund inspector reads.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON payroll_runs TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('DELETE ON payroll_runs TO auto_mb_app');
+    // Its LINES do delete, for the recalculation of a draft and nothing
+    // else — the guard is what closes that path the moment the run is
+    // finalised or cancelled.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON payroll_run_lines TO auto_mb_app;',
+    );
+    expect(sql).toContain('BEFORE INSERT OR UPDATE OR DELETE ON payroll_run_lines');
+
+    // The number comes off a counter claimed by upsert. NEVER max()+1.
+    expect(sql).toContain('CREATE TABLE payroll_run_counters');
+    expect(sql).toContain('CREATE TRIGGER payroll_run_counters_guard_decrease');
+    expect(sql).not.toMatch(/max\(sequence_number\)/);
+
+    // MONEY ENFORCED TWICE. The arithmetic is a CHECK as well as a
+    // computation: the four heads sum to the gross, and the gross less
+    // the four EMPLOYEE-side deductions is the net. A payslip that took
+    // an employer contribution off somebody's pay is impossible here,
+    // not merely unlikely.
+    expect(sql).toContain('CONSTRAINT payroll_run_lines_gross_check');
+    expect(sql).toContain('CONSTRAINT payroll_run_lines_net_check');
+
+    // The pension share is capped by its OWN ceiling and the employer's
+    // fund share is the remainder — a subtraction, never a third rate.
+    // The widely quoted 3.67% is only exactly 3.67% at or below the
+    // ceiling, so the number must not appear in the arithmetic at all.
+    expect(sql).toContain('v_epf_employer := v_epf_total - v_eps_employer;');
+    // Matched against ASSIGNMENTS rather than the whole file: the header
+    // and two column comments explain the 3.67% figure at length, and a
+    // bare search would find the explanation instead of the defect.
+    expect(sql).not.toMatch(/:=[^;]*3\.67/);
+
+    // ESI rounds UP, both shares: regulation 40, and rounding an
+    // insurance contribution down is a short remittance.
+    expect(sql).toContain('v_esi_employee := ceil(');
+    expect(sql).toContain('v_esi_employer := ceil(');
+
+    // Surcharge is refused rather than approximated. An under-deduction
+    // under section 192 is the employer's own liability, with interest.
+    expect(sql).toContain("USING ERRCODE = '23H05'");
+    expect(sql).toContain('v_total_income > v_surcharge_floor');
+
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(4);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    for (const declaration of functions) {
+      const source = sql.slice(sql.indexOf(declaration));
+      // Comments stripped, for the reason the 0089 test above gives.
+      expect(
+        source.slice(0, source.indexOf('$$;')).replace(/--.*$/gm, ''),
+        declaration,
+      ).not.toContain('SECURITY DEFINER');
+    }
+
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(15);
+    expect(sql.match(/USING ERRCODE = '23H\d\d'/g)?.length).toBe(raises.length);
   });
 });

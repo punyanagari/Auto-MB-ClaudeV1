@@ -189,6 +189,16 @@ const TENANT_TABLES = [
   // because the guard claims it as the first write of every one.
   'stock_movement_counters',
   'stock_movements',
+  // Payroll (0089, 0090). The schedules first because the runs read
+  // them, the employee before the lines that snapshot them, and the
+  // counter before the runs it numbers.
+  'payroll_statutory_rates',
+  'professional_tax_slabs',
+  'income_tax_slabs',
+  'employees',
+  'payroll_run_counters',
+  'payroll_runs',
+  'payroll_run_lines',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -374,6 +384,11 @@ const DELETE_REVOKED_TABLES = [
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // A payslip is cleared and rewritten every time a DRAFT run is
+  // recalculated, which is the only reason DELETE exists on the table at
+  // all; the 0090 guard refuses every delete once the run is finalised
+  // or cancelled.
+  'payroll_run_lines',
   // A bid-checklist line is draft working material while the bid is
   // being assembled, so it deletes; the route refuses it from submission
   // onwards, when the list becomes the record of what went out (0083).
