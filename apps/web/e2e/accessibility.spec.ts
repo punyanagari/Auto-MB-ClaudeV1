@@ -1517,6 +1517,59 @@ test('the signing queue passes the axe scan', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open signed PDF' })).toBeVisible();
 });
 
+test('the audit register and the management summary pass the axe scan', async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+  await page.goto('/#/audit');
+
+  /* The two screens migration 0095 adds, scanned together because they
+     are one pack's grammar and neither is on an existing journey.
+
+     The audit register is the harder of the two and the reason this is
+     its own test: it is five filter controls with `sr-only` labels over a
+     dense table, and every one of those labels is a place label
+     association fails silently. The DIFF is the other reason — the
+     before/after in the detail sheet renders the old value with a
+     line-through and the new one in bold, which is the one place on
+     either screen where meaning could rest on presentation alone. It does
+     not: an `sr-only` "changed to" carries the relationship, and the scan
+     is what keeps that true. */
+  await expect(page.getByRole('heading', { name: 'Audit trail' })).toBeVisible();
+  // Matched inside the table rather than by text alone: the same sentence
+  // is also an <option> in the action picker, and an option in a closed
+  // select is hidden.
+  await expect(
+    page.getByRole('cell', { name: 'Challan issued', exact: true }),
+  ).toBeVisible();
+  // The retention sentence: the register says how far back it reached,
+  // because a window that showed less than the dates asked for would
+  // otherwise read as a quiet organisation.
+  await expect(page.getByText(/This register looks back to/)).toBeVisible();
+  await expectNoAxeViolations(page, 'audit register');
+
+  // The detail sheet, with the before/after list on screen.
+  await page.getByRole('button', { name: 'Detail' }).first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expectNoAxeViolations(page, 'audit event detail');
+  await page.keyboard.press('Escape');
+
+  /* The management summary: three dense numeric tables and a tile row.
+     Every figure is monospace and right-aligned, and the ageing table
+     always draws all five bands — including the zero ones, which is the
+     contrast state a table of only populated rows would never reach. */
+  await page.goto('/#/reports');
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Output tax by month' }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Receivables ageing' })).toBeVisible();
+  await expect(
+    page.getByRole('rowheader', { name: 'Over 90 days', exact: true }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'management summary');
+});
+
 test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/settings');

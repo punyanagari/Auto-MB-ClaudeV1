@@ -159,7 +159,7 @@ async function workbook(
 ): Promise<{ status: number; sheet: string; body: string }> {
   const response = await authed(jar, {
     method: 'GET',
-    url: `/api/registers/${register_}.xlsx`,
+    url: `/api/registers/${register_}/workbook.xlsx`,
     organisationId,
   });
   if (response.statusCode !== 200) {
@@ -208,7 +208,7 @@ async function seedEvent(event: {
     values (
       ${organisationId}, ${event.actor ?? ownerUserId}, ${event.action},
       ${event.entityType}, ${event.entityId ?? null}, ${event.occurredAt},
-      ${admin.json(event.details ?? {})}
+      ${admin.json((event.details ?? {}) as never)}
     )
   `;
 }
@@ -609,14 +609,15 @@ describe('register workbooks and work scope', () => {
     expect(JSON.parse(refused.body).code).toBe('AUTHORITY_REQUIRED');
   });
 
-  it('refuses a register name it does not know', async () => {
+  it('refuses a register name it does not know before the handler runs', async () => {
+    // The param is an enum, so an unknown name never reaches the tenant
+    // transaction — a probe cannot spend a database lookup.
     const response = await authed(owner, {
       method: 'GET',
-      url: '/api/registers/salaries.xlsx',
+      url: '/api/registers/salaries/workbook.xlsx',
       organisationId,
     });
-    expect(response.statusCode, response.body).toBe(404);
-    expect(response.json<{ code: string }>().code).toBe('REGISTER_UNKNOWN');
+    expect(response.statusCode, response.body).toBe(400);
   });
 
   it('does not export the audit trail through the shared register route', async () => {
@@ -624,10 +625,11 @@ describe('register workbooks and work scope', () => {
     // Reaching it through the generic one would bypass all three.
     const response = await authed(owner, {
       method: 'GET',
-      url: '/api/registers/audit-events.xlsx',
+      url: '/api/registers/audit-events/workbook.xlsx',
       organisationId,
     });
     expect(response.statusCode, response.body).toBe(404);
+    expect(response.json<{ code: string }>().code).toBe('REGISTER_UNKNOWN');
   });
 
   it('records every register export in the trail', async () => {

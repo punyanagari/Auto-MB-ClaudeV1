@@ -3058,7 +3058,7 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       });
     },
     async downloadRegisterWorkbook(organisationId, register) {
-      return downloadBlob(`/api/registers/${register}.xlsx`, organisationId);
+      return downloadBlob(`/api/registers/${register}/workbook.xlsx`, organisationId);
     },
     async downloadAuditWorkbook(organisationId, options = {}) {
       return downloadBlob(

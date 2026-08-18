@@ -114,6 +114,14 @@ const UNBOUND_ROUTES = new Set([
 const UNPAGINATED_LISTS = new Map<string, string>([
   // --- Bounded by the organisation's configuration ------------------------
   [
+    'GET /api/audit-events/facets',
+    "the audit register's filter vocabularies: the distinct actions, record types and members its own trail contains, each capped at 200 by the route. A picker longer than that is not a picker, and the register itself (GET /api/audit-events) pages normally",
+  ],
+  [
+    'GET /api/mis/summary',
+    'the management summary: three aggregates whose arrays are one row per MONTH (capped by the route at 60) and one row per ageing band (five, always all five). Paging a summary would page the answer to a question that has one screen',
+  ],
+  [
     'GET /api/masters/contacts',
     'party master: one row per party the agency deals with',
   ],

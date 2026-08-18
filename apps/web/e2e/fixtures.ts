@@ -36,6 +36,10 @@ export const ME = {
       // the rail carries no Employees door and both payroll screens
       // refuse. The owner of a new organisation holds it implicitly.
       canManagePayroll: true,
+      // The audit authority (0095). Granted so the audit register renders
+      // its rows and its filters under the scan; without it the screen is
+      // one refusal paragraph, which is a different set of nodes.
+      canViewAuditTrail: true,
       status: 'active',
     },
   ],
@@ -746,6 +750,111 @@ const PRODUCTION_BOM = {
    the only colour this screen puts on a word, and a scan of an empty
    register proves nothing about chips it never drew. */
 const SIGNING_THUMBPRINT = 'CFD1D2EF23018CEC652D1F380FC57FDCF5C0C4E4';
+/** The organisation-wide audit register (0095). One row of each shape the
+ * screen draws differently: an update carrying a before/after diff, a
+ * creation carrying context facts, and an organisation-level event with no
+ * record id at all — which is the row that renders a dash where every
+ * other row renders a monospace identifier. */
+const AUDIT_REGISTER = {
+  events: [
+    {
+      id: 'a1111111-1111-4111-8111-111111111111',
+      occurredAt: '2026-08-11T09:15:00.000Z',
+      actorUserId: 'user-a',
+      actorName: 'Anand Sharma',
+      action: 'challan.issued',
+      entityType: 'delivery_challans',
+      entityId: 'a2222222-2222-4222-8222-222222222222',
+      details: {
+        before: { status: 'draft' },
+        after: { status: 'issued' },
+      },
+    },
+    {
+      id: 'a3333333-3333-4333-8333-333333333333',
+      occurredAt: '2026-08-10T11:40:00.000Z',
+      actorUserId: 'user-a',
+      actorName: 'Anand Sharma',
+      action: 'membership.updated',
+      entityType: 'organisation_memberships',
+      entityId: null,
+      details: {
+        before: { canManagePayments: false },
+        after: { canManagePayments: true },
+      },
+    },
+    {
+      id: 'a4444444-4444-4444-8444-444444444444',
+      occurredAt: '2026-08-09T05:05:00.000Z',
+      actorUserId: 'user-a',
+      actorName: 'Anand Sharma',
+      action: 'work.created',
+      entityType: 'works',
+      entityId: 'a5555555-5555-4555-8555-555555555555',
+      details: { number: 'NWR-114' },
+    },
+  ],
+  nextCursor: null,
+  windowFrom: '2018-08-01',
+  retentionMonths: 96,
+};
+
+const AUDIT_FACETS = {
+  actions: ['challan.issued', 'membership.updated', 'work.created'],
+  entityTypes: ['delivery_challans', 'organisation_memberships', 'works'],
+  actors: [{ userId: 'user-a', name: 'Anand Sharma' }],
+};
+
+/** The management summary (0095). Two months so the table has more than
+ * one row, all five ageing bands because the screen always draws all five,
+ * and a payroll month so the third table is not its empty state. */
+const MIS_SUMMARY = {
+  outputTax: [
+    {
+      month: '2026-08',
+      invoiceCount: 4,
+      taxableValue: '4820000.00',
+      cgst: '433800.00',
+      sgst: '433800.00',
+      igst: '0.00',
+      total: '5687600.00',
+      creditNoteCount: 1,
+      creditTaxableValue: '120000.00',
+      creditTotal: '141600.00',
+    },
+    {
+      month: '2026-07',
+      invoiceCount: 2,
+      taxableValue: '1960000.00',
+      cgst: '0.00',
+      sgst: '0.00',
+      igst: '352800.00',
+      total: '2312800.00',
+      creditNoteCount: 0,
+      creditTaxableValue: '0.00',
+      creditTotal: '0.00',
+    },
+  ],
+  receivablesAgeing: [
+    { bucket: 'unsubmitted', billCount: 1, outstanding: '0.00' },
+    { bucket: '0-30', billCount: 3, outstanding: '1840000.00' },
+    { bucket: '31-60', billCount: 1, outstanding: '620000.00' },
+    { bucket: '61-90', billCount: 0, outstanding: '0.00' },
+    { bucket: '90+', billCount: 2, outstanding: '2410000.00' },
+  ],
+  indeterminateBills: 1,
+  payrollCost: [
+    {
+      month: '2026-07',
+      runCount: 1,
+      headcount: 14,
+      grossPay: '842000.00',
+      deductions: '96400.00',
+      netPay: '745600.00',
+    },
+  ],
+};
+
 const SIGNING_QUEUE = {
   requests: [
     ['pending', null, null],
@@ -1567,6 +1676,17 @@ export async function mockWorkspace(
   await page.route('**/api/signing-requests*', (route) =>
     route.fulfill(json(SIGNING_QUEUE)),
   );
+  // The audit register and the management summary (0095). The two audit
+  // patterns do not overlap: a Playwright glob's star does not cross a
+  // slash, so the bare audit-events pattern answers the register and the
+  // workbook and never the facets route beneath it.
+  await page.route('**/api/audit-events/facets*', (route) =>
+    route.fulfill(json(AUDIT_FACETS)),
+  );
+  await page.route('**/api/audit-events*', (route) =>
+    route.fulfill(json(AUDIT_REGISTER)),
+  );
+  await page.route('**/api/mis/summary*', (route) => route.fulfill(json(MIS_SUMMARY)));
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),
   );

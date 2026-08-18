@@ -424,7 +424,6 @@ export const EMPLOYEE_REGISTER_HASH = workspaceHashOf({ view: { name: 'employees
 export const PAYROLL_HASH = workspaceHashOf({ view: { name: 'payroll' } });
 
 export const SETTINGS_HASH = '#/settings';
-export const AUDIT_REGISTER_HASH = workspaceHashOf({ view: { name: 'audit' } });
 export const QUOTATIONS_HASH = '#/quotations';
 
 /** `#/installations`, or the register narrowed to one Work. */

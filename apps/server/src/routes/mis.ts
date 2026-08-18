@@ -1,4 +1,5 @@
 import {
+  EXPORTABLE_REGISTERS,
   MisSummaryQuerySchema,
   MisSummaryResponseSchema,
   TallyExportQuerySchema,
@@ -417,8 +418,19 @@ const REGISTERS: Readonly<Partial<Record<ExportableRegister, RegisterDescriptor>
 
 /* --- routes --------------------------------------------------------------- */
 
+/**
+ * The register name, as a closed set rather than a pattern.
+ *
+ * Two things follow from the enum that a free string did not give. An
+ * unknown name is refused by schema validation before the handler runs, so
+ * a probe never reaches the tenant transaction; and the OpenAPI document
+ * lists the registers a client may ask for, which is the same list the
+ * client's export buttons are rendered from.
+ */
 const RegisterParamsSchema = Type.Object(
-  { register: Type.String({ pattern: '^[a-z-]{4,30}$' }) },
+  {
+    register: Type.Union(EXPORTABLE_REGISTERS.map((name) => Type.Literal(name))),
+  },
   { additionalProperties: false },
 );
 
@@ -532,7 +544,12 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
   tenantRoute(
     {
       method: 'GET',
-      url: '/api/registers/:register.xlsx',
+      // The extension is its OWN segment, not a suffix on the parameter.
+      // `/api/registers/:register.xlsx` reads to a router as one segment
+      // whose name is `register.xlsx`, which no params schema can name
+      // and no caller can address — `test/route-inventory` found it by
+      // synthesising a request the route could not answer.
+      url: '/api/registers/:register/workbook.xlsx',
       schema: { params: RegisterParamsSchema },
     },
     async ({ request, reply, user, organisationId, tenant }) => {
@@ -554,8 +571,8 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
         // organisation-wide one has no Work to narrow by and would be
         // handed two parameters it never declared, which PostgreSQL
         // refuses outright rather than ignoring.
-        const parameters =
-          register.scope === 'work' ? [full, user.id] : ([] as unknown[]);
+        const parameters: (boolean | string)[] =
+          register.scope === 'work' ? [full, user.id] : [];
         const rows = (await tx.unsafe(
           `${register.sql} limit ${EXPORT_ROW_CAP}`,
           parameters,
