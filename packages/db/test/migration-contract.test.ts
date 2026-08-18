@@ -2095,8 +2095,15 @@ describe('tenant migration contract', () => {
     expect(sql).toContain(
       'CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(',
     );
+    // Four trues, and the fourth is 0089's. Both 0089 and 0091 replace
+    // this function, 0091 runs second, and a replacement states the
+    // whole body — so this migration must restate the payroll grant or
+    // silently revoke it from every founder. The assertion pins both
+    // authorities so dropping either fails here rather than in a
+    // founder's first payroll run.
+    expect(sql).toContain('can_manage_payroll, status');
     expect(sql).toContain(
-      "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, 'active');",
+      "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, 'active');",
     );
     // Bodies only, in the sibling migrations' idiom: the header explains
     // in prose why the guards are not definers, and a naive substring
