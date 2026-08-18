@@ -10,6 +10,7 @@ import { cn } from '../lib/cn.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
+import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FieldRow, FormError, FormNotice } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -79,13 +80,15 @@ export function ProductionItems({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
+  const [includeRetired, setIncludeRetired] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setItems(null);
     setLoadError(null);
     api
-      .listProductionItems(organisationId)
+      .listProductionItems(organisationId, includeRetired)
       .then((loaded) => {
         if (cancelled) return;
         setItems(loaded.items);
@@ -108,7 +111,7 @@ export function ProductionItems({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, includeRetired, loadVersion]);
 
   const reload = useCallback(() => {
     setLoadVersion((current) => current + 1);
@@ -176,6 +179,20 @@ export function ProductionItems({
           }}
         />
       )}
+      {actionError !== null && <FormError>{actionError}</FormError>}
+      {/* Masters retires a master rather than deleting it, and shows the
+          retired ones behind a toggle (`views/Masters.tsx`). The item
+          master is a master and behaves like one. */}
+      <label className="mb-4 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={includeRetired}
+          onChange={(event) => {
+            setIncludeRetired(event.currentTarget.checked);
+          }}
+        />
+        Show retired items
+      </label>
       {items.length === 0 ? (
         <EmptyState>
           Nothing in the catalogue yet. Add the products the agency manufactures and the
@@ -227,6 +244,19 @@ export function ProductionItems({
               catalogue={items}
               canModify={canModify}
               onChanged={reload}
+              onSetActive={(active) => {
+                setActionError(null);
+                api
+                  .setProductionItemActive(organisationId, active.id, active.active)
+                  .then(reload)
+                  .catch((cause: unknown) => {
+                    setActionError(
+                      cause instanceof RequestFailedError
+                        ? cause.message
+                        : 'The item could not be retired.',
+                    );
+                  });
+              }}
             />
           )}
         </div>
@@ -425,6 +455,7 @@ function ItemDetail({
   catalogue,
   canModify,
   onChanged,
+  onSetActive,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -432,6 +463,10 @@ function ItemDetail({
   readonly catalogue: readonly ProductionItem[];
   readonly canModify: boolean;
   readonly onChanged: () => void;
+  readonly onSetActive: (next: {
+    readonly id: string;
+    readonly active: boolean;
+  }) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -445,7 +480,20 @@ function ItemDetail({
               <span className="font-mono text-xs tabular-nums text-muted-foreground">
                 {item.itemCode} · {item.unit}
               </span>
+              {!item.active && <StatusChip status="archived">Retired</StatusChip>}
             </div>
+            {canModify && (
+              <Button
+                className="mt-3"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onSetActive({ id: item.id, active: !item.active });
+                }}
+              >
+                {item.active ? 'Retire item' : 'Reactivate item'}
+              </Button>
+            )}
           </div>
           {/* The mock's muted well. It prints its fixture's `nextSerial`;
               this prints the SHAPE of the series instead, because the next
@@ -667,6 +715,7 @@ function BillOfMaterialCard({
   readonly canModify: boolean;
 }) {
   const [nodes, setNodes] = useState<readonly BomNode[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -684,6 +733,7 @@ function BillOfMaterialCard({
       .then((loaded) => {
         if (cancelled) return;
         setNodes(loaded.nodes);
+        setTruncated(loaded.truncated);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -740,6 +790,7 @@ function BillOfMaterialCard({
               })
               .then((updated) => {
                 setNodes(updated.nodes);
+                setTruncated(updated.truncated);
                 setAdding(false);
                 setComponentId('');
                 setQuantity('1');
@@ -827,6 +878,14 @@ function BillOfMaterialCard({
         </EmptyState>
       ) : (
         <div className="flex flex-col gap-2">
+          {/* The cap is fine; a bill drawn half-way and presented as
+              the whole bill is not. */}
+          {truncated && (
+            <p className="m-0 text-xs text-warning-foreground">
+              This bill of material nests deeper than the limit, so the levels below are
+              not shown here. Open a sub-assembly to read its own bill.
+            </p>
+          )}
           {nodes
             .filter((node) => node.parentLineId === null)
             .map((node) => (
@@ -841,6 +900,7 @@ function BillOfMaterialCard({
                     .removeProductionBomLine(organisationId, lineId)
                     .then((updated) => {
                       setNodes(updated.nodes);
+                      setTruncated(updated.truncated);
                     })
                     .catch((cause: unknown) => {
                       setActionError(

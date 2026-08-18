@@ -50,6 +50,10 @@ import { DataTable, numericCell } from '../ui/table.js';
  * mock's own and stays.
  */
 
+/** One page of the register. The tiles count the whole of it, so a
+ * page boundary never changes a figure. */
+const PAGE_SIZE = 50;
+
 interface ProductionProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -76,16 +80,27 @@ export function Production({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
   const [creating, setCreating] = useState(false);
+  /* The register is keyset-paginated server-side, and asking for a page
+     is what makes that real: without a `limit` the route answers the
+     whole table, which is the compatibility default `packages/contracts`
+     § pagination describes and not something a register should rely on
+     as it grows. */
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [paging, setPaging] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setCards(null);
     setLoadError(null);
     api
-      .listJobCards(organisationId, workId ?? undefined)
+      .listJobCards(organisationId, {
+        ...(workId === null ? {} : { workId }),
+        limit: PAGE_SIZE,
+      })
       .then((loaded) => {
         if (cancelled) return;
         setCards(loaded.jobCards);
+        setNextCursor(loaded.nextCursor);
         setCounts({
           open: loaded.openCount,
           inProduction: loaded.inProductionCount,
@@ -326,6 +341,40 @@ export function Production({
               ))}
             </tbody>
           </DataTable>
+        )}
+
+        {nextCursor !== null && (
+          <div>
+            <Button
+              variant="outline"
+              disabled={paging}
+              onClick={() => {
+                setPaging(true);
+                api
+                  .listJobCards(organisationId, {
+                    ...(workId === null ? {} : { workId }),
+                    limit: PAGE_SIZE,
+                    cursor: nextCursor,
+                  })
+                  .then((page) => {
+                    setCards((current) => [...(current ?? []), ...page.jobCards]);
+                    setNextCursor(page.nextCursor);
+                  })
+                  .catch((cause: unknown) => {
+                    setLoadError(
+                      cause instanceof RequestFailedError
+                        ? cause.message
+                        : 'The next page could not be loaded.',
+                    );
+                  })
+                  .finally(() => {
+                    setPaging(false);
+                  });
+              }}
+            >
+              Load more job cards
+            </Button>
+          </div>
         )}
       </div>
     </>

@@ -55,6 +55,12 @@ const ACTION_LABELS: Record<string, string> = {
   'inspection_call.cancelled': 'Inspection certificate withdrawn',
   'bill_payment.recorded': 'Payment received',
   'bill_payment.voided': 'Payment withdrawn',
+  // The production job card (0084). Only the card reaches the timeline;
+  // its units and their releases would flood a Work with one row each.
+  'production_job_card.raised': 'Job card raised',
+  'production_job_card.revised': 'Job card revised',
+  'production_job_card.completed': 'Job card completed',
+  'production_job_card.cancelled': 'Job card cancelled',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -65,6 +71,11 @@ const FIELD_LABELS: Record<string, string> = {
   challanNumber: 'Challan number',
   totalAmount: 'Total amount',
   itemCount: 'Line count',
+  // Job-card audit details (0084).
+  number: 'Number',
+  quantity: 'Quantity',
+  dueDate: 'Due date',
+  units: 'Units',
   sequence: 'Sequence',
   note: 'Note',
   status: 'Status',

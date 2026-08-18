@@ -15,7 +15,7 @@ SET LOCAL statement_timeout = '5min';
 -- `app/production/page.tsx`, `app/production/items/page.tsx` and
 -- `components/production-job-card-page.tsx` (fdfe5ef).
 --
--- NINE TABLES, AND WHY EACH EXISTS.
+-- TEN TABLES, AND WHY EACH EXISTS.
 --
 --   production_items              the OEM item master: what is made and
 --                                 what is bought to make it
@@ -32,6 +32,7 @@ SET LOCAL statement_timeout = '5min';
 --   production_dispatches         the handoff: finished units leave
 --                                 production and become stock
 --   production_dispatch_counters  per-job-card despatch numbering
+--   production_dispatch_serials   which units a despatch released
 --
 -- ---------------------------------------------------------------------
 -- WHY NOT `canonical_items` (migration 0078).
@@ -141,6 +142,8 @@ SET LOCAL statement_timeout = '5min';
 --     23D13  the job card cannot complete: units are still outstanding
 --     23D14  the finished serial cannot be written this way
 --     23D15  the component serial cannot be consumed into this unit
+--     23D16  the despatch cannot release these units
+--     23D17  the organisation's own today cannot be resolved
 --
 -- ---------------------------------------------------------------------
 -- LOCK ORDER. `routes/inspections.ts` declares the product's ordering as
@@ -493,7 +496,69 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION app_private.production_bom_max_depth() IS
-  'The deepest a bill of material may nest. A bound on an honest tree''s explosion, and a second answer if a cycle ever existed in stored data.';
+  'The deepest a bill of material may nest, counted in EDGES along one chain. A bound on an honest tree''s explosion, and a second answer if a cycle ever existed in stored data.';
+
+-- What one unit of an item requires of each distinct part, exploded.
+--
+-- LEVEL-SYNCHRONOUS, NOT PATH-ENUMERATING, and that is the whole point
+-- of it being a function rather than a recursive CTE in the route.
+--
+-- A bill of material is a DAG, not a tree: two sub-assemblies that share
+-- a part are the ordinary case, and a plain recursive CTE walks one row
+-- per PATH, so a diamond doubles the row count at every level it
+-- reappears. Twelve levels of modest fan-out is an exponential answer to
+-- a question with a linear one — and it was being asked on every read of
+-- a job card, under that card's row lock.
+--
+-- This walks a FRONTIER instead: at each level it aggregates the
+-- requirement per distinct item before descending, so the work is
+-- bounded by levels times edges no matter how many paths reach a part.
+-- The quantities are summed in `numeric` throughout; nothing here
+-- touches floating point (AGENTS.md rule 5).
+CREATE FUNCTION app_private.production_bom_requirements(org uuid, root uuid)
+RETURNS TABLE (item_id uuid, quantity_per_unit numeric)
+LANGUAGE plpgsql
+STABLE
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  frontier_items uuid[] := ARRAY[root];
+  frontier_qty numeric[] := ARRAY[1::numeric];
+  total_items uuid[] := '{}'::uuid[];
+  total_qty numeric[] := '{}'::numeric[];
+  level integer := 0;
+BEGIN
+  WHILE coalesce(array_length(frontier_items, 1), 0) > 0
+    AND level < app_private.production_bom_max_depth() LOOP
+    level := level + 1;
+
+    SELECT coalesce(array_agg(step.item_id), '{}'::uuid[]),
+           coalesce(array_agg(step.qty), '{}'::numeric[])
+      INTO frontier_items, frontier_qty
+    FROM (
+      SELECT line.component_item_id AS item_id,
+             sum(f.qty * line.quantity) AS qty
+      FROM unnest(frontier_items, frontier_qty) AS f(item_id, qty)
+      JOIN production_bom_lines line
+        ON line.organisation_id = org AND line.parent_item_id = f.item_id
+      GROUP BY line.component_item_id
+    ) AS step;
+
+    total_items := total_items || frontier_items;
+    total_qty := total_qty || frontier_qty;
+  END LOOP;
+
+  -- A part reachable at two different depths contributes at each, so the
+  -- accumulated rows are summed once at the end.
+  RETURN QUERY
+    SELECT t.item_id, sum(t.qty)
+    FROM unnest(total_items, total_qty) AS t(item_id, qty)
+    GROUP BY t.item_id;
+END
+$$;
+
+COMMENT ON FUNCTION app_private.production_bom_requirements(uuid, uuid) IS
+  'Per one unit of the root item, how much of each distinct part it takes. Aggregates per level rather than enumerating paths, so a shared sub-assembly costs one row per level instead of one row per path through it.';
 
 CREATE FUNCTION app_private.guard_production_bom_edge()
 RETURNS trigger
@@ -504,7 +569,8 @@ DECLARE
   parent_manufactured boolean;
   parent_active boolean;
   component_active boolean;
-  reached_depth integer;
+  reached_above integer;
+  reached_below integer;
 BEGIN
   -- Serialise every bill-of-material edit in this organisation against
   -- every other. See the section header: two sessions adding opposite
@@ -572,26 +638,53 @@ BEGIN
       USING ERRCODE = '23D01';
   END IF;
 
-  -- With no cycle present the tree is finite, so its depth is a real
-  -- number and worth bounding.
-  SELECT max(depth) INTO reached_depth
+  -- THE DEPTH BOUND MEASURES BOTH DIRECTIONS, and it has to.
+  --
+  -- Measuring only downward from the new component bounds a BOTTOM-UP
+  -- build and lets a top-down one through entirely: adding A->B, then
+  -- B->C, then C->D, the new component is a leaf every single time, so
+  -- the descent is always one level and the cap never fires however
+  -- long the chain gets. The longest chain THROUGH this edge is what
+  -- matters, and that is the height standing above the parent, plus this
+  -- edge, plus the depth hanging below the component.
+  --
+  -- Both walks are bounded one past the cap — enough to know the cap is
+  -- exceeded, and no further — and both carry the CYCLE clause for the
+  -- reason the search above does.
+  SELECT coalesce(max(height), 0) INTO reached_above
+  FROM (
+    WITH RECURSIVE ascent(item_id, height) AS (
+      SELECT NEW.parent_item_id, 0
+      UNION ALL
+      SELECT line.parent_item_id, ascent.height + 1
+      FROM production_bom_lines line
+      JOIN ascent ON ascent.item_id = line.component_item_id
+      WHERE line.organisation_id = NEW.organisation_id
+        AND ascent.height <= app_private.production_bom_max_depth()
+    ) CYCLE item_id SET is_cycle USING path
+    SELECT height FROM ascent
+  ) AS above;
+
+  SELECT coalesce(max(depth), 0) INTO reached_below
   FROM (
     WITH RECURSIVE descent(item_id, depth) AS (
-      SELECT NEW.component_item_id, 1
+      SELECT NEW.component_item_id, 0
       UNION ALL
       SELECT line.component_item_id, descent.depth + 1
       FROM production_bom_lines line
       JOIN descent ON descent.item_id = line.parent_item_id
       WHERE line.organisation_id = NEW.organisation_id
-        AND descent.depth < app_private.production_bom_max_depth() + 1
+        AND descent.depth <= app_private.production_bom_max_depth()
     ) CYCLE item_id SET is_cycle USING path
     SELECT depth FROM descent
-  ) AS reached;
+  ) AS below;
 
-  IF coalesce(reached_depth, 1) >= app_private.production_bom_max_depth() THEN
+  -- Edges, not nodes: the chain through this edge is everything above
+  -- the parent, the edge itself, and everything below the component.
+  IF reached_above + 1 + reached_below > app_private.production_bom_max_depth() THEN
     RAISE EXCEPTION
-      'this edge would nest the bill of material deeper than % levels',
-      app_private.production_bom_max_depth()
+      'this edge would nest the bill of material % levels deep, past the limit of %',
+      reached_above + 1 + reached_below, app_private.production_bom_max_depth()
       USING ERRCODE = '23D01';
   END IF;
 
@@ -600,7 +693,7 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_production_bom_edge() IS
-  'Refuses a bill-of-material edge that would close a cycle, nest past the depth bound, hang off an item nobody manufactures, or name a retired part. Takes a per-organisation advisory lock first: two sessions adding opposite edges cannot see each other''s uncommitted row.';
+  'Refuses a bill-of-material edge that would close a cycle, nest past the depth bound measured through the edge in BOTH directions (a top-down build hits it too), hang off an item nobody manufactures, or name a retired part. Takes a per-organisation advisory lock first: two sessions adding opposite edges cannot see each other''s uncommitted row.';
 
 CREATE TRIGGER production_bom_lines_guard_edge
 BEFORE INSERT OR UPDATE ON production_bom_lines
@@ -1342,6 +1435,16 @@ FOR EACH ROW EXECUTE FUNCTION app_private.guard_counter_decrease();
 -- despatch is production's statement, and a stock correction is a stock
 -- movement, not a rewrite of what the factory said it released.
 --
+-- AND IT MUST KEY ON `production_serials.id`, NEVER ON serial_number.
+-- Whenever a despatched unit is later linked to a Delivery Challan, the
+-- link is by row id. The number is unique per organisation TODAY, and
+-- that is a constraint this migration chose rather than a law: it is a
+-- human-facing label read off a nameplate, it is the field an importer
+-- of legacy data is most likely to arrive with duplicates in, and
+-- `challan_item_serials` already scopes the same kind of string per WORK
+-- rather than per organisation. A join on text would silently bind the
+-- wrong unit the first time those two scopes met.
+--
 -- THE DELETE PATH, AND WHY IT IS SAFE TO LEAVE OPEN. A despatch raised
 -- in error can be deleted today, which releases its units. That is
 -- deliberate and it is self-closing: the moment Inventory's ledger
@@ -1401,6 +1504,109 @@ CREATE POLICY production_dispatches_tenant_policy ON production_dispatches
 -- closes itself the moment a stock ledger references it (§ 7).
 GRANT SELECT, INSERT, DELETE ON production_dispatches TO auto_mb_app;
 
+-- Whether a unit still owes a serial-controlled component its product's
+-- bill of material calls for.
+--
+-- ONE expression, because three callers ask it and a disagreement
+-- between them is a wrong answer on a screen: the despatch-line guard
+-- below, the dispatch-readiness function under it, and the route. The
+-- mock's own defect is exactly this — its plan status and its computed
+-- shortage disagree — so the fix cannot be three copies of the rule.
+-- The parameter is `finished_serial`, not `unit`: `production_items.unit`
+-- is a column in scope here, and PostgreSQL resolves the bare name to
+-- the column, which turns `s.id = unit` into `uuid = text`.
+CREATE FUNCTION app_private.production_unit_incomplete(org uuid, finished_serial uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM production_serials s
+    JOIN production_bom_lines line
+      ON line.organisation_id = s.organisation_id
+     AND line.parent_item_id = s.item_id
+    JOIN production_items component
+      ON component.organisation_id = line.organisation_id
+     AND component.id = line.component_item_id
+    WHERE s.organisation_id = org
+      AND s.id = finished_serial
+      AND component.serial_controlled
+      AND (
+        SELECT count(*) FROM production_component_serials c
+        WHERE c.organisation_id = s.organisation_id
+          AND c.finished_serial_id = s.id
+          AND c.component_item_id = line.component_item_id
+      ) < ceil(line.quantity)
+  )
+$$;
+
+COMMENT ON FUNCTION app_private.production_unit_incomplete(uuid, uuid) IS
+  'Whether a finished unit is still missing a serial-controlled component its bill of material calls for. The single expression the despatch guard, the readiness function and the route all ask.';
+
+-- The despatch header's own guard. § 2 of this migration states the
+-- principle these exist for: a rule the route checks is a rule that
+-- holds for the route, and this is the layer a writer arriving another
+-- way still meets.
+CREATE FUNCTION app_private.guard_production_dispatch()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  card_status text;
+  today date;
+BEGIN
+  SELECT status INTO card_status
+  FROM production_job_cards
+  WHERE organisation_id = NEW.organisation_id AND id = NEW.job_card_id
+  FOR UPDATE;
+
+  IF card_status IS NULL THEN
+    RAISE EXCEPTION
+      'despatch names job card %, which this transaction cannot read', NEW.job_card_id
+      USING ERRCODE = '23D16';
+  END IF;
+
+  IF card_status = 'cancelled' THEN
+    RAISE EXCEPTION
+      'job card % is cancelled and releases nothing', NEW.job_card_id
+      USING ERRCODE = '23D16';
+  END IF;
+
+  -- The ORGANISATION's today, not UTC's (rule 6 and 0082's own
+  -- `organisation_today`): a release recorded at 00:30 IST is today, and
+  -- a server thinking in UTC would call it tomorrow and refuse it.
+  today := app_private.organisation_today(NEW.organisation_id);
+
+  -- A missing timezone is not a reason to wave the check through. It
+  -- gets its own code so the route can say what is actually wrong
+  -- instead of reporting a future-dated despatch.
+  IF today IS NULL THEN
+    RAISE EXCEPTION
+      'the organisation has no resolvable calendar date, so a despatch cannot be dated'
+      USING ERRCODE = '23D17';
+  END IF;
+
+  IF NEW.dispatched_on > today THEN
+    RAISE EXCEPTION
+      'a despatch cannot be dated in the future (% is after %)',
+      NEW.dispatched_on, today
+      USING ERRCODE = '23D16';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+COMMENT ON FUNCTION app_private.guard_production_dispatch() IS
+  'Refuses a despatch on a cancelled job card, or dated after the organisation''s own today — and refuses outright when that date cannot be resolved rather than falling back to UTC.';
+
+CREATE TRIGGER production_dispatches_guard_write
+BEFORE INSERT ON production_dispatches
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_production_dispatch();
+
 CREATE TABLE production_dispatch_serials (
   organisation_id uuid NOT NULL REFERENCES organisations(id),
   production_dispatch_id uuid NOT NULL,
@@ -1439,3 +1645,94 @@ CREATE POLICY production_dispatch_serials_tenant_policy ON production_dispatch_s
 -- No UPDATE: a line is made or unmade, never moved to another despatch.
 -- DELETE exists only so deleting a despatch can take its lines with it.
 GRANT SELECT, INSERT, DELETE ON production_dispatch_serials TO auto_mb_app;
+
+-- Completeness is checked HERE rather than on the header, because the
+-- header does not yet know which units it carries: the lines arrive
+-- after it. A unit still owing a component serial is not finished, and
+-- letting it leave would close its component record (§ 5) with the
+-- record incomplete.
+CREATE FUNCTION app_private.guard_production_dispatch_serial()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF app_private.production_unit_incomplete(
+       NEW.organisation_id, NEW.production_serial_id
+     ) THEN
+    RAISE EXCEPTION
+      'unit % is still missing a component serial its bill of material calls for',
+      NEW.production_serial_id
+      USING ERRCODE = '23D16';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+COMMENT ON FUNCTION app_private.guard_production_dispatch_serial() IS
+  'Refuses the release of a unit that still owes a serial-controlled component. Checked on the line rather than the header because the header does not yet know which units it carries.';
+
+CREATE TRIGGER production_dispatch_serials_guard_write
+BEFORE INSERT ON production_dispatch_serials
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_production_dispatch_serial();
+
+-- Whether a job card has units ready to leave the factory.
+--
+-- THE ONE EXPRESSION the register tile and the job card's own badge both
+-- read. They disagreed before: the tile counted `in_production` cards
+-- whose serial count had been reached and said nothing about components,
+-- while the detail also required every unit's components. A tile that
+-- counts a different thing from the badge it links to is the defect
+-- § 11b of `docs/UX.md` accuses the mock of, committed here.
+--
+-- The status semantics, decided rather than inherited:
+--
+--   * `cancelled` is never ready. Nothing leaves a withdrawn order.
+--   * `completed` IS ready while units remain in the factory, and that
+--     is the stated home for the case the review asked about. Completing
+--     a card means every planned unit was BUILT; it says nothing about
+--     whether they have shipped, and a completed card holding twelve
+--     unreleased boards is precisely what an operator wants the tile to
+--     surface.
+--   * A card with nothing left to release is NOT ready — there is
+--     nothing to be ready for. Without this the tile would keep counting
+--     cards forever after their last unit shipped.
+CREATE FUNCTION app_private.production_job_card_dispatch_ready(org uuid, card uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $$
+  SELECT j.status <> 'cancelled'
+     AND (
+       SELECT count(*) FROM production_serials s
+       WHERE s.organisation_id = j.organisation_id AND s.job_card_id = j.id
+     ) >= j.quantity
+     AND EXISTS (
+       SELECT 1 FROM production_serials s
+       WHERE s.organisation_id = j.organisation_id
+         AND s.job_card_id = j.id
+         AND NOT EXISTS (
+           SELECT 1 FROM production_dispatch_serials d
+           WHERE d.organisation_id = s.organisation_id
+             AND d.production_serial_id = s.id
+         )
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM production_serials s
+       WHERE s.organisation_id = j.organisation_id
+         AND s.job_card_id = j.id
+         AND NOT EXISTS (
+           SELECT 1 FROM production_dispatch_serials d
+           WHERE d.organisation_id = s.organisation_id
+             AND d.production_serial_id = s.id
+         )
+         AND app_private.production_unit_incomplete(s.organisation_id, s.id)
+     )
+  FROM production_job_cards j
+  WHERE j.organisation_id = org AND j.id = card
+$$;
+
+COMMENT ON FUNCTION app_private.production_job_card_dispatch_ready(uuid, uuid) IS
+  'Whether a job card has units ready to leave: not cancelled, every planned unit built, at least one still in the factory, and none of those missing a component serial. Read by the register tile and the job card badge alike, so the two cannot disagree.';

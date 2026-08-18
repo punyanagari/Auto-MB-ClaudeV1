@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,7 @@ import {
   runMigrations,
 } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
+import { PRODUCTION_DATABASE_REFUSAL_CODES } from '../src/routes/production.js';
 
 /**
  * OEM production (migration 0084).
@@ -548,6 +549,128 @@ describe('the recursive bill of material', () => {
     expect(loop.json<{ code: string }>().code).toBe('PRODUCTION_BOM_CYCLE');
   });
 
+  it('refuses a TOP-DOWN chain at the depth cap, not only a bottom-up one', async () => {
+    // The defect this covers: measuring depth only DOWNWARD from the new
+    // component bounds a bottom-up build and lets a top-down one through
+    // entirely, because each new component is a leaf and the descent is
+    // always one level however long the chain gets.
+    const chain: ProductionItem[] = [];
+    for (let index = 0; index < 26; index += 1) {
+      chain.push(await createProduct({ name: `Depth chain ${String(index)}` }));
+    }
+
+    let accepted = 0;
+    let refusal: { statusCode: number; body: string } | null = null;
+    for (let index = 0; index + 1 < chain.length; index += 1) {
+      const response = await addBomLine(
+        chain[index]?.id ?? '',
+        chain[index + 1]?.id ?? '',
+      );
+      if (response.statusCode === 201) {
+        accepted += 1;
+        continue;
+      }
+      refusal = { statusCode: response.statusCode, body: response.body };
+      break;
+    }
+
+    expect(refusal, 'a 25-edge top-down chain was accepted whole').not.toBeNull();
+    expect(refusal?.statusCode).toBe(409);
+    expect(JSON.parse(refusal?.body ?? '{}')).toMatchObject({
+      code: 'PRODUCTION_BOM_CYCLE',
+    });
+    // The cap is twelve EDGES, so twelve are taken and the thirteenth is
+    // the one refused.
+    expect(accepted).toBe(12);
+  });
+
+  it('reports a bill of material the depth cap truncated', async () => {
+    // The read cap and the write cap are the same number, so a bill
+    // built through the API can never be too deep to draw — which is the
+    // point of the write guard. The flag therefore reports one thing: a
+    // bill that is deeper than the rule allows, meaning it was written
+    // around the guard. That is worth reporting rather than drawing
+    // half of it and calling it the bill.
+    //
+    // The trigger is disabled to produce exactly that writer, which is
+    // how migration 0043 models a bulk operation that bypasses a guard.
+    const chain: ProductionItem[] = [];
+    for (let index = 0; index < 16; index += 1) {
+      chain.push(await createProduct({ name: `Truncation ${String(index)}` }));
+    }
+    await admin`ALTER TABLE production_bom_lines DISABLE TRIGGER production_bom_lines_guard_edge`;
+    try {
+      for (let index = 0; index + 1 < chain.length; index += 1) {
+        await admin`
+          insert into production_bom_lines (
+            organisation_id, parent_item_id, component_item_id, quantity,
+            created_by_user_id
+          )
+          values (
+            ${organisationId}, ${chain[index]?.id ?? ''},
+            ${chain[index + 1]?.id ?? ''}, 1, 'deep-fixture'
+          )
+        `;
+      }
+    } finally {
+      await admin`ALTER TABLE production_bom_lines ENABLE TRIGGER production_bom_lines_guard_edge`;
+    }
+
+    const deep = await authed(office, {
+      method: 'GET',
+      url: `/api/production/items/${chain[0]?.id ?? ''}/bom`,
+      organisationId,
+    });
+    expect(deep.statusCode, deep.body).toBe(200);
+    const drawn = deep.json<BomResponse>();
+    // The read stops rather than running away, and says that it did.
+    expect(drawn.truncated).toBe(true);
+    expect(drawn.nodes.length).toBeLessThan(chain.length - 1);
+
+    // A bill that fits says so too, rather than leaving the flag as
+    // decoration nothing ever clears.
+    const shallow = await createProduct({ name: 'Shallow parent' });
+    const part = await createItem({ name: 'Shallow part' });
+    expect((await addBomLine(shallow.id, part.id)).statusCode).toBe(201);
+    const near = await authed(office, {
+      method: 'GET',
+      url: `/api/production/items/${shallow.id}/bom`,
+      organisationId,
+    });
+    expect(near.json<BomResponse>().truncated).toBe(false);
+  });
+
+  it('explodes a shared sub-assembly once per level, not once per path', async () => {
+    // A DAG, not a tree: both sub-assemblies take the same part, and both
+    // are taken by the same board. A path-enumerating walk doubles its
+    // row count at every level a shared part reappears — which is what
+    // the requirement read used to do, on every job-card response, under
+    // that card's row lock.
+    const board = await createProduct({ name: 'Diamond board' });
+    const left = await createProduct({ name: 'Diamond left' });
+    const right = await createProduct({ name: 'Diamond right' });
+    const shared = await createItem({ name: 'Diamond shared part' });
+    expect((await addBomLine(board.id, left.id, '2.000')).statusCode).toBe(201);
+    expect((await addBomLine(board.id, right.id, '3.000')).statusCode).toBe(201);
+    expect((await addBomLine(left.id, shared.id, '5.000')).statusCode).toBe(201);
+    expect((await addBomLine(right.id, shared.id, '7.000')).statusCode).toBe(201);
+
+    const card = (
+      await createJobCard(board.id, { quantity: 10 })
+    ).json<JobCardDetail>();
+
+    // Three distinct parts, each appearing ONCE however many paths reach
+    // it — the row count is the answer to the finding.
+    expect(card.materials).toHaveLength(3);
+    const requirement = (id: string) =>
+      Number(card.materials.find((row) => row.itemId === id)?.required);
+    expect(requirement(left.id)).toBe(20);
+    expect(requirement(right.id)).toBe(30);
+    // …and the arithmetic is unchanged by the aggregation: the shared
+    // part is (2 x 5) + (3 x 7) = 31 per board, times ten boards.
+    expect(requirement(shared.id)).toBe(310);
+  });
+
   it('refuses a self-edge and a bill hung off an item nobody manufactures', async () => {
     const product = await createProduct({ name: 'Self edge board' });
     const bought = await createItem({ name: 'Bought-in part' });
@@ -942,6 +1065,67 @@ describe('the despatch boundary', () => {
     expect(response.json<{ code: string }>().code).toBe('PRODUCTION_DISPATCH_INVALID');
   });
 
+  it('counts dispatch readiness the same way on the tile and on the card', async () => {
+    // The defect: the register tile counted `in_production` cards whose
+    // serial count had been reached and said nothing about components,
+    // while the job card also required every unit's components. A tile
+    // that counts a different thing from the badge it links to is the
+    // self-contradiction docs/UX.md § 11b accuses the mock of.
+    const product = await createProduct({ name: 'Readiness board' });
+    const part = await createItem({ name: 'Readiness part', serialControlled: true });
+    expect((await addBomLine(product.id, part.id, '1.000')).statusCode).toBe(201);
+    const card = (
+      await createJobCard(product.id, { quantity: 1 })
+    ).json<JobCardDetail>();
+    const unitId =
+      (await mintSerial(card.id)).json<JobCardDetail>().serials[0]?.id ?? '';
+
+    const readyCountOf = async (): Promise<number> => {
+      const listed = await authed(office, {
+        method: 'GET',
+        url: `/api/production/job-cards?workId=${workId}`,
+        organisationId,
+      });
+      return listed.json<JobCardListResponse>().dispatchReadyCount;
+    };
+    const cardReadyOf = async (): Promise<boolean> => {
+      const opened = await authed(office, {
+        method: 'GET',
+        url: `/api/production/job-cards/${card.id}`,
+        organisationId,
+      });
+      return opened.json<JobCardDetail>().dispatchReady;
+    };
+
+    // Every unit built, but the component is not captured: not ready, on
+    // BOTH readings. The old tile said ready here.
+    const beforeTile = await readyCountOf();
+    expect(await cardReadyOf()).toBe(false);
+
+    const scanned = await authed(site, {
+      method: 'POST',
+      url: `/api/production/serials/${unitId}/components`,
+      organisationId,
+      payload: { componentItemId: part.id, serialNumber: `RDY-${suffix}` },
+    });
+    expect(scanned.statusCode, scanned.body).toBe(201);
+
+    expect(await cardReadyOf()).toBe(true);
+    expect(await readyCountOf()).toBe(beforeTile + 1);
+
+    // Released, so there is nothing left to be ready for — and the tile
+    // stops counting it rather than counting it for ever.
+    const released = await authed(site, {
+      method: 'POST',
+      url: `/api/production/job-cards/${card.id}/dispatches`,
+      organisationId,
+      payload: { serialIds: [unitId], dispatchedOn: '2026-08-18' },
+    });
+    expect(released.statusCode, released.body).toBe(201);
+    expect(released.json<JobCardDetail>().dispatchReady).toBe(false);
+    expect(await readyCountOf()).toBe(beforeTile);
+  });
+
   it('refuses a despatch dated in the future, against the ORGANISATION today', async () => {
     const { cardId, unitId } = await readyUnit('Future');
     const response = await authed(site, {
@@ -1054,6 +1238,73 @@ describe('under concurrency', () => {
     expect(count?.n).toBe('1');
   });
 
+  it('does not release a unit while its last component is being scanned', async () => {
+    // The interleaving the component guard's job-card lock exists for: a
+    // release and a component scan reaching the same unit together. The
+    // release must not see a half-captured unit as complete, and the
+    // scan must not land inside a unit that has already left — the
+    // component record closes at despatch.
+    const product = await createProduct({ name: 'Race scan board' });
+    const part = await createItem({ name: 'Race scan part', serialControlled: true });
+    expect((await addBomLine(product.id, part.id, '2.000')).statusCode).toBe(201);
+    const card = (
+      await createJobCard(product.id, { quantity: 1 })
+    ).json<JobCardDetail>();
+    const unitId =
+      (await mintSerial(card.id)).json<JobCardDetail>().serials[0]?.id ?? '';
+
+    // One of the two required components is already in; the race is over
+    // the second.
+    expect(
+      (
+        await authed(site, {
+          method: 'POST',
+          url: `/api/production/serials/${unitId}/components`,
+          organisationId,
+          payload: { componentItemId: part.id, serialNumber: `RACE-${suffix}-1` },
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const [scan, release] = await Promise.all([
+      authed(site, {
+        method: 'POST',
+        url: `/api/production/serials/${unitId}/components`,
+        organisationId,
+        payload: { componentItemId: part.id, serialNumber: `RACE-${suffix}-2` },
+      }),
+      authed(site, {
+        method: 'POST',
+        url: `/api/production/job-cards/${card.id}/dispatches`,
+        organisationId,
+        payload: { serialIds: [unitId], dispatchedOn: '2026-08-18' },
+      }),
+    ]);
+
+    // Whichever order they serialise in, the outcome is consistent: a
+    // release that won saw an incomplete unit and was refused, and a
+    // scan that lost landed after despatch and was refused. What must
+    // never happen is both succeeding, which would close the component
+    // record and then add to it.
+    const [componentRows] = await admin<{ n: string }[]>`
+      select count(*)::text as n from production_component_serials
+      where finished_serial_id = ${unitId}
+    `;
+    const [dispatchRows] = await admin<{ n: string }[]>`
+      select count(*)::text as n from production_dispatch_serials
+      where production_serial_id = ${unitId}
+    `;
+    if (dispatchRows?.n === '1') {
+      expect(release.statusCode, release.body).toBe(201);
+      expect(scan.statusCode).toBe(409);
+      expect(componentRows?.n).toBe('2');
+    } else {
+      expect(scan.statusCode, scan.body).toBe(201);
+      expect(release.statusCode).toBe(409);
+      expect(componentRows?.n).toBe('2');
+    }
+  });
+
   it('numbers two job cards raised together without collision', async () => {
     const product = await createProduct({ name: 'Race numbering board' });
     const [first, second] = await Promise.all([
@@ -1164,6 +1415,24 @@ describe('the database guards, attacked directly', () => {
         )
       `,
     ).rejects.toThrow(/not in the bill of material/);
+  });
+
+  it('maps every named refusal the migration can raise', async () => {
+    // A guard added to 0084 without a mapping in `routes/production.ts`
+    // reaches an operator as an unexplained 500. The census makes that a
+    // build failure instead.
+    const sql = await readFile(
+      path.resolve(migrationsDirectory, '0084_production.sql'),
+      'utf8',
+    );
+    const raised = [
+      ...new Set([...sql.matchAll(/USING ERRCODE = '(23D\d\d)'/g)].map((m) => m[1])),
+    ].sort();
+    expect(raised.length).toBeGreaterThanOrEqual(8);
+    const mapped = PRODUCTION_DATABASE_REFUSAL_CODES.filter((code) =>
+      code.startsWith('23D'),
+    ).sort();
+    expect(mapped).toEqual(raised);
   });
 
   it('refuses a rewound counter and a moved tenant', async () => {

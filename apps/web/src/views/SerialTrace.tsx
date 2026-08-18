@@ -35,6 +35,41 @@ interface SerialTraceProps {
  * Rendered by `views/Search.tsx` under the "Installations & serials"
  * scope, and by "Everything".
  */
+/** The delivery half's challan cell. Extracted so the narrowing that
+ * proves a Work and a challan are both present happens in one place
+ * rather than at each of the four fields that need it. */
+function ChallanCell({
+  workId,
+  challanId,
+  challanNumber,
+  challanDate,
+  challanStatus,
+  onOpenChallan,
+}: {
+  readonly workId: string;
+  readonly challanId: string;
+  readonly challanNumber: string | null;
+  readonly challanDate: string | null;
+  readonly challanStatus: string | null;
+  readonly onOpenChallan: (workId: string, challanId: string) => void;
+}) {
+  return (
+    <>
+      <a
+        href={challanHash(workId, challanId)}
+        className="font-medium"
+        onClick={navigateOnClick(() => {
+          onOpenChallan(workId, challanId);
+        })}
+      >
+        {challanNumber ?? 'Draft'}
+      </a>{' '}
+      <span className="text-muted-foreground">· {challanDate}</span>{' '}
+      {challanStatus !== null && <StatusChip status={challanStatus} />}
+    </>
+  );
+}
+
 export function SerialTrace({
   api,
   organisationId,
@@ -117,12 +152,13 @@ export function SerialTrace({
           </p>
           <DataTable>
             <caption className="sr-only">
-              Serial numbers matching the search, with their Work, Delivery Challan,
-              receipt and installation state
+              Serial numbers matching the search, with their origin, Work, Delivery
+              Challan, receipt and installation state
             </caption>
             <thead>
               <tr>
                 <th scope="col">Serial</th>
+                <th scope="col">Origin</th>
                 <th scope="col">Work</th>
                 <th scope="col">Item</th>
                 <th scope="col">Challan</th>
@@ -131,60 +167,109 @@ export function SerialTrace({
               </tr>
             </thead>
             <tbody>
-              {result.matches.map((match) => (
-                <tr key={match.id}>
-                  <th scope="row" className="font-mono">
-                    {match.serialNumber}
-                  </th>
-                  <td className={wrapCell}>
-                    {/* Real links so a hit can be middle-clicked into
-                        its own tab; a left click stays in-app. */}
-                    <a
-                      href={workHash(match.workId)}
-                      className="font-medium"
-                      onClick={navigateOnClick(() => {
-                        onOpenWork(match.workId);
-                      })}
-                    >
-                      {match.workCode}
-                    </a>{' '}
-                    <span className="text-muted-foreground">{match.workTitle}</span>
-                  </td>
-                  <td className={wrapCell}>{match.itemDescription}</td>
-                  <td>
-                    <a
-                      href={challanHash(match.workId, match.challanId)}
-                      className="font-medium"
-                      onClick={navigateOnClick(() => {
-                        onOpenChallan(match.workId, match.challanId);
-                      })}
-                    >
-                      {match.challanNumber ?? 'Draft'}
-                    </a>{' '}
-                    <span className="text-muted-foreground">· {match.challanDate}</span>{' '}
-                    <StatusChip status={match.challanStatus} />
-                  </td>
-                  <td>
-                    {match.receiptRecorded ? (
-                      <StatusChip status="confirmed">received</StatusChip>
-                    ) : (
-                      <span className="text-muted-foreground">no receipt</span>
-                    )}
-                  </td>
-                  <td>
-                    {match.installedOn !== null ? (
-                      <StatusChip status="installed">
-                        installed {match.installedOn}
-                        {typeof match.installationLocation === 'string'
-                          ? ` at ${match.installationLocation}`
-                          : ''}
-                      </StatusChip>
-                    ) : (
-                      <span className="text-muted-foreground">not installed</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {result.matches.map((match) => {
+                /* Narrowed once, so the Work cell's link does not have to
+                   re-prove it inside a closure. */
+                const workCode =
+                  match.workId === null
+                    ? null
+                    : { workId: match.workId, code: match.workCode };
+                return (
+                  <tr key={match.id}>
+                    <th scope="row" className="font-mono">
+                      {match.serialNumber}
+                    </th>
+                    <td>
+                      {/* A unit the factory built and has not despatched
+                        matched nothing here before migration 0084's
+                        union — which reads exactly like "no such
+                        serial", the worst answer a trace can give. */}
+                      {match.source === 'production' ? (
+                        <StatusChip status="in-production" tone="warning">
+                          Production
+                        </StatusChip>
+                      ) : (
+                        <StatusChip status="issued">Delivered</StatusChip>
+                      )}
+                    </td>
+                    <td className={wrapCell}>
+                      {/* Real links so a hit can be middle-clicked into
+                        its own tab; a left click stays in-app. A
+                        production unit may have no Work at all — a job
+                        card against a private purchase order — so the
+                        cell says so rather than linking nowhere. */}
+                      {workCode === null ? (
+                        <span className="text-muted-foreground">
+                          {match.source === 'production' ? 'Private order' : '—'}
+                        </span>
+                      ) : (
+                        <>
+                          <a
+                            href={workHash(workCode.workId)}
+                            className="font-medium"
+                            onClick={navigateOnClick(() => {
+                              onOpenWork(workCode.workId);
+                            })}
+                          >
+                            {workCode.code}
+                          </a>{' '}
+                          <span className="text-muted-foreground">
+                            {match.workTitle}
+                          </span>
+                        </>
+                      )}
+                    </td>
+                    <td className={wrapCell}>{match.itemDescription}</td>
+                    <td>
+                      {match.challanId === null || match.workId === null ? (
+                        <span className="text-muted-foreground">
+                          {match.source === 'production'
+                            ? match.releasedOn == null
+                              ? 'in the factory'
+                              : `released ${match.releasedOn}`
+                            : '—'}
+                        </span>
+                      ) : (
+                        <ChallanCell
+                          workId={match.workId}
+                          challanId={match.challanId}
+                          challanNumber={match.challanNumber}
+                          challanDate={match.challanDate}
+                          challanStatus={match.challanStatus}
+                          onOpenChallan={onOpenChallan}
+                        />
+                      )}
+                    </td>
+                    <td>
+                      {match.source === 'production' ? (
+                        match.genealogyComplete === true ? (
+                          <StatusChip status="confirmed">
+                            {match.componentsCaptured ?? 0} components
+                          </StatusChip>
+                        ) : (
+                          <StatusChip status="pending">genealogy short</StatusChip>
+                        )
+                      ) : match.receiptRecorded ? (
+                        <StatusChip status="confirmed">received</StatusChip>
+                      ) : (
+                        <span className="text-muted-foreground">no receipt</span>
+                      )}
+                    </td>
+                    <td>
+                      {match.installedOn !== null ? (
+                        <StatusChip status="installed">
+                          installed {match.installedOn}
+                          {typeof match.installationLocation === 'string'
+                            ? ` at ${match.installationLocation}`
+                            : ''}
+                        </StatusChip>
+                      ) : (
+                        <span className="text-muted-foreground">not installed</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </DataTable>
         </>

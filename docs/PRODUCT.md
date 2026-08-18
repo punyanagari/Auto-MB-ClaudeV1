@@ -1356,6 +1356,14 @@ record cannot answer it. One physical component is consumed into exactly
 one unit, and no more of a part may be scanned into a unit than its bill
 of material calls for.
 
+A serial typed into the global search finds a unit whether or not it has
+reached a Delivery Challan. Before production existed every serial in
+the product came from a challan line and therefore had a Work; a unit
+the factory has built and not yet despatched has neither, and the trace
+says so — its origin, its job card, how much of its genealogy is
+recorded, and whether it has been released — rather than matching
+nothing, which reads exactly like "no such unit".
+
 Neither record is ever UPDATEd — a serial number is stamped on hardware,
 not corrected. A unit recorded in error, and a mis-scanned component, are
 removed while the unit is still in the factory; once it has been
@@ -1363,6 +1371,18 @@ despatched, nothing is removed, because the unit is somewhere else and
 the record is the only account of what is inside it. The refusal comes
 from the reference itself rather than from a guard that has to remember
 to look.
+
+**Dispatch readiness** is derived, never stored, and it is one
+expression: a job card has units ready to leave when it is not
+cancelled, every planned unit has been built, at least one of them is
+still in the factory, and none of those is missing a component serial
+its bill of material calls for. A `completed` card still counts —
+completing means every planned unit was BUILT, which says nothing about
+whether it has shipped, and a completed card holding twelve unreleased
+boards is exactly what the register should surface. A card with nothing
+left to release does not count, because there is nothing to be ready
+for. The register's tile and the job card's own badge read that one
+expression, so the count and the badge it links to cannot disagree.
 
 **Despatch** is the boundary. Named finished units leave the factory on a
 date, and that is all it is: not a Delivery Challan, no consignee, no

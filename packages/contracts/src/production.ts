@@ -148,7 +148,15 @@ export const BomNodeSchema = Type.Object(
 export type BomNode = Static<typeof BomNodeSchema>;
 
 export const BomResponseSchema = Type.Object(
-  { nodes: Type.Array(BomNodeSchema) },
+  {
+    nodes: Type.Array(BomNodeSchema),
+    /** Whether the walk stopped at the depth bound with children unread.
+     *
+     * The cap is not the defect; a bill drawn half-way and presented as
+     * the whole bill is. When this is true the view says so, so nobody
+     * plans a build against a list that quietly stops. */
+    truncated: Type.Boolean(),
+  },
   { additionalProperties: false },
 );
 export type BomResponse = Static<typeof BomResponseSchema>;
@@ -277,15 +285,20 @@ export const FinishedSerialSchema = Type.Object(
 );
 export type FinishedSerial = Static<typeof FinishedSerialSchema>;
 
-/** What one unit still owes: a serial-controlled part, how many the bill
- * of material calls for, and how many have been scanned into THIS unit. */
+/** A serial-controlled part one unit is built from, and how many of it
+ * the bill of material calls for.
+ *
+ * There is no `captured` count here: how many have been scanned into a
+ * given unit is a fact about that UNIT, and it is already on
+ * `FinishedSerial.components`. A second copy on a per-card slot would
+ * have to mean "captured into which unit?" and could only ever answer
+ * for one of them. */
 export const ComponentSlotSchema = Type.Object(
   {
     componentItemId: UuidSchema,
     componentItemCode: Type.String(),
     name: Type.String(),
     required: Type.Integer({ minimum: 1 }),
-    captured: Type.Integer({ minimum: 0 }),
   },
   { additionalProperties: false },
 );

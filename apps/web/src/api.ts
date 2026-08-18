@@ -1296,7 +1296,13 @@ export interface ApiClient {
   ) => Promise<BomResponse>;
   readonly listJobCards: (
     organisationId: string,
-    workId?: string,
+    /** `URLSearchParams` escapes every value, so an id is never
+     * interpolated raw into the path. */
+    query?: {
+      readonly workId?: string;
+      readonly limit?: number;
+      readonly cursor?: string;
+    },
   ) => Promise<JobCardListResponse>;
   readonly getJobCard: (
     organisationId: string,
@@ -3613,13 +3619,15 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
-    async listJobCards(organisationId, workId) {
-      return request<JobCardListResponse>(
-        workId === undefined
-          ? '/api/production/job-cards'
-          : `/api/production/job-cards?workId=${workId}`,
-        { organisationId },
-      );
+    async listJobCards(organisationId, query = {}) {
+      const search = new URLSearchParams();
+      if (query.workId !== undefined) search.set('workId', query.workId);
+      if (query.limit !== undefined) search.set('limit', String(query.limit));
+      if (query.cursor !== undefined) search.set('cursor', query.cursor);
+      const suffix = search.size === 0 ? '' : `?${search.toString()}`;
+      return request<JobCardListResponse>(`/api/production/job-cards${suffix}`, {
+        organisationId,
+      });
     },
     async getJobCard(organisationId, jobCardId) {
       return request<JobCardDetail>(`/api/production/job-cards/${jobCardId}`, {

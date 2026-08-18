@@ -491,16 +491,16 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .mockRejectedValue(new Error('not stubbed')),
     getProductionBom: vi
       .fn<ApiClient['getProductionBom']>()
-      .mockResolvedValue({ nodes: [] }),
+      .mockResolvedValue({ nodes: [], truncated: false }),
     addProductionBomLine: vi
       .fn<ApiClient['addProductionBomLine']>()
-      .mockResolvedValue({ nodes: [] }),
+      .mockResolvedValue({ nodes: [], truncated: false }),
     updateProductionBomLine: vi
       .fn<ApiClient['updateProductionBomLine']>()
-      .mockResolvedValue({ nodes: [] }),
+      .mockResolvedValue({ nodes: [], truncated: false }),
     removeProductionBomLine: vi
       .fn<ApiClient['removeProductionBomLine']>()
-      .mockResolvedValue({ nodes: [] }),
+      .mockResolvedValue({ nodes: [], truncated: false }),
     listJobCards: vi.fn<ApiClient['listJobCards']>().mockResolvedValue({
       jobCards: [],
       nextCursor: null,

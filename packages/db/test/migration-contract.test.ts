@@ -24,7 +24,7 @@ let createdTriggers: string[] = [];
  * happen without somebody typing the new total and, in doing so, asking
  * whether the trigger has a test.
  */
-const TRIGGER_CENSUS = 201;
+const TRIGGER_CENSUS = 203;
 
 /**
  * The one counter table that must NOT carry a monotonicity guard.
@@ -1030,6 +1030,36 @@ describe('tenant migration contract', () => {
     expect(sql).toMatch(/CHECK \(parent_item_id <> component_item_id\)/);
     expect(sql).toContain('CREATE FUNCTION app_private.guard_production_bom_edge()');
     expect(sql).toMatch(/WITH RECURSIVE reachable\(item_id\) AS \(/);
+    // THE DEPTH BOUND MEASURES BOTH DIRECTIONS. Downward only bounds a
+    // bottom-up build and lets a top-down one through entirely, because
+    // the new component is a leaf every time.
+    expect(sql).toMatch(/WITH RECURSIVE ascent\(item_id, height\) AS \(/);
+    expect(sql).toMatch(/WITH RECURSIVE descent\(item_id, depth\) AS \(/);
+    expect(sql).toContain(
+      'IF reached_above + 1 + reached_below > app_private.production_bom_max_depth()',
+    );
+    // The requirement explosion aggregates per level rather than walking
+    // one row per path, so a shared sub-assembly costs rows once.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.production_bom_requirements(org uuid, root uuid)',
+    );
+    expect(sql).toContain('GROUP BY line.component_item_id');
+    // One readiness expression, read by the register tile and the job
+    // card badge alike.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.production_job_card_dispatch_ready(',
+    );
+    expect(sql).toContain('CREATE FUNCTION app_private.production_unit_incomplete(');
+    // The despatch rules hold at the database too, not only at the route.
+    expect(sql).toContain(
+      'CREATE TRIGGER production_dispatches_guard_write\nBEFORE INSERT ON production_dispatches',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER production_dispatch_serials_guard_write\nBEFORE INSERT ON production_dispatch_serials',
+    );
+    // …and an unresolvable organisation date is refused, not defaulted.
+    expect(sql).toContain("USING ERRCODE = '23D17'");
+    expect(sql).toMatch(/IF today IS NULL THEN/);
     // The CYCLE clause is what makes the guard terminate even against
     // stored data that already contains a loop, so the guard can never
     // itself be the thing that hangs.
@@ -1073,7 +1103,10 @@ describe('tenant migration contract', () => {
     // No readiness is STORED. The mock's own fixture disagrees with its
     // own derived shortage on two of three plans, which is the defect a
     // stored copy of a computed fact produces.
-    expect(sql).not.toMatch(/material_short|material_ready|dispatch_ready/);
+    // No stored COLUMN for any of them. `dispatch_ready` appears as the
+    // name of the FUNCTION that derives it, which is the whole point —
+    // what must not exist is a column somebody has to keep in step.
+    expect(sql).not.toMatch(/^\s+(material_short|material_ready|dispatch_ready) /m);
     // …and nothing here writes to a stock table that does not exist yet.
     expect(sql).not.toMatch(/stock_items|stock_ledger/);
 

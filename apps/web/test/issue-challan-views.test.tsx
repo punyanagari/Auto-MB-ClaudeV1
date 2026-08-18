@@ -317,7 +317,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listProductionItems: vi.fn().mockResolvedValue({ items: [] }),
     saveProductionItem: vi.fn(),
     setProductionItemActive: vi.fn(),
-    getProductionBom: vi.fn().mockResolvedValue({ nodes: [] }),
+    getProductionBom: vi.fn().mockResolvedValue({ nodes: [], truncated: false }),
     addProductionBomLine: vi.fn(),
     updateProductionBomLine: vi.fn(),
     removeProductionBomLine: vi.fn(),

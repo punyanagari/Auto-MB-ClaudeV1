@@ -292,6 +292,19 @@ replicating the pixel make the product claim something untrue?
 | 11g | A `nextSerial` figure printed in the item's serial-series well                                        | The series SHAPE (`IPDB6-00000`) and the words "Claimed per unit, gap-free"                                          | The next number is claimed from a counter at the moment a unit is built. Any figure rendered here is stale the instant a second operator builds one, and a wrong next-serial on a screen an operator plans labels from is worse than no figure.                                                           |
 | 11h | A status-free register, with state encoded in the Material badge                                      | The product's status chip, plus the Material badge                                                                   | `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label chip the single vocabulary for record state, and the mock's own fixture shows why one badge cannot carry both readings at once.                                                                                                        |
 
+Two more the review of this pack settled, recorded so the reasoning is
+not re-litigated:
+
+- **The Material column counts parts, and the Materials tab is captioned
+  as a requirement rather than a shortage.** Both say what they are
+  instead of showing an empty Available column that reads as "nothing is
+  short".
+- **The serial trace gains an Origin column** (§ Approved divergences 7's
+  table, extended): a production unit and a delivered one are different
+  kinds of answer, and a unit still on the factory floor has no Work,
+  no challan and no receipt to show. The row says "Private order" or
+  "in the factory" rather than linking nowhere.
+
 Two additions of the application's own, on the same ruling:
 
 - **A withdraw control on a release.** A despatch raised in error would

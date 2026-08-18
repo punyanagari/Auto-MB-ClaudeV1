@@ -30,6 +30,7 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
+import { assertWorkOperable } from '../work-status.js';
 import { financialYearLabel } from '../financial-year.js';
 import { httpError } from '../http.js';
 import { keysetPage, sqlLimit } from '../pagination.js';
@@ -128,11 +129,47 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'PRODUCTION_COMPONENT_SERIAL_INVALID',
     'The unit was despatched or its bill of material changed while the component was being scanned.',
   ],
+  '23D16': [
+    'PRODUCTION_DISPATCH_INVALID',
+    'The job card was cancelled, the date moved past the organisation’s today, or a unit lost a component serial while the release was being recorded.',
+  ],
+  '23D17': [
+    'PRODUCTION_DISPATCH_INVALID',
+    'The organisation has no resolvable calendar date, so a despatch cannot be dated. Set the organisation timezone in Settings.',
+  ],
   '23503': [
     'PRODUCTION_SERIAL_LOCKED',
     'The unit has components consumed into it or has already been despatched, so it can no longer be removed.',
   ],
 };
+
+/**
+ * Every named refusal migration 0084 can raise. The test
+ * `production.integration` asserts that this set is exactly the set of
+ * ERRCODEs in the migration text, so a guard added there without a
+ * mapping here fails the build instead of reaching an operator as a 500.
+ */
+export const PRODUCTION_DATABASE_REFUSAL_CODES: readonly string[] =
+  Object.keys(DATABASE_REFUSALS);
+
+/**
+ * A CHECK violation, mapped rather than surfaced.
+ *
+ * The 23D codes above are the rules this migration states deliberately.
+ * 23514 is everything the COLUMNS refuse — a name that trims to one
+ * character, a part number of forty-one — and without this it arrives as
+ * an unexplained 500. The route trims and length-checks first
+ * (`trimmedField`), so reaching here means a writer got past that; the
+ * answer is still a 400 naming the shape rather than a server error.
+ */
+function isCheckViolation(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    String(error.code) === '23514'
+  );
+}
 
 function rethrowWriteRefusal(error: unknown): never {
   const code =
@@ -141,6 +178,13 @@ function rethrowWriteRefusal(error: unknown): never {
       : '';
   const refusal = DATABASE_REFUSALS[code];
   if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
+  if (isCheckViolation(error)) {
+    throw httpError(
+      400,
+      'PRODUCTION_ITEM_INVALID',
+      'A value in this request is outside the shape its column allows — check the lengths and that nothing is blank.',
+    );
+  }
   throw error;
 }
 
@@ -162,12 +206,52 @@ function isUniqueViolation(error: unknown): boolean {
  * Module-local, as it is in `inspections.ts`, `payments.ts` and
  * `bill-payments.ts`: three lines of SQL repeated is cheaper to read
  * than an import that hides which date a route is asking about.
+ *
+ * An UNRESOLVABLE date is refused, not defaulted. The first version
+ * returned a `9999-12-31` sentinel, which is the worst of both answers:
+ * every future-date check passes, every financial-year label reads
+ * 9999-00, and the operator is told nothing. There is no organisation
+ * without a timezone in practice — the column is NOT NULL — so this
+ * fires only when the row itself is unreachable, and saying so is the
+ * honest answer.
  */
 async function todayOf(tx: TransactionSql, organisationId: string): Promise<string> {
-  const [row] = await tx<{ today: string }[]>`
+  const [row] = await tx<{ today: string | null }[]>`
     select app_private.organisation_today(${organisationId})::text as today
   `;
-  return row?.today ?? '9999-12-31';
+  if (!row?.today) {
+    throw httpError(
+      409,
+      'PRODUCTION_DISPATCH_INVALID',
+      'The organisation has no resolvable calendar date, so this cannot be dated. Set the organisation timezone in Settings.',
+    );
+  }
+  return row.today;
+}
+
+/**
+ * Proves the Work is one this organisation may still act on, after
+ * proving the caller may reach it.
+ *
+ * A completed Work takes no new records — that is what `work-status`
+ * says for every other Work-linked write, and a job card raised against
+ * a Work whose contract is closed is exactly the kind of record the rule
+ * exists to stop. A card with NO Work skips it: there is no Work to be
+ * completed, and a private purchase order is not governed by any Work's
+ * status.
+ */
+async function assertWorkWritable(
+  tx: TransactionSql,
+  userId: string,
+  workId: string,
+  action: string,
+): Promise<void> {
+  await assertWorkAccess(tx, userId, workId);
+  const [work] = await tx<{ status: string }[]>`
+    select status from works where id = ${workId} and deleted_at is null
+  `;
+  if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  assertWorkOperable(work.status, action);
 }
 
 /** `PP-26-081` — the mock's job-card number. Built for display rather
@@ -319,6 +403,7 @@ interface BomRowShape {
   effective_quantity: string;
   serial_controlled: boolean;
   has_children: boolean;
+  pruned: boolean;
 }
 
 /**
@@ -334,7 +419,7 @@ async function readBom(
   tx: TransactionSql,
   organisationId: string,
   rootItemId: string,
-): Promise<readonly BomNode[]> {
+): Promise<{ readonly nodes: readonly BomNode[]; readonly truncated: boolean }> {
   const rows = await tx<BomRowShape[]>`
     with recursive explosion as (
       select line.id as line_id,
@@ -370,36 +455,54 @@ async function readBom(
              select 1 from production_bom_lines below
              where below.organisation_id = ${organisationId}
                and below.parent_item_id = explosion.item_id
-           ) as has_children
+           ) as has_children,
+           -- This node sits at the cap AND has a bill of its own, so the
+           -- walk stopped with children unread. The response says so
+           -- rather than drawing half a bill and calling it the bill.
+           (explosion.depth + 1 >= app_private.production_bom_max_depth()
+            and exists (
+              select 1 from production_bom_lines below
+              where below.organisation_id = ${organisationId}
+                and below.parent_item_id = explosion.item_id
+            )) as pruned
     from explosion
     join production_items item
       on item.organisation_id = ${organisationId} and item.id = explosion.item_id
     where not explosion.is_cycle
     order by explosion.depth, item.name, explosion.line_id
   `;
-  return rows.map((row) => ({
-    lineId: row.line_id,
-    parentLineId: row.parent_line_id,
-    depth: row.depth,
-    itemId: row.item_id,
-    itemCode: row.item_code,
-    name: row.name,
-    unit: row.unit,
-    quantity: row.quantity,
-    effectiveQuantity: row.effective_quantity,
-    serialControlled: row.serial_controlled,
-    hasChildren: row.has_children,
-  }));
+  return {
+    nodes: rows.map((row) => ({
+      lineId: row.line_id,
+      parentLineId: row.parent_line_id,
+      depth: row.depth,
+      itemId: row.item_id,
+      itemCode: row.item_code,
+      name: row.name,
+      unit: row.unit,
+      quantity: row.quantity,
+      effectiveQuantity: row.effective_quantity,
+      serialControlled: row.serial_controlled,
+      hasChildren: row.has_children,
+    })),
+    truncated: rows.some((row) => row.pruned),
+  };
 }
 
 /**
  * What the whole job card asks of each distinct part.
  *
- * The explosion is per unit of the product; this multiplies by the
- * planned quantity and folds repeats of one part together, which is the
- * mock's `planMaterial` minus the stock half it cannot have yet. The
- * arithmetic is done in SQL over `numeric`, not in JavaScript, because
- * quantities are decimal (AGENTS.md rule 5).
+ * The explosion is `app_private.production_bom_requirements`, which
+ * aggregates per LEVEL rather than enumerating paths. The recursive CTE
+ * that used to live here walked one row per path, so a bill of material
+ * where two sub-assemblies share a part — the ordinary case, not a
+ * pathological one — doubled its row count at every level the part
+ * reappeared, and it ran on every read of a job card under that card's
+ * row lock. A ten-level shared lattice measured 1022 rows against the
+ * function's 18, for the same arithmetic.
+ *
+ * The multiplication by the planned quantity stays in SQL over
+ * `numeric`; nothing here touches floating point (AGENTS.md rule 5).
  */
 async function readMaterials(
   tx: TransactionSql,
@@ -417,29 +520,13 @@ async function readMaterials(
       serial_controlled: boolean;
     }[]
   >`
-    with recursive explosion as (
-      -- Same domain cast as the explosion above, for the same reason.
-      select line.component_item_id as item_id,
-             line.quantity::numeric as effective_quantity
-      from production_bom_lines line
-      where line.organisation_id = ${organisationId}
-        and line.parent_item_id = ${itemId}
-      union all
-      select child.component_item_id,
-             explosion.effective_quantity * child.quantity
-      from production_bom_lines child
-      join explosion on explosion.item_id = child.parent_item_id
-      where child.organisation_id = ${organisationId}
-    ) cycle item_id set is_cycle using path
-    select explosion.item_id, item.item_code, item.name, item.unit,
-           (sum(explosion.effective_quantity) * ${quantity})::text as required,
+    select requirement.item_id, item.item_code, item.name, item.unit,
+           (requirement.quantity_per_unit * ${quantity})::text as required,
            item.serial_controlled
-    from explosion
+    from app_private.production_bom_requirements(${organisationId}, ${itemId})
+      as requirement
     join production_items item
-      on item.organisation_id = ${organisationId} and item.id = explosion.item_id
-    where not explosion.is_cycle
-    group by explosion.item_id, item.item_code, item.name, item.unit,
-             item.serial_controlled
+      on item.organisation_id = ${organisationId} and item.id = requirement.item_id
     order by item.name
   `;
   return rows.map((row) => ({
@@ -494,7 +581,6 @@ async function readComponentSlots(
     componentItemCode: row.item_code,
     name: row.name,
     required: row.required,
-    captured: 0,
   }));
 }
 
@@ -620,20 +706,18 @@ async function readJobCardDetail(
     readComponentSlots(tx, organisationId, row.item_id),
     readDispatches(tx, organisationId, jobCardId, summary.number),
   ]);
-  // The mock's `dispatch-ready`, derived: every planned unit exists, and
-  // every unit that has not yet left carries the components its bill
-  // calls for. A stored flag is what its own fixture contradicts.
-  const dispatchReady =
-    summary.manufactured >= summary.quantity &&
-    summary.quantity > 0 &&
-    serials.every((unit) =>
-      slots.every(
-        (slot) =>
-          unit.components.filter(
-            (component) => component.componentItemId === slot.componentItemId,
-          ).length >= slot.required,
-      ),
-    );
+  // Readiness comes from `app_private.production_job_card_dispatch_ready`,
+  // the SAME expression the register's tile counts with. It used to be
+  // computed here in TypeScript while the tile counted something else in
+  // SQL, so a card could appear under "Dispatch ready" and then say
+  // "Units outstanding" when opened — which is precisely the
+  // self-contradiction `docs/UX.md` § 11b accuses the mock of.
+  const [readiness] = await tx<{ ready: boolean }[]>`
+    select app_private.production_job_card_dispatch_ready(
+      ${organisationId}, ${jobCardId}
+    ) as ready
+  `;
+  const dispatchReady = readiness?.ready ?? false;
   return {
     ...summary,
     materials: [...materials],
@@ -886,7 +970,7 @@ export function registerProductionRoutes(
       const { id } = request.params;
       return tenant(async (tx) => {
         await assertItemExists(tx, id);
-        return { nodes: [...(await readBom(tx, organisationId, id))] };
+        return await readBom(tx, organisationId, id);
       });
     },
   );
@@ -905,7 +989,7 @@ export function registerProductionRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
       const body = request.body;
-      const nodes = await tenant(async (tx) => {
+      const bom = await tenant(async (tx) => {
         await assertItemExists(tx, id);
         const [line] = await tx<{ id: string }[]>`
           insert into production_bom_lines (
@@ -939,7 +1023,7 @@ export function registerProductionRoutes(
         );
         return await readBom(tx, organisationId, id);
       });
-      return reply.status(201).send({ nodes: [...nodes] });
+      return reply.status(201).send(bom);
     },
   );
 
@@ -976,9 +1060,7 @@ export function registerProductionRoutes(
           id,
           { quantity },
         );
-        return {
-          nodes: [...(await readBom(tx, organisationId, updated.parent_item_id))],
-        };
+        return await readBom(tx, organisationId, updated.parent_item_id);
       });
     },
   );
@@ -1010,9 +1092,7 @@ export function registerProductionRoutes(
           id,
           { parentItemId: removed.parent_item_id },
         );
-        return {
-          nodes: [...(await readBom(tx, organisationId, removed.parent_item_id))],
-        };
+        return await readBom(tx, organisationId, removed.parent_item_id);
       });
     },
   );
@@ -1061,10 +1141,9 @@ export function registerProductionRoutes(
             count(*) filter (where j.status = 'in_production')::int
               as in_production_count,
             count(*) filter (
-              where j.status = 'in_production'
-                and (select count(*) from production_serials s
-                      where s.organisation_id = j.organisation_id
-                        and s.job_card_id = j.id) >= j.quantity)::int as ready_count
+              where app_private.production_job_card_dispatch_ready(
+                j.organisation_id, j.id
+              ))::int as ready_count
           from production_job_cards j
           where ${scope}
         `;
@@ -1111,8 +1190,10 @@ export function registerProductionRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
       const detail = await tenant(async (tx) => {
-        const sourceReference = requireTrimmed(
+        const sourceReference = trimmedField(
           body.sourceReference,
+          1,
+          200,
           'Name the schedule line or purchase order this job card is for.',
         );
         const customerName = optionalTrimmed(body.customerName);
@@ -1126,7 +1207,12 @@ export function registerProductionRoutes(
           );
         }
         if (body.workId !== undefined) {
-          await assertWorkAccess(tx, user.id, body.workId);
+          await assertWorkWritable(
+            tx,
+            user.id,
+            body.workId,
+            'raising a job card against it',
+          );
         }
         const fyLabel = financialYearLabel(await todayOf(tx, organisationId));
         // The house counter upsert (0001's challan counters): the number
@@ -1192,11 +1278,13 @@ export function registerProductionRoutes(
       const { id } = request.params;
       const body = request.body;
       return tenant(async (tx) => {
-        const sourceReference = requireTrimmed(
+        const sourceReference = trimmedField(
           body.sourceReference,
+          1,
+          200,
           'Name the schedule line or purchase order this job card is for.',
         );
-        await assertJobCardAccess(tx, user.id, id);
+        await assertJobCardAccess(tx, user.id, id, 'revising a job card on it');
         const [updated] = await tx<{ id: string }[]>`
           update production_job_cards
           set quantity = ${body.quantity}, source_reference = ${sourceReference},
@@ -1232,7 +1320,9 @@ export function registerProductionRoutes(
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       return tenant(async (tx) => {
-        const card = await lockJobCard(tx, user.id, id);
+        const card = await lockJobCard(tx, user.id, id, {
+          operableFor: 'completing a job card on it',
+        });
         if (card.status !== 'in_production') {
           throw httpError(
             409,
@@ -1287,9 +1377,11 @@ export function registerProductionRoutes(
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       return tenant(async (tx) => {
-        const reason = requireTrimmed(
+        const reason = trimmedField(
           request.body.reason,
-          'Say why the job card is being cancelled.',
+          3,
+          500,
+          'Say why the job card is being cancelled, in at least three characters.',
         );
         const card = await lockJobCard(tx, user.id, id);
         if (card.status === 'completed' || card.status === 'cancelled') {
@@ -1333,7 +1425,9 @@ export function registerProductionRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
       const detail = await tenant(async (tx) => {
-        const card = await lockJobCard(tx, user.id, id);
+        const card = await lockJobCard(tx, user.id, id, {
+          operableFor: 'recording a unit on it',
+        });
         if (card.status === 'completed' || card.status === 'cancelled') {
           throw httpError(
             409,
@@ -1433,7 +1527,9 @@ export function registerProductionRoutes(
         if (!unit) {
           throw httpError(404, 'PRODUCTION_SERIAL_NOT_FOUND', 'No such unit.');
         }
-        await lockJobCard(tx, user.id, unit.job_card_id);
+        await lockJobCard(tx, user.id, unit.job_card_id, {
+          operableFor: 'recording units on it',
+        });
         // The unit's number is NOT released: the counter never rewinds,
         // because the label was already printed.
         await tx`
@@ -1468,8 +1564,10 @@ export function registerProductionRoutes(
       const { id } = request.params;
       const body = request.body;
       const detail = await tenant(async (tx) => {
-        const serialNumber = requireTrimmed(
+        const serialNumber = trimmedField(
           body.serialNumber,
+          1,
+          100,
           'Scan or type the component serial.',
         );
         const [unit] = await tx<{ job_card_id: string }[]>`
@@ -1478,7 +1576,9 @@ export function registerProductionRoutes(
         if (!unit) {
           throw httpError(404, 'PRODUCTION_SERIAL_NOT_FOUND', 'No such unit.');
         }
-        await lockJobCard(tx, user.id, unit.job_card_id);
+        await lockJobCard(tx, user.id, unit.job_card_id, {
+          operableFor: 'recording units on it',
+        });
         const [recorded] = await tx<{ id: string }[]>`
           insert into production_component_serials (
             organisation_id, finished_serial_id, component_item_id,
@@ -1542,7 +1642,9 @@ export function registerProductionRoutes(
             'No such component record.',
           );
         }
-        await lockJobCard(tx, user.id, row.job_card_id);
+        await lockJobCard(tx, user.id, row.job_card_id, {
+          operableFor: 'recording units on it',
+        });
         await tx`
           delete from production_component_serials where id = ${id}
         `.catch(rethrowWriteRefusal);
@@ -1578,7 +1680,9 @@ export function registerProductionRoutes(
       const body = request.body;
       const detail = await tenant(async (tx) => {
         const remarks = optionalTrimmed(body.remarks);
-        const card = await lockJobCard(tx, user.id, id);
+        const card = await lockJobCard(tx, user.id, id, {
+          operableFor: 'releasing units on it',
+        });
         if (card.status === 'cancelled') {
           throw httpError(
             409,
@@ -1724,7 +1828,9 @@ export function registerProductionRoutes(
         if (!dispatch) {
           throw httpError(404, 'PRODUCTION_DISPATCH_NOT_FOUND', 'No such despatch.');
         }
-        await lockJobCard(tx, user.id, dispatch.job_card_id);
+        await lockJobCard(tx, user.id, dispatch.job_card_id, {
+          operableFor: 'withdrawing a release on it',
+        });
         // Lines first: nothing cascades, deliberately. When Inventory's
         // stock ledger references the header (migration 0084 § 7), that
         // foreign key is what refuses this delete, and a cascade would
@@ -1775,6 +1881,30 @@ function jobCardNotFound(): Error {
 /** Trims the request's strings and settles the manufactured item's
  * implied fields, so the CHECK in migration 0084 is met by a route that
  * said why rather than by a 23514 the caller reads as a 500. */
+/**
+ * A trust-boundary string, trimmed AND length-checked against the shape
+ * its column allows.
+ *
+ * `requireTrimmed` refuses a value of nothing but spaces, which is not
+ * the whole of the problem: a schema's `minLength: 2` is measured BEFORE
+ * trimming, so `' a '` passes the contract, reaches the column as `'a'`,
+ * and the CHECK refuses it as a 23514 the caller reads as a 500. The
+ * bound is re-applied here, on the trimmed value, which is the value the
+ * column will actually see.
+ */
+function trimmedField(
+  value: string,
+  min: number,
+  max: number,
+  refusal: string,
+): string {
+  const trimmed = requireTrimmed(value, refusal);
+  if (trimmed.length < min || trimmed.length > max) {
+    throw httpError(400, 'FIELD_TOO_SHORT', refusal);
+  }
+  return trimmed;
+}
+
 function itemFieldsOf(body: {
   itemCode: string;
   name: string;
@@ -1802,17 +1932,37 @@ function itemFieldsOf(body: {
       'A manufactured item needs a serial series, because every unit it produces is named from it.',
     );
   }
+  // Trimmed and then bounded, for the reason `trimmedField` states: the
+  // jsonb CHECK measures the stored value, and a blank pair is dropped
+  // rather than refused because the form leaves one behind whenever an
+  // operator adds a row and changes their mind.
   const specifications = (body.specifications ?? [])
     .map((spec) => ({ attribute: spec.attribute.trim(), value: spec.value.trim() }))
-    .filter((spec) => spec.attribute.length > 0 && spec.value.length > 0);
+    .filter((spec) => spec.attribute.length > 0 && spec.value.length > 0)
+    .map((spec) => ({
+      attribute: spec.attribute.slice(0, 100),
+      value: spec.value.slice(0, 200),
+    }));
   return {
-    itemCode: requireTrimmed(
+    itemCode: trimmedField(
       body.itemCode,
-      'Give the item a part number.',
+      2,
+      40,
+      'Give the item a part number of two to forty characters.',
     ).toUpperCase(),
-    name: requireTrimmed(body.name, 'Give the item a name.'),
-    category: requireTrimmed(body.category, 'Give the item a category.'),
-    unit: requireTrimmed(body.unit, 'Give the item a unit.'),
+    name: trimmedField(
+      body.name,
+      2,
+      200,
+      'Give the item a name of at least two characters.',
+    ),
+    category: trimmedField(
+      body.category,
+      2,
+      100,
+      'Give the item a category of at least two characters.',
+    ),
+    unit: trimmedField(body.unit, 1, 20, 'Give the item a unit.'),
     manufactured: body.manufactured,
     serialPrefix: serialPrefix ?? null,
     // A manufactured item is always serial controlled: the CHECK in
@@ -1854,6 +2004,7 @@ async function lockJobCard(
   tx: TransactionSql,
   userId: string,
   jobCardId: string,
+  options: { readonly operableFor?: string } = {},
 ): Promise<LockedJobCard> {
   const [card] = await tx<
     {
@@ -1872,7 +2023,16 @@ async function lockJobCard(
     for update
   `;
   if (!card) throw jobCardNotFound();
-  if (card.work_id !== null) await assertWorkAccess(tx, userId, card.work_id);
+  // Reading a card is not writing to it, so the operable check belongs to
+  // the callers that mutate — `lockJobCard` is taken by the detail read
+  // too. Access is proved either way.
+  if (card.work_id !== null) {
+    if (options.operableFor === undefined) {
+      await assertWorkAccess(tx, userId, card.work_id);
+    } else {
+      await assertWorkWritable(tx, userId, card.work_id, options.operableFor);
+    }
+  }
   return {
     id: card.id,
     number: jobCardNumberOf(card.fy_label, card.sequence_number),
@@ -1886,6 +2046,7 @@ async function assertJobCardAccess(
   tx: TransactionSql,
   userId: string,
   jobCardId: string,
+  operableFor: string,
 ): Promise<void> {
-  await lockJobCard(tx, userId, jobCardId);
+  await lockJobCard(tx, userId, jobCardId, { operableFor });
 }

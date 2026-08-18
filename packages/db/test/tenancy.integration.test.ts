@@ -1549,7 +1549,11 @@ async function seedTenantGraph(
         created_by_user_id
       )
       values (
-        ${organisationId}, ${jobCard.id}, 1, '2026-09-01', ${userId}
+        ${organisationId}, ${jobCard.id}, 1,
+        -- The despatch guard (0084) refuses a date after the
+        -- organisation's own today, so the seed dates it in the past
+        -- rather than pinning a future day that goes stale.
+        current_date - 1, ${userId}
       )
       returning id
     `;

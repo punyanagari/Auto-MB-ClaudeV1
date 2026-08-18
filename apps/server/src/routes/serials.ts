@@ -224,11 +224,74 @@ export function registerSerialRoutes(
           order by s.serial_number, s.id
           limit ${SEARCH_LIMIT + 1}
         `;
-        const truncated = rows.length > SEARCH_LIMIT;
-        return {
-          matches: rows.slice(0, SEARCH_LIMIT).map((row): SerialSearchMatch => ({
+        /* THE PRODUCTION HALF (migration 0084).
+         *
+         * A serial an operator types into search is a number off a
+         * nameplate, and they do not know — and should not have to know
+         * — whether the unit has reached a Delivery Challan yet. Before
+         * this, a unit the factory had built and not yet despatched
+         * matched nothing at all, which is the worst possible answer:
+         * indistinguishable from "no such unit".
+         *
+         * Organisation-scoped by RLS, and work-scoped the same way the
+         * delivery half is, with the one difference the schema forces —
+         * a job card with no Work belongs to nobody in particular and
+         * has organisation-wide reach, exactly as the production
+         * register reads it.
+         */
+        const productionRows = await tx<
+          {
+            id: string;
+            serial_number: string;
+            work_id: string | null;
+            work_code: string | null;
+            work_title: string | null;
+            item_description: string;
+            job_card_id: string;
+            job_card_number: string;
+            components_captured: number;
+            genealogy_complete: boolean;
+            released_on: string | null;
+          }[]
+        >`
+          select s.id, s.serial_number,
+                 j.work_id, w.work_code, w.title as work_title,
+                 item.name as item_description,
+                 j.id as job_card_id,
+                 'PP-' || substr(j.fy_label, 3, 2) || '-' ||
+                   lpad(j.sequence_number::text, 3, '0') as job_card_number,
+                 (select count(*)::int from production_component_serials c
+                   where c.organisation_id = s.organisation_id
+                     and c.finished_serial_id = s.id) as components_captured,
+                 not app_private.production_unit_incomplete(
+                   s.organisation_id, s.id
+                 ) as genealogy_complete,
+                 d.dispatched_on::text as released_on
+          from production_serials s
+          join production_job_cards j
+            on j.organisation_id = s.organisation_id and j.id = s.job_card_id
+          join production_items item
+            on item.organisation_id = s.organisation_id and item.id = s.item_id
+          left join works w on w.organisation_id = j.organisation_id and w.id = j.work_id
+          left join production_dispatch_serials ds
+            on ds.organisation_id = s.organisation_id and ds.production_serial_id = s.id
+          left join production_dispatches d
+            on d.organisation_id = ds.organisation_id and d.id = ds.production_dispatch_id
+          where s.serial_number ilike ${pattern}
+            and (${full} or j.work_id is null or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = j.work_id and wa.user_id = ${user.id}
+            ))
+          order by s.serial_number, s.id
+          limit ${SEARCH_LIMIT + 1}
+        `;
+
+        const deliveryMatches = rows
+          .slice(0, SEARCH_LIMIT)
+          .map((row): SerialSearchMatch => ({
             id: row.id,
             serialNumber: row.serial_number,
+            source: 'delivery',
             workId: row.work_id,
             workCode: row.work_code,
             workTitle: row.work_title,
@@ -241,7 +304,37 @@ export function registerSerialRoutes(
             installedOn: row.installed_on,
             installationId: row.installation_id,
             installationLocation: row.installation_location,
-          })),
+          }));
+        const productionMatches = productionRows
+          .slice(0, SEARCH_LIMIT)
+          .map((row): SerialSearchMatch => ({
+            id: row.id,
+            serialNumber: row.serial_number,
+            source: 'production',
+            workId: row.work_id,
+            workCode: row.work_code,
+            workTitle: row.work_title,
+            itemDescription: row.item_description,
+            // A unit that has not been despatched has no challan, and
+            // saying so with nulls beats inventing one.
+            challanId: null,
+            challanNumber: null,
+            challanDate: null,
+            challanStatus: null,
+            receiptRecorded: false,
+            installedOn: null,
+            jobCardId: row.job_card_id,
+            jobCardNumber: row.job_card_number,
+            componentsCaptured: row.components_captured,
+            genealogyComplete: row.genealogy_complete,
+            releasedOn: row.released_on,
+          }));
+        const truncated =
+          rows.length > SEARCH_LIMIT || productionRows.length > SEARCH_LIMIT;
+        return {
+          matches: [...deliveryMatches, ...productionMatches].sort((left, right) =>
+            left.serialNumber.localeCompare(right.serialNumber),
+          ),
           truncated,
         };
       });
