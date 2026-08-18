@@ -214,7 +214,7 @@ export function PlatformSettings({
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <StatusChip status={flag.enabled ? 'active' : 'paused'} />
+              <StatusChip status={flag.enabled ? 'active' : 'disabled'} />
               <Button
                 variant="outline"
                 size="sm"
@@ -285,7 +285,21 @@ export function PlatformSettings({
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  <StatusChip status={schedule.enabled ? 'active' : 'paused'} />
+                  {/* Two different kinds of "off", and they must not read
+                      the same. A check the SCHEDULER stopped is work to
+                      do, which is `paused` — the same reading 0092 gives
+                      a throttled template. One an operator stopped is
+                      inert, which is `disabled`: unmapped and neutral BY
+                      DECISION, recorded beside `paused` in ui/chip.tsx. */}
+                  <StatusChip
+                    status={
+                      schedule.enabled
+                        ? 'active'
+                        : schedule.disabledReason !== null
+                          ? 'paused'
+                          : 'disabled'
+                    }
+                  />
                   <Button
                     variant="outline"
                     size="sm"

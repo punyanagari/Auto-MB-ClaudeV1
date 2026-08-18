@@ -212,6 +212,18 @@ const FEATURES = [
     change: 'Payroll authority',
   },
   {
+    /* The notifications authority (migration 0092): who may configure the
+       WhatsApp and email channels, maintain the message templates, record
+       a recipient's consent and send a message. Separate from the issue
+       authority because choosing the number the organisation speaks from,
+       and deciding who else may be messaged, is not the same decision as
+       committing the words of a document. */
+    key: 'canManageNotifications',
+    heading: 'Can message',
+    authority: 'Notifications authority',
+    change: 'Notifications authority',
+  },
+  {
     /* The entitlements authority (migration 0096). OWNER-ONLY IN EFFECT:
        every route carrying it also requires the owner role, so granting
        it to a non-owner is not an error and confers nothing — it is the

@@ -17,6 +17,39 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v25: notifications (0092) join the package — the channels the
+ * organisation speaks through, the templates it may say, the consent that
+ * permits each recipient to be spoken to, and every message it sent.
+ *
+ * THE CONSENT REGISTER IS THE POINT OF THIS SECTION. An organisation
+ * asked years later to show that it had permission to message a
+ * counterparty needs the agreement, the address it was given for, the
+ * words the member wrote down about how it was obtained, and the date —
+ * and unlike a challan there is no counterparty holding a copy. The
+ * delivery log is its other half: it says what was actually sent, to
+ * which address, and whether the handset acknowledged it.
+ *
+ * Nothing is withheld and nothing needs to be, because there was never a
+ * credential to withhold: the WhatsApp access token, the Meta app secret
+ * and the SMTP password are deployment environment held inside an
+ * injected adapter (`notify/transport.ts`), so `select *` publishes
+ * identity — a phone number id, a display number, a sender address — and
+ * no secret. That is a property of the schema rather than of this query,
+ * which is why it is stated here rather than defended by naming columns
+ * as `signingAgents` has to.
+ *
+ * The RENDERED text of a message is absent because it was never stored:
+ * a message row carries the template it was rendered from and the ordered
+ * parameter values, and the text is reproducible from the two. An export
+ * carrying one fewer copy of a recipient's personal data is the right
+ * trade when the copy is derivable.
+ *
+ * v24 (signing) is the pack of this wave that landed ahead of it. The
+ * numbers were ALLOCATED by the coordinator rather than claimed on merge,
+ * for the reason the v15, v17 and v21 notes record at length: a version
+ * string identifies a format, two formats sharing one string is the
+ * failure that matters, and a gap is not.
+ *
  * export-v28: the platform controls (0096) join the package — the
  * organisation's module entitlements, its recurring statutory schedules,
  * and the register of the exports it has taken of itself.
@@ -47,12 +80,14 @@ const errorResponses = {
  * string identifies a format, two formats sharing one string is the
  * failure that matters, and a gap is not.
  *
- * ONE FIX RIDES WITH IT, and it is not this pack's own. The `members`
- * section listed every authority column except `can_sign_documents`,
- * which migration 0091 added: a restored organisation came back unable to
- * sign, with nobody able to see why, which is precisely the failure that
- * section's own comment warns about. This version restores it alongside
- * the two columns 0096 adds.
+ * TWO FIXES RIDE WITH IT, and neither is this pack's own. The `members`
+ * section listed every authority column except `can_sign_documents`
+ * (migration 0091) and `can_manage_notifications` (0092): a restored
+ * organisation came back unable to sign and unable to message, with
+ * nobody able to see why, which is precisely the failure that section's
+ * own comment warns about. This version restores both alongside the two
+ * columns 0096 adds — and the pattern is now three for three, so the
+ * next authority to be added should be added HERE in the same commit.
  *
  * export-v24: the signing trail (0091, ADR-0012) joins the package — the
  * kiosk credentials, and every request to put the organisation's own
@@ -343,6 +378,7 @@ const SECTIONS: readonly ExportSection[] = [
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
                  can_sign_documents, can_manage_payroll,
+                 can_manage_notifications,
                  can_manage_entitlements, can_export_org,
                  status, created_at
           from organisation_memberships
@@ -1001,6 +1037,38 @@ const SECTIONS: readonly ExportSection[] = [
             ]
           : [],
     },
+  },
+  {
+    // The channels an organisation speaks through (0092). `select *`
+    // publishes no secret, because the schema holds none: the access
+    // token, the app secret and the mail password are the deployment's
+    // and live inside the injected adapter.
+    key: 'notificationChannels',
+    sql: `select * from notification_channels order by channel`,
+  },
+  {
+    // What the organisation is allowed to say (0092), before the messages
+    // that name it. Every logged message renders from one of these, so a
+    // package carrying the log without the templates would say that
+    // something was sent and not what.
+    key: 'notificationTemplates',
+    sql: `select * from notification_templates order by name, language, id`,
+  },
+  {
+    // The consent register (0092). The most load-bearing section of this
+    // pack: an organisation asked to show it had permission to message a
+    // counterparty has nowhere else to look, because unlike a challan
+    // there is no counterparty holding a copy.
+    key: 'notificationConsents',
+    sql: `select * from notification_consents order by recorded_at, id`,
+  },
+  {
+    // The delivery log (0092). What was sent, to which address, and what
+    // became of it. The rendered text is absent because it was never
+    // stored — the template above plus `parameters` reproduce it.
+    key: 'notificationMessages',
+    sql: `select * from notification_messages order by queued_at, id`,
+    jsonbColumns: ['parameters'],
   },
   {
     // Maintenance (0088). Five sections, and every one of them is load

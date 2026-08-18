@@ -1517,6 +1517,87 @@ test('the signing queue passes the axe scan', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open signed PDF' })).toBeVisible();
 });
 
+test('the notifications screen passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  // The shared contact master answers empty, which is the state the stock
+  // shortage scan needs. Both write forms here pick a contact from it, so
+  // a later, more specific handler gives this screen one to pick — a
+  // disabled submit is a different contrast state from an enabled one,
+  // and the enabled one is what an operator actually meets.
+  await page.route('**/api/masters/contacts*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        contacts: [
+          {
+            id: '44444444-0092-4000-8000-000000000000',
+            designation: 'Sr. DEE (G) CR Nagpur',
+            contactPerson: null,
+            address: null,
+            phone: null,
+            email: null,
+            gstin: null,
+            pincode: null,
+            stateCode: null,
+            isConsignee: true,
+            isVendor: false,
+            isClient: false,
+            isEmployee: false,
+            active: true,
+          },
+        ],
+      }),
+    }),
+  );
+  await page.goto('/#/notifications');
+
+  /* Notifications (0092). Its own top-level test rather than a leg of an
+     existing journey, for the reason the signing queue took its own: the
+     big picker journey is already budgeted with test.slow().
+
+     Scanned with every tint on screen at once. Four sections, and the
+     colour is entirely in their chips: an ENABLED channel whose
+     deployment has no transport draws a success lamp and a warning lamp
+     side by side — the one state on this screen with no precedent in the
+     mock — and the template list and the delivery log carry every status
+     word that tints, including the two that deliberately read neutral. */
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  await expect(page.getByText('+919000000001')).toBeVisible();
+  await expect(page.getByText('no transport')).toBeVisible();
+  for (const label of ['approved', 'pending', 'rejected', 'paused', 'draft']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  for (const label of ['queued', 'sent', 'delivered', 'read', 'failed']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByText('opted in').first()).toBeVisible();
+  await expect(page.getByText('opted out').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'notifications registers');
+
+  /* Every form on the screen, opened together. A form is where label
+     association and focus order actually fail, and these four are
+     different shapes: a field row plus a checkbox, a select with a
+     textarea, a three-select row, and a two-select row. The per-row
+     status control is drawn already — its select and its conditional
+     reason box are the only controls on this screen that appear INSIDE a
+     table cell, which is where a label that is only visually adjacent
+     stops being a label at all. */
+  await page.getByRole('button', { name: 'Change WhatsApp settings' }).click();
+  await page.getByRole('button', { name: 'Write a template' }).click();
+  await page.getByRole('button', { name: 'Record a consent' }).click();
+  await page.getByRole('button', { name: 'Send a message' }).click();
+  await expect(page.getByLabel('Phone number id')).toBeVisible();
+  await expect(page.getByLabel('Body')).toBeVisible();
+  await expect(page.getByLabel('How it was obtained')).toBeVisible();
+  await expect(page.getByLabel('Parameters')).toBeVisible();
+  // The reason box only exists for the three statuses Meta explains, so
+  // it is opened deliberately rather than left to chance.
+  await page.getByLabel('New status for payment_due').selectOption('disabled');
+  await expect(page.getByLabel('What Meta said about payment_due')).toBeVisible();
+  await expectNoAxeViolations(page, 'notifications forms');
+});
+
 test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/settings');

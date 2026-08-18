@@ -695,6 +695,132 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
+### 17. Notifications — a screen the mock does not draw
+
+**Status: PROPOSED. Application-first, owner ruling not yet taken.**
+Numbered 17 by coordinator allocation; 14, 15 and 16 belong to the packs
+that landed ahead of it.
+
+**There is no mock citation for this screen, and this entry exists so
+that absence is a recorded decision rather than an omission a reviewer
+has to guess at.** `app/settings/page.tsx` at
+`punyanagari/Auto-MB-Vercel-du@fdfd610` has five tabs — Company,
+Documents, Digital signatures, Appearance, Account & organisations — and
+none of them is this. `components/app-topbar.tsx` draws a bell with a
+"2 notifications" tooltip, but that is an in-app alert badge and not the
+outbound messaging this pack is about; nothing in the mock models a
+channel, a template, a consent or a delivery.
+
+That puts the screen under § Design contract 4 — "behaviour the mock
+cannot express is built inside the mock's visual grammar using its
+existing components, without inventing new visual language" — and
+§ Approved divergences 4, "screens the mock does not cover", whose list
+this extends. Concretely, every element on it is one the mock already
+ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Section panels          | `Card` + `CardHeader`, one per section, as `app/settings/page.tsx` stacks its own   |
+| Templates, consent, log | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Collapsed forms         | `Disclosure`, the same anatomy the Settings number-series editor uses               |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+**Four chip words join the shared vocabulary** rather than being styled
+locally, because each means the same thing wherever it appears:
+`delivered` and `read` join the success family beside `paid` and
+`signed` — a message that reached the handset and one the recipient
+opened are both the proceed state of a delivery; `queued` joins the
+notice family beside `pending` and `sent`, because a message waiting on
+a provider is a queue and not a caution; and `paused` joins the warning
+family beside `in-production`, because a template Meta throttled for
+quality is work to do rather than something that failed. Unmapped, all
+four rendered neutral — identical to a draft, which is the one reading
+they must not have.
+
+**Three pairs are toned LOCALLY instead**, per `ui/chip.tsx`'s own rule
+that a word whose meaning is screen-specific must not enter the shared
+map: `enabled`/`disabled` for a channel, and `opted in`/`opted out` for a
+consent. "Enabled" is not a lifecycle stage anywhere else in the product,
+and an opted-out contact is a deliberate, correct state rather than a
+cancellation — so it is neutral, not destructive.
+
+**One thing on this screen has no precedent in the mock, and it is
+deliberate: a channel can show two lamps at once.** A channel that the
+organisation has switched on, on a deployment that has no access token or
+no mail relay, draws its green `enabled` chip AND an amber `no transport`
+chip beside it, with a sentence naming who to ask. The two facts belong
+to two different people — Meta's onboarding is the agency's, the server's
+environment is the administrator's — and they genuinely come true months
+apart. A single lamp would have to lie about one of them, and a green one
+over a server that cannot send is the worse lie.
+
+**Every control the feature needs is on this screen, and the first draft
+of it shipped without three of them.** That is recorded here rather than
+quietly fixed, because the shape of the mistake is one this document
+exists to catch: four read-only registers whose empty states instructed
+an operator to record a Meta status, record a consent and send a
+message — none of which the screen could do. Nothing could leave `draft`,
+so WhatsApp refused everything; no consent row could be created, so both
+channels refused everything. The feature was unreachable from the product
+it was in while every one of its API routes worked perfectly.
+
+The three controls are:
+
+| Control               | Where                          | Why there                                                                                 |
+| --------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
+| Record what Meta said | A cell on each template row    | The status belongs to one template, and a separate form would need to name which          |
+| Record a consent      | A `Disclosure` in the register | Consent is per channel AND per address; a checkbox on a contact row could express neither |
+| Send a message        | A `Disclosure` in the log      | It is the only send in the product today, so without it the log can never hold a row      |
+
+The status control offers exactly the moves migration 0092's guard
+admits, so anything it draws is something the server accepts, and the
+reason box appears only for the three statuses Meta actually explains.
+The send form has no address field, and that absence is the consent rule
+made visible: the address comes from the consent record, and a caller who
+could pass one could send somewhere nobody agreed to.
+
+**What the screen still deliberately does not do:**
+
+- **Send from a document.** Sending a _document_ belongs on the document
+  being sent, and that is the next pack's outcome. The send form here is
+  the operator's own — proving a channel works, and messaging a
+  counterparty about something with no document behind it. When document
+  delivery lands, it adds a button to the challan, not a second picker
+  here.
+- **Poll Meta for template status.** The status is recorded by a member
+  reading the Meta console. There is no WABA to poll yet, and a screen
+  that pretended to poll one would be drawing a mechanism that does not
+  exist.
+- **Page any of the four registers.** Each reads the first fifty rows and
+  says so when there are more. A paging control on a register nobody has
+  filled is furniture; the honest upgrade when an organisation reaches
+  fifty templates is a cursor button, not a redesign.
+- **Read inbound replies.** The webhook ignores them. What a reply of
+  "STOP" does to a consent record is an owner's rule to state, and until
+  it is stated the register shows only what a member recorded.
+
+**Where it sits.** Administration, between Members and Settings, with the
+`MessageSquare` lamp — the one icon on that rail not already spoken for.
+Administration rather than Documents because it configures how the
+organisation speaks, in the same family as who belongs to it and how it
+is set up. It is NOT a sixth tab inside Settings: the delivery log and
+the consent register are registers people go looking for, and a register
+behind a tab behind a settings page is a register nobody finds.
+
+**Gated at the screen, not at a control.** Every read this view makes
+needs the notifications authority — the consent register is a list of
+counterparties' personal telephone numbers and the delivery log says who
+was messaged — so a member without it gets a refusal panel rather than
+four failed loads. The rail door stays visible, unlike Employees': that
+door leaks that a salary register exists, and this one leaks nothing an
+ordinary member should not know the product has.
+
+**When the mock grows a notifications screen, the mock wins.** This entry
+retires the moment there is something to cite, on the § 4 iteration
+pipeline: change it in v0, merge it, diff, port the delta.
+
 ### 20. Platform controls — three surfaces the mock does not draw
 
 **Status: application-first, owner ruling not yet taken.** Numbered 20 by
@@ -726,18 +852,18 @@ Every element is one the mock already ships:
 | Export register         | `DataTable`, right-aligned mono numerics, one action column                           |
 | Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares   |
 
-**One chip word joins the shared vocabulary, deliberately: `paused`,
-mapped to the neutral family in `ui/chip.tsx`.** A recurring check somebody
-has switched off is inert — the reading `draft` already has — and an amber
-lamp on it would be a lamp permanently lit for every organisation that
-wants only one of the checks. It is mapped rather than left to render
-neutral by falling off the end of the map, which is the exact trap that
-file's own note under `draft` exists to name.
+**No chip word is added.** Every state here is spelled with a word the
+vocabulary already carries, and each is chosen for the tone `ui/chip.tsx`
+already gives it: a module reads `active` or `disabled`, an export walks
+`pending` → `processing` → `active` / `failed` / `expired`, and a run reads
+`pending` / `claimed` / `completed` / `failed`.
 
-Every other word is one the vocabulary already carries: a module reads
-`active` or `paused`, an export walks `pending` → `processing` → `active` /
-`failed` / `expired`, and a run reads `pending` / `claimed` / `completed` /
-`failed`.
+**A switched-off check has two readings and they must not look the same.**
+One the SCHEDULER stopped — because the member it ran as has left — is work
+to do, and reads `paused`, which is the warning tone § 17 gave a throttled
+template for exactly that reason. One an OPERATOR stopped is inert, and
+reads `disabled`: unmapped and therefore neutral, which `ui/chip.tsx`
+records as a decision beside `paused` rather than leaving it to accident.
 
 **A refused run reads `review`, in the WARNING family and not the
 destructive one.** It is not a run that broke: it is a run the database

@@ -97,6 +97,11 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // finalising a run authorises the salaries — worth stealing on both
   // counts, so it joins the wall beside payments.
   payroll: true,
+  // Whoever may configure a channel can point the organisation's outbound
+  // voice at a number they control, and whoever may record a consent can
+  // authorise a recipient nobody agreed to. A stolen session that can do
+  // either can impersonate the agency to its own customers.
+  notifications: true,
   // Entitlements decide which modules the organisation may use at all. A
   // stolen owner session that can turn the e-way bill module on is a
   // stolen session that can start speaking to a government portal in the
@@ -118,6 +123,7 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  notifications: 'can_manage_notifications',
   entitlements: 'can_manage_entitlements',
   export: 'can_export_org',
 };

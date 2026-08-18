@@ -90,6 +90,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0089_employees.sql': 4,
   '0090_payroll.sql': 6,
   '0091_signing_requests.sql': 2,
+  '0092_notifications.sql': 4,
   '0096_platform_controls.sql': 5,
 };
 
@@ -2175,6 +2176,179 @@ describe('tenant migration contract', () => {
     expect(raises.length).toBeGreaterThanOrEqual(6);
     expect(guards.match(/USING ERRCODE = '23J\d\d'/g)?.length).toBe(raises.length);
   });
+
+  it('binds the notification registers in 0092', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0092_notifications.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // NO CREDENTIAL IS EVER STORED. The access token, the Meta app secret
+    // and the SMTP password are deployment environment read into an
+    // injected adapter (`apps/server/src/notify/transport.ts`), which is
+    // the statutory transport's posture and is here for the same reason:
+    // a secret in a tenant table is a secret in the organisation's own
+    // export and in every backup. What the schema holds is identity.
+    expect(sql).not.toMatch(/^\s*(access_token|app_secret|api_key|password)\b/im);
+    expect(sql).toContain(
+      "waba_phone_number_id text CHECK (waba_phone_number_id ~ '^[0-9]{5,32}$')",
+    );
+
+    // THE WEBHOOK RESOLVES A TENANT BY THE PHONE NUMBER ID, before any
+    // tenant is bound, so that value has to name one row in the CLUSTER
+    // rather than one row per organisation. Partial, because most rows
+    // are email rows with no phone number at all.
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX notification_channels_waba_phone_number_id_key\n' +
+        '  ON notification_channels (waba_phone_number_id)\n' +
+        '  WHERE waba_phone_number_id IS NOT NULL;',
+    );
+    // The same argument for the provider's own message id: a receipt
+    // names a message by it and nothing else.
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX notification_messages_provider_message_id_key\n' +
+        '  ON notification_messages (provider_message_id)\n' +
+        '  WHERE provider_message_id IS NOT NULL;',
+    );
+
+    // CONSENT IS PER ADDRESS. The column is NOT NULL and shaped per
+    // channel, and the message guard compares it against the address the
+    // message is going to — which is what stops an agreement given for
+    // one number carrying across to whoever holds it next.
+    expect(sql).toContain('notification_consents_address_shape');
+    expect(sql).toContain("WHEN 'whatsapp' THEN address ~ '^\\+[1-9][0-9]{7,14}$'");
+    expect(sql).toContain('OR v_consent.address <> NEW.to_address');
+
+    // THE DELIVERY LEDGER IS FORWARD ONLY, stated in BOTH arms: the
+    // definer function's WHERE clause makes a late or duplicate receipt a
+    // silent no-op, and the guard makes any other writer's rewind a named
+    // refusal.
+    expect(sql).toContain(
+      "(OLD.status = 'queued' AND NEW.status IN ('sent', 'delivered', 'read', 'failed'))",
+    );
+    expect(sql).toContain("OR (OLD.status = 'delivered' AND NEW.status = 'read')");
+    expect(sql).not.toMatch(/NEW\.status = 'queued'/);
+    expect(sql).toContain('notification_messages_outcome_shape');
+
+    // …and the receipt path carries NO `queued` arm at all, which is not
+    // an oversight but a consequence: the outcome shape requires a queued
+    // row to hold a NULL provider_message_id, and this function finds a
+    // row BY that id. An arm admitting `queued` would be a branch no test
+    // could ever cover, which is how dead code gets documented as live.
+    const receipt = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.record_notification_receipt'),
+      sql.indexOf('CREATE FUNCTION app_private.guard_notification_channel'),
+    );
+    expect(receipt).toContain("WHEN 'delivered' THEN m.status = 'sent'");
+    expect(receipt).not.toMatch(/m\.status IN \('queued'/);
+
+    // THE TEMPLATE LIFECYCLE ADMITS WHAT META ACTUALLY DOES. A rejection
+    // is not terminal — Meta's own remedy is edit and resubmit, and an
+    // appeal reaches approval through review — and because
+    // (organisation_id, name, language) is unique with no DELETE grant, a
+    // dead end would burn the template name forever.
+    expect(sql).toContain(
+      "OR (OLD.status = 'rejected' AND NEW.status IN ('pending', 'disabled'))",
+    );
+    expect(sql).toContain(
+      "(OLD.status = 'draft' AND NEW.status IN ('pending', 'disabled'))",
+    );
+    // …and `disabled` stays terminal: Meta withdrew it, and getting it
+    // back is a new template.
+    expect(sql).not.toMatch(/OLD\.status = 'disabled'/);
+    // The body is editable exactly while Meta is not holding it.
+    expect(sql).toContain("IF OLD.status NOT IN ('draft', 'rejected')");
+
+    // All four tables in the ADR-0010 InitPlan policy shape, and none of
+    // them grants DELETE.
+    for (const table of [
+      'notification_channels',
+      'notification_templates',
+      'notification_consents',
+      'notification_messages',
+    ]) {
+      expect(sql, table).toContain(
+        `CREATE POLICY ${table}_tenant_policy ON ${table}\n  USING (organisation_id = (SELECT app_private.current_organisation_id()))`,
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).toContain(
+        `GRANT SELECT, INSERT, UPDATE ON ${table} TO auto_mb_app;`,
+      );
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+
+    // EXACTLY ONE SECURITY DEFINER, and it is the webhook receipt writer
+    // — the one write that must cross tenancy, because Meta is not a
+    // member of anything and there is no member to bind a transaction
+    // as. The four guards are invoker-rights and every function pins its
+    // search_path.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions).toHaveLength(5);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(
+      functions.length,
+    );
+    const definers = functions.filter((declaration) => {
+      const source = sql.slice(sql.indexOf(declaration));
+      return source.slice(0, source.indexOf('$$;')).includes('SECURITY DEFINER');
+    });
+    expect(definers).toEqual([
+      'CREATE FUNCTION app_private.record_notification_receipt',
+    ]);
+    expect(sql).toContain(
+      'ALTER FUNCTION app_private.record_notification_receipt(\n  text, text, text, timestamptz, text, text\n) OWNER TO auto_mb_definer;',
+    );
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION app_private.record_notification_receipt(\n  text, text, text, timestamptz, text, text\n) FROM PUBLIC;',
+    );
+    // It answers with a boolean and nothing else, and is scoped by BOTH
+    // the phone number id and the provider message id: a forged receipt
+    // cannot move a row belonging to the organisation that does not own
+    // the number it arrived on.
+    // It answers WHY it did nothing, not merely whether. The receiver has
+    // to retry a `missing` receipt — the send's completion transaction
+    // has not committed yet — and must never retry the other two, so a
+    // boolean could not carry the decision.
+    expect(sql).toContain('RETURNS text');
+    for (const outcome of ["'applied'", "'ahead'", "'missing'", "'unknown_channel'"]) {
+      expect(sql, outcome).toContain(outcome);
+    }
+    expect(sql).toContain('WHERE c.waba_phone_number_id = p_phone_number_id');
+    expect(sql).toContain('AND m.provider_message_id = p_provider_message_id');
+
+    // NOTIFICATIONS IS ITS OWN AUTHORITY (0092), in 0061's, 0080's and
+    // 0091's shape: a per-member column, default false, not backfilled.
+    expect(sql).toContain(
+      'ALTER TABLE organisation_memberships\n  ADD COLUMN can_manage_notifications boolean NOT NULL DEFAULT false;',
+    );
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(',
+    );
+    // FIVE trues, and only the last is this migration's. 0089 added
+    // payroll and 0091 added signing; a CREATE OR REPLACE states the
+    // whole body, so this migration must restate both or silently revoke
+    // them from every founder. The assertion pins all of them so dropping
+    // any fails here rather than in a founder's first payroll run.
+    expect(sql).toContain('can_manage_payroll, can_manage_notifications, status');
+    expect(sql).toContain(
+      "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, true, 'active');",
+    );
+
+    // Every RAISE in the migration's OWN guards carries a named SQLSTATE
+    // from the 23K block, which this migration is the first to use, so
+    // `notify/send.ts` maps it to a code instead of surfacing a bare
+    // 23514 as a 500. Scoped to the guards, because the file also
+    // re-creates `create_organisation_with_owner` and that function
+    // carries 0004's own 28000.
+    const guards = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.guard_notification'),
+    );
+    const raises = guards.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(9);
+    expect(guards.match(/USING ERRCODE = '23K\d\d'/g)?.length).toBe(raises.length);
+  });
+
   it('binds the platform controls in 0096', async () => {
     const sql = await readFile(
       path.join(migrationsDirectory, '0096_platform_controls.sql'),

@@ -71,6 +71,14 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level (0087): one shelf serves every contract, so a movement is not a fact about a Work even when it names one. The ledger is its own trail, read on the part.',
   signing_agents:
     'Organisation-level (0091): a kiosk credential belongs to the company and outlives every Work it signs for. What it did to a Work IS on the timeline, as signing_requests.',
+  notification_channels:
+    'Organisation-level (0092): which channels the agency speaks through is configuration about the company, not anything a Work did.',
+  notification_templates:
+    'Organisation-level (0092): a template is what the agency is allowed to say, and it outlives every Work it is said about.',
+  notification_consents:
+    'Organisation-level (0092): an agreement to be messaged is between the agency and a contact, and the same agreement covers every Work that contact is involved in.',
+  notification_messages:
+    'Organisation-level (0092): nothing this pack sends is about a Work — the messages are configuration and test traffic. When document delivery lands (E-whatsapp-delivery) its messages WILL name a Work, and promoting this table then means a whitelist entry, a scoping arm in routes/timeline.ts, web labels and tests, exactly as received_railway_bills got.',
   organisation_entitlements:
     'Organisation-level (0096): whether a MODULE is available to the organisation. It governs every Work equally and belongs to none of them, which is the same reason document_number_series is here.',
   statutory_job_schedules:

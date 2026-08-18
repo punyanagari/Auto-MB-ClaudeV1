@@ -561,6 +561,65 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // signature already made depends on.
   signing_agents: ['last_seen_at', 'revoked_at', 'revoked_by_user_id'],
 
+  // Notifications (0092). A channel's identity is which organisation and
+  // which channel; everything else about it is configuration an operator
+  // revises as Meta onboarding progresses, which is the whole reason the
+  // row exists before it is complete.
+  notification_channels: [
+    'enabled',
+    'waba_phone_number_id',
+    'waba_business_account_id',
+    'display_phone_number',
+    'api_base_url',
+    'from_address',
+    'reply_to_address',
+    'configured_by_user_id',
+    'updated_at',
+  ],
+  // A template's identity is the name and language Meta knows it by, and
+  // its body freezes at submission because the WABA then holds the
+  // reviewed text and it is that text which is sent.
+  //
+  // `body_text`, `parameter_count` and `category` are absent from this
+  // list and therefore counted as FROZEN, which is the conservative half
+  // of a truth the census's binary model cannot state: the guard's second
+  // arm refuses them only once the status has left `draft`, so they are
+  // editable exactly while nobody outside this system has seen them. The
+  // reader sees the ROW comparison and reads it as a freeze; listing them
+  // as mutable instead would claim they are editable after submission,
+  // which is the direction that would matter if it were wrong.
+  notification_templates: ['status', 'status_reason', 'email_subject', 'updated_at'],
+  // Which contact and which channel a consent is about are written once.
+  // The address, the state and the evidence are revised: an agreement
+  // given for a new number is a new agreement on the same row, with its
+  // own evidence sentence.
+  notification_consents: [
+    'address',
+    'state',
+    'evidence',
+    'recorded_by_user_id',
+    'updated_at',
+  ],
+  // What was sent, to whom, through what, is frozen. What moves is the
+  // delivery ledger — forwards only, and its own guard arm proves that
+  // separately.
+  //
+  // `provider_message_id` is absent for the same reason the template's
+  // body is: the guard freezes it with a scalar comparison the moment it
+  // stops being NULL, which the reader sees as a freeze. It is written
+  // once, by the transaction that records what the provider answered, and
+  // never again — rewriting it would re-point every future receipt at a
+  // row it is not about.
+  notification_messages: [
+    'status',
+    'failure_code',
+    'failure_detail',
+    'sent_at',
+    'delivered_at',
+    'read_at',
+    'failed_at',
+  ],
+
   // A recurring check's identity is its organisation and its kind (0096),
   // and both are frozen: letting either move would silently repoint a run
   // history at a different check. Everything else on the row is a setting

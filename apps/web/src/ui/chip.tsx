@@ -69,6 +69,26 @@ const CHIP_TONES = {
   // `pending` is already mapped above and stays there — a request
   // waiting for a kiosk is a queue, not a caution.
   claimed: 'warning',
+  // A message the provider has accepted but nothing has acknowledged
+  // yet, and one written before the provider was even called (0092).
+  // Both are queues rather than cautions, which is the reading `pending`
+  // already carries; `sent` is mapped info above for the same reason.
+  queued: 'info',
+  // The two acknowledgements a WhatsApp receipt brings back (0092). A
+  // message that reached the handset, and one the recipient opened: both
+  // are the proceed state of a delivery, which is what `docs/DESIGN.md`
+  // § Status badge semantics gives the success family. Unmapped they
+  // rendered neutral — identical to a queued message, which is the one
+  // reading they must not have.
+  delivered: 'success',
+  read: 'success',
+  // A template Meta approved and then throttled for poor quality (0092).
+  // Work to do — the organisation has to fix the template or its
+  // engagement — which is the warning family, not the destructive one:
+  // nothing was refused and nothing failed. Its sibling `disabled` stays
+  // unmapped and reads neutral, because a withdrawn template is finished
+  // rather than bad.
+  paused: 'warning',
   // A maintenance request nobody has decided yet, and one part-way
   // through its dispatches (0088). `docs/DESIGN.md` § Status badge
   // semantics puts both in the warning family — the first is waiting on
@@ -106,18 +126,6 @@ const CHIP_TONES = {
   // neutral by accident — and an accident is exactly what somebody
   // "fixes" later.
   draft: 'neutral',
-
-  // A recurring statutory check that is switched off (0096). Neutral by
-  // DECISION, exactly as `draft` is: a check somebody has deliberately
-  // stopped is inert, not a caution, and an amber lamp on it would be
-  // a lamp that is always lit for every organisation that only wants one
-  // of the checks. The remedy when the SCHEDULER paused it — a member who
-  // left — is a sentence on the row, not a colour.
-  //
-  // This is the one word this pack adds to the vocabulary, and it is
-  // added deliberately rather than left to render neutral by accident,
-  // which is the trap the note under `draft` exists to name.
-  paused: 'neutral',
 
   // A finalised payroll run (0090) is an issued document — numbered,
   // immutable, the record of what was paid. `docs/DESIGN.md` § Status

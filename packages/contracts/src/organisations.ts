@@ -61,6 +61,14 @@ const MembershipSchema = Type.Object(
      * salaries, PAN, UAN or bank details by default. Defaults false; the
      * owner of a new organisation holds it implicitly. */
     canManagePayroll: Type.Boolean(),
+    /** The notifications authority (migration 0092): may configure the
+     * WhatsApp and email channels, maintain message templates, record
+     * recipient consent and send a message. Separate from
+     * canIssueDocuments because choosing the number the organisation
+     * speaks from — and who else may be messaged — is a different
+     * decision from committing the words of a document. Defaults false;
+     * the owner of a new organisation holds it implicitly. */
+    canManageNotifications: Type.Boolean(),
     /** The entitlements authority (migration 0096): may switch the
      * organisation's modules on and off and configure its recurring
      * statutory checks. OWNER-ONLY IN EFFECT — every route carrying it
@@ -108,6 +116,7 @@ export const AddMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageNotifications: Type.Optional(Type.Boolean()),
     canManageEntitlements: Type.Optional(Type.Boolean()),
     canExportOrg: Type.Optional(Type.Boolean()),
   },
@@ -426,6 +435,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageNotifications: Type.Optional(Type.Boolean()),
     canManageEntitlements: Type.Optional(Type.Boolean()),
     canExportOrg: Type.Optional(Type.Boolean()),
     status: Type.Optional(

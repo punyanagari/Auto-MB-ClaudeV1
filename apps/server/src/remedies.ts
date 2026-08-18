@@ -481,6 +481,42 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   SIGNED_OUTPUT_REJECTED:
     'Check that the certificate chain the kiosk holds reaches a trust anchor installed on this server, then raise the request again.',
 
+  // ---- Notifications (0092) -------------------------------------------------
+  NOTIFICATION_CHANNEL_NOT_CONFIGURED:
+    'Open the Notifications screen, fill the channel in and switch it on before sending; a channel that is off sends nothing rather than sending quietly.',
+  NOTIFICATION_CHANNEL_NUMBER_TAKEN:
+    'Check the phone number id against the Meta console and enter the one this organisation was issued; if it is already correct, ask your administrator to raise it with support.',
+  NOTIFICATION_FIELD_INVALID:
+    'Check the phone number, the address and the template name against the shapes the form describes, then save again.',
+  NOTIFICATION_OUTCOME_UNRECORDED:
+    'Compare this notification against the provider console before sending it again, because it was handed over and the log could not record what happened.',
+  NOTIFICATION_WEBHOOK_UNVERIFIED:
+    'Check that the webhook secret and verify token in the Meta app match this deployment’s configuration; nothing was recorded from this request.',
+  NOTIFICATION_CHANNEL_INCOMPLETE:
+    'Fill in the whole channel before enabling it — WhatsApp needs its phone number id, business account id and display number; email needs a sender address.',
+  NOTIFICATION_CHANNEL_STATE:
+    'Reload the notifications settings; which organisation and which channel a configuration is for cannot be changed, so edit the other channel instead.',
+  NOTIFICATION_TEMPLATE_NOT_FOUND:
+    'Reload the template list; this template may have been created or renamed in another session.',
+  NOTIFICATION_TEMPLATE_EXISTS:
+    'Open the template that already holds this name and language, or choose a different name; Meta identifies a template by both.',
+  NOTIFICATION_TEMPLATE_STATE:
+    'Reload the template list and act on the status it shows now; a submitted body cannot be edited, and a rejected template is replaced by a new one rather than resubmitted.',
+  NOTIFICATION_TEMPLATE_NOT_SENDABLE:
+    'Use a template Meta has approved for WhatsApp, or give the template a subject line so it can go by email; check the parameter count matches what the body takes.',
+  NOTIFICATION_CONSENT_MISSING:
+    'Record the contact’s opt-in for this channel and address on the consent register first; a message is only sent to an address somebody agreed to.',
+  NOTIFICATION_CONSENT_STATE:
+    'Record the consent against the contact and channel it is actually about; an existing record cannot be re-pointed at a different contact.',
+  NOTIFICATION_CONTACT_NOT_FOUND:
+    'Reload the contact list; this contact may have been retired since this screen was opened.',
+  NOTIFICATION_MESSAGE_STATE:
+    'Reload the delivery log and read what it shows now; what was sent is written once, and a delivery status only ever moves forwards.',
+  NOTIFICATION_TRANSPORT_NOT_CONFIGURED:
+    'Ask your administrator to configure this deployment’s WhatsApp access token or its mail relay; the organisation’s own settings are complete but the server has nothing to send through.',
+  NOTIFICATION_SEND_FAILED:
+    'Read the delivery log for the provider’s own reason, fix it and send again; nothing was delivered and the attempt is on the record.',
+
   // ---- The envelope's own codes -------------------------------------------
   //
   // These three are minted by the error handler in `app.ts` rather than by

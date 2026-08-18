@@ -693,6 +693,23 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
     finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
     cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
+    listNotificationChannels: vi
+      .fn<ApiClient['listNotificationChannels']>()
+      .mockResolvedValue({ channels: [] }),
+    saveNotificationChannel: vi.fn<ApiClient['saveNotificationChannel']>(),
+    listNotificationTemplates: vi
+      .fn<ApiClient['listNotificationTemplates']>()
+      .mockResolvedValue({ templates: [], nextCursor: null }),
+    createNotificationTemplate: vi.fn<ApiClient['createNotificationTemplate']>(),
+    setNotificationTemplateStatus: vi.fn<ApiClient['setNotificationTemplateStatus']>(),
+    listNotificationConsents: vi
+      .fn<ApiClient['listNotificationConsents']>()
+      .mockResolvedValue({ consents: [], nextCursor: null }),
+    recordNotificationConsent: vi.fn<ApiClient['recordNotificationConsent']>(),
+    listNotifications: vi
+      .fn<ApiClient['listNotifications']>()
+      .mockResolvedValue({ messages: [], nextCursor: null }),
+    sendNotification: vi.fn<ApiClient['sendNotification']>(),
     // The platform controls (0096). Both lists answer empty by default,
     // for the reason the stock reads below do: a view that opens one
     // renders its own empty state rather than hanging on an unresolved
@@ -829,6 +846,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canManagePayments: false,
     canSignDocuments: false,
     canManagePayroll: true,
+    canManageNotifications: true,
     canManageEntitlements: true,
     canExportOrg: true,
     twoFactorEnabled: false,
