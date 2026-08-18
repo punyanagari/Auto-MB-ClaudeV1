@@ -187,6 +187,8 @@ jobs:
           AUTO_MB_APP_DB_PASSWORD=smoke-app-password
           AUTH_SECRET=smoke-secret-0123456789abcdef0123456789abcdef
           METRICS_TOKEN=smoke-metrics-token
+          SMTP_URL=smtp://localhost:2525
+          MAIL_FROM=no-reply@localhost
           ENV
           docker compose -f deploy/docker-compose.prod.yml \
             --env-file deploy/.env.production up -d --build
