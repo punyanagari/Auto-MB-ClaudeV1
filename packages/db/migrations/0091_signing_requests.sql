@@ -166,11 +166,20 @@ BEGIN
 
   INSERT INTO organisations (id, name, slug) VALUES (p_id, p_name, p_slug);
 
+  -- BOTH new authorities of this wave, and the second one is not this
+  -- migration's own. 0089 replaced this same function to add
+  -- can_manage_payroll; this replacement runs after it and would
+  -- silently drop that grant, because a CREATE OR REPLACE states the
+  -- whole body rather than amending it. A founder who could not run
+  -- payroll in an organisation they had just created — with no error
+  -- anywhere, because nothing refuses a column left false — is the
+  -- failure that costs the most to diagnose later.
   INSERT INTO organisation_memberships (
     organisation_id, user_id, role, work_scope,
-    can_issue_documents, can_cancel_documents, can_sign_documents, status
+    can_issue_documents, can_cancel_documents, can_sign_documents,
+    can_manage_payroll, status
   )
-  VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, 'active');
+  VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, 'active');
 
   INSERT INTO audit_events (
     organisation_id, actor_user_id, action, entity_type, entity_id

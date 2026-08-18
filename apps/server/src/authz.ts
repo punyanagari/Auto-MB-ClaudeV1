@@ -19,8 +19,7 @@ export async function membershipOf(
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
-           can_sign_documents
-           can_manage_payroll
+           can_sign_documents, can_manage_payroll
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
