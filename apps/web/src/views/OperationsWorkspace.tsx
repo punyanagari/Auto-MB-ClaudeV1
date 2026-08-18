@@ -43,6 +43,8 @@ import {
   type ModuleKey,
 } from '../shell/navigation.js';
 import { Badge } from '../ui/badge.js';
+import { Card } from '../ui/card.js';
+import { PageHeader } from '../ui/page-header.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Modal } from '../ui/dialog.js';
@@ -161,6 +163,12 @@ const StockShortages = lazy(() =>
   import('./StockShortages.js').then((module) => ({
     default: module.StockShortages,
   })),
+);
+const Employees = lazy(() =>
+  import('./Employees.js').then((module) => ({ default: module.Employees })),
+);
+const PayrollRun = lazy(() =>
+  import('./PayrollRun.js').then((module) => ({ default: module.PayrollRun })),
 );
 const NitIntake = lazy(() =>
   import('./NitIntake.js').then((module) => ({ default: module.NitIntake })),
@@ -1215,6 +1223,41 @@ export function OperationsWorkspace({
               />
             )}
 
+            {/* Both screens are gated on `can_manage_payments`, reads
+                included: an employee register is a register of salaries,
+                and a member without the authority to move the
+                organisation's money out has no business reading what
+                every colleague earns. The server refuses them the same
+                way, so this is the door and not the lock. */}
+            {view.name === 'employees' &&
+              (canManagePayments ? (
+                <Employees
+                  api={api}
+                  organisationId={organisation.id}
+                  canManagePayments={canManagePayments}
+                  canModify={canModify}
+                  onOpenPayroll={() => {
+                    navigate({ name: 'payroll' });
+                  }}
+                />
+              ) : (
+                <PayrollAuthorityRequired />
+              ))}
+
+            {view.name === 'payroll' &&
+              (canManagePayments ? (
+                <PayrollRun
+                  api={api}
+                  organisationId={organisation.id}
+                  canModify={canModify}
+                  onOpenEmployees={() => {
+                    navigate({ name: 'employees' });
+                  }}
+                />
+              ) : (
+                <PayrollAuthorityRequired />
+              ))}
+
             {view.name === 'tenders' && (
               <Tenders
                 api={api}
@@ -1818,5 +1861,39 @@ export function OperationsWorkspace({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * What a member without `can_manage_payments` sees where the payroll
+ * screens would be.
+ *
+ * Deliberately NOT an `ErrorState`. `docs/UX.md` § Shared states settles
+ * it: a 403 does not become a success on the second attempt, so offering
+ * a Retry would offer a control that refuses identically. It reads as an
+ * inline refusal naming the authority and where it is granted, which is
+ * the same shape `remedies.ts` gives `AUTHORITY_REQUIRED`.
+ */
+function PayrollAuthorityRequired() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="People and payroll"
+        title="Employees"
+        titleId="payroll-authority-title"
+        description="Employee records and payroll."
+      />
+      <Card>
+        <p className="m-0 text-sm">
+          Payroll is behind the payments authority, and this account does not hold it.
+          The register carries what every colleague is paid, so it is granted per
+          member rather than by role.
+        </p>
+        <p className="m-0 mt-2 text-sm text-muted-foreground">
+          Ask an owner to grant it on the Members screen, or ask a member who already
+          holds it to run the month.
+        </p>
+      </Card>
+    </>
   );
 }

@@ -119,6 +119,19 @@ export type WorkspaceView =
    * each way, not one screen with a tab strip. */
   | { name: 'stock' }
   | { name: 'stock-shortages' }
+  /** The employee master and the monthly payroll run (0089, 0090).
+   * Organisation-level, and deliberately: a salary is paid by the agency
+   * and not by a contract, so neither carries a Work.
+   *
+   * Two addresses because the mock draws two pages
+   * (`app/employees/page.tsx` and `app/hr/payroll/page.tsx` at fdfd610).
+   * The payroll one lives UNDER employees here rather than at the mock's
+   * own `/hr/payroll`, because the mock's rail has no entry that reaches
+   * it at all — see `docs/UX.md` § 15 — and hanging it off the register
+   * gives it the one door the mock forgot without inventing a second
+   * rail lamp for a module the mock lists once. */
+  | { name: 'employees' }
+  | { name: 'payroll' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -267,6 +280,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/inventory';
     case 'stock-shortages':
       return '#/inventory/shortages';
+    case 'employees':
+      return '#/employees';
+    case 'payroll':
+      return '#/employees/payroll';
     case 'tenders':
       return '#/tenders';
     case 'production':
@@ -362,6 +379,16 @@ export function stockRegisterHash(): string {
 
 export function stockShortagesHash(): string {
   return workspaceHashOf({ view: { name: 'stock-shortages' } });
+}
+
+/** `#/employees` and the payroll workspace under it, as plain hrefs —
+ * what the link between the two renders. */
+export function employeeRegisterHash(): string {
+  return workspaceHashOf({ view: { name: 'employees' } });
+}
+
+export function payrollHash(): string {
+  return workspaceHashOf({ view: { name: 'payroll' } });
 }
 
 export const SETTINGS_HASH = '#/settings';
@@ -520,6 +547,12 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       return first === 'shortages' || first === 'purchase-orders'
         ? { view: { name: 'stock-shortages' } }
         : null;
+    }
+    case 'employees': {
+      const [first, ...extra] = rest;
+      if (extra.length > 0) return null;
+      if (first === undefined) return { view: { name: 'employees' } };
+      return first === 'payroll' ? { view: { name: 'payroll' } } : null;
     }
     case 'tenders': {
       const [first, ...extra] = rest;

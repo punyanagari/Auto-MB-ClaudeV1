@@ -246,6 +246,10 @@ export const EmployeeListResponseSchema = Type.Object(
     nextCursor: Type.Union([UuidSchema, Type.Null()]),
     /** Register-wide, not the page's: the stat strip counts everybody. */
     currentCount: Type.Integer(),
+    /** What the payroll costs at full attendance, summed by PostgreSQL
+     * over every current employee. Register-wide for the same reason,
+     * and server-side because the browser never adds money up. */
+    currentMonthlyGross: NonNegativeMoneyStringSchema,
   },
   { additionalProperties: false },
 );

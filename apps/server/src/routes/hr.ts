@@ -600,14 +600,21 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         // Register-wide, not the page's: the stat strip counts the whole
         // payroll, and a count taken off a page would fall as the
         // operator paged through it.
-        const [counted] = await tx<{ current_count: string }[]>`
-          select count(*)::text as current_count
+        const [counted] = await tx<
+          { current_count: string; monthly_gross: string }[]
+        >`
+          select count(*)::text as current_count,
+                 coalesce(sum(
+                   basic_monthly + dearness_allowance_monthly
+                     + house_rent_allowance_monthly + other_allowances_monthly
+                 ), 0)::text as monthly_gross
           from employees where date_of_exit is null
         `;
         return {
           employees: page.rows.map(toEmployeeSummary),
           nextCursor: page.nextCursor,
           currentCount: Number(counted?.current_count ?? '0'),
+          currentMonthlyGross: counted?.monthly_gross ?? '0',
         };
       });
     },

@@ -425,6 +425,22 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     recordProductionReceipt: vi.fn(),
     listStockShortages: vi.fn(),
     createShortagePurchaseOrder: vi.fn(),
+    listEmployees: vi.fn().mockResolvedValue({
+      employees: [],
+      nextCursor: null,
+      currentCount: 0,
+      currentMonthlyGross: '0',
+    }),
+    getEmployee: vi.fn(),
+    createEmployee: vi.fn(),
+    updateEmployee: vi.fn(),
+    listPayrollRuns: vi.fn().mockResolvedValue({ runs: [], nextCursor: null }),
+    getPayrollRun: vi.fn(),
+    openPayrollRun: vi.fn(),
+    calculatePayrollRun: vi.fn(),
+    setPayrollLineLossOfPay: vi.fn(),
+    finalizePayrollRun: vi.fn(),
+    cancelPayrollRun: vi.fn(),
     ...overrides,
   };
 }

@@ -662,6 +662,24 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       purchaseOrdersTruncated: false,
     }),
     createShortagePurchaseOrder: vi.fn<ApiClient['createShortagePurchaseOrder']>(),
+    listEmployees: vi.fn<ApiClient['listEmployees']>().mockResolvedValue({
+      employees: [],
+      nextCursor: null,
+      currentCount: 0,
+      currentMonthlyGross: '0',
+    }),
+    getEmployee: vi.fn<ApiClient['getEmployee']>(),
+    createEmployee: vi.fn<ApiClient['createEmployee']>(),
+    updateEmployee: vi.fn<ApiClient['updateEmployee']>(),
+    listPayrollRuns: vi
+      .fn<ApiClient['listPayrollRuns']>()
+      .mockResolvedValue({ runs: [], nextCursor: null }),
+    getPayrollRun: vi.fn<ApiClient['getPayrollRun']>(),
+    openPayrollRun: vi.fn<ApiClient['openPayrollRun']>(),
+    calculatePayrollRun: vi.fn<ApiClient['calculatePayrollRun']>(),
+    setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
+    finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
+    cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
     ...overrides,
   };
 }
