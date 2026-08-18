@@ -579,13 +579,13 @@ async function readMaterials(
   jobCardId: string,
 ): Promise<readonly MaterialRequirement[]> {
   const rows = (await tx.unsafe(
-    `select position.item_id, position.item_code, position.name, position.unit,
-            position.serial_controlled,
-            position.required::text as required,
-            position.available::text as available,
-            position.shortage::text as shortage
-     from (${MATERIAL_POSITION_SQL}) position
-     order by position.name`,
+    `select parts.item_id, parts.item_code, parts.name, parts.unit,
+            parts.serial_controlled,
+            parts.required::text as required,
+            parts.available::text as available,
+            parts.shortage::text as shortage
+     from (${MATERIAL_POSITION_SQL}) parts
+     order by parts.name`,
     [organisationId, [jobCardId]],
   )) as unknown as {
     item_id: string;
@@ -625,10 +625,10 @@ async function readShortPartCounts(
 ): Promise<Map<string, number>> {
   if (jobCardIds.length === 0) return new Map();
   const rows = (await tx.unsafe(
-    `select position.job_card_id,
-            count(*) filter (where position.shortage > 0)::int as short_parts
-     from (${MATERIAL_POSITION_SQL}) position
-     group by position.job_card_id`,
+    `select parts.job_card_id,
+            count(*) filter (where parts.shortage > 0)::int as short_parts
+     from (${MATERIAL_POSITION_SQL}) parts
+     group by parts.job_card_id`,
     [organisationId, [...jobCardIds]],
   )) as unknown as { job_card_id: string; short_parts: number }[];
   return new Map(rows.map((row) => [row.job_card_id, row.short_parts]));
