@@ -91,10 +91,6 @@ export const XLSX_LIMITS = {
   maxCellLength: 4_000,
 } as const;
 
-/** The signature every ZIP — and therefore every .xlsx — starts with.
- * `upload-guards.ts` checks it before these bytes reach this module. */
-export const XLSX_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-
 /** The OOXML spreadsheet media type, spelled once. */
 export const XLSX_MEDIA_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

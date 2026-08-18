@@ -801,8 +801,6 @@ export const IMPORT_TARGETS: Readonly<Record<string, ImportTarget>> = {
   [CANONICAL_ITEMS_TARGET.key]: CANONICAL_ITEMS_TARGET,
 };
 
-export const IMPORT_TARGET_KEYS = Object.keys(IMPORT_TARGETS);
-
 /**
  * The three rows of a downloadable template.
  *

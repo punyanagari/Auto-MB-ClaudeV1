@@ -18,6 +18,7 @@ import {
   IMPORT_TARGETS,
   type DuplicateContext,
   type ImportTarget,
+  templateRows,
   type RowError,
   type TargetColumn,
 } from '../import-targets.js';
@@ -30,7 +31,6 @@ import {
   consumeUpload,
 } from '../upload-guards.js';
 import {
-  XLSX_LIMITS,
   XLSX_MEDIA_TYPE,
   XlsxParseError,
   readXlsxRows,
@@ -471,11 +471,7 @@ export function registerImportRoutes(
       // route for exactly this and caught the original ordering.
       await tenant(() => Promise.resolve());
       const target = requireTarget(request.params.target);
-      const bytes = writeXlsxWorkbook(target.sheetName, [
-        target.columns.map((column) => column.header),
-        target.columns.map((column) => column.example),
-        target.columns.map((column) => column.note),
-      ]);
+      const bytes = writeXlsxWorkbook(target.sheetName, templateRows(target));
       void reply.type(XLSX_MEDIA_TYPE);
       void reply.header(
         'content-disposition',
@@ -908,11 +904,3 @@ export function registerImportRoutes(
     },
   );
 }
-
-/** Re-exported so the upload guard's ceiling and the sheet's own row cap
- * are readable from one place when an operator asks how big a file may
- * be. */
-export const IMPORT_LIMITS = {
-  maxUploadBytes: MAX_XLSX_UPLOAD_BYTES,
-  maxRows: XLSX_LIMITS.maxRows,
-} as const;
