@@ -42,6 +42,15 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
  * the one that decides them and the browser's is not.
  */
 
+/** How many periods the card reads at once.
+ *
+ * Bounded, because a Work's periods grow with its installations and the
+ * card is a section of a page rather than the register. Sending no limit
+ * at all asks for the whole table and never renders the line below the
+ * table that points at the register — the branch would be dead and the
+ * read unbounded, which is the pair worth avoiding. */
+const CARD_PAGE_SIZE = 100;
+
 interface WorkWarrantyProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -67,7 +76,7 @@ export function WorkWarranty({
     setData(null);
     setLoadError(null);
     api
-      .getWorkWarranty(organisationId, workId)
+      .getWorkWarranty(organisationId, workId, { limit: CARD_PAGE_SIZE })
       .then((loaded) => {
         if (cancelled) return;
         setData(loaded);
@@ -84,7 +93,9 @@ export function WorkWarranty({
   }, [api, organisationId, workId, loadVersion]);
 
   const refresh = useCallback(async () => {
-    setData(await api.getWorkWarranty(organisationId, workId));
+    setData(
+      await api.getWorkWarranty(organisationId, workId, { limit: CARD_PAGE_SIZE }),
+    );
   }, [api, organisationId, workId]);
 
   if (loadError !== null) {
@@ -247,7 +258,7 @@ export function WorkWarranty({
               pbgCover.instrumentExpiresOn !== null
                 ? `${pbgCover.instrumentReference} expires ${formatDate(pbgCover.instrumentExpiresOn)}`
                 : pbgCover.requiredByLetter
-                  ? 'None recorded with an expiry date'
+                  ? 'No live guarantee with an expiry date on record'
                   : 'The letter demands none'}
             </dd>
           </div>

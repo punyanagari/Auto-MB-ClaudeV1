@@ -147,6 +147,41 @@ describe('the warranty register', () => {
     expect(onOpenWorks).toHaveBeenCalled();
   });
 
+  it('pages the narrowed reading through the Work endpoint rather than truncating it', async () => {
+    const getWorkWarranty = vi
+      .fn()
+      .mockResolvedValueOnce(card({ warranties: [ELAPSED], nextCursor: ELAPSED.id }))
+      .mockResolvedValueOnce(card({ warranties: [warranty()], nextCursor: null }));
+    const api = stubApi({
+      getWorkWarranty,
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+    });
+    render(
+      <Warranties
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        onOpenWork={vi.fn()}
+        onOpenWorks={vi.fn()}
+        onClearWorkFilter={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole('link', { name: 'DCW-2' })).toBeTruthy();
+    expect(getWorkWarranty).toHaveBeenCalledWith(ORG_ID, WORK_ID, { limit: 100 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more periods' }));
+    expect(await screen.findByRole('link', { name: 'DCW-1' })).toBeTruthy();
+    expect(getWorkWarranty).toHaveBeenLastCalledWith(ORG_ID, WORK_ID, {
+      limit: 100,
+      cursor: ELAPSED.id,
+    });
+    // The page that exhausted the Work retires the button, and the first
+    // page is still on screen beneath the second.
+    expect(screen.queryByRole('button', { name: 'Load more periods' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'DCW-2' })).toBeTruthy();
+  });
+
   it('reads one Work through the Work endpoint, and names it with a clearable chip', async () => {
     const getWorkWarranty = vi.fn().mockResolvedValue(card());
     const onClearWorkFilter = vi.fn();

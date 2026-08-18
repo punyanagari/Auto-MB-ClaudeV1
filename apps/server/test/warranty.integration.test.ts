@@ -690,7 +690,7 @@ describe('a live defect liability period', () => {
     });
     expect(blocked.statusCode).toBe(409);
     expect(blocked.json<{ code: string }>().code).toBe(
-      'INSTALLATION_HAS_LIVE_WARRANTY',
+      'INSTALLATION_HAS_WARRANTY_PERIOD',
     );
 
     const voided = await authed(owner, {

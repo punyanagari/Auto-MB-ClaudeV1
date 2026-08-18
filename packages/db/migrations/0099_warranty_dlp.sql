@@ -343,11 +343,18 @@ BEGIN
         INTO v_pac_status, v_pac_issue_date, v_pac_covers
       FROM pac_certificates pc
       WHERE pc.organisation_id = NEW.organisation_id
-        AND pc.id = NEW.pac_certificate_id;
+        AND pc.id = NEW.pac_certificate_id
+        -- The Work as well as the tenant, and that is not belt and
+        -- braces. The composite foreign key below would refuse a
+        -- certificate of another Work too, but it refuses it as a 23503
+        -- raised at constraint-check time, which no route maps and an
+        -- operator therefore meets as a 500. Matching the Work here
+        -- turns the same refusal into this block's own code.
+        AND pc.work_id = NEW.work_id;
 
       IF v_pac_status IS DISTINCT FROM 'recorded' THEN
         RAISE EXCEPTION
-          'the PAC certificate a defect liability period starts from must be recorded'
+          'the PAC certificate a defect liability period starts from must be a recorded certificate of the same Work'
           USING ERRCODE = '23Q03';
       END IF;
       IF v_pac_covers IS DISTINCT FROM true THEN

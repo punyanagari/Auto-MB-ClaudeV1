@@ -837,7 +837,7 @@ export function registerInstallationRoutes(
           // the 0099 guard would refuse.
           throw httpError(
             409,
-            'INSTALLATION_HAS_LIVE_WARRANTY',
+            'INSTALLATION_HAS_WARRANTY_PERIOD',
             warranty.status === 'closed'
               ? `This installation's defect liability period was discharged on ${warranty.closed_on ?? warranty.dlp_expires_on}; the record it rests on is permanent and is not cancelled.`
               : `This installation carries a defect liability period running to ${warranty.dlp_expires_on}. Void the period on the Work's Instruments tab first.`,

@@ -209,6 +209,10 @@ export const WarrantyPbgCoverSchema = Type.Object(
      * short of anything. */
     requiredByLetter: Type.Boolean(),
     dlpCoverUntil: Type.Union([DateOnlySchema, Type.Null()]),
+    /** The LIVE guarantee reaching furthest out — a released, expired or
+     * closed instrument is not cover anybody holds, and one recorded with
+     * no expiry date cannot be compared against a period at all. Null
+     * where no instrument answers that description. */
     instrumentReference: Type.Union([Type.String(), Type.Null()]),
     instrumentExpiresOn: Type.Union([DateOnlySchema, Type.Null()]),
     shortfallDays: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),

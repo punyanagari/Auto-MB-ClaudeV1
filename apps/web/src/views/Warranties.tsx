@@ -101,17 +101,35 @@ export function Warranties({
   });
   const [loadVersion, retry] = useReload();
 
+  /* One page, from whichever read the current view is a view OF. The
+     narrowed reading pages through the Work's own endpoint rather than
+     falling back to a single unpaged read: a Work with more periods than
+     one page would otherwise lose the tail silently, under a chip saying
+     the register had been narrowed to it. */
   const fetchPage = useCallback(
-    (cursor?: string) =>
-      api.listWarranties(organisationId, {
+    async (
+      cursor?: string,
+    ): Promise<{
+      readonly warranties: readonly Warranty[];
+      readonly nextCursor: string | null;
+    }> => {
+      if (workId !== null) {
+        const card = await api.getWorkWarranty(organisationId, workId, {
+          limit: PAGE_SIZE,
+          ...(cursor !== undefined ? { cursor } : {}),
+        });
+        return { warranties: card.warranties, nextCursor: card.nextCursor };
+      }
+      return api.listWarranties(organisationId, {
         limit: PAGE_SIZE,
         ...(cursor !== undefined ? { cursor } : {}),
         ...(filter.standing !== ''
           ? { standing: filter.standing as WarrantyStanding }
           : {}),
         ...(filter.expiresBefore !== '' ? { expiresBefore: filter.expiresBefore } : {}),
-      }),
-    [api, organisationId, filter],
+      });
+    },
+    [api, organisationId, workId, filter],
   );
 
   useEffect(() => {
@@ -142,15 +160,12 @@ export function Warranties({
     /* One failure state, because these are not independent reads: a chip
        with no Work to name and rows with no chip over them are each half
        of the narrowed reading, and neither is worth rendering alone. */
-    Promise.all([
-      api.getWork(organisationId, workId),
-      api.getWorkWarranty(organisationId, workId, { limit: PAGE_SIZE }),
-    ])
+    Promise.all([api.getWork(organisationId, workId), fetchPage()])
       .then(([detail, page]) => {
         if (cancelled) return;
         setWorkFilter({ workCode: detail.work.workCode, workTitle: detail.work.title });
         setWarranties(page.warranties);
-        setNextCursor(null);
+        setNextCursor(page.nextCursor);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;

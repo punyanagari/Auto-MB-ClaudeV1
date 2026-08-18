@@ -128,7 +128,7 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'A defect liability period is voided with a note rather than removed.',
   ],
   '23Q09': [
-    'INSTALLATION_HAS_LIVE_WARRANTY',
+    'INSTALLATION_HAS_WARRANTY_PERIOD',
     'Void the defect liability period on this installation before cancelling the record; a period already discharged makes the record permanent.',
   ],
   '23Q10': [
@@ -264,7 +264,13 @@ function warrantyQuery(where: string): string {
       from installation_warranties w
       join installations inst on inst.id = w.installation_id
       join work_items wi on wi.id = inst.work_item_id
-      join works wk on wk.id = w.work_id
+      -- A withdrawn Work is invisible everywhere else in the product
+      -- (0071 soft-deletes it and every read filters on that), so its
+      -- periods must not surface here either. The supersede guard refuses
+      -- to withdraw a Work carrying an installation at all, which makes
+      -- this unreachable today; a register that would start reporting
+      -- ghost rows the day that rule changed is not one to leave open.
+      join works wk on wk.id = w.work_id and wk.deleted_at is null
       left join pac_certificates pc on pc.id = w.pac_certificate_id
       cross join (
         select app_private.organisation_today(

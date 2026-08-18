@@ -327,6 +327,48 @@ describe('starting a defect liability period', () => {
       }),
     ).resolves.toBeTypeOf('string');
   });
+
+  it('refuses a PAC certificate of another Work with a mapped code, not a raw key violation', async () => {
+    // The composite foreign key would refuse this row too, but it refuses
+    // it as a 23503 raised at constraint-check time — which no route maps
+    // and an operator therefore meets as a 500. The guard has to get
+    // there first.
+    const [otherWork] = await database.pool<{ id: string }[]>`
+      insert into works (
+        organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${tenant.organisationId}, 'WARR-OTHER', 'WARR-OTHER-LETTER',
+        '2025-06-01', 'Another Work entirely', 1000.00, 900.00,
+        'per_schedule', ${tenant.userId}
+      )
+      returning id
+    `;
+    if (!otherWork) throw new Error('second work seed failed');
+    const [foreign] = await database.pool<{ id: string }[]>`
+      insert into pac_certificates (
+        organisation_id, work_id, reference, issue_date, consignee_master_id,
+        consignee_designation, recorded_by_user_id
+      )
+      values (
+        ${tenant.organisationId}, ${otherWork.id}, 'PAC-OTHER', ${today},
+        ${tenant.buyerId}, 'Sr. DEE elsewhere', ${tenant.userId}
+      )
+      returning id
+    `;
+    if (!foreign) throw new Error('foreign PAC seed failed');
+
+    const installation = await recordInstallation(today);
+    const failure = await refused(
+      startPeriod(installation, {
+        basis: 'pac',
+        pacCertificateId: foreign.id,
+        startOn: today,
+      }),
+    );
+    expect(failure.code).toBe('23Q03');
+  });
 });
 
 describe('a live defect liability period', () => {

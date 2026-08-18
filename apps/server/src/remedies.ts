@@ -503,7 +503,7 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Discharge the period on or after the day it expires and on or before today; a period that has not run out yet is voided rather than closed.',
   WARRANTY_STATE:
     "Reload the Work's Instruments tab; a discharged or voided defect liability period is a finished record and takes no further changes.",
-  INSTALLATION_HAS_LIVE_WARRANTY:
+  INSTALLATION_HAS_WARRANTY_PERIOD:
     "Void the installation's defect liability period on the Work's Instruments tab before cancelling the record; a period already discharged makes the record permanent.",
 
   // ---- The envelope's own codes -------------------------------------------
