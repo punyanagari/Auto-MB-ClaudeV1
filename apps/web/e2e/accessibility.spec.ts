@@ -29,6 +29,16 @@ test('sign-in screen is keyboard-labelled and passes the axe scan', async ({
 test('organisation picker and members workspace pass the axe scan', async ({
   page,
 }) => {
+  /* The second-heaviest journey in the suite, and now over Playwright's
+     30s default: ten `expectNoAxeViolations` calls in both themes across
+     the picker, dashboard, four registers, Masters, Members and Settings,
+     plus the two transient shell surfaces at the end. It sat just under
+     the line and the receivables module's rail entry — one more node in
+     every one of those scans — is enough to put it over on a loaded
+     machine. Budgeted with `test.slow()`, the same way the Work workspace
+     leg below was when it crossed; the receivables scans themselves are a
+     separate test rather than an eleventh leg here. */
+  test.slow();
   await mockWorkspace(page, { me: PICKER_ME, organisations: [ORG, SECOND_ORG] });
 
   await page.goto('/');
@@ -125,25 +135,6 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await page.getByRole('button', { name: 'iREPS submission' }).click();
   await expect(page.getByText('Tracking only')).toBeVisible();
   await expectNoAxeViolations(page, 'tender iREPS submission panel');
-
-  /* The receivables register. Scanned twice: the table, where three status
-     chips and three right-aligned money columns are on screen at once, and
-     the opened bill's sheet, where the deduction waterfall puts a success
-     tint on one figure and the lifecycle strip carries dots that must not
-     be the only thing distinguishing a done step from a pending one. */
-  await page.getByRole('link', { name: 'Receivables' }).click();
-  await expect(page.getByRole('heading', { name: 'Receivables' })).toBeVisible();
-  await expect(page.getByText('FY 2026-27')).toBeVisible();
-  await expectNoAxeViolations(page, 'receivables register');
-
-  await page
-    .getByRole('button', { name: /Open bill 8/ })
-    .first()
-    .click();
-  await expect(page.getByText('Deduction waterfall')).toBeVisible();
-  await expect(page.getByText('Net payable')).toBeVisible();
-  await expectNoAxeViolations(page, 'receivables bill sheet');
-  await page.keyboard.press('Escape');
 
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
@@ -253,6 +244,37 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expectNoAxeViolations(page, 'collapsed rail');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+});
+
+/* Its own test rather than another leg of the picker journey above, which
+   was already close to the 30s budget and tipped over it when these two
+   scans were appended. A module gets its own test here for the same reason
+   the LOA and Work workspace legs do: the journey test grows with every
+   wave, and a shared budget nobody can attribute is a timeout the next
+   pack inherits. */
+test('the receivables register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+  /* Scanned twice: the table, where three status chips and three
+     right-aligned money columns are on screen at once, and the opened
+     bill's sheet, where the deduction waterfall puts a success tint on one
+     figure and the lifecycle strip carries dots that must not be the only
+     thing distinguishing a done step from a pending one. */
+  await page.getByRole('link', { name: 'Receivables' }).click();
+  await expect(page.getByRole('heading', { name: 'Receivables' })).toBeVisible();
+  await expect(page.getByText('FY 2026-27')).toBeVisible();
+  await expectNoAxeViolations(page, 'receivables register');
+
+  await page
+    .getByRole('button', { name: /Open bill 8/ })
+    .first()
+    .click();
+  await expect(page.getByText('Deduction waterfall')).toBeVisible();
+  await expect(page.getByText('Net payable')).toBeVisible();
+  await expectNoAxeViolations(page, 'receivables bill sheet');
 });
 
 test('LOA upload and review screens pass the axe scan', async ({ page }) => {

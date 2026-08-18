@@ -455,7 +455,7 @@ describe('outstanding with the railway', () => {
 
 describe('the organisation-wide receivables register', () => {
   it('reports the register facts and sums its totals in SQL', async () => {
-    const { workId, billId } = await seedBill('BPX');
+    const { billId } = await seedBill('BPX');
     expect((await record(billId, HALF)).statusCode).toBe(201);
 
     const response = await register();
