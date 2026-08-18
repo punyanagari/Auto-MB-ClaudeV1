@@ -26,11 +26,7 @@ const DURATION_BUCKETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 export type AuthFailureSurface = 'sign_in' | 'sign_up' | 'two_factor';
 type TenantDenialReason = 'not_a_member';
 type RateLimitScope =
-  | 'auth'
-  | 'upload'
-  | 'account_lockout'
-  | 'signing'
-  | 'notification_webhook';
+  'auth' | 'upload' | 'account_lockout' | 'signing' | 'notification_webhook';
 type UploadScanFailureReason = 'malware_detected' | 'scanner_unavailable';
 type StatutoryOutcomeStatus = 'succeeded' | 'failed' | 'unknown';
 

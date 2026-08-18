@@ -43,7 +43,11 @@ export class SmtpEmailTransport implements EmailTransport {
     // second place for the same sentence to be wrong.
     const text = renderTemplateBody(message.bodyText, message.parameters);
     try {
-      const result = await this.transporter.sendMail({
+      // Nodemailer's send result is typed `any` by its own declarations,
+      // so it is narrowed here rather than trusted: this value is stored
+      // and exported, and a non-string arriving in it would be a column
+      // holding whatever the transport happened to hand back.
+      const result: unknown = await this.transporter.sendMail({
         from: target.fromAddress,
         ...(target.replyToAddress === null ? {} : { replyTo: target.replyToAddress }),
         to: message.toAddress,
@@ -53,8 +57,12 @@ export class SmtpEmailTransport implements EmailTransport {
       // The relay's own Message-ID. Recorded so the delivery log names
       // the message the way the mail server's logs do, which is the only
       // way the two can be reconciled during a delivery dispute.
-      return typeof result.messageId === 'string' && result.messageId !== ''
-        ? result.messageId
+      const messageId =
+        typeof result === 'object' && result !== null && 'messageId' in result
+          ? result.messageId
+          : undefined;
+      return typeof messageId === 'string' && messageId !== ''
+        ? messageId
         : `smtp:${String(Date.now())}`;
     } catch (cause) {
       // The errno and nothing else. A nodemailer transport error carries

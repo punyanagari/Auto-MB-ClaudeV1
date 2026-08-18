@@ -578,20 +578,17 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   ],
   // A template's identity is the name and language Meta knows it by, and
   // its body freezes at submission because the WABA then holds the
-  // reviewed text and it is that text which is sent. What moves is where
-  // Meta's review has got to. `body_text`, `parameter_count` and
-  // `category` are outside the ROW freeze because a DRAFT is still being
-  // written; the guard's second arm refuses them once the status leaves
-  // draft, which the freeze-column reader cannot see.
-  notification_templates: [
-    'category',
-    'status',
-    'status_reason',
-    'body_text',
-    'parameter_count',
-    'email_subject',
-    'updated_at',
-  ],
+  // reviewed text and it is that text which is sent.
+  //
+  // `body_text`, `parameter_count` and `category` are absent from this
+  // list and therefore counted as FROZEN, which is the conservative half
+  // of a truth the census's binary model cannot state: the guard's second
+  // arm refuses them only once the status has left `draft`, so they are
+  // editable exactly while nobody outside this system has seen them. The
+  // reader sees the ROW comparison and reads it as a freeze; listing them
+  // as mutable instead would claim they are editable after submission,
+  // which is the direction that would matter if it were wrong.
+  notification_templates: ['status', 'status_reason', 'email_subject', 'updated_at'],
   // Which contact and which channel a consent is about are written once.
   // The address, the state and the evidence are revised: an agreement
   // given for a new number is a new agreement on the same row, with its
@@ -606,9 +603,15 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // What was sent, to whom, through what, is frozen. What moves is the
   // delivery ledger — forwards only, and its own guard arm proves that
   // separately.
+  //
+  // `provider_message_id` is absent for the same reason the template's
+  // body is: the guard freezes it with a scalar comparison the moment it
+  // stops being NULL, which the reader sees as a freeze. It is written
+  // once, by the transaction that records what the provider answered, and
+  // never again — rewriting it would re-point every future receipt at a
+  // row it is not about.
   notification_messages: [
     'status',
-    'provider_message_id',
     'failure_code',
     'failure_detail',
     'sent_at',

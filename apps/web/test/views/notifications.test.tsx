@@ -131,29 +131,21 @@ function renderNotifications(
   } = {},
 ) {
   const api = stubApi({
-    listNotificationChannels: vi
-      .fn()
-      .mockResolvedValue({
-        channels: options.channels ?? [whatsappChannel(), emailChannel()],
-      }),
-    listNotificationTemplates: vi
-      .fn()
-      .mockResolvedValue({
-        templates: options.templates ?? [template()],
-        nextCursor: null,
-      }),
-    listNotificationConsents: vi
-      .fn()
-      .mockResolvedValue({
-        consents: options.consents ?? [consent()],
-        nextCursor: null,
-      }),
-    listNotifications: vi
-      .fn()
-      .mockResolvedValue({
-        messages: options.messages ?? [message()],
-        nextCursor: null,
-      }),
+    listNotificationChannels: vi.fn().mockResolvedValue({
+      channels: options.channels ?? [whatsappChannel(), emailChannel()],
+    }),
+    listNotificationTemplates: vi.fn().mockResolvedValue({
+      templates: options.templates ?? [template()],
+      nextCursor: null,
+    }),
+    listNotificationConsents: vi.fn().mockResolvedValue({
+      consents: options.consents ?? [consent()],
+      nextCursor: null,
+    }),
+    listNotifications: vi.fn().mockResolvedValue({
+      messages: options.messages ?? [message()],
+      nextCursor: null,
+    }),
     saveNotificationChannel: vi
       .fn()
       .mockResolvedValue({ channel: whatsappChannel({ enabled: false }) }),

@@ -36,6 +36,10 @@ export const ME = {
       // the rail carries no Employees door and both payroll screens
       // refuse. The owner of a new organisation holds it implicitly.
       canManagePayroll: true,
+      // The notifications authority (0092). Without it the Notifications
+      // screen mounts its refusal panel instead of its four registers,
+      // and the axe scan would be scanning two paragraphs in a card.
+      canManageNotifications: true,
       status: 'active',
     },
   ],

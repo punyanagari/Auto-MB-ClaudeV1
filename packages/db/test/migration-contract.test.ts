@@ -2217,9 +2217,7 @@ describe('tenant migration contract', () => {
     // message is going to — which is what stops an agreement given for
     // one number carrying across to whoever holds it next.
     expect(sql).toContain('notification_consents_address_shape');
-    expect(sql).toContain(
-      "WHEN 'whatsapp' THEN address ~ '^\\+[1-9][0-9]{7,14}$'",
-    );
+    expect(sql).toContain("WHEN 'whatsapp' THEN address ~ '^\\+[1-9][0-9]{7,14}$'");
     expect(sql).toContain('OR v_consent.address <> NEW.to_address');
 
     // THE DELIVERY LEDGER IS FORWARD ONLY, stated in BOTH arms: the

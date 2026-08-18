@@ -155,8 +155,8 @@ describe('receiptsOf', () => {
         ],
       },
     ];
-    for (const input of nonsense) {
-      expect(receiptsOf(input), JSON.stringify(input) ?? 'undefined').toEqual([]);
+    for (const [index, input] of nonsense.entries()) {
+      expect(receiptsOf(input), `case ${String(index)}`).toEqual([]);
     }
   });
 
@@ -259,8 +259,12 @@ describe('MetaCloudWhatsAppTransport', () => {
   } {
     const calls: { url: string; body: unknown }[] = [];
     const transport = new MetaCloudWhatsAppTransport(config, (input, init) => {
-      const url = String(input);
-      const body: unknown = JSON.parse(String(init?.body ?? '{}'));
+      // The adapter always calls with a string URL and a string body;
+      // both are narrowed rather than stringified so a change that
+      // started passing a Request or a stream fails here loudly.
+      const url = typeof input === 'string' ? input : (input as URL).href;
+      const raw = init?.body;
+      const body: unknown = JSON.parse(typeof raw === 'string' ? raw : '{}');
       calls.push({ url, body });
       return Promise.resolve(responder(url, init ?? {}));
     });

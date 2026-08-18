@@ -901,9 +901,13 @@ BEGIN
   -- The identity Meta knows the template by, and the body it reviewed.
   -- Editing an approved body would leave the WABA holding one text and
   -- this register showing another — and the WABA's is what is sent.
-  IF ROW(NEW.id, NEW.organisation_id, NEW.name, NEW.language, NEW.created_at)
-     IS DISTINCT FROM ROW(OLD.id, OLD.organisation_id, OLD.name, OLD.language, OLD.created_at)
-  THEN
+  IF ROW(
+       NEW.id, NEW.organisation_id, NEW.name, NEW.language,
+       NEW.created_by_user_id, NEW.created_at
+     ) IS DISTINCT FROM ROW(
+       OLD.id, OLD.organisation_id, OLD.name, OLD.language,
+       OLD.created_by_user_id, OLD.created_at
+     ) THEN
     RAISE EXCEPTION
       'a notification template''s name and language are what Meta knows it by and are written once; create a new template'
       USING ERRCODE = '23K03';

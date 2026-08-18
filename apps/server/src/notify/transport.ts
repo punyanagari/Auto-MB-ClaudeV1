@@ -31,8 +31,6 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export type NotificationProvider = 'meta_cloud' | 'bsp' | 'smtp';
-
 /**
  * A provider refused, or could not be reached.
  *

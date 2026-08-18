@@ -341,10 +341,12 @@ export function receiptsOf(payload: unknown): readonly Receipt[] {
             : new Date();
         const errors = status.errors;
         const firstError = Array.isArray(errors) ? record(errors[0]) : null;
+        // Meta sends the error code as a NUMBER in the Cloud API and as a
+        // string in some BSP relays, so both are read and anything else
+        // is dropped rather than stringified into `[object Object]`.
+        const rawCode: unknown = firstError?.code;
         const failureCode =
-          firstError === null
-            ? null
-            : (readString(firstError.code) ?? String(firstError.code ?? '')) || null;
+          typeof rawCode === 'number' ? String(rawCode) : (readString(rawCode) ?? null);
         receipts.push({
           phoneNumberId,
           providerMessageId,
