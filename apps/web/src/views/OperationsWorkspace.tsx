@@ -162,6 +162,19 @@ const StockShortages = lazy(() =>
     default: module.StockShortages,
   })),
 );
+const Maintenance = lazy(() =>
+  import('./Maintenance.js').then((module) => ({ default: module.Maintenance })),
+);
+const MaintenanceJobCard = lazy(() =>
+  import('./MaintenanceJobCard.js').then((module) => ({
+    default: module.MaintenanceJobCard,
+  })),
+);
+const MaintenanceRequestForm = lazy(() =>
+  import('./MaintenanceRequestForm.js').then((module) => ({
+    default: module.MaintenanceRequestForm,
+  })),
+);
 const NitIntake = lazy(() =>
   import('./NitIntake.js').then((module) => ({ default: module.NitIntake })),
 );
@@ -1211,6 +1224,49 @@ export function OperationsWorkspace({
                 canModify={canModify}
                 onOpenRegister={() => {
                   navigate({ name: 'stock' });
+                }}
+              />
+            )}
+
+            {view.name === 'maintenance' && (
+              <Maintenance
+                api={api}
+                organisationId={organisation.id}
+                canModify={canRecordEvidence}
+                onNewRequest={() => {
+                  navigate({ name: 'maintenance-new' });
+                }}
+                onOpenRequest={(requestId) => {
+                  navigate({ name: 'maintenance-request', requestId });
+                }}
+              />
+            )}
+
+            {view.name === 'maintenance-new' && (
+              <MaintenanceRequestForm
+                api={api}
+                organisationId={organisation.id}
+                onDone={(requestId) => {
+                  navigate({ name: 'maintenance-request', requestId });
+                }}
+                onCancel={() => {
+                  navigate({ name: 'maintenance' });
+                }}
+              />
+            )}
+
+            {view.name === 'maintenance-request' && (
+              <MaintenanceJobCard
+                api={api}
+                organisationId={organisation.id}
+                requestId={view.requestId}
+                canModify={canRecordEvidence}
+                /* The mock's whole-request admin approval: owner only,
+                   exactly as `routes/maintenance.ts` gates it. */
+                canApprove={membership?.role === 'owner'}
+                canIssue={canIssue}
+                onBack={() => {
+                  navigate({ name: 'maintenance' });
                 }}
               />
             )}

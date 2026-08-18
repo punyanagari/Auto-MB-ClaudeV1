@@ -662,6 +662,14 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       purchaseOrdersTruncated: false,
     }),
     createShortagePurchaseOrder: vi.fn<ApiClient['createShortagePurchaseOrder']>(),
+    listMaintenanceRequests: vi.fn<ApiClient['listMaintenanceRequests']>(),
+    getMaintenanceRequest: vi.fn<ApiClient['getMaintenanceRequest']>(),
+    createMaintenanceRequest: vi.fn<ApiClient['createMaintenanceRequest']>(),
+    approveMaintenanceRequest: vi.fn<ApiClient['approveMaintenanceRequest']>(),
+    recordMaintenanceDispatch: vi.fn<ApiClient['recordMaintenanceDispatch']>(),
+    receiveMaintenanceReturn: vi.fn<ApiClient['receiveMaintenanceReturn']>(),
+    cancelMaintenanceLine: vi.fn<ApiClient['cancelMaintenanceLine']>(),
+    closeMaintenanceRequest: vi.fn<ApiClient['closeMaintenanceRequest']>(),
     ...overrides,
   };
 }
