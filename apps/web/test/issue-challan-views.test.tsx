@@ -417,6 +417,14 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     clearNumberSeries: vi.fn(),
     createDirectTaxInvoice: vi.fn(),
     setWorkItemTaxFacts: vi.fn(),
+    listStockItems: vi.fn(),
+    setStockReorderLevel: vi.fn(),
+    listStockMovements: vi.fn(),
+    postStockMovement: vi.fn(),
+    listPendingProductionReceipts: vi.fn(),
+    recordProductionReceipt: vi.fn(),
+    listStockShortages: vi.fn(),
+    createShortagePurchaseOrder: vi.fn(),
     ...overrides,
   };
 }

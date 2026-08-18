@@ -122,6 +122,26 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Open the job card's Dispatch tab again; a release deleted there is no longer reachable by its old id.",
   PRODUCTION_DISPATCH_INVALID:
     'Release only units of this job card that are still in the factory and have every required component serial captured.',
+  // The stock ledger (migration 0087). Every remedy names the movement
+  // that fixes the situation, because in a ledger the answer to a wrong
+  // number is always another row rather than an edit.
+  STOCK_BACKDATED:
+    'Post the movement at today’s date and put the docket’s own date in the reason; a ledger records changes in the order they happen, so a running balance cannot be inserted behind one already written.',
+  STOCK_ITEM_NOT_FOUND:
+    'Pick the part again from the stock register; one retired on Production, Item master is no longer selectable by its old id.',
+  STOCK_INSUFFICIENT:
+    'Receive the material before issuing it, or post an adjustment with the reason the shelf count was wrong; stock is never taken below zero.',
+  STOCK_MOVEMENT_INVALID:
+    'Check the movement type against what it names: a receipt needs its purchase order line, an issue needs a job card or a Work, and an adjustment needs a reason.',
+  STOCK_SOURCE_INVALID:
+    'Post the movement against a document that can still take it — an issued purchase order, an open job card, an active Work.',
+  STOCK_DISPATCH_RECEIVED:
+    'This despatch is already on the shelf; correct the quantity with an adjustment rather than receiving it twice.',
+  STOCK_NOT_SHORT:
+    'Order only the parts the shortage list is still showing; one that has been received since the list was drawn no longer needs buying.',
+  STOCK_JOB_CARD_HAS_NO_WORK:
+    'Raise the purchase order from a job card that serves a Work; a purchase order belongs to a Work, and this card serves a private order.',
+
   FIELD_TOO_SHORT:
     'Fill the named field in and submit again; a value of nothing but spaces is not a value.',
   // Crossed the three-throw coverage bar when the production and

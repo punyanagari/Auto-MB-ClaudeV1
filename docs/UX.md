@@ -322,6 +322,39 @@ architecture), and it left the omitted list this wave. Inventory,
 Purchase orders and Maintenance stay omitted rather than drawn as dead
 entries.
 
+### 13. Inventory screens — the fakes the stock ledger refused
+
+The two screens are ported (`app/inventory/page.tsx`,
+`app/inventory/purchase-orders/page.tsx` at `fdfe5ef`) inside the mock's own
+grammar: its stat strip, its item table, its movement table, its checkbox
+rows, its supplier-order cards. What is listed here is data the mock DRAWS
+that its own code cannot mean — in three of the eight cases its running
+fixture contradicts itself — so replicating the pixel would have made the
+product state a number that is not true.
+
+**The section number is not settled here.** Production and correspondence
+both claim § 11 in their own branches, and the coordinator renumbers these
+sections when the wave is assembled. This one is written as § 13 so it
+collides with neither: read it as a placeholder, not as a claim, and do not
+renumber the others to fit it.
+
+| #   | The mock draws                                                   | The application ships                                                                 | Why                                                                                                                                                                                                                                                                                 |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 13a | "On hand" and "Reserved" stat tiles summing a quantity           | Counts of PARTS: tracked, at reorder level, and short                                 | The sums add cabinets in Nos to cable in Mtr to solder in Kg and print one number. A count of parts is the same question asked in a unit that exists.                                                                                                                               |
+| 13b | A `reserved` column stored on the item                           | A `Committed` column, derived from every open job card's outstanding bill of material | Nothing in the mock ever writes `reserved`, and its fixture values disagree with its own explosion — 720 driver ICs reserved against a plan needing 2 304. A stored reservation with no writer is a fake; the derived one has the job cards as its writer and cannot drift.         |
+| 13c | A warehouse on the item and on every movement                    | No location dimension at all                                                          | Nothing the mock computes is per location — one pooled balance, no transfer — and its own data layer reads a `location` field its `StockItem` type does not have, so every warehouse in the running mock is `undefined`. A label that cannot move a balance can only ever be wrong. |
+| 13d | A "Batch controlled" checkbox on the item dialog                 | Absent                                                                                | There is no batch anywhere else in the mock or in the product. A flag with no feature behind it is a promise the screen cannot keep.                                                                                                                                                |
+| 13e | A "New item" dialog creating a stock item                        | No create here; the reorder level is the one stock fact this screen edits             | The item master is Production's (`production_items`, 0084) and its own screens own it. Two create forms pointed at one table is how two catalogues start.                                                                                                                           |
+| 13f | A shortage row per (plan, part), with a checkbox on each         | One row per PART, with the job cards asking for it named on the row                   | Ticking the two rows for one cabinet from two plans orders it twice, because neither row knows about the other — and there is no honest per-card answer to "how much of the shelf is mine". The requirement is summed and netted once against one balance.                          |
+| 13g | A separate `SupplierPO` with its own numbering and four statuses | The purchase order of migration 0033, drafted from the shortage                       | A second purchase-order concept would duplicate the vendor, the lines, the gapless per-Work number, the issue snapshot and the receipt balance, and split "what have we ordered from this vendor" across two registers.                                                             |
+| 13h | A `destructive` "Low stock" badge                                | The shared status chip in the WARNING family                                          | `docs/DESIGN.md` § Status badge semantics keeps destructive for cancelled, rejected and declined. A part that needs reordering is a thing to do, not a thing that failed. Its two siblings, `available` and `retired`, stay unmapped and read neutral.                              |
+
+One thing the application draws that the mock does not: a
+**"Despatched, not yet on the shelf"** list, in the mock's own bordered-row
+grammar. The mock has no production despatch to receive, and a released
+despatch nobody takes in leaves the register quietly understating the shelf.
+The quantity is the despatch's own unit count and there is no field for it.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

@@ -60,6 +60,7 @@ import { financialYearLabel } from '../financial-year.js';
 import {
   audit,
   IdParamsSchema,
+  receivedQuantitySql,
   upstreamErrorResponses as errorResponses,
 } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -198,52 +199,55 @@ async function readItems(
 /**
  * The over-receipt notices for this challan's purchase-order-linked
  * lines, one per purchase-order line, in exact SQL numeric arithmetic
- * (rule 5). `received` counts issued receipts on OTHER challans plus this
+ * (rule 5). `received` counts receipts recorded ELSEWHERE plus this
  * challan's own lines — the projection while this challan is a draft and
  * the actual total once it is issued (its own lines are then part of the
- * issued sum, so the two readings agree). Over-receipt is deliberately a
+ * settled sum, so the two readings agree). Over-receipt is deliberately a
  * WARNING, never a refusal: vendors over-ship, and the delivery document
  * must record what actually arrived (the purchase-order balance already
  * floors its pending figure at zero, purchase-orders.ts readLines).
+ *
+ * "Elsewhere" comes from the shared `receivedQuantitySql` fragment rather
+ * than a fourth copy of the arithmetic, so this warning and the balance
+ * that decides whether the order may be CLOSED can never disagree about
+ * what has arrived. The fragment also owns the channel rule (0087): a
+ * line that names a part is stock-received and a line that does not is
+ * challan-received, and a challan item pointing at a stock line is
+ * refused at the database, so the branch this reader does not use cannot
+ * hold a row.
  */
 async function readOverReceiptWarnings(
   tx: TransactionSql,
   challanId: string,
 ): Promise<ChallanOverReceiptWarning[]> {
-  const rows = await tx<
-    {
-      purchase_order_line_id: string;
-      po_number: string;
-      line_number: number;
-      description: string;
-      ordered_quantity: string;
-      received_quantity: string;
-    }[]
-  >`
-    select pol.id as purchase_order_line_id, po.po_number, pol.line_number,
-           pol.description, pol.quantity::text as ordered_quantity,
-           (coalesce(elsewhere.received, 0) + own.quantity)
-             ::numeric(18,3)::text as received_quantity
-    from (
-      select dci.purchase_order_line_id as pol_id, sum(dci.quantity) as quantity
-      from delivery_challan_items dci
-      where dci.delivery_challan_id = ${challanId}
-        and dci.purchase_order_line_id is not null
-      group by dci.purchase_order_line_id
-    ) own
-    join purchase_order_lines pol on pol.id = own.pol_id
-    join purchase_orders po on po.id = pol.purchase_order_id
-    left join lateral (
-      select sum(q.quantity) as received
-      from delivery_challan_items q
-      join delivery_challans dc on dc.id = q.delivery_challan_id
-      where q.purchase_order_line_id = pol.id
-        and dc.status = 'issued'
-        and q.delivery_challan_id <> ${challanId}
-    ) elsewhere on true
-    where coalesce(elsewhere.received, 0) + own.quantity > pol.quantity
-    order by pol.line_number
-  `;
+  const rows = (await tx.unsafe(
+    `select pol.id as purchase_order_line_id, po.po_number, pol.line_number,
+            pol.description, pol.quantity::text as ordered_quantity,
+            (elsewhere.received + own.quantity)
+              ::numeric(18,3)::text as received_quantity
+     from (
+       select dci.purchase_order_line_id as pol_id, sum(dci.quantity) as quantity
+       from delivery_challan_items dci
+       where dci.delivery_challan_id = $1
+         and dci.purchase_order_line_id is not null
+       group by dci.purchase_order_line_id
+     ) own
+     join purchase_order_lines pol on pol.id = own.pol_id
+     join purchase_orders po on po.id = pol.purchase_order_id
+     cross join lateral (
+       select ${receivedQuantitySql({ excludingChallan: '$1' })} as received
+     ) elsewhere
+     where elsewhere.received + own.quantity > pol.quantity
+     order by pol.line_number`,
+    [challanId],
+  )) as unknown as {
+    purchase_order_line_id: string;
+    po_number: string;
+    line_number: number;
+    description: string;
+    ordered_quantity: string;
+    received_quantity: string;
+  }[];
   return rows.map((row) => ({
     purchaseOrderLineId: row.purchase_order_line_id,
     poNumber: row.po_number,

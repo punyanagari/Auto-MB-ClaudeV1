@@ -49,6 +49,16 @@ const CHIP_TONES = {
   // deliberately NOT mapped — see the note below `CHIP_TONES`.
   'in-production': 'warning',
 
+  // A part whose available quantity has fallen to its reorder level, or
+  // below what the open job cards have already spoken for (0087). The
+  // mock badges this `destructive`; here it is a caution, because the
+  // destructive family is cancelled/rejected/declined and a part that
+  // needs reordering is a thing to do rather than a thing that failed.
+  // Its two siblings, `available` and `retired`, are deliberately
+  // UNMAPPED so they read neutral — being in stock is not an
+  // achievement, and a retired part is finished rather than bad.
+  'low-stock': 'warning',
+
   review: 'warning',
   prepared: 'warning',
   // A company document whose newest version lapses inside the warning

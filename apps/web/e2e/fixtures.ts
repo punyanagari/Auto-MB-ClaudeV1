@@ -718,6 +718,172 @@ const PRODUCTION_BOM = {
   ],
 };
 
+/* The stock ledger (migration 0087). Shaped so one paint carries every
+   tint the two screens can put on a word: a part reading `Available`, one
+   reading `Low stock` against its reorder level, and one whose available
+   quantity is NEGATIVE — which is the same chip for a different reason
+   and the number the shortage screen orders against. The shortage row
+   carries both a Work-backed job card and a private one, because the
+   second renders a badge with no Work code beside it. */
+const STOCK_REGISTER = {
+  items: [
+    {
+      id: '9f2c1d84-6b3a-4e57-8c10-2a5d7e9f4b31',
+      itemCode: 'EL-SMPS-2410',
+      name: '24 V 10 A SMPS',
+      category: 'Power supplies',
+      unit: 'Nos',
+      manufactured: false,
+      serialControlled: true,
+      active: true,
+      reorderLevel: '20.000',
+      onHand: '30.000',
+      committed: '4.000',
+      available: '26.000',
+      belowReorderLevel: false,
+    },
+    {
+      id: '3b7e5a91-2c48-4d6f-9a03-8e1b6c2f7d54',
+      itemCode: 'EL-CTRL-ETH',
+      name: 'Ethernet controller card',
+      category: 'Electronics',
+      unit: 'Nos',
+      manufactured: false,
+      serialControlled: true,
+      active: true,
+      reorderLevel: '10.000',
+      onHand: '9.000',
+      committed: '3.000',
+      available: '6.000',
+      belowReorderLevel: true,
+    },
+    {
+      id: '6d4f8c02-7a15-4b93-8e26-5c9a3f1b7e48',
+      itemCode: 'RM-CAB-IPDB6',
+      name: 'Powder-coated cabinet',
+      category: 'Fabrication',
+      unit: 'Nos',
+      manufactured: false,
+      serialControlled: false,
+      active: true,
+      reorderLevel: null,
+      onHand: '0.000',
+      committed: '11.000',
+      available: '-11.000',
+      belowReorderLevel: false,
+    },
+  ],
+  nextCursor: null,
+  summary: { partsTracked: 3, partsBelowReorderLevel: 1, partsShort: 1 },
+};
+
+const STOCK_MOVEMENTS = {
+  movements: [
+    {
+      id: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+      reference: 'SM/EL-SMPS-2410/2',
+      itemId: '9f2c1d84-6b3a-4e57-8c10-2a5d7e9f4b31',
+      itemCode: 'EL-SMPS-2410',
+      itemName: '24 V 10 A SMPS',
+      unit: 'Nos',
+      movementType: 'issue',
+      quantity: '-4.000',
+      balanceAfter: '26.000',
+      movementDate: '2026-08-14',
+      source: 'work',
+      sourceLabel: 'PL-281',
+      reason: null,
+      counterparty: null,
+      createdAt: '2026-08-14T09:00:00.000Z',
+    },
+    {
+      id: '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e',
+      reference: 'SM/EL-SMPS-2410/1',
+      itemId: '9f2c1d84-6b3a-4e57-8c10-2a5d7e9f4b31',
+      itemCode: 'EL-SMPS-2410',
+      itemName: '24 V 10 A SMPS',
+      unit: 'Nos',
+      movementType: 'adjustment_in',
+      quantity: '30.000',
+      balanceAfter: '30.000',
+      movementDate: '2026-08-12',
+      source: 'none',
+      sourceLabel: null,
+      reason: 'Opening stock count',
+      counterparty: null,
+      createdAt: '2026-08-12T09:00:00.000Z',
+    },
+  ],
+  nextCursor: null,
+};
+
+const STOCK_PENDING_RECEIPTS = {
+  dispatches: [
+    {
+      productionDispatchId: '7e8f9a0b-1c2d-4e3f-8a4b-5c6d7e8f9a0b',
+      reference: 'PP-26-081/D1',
+      dispatchedOn: '2026-08-15',
+      itemId: '4c5d6e7f-8a9b-4c0d-8e1f-2a3b4c5d6e7f',
+      itemCode: 'PEB-IPDB-6L',
+      itemName: 'IP Display Board 6 line',
+      unit: 'Nos',
+      quantity: '6',
+    },
+  ],
+};
+
+const STOCK_SHORTAGES = {
+  shortages: [
+    {
+      itemId: '6d4f8c02-7a15-4b93-8e26-5c9a3f1b7e48',
+      itemCode: 'RM-CAB-IPDB6',
+      name: 'Powder-coated cabinet',
+      unit: 'Nos',
+      required: '11.000',
+      onHand: '0.000',
+      shortage: '11.000',
+      jobCards: [
+        {
+          id: '8a9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d',
+          number: 'PP-26-081',
+          workId: 'd6a1c9b4-5e73-4f28-9a0c-1b2d3e4f5a67',
+          workCode: 'PL-281',
+          required: '7.000',
+        },
+        {
+          id: '9b0c1d2e-3f4a-4b5c-8d6e-8f9a0b1c2d3e',
+          number: 'PP-26-082',
+          workId: null,
+          workCode: null,
+          required: '4.000',
+        },
+      ],
+    },
+  ],
+  purchaseOrders: [
+    {
+      id: '0c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+      workId: 'd6a1c9b4-5e73-4f28-9a0c-1b2d3e4f5a67',
+      poNumber: 'PL-281-PO-03',
+      status: 'issued',
+      vendorDesignation: 'Bright LED Components',
+      poDate: '2026-08-10',
+      expectedOn: '2026-08-24',
+      jobCardNumbers: ['PP-26-081'],
+      lines: [
+        {
+          productionItemId: '3b7e5a91-2c48-4d6f-9a03-8e1b6c2f7d54',
+          itemCode: 'EL-CTRL-ETH',
+          name: 'Ethernet controller card',
+          unit: 'Nos',
+          ordered: '18.000',
+          received: '6.000',
+        },
+      ],
+    },
+  ],
+};
+
 const TENDER_LIST = {
   tenders: [
     {
@@ -907,6 +1073,23 @@ export async function mockWorkspace(
   );
   await page.route('**/api/production/job-cards*', (route) =>
     route.fulfill(json(PRODUCTION_JOB_CARD_LIST)),
+  );
+  /* The stock ledger (0087). The shortage screen also reads the contacts
+     master for its vendor picker, and the handler below answers that with
+     an empty list — so the picker renders its "Select a vendor" option and
+     the primary action stays correctly disabled, which is the state the
+     scan has to check the contrast of. */
+  await page.route('**/api/stock/items*', (route) =>
+    route.fulfill(json(STOCK_REGISTER)),
+  );
+  await page.route('**/api/stock/movements*', (route) =>
+    route.fulfill(json(STOCK_MOVEMENTS)),
+  );
+  await page.route('**/api/stock/production-receipts*', (route) =>
+    route.fulfill(json(STOCK_PENDING_RECEIPTS)),
+  );
+  await page.route('**/api/stock/shortages*', (route) =>
+    route.fulfill(json(STOCK_SHORTAGES)),
   );
   await page.route('**/api/masters/contacts*', (route) =>
     route.fulfill(json({ contacts: [] })),

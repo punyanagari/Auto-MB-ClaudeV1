@@ -1,4 +1,5 @@
 import {
+  Boxes,
   CircleCheckBig,
   Database,
   ClipboardCheck,
@@ -38,6 +39,7 @@ export type ModuleKey =
   | 'search'
   | 'installations'
   | 'production'
+  | 'stock'
   | 'masters'
   | 'members'
   | 'settings';
@@ -62,11 +64,11 @@ export interface NavGroup {
  * then Documents, Operations and Administration.
  *
  * The mock draws modules this build has no route for — E-Way Bills,
- * Inventory, Purchase orders, Maintenance, Employees — and those are
- * omitted rather than rendered as dead entries. Production (migration
- * 0084) and Correspondence (0086) left that list this wave: Production
- * takes the first place the mock gives it under Operations, and
- * Correspondence the last under Documents.
+ * Purchase orders, Maintenance, Employees — and those are omitted rather
+ * than rendered as dead entries. Production (migration 0084),
+ * Correspondence (0086) and Inventory (0087) all left that list this
+ * wave: Production and Inventory take the places the mock gives them
+ * under Operations, and Correspondence the last under Documents.
  * Quotations runs the other way: the mock draws it under Documents in its
  * own list, so it keeps its place here.
  *
@@ -122,6 +124,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'production', label: 'Production', icon: Factory },
       { key: 'installations', label: 'Installations', icon: Wrench },
       { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
+      { key: 'stock', label: 'Inventory', icon: Boxes },
       { key: 'search', label: 'Global search', icon: ScanSearch },
     ],
   },
@@ -174,6 +177,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'installations', workId: null };
     case 'production':
       return { name: 'production', workId: null };
+    case 'stock':
+      return { name: 'stock' };
     case 'masters':
       return { name: 'masters' };
     case 'members':
@@ -216,6 +221,10 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'production-items':
     case 'production-job-card':
       return 'production';
+    // The register and the shortage screen are one place on the rail.
+    case 'stock':
+    case 'stock-shortages':
+      return 'stock';
     case 'dashboard':
     case 'challans':
     case 'invoices':
@@ -305,6 +314,10 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Global search';
     case 'installations':
       return 'Installations';
+    case 'stock':
+      return 'Inventory';
+    case 'stock-shortages':
+      return 'Shortage procurement';
     case 'masters':
       return 'Masters';
     case 'members':

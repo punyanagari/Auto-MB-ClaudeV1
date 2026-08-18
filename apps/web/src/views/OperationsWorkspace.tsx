@@ -154,6 +154,14 @@ const ProductionJobCard = lazy(() =>
     default: module.ProductionJobCard,
   })),
 );
+const StockRegister = lazy(() =>
+  import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
+);
+const StockShortages = lazy(() =>
+  import('./StockShortages.js').then((module) => ({
+    default: module.StockShortages,
+  })),
+);
 const NitIntake = lazy(() =>
   import('./NitIntake.js').then((module) => ({ default: module.NitIntake })),
 );
@@ -1181,6 +1189,28 @@ export function OperationsWorkspace({
                 canCancel={canCancel}
                 onBack={() => {
                   navigate({ name: 'production', workId: null });
+                }}
+              />
+            )}
+
+            {view.name === 'stock' && (
+              <StockRegister
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                onOpenShortages={() => {
+                  navigate({ name: 'stock-shortages' });
+                }}
+              />
+            )}
+
+            {view.name === 'stock-shortages' && (
+              <StockShortages
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+                onOpenRegister={() => {
+                  navigate({ name: 'stock' });
                 }}
               />
             )}

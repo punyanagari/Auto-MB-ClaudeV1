@@ -230,6 +230,14 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   production_dispatches: 'SELECT, INSERT, DELETE',
   production_dispatch_counters: 'SELECT, INSERT, UPDATE',
   production_dispatch_serials: 'SELECT, INSERT, DELETE',
+  // The stock ledger (0087). The movement table is append-only in the
+  // strongest sense the schema can state: no UPDATE, because a balance
+  // that can be edited is not a ledger, and no DELETE either, because a
+  // movement posted in error is reversed by an adjustment carrying the
+  // reason. The counter records how far the ledger has gone and only
+  // ever climbs.
+  stock_movements: 'SELECT, INSERT',
+  stock_movement_counters: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

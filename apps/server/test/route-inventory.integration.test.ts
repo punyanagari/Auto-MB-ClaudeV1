@@ -157,6 +157,14 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     'GET /api/production/job-cards/:id',
     "one job card's own materials, units, component slots and releases, all bounded by the card",
   ],
+  [
+    'GET /api/stock/shortages',
+    'what the open job cards need and the shelf does not hold: one row per PART, so it is bounded by the item master rather than by history, and it shrinks to nothing as the material is bought. The screen reads all of it at once because "what do we order" is a question about the whole list, and the purchase orders beside it are already capped at fifty',
+  ],
+  [
+    'GET /api/stock/production-receipts',
+    'production despatches with no stock receipt behind them: a work queue that is meant to be empty, and every row on it is a job somebody has to do today. Paging a backlog whose whole point is that it should be short would hide the tail of exactly the problem it exists to report',
+  ],
 
   // --- Bounded by the Work's own schedule ---------------------------------
   ['GET /api/works/:id/balance', 'one row per LOA schedule item'],

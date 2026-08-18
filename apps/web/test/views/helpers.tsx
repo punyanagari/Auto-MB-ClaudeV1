@@ -639,6 +639,29 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     clearNumberSeries: vi.fn<ApiClient['clearNumberSeries']>(),
     createDirectTaxInvoice: vi.fn<ApiClient['createDirectTaxInvoice']>(),
     setWorkItemTaxFacts: vi.fn<ApiClient['setWorkItemTaxFacts']>(),
+    // The stock ledger (0087). The three reads answer empty by default so
+    // a view that opens them renders its own empty state rather than
+    // hanging on an unresolved mock.
+    listStockItems: vi.fn<ApiClient['listStockItems']>().mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      summary: { partsTracked: 0, partsBelowReorderLevel: 0, partsShort: 0 },
+    }),
+    setStockReorderLevel: vi.fn<ApiClient['setStockReorderLevel']>(),
+    listStockMovements: vi
+      .fn<ApiClient['listStockMovements']>()
+      .mockResolvedValue({ movements: [], nextCursor: null }),
+    postStockMovement: vi.fn<ApiClient['postStockMovement']>(),
+    listPendingProductionReceipts: vi
+      .fn<ApiClient['listPendingProductionReceipts']>()
+      .mockResolvedValue({ dispatches: [] }),
+    recordProductionReceipt: vi.fn<ApiClient['recordProductionReceipt']>(),
+    listStockShortages: vi.fn<ApiClient['listStockShortages']>().mockResolvedValue({
+      shortages: [],
+      purchaseOrders: [],
+      purchaseOrdersTruncated: false,
+    }),
+    createShortagePurchaseOrder: vi.fn<ApiClient['createShortagePurchaseOrder']>(),
     ...overrides,
   };
 }

@@ -36,6 +36,8 @@ import {
 import { Production } from '../../src/views/Production.js';
 import { ProductionItems } from '../../src/views/ProductionItems.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
+import { StockRegister } from '../../src/views/StockRegister.js';
+import { StockShortages } from '../../src/views/StockShortages.js';
 import { Tenders } from '../../src/views/Tenders.js';
 import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
@@ -588,6 +590,39 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'An upload form has no register to be empty; the pickers simply come back empty.',
     },
+  },
+  {
+    view: 'StockRegister.tsx',
+    name: 'the stock register',
+    // Three reads on mount, and the failure of any one of them is the
+    // screen's failure: a register that rendered its items while its
+    // ledger was unreachable would show balances nothing could explain.
+    loads: ['listStockItems', 'listStockMovements', 'listPendingProductionReceipts'],
+    render: (api) => (
+      <StockRegister
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onOpenShortages={noop}
+      />
+    ),
+    retry: /Retry the stock register/,
+    empty: { text: /No part is in the item master yet/ },
+  },
+  {
+    view: 'StockShortages.tsx',
+    name: 'shortage procurement',
+    loads: ['listStockShortages', 'listContacts'],
+    render: (api) => (
+      <StockShortages
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onOpenRegister={noop}
+      />
+    ),
+    retry: /Retry the shortage list/,
+    empty: { text: /Nothing is short/ },
   },
   {
     view: 'Tenders.tsx',

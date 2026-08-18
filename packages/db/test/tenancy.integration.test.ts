@@ -184,6 +184,11 @@ const TENANT_TABLES = [
   'production_dispatch_counters',
   'production_dispatches',
   'production_dispatch_serials',
+  // The stock ledger: the per-item position and the append-only
+  // movements it orders (0087). The counter precedes the movements
+  // because the guard claims it as the first write of every one.
+  'stock_movement_counters',
+  'stock_movements',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -237,7 +242,12 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     table !== 'production_serials' &&
     table !== 'production_component_serials' &&
     table !== 'production_dispatches' &&
-    table !== 'production_dispatch_serials',
+    table !== 'production_dispatch_serials' &&
+    // A stock movement states what happened; a balance that can be
+    // edited is not a ledger. The application role holds no UPDATE, so a
+    // cross-tenant one raises 42501 rather than matching zero rows
+    // (0087).
+    table !== 'stock_movements',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -354,6 +364,11 @@ const DELETE_REVOKED_TABLES = [
   'production_job_card_counters',
   'production_serial_counters',
   'production_dispatch_counters',
+  // A movement posted in error is reversed by an adjustment carrying the
+  // reason, never deleted; the counter records how far the ledger has
+  // gone (0087).
+  'stock_movements',
+  'stock_movement_counters',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -1595,6 +1610,22 @@ async function seedTenantGraph(
       )
       values (
         ${organisationId}, ${dispatch.id}, ${unit.id}, ${jobCard.id}
+      )
+    `;
+
+    // The stock ledger (0087): the despatch above taken onto the shelf.
+    // One movement is all the sweeps need, and taking it from the
+    // despatch keeps the seed a real chain rather than a bare row —
+    // `stock_movement_counters` is seeded by the guard as a side effect,
+    // which is the only way that row is ever created.
+    await tx`
+      insert into stock_movements (
+        organisation_id, production_item_id, movement_type, quantity,
+        movement_date, production_dispatch_id, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${product.id}, 'production_receipt', 1,
+        '2026-08-01', ${dispatch.id}, ${userId}
       )
     `;
 

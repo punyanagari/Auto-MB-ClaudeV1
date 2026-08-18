@@ -1,5 +1,15 @@
 import type {
   AddMemberRequest,
+  CreateShortagePurchaseOrderRequest,
+  CreateStockMovementRequest,
+  PendingProductionReceiptListResponse,
+  RecordProductionReceiptRequest,
+  SetReorderLevelRequest,
+  StockItemResponse,
+  StockMovementListResponse,
+  StockMovementResponse,
+  StockRegisterResponse,
+  StockShortageResponse,
   ApiError,
   ApprovalRequest,
   ApprovalStatus,
@@ -1852,6 +1862,45 @@ export interface ApiClient {
     workItemId: string,
     body: SetWorkItemTaxFactsRequest,
   ) => Promise<WorkItemTaxFactsResponse>;
+  /** The stock ledger (migration 0087). Organisation-level, not per Work:
+   * one shelf serves every contract. The register's balances and the
+   * shortage list are derived server-side on every read — there is no
+   * stored balance to go stale, and nothing here posts one. */
+  readonly listStockItems: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly status?: 'all' | 'active';
+    },
+  ) => Promise<StockRegisterResponse>;
+  readonly setStockReorderLevel: (
+    organisationId: string,
+    itemId: string,
+    body: SetReorderLevelRequest,
+  ) => Promise<StockItemResponse>;
+  readonly listStockMovements: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<StockMovementListResponse>;
+  readonly postStockMovement: (
+    organisationId: string,
+    body: CreateStockMovementRequest,
+  ) => Promise<StockMovementResponse>;
+  readonly listPendingProductionReceipts: (
+    organisationId: string,
+  ) => Promise<PendingProductionReceiptListResponse>;
+  readonly recordProductionReceipt: (
+    organisationId: string,
+    body: RecordProductionReceiptRequest,
+  ) => Promise<StockMovementResponse>;
+  readonly listStockShortages: (
+    organisationId: string,
+  ) => Promise<StockShortageResponse>;
+  readonly createShortagePurchaseOrder: (
+    organisationId: string,
+    body: CreateShortagePurchaseOrderRequest,
+  ) => Promise<PurchaseOrderDetailResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -4357,6 +4406,63 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<WorkItemTaxFactsResponse>(
         `/api/work-items/${workItemId}/tax-facts`,
         { method: 'PATCH', body, organisationId },
+      );
+    },
+    async listStockItems(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<StockRegisterResponse>(`/api/stock/items${suffix}`, {
+        organisationId,
+      });
+    },
+    async setStockReorderLevel(organisationId, itemId, body) {
+      return request<StockItemResponse>(`/api/stock/items/${itemId}/reorder-level`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listStockMovements(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<StockMovementListResponse>(`/api/stock/movements${suffix}`, {
+        organisationId,
+      });
+    },
+    async postStockMovement(organisationId, body) {
+      return request<StockMovementResponse>('/api/stock/movements', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async listPendingProductionReceipts(organisationId) {
+      return request<PendingProductionReceiptListResponse>(
+        '/api/stock/production-receipts',
+        { organisationId },
+      );
+    },
+    async recordProductionReceipt(organisationId, body) {
+      return request<StockMovementResponse>('/api/stock/production-receipts', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async listStockShortages(organisationId) {
+      return request<StockShortageResponse>('/api/stock/shortages', {
+        organisationId,
+      });
+    },
+    async createShortagePurchaseOrder(organisationId, body) {
+      return request<PurchaseOrderDetailResponse>(
+        '/api/stock/shortages/purchase-order',
+        { method: 'POST', body, organisationId },
       );
     },
   };

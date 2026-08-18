@@ -26,7 +26,12 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import { canonicalRateText } from '../rate-text.js';
 import { assertWorkOperable } from '../work-status.js';
 import { cancellationNote } from './challans.js';
-import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import {
+  audit,
+  errorResponses,
+  IdParamsSchema,
+  receivedQuantitySql,
+} from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 
@@ -149,37 +154,36 @@ interface LineRow {
 }
 
 /**
- * Every line with its receipt balance, computed in exact SQL numeric
- * arithmetic from the live delivery challan items that point at it.
+ * Every line with its receipt balance, in exact SQL numeric arithmetic
+ * from the live rows that point at it — through the one shared
+ * {@link receivedQuantitySql} fragment, which is also what decides WHICH
+ * channel a line is received on.
  *
- * Only ISSUED challans count: a draft challan has delivered nothing, and
- * a cancelled one releases what it had claimed — exactly the rule the
- * Work balance already applies to awarded quantities. `pending` floors at
- * zero so an over-receipt reads as "nothing still owed" rather than as a
- * negative debt; the ordered and received quantities are both on the row,
- * so an over-receipt is still visible.
+ * Only ISSUED challans count on the challan channel: a draft challan has
+ * delivered nothing, and a cancelled one releases what it had claimed,
+ * exactly the rule the Work balance already applies to awarded
+ * quantities. On the stock channel every movement counts, because the
+ * ledger is append-only and has no draft state to wait for.
+ *
+ * `pending` floors at zero so an over-receipt reads as "nothing still
+ * owed" rather than as a negative debt; the ordered and received
+ * quantities are both on the row, so an over-receipt is still visible.
  */
 async function readLines(tx: TransactionSql, purchaseOrderId: string) {
-  return tx<LineRow[]>`
-    select pol.id, pol.work_item_id, pol.line_number, pol.description,
-           pol.hsn_code, pol.unit_code, pol.quantity::text as quantity,
-           pol.rate::text as rate, pol.gst_rate::text as gst_rate,
-           pol.line_amount::text as line_amount,
-           coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0)
-             ::numeric(18,3)::text as received_quantity,
-           greatest(
-             pol.quantity
-               - coalesce(sum(dci.quantity) filter (where dc.status = 'issued'), 0),
-             0
-           )::numeric(18,3)::text as pending_quantity
-    from purchase_order_lines pol
-    left join delivery_challan_items dci
-      on dci.purchase_order_line_id = pol.id
-    left join delivery_challans dc on dc.id = dci.delivery_challan_id
-    where pol.purchase_order_id = ${purchaseOrderId}
-    group by pol.id
-    order by pol.line_number
-  `;
+  return (await tx.unsafe(
+    `select pol.id, pol.work_item_id, pol.line_number, pol.description,
+            pol.hsn_code, pol.unit_code, pol.quantity::text as quantity,
+            pol.rate::text as rate, pol.gst_rate::text as gst_rate,
+            pol.line_amount::text as line_amount,
+            received.quantity::numeric(18,3)::text as received_quantity,
+            greatest(pol.quantity - received.quantity, 0)
+              ::numeric(18,3)::text as pending_quantity
+     from purchase_order_lines pol
+     cross join lateral (select ${receivedQuantitySql()} as quantity) received
+     where pol.purchase_order_id = $1
+     order by pol.line_number`,
+    [purchaseOrderId],
+  )) as unknown as LineRow[];
 }
 
 function toLine(row: LineRow): PurchaseOrderLine {
@@ -199,7 +203,7 @@ function toLine(row: LineRow): PurchaseOrderLine {
   };
 }
 
-async function readDetail(
+export async function readDetail(
   tx: TransactionSql,
   purchaseOrderId: string,
 ): Promise<PurchaseOrderDetailResponse> {
@@ -287,7 +291,7 @@ function trimmedText(
  * the Work's LOA letter date — a contractor cannot buy against an award
  * that did not exist yet. "Today" is the organisation's own timezone, not
  * the server clock. */
-async function assertPurchaseOrderDate(
+export async function assertPurchaseOrderDate(
   tx: TransactionSql,
   workId: string,
   poDate: string,
@@ -317,7 +321,7 @@ async function assertPurchaseOrderDate(
   }
 }
 
-interface VendorRow {
+export interface VendorRow {
   id: string;
   designation: string;
   contact_person: string | null;
@@ -339,7 +343,7 @@ interface VendorRow {
  * contact of another tenant is invisible under RLS and answers exactly
  * like an unknown id.
  */
-async function requireVendor(
+export async function requireVendor(
   tx: TransactionSql,
   contactId: string,
 ): Promise<VendorRow> {
@@ -619,6 +623,79 @@ async function readLineInputs(
   }));
 }
 
+/**
+ * The draft row, its numbering-conflict refusal, and its audit event —
+ * one helper, because two modules now raise a purchase order.
+ *
+ * `routes/inventory.ts` drafts one from a production shortage. Written
+ * out a second time there it would be a second place for the 23505 catch
+ * to be forgotten, and the partial unique index that holds one draft per
+ * Work and vendor (0045) is exactly the kind of rule that only shows up
+ * under concurrency — where a missing catch surfaces as a bare 500
+ * instead of the named conflict the editor knows how to recover from.
+ *
+ * `details` is merged into the audit event so a caller can record WHY it
+ * drafted the order without inventing a second action name: the
+ * procurement register and the shortage screen both write
+ * `purchase_order.created`, and a reader of the trail sees one kind of
+ * event with one shape.
+ */
+export async function createPurchaseOrderDraft(
+  tx: TransactionSql,
+  input: {
+    readonly organisationId: string;
+    readonly userId: string;
+    readonly workId: string;
+    readonly vendorContactId: string;
+    readonly poDate: string;
+    readonly expectedOn?: string | null;
+    readonly terms?: string | null;
+  },
+  details: Record<string, unknown> = {},
+): Promise<string> {
+  const [created] = await tx<{ id: string }[]>`
+    insert into purchase_orders (
+      organisation_id, work_id, vendor_contact_id, po_date, expected_on,
+      terms, created_by_user_id
+    )
+    values (
+      ${input.organisationId}, ${input.workId}, ${input.vendorContactId},
+      ${input.poDate}, ${input.expectedOn ?? null}, ${input.terms ?? null},
+      ${input.userId}
+    )
+    returning id
+  `.catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === '23505') {
+      // A concurrent create won between the pre-check and this insert;
+      // the transaction is aborted, so the route-level catch names the
+      // winner from a fresh read.
+      throw httpError(
+        409,
+        'PO_DRAFT_EXISTS',
+        'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+      );
+    }
+    throw error;
+  });
+  if (!created) throw new Error('purchase order insert returned no row');
+
+  await audit(
+    tx,
+    input.organisationId,
+    input.userId,
+    'purchase_order.created',
+    'purchase_orders',
+    created.id,
+    {
+      workId: input.workId,
+      vendorContactId: input.vendorContactId,
+      poDate: input.poDate,
+      ...details,
+    },
+  );
+  return created.id;
+}
+
 // --- Routes -----------------------------------------------------------------
 
 export function registerPurchaseOrderRoutes(
@@ -655,14 +732,7 @@ export function registerPurchaseOrderRoutes(
                  or exists (
                    select 1 from purchase_order_lines pol
                    where pol.purchase_order_id = po.id
-                     and pol.quantity > coalesce((
-                       select sum(dci.quantity)
-                       from delivery_challan_items dci
-                       join delivery_challans dc
-                         on dc.id = dci.delivery_challan_id
-                       where dci.purchase_order_line_id = pol.id
-                         and dc.status = 'issued'
-                     ), 0)
+                     and pol.quantity > ${receivedQuantitySql()}
                  )
                )
              order by po.po_date desc, po.created_at desc, po.id`,
@@ -723,45 +793,16 @@ export function registerPurchaseOrderRoutes(
           );
         }
 
-        const [created] = await tx<{ id: string }[]>`
-            insert into purchase_orders (
-              organisation_id, work_id, vendor_contact_id, po_date, expected_on,
-              terms, created_by_user_id
-            )
-            values (
-              ${organisationId}, ${workId}, ${body.vendorContactId},
-              ${body.poDate}, ${body.expectedOn ?? null}, ${terms}, ${user.id}
-            )
-            returning id
-          `.catch((error: unknown) => {
-          if (error instanceof Error && 'code' in error && error.code === '23505') {
-            // A concurrent create won between the pre-check and this
-            // insert; the transaction is aborted, so the route-level
-            // catch names the winner from a fresh read.
-            throw httpError(
-              409,
-              'PO_DRAFT_EXISTS',
-              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
-            );
-          }
-          throw error;
-        });
-        if (!created) throw new Error('purchase order insert returned no row');
-
-        await audit(
-          tx,
+        const createdId = await createPurchaseOrderDraft(tx, {
           organisationId,
-          user.id,
-          'purchase_order.created',
-          'purchase_orders',
-          created.id,
-          {
-            workId,
-            vendorContactId: body.vendorContactId,
-            poDate: body.poDate,
-          },
-        );
-        return readDetail(tx, created.id);
+          userId: user.id,
+          workId,
+          vendorContactId: body.vendorContactId,
+          poDate: body.poDate,
+          expectedOn: body.expectedOn ?? null,
+          terms,
+        });
+        return readDetail(tx, createdId);
       }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
           tenant(async (tx) => {
@@ -1163,6 +1204,12 @@ export function registerPurchaseOrderRoutes(
         // cancelled AFTER this commits; the balance is therefore
         // recomputed live on every read, and a closed order whose receipt
         // was later released shows its lines pending again.
+        //
+        // The stock half of the balance (0087) needs no lock of its own:
+        // the ledger is append-only and a movement is never released, so
+        // a receipt landing beside this transaction can only make a line
+        // MORE received, and the only decision made here is whether every
+        // line already is.
         await tx`
           select dc.id from delivery_challans dc
           where dc.id in (

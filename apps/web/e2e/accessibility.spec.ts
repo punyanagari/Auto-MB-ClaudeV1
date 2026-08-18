@@ -136,6 +136,37 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(page.getByText('Tracking only')).toBeVisible();
   await expectNoAxeViolations(page, 'tender iREPS submission panel');
 
+  /* The stock ledger (migration 0087). Scanned twice, because the two
+     screens put colour on a word in two different places.
+
+     The REGISTER carries its status words and, more to the point, a
+     NEGATIVE available quantity in a numeric column. A minus sign in mono
+     tabular figures is the whole difference between "26" and "-11" on a
+     screen somebody buys material from, so it has to hold contrast in
+     both themes rather than leaning on the tint beside it.
+
+     The SHORTAGE screen carries the one destructive-tinted figure in the
+     pack, a checkbox row whose label is three stacked lines, and a
+     disabled primary action beside the picker that disables it. */
+  await page.getByRole('link', { name: 'Inventory' }).click();
+  await expect(page.getByRole('heading', { name: 'Inventory control' })).toBeVisible();
+  await expect(page.getByText('Low stock').first()).toBeVisible();
+  await expect(page.getByText('Available').first()).toBeVisible();
+  await expect(page.getByText('-11.000')).toBeVisible();
+  await expect(page.getByText('PP-26-081/D1')).toBeVisible();
+  await expectNoAxeViolations(page, 'stock register');
+
+  await page.getByRole('link', { name: 'Shortage procurement' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Shortage procurement' }),
+  ).toBeVisible();
+  await expect(page.getByText('11.000 Nos')).toBeVisible();
+  await expect(page.getByRole('checkbox')).toBeChecked();
+  await expect(
+    page.getByRole('button', { name: /Create draft supplier PO/ }),
+  ).toBeDisabled();
+  await expectNoAxeViolations(page, 'shortage procurement');
+
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();
