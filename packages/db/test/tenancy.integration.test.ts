@@ -1686,7 +1686,8 @@ async function seedTenantGraph(
       )
       returning id
     `;
-    if (!maintenanceRequest) throw new Error('seed maintenance request returned no row');
+    if (!maintenanceRequest)
+      throw new Error('seed maintenance request returned no row');
     const [maintenanceLine] = await tx<{ id: string }[]>`
       insert into maintenance_request_lines (
         organisation_id, maintenance_request_id, production_item_id,

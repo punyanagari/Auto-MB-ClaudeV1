@@ -1635,8 +1635,12 @@ describe('tenant migration contract', () => {
     expect(sql).not.toMatch(/received_return_quantity\s+quantity_amount/i);
     // The two functions the derivations go through, so the dispatch
     // ceiling and the closure gate cannot be computed two different ways.
-    expect(sql).toContain('app_private.maintenance_line_outstanding(org uuid, line uuid)');
-    expect(sql).toContain('app_private.maintenance_line_return_due(org uuid, line uuid)');
+    expect(sql).toContain(
+      'app_private.maintenance_line_outstanding(org uuid, line uuid)',
+    );
+    expect(sql).toContain(
+      'app_private.maintenance_line_return_due(org uuid, line uuid)',
+    );
 
     // States are CHECKed text, not an enum, for the reason 0079 and 0086
     // give about theirs.
@@ -1699,9 +1703,7 @@ describe('tenant migration contract', () => {
     // source is one more term.
     expect(sql).toContain('ADD COLUMN maintenance_dispatch_id uuid,');
     expect(sql).toContain('DROP CONSTRAINT stock_movements_source_shape_check;');
-    expect(sql).toContain(
-      '+ (maintenance_dispatch_id IS NOT NULL)::int = 1',
-    );
+    expect(sql).toContain('+ (maintenance_dispatch_id IS NOT NULL)::int = 1');
     // The non-partial leading index the new foreign key needs.
     expect(sql).toContain(
       'CREATE INDEX stock_movements_maintenance_dispatch_idx\n  ON stock_movements (organisation_id, maintenance_dispatch_id);',

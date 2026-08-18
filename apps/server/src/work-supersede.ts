@@ -282,11 +282,13 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   // raising a NEW request against a Work that is no longer active.
   maintenance_requests:
     'a fault on a platform that superseding the Work does not repair; the obligation to put material there outlives the letter being re-read',
-  maintenance_request_lines: 'what a maintenance request asked for, which does not block',
+  maintenance_request_lines:
+    'what a maintenance request asked for, which does not block',
   maintenance_dispatches:
     'a replacement part handed to a site receiver against a fault; the OUTWARD contractual act is the delivery challan, which blocks',
   maintenance_dispatch_lines: 'the quantities one maintenance challan carried',
-  maintenance_returns: 'a defective unit received back for repair, which does not block',
+  maintenance_returns:
+    'a defective unit received back for repair, which does not block',
   maintenance_request_counters: 'numbering state, not a document',
   maintenance_dispatch_counters: 'numbering state, not a document',
 };
