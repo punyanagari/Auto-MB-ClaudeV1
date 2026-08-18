@@ -318,6 +318,16 @@ export function App({ api: providedApi }: AppProps) {
     sessionRefreshIdRef.current += 1;
     try {
       await api.signOut();
+    } catch {
+      /* Swallowed on purpose, and it is not a formality: offline, this
+       * call is REFUSED before it is sent (`src/api.ts`), so signing out
+       * with no connection would otherwise reject on every attempt. The
+       * local half has to happen either way — this browser throws away
+       * the workspace it was showing and the records it had cached — and
+       * leaving an operator looking at somebody else's screen because
+       * the server could not be told is the worse failure. The server
+       * session outlives it and ends on its own; nothing here could
+       * shorten that without reaching the server. */
     } finally {
       forgetOrganisation();
       setPhase({ name: 'signed-out' });

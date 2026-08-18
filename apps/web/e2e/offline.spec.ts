@@ -80,6 +80,24 @@ test('the shell opens with no connection, serves the register it last read, and 
   await expect(banner).toContainText('Nothing can be created, changed or issued');
   await expectNoAxeViolations(page, 'offline banner over an open screen');
 
+  /* The phone, which is where a lost signal actually happens (§ 2, the
+     site-facing shell). The banner is a full sentence in a flex row and
+     is exactly the shape that makes a page scroll sideways at 320px,
+     which `e2e/responsive.spec.ts` guards for every register but cannot
+     reach here — its projects run that file only. Checked in place
+     rather than by running this whole journey three more times. */
+  await page.setViewportSize({ width: 320, height: 640 });
+  await expect(banner).toBeVisible();
+  const overflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    innerWidth: window.innerWidth,
+  }));
+  expect(
+    overflow.scrollWidth,
+    'the offline banner must not make the page scroll sideways at 320px',
+  ).toBeLessThanOrEqual(overflow.innerWidth);
+  await page.setViewportSize({ width: 1280, height: 800 });
+
   // ---------------------------------------------------------------- 2.
   // A write, refused before it is sent, with the refusal left on screen.
   await page.getByRole('button', { name: 'Save company details' }).click();
@@ -105,6 +123,16 @@ test('the shell opens with no connection, serves the register it last read, and 
   await expect(banner).toContainText('Records on this screen were read at');
   await expectNoAxeViolations(page, 'offline dashboard served from the cache');
 
+  /* And a screen with no copy behind it drops the sentence rather than
+     carrying the Dashboard's timestamp onto records it does not
+     describe. Settings reads the organisation profile, which is not one
+     of the four cached registers, so it fails honestly with its own
+     retry — under a banner that no longer claims a read time. */
+  await page.goto('/#/settings');
+  await expect(page.getByRole('button', { name: 'Retry settings' })).toBeVisible();
+  await expect(banner).toBeVisible();
+  await expect(banner).not.toContainText('were read at');
+
   // ---------------------------------------------------------------- 4.
   // A cold start with nothing reachable at all. The service worker
   // serves the document and the bundle, so what appears is Auto-MB
@@ -125,7 +153,14 @@ test('the shell opens with no connection, serves the register it last read, and 
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   await mockWorkspace(page);
   await context.setOffline(false);
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  // The rail is the workspace itself, and the reload left the address on
+  // Settings, so this is the first thing to appear.
+  await expect(page.getByRole('navigation', { name: 'Modules' })).toBeVisible();
+  await expect(banner).toHaveCount(0);
+  // Reading live again, not from the copy: the register's own rows are
+  // back and no staleness sentence is claimed over them.
+  await page.goto('/#/');
+  await expect(page.getByText('PL270-CRB').first()).toBeVisible();
   await expect(banner).toHaveCount(0);
 });
 

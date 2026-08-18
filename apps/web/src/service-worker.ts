@@ -24,13 +24,13 @@
  *    `src/lib/offline.ts` instead, keyed per user and per organisation,
  *    and they die with the tab.
  *
- * 3. The document is fetched NETWORK-FIRST, falling back to the cached
- *    copy. `index.html` is the one file in the build whose name carries
- *    no content hash, so it is the one file a cache-first rule could pin
- *    for ever — and pinning it pins the asset names inside it, which is
- *    how a service worker serves a bundle from six deploys ago until
- *    somebody clears their browser. Hashed assets go cache-first because
- *    their names ARE their content.
+ * 3. The document is fetched NETWORK-FIRST, falling back to the copy
+ *    taken at install. `index.html` is the one file in the build whose
+ *    name carries no content hash, so it is the one file a cache-first
+ *    rule could pin for ever — and pinning it pins the asset names
+ *    inside it, which is how a service worker serves a bundle from six
+ *    deploys ago until somebody clears their browser. Hashed assets go
+ *    cache-first because their names ARE their content.
  *
  * 4. It never calls `skipWaiting()`. A worker that activates while a tab
  *    is open swaps the asset cache underneath a running application, and
@@ -130,14 +130,28 @@
     return url.origin === location.origin && url.pathname.startsWith('/assets/');
   }
 
+  /**
+   * The document: the network's answer while there is one, and the copy
+   * taken at install when there is not.
+   *
+   * The copy is NEVER refreshed from a later fetch, and that is the
+   * point. `index.html` names the asset files, and this worker installed
+   * exactly one set of them. Re-caching a document fetched after a deploy
+   * would leave the cache holding a NEW page that names assets this
+   * worker never installed, and the first offline visit after that deploy
+   * would open a blank screen — the failure the whole file exists to
+   * prevent, arrived from the other direction. Installed together, served
+   * together: the pair is only ever replaced by a whole new worker.
+   *
+   * The cost is one narrow case: an `index.html` edited with no asset
+   * change at all produces no new revision, so the offline copy stays a
+   * version behind until the next build that changes a file. Anyone
+   * ONLINE has the current document either way, because this is
+   * network-first.
+   */
   async function documentResponse(request: Request): Promise<Response> {
     try {
-      const response = await fetch(request);
-      if (response.ok) {
-        const cache = await caches.open(CACHE_NAME);
-        await cache.put(SHELL_URL, response.clone());
-      }
-      return response;
+      return await fetch(request);
     } catch (unreachable) {
       const cached = await caches.match(SHELL_URL);
       if (cached !== undefined) return cached;

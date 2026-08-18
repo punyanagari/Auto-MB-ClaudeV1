@@ -187,6 +187,34 @@ Primary risks:
 - secrets are supplied from a secret manager in production;
 - production refuses placeholder or short signing secrets.
 
+### Client-side storage and the offline shell
+
+The browser holds as little as it can, and what it does hold is written
+down here because a site machine is shared and a cache outlives the
+person who filled it.
+
+- **The service worker caches the application shell and nothing else.**
+  The document and the content-hashed build assets, both public. No API
+  response, no session cookie, no two-factor state, no document byte.
+  Cache Storage is keyed by ORIGIN and survives sign-out, so anything put
+  there would be readable by whoever signs in next; a browser test
+  asserts that no path beginning `/api` appears in any cache after a
+  session (`apps/web/e2e/offline.spec.ts`).
+- **Recently-read registers are cached in memory only**, keyed by signed-
+  in user AND organisation, and evicted whenever either changes — which
+  covers signing out, switching organisation, and the session lapsing.
+  Nothing tenant-owned is written to `localStorage`, `sessionStorage`,
+  IndexedDB or Cache Storage. `sessionStorage` holds one thing, the
+  selected organisation id, which is navigation state and carries no
+  authority.
+- **No authorisation fact is cached.** Memberships, work-scope and the
+  per-feature permission flags are re-read from the server on every
+  session load; a cold start with no connection stops at an explanation
+  rather than restoring a workspace from a remembered one.
+- **Writes are refused while the browser reports no network**, before the
+  request is sent, and nothing is queued for replay. See `docs/UX.md`
+  § 23 for the reasoning and the boundary.
+
 ### Business integrity
 
 - issue, numbering, quantity validation, snapshots, audit, and job enqueue occur atomically;

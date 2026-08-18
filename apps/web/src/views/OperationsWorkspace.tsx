@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { ApiClient, MeResponse } from '../api.js';
 import { useDocumentTitle } from '../lib/document-title.js';
+import { clearCachedReadNotice } from '../lib/offline.js';
 import {
   mastersHash,
   navigateOnClick,
@@ -765,6 +766,24 @@ export function OperationsWorkspace({
       window.history.replaceState(null, '', currentHash);
     }
     hashSyncedRef.current = true;
+  }, [currentHash]);
+
+  /* The offline banner's staleness sentence is a claim about the screen
+   * in front of the operator — "records on THIS screen were read at
+   * 14:32" — so it is forgotten whenever the screen changes and rebuilt
+   * from whatever the new one is answered with. Without this it would
+   * keep naming the oldest copy served anywhere since the connection
+   * went, which is a screen the operator may have left ten minutes ago.
+   *
+   * Keyed on the address rather than on the view object, so a re-render
+   * that produces an identical screen does not clear it.
+   *
+   * The order is safe and worth stating: a view starts its read in its
+   * own effect, effects run children-first, and a read only resolves on
+   * a later microtask — so this clear always lands before the answer it
+   * must not throw away. */
+  useEffect(() => {
+    clearCachedReadNotice();
   }, [currentHash]);
 
   // Address bar → state: browser Back/Forward, a middle-clicked register
