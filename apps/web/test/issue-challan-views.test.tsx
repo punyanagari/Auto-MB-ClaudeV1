@@ -425,6 +425,12 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     recordProductionReceipt: vi.fn(),
     listStockShortages: vi.fn(),
     createShortagePurchaseOrder: vi.fn(),
+    listSigningRequests: vi.fn(),
+    createSigningRequest: vi.fn(),
+    downloadSignedPdf: vi.fn(),
+    cancelSigningRequest: vi.fn(),
+    registerSigningAgent: vi.fn(),
+    revokeSigningAgent: vi.fn(),
     listEmployees: vi.fn().mockResolvedValue({
       employees: [],
       nextCursor: null,
@@ -1024,6 +1030,7 @@ describe('WorkDetail Issue Challans section', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
+        canSign={false}
         canModify
         canRecordEvidence
         canIssue

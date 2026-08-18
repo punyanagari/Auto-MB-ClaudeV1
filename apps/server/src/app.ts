@@ -69,6 +69,7 @@ import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
+import { registerSigningRoutes } from './routes/signing.js';
 import { registerHrRoutes } from './routes/hr.js';
 import { registerMaintenanceRoutes } from './routes/maintenance.js';
 import { registerMeasurementBookRoutes } from './routes/measurement-books/index.js';
@@ -86,7 +87,7 @@ import {
 import { recordRegisteredRoutes, tenantRoutesOf } from './tenant-route.js';
 import { assertProductionMalwareScanning } from './upload-guards.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
-import { createMutationOriginGuard } from './origin-guard.js';
+import { createMutationOriginGuard, isOriginExemptRoute } from './origin-guard.js';
 
 export interface BuildAppOptions {
   readonly logger?: boolean;
@@ -130,6 +131,7 @@ export interface BuildAppOptions {
   readonly rateLimits?: {
     readonly auth?: RateLimitRule;
     readonly upload?: RateLimitRule;
+    readonly signing?: RateLimitRule;
     readonly accountLockout?: AccountLockoutRule;
   };
   /** Namespace for the PostgreSQL-backed throttle state (finding 38,
@@ -473,7 +475,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     const guardMutationOrigin = createMutationOriginGuard(options.trustedOrigins);
     app.addHook('onRequest', (request, _reply, done) => {
       try {
-        guardMutationOrigin(request.method, request.headers.origin);
+        // `onRequest` runs AFTER routing in Fastify's lifecycle, so the
+        // resolved route pattern is available here — which is what the
+        // exemption is matched on. Never `request.url`: that is caller
+        // input and a prefix test on it is a hole.
+        guardMutationOrigin(
+          request.method,
+          request.headers.origin,
+          request.routeOptions.url,
+        );
         done();
       } catch (error) {
         done(error as Error);
@@ -565,6 +575,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   // upload surface — falls back to the in-process maps.
   const authRule = options.rateLimits?.auth ?? { windowMs: 5 * 60_000, max: 20 };
   const uploadRule = options.rateLimits?.upload ?? { windowMs: 10 * 60_000, max: 30 };
+  // The kiosk signing agent (0091). Its two routes authenticate by bearer
+  // token, so an unauthenticated caller can spend a database lookup per
+  // request without ever holding a credential — cheap for them, not for
+  // us. Sized against the LEGITIMATE poll rather than tightened to the
+  // auth rule: the shipped agent polls every 15 seconds (4/minute), so 60
+  // a minute leaves fifteen times the headroom a real kiosk needs and
+  // still bounds a grinder.
+  const signingRule = options.rateLimits?.signing ?? { windowMs: 60_000, max: 60 };
   const throttleNamespace =
     options.throttleNamespace ??
     (process.env.NODE_ENV === 'test' ? crypto.randomUUID() : 'deployment');
@@ -574,6 +592,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   const uploadLimiter = database
     ? createPgRateLimiter(database, 'upload', uploadRule, throttleNamespace)
     : createRateLimiter(uploadRule, 'upload');
+  const signingLimiter = database
+    ? createPgRateLimiter(database, 'signing', signingRule, throttleNamespace)
+    : createRateLimiter(signingRule, 'signing');
   // Second throttling dimension for sign-in only: the per-address window
   // above is trivially bypassed by rotating source addresses, so repeated
   // failures against ONE account (keyed by a hash of the normalised
@@ -618,7 +639,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       routePattern !== undefined &&
       tenantRoutesOf(app).get(`${request.method} ${routePattern}`)?.bodyLimit !==
         undefined;
-    const limiter = isAuthAttempt ? authLimiter : isUpload ? uploadLimiter : null;
+    const isKioskSigning =
+      routePattern !== undefined && isOriginExemptRoute(request.method, routePattern);
+    const limiter = isAuthAttempt
+      ? authLimiter
+      : isUpload
+        ? uploadLimiter
+        : isKioskSigning
+          ? signingLimiter
+          : null;
     // Fail closed: a database failure here throws, and the error handler
     // answers 503 — the protected endpoints could not have served the
     // request without the database anyway.
@@ -943,6 +972,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       scanner,
       pdfTrustAnchors,
     );
+    // The third consumer of the trust anchors, and the first that verifies
+    // a document this server produced rather than one it received
+    // (0091, ADR-0012): the kiosk lane refuses to store a signature its
+    // own verifier does not read as signed_and_intact.
+    registerSigningRoutes(app, authInstance, database, storage, pdfTrustAnchors);
     registerChallanRoutes(
       app,
       authInstance,

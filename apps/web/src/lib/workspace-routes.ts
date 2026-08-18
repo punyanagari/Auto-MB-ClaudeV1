@@ -126,6 +126,11 @@ export type WorkspaceView =
    * each way, not one screen with a tab strip. */
   | { name: 'stock' }
   | { name: 'stock-shortages' }
+  /** The signing queue (migration 0091, ADR-0012). Organisation-level:
+   * one queue for every issued document waiting on the kiosk, because
+   * the kiosk is one machine and the person watching it watches one
+   * list. No mock screen — see docs/UX.md § 16. */
+  | { name: 'signing' }
   /** The employee master and the monthly payroll run (0089, 0090).
    * Organisation-level, and deliberately: a salary is paid by the agency
    * and not by a contract, so neither carries a Work.
@@ -283,6 +288,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/company-documents';
     case 'inspection':
       return '#/inspection';
+    case 'signing':
+      return '#/signing';
     case 'stock':
       return '#/inventory';
     case 'stock-shortages':
@@ -619,6 +626,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'company-documents':
     case 'inspection':
     case 'receivables':
+    case 'signing':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;

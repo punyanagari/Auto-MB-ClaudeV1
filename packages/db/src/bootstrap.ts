@@ -238,6 +238,13 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // ever climbs.
   stock_movements: 'SELECT, INSERT',
   stock_movement_counters: 'SELECT, INSERT, UPDATE',
+  // The signing queue (0091). No DELETE on either: a signature on an
+  // issued document is a record of an act, and the credential that made
+  // it outlives the machine it sat in. A request raised in error is
+  // cancelled with a reason and an agent is revoked, both of which are
+  // updates.
+  signing_requests: 'SELECT, INSERT, UPDATE',
+  signing_agents: 'SELECT, INSERT, UPDATE',
   // Payroll (0089, 0090). The three schedules and the employee master
   // retire by end-dating, exactly as gst_rates does, so none of them
   // holds DELETE. Nor does a payroll run at any status: it has claimed a

@@ -208,6 +208,29 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   stock_movements:
     'the organisation’s own shelf; superseding a letter moves no material',
   stock_movement_counters: 'the per-item ledger position, not a document',
+  // The signing queue (0091). This is the one entry in this list whose
+  // exemption reads wrong at first glance, so the argument is written out.
+  //
+  // A signature IS a record of an act — the strongest kind this product
+  // holds, because it says the organisation put its registered
+  // certificate to exact bytes on a date. That looks like a blocker.
+  //
+  // It is exempt for the `bill_payments` reason, structurally: a signing
+  // request cannot exist without naming a `delivery_challans` or a
+  // `tax_invoices` row (the shape CHECK admits nothing else), and both of
+  // those are in the blocking list above. There is no arrangement of rows
+  // in which a Work carries a signing request and is eligible — it is
+  // refused by the document before this question is asked — so adding an
+  // eighteenth register would ask one more question with an answer two
+  // registers have already given.
+  //
+  // And the act it records is not undone by the supersede in any case.
+  // The signed PDF exists, its bytes are in the object store under their
+  // own key, and the certificate that signed them is what a counterparty
+  // checks. Withdrawing the letter behind it changes none of that; it
+  // withdraws the CLAIM, not the signature.
+  signing_requests:
+    'a signature on an issued document, and that document — a delivery challan or a tax invoice — blocks first',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

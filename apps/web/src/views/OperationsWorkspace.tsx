@@ -163,6 +163,14 @@ const ProductionJobCard = lazy(() =>
     default: module.ProductionJobCard,
   })),
 );
+const SigningKioskSettings = lazy(() =>
+  import('./SigningKioskSettings.js').then((module) => ({
+    default: module.SigningKioskSettings,
+  })),
+);
+const SigningQueue = lazy(() =>
+  import('./SigningQueue.js').then((module) => ({ default: module.SigningQueue })),
+);
 const StockRegister = lazy(() =>
   import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
 );
@@ -437,6 +445,11 @@ export function OperationsWorkspace({
   const canRecordEvidence = canModify || membership?.role === 'site';
   const canIssue = membership?.canIssueDocuments ?? false;
   const canCancel = membership?.canCancelDocuments ?? false;
+  // The signing authority (0091). Separate from canIssue on purpose:
+  // issuing a document and putting the organisation's registered
+  // certificate on it are two acts, and the second is what a signer at a
+  // kiosk trusts the queue about.
+  const canSign = membership?.canSignDocuments ?? false;
   const canApprove = membership?.canApproveAmendments ?? false;
   // The compliance authority (migration 0061). It gates the IRP and NIC
   // portal surfaces ON TOP of issue/cancel — a member who may issue an
@@ -1009,6 +1022,11 @@ export function OperationsWorkspace({
                   organisationId={organisation.id}
                   isOwner={membership?.role === 'owner'}
                 />
+                <SigningKioskSettings
+                  api={api}
+                  organisationId={organisation.id}
+                  isOwner={membership?.role === 'owner'}
+                />
                 <AppearanceSettings />
                 <AccountSecurity api={api} />
                 <OrganisationAccessSettings
@@ -1230,6 +1248,14 @@ export function OperationsWorkspace({
               />
             )}
 
+            {view.name === 'signing' && (
+              <SigningQueue
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
+              />
+            )}
+
             {view.name === 'stock' && (
               <StockRegister
                 api={api}
@@ -1416,6 +1442,7 @@ export function OperationsWorkspace({
                 canModify={canModify}
                 canRecordEvidence={canRecordEvidence}
                 canIssue={canIssue}
+                canSign={canSign}
                 canCancel={canCancel}
                 canApprove={canApprove}
                 canManageStatutory={canManageStatutory}
@@ -1491,6 +1518,7 @@ export function OperationsWorkspace({
                 canIssue={canIssue}
                 canCancel={canCancel}
                 canRecordEvidence={canRecordEvidence}
+                canSign={canSign}
                 workActive={challanWorkActive}
                 onEdit={(challanId) => {
                   navigate({
@@ -1588,6 +1616,7 @@ export function OperationsWorkspace({
                 organisationId={organisation.id}
                 canModify={canModify}
                 canIssue={canIssue}
+                canSign={canSign}
                 canCancel={canCancel}
                 canManageStatutory={canManageStatutory}
                 hasFullWorkScope={membership?.workScope === 'all'}

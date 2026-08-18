@@ -154,6 +154,7 @@ describe('WorkDetail retention', () => {
         canModify={flags.canModify ?? true}
         canRecordEvidence={flags.canRecordEvidence ?? true}
         canIssue={flags.canIssue ?? true}
+        canSign={false}
         canCancel={flags.canCancel ?? true}
         canApprove={flags.canApprove ?? false}
         canManageStatutory={true}
@@ -699,6 +700,7 @@ describe('WorkDetail R8 completion panel', () => {
         canModify={canModify}
         canRecordEvidence
         canIssue
+        canSign={false}
         canCancel
         canApprove={false}
         canManageStatutory={true}
@@ -992,6 +994,7 @@ describe('WorkDetail amendments', () => {
         canModify={true}
         canRecordEvidence={true}
         canIssue={true}
+        canSign={false}
         canCancel={true}
         canApprove={false}
         canManageStatutory={true}
@@ -1312,6 +1315,7 @@ describe('WorkDetail serial tracking toggle', () => {
         canModify={canModify}
         canRecordEvidence={canModify}
         canIssue={canModify}
+        canSign={false}
         canCancel={canModify}
         canApprove={false}
         canManageStatutory={true}
@@ -1450,6 +1454,7 @@ describe('WorkSchedules tax facts', () => {
         canModify={canModify}
         canRecordEvidence={canModify}
         canIssue={canModify}
+        canSign={false}
         canCancel={canModify}
         canApprove={false}
         canManageStatutory={true}
@@ -1593,6 +1598,7 @@ describe('WorkDetail PBG requirement', () => {
         canModify={false}
         canRecordEvidence={false}
         canIssue={false}
+        canSign={false}
         canCancel={false}
         canApprove={false}
         canManageStatutory={false}
@@ -1658,6 +1664,7 @@ describe('WorkDetail procurement tab', () => {
         canModify
         canRecordEvidence
         canIssue
+        canSign={false}
         canCancel
         canApprove={false}
         canManageStatutory={true}

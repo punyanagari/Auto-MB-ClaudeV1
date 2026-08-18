@@ -54,6 +54,13 @@ export const TIMELINE_ENTITY_TYPES = [
   // census in `apps/server/test/audit-timeline-census.test.ts` records
   // the same reasoning against each of them.
   'production_job_cards',
+  // The signing queue (0091, ADR-0012). Putting the organisation's own
+  // certificate on an issued document is an act on that document, and a
+  // trail that shows a challan issued but never shows it signed cannot
+  // answer the one question a counterparty asks about it. The request,
+  // its cancellation and its outcome all land here; the kiosk credential
+  // that fulfilled it does not, being organisation-level.
+  'signing_requests',
   // The site material request (0088). Raising one, approving it,
   // dispatching against it and closing it are acts on the Work: a
   // platform on this contract failed and the store answered it. A trail

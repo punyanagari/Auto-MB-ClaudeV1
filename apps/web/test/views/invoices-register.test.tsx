@@ -99,6 +99,7 @@ function renderRegister(
       organisationId={ORG_ID}
       canModify
       canIssue
+      canSign
       canCancel
       canManageStatutory
       hasFullWorkScope={props.hasFullWorkScope ?? true}

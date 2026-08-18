@@ -219,8 +219,11 @@ describe('the schema at head names all three shapes', () => {
     // which adds the inspection document's; 28 after 0083 adds
     // tender_notices.sha256, the digest of a stored NIT; 29 after 0086
     // adds correspondence_letters.scan_sha256, the digest of a received
-    // letter's scan.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(29);
+    // letter's scan; 33 after 0091 adds four — the signing queue's
+    // source and signed digests, the digest the token is authorised to
+    // sign, and the kiosk credential's own token hash, which is a
+    // password-equivalent stored only as its SHA-256.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(33);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

@@ -27,6 +27,8 @@ interface WorkTaxInvoicesProps {
   /** Drafting an invoice additionally requires the Work to be active. */
   readonly canCreateDocuments: boolean;
   readonly canIssue: boolean;
+  /** The signing authority (0091), separate from canIssue. */
+  readonly canSign: boolean;
   readonly canCancel: boolean;
   /** The compliance authority (migration 0061). Every IRP/NIC portal
    * control needs it IN ADDITION to canIssue/canCancel. */
@@ -70,6 +72,7 @@ export function WorkTaxInvoices({
   canModify,
   canCreateDocuments,
   canIssue,
+  canSign,
   canCancel,
   canManageStatutory,
   pending,
@@ -346,6 +349,7 @@ export function WorkTaxInvoices({
           gstRates={gstRates}
           canModify={canModify}
           canIssue={canIssue}
+          canSign={canSign}
           canCancel={canCancel}
           canManageStatutory={canManageStatutory}
           pending={pending}

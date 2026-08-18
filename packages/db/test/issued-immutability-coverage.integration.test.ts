@@ -534,6 +534,32 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // which is why neither appears here. Nothing but the maintained
   // timestamp is outside the freeze.
   work_supersessions: ['updated_at'],
+
+  // The signing queue (0091). Everything the signature is computed over —
+  // the document, the bytes, the digest, the certificate, the dictionary
+  // entries and the expiry — is frozen the moment the request is raised,
+  // because a preparation that can change is one the completion path
+  // cannot re-derive, and that re-derivation IS the integrity check
+  // (ADR-0012 § "The approval is the authority"). What remains is the
+  // outcome: where the request has got to, when it got there, and what
+  // came back.
+  signing_requests: [
+    'status',
+    'signed_object_key',
+    'signed_sha256',
+    'signature_status',
+    'signature_verdict',
+    'signature_verified_at',
+    'failure_reason',
+    'claimed_at',
+    'completed_at',
+    'updated_at',
+  ],
+  // A kiosk credential is written once. The three columns outside the
+  // freeze are the two halves of revocation and the poll timestamp — none
+  // of which changes what the credential IS, which is the property every
+  // signature already made depends on.
+  signing_agents: ['last_seen_at', 'revoked_at', 'revoked_by_user_id'],
 };
 
 /**

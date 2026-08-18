@@ -1477,3 +1477,64 @@ test('production register, job card and item master pass the axe scan', async ({
   await expect(page.getByRole('heading', { name: 'Bill of material' })).toBeVisible();
   await expectNoAxeViolations(page, 'production item master');
 });
+
+test('the signing queue passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/signing');
+
+  /* The signing queue (0091, ADR-0012). Its own top-level test rather
+     than a leg of an existing journey, for the reason Receivables and
+     Correspondence took theirs: the big picker journey is already
+     budgeted with test.slow() and does not need another leg.
+
+     Scanned with all four statuses on screen at once, because the chip is
+     the only colour this screen puts on a word — and with the kiosk panel
+     above them, whose success lamp and warning border are the only other
+     two. The full SHA-256 in every row is the reason the target-size and
+     the contrast rules matter here more than on a normal register: it is
+     11px monospace, wrapped, and it is what an operator compares against
+     the kiosk's console. */
+  await expect(page.getByRole('heading', { name: 'Signing queue' })).toBeVisible();
+  await expect(page.getByText('Cabin kiosk')).toBeVisible();
+  for (const label of ['pending', 'claimed', 'signed', 'failed']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByText('a'.repeat(64)).first()).toBeVisible();
+  await expectNoAxeViolations(page, 'signing queue');
+
+  // The withdrawal dialog: a destructive confirm whose primary action is
+  // disabled until a reason is typed, which is a contrast state a scan of
+  // the register behind it never reaches.
+  await page.getByRole('button', { name: 'Withdraw' }).first().click();
+  await expect(
+    page.getByRole('heading', { name: 'Withdraw this signing request' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'signing withdrawal dialog');
+
+  // The signed document opens from the row, so the action is drawn on a
+  // completed request and scanned with the rest.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Open signed PDF' })).toBeVisible();
+});
+
+test('the signing kiosk settings pass the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/settings');
+
+  /* The owner-only panel that hands out a kiosk credential (0091). Its
+     own scan rather than a leg of the queue journey: it is a FORM — a
+     textarea for a PEM chain, two inputs, a destructive revoke — and a
+     form is where label association and focus order actually fail. */
+  await expect(page.getByRole('heading', { name: 'Signing kiosk' })).toBeVisible();
+  await expect(page.getByText('Cabin kiosk')).toBeVisible();
+  await expect(page.getByLabel('Certificate chain (PEM, signer first)')).toBeVisible();
+  await expectNoAxeViolations(page, 'signing kiosk settings');
+
+  // The revoke confirmation: a destructive dialog whose copy warns that
+  // queued work will be failed.
+  await page.getByRole('button', { name: 'Revoke' }).first().click();
+  await expect(
+    page.getByRole('heading', { name: 'Revoke this signing kiosk' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'signing kiosk revoke dialog');
+});

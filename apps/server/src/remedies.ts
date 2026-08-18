@@ -453,6 +453,32 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   LOA_DOCUMENT_DUPLICATE:
     'Open the document already holding this file, or discard it first if this upload is meant to replace it.',
 
+  // ---- Signing an issued document (0091, ADR-0012) --------------------------
+  SIGNING_KIOSK_UNAVAILABLE:
+    'Register the signing kiosk under Settings before raising a request, or revoke the kiosks no longer in use so exactly one certificate is in play.',
+  SIGNING_DOCUMENT_NOT_RENDERED:
+    'Issue the document and render its PDF first; a signature covers stored bytes, so there is nothing to sign until they exist.',
+  SIGNING_REQUEST_OPEN:
+    'Open the signing request already raised against this document, or withdraw it before raising another.',
+  SIGNING_REQUEST_STATE:
+    'Reload the signing queue and act on what it shows now; a request that has reached the kiosk or finished cannot be changed.',
+  SIGNING_REQUEST_NOT_FOUND:
+    'Reload the signing queue; the request may have been withdrawn or completed since this screen was opened.',
+  SIGNING_REQUEST_EXPIRED:
+    'Raise the signing request again; an authorisation lapses so that a document nobody signed for a week is reviewed before it is.',
+  SIGNING_SOURCE_CHANGED:
+    'Raise a new signing request against the current document; the one you raised authorised bytes the render has since replaced.',
+  SIGNING_AGENT_REVOKED:
+    'Register a signing kiosk and raise the request again; a revoked credential can never be restored.',
+  SIGNING_AGENT_NOT_FOUND:
+    'Reload the settings screen; this kiosk may have been revoked from another session.',
+  SIGNING_CERTIFICATE_INVALID:
+    'Export the chain again from the kiosk with the signer certificate first, and check the thumbprint against the one your certificate store shows.',
+  SIGNING_UNAUTHENTICATED:
+    'Register the kiosk again and give the agent its new token; the one it is using is not a credential this organisation holds.',
+  SIGNED_OUTPUT_REJECTED:
+    'Check that the certificate chain the kiosk holds reaches a trust anchor installed on this server, then raise the request again.',
+
   // ---- The envelope's own codes -------------------------------------------
   //
   // These three are minted by the error handler in `app.ts` rather than by

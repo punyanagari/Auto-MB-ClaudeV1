@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -189,6 +190,10 @@ const TENANT_TABLES = [
   // because the guard claims it as the first write of every one.
   'stock_movement_counters',
   'stock_movements',
+  // The signing queue (0091): the kiosk credential first, because every
+  // request is authorised against one.
+  'signing_agents',
+  'signing_requests',
   // Payroll (0089, 0090). The schedules first because the runs read
   // them, the employee before the lines that snapshot them, and the
   // counter before the runs it numbers.
@@ -399,6 +404,11 @@ const DELETE_REVOKED_TABLES = [
   // gone (0087).
   'stock_movements',
   'stock_movement_counters',
+  // A signature on an issued document is a record of an act, and the
+  // credential that made it outlives the machine it sat in: a request
+  // raised in error cancels with a reason, and an agent revokes (0091).
+  'signing_requests',
+  'signing_agents',
   // A maintenance request carries a number from the moment it is raised
   // and closes rather than disappearing; its lines are cancelled with a
   // reason rather than removed; the challan, its lines and the defective
@@ -1673,6 +1683,60 @@ async function seedTenantGraph(
       values (
         ${organisationId}, ${product.id}, 'production_receipt', 1,
         '2026-08-01', ${dispatch.id}, ${userId}
+      )
+    `;
+
+    // The signing queue (0091). Its request has to hang off an ISSUED
+    // document — the guard refuses a draft, which is the point of it — so
+    // this seeds a second challan carrying a number and a render, and
+    // then the kiosk credential the request is authorised against.
+    const [issued] = await tx<{ id: string }[]>`
+      insert into delivery_challans (
+        organisation_id, work_id, challan_date, prefix, status,
+        challan_number, sequence_number, issued_snapshot, issued_at,
+        rendered_object_key, rendered_sha256, created_by_user_id, issued_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, '2026-02-02', 'DC', 'issued',
+        ${`DC/SIG/${workCode}`}, 9001, ${tx.json({})}, now(),
+        ${`${organisationId}/dc/signed-seed.pdf`}, ${'c'.repeat(64)},
+        ${userId}, ${userId}
+      )
+      returning id
+    `;
+    if (!issued) throw new Error('seed issued challan insert returned no row');
+
+    const [agent] = await tx<{ id: string }[]>`
+      insert into signing_agents (
+        organisation_id, label, token_hash, certificate_thumbprint,
+        certificate_subject, certificate_serial, certificate_not_after,
+        certificate_chain_pem, operator_user_id, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'Integration kiosk',
+        ${randomBytes(32).toString('hex')}, ${'A'.repeat(40)},
+        'CN=INTEGRATION SIGNER', 'AB01', '2030-01-01T00:00:00Z',
+        '-----BEGIN CERTIFICATE-----\nseed\n-----END CERTIFICATE-----\n',
+        ${userId}, ${userId}
+      )
+      returning id
+    `;
+    if (!agent) throw new Error('seed signing agent insert returned no row');
+
+    await tx`
+      insert into signing_requests (
+        organisation_id, document_type, delivery_challan_id, work_id,
+        source_object_key, source_sha256, authorised_digest,
+        claimed_signing_time, signer_name, signing_reason, signing_location,
+        expires_at, signing_agent_id, certificate_thumbprint,
+        requested_by_user_id
+      )
+      values (
+        ${organisationId}, 'delivery_challan', ${issued.id}, ${work.id},
+        ${`${organisationId}/dc/signed-seed.pdf`}, ${'c'.repeat(64)},
+        ${'d'.repeat(64)}, now(), 'INTEGRATION SIGNER',
+        'Issued by the contractor', 'Nagpur', now() + interval '7 days',
+        ${agent.id}, ${'A'.repeat(40)}, ${userId}
       )
     `;
 

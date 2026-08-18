@@ -221,6 +221,10 @@ describe('MFA authority census', () => {
       // The payroll authority (0089/0090) reveals every salary and PAN and
       // authorises the salaries a run pays, so it joins the wall too.
       'payroll',
+      // The signing authority (migration 0091). A stolen session that can
+      // queue a signature can get a signer standing at the token to put
+      // the organisation's registered certificate on it.
+      'sign',
       'statutory',
     ]);
     expect(Object.values(MFA_REQUIRING_AUTHORITIES)).not.toContain(false);

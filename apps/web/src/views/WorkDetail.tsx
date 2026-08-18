@@ -71,6 +71,7 @@ interface WorkDetailProps {
   readonly canModify: boolean;
   readonly canRecordEvidence: boolean;
   readonly canIssue: boolean;
+  readonly canSign: boolean;
   readonly canCancel: boolean;
   /** Holds can_approve_amendments — gates manual back-fill deletion. */
   readonly canApprove: boolean;
@@ -379,6 +380,7 @@ export function WorkDetail({
   canModify,
   canRecordEvidence,
   canIssue,
+  canSign,
   canCancel,
   canApprove,
   canManageStatutory,
@@ -1670,6 +1672,7 @@ export function WorkDetail({
               what the contract owes, the tax invoice is what the law
               requires for it. */}
           <WorkTaxInvoices
+            canSign={canSign}
             api={api}
             organisationId={organisationId}
             workId={workId}

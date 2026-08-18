@@ -36,6 +36,7 @@ describe('ChallanDetail', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify
         canIssue
         canCancel={false}
@@ -82,6 +83,7 @@ describe('ChallanDetail', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel
@@ -150,6 +152,7 @@ describe('ChallanDetail', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel={false}
@@ -194,6 +197,7 @@ describe('ChallanDetail', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel={false}
@@ -244,6 +248,7 @@ describe('ChallanDetail', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel={false}
@@ -279,6 +284,7 @@ describe('ChallanDetail', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel={false}
@@ -300,6 +306,7 @@ describe('ChallanDetail', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel={false}
@@ -322,6 +329,7 @@ describe('ChallanDetail', () => {
         api={draftApi}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel={false}
@@ -355,6 +363,7 @@ describe('Correction flow (issued Delivery Challan)', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={canModify}
         canIssue={false}
         canCancel={false}
@@ -551,6 +560,7 @@ describe('ChallanDetail cancel surface', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel
@@ -651,6 +661,7 @@ describe('ChallanDetail cancel surface', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify
         canIssue={false}
         canCancel
@@ -704,6 +715,7 @@ describe('Draft challan serial recording', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify
         canIssue
         canCancel={false}
@@ -750,6 +762,7 @@ describe('Draft challan serial recording', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify
         canIssue
         canCancel={false}

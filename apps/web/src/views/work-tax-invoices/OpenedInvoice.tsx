@@ -23,6 +23,8 @@ interface OpenedInvoiceProps {
   readonly gstRates: readonly GstRateMaster[];
   readonly canModify: boolean;
   readonly canIssue: boolean;
+  /** The signing authority (0091), separate from canIssue. */
+  readonly canSign: boolean;
   readonly canCancel: boolean;
   readonly canManageStatutory: boolean;
   readonly pending: boolean;
@@ -57,6 +59,7 @@ export function OpenedInvoice({
   gstRates,
   canModify,
   canIssue,
+  canSign,
   canCancel,
   canManageStatutory,
   pending,
@@ -92,6 +95,7 @@ export function OpenedInvoice({
         gstRates={gstRates}
         canModify={canModify}
         canIssue={canIssue}
+        canSign={canSign}
         pending={pending}
         act={act}
         refresh={refresh}

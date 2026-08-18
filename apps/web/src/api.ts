@@ -26,6 +26,14 @@ import type {
   StockMovementResponse,
   StockRegisterResponse,
   StockShortageResponse,
+  CancelSigningRequest,
+  CreateSigningRequest,
+  RegisterSigningAgent,
+  RegisterSigningAgentResponse,
+  SigningAgentResponse,
+  SigningQueueResponse,
+  SigningRequestResponse,
+  SigningRequestStatus,
   ApiError,
   ApprovalRequest,
   ApprovalStatus,
@@ -1960,6 +1968,40 @@ export interface ApiClient {
     organisationId: string,
     body: CreateShortagePurchaseOrderRequest,
   ) => Promise<PurchaseOrderDetailResponse>;
+  /** The signing queue (migration 0091, ADR-0012 lane 2). One list for
+   * the whole organisation: the kiosk is one machine, and the person
+   * watching it watches one queue. */
+  readonly listSigningRequests: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly status?: SigningRequestStatus;
+    },
+  ) => Promise<SigningQueueResponse>;
+  readonly createSigningRequest: (
+    organisationId: string,
+    body: CreateSigningRequest,
+  ) => Promise<SigningRequestResponse>;
+  readonly cancelSigningRequest: (
+    organisationId: string,
+    requestId: string,
+    body: CancelSigningRequest,
+  ) => Promise<SigningRequestResponse>;
+  /** The signed PDF of a completed request. Same authority as the
+   * unsigned document's own download: work scope and nothing more. */
+  readonly downloadSignedPdf: (
+    organisationId: string,
+    requestId: string,
+  ) => Promise<Blob>;
+  readonly registerSigningAgent: (
+    organisationId: string,
+    body: RegisterSigningAgent,
+  ) => Promise<RegisterSigningAgentResponse>;
+  readonly revokeSigningAgent: (
+    organisationId: string,
+    agentId: string,
+  ) => Promise<SigningAgentResponse>;
 
   /** The employee master and the monthly payroll run (migrations 0089
    * and 0090). Organisation-level, not per Work: a salary is paid by the
@@ -4640,6 +4682,53 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         '/api/stock/shortages/purchase-order',
         { method: 'POST', body, organisationId },
       );
+    },
+    async listSigningRequests(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<SigningQueueResponse>(`/api/signing-requests${suffix}`, {
+        organisationId,
+      });
+    },
+    async createSigningRequest(organisationId, body) {
+      return request<SigningRequestResponse>('/api/signing-requests', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async cancelSigningRequest(organisationId, requestId, body) {
+      return request<SigningRequestResponse>(
+        `/api/signing-requests/${requestId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async downloadSignedPdf(organisationId, requestId) {
+      // Fetched rather than linked, like every other PDF here: the
+      // tenant header travels on every scoped request and an <a href>
+      // cannot carry one.
+      const response = await fetchImpl(`/api/signing-requests/${requestId}/pdf`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
+    async registerSigningAgent(organisationId, body) {
+      return request<RegisterSigningAgentResponse>('/api/signing-agents', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async revokeSigningAgent(organisationId, agentId) {
+      return request<SigningAgentResponse>(`/api/signing-agents/${agentId}/revoke`, {
+        method: 'POST',
+        organisationId,
+      });
     },
 
     async listEmployees(organisationId, options) {

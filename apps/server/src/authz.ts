@@ -8,6 +8,7 @@ export interface MembershipRow {
   can_cancel_documents: boolean;
   can_manage_statutory_reporting: boolean;
   can_manage_payments: boolean;
+  can_sign_documents: boolean;
   can_manage_payroll: boolean;
 }
 
@@ -18,7 +19,7 @@ export async function membershipOf(
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
-           can_manage_payroll
+           can_sign_documents, can_manage_payroll
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -128,7 +129,24 @@ export async function requireEvidenceRole(
  * a different act from issuing a document of our own, so it carries its
  * own grant on top of issue/cancel rather than replacing them. */
 export type DocumentAuthority =
-  'issue' | 'cancel' | 'statutory' | 'payments' | 'payroll';
+  | 'issue'
+  | 'cancel'
+  | 'statutory'
+  | 'payments'
+  /** Putting the organisation's own registered certificate on a document
+   * it has already issued (0091, ADR-0012, owner ruling 2026-08-18).
+   * Separate from `issue` because the digest binding and this authority
+   * answer different questions: the binding makes it impossible to sign
+   * bytes nobody authorised, and this makes it impossible for the wrong
+   * member to put a correctly-bound request in front of a signer who is
+   * about to type their PIN because the queue said to. */
+  | 'sign'
+  /** Seeing the employee register and running the monthly payroll (0089,
+   * owner ruling 2026-08-18). Separate from `payments` because the
+   * register carries every colleague's salary, PAN, UAN and bank
+   * account, and a member who may approve a vendor payment has no
+   * business reading any of that by default. */
+  | 'payroll';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -140,6 +158,7 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
     'Your membership does not carry the statutory reporting authority, which is required to register, reconcile, cancel, or record government e-invoice and E-way Bill evidence.',
   payments:
     'Your membership does not carry the payments authority, which is required to approve employee payment requests and to record or pay vendor invoices.',
+  sign: 'Your membership does not carry the signing authority, which is required to send an issued document for the organisation’s digital signature or to withdraw a request for one.',
   payroll:
     'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
 };
@@ -155,6 +174,7 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_cancel_documents'
     | 'can_manage_statutory_reporting'
     | 'can_manage_payments'
+    | 'can_sign_documents'
     | 'can_manage_payroll'
   >
 > = {
@@ -162,6 +182,7 @@ const AUTHORITY_COLUMNS: Record<
   cancel: 'can_cancel_documents',
   statutory: 'can_manage_statutory_reporting',
   payments: 'can_manage_payments',
+  sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
 };
 

@@ -29,6 +29,10 @@ interface ChallanDetailProps {
   readonly canIssue: boolean;
   readonly canCancel: boolean;
   readonly canRecordEvidence: boolean;
+  /** The signing authority (0091). Draws the one action that queues this
+   * challan for the organisation's own certificate; the server checks the
+   * same authority, which is where it is enforced. */
+  readonly canSign: boolean;
   /** R8: false closes the two mutating surfaces (cancel, correction) on a
    * completed Work, which the server refuses anyway. Omitted means the
    * caller has not resolved the Work — the surfaces stay open exactly as
@@ -232,6 +236,7 @@ export function ChallanDetail({
   canIssue,
   canCancel,
   canRecordEvidence,
+  canSign,
   workActive = true,
   onEdit,
   onDeleted,
@@ -586,6 +591,29 @@ export function ChallanDetail({
             }
           >
             Open PDF
+          </Button>
+        )}
+        {/* SEND FOR SIGNING (0091, ADR-0012). Only on an issued challan
+            that has a render — the signature covers stored bytes, so
+            there is nothing to sign before one exists — and only for a
+            member holding the signing authority. The queue at #/signing
+            is where it goes next; this is the only place it is raised,
+            because raising it is a thing you do TO a document. */}
+        {challan.status === 'issued' && challan.renderedAvailable && canSign && (
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() =>
+              void act(async () => {
+                await api.createSigningRequest(organisationId, {
+                  documentType: 'delivery_challan',
+                  documentId: challan.id,
+                });
+                return null;
+              }, 'Sent to the signing queue.')
+            }
+          >
+            Send for signing
           </Button>
         )}
         {challan.signedCopyAvailable && (

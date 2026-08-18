@@ -272,6 +272,7 @@ describe('OperationsWorkspace mobile shell', () => {
       // it carries a rail entry of its own here, under Documents where
       // the mock groups document registers.
       'Company documents',
+      'Signing queue',
       // Production takes the first place the mock's Operations group
       // gives it (migration 0084); Purchase orders is still omitted
       // rather than drawn as a dead entry.
@@ -327,6 +328,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Quotations', '#/quotations'],
       ['Correspondence', '#/correspondence'],
       ['Company documents', '#/company-documents'],
+      ['Signing queue', '#/signing'],
       ['Production', '#/production'],
       ['Installations', '#/installations'],
       ['Inspection', '#/inspection'],

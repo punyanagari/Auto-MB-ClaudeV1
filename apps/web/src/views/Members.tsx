@@ -190,6 +190,17 @@ const FEATURES = [
     change: 'Payments authority',
   },
   {
+    /* The signing authority (migration 0091, owner ruling 2026-08-18):
+       who may send an issued document for the organisation's own digital
+       signature. Granted on top of issue, never inherited from it — the
+       person at the kiosk types their PIN because the queue said to, so
+       who may fill that queue is its own decision. */
+    key: 'canSignDocuments',
+    heading: 'Can sign',
+    authority: 'Signing authority',
+    change: 'Signing authority',
+  },
+  {
     /* The payroll authority (migration 0089): who may see the employee
        register and run payroll. Separate from the payments authority
        because the register carries every colleague's salary, PAN, UAN

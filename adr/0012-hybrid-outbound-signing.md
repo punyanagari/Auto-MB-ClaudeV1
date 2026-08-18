@@ -1,10 +1,69 @@
 # ADR-0012: Hybrid outbound signing — eSign by default, kiosk-held DSC where the token certificate is mandated
 
-- Status: Accepted (owner decision 2026-08-14)
+- Status: Accepted (owner decision 2026-08-14), **amended 2026-08-18 by
+  migration `0091_signing_requests.sql`**
 - Date: 2026-08-14
 - Amends: ADR-0009 (outbound DSC signing). The cryptographic profile of
   ADR-0009 stands in full; its transport and consent chapters are
   superseded for the reasons below.
+
+## Amendment, 2026-08-18 — what building lane 2 changed
+
+The kiosk lane is built. Four things in the text below turned out to be
+wrong or premature when it met the hardware, and they are listed here
+rather than left for a reader to discover the hard way. Migration
+`0091_signing_requests.sql`'s header carries the full reasoning for each;
+this is the index.
+
+1. **The kiosk is NOT a headless Windows service.** § Lane 2 says it is.
+   It cannot be: the token's PIN dialog is drawn on the desktop of an
+   INTERACTIVE session, so a signing call made from a service context
+   blocks forever — no error, no timeout, no log line. Verified on the
+   owner's HYPERSECU HYP2003 (e-Mudhra Class 3, KSP
+   `HyperPKI HYP2003 KSP India v3`) on 2026-08-17. The outbound-only
+   polling this ADR specifies is unchanged; only the process model moves,
+   to a script the signer starts in their own logged-in session
+   (`tools/kiosk-signing-agent.ps1`).
+
+   **This also changes the security argument, not just the deployment.**
+   § "The approval is the authority" accepts the lane's risk on the basis
+   that an unattended token with a cached PIN is a signing oracle. A
+   token that cannot be driven at all without a person at its desktop is
+   a weaker oracle than that — but only weaker, because PIN caching
+   within one interactive session is real, and because the person at that
+   desktop is trusting the QUEUE about what to sign. Both mitigations are
+   built: see 3 below.
+
+2. **The kiosk lane has no server-visible approval act.** This ADR
+   describes the signer approving each request from a phone; that is lane
+   1's flow. In lane 2 the approver is whoever is standing at the token
+   typing the PIN, and the server cannot see them. So the four facts
+   § "The approval is the authority" requires the approver to see — the
+   document, its class, who asked, and the SHA-256 — are printed by the
+   agent to its own console before the PIN dialog opens, and shown in
+   full on the queue screen so the two can be compared by eye.
+
+3. **Signing is its own authority, `can_sign_documents`** (owner ruling
+   2026-08-18), and it is the resolution of this ADR's "raising a
+   signature request and approving one are distinct permissions". The
+   first draft of 0091 reused `issue` and argued the distinction was
+   lane 1's alone. That was wrong, and the reason is the sharpest
+   statement of what the two mechanisms do: the **digest binding answers
+   WHICH DOCUMENT** may be signed — the token only ever sees the digest
+   of a preparation the server can rebuild — and the **authority answers
+   WHO MAY QUEUE ONE**, which is the gap a signer at a kiosk cannot see
+   past. Neither is redundant.
+
+4. **PAdES B-B, not B-T.** § Lane 1 and ADR-0009 both assume the RFC 3161
+   timestamp is applied at signing time. The TSA contract has not landed,
+   so no timestamp is embedded: `/M` carries the signer's claimed time,
+   labelled a claim by the verifier, and the unsigned-attribute slot is
+   left empty rather than filled with a self-asserted time dressed up as
+   attestation. The "B-T now / B-LT asynchronously" policy applies from
+   the moment the TSA contract exists.
+
+Everything else in this ADR stands, including the whole of lane 1, which
+remains unbuilt and gated on ESP onboarding.
 
 ## Context
 

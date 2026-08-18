@@ -686,6 +686,7 @@ describe('Timeline', () => {
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
+        canSign={false}
         canModify={false}
         canIssue={false}
         canCancel={false}

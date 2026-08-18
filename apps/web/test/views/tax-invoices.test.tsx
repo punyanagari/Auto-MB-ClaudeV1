@@ -39,6 +39,7 @@ describe('WorkDetail tax invoices', () => {
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove={false}
         canManageStatutory={true}
@@ -720,6 +721,7 @@ describe('WorkDetail billing readiness panel', () => {
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove={false}
         canManageStatutory={true}
@@ -891,6 +893,7 @@ describe('WorkBills line rendering', () => {
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove={false}
         canManageStatutory={true}
@@ -926,6 +929,7 @@ describe('Tax invoice draft gating and wayfinding', () => {
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove={false}
         canManageStatutory={true}

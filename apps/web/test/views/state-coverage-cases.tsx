@@ -39,6 +39,8 @@ import { Maintenance } from '../../src/views/Maintenance.js';
 import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
 import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
+import { SigningKioskSettings } from '../../src/views/SigningKioskSettings.js';
+import { SigningQueue } from '../../src/views/SigningQueue.js';
 import { Employees } from '../../src/views/Employees.js';
 import { PayrollRun } from '../../src/views/PayrollRun.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
@@ -291,6 +293,7 @@ export const STATE_CASES: readonly StateCase[] = [
         organisationId={ORG_ID}
         canModify
         canIssue
+        canSign
         canCancel
         canManageStatutory
         hasFullWorkScope
@@ -595,6 +598,24 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'An upload form has no register to be empty; the pickers simply come back empty.',
     },
+  },
+  {
+    view: 'SigningKioskSettings.tsx',
+    name: 'the signing kiosk settings',
+    // Reads the queue endpoint for its agents block rather than an
+    // endpoint of its own: one list, one authority, one round trip.
+    loads: ['listSigningRequests'],
+    render: (api) => <SigningKioskSettings api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the signing kiosks/,
+    empty: { text: /No kiosk is registered/ },
+  },
+  {
+    view: 'SigningQueue.tsx',
+    name: 'the signing queue',
+    loads: ['listSigningRequests'],
+    render: (api) => <SigningQueue api={api} organisationId={ORG_ID} canModify />,
+    retry: /Retry the signing queue/,
+    empty: { text: /No document has been sent for signature yet/ },
   },
   {
     view: 'Employees.tsx',
@@ -935,6 +956,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove
         canManageStatutory
@@ -962,6 +984,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canRecordEvidence
         canIssue
+        canSign
         canCancel
         canApprove
         canManageStatutory
@@ -992,6 +1015,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canCreateDocuments
         canIssue
+        canSign
         canCancel
         canManageStatutory
         pending={false}
@@ -1014,6 +1038,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canModify
         canCreateDocuments
         canIssue
+        canSign
         canCancel
         canManageStatutory
         pending={false}
