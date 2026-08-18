@@ -431,7 +431,9 @@ describe('a payroll run, opened to finalised', () => {
     expect(recalculated.statusCode, recalculated.body).toBe(409);
     expect(recalculated.json<{ code: string }>().code).toBe('PAYROLL_RUN_IMMUTABLE');
     // The refusal carries the reviewed action, not only the fact.
-    expect(recalculated.json<{ remedy?: string }>().remedy).toContain('Cancel this run');
+    expect(recalculated.json<{ remedy?: string }>().remedy).toContain(
+      'Cancel this run',
+    );
   });
 });
 

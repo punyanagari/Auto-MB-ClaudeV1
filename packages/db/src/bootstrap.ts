@@ -238,6 +238,21 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // ever climbs.
   stock_movements: 'SELECT, INSERT',
   stock_movement_counters: 'SELECT, INSERT, UPDATE',
+  // Payroll (0089, 0090). The three schedules and the employee master
+  // retire by end-dating, exactly as gst_rates does, so none of them
+  // holds DELETE. Nor does a payroll run at any status: it has claimed a
+  // number by the time it exists, and an abandoned draft is cancelled
+  // with a reason rather than removed. Its LINES are the one exception,
+  // and a narrow one — a draft is recalculated by clearing them and
+  // writing them again, and the 0090 guard refuses every delete the
+  // moment the run is finalised or cancelled.
+  payroll_statutory_rates: 'SELECT, INSERT, UPDATE',
+  professional_tax_slabs: 'SELECT, INSERT, UPDATE',
+  income_tax_slabs: 'SELECT, INSERT, UPDATE',
+  employees: 'SELECT, INSERT, UPDATE',
+  payroll_run_counters: 'SELECT, INSERT, UPDATE',
+  payroll_runs: 'SELECT, INSERT, UPDATE',
+  payroll_run_lines: 'SELECT, INSERT, UPDATE, DELETE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

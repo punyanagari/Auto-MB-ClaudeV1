@@ -1,6 +1,9 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { CalendarX2, ChevronDown, ChevronRight, LockKeyhole } from 'lucide-react';
-import type { PayrollRun as PayrollRunRecord, PayrollRunLine } from '@auto-mb/contracts';
+import type {
+  PayrollRun as PayrollRunRecord,
+  PayrollRunLine,
+} from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
@@ -75,9 +78,9 @@ export function PayrollRun({
   canModify,
   onOpenEmployees,
 }: PayrollRunProps) {
-  const [runs, setRuns] = useState<readonly { id: string; periodMonth: string }[] | null>(
-    null,
-  );
+  const [runs, setRuns] = useState<
+    readonly { id: string; periodMonth: string }[] | null
+  >(null);
   const [run, setRun] = useState<PayrollRunRecord | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -104,7 +107,9 @@ export function PayrollRun({
       .listPayrollRuns(organisationId, { limit: 24 })
       .then(async (page) => {
         if (cancelled) return;
-        setRuns(page.runs.map((entry) => ({ id: entry.id, periodMonth: entry.periodMonth })));
+        setRuns(
+          page.runs.map((entry) => ({ id: entry.id, periodMonth: entry.periodMonth })),
+        );
         const newest = page.runs[0];
         if (newest === undefined) return;
         const detail = await api.getPayrollRun(organisationId, newest.id);
@@ -387,6 +392,11 @@ export function PayrollRun({
                             type="button"
                             className="flex items-center gap-2 text-left"
                             aria-expanded={expanded === line.id}
+                            /* Names the panel it opens. `aria-expanded`
+                               alone tells a screen reader that SOMETHING
+                               expanded and not what, which is what
+                               `test/a11y-invariants.test.ts` refuses. */
+                            aria-controls={`payslip-${line.id}`}
                             onClick={() => {
                               setExpanded(expanded === line.id ? null : line.id);
                             }}
@@ -419,9 +429,13 @@ export function PayrollRun({
                         <td className={numericCell}>{formatInr(line.epfEmployee)}</td>
                         <td className={numericCell}>{formatInr(line.epfEmployer)}</td>
                         <td className={numericCell}>
-                          {line.esiCovered ? formatInr(line.esiEmployee) : 'Not covered'}
+                          {line.esiCovered
+                            ? formatInr(line.esiEmployee)
+                            : 'Not covered'}
                         </td>
-                        <td className={numericCell}>{formatInr(line.professionalTax)}</td>
+                        <td className={numericCell}>
+                          {formatInr(line.professionalTax)}
+                        </td>
                         <td className={numericCell}>{formatInr(line.tds)}</td>
                         <td className={`${numericCell} font-semibold`}>
                           {formatInr(line.netPay)}
@@ -429,7 +443,11 @@ export function PayrollRun({
                       </tr>
                       {expanded === line.id && (
                         <tr>
-                          <td colSpan={9} className="bg-muted/25 px-4 py-4">
+                          <td
+                            id={`payslip-${line.id}`}
+                            colSpan={9}
+                            className="bg-muted/25 px-4 py-4"
+                          >
                             <LineBreakdown
                               line={line}
                               runId={run.id}

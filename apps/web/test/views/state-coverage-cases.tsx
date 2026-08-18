@@ -618,12 +618,7 @@ export const STATE_CASES: readonly StateCase[] = [
     // why only the register read is listed here.
     loads: ['listPayrollRuns'],
     render: (api) => (
-      <PayrollRun
-        api={api}
-        organisationId={ORG_ID}
-        canModify
-        onOpenEmployees={noop}
-      />
+      <PayrollRun api={api} organisationId={ORG_ID} canModify onOpenEmployees={noop} />
     ),
     retry: /Retry the payroll register/,
     empty: { text: /No payroll run has been opened/ },

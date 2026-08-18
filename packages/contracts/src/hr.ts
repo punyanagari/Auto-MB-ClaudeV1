@@ -166,51 +166,51 @@ export type Employee = Static<typeof EmployeeSchema>;
  * existing contact.
  */
 const EMPLOYEE_FIELDS = {
-    /** Two characters at least. `nonBlankString` cannot express a
-     * one-character minimum — its pattern needs a non-space at each end
-     * — and a single-character employee code is not worth a second
-     * validator, so the floor is two here and two in the CHECK. */
-    employeeCode: nonBlankString({ minLength: 2, maxLength: 40 }),
-    department: Type.Optional(
-      Type.Union([nonBlankString({ minLength: 2, maxLength: 100 }), Type.Null()]),
-    ),
-    dateOfJoining: DateOnlySchema,
-    dateOfExit: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
-    /** Required: the old regime's basic exemption depends on age, so a
-     * run cannot pick the right slab ladder without it. */
-    dateOfBirth: DateOnlySchema,
+  /** Two characters at least. `nonBlankString` cannot express a
+   * one-character minimum — its pattern needs a non-space at each end
+   * — and a single-character employee code is not worth a second
+   * validator, so the floor is two here and two in the CHECK. */
+  employeeCode: nonBlankString({ minLength: 2, maxLength: 40 }),
+  department: Type.Optional(
+    Type.Union([nonBlankString({ minLength: 2, maxLength: 100 }), Type.Null()]),
+  ),
+  dateOfJoining: DateOnlySchema,
+  dateOfExit: Type.Optional(Type.Union([DateOnlySchema, Type.Null()])),
+  /** Required: the old regime's basic exemption depends on age, so a
+   * run cannot pick the right slab ladder without it. */
+  dateOfBirth: DateOnlySchema,
 
-    uan: Type.Optional(
-      Type.Union([Type.String({ pattern: '^[0-9]{12}$' }), Type.Null()]),
-    ),
-    esicNumber: Type.Optional(
-      Type.Union([Type.String({ pattern: '^[0-9]{17}$' }), Type.Null()]),
-    ),
+  uan: Type.Optional(
+    Type.Union([Type.String({ pattern: '^[0-9]{12}$' }), Type.Null()]),
+  ),
+  esicNumber: Type.Optional(
+    Type.Union([Type.String({ pattern: '^[0-9]{17}$' }), Type.Null()]),
+  ),
 
-    pfCovered: Type.Boolean(),
-    pfWageBasis: PfWageBasisSchema,
-    esiApplicable: Type.Boolean(),
+  pfCovered: Type.Boolean(),
+  pfWageBasis: PfWageBasisSchema,
+  esiApplicable: Type.Boolean(),
 
-    /** The two-digit GST State code, or null where the State levies no
-     * profession tax. Travels with its category: a schedule cannot be
-     * resolved without both. */
-    professionalTaxStateCode: Type.Optional(
-      Type.Union([Type.String({ pattern: '^[0-9]{2}$' }), Type.Null()]),
-    ),
-    professionalTaxCategory: Type.Optional(
-      Type.Union([ProfessionalTaxCategorySchema, Type.Null()]),
-    ),
+  /** The two-digit GST State code, or null where the State levies no
+   * profession tax. Travels with its category: a schedule cannot be
+   * resolved without both. */
+  professionalTaxStateCode: Type.Optional(
+    Type.Union([Type.String({ pattern: '^[0-9]{2}$' }), Type.Null()]),
+  ),
+  professionalTaxCategory: Type.Optional(
+    Type.Union([ProfessionalTaxCategorySchema, Type.Null()]),
+  ),
 
-    taxRegime: TaxRegimeSchema,
-    /** The two totals off the employee's signed Form 12BB. Both ignored
-     * under the new regime, where neither deduction is available. */
-    declaredExemptAllowancesAnnual: Type.Optional(NonNegativeMoneyStringSchema),
-    declaredChapterViaAnnual: Type.Optional(NonNegativeMoneyStringSchema),
+  taxRegime: TaxRegimeSchema,
+  /** The two totals off the employee's signed Form 12BB. Both ignored
+   * under the new regime, where neither deduction is available. */
+  declaredExemptAllowancesAnnual: Type.Optional(NonNegativeMoneyStringSchema),
+  declaredChapterViaAnnual: Type.Optional(NonNegativeMoneyStringSchema),
 
-    basicMonthly: PositiveMoneyStringSchema,
-    dearnessAllowanceMonthly: Type.Optional(NonNegativeMoneyStringSchema),
-    houseRentAllowanceMonthly: Type.Optional(NonNegativeMoneyStringSchema),
-    otherAllowancesMonthly: Type.Optional(NonNegativeMoneyStringSchema),
+  basicMonthly: PositiveMoneyStringSchema,
+  dearnessAllowanceMonthly: Type.Optional(NonNegativeMoneyStringSchema),
+  houseRentAllowanceMonthly: Type.Optional(NonNegativeMoneyStringSchema),
+  otherAllowancesMonthly: Type.Optional(NonNegativeMoneyStringSchema),
 } as const;
 
 /**
@@ -243,9 +243,7 @@ export const EmployeeListQuerySchema = Type.Object(
   {
     /** `current` is the default: a register of people who have left is a
      * different question, asked deliberately. */
-    status: Type.Optional(
-      Type.Union([Type.Literal('all'), Type.Literal('current')]),
-    ),
+    status: Type.Optional(Type.Union([Type.Literal('all'), Type.Literal('current')])),
     search: Type.Optional(Type.String({ maxLength: 200 })),
   },
   { additionalProperties: false },

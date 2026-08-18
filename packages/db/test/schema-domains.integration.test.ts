@@ -189,8 +189,14 @@ describe('the schema at head names all three shapes', () => {
     // quantity — a job card's own quantity is a whole-unit integer, not
     // a measured quantity, because every unit becomes a serial; and 0087
     // adds three, the item's reorder level and the stock movement's own
-    // quantity and running balance.
-    expect(adopted.length).toBe(69);
+    // quantity and running balance. 0089 adds twelve — the employee's six
+    // salary and declaration figures, the four bounds and amounts of a
+    // profession-tax band, and an income-tax band's two — and 0090
+    // nineteen, which is a payslip: four earnings heads and their gross,
+    // the provident-fund wage and its three contributions and pension
+    // ceiling, the insurance wage, two shares and ceiling, the profession
+    // tax, the two annual projections, the tax deducted, and the net.
+    expect(adopted.length).toBe(100);
   });
 
   it('types every digest column as sha256_hex', () => {

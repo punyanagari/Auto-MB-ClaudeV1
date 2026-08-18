@@ -275,7 +275,9 @@ export function Employees({
                     <span className="block font-medium">{employee.name}</span>
                     <span className="font-mono text-xs text-muted-foreground">
                       {employee.employeeCode}
-                      {employee.designation === null ? '' : ` · ${employee.designation}`}
+                      {employee.designation === null
+                        ? ''
+                        : ` · ${employee.designation}`}
                     </span>
                   </th>
                   <td>{employee.department ?? '—'}</td>
@@ -624,8 +626,8 @@ function EmployeeComposer({
             <option value="female">Women&rsquo;s schedule</option>
           </select>
           <Hint>
-            Maharashtra exempts women below ₹25,000 a month and men below ₹7,500, so
-            the schedule cannot be resolved without knowing which entry applies.
+            Maharashtra exempts women below ₹25,000 a month and men below ₹7,500, so the
+            schedule cannot be resolved without knowing which entry applies.
           </Hint>
         </Field>
 

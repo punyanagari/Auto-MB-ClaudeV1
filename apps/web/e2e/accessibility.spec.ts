@@ -167,6 +167,35 @@ test('organisation picker and members workspace pass the axe scan', async ({
   ).toBeDisabled();
   await expectNoAxeViolations(page, 'shortage procurement');
 
+  /* People and payroll (0089, 0090). Two screens, scanned separately,
+     because they put colour on a word in different places.
+
+     The REGISTER carries the employed/left status chips and a rupee
+     figure in a mono tabular column. The PAYROLL run carries the run's
+     own draft chip, a warning-toned loss-of-pay line, a nine-column
+     deduction table whose header groups earnings against deductions, and
+     an expandable computation — opened before the scan, because a
+     collapsed row proves nothing about the panel inside it. */
+  await page.getByRole('link', { name: 'Employees' }).click();
+  await expect(page.getByRole('heading', { name: 'Employees' })).toBeVisible();
+  await expect(page.getByText('Anita Deshmukh')).toBeVisible();
+  await expect(page.getByText('Employed').first()).toBeVisible();
+  await expect(page.getByText('Left')).toBeVisible();
+  await expect(page.getByText('Provident fund · ESI').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'employee register');
+
+  await page.getByRole('link', { name: 'Monthly payroll' }).click();
+  await expect(page.getByRole('heading', { name: 'Monthly payroll' })).toBeVisible();
+  await expect(page.getByText('PAY/2026-27/001')).toBeVisible();
+  await expect(page.getByText('Not covered')).toBeVisible();
+  await expect(page.getByText('Loss of pay 2.00')).toBeVisible();
+  // The breakdown, open. Its regime card and its two-column figure list
+  // are the densest thing on the screen and the scan has to see them.
+  await page.getByRole('button', { name: /Anita Deshmukh/ }).click();
+  await expect(page.getByText('Monthly computation')).toBeVisible();
+  await expect(page.getByText('Statutory basis')).toBeVisible();
+  await expectNoAxeViolations(page, 'monthly payroll run');
+
   await page.getByRole('link', { name: 'Members' }).click();
   await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible();
   await expect(page.getByRole('table')).toBeVisible();

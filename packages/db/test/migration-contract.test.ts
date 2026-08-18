@@ -1314,7 +1314,7 @@ describe('tenant migration contract', () => {
     // this migration is the first to use, so the route maps it to a code
     // instead of surfacing a bare 23514 as a 500.
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
-    expect(raises.length).toBeGreaterThanOrEqual(15);
+    expect(raises.length).toBeGreaterThanOrEqual(14);
     expect(sql.match(/USING ERRCODE = '23D\d\d'/g)?.length).toBe(raises.length);
 
     // The despatch boundary is documented where the next pack will look

@@ -145,8 +145,7 @@ export const DEFAULT_PAYROLL_STATUTORY_RATES: readonly PayrollStatutoryRateSeed[
     value: '75000.0000',
     effectiveFrom: '2025-04-01',
     effectiveTo: null,
-    notification:
-      'Section 16(ia) as applied to section 115BAC(1A), Finance Act 2024',
+    notification: 'Section 16(ia) as applied to section 115BAC(1A), Finance Act 2024',
   },
   {
     parameter: 'rebate_87a_old_income_limit_rupees',

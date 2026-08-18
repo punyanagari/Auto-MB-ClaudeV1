@@ -214,9 +214,21 @@ CREATE TABLE payroll_runs (
   UNIQUE (organisation_id, fy_label, sequence_number),
   UNIQUE (organisation_id, run_number),
 
+  -- `finalized_at` records that the run WAS finalised, which stays true
+  -- after it is cancelled.
+  --
+  -- Written as three one-way rules rather than as the equivalence
+  -- `(status = 'finalized') = (finalized_at IS NOT NULL)`, which is what
+  -- this was first and which made a finalised run impossible to cancel:
+  -- the equivalence demanded the timestamp be cleared the moment the
+  -- status left 'finalized', and clearing it would erase the fact that
+  -- the run had ever been issued — on the one record a provident-fund
+  -- inspector reads to see what happened. A cancelled run that was
+  -- finalised first keeps both marks, which is the truth about it.
   CONSTRAINT payroll_runs_finalized_shape_check CHECK (
-    (status = 'finalized') = (finalized_at IS NOT NULL)
-    AND (finalized_at IS NULL) = (finalized_by_user_id IS NULL)
+    (finalized_at IS NULL) = (finalized_by_user_id IS NULL)
+    AND (status <> 'finalized' OR finalized_at IS NOT NULL)
+    AND (status <> 'draft' OR finalized_at IS NULL)
   ),
   CONSTRAINT payroll_runs_cancel_shape_check CHECK (
     (cancelled_at IS NULL AND cancelled_by_user_id IS NULL
@@ -1156,32 +1168,26 @@ BEGIN
       USING ERRCODE = '23H03';
   END IF;
 
-  IF OLD.status = 'finalized' AND NEW.status = 'draft' THEN
+  -- A FINALISED RUN TAKES EXACTLY ONE FURTHER WRITE: the cancel.
+  --
+  -- Stated as one rule over the status rather than as three rules over
+  -- the columns each would protect, and that is worth a sentence because
+  -- the three-rule version was written first. It refused a return to
+  -- draft, a second finalise that moved `finalized_at`, and a
+  -- recalculation that moved `calculated_at` — and the state machine
+  -- already implied all three, so each was a second statement of a rule
+  -- that could drift from it. The wide rule is also STRONGER: it refuses
+  -- a fourth change nobody thought of, where the narrow ones would each
+  -- have let it through.
+  --
+  -- It is what makes finalising happen once. A retried finalise is the
+  -- two-approvers race, and through the route it would raise a second
+  -- set of salary payment requests — a second month's salary out of the
+  -- bank.
+  IF OLD.status = 'finalized' AND NEW.status <> 'cancelled' THEN
     RAISE EXCEPTION
-      'A finalised payroll run cannot be returned to draft; cancel it and run the month again.'
-      USING ERRCODE = '23H03';
-  END IF;
-
-  -- Finalising happens once. A second finalise is the two-approvers race
-  -- and it would overwrite who finalised and when — and, through the
-  -- route, raise a second set of salary payment requests.
-  IF OLD.status = 'finalized' AND NEW.status = 'finalized'
-     AND (NEW.finalized_at IS DISTINCT FROM OLD.finalized_at
-       OR NEW.finalized_by_user_id IS DISTINCT FROM OLD.finalized_by_user_id)
-  THEN
-    RAISE EXCEPTION 'This payroll run has already been finalised.'
-      USING ERRCODE = '23H03';
-  END IF;
-
-  -- `calculated_at` moves only while the run is a draft: it records when
-  -- the figures were computed, and the figures of a finalised run do not
-  -- move.
-  IF OLD.status <> 'draft'
-     AND NEW.calculated_at IS DISTINCT FROM OLD.calculated_at
-  THEN
-    RAISE EXCEPTION
-      'The figures of a % payroll run are settled and are not recalculated.',
-      OLD.status
+      'Payroll run % is finalised: its figures are settled and the only change left to it is a cancellation.',
+      OLD.run_number
       USING ERRCODE = '23H02';
   END IF;
 
@@ -1190,7 +1196,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION app_private.guard_payroll_run_write() IS
-  'Holds the payroll run''s lifecycle: opened as a draft, finalised once, cancelled with a reason and never reopened, and its number, month and opener frozen from the first write. The finalise-once arm is what stops a retried request raising a second set of salary payment requests.';
+  'Holds the payroll run''s lifecycle: opened as a draft, finalised once, cancelled with a reason and never reopened, and its number, month and opener frozen from the first write. A finalised run takes exactly one further write, the cancel — which is what stops a retried finalise raising a second set of salary payment requests, and a second month''s salary leaving the bank.';
 
 CREATE TRIGGER guard_payroll_run_write
   BEFORE INSERT OR UPDATE ON payroll_runs

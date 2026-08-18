@@ -1886,8 +1886,8 @@ function PayrollAuthorityRequired() {
       <Card>
         <p className="m-0 text-sm">
           Payroll is behind the payments authority, and this account does not hold it.
-          The register carries what every colleague is paid, so it is granted per
-          member rather than by role.
+          The register carries what every colleague is paid, so it is granted per member
+          rather than by role.
         </p>
         <p className="m-0 mt-2 text-sm text-muted-foreground">
           Ask an owner to grant it on the Members screen, or ask a member who already

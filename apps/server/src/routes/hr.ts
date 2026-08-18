@@ -575,7 +575,10 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
       },
       authority: 'payments',
     },
-    async ({ request, organisationId, tenant }) => {
+    // No `organisationId`: RLS has already narrowed every read inside the
+    // bound transaction, so a predicate here would be a second, weaker
+    // copy of the tenancy rule.
+    async ({ request, tenant }) => {
       const query = request.query;
       return tenant(async (tx) => {
         const cursor = await cursorRowId(tx, 'employees', query.cursor);
@@ -600,9 +603,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         // Register-wide, not the page's: the stat strip counts the whole
         // payroll, and a count taken off a page would fall as the
         // operator paged through it.
-        const [counted] = await tx<
-          { current_count: string; monthly_gross: string }[]
-        >`
+        const [counted] = await tx<{ current_count: string; monthly_gross: string }[]>`
           select count(*)::text as current_count,
                  coalesce(sum(
                    basic_monthly + dearness_allowance_monthly
@@ -644,12 +645,9 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
           select id, active, is_employee from contacts where id = ${body.contactId}
         `;
         if (contact === undefined) {
-          throw httpError(
-            404,
-            'CONTACT_NOT_FOUND',
-            'No such contact in the master.',
-            { field: 'contactId' },
-          );
+          throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact in the master.', {
+            field: 'contactId',
+          });
         }
         if (!contact.active) {
           throw httpError(
@@ -703,9 +701,17 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         // The audit detail names the person and NOT their pay. An audit
         // trail is read by more people than the payroll screen is, and
         // copying a salary into it would publish it to all of them.
-        await audit(tx, organisationId, user.id, 'employee.added', 'employees', row.id, {
-          employeeCode: body.employeeCode,
-        });
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'employee.added',
+          'employees',
+          row.id,
+          {
+            employeeCode: body.employeeCode,
+          },
+        );
         return loadEmployee(tx, row.id);
       });
       reply.code(201);
@@ -1233,79 +1239,113 @@ async function raiseSalaryPaymentRequests(
     order by lower(l.employee_code)
   `;
 
+  if (lines.length === 0) return;
+
   const fyLabel = financialYearLabel(run.period_month);
   const month = run.period_month.slice(0, 7);
 
-  for (const line of lines) {
-    // The same counter and the same number format the payments workspace
-    // uses for a hand-raised request, claimed the same way: this module
-    // is a caller of that series, not a second one.
-    const [counter] = await tx<{ next_value: number }[]>`
-      insert into payment_request_counters (organisation_id, fy_label, next_value)
-      values (${organisationId}, ${fyLabel}, 2)
-      on conflict (organisation_id, fy_label) do update
-        set next_value = payment_request_counters.next_value + 1,
-            updated_at = now()
-      returning
-        case when xmax = 0 then 1
-             else payment_request_counters.next_value - 1
-        end as next_value
-    `;
-    if (counter === undefined) {
-      throw httpError(
-        500,
-        'PAYMENT_REQUEST_NUMBER_FAILED',
-        'The payment-request counter did not yield a number.',
-      );
-    }
-    const sequence = Number(counter.next_value);
-    const requestNumber = `PR/${fyLabel}/${String(sequence).padStart(3, '0')}`;
+  // THREE STATEMENTS FOR THE WHOLE PAYROLL, not three per employee.
+  //
+  // This ran as a loop first and `test/query-write-loop-census.test.ts`
+  // refused it, rightly: a write per row inside the transaction holding
+  // the run's lock is one round-trip per employee, and payroll is the
+  // one path in the product whose row count is the organisation's
+  // headcount. Two hundred people meant six hundred round-trips with the
+  // run locked throughout.
 
-    const [created] = await tx<{ id: string }[]>`
-      insert into payment_requests (
-        organisation_id, fy_label, sequence_number, request_number,
-        kind, work_id, beneficiary_contact_id, beneficiary_snapshot,
-        purpose, category, amount, proof_reference, proof_filename,
-        status, requested_by_user_id
-      )
-      select ${organisationId}, ${fyLabel}, ${sequence}, ${requestNumber},
-             'salary', null, ${line.contact_id},
-             jsonb_build_object(
-               'designation', c.designation,
-               'contactPerson', c.contact_person,
-               'address', c.address
-             ),
-             ${`Salary for ${month} — ${line.employee_name}`},
-             'payroll', ${line.net_pay}::money_amount,
-             -- The proof is the payslip, named. There is no file, and
-             -- migration 0090 § 4 widened the shape constraint rather
-             -- than let this invent one.
-             ${run.run_number}, null,
-             'submitted', ${userId}
-      from contacts c where c.id = ${line.contact_id}
-      returning id
-    `;
-    if (created === undefined) {
-      throw httpError(
-        500,
-        'PAYMENT_REQUEST_CREATE_FAILED',
-        'The salary payment request was not written.',
-      );
-    }
-
-    await tx`
-      update payroll_run_lines set payment_request_id = ${created.id}
-      where id = ${line.id}
-    `;
+  // 1. The whole block of numbers, claimed in one increment.
+  //
+  // The counter is the payments workspace's own (0080) and this module is
+  // a CALLER of that series rather than a second one — a salary request
+  // and a hand-raised advance are numbered from the same sequence,
+  // because they land in the same register and an accountant reads them
+  // together. Claiming N at once keeps the block contiguous and keeps the
+  // whole allocation to a single row lock.
+  const claimed = lines.length;
+  const [counter] = await tx<{ first_value: number }[]>`
+    insert into payment_request_counters (organisation_id, fy_label, next_value)
+    values (${organisationId}, ${fyLabel}, ${claimed + 1})
+    on conflict (organisation_id, fy_label) do update
+      set next_value = payment_request_counters.next_value + ${claimed},
+          updated_at = now()
+    returning
+      case when xmax = 0 then 1
+           else payment_request_counters.next_value - ${claimed}
+      end as first_value
+  `;
+  if (counter === undefined) {
+    throw httpError(
+      500,
+      'PAYMENT_REQUEST_NUMBER_FAILED',
+      'The payment-request counter did not yield a number.',
+    );
   }
+  const firstSequence = Number(counter.first_value);
+  const sequences = lines.map((_line, index) => firstSequence + index);
+
+  // 2. Every request, in one insert. The beneficiary snapshot is still
+  // built in SQL from the contact, exactly as the hand-raised path builds
+  // it, so the two cannot drift.
+  const created = await tx<{ id: string; sequence_number: number }[]>`
+    insert into payment_requests (
+      organisation_id, fy_label, sequence_number, request_number,
+      kind, work_id, beneficiary_contact_id, beneficiary_snapshot,
+      purpose, category, amount, proof_reference, proof_filename,
+      status, requested_by_user_id
+    )
+    select ${organisationId}, ${fyLabel}, salary.sequence_number,
+           'PR/' || ${fyLabel} || '/' || lpad(salary.sequence_number::text, 3, '0'),
+           'salary', null, salary.contact_id,
+           jsonb_build_object(
+             'designation', c.designation,
+             'contactPerson', c.contact_person,
+             'address', c.address
+           ),
+           ${`Salary for ${month} — `} || salary.employee_name,
+           'payroll', salary.net_pay,
+           -- The proof is the payslip, named. There is no file, and
+           -- migration 0090 § 4 widened the shape constraint rather
+           -- than let this invent one.
+           ${run.run_number}, null,
+           'submitted', ${userId}
+    from unnest(
+      ${sequences}::integer[],
+      ${lines.map((line) => line.contact_id)}::uuid[],
+      ${lines.map((line) => line.employee_name)}::text[],
+      ${lines.map((line) => line.net_pay)}::money_amount[]
+    ) as salary(sequence_number, contact_id, employee_name, net_pay)
+    join contacts c on c.id = salary.contact_id
+    returning id, sequence_number
+  `;
+  if (created.length !== lines.length) {
+    throw httpError(
+      500,
+      'PAYMENT_REQUEST_CREATE_FAILED',
+      'The salary payment requests were not all written.',
+    );
+  }
+
+  // 3. Every line stamped, in one update. Joined on the sequence number
+  // rather than on the beneficiary, because the sequence is what this
+  // function assigned and a contact could in principle be reached twice
+  // by a future caller.
+  await tx`
+    update payroll_run_lines pl
+    set payment_request_id = stamped.id
+    from unnest(
+      ${lines.map((line) => line.id)}::uuid[],
+      ${sequences}::integer[]
+    ) as claim(line_id, sequence_number)
+    join payment_requests stamped
+      on stamped.organisation_id = ${organisationId}
+     and stamped.fy_label = ${fyLabel}
+     and stamped.sequence_number = claim.sequence_number
+    where pl.id = claim.line_id
+  `;
 }
 
 function employeeNotFound(): ReturnType<typeof httpError> {
-  return httpError(
-    404,
-    'EMPLOYEE_NOT_FOUND',
-    'No such employee in this organisation.',
-  );
+  return httpError(404, 'EMPLOYEE_NOT_FOUND', 'No such employee in this organisation.');
 }
 
 async function loadEmployee(tx: TransactionSql, id: string): Promise<Employee> {
@@ -1340,7 +1380,7 @@ async function assertEmployeeShape(
   excludeId: string | null,
 ): Promise<void> {
   if (
-    (body.professionalTaxStateCode ?? null) === null !==
+    ((body.professionalTaxStateCode ?? null) === null) !==
     ((body.professionalTaxCategory ?? null) === null)
   ) {
     throw httpError(
@@ -1397,8 +1437,7 @@ function rethrowEmployeeWriteRefusal(error: unknown): never {
     'code' in error &&
     String(error.code) === '23505'
   ) {
-    const constraint =
-      'constraint_name' in error ? String(error.constraint_name) : '';
+    const constraint = 'constraint_name' in error ? String(error.constraint_name) : '';
     if (constraint === 'employees_organisation_id_contact_id_key') {
       throw httpError(
         409,

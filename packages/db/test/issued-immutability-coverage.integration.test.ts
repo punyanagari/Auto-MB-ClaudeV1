@@ -95,6 +95,33 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'reorder_level',
   ],
 
+  // A payroll run (0090). Its identity is frozen from the first write —
+  // the number, the month it pays, and who opened it — and everything
+  // below is the lifecycle it is allowed to move through: calculated
+  // while it is a draft, finalised once, cancelled with a reason and
+  // never reopened. `updated_at` is maintained by the shared trigger.
+  //
+  // The lifecycle columns are DECLARED rather than frozen because the
+  // guard holds them by STATUS rather than by column: a finalised run
+  // takes exactly one further write, the cancel, so nothing needs to
+  // compare `calculated_at` or `finalized_at` to protect them.
+  //
+  // The PAYSLIPS are not here because their guard freezes them wholesale
+  // rather than column by column: after the run is issued the only write
+  // a line takes is the payment-request stamp, and the guard compares
+  // every other column as one row.
+  payroll_runs: [
+    'id',
+    'updated_at',
+    'status',
+    'calculated_at',
+    'finalized_at',
+    'finalized_by_user_id',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancel_reason',
+  ],
+
   // The amendment decision ledger: everything proposed is frozen, the
   // decision is what gets written.
   approval_requests: [

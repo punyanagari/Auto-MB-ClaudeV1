@@ -1644,6 +1644,109 @@ async function seedTenantGraph(
       )
     `;
 
+    // Payroll (0089, 0090). A whole chain rather than seven bare rows:
+    // the schedules a run reads, an employee hanging off a contact, and
+    // a draft run calculated by the real function — which is what seeds
+    // `payroll_run_lines` and, through the route's own upsert shape,
+    // gives `payroll_run_counters` a row to sweep.
+    for (const [parameter, value] of [
+      ['epf_employee_percent', '12'],
+      ['epf_employer_total_percent', '12'],
+      ['eps_employer_percent', '8.33'],
+      ['eps_monthly_wage_ceiling_rupees', '15000'],
+      ['epf_monthly_wage_ceiling_rupees', '15000'],
+      ['esi_employee_percent', '0.75'],
+      ['esi_employer_percent', '3.25'],
+      ['esi_monthly_gross_ceiling_rupees', '21000'],
+      ['income_tax_cess_percent', '4'],
+      ['income_tax_surcharge_floor_rupees', '5000000'],
+      ['standard_deduction_new_rupees', '75000'],
+      ['rebate_87a_new_income_limit_rupees', '1200000'],
+      ['rebate_87a_new_cap_rupees', '60000'],
+    ] as const) {
+      await tx`
+        insert into payroll_statutory_rates (
+          organisation_id, parameter, value, effective_from, notification
+        )
+        values (
+          ${organisationId}, ${parameter}, ${value}::numeric(14,4),
+          '2014-09-01'::date, 'tenancy fixture'
+        )
+      `;
+    }
+    for (const [from, to, amount] of [
+      ['0', '10000.01', '0'],
+      ['10000.01', null, '200'],
+    ] as const) {
+      await tx`
+        insert into professional_tax_slabs (
+          organisation_id, state_code, payee_category, effective_from,
+          monthly_wage_from, monthly_wage_to, monthly_amount, notification
+        )
+        values (
+          ${organisationId}, '27', 'male', '2023-04-01'::date,
+          ${from}::numeric(18,2), ${to}::numeric(18,2),
+          ${amount}::numeric(18,2), 'tenancy fixture'
+        )
+      `;
+    }
+    for (const [from, to, rate] of [
+      ['0', '400000', '0'],
+      ['400000', null, '5'],
+    ] as const) {
+      await tx`
+        insert into income_tax_slabs (
+          organisation_id, regime, payee_category, effective_from,
+          annual_income_from, annual_income_to, rate, notification
+        )
+        values (
+          ${organisationId}, 'new', 'general', '2025-04-01'::date,
+          ${from}::numeric(18,2), ${to}::numeric(18,2),
+          ${rate}::numeric(5,2), 'tenancy fixture'
+        )
+      `;
+    }
+    const [payrollContact] = await tx<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, is_employee, created_by_user_id
+      )
+      values (${organisationId}, 'Payroll fixture person', true, ${userId})
+      returning id
+    `;
+    if (!payrollContact) throw new Error('seed payroll contact returned no row');
+    const [employee] = await tx<{ id: string }[]>`
+      insert into employees (
+        organisation_id, contact_id, employee_code, date_of_joining,
+        date_of_birth, pf_covered, pf_wage_basis, esi_applicable,
+        professional_tax_state_code, professional_tax_category, tax_regime,
+        basic_monthly, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${payrollContact.id}, 'FIX-001', '2024-04-01',
+        '1990-01-01', true, 'ceiling', true, '27', 'male', 'new',
+        30000.00, ${userId}
+      )
+      returning id
+    `;
+    if (!employee) throw new Error('seed employee returned no row');
+    await tx`
+      insert into payroll_run_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    const [payrollRun] = await tx<{ id: string }[]>`
+      insert into payroll_runs (
+        organisation_id, fy_label, sequence_number, run_number, period_month,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, '2026-27', 1, 'PAY/2026-27/001', '2026-07-01',
+        ${userId}
+      )
+      returning id
+    `;
+    if (!payrollRun) throw new Error('seed payroll run returned no row');
+    await tx`select app_private.calculate_payroll_run(${payrollRun.id})`;
+
     return {
       workId: work.id,
       scheduleId: schedule.id,

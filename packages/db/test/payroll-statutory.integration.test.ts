@@ -362,9 +362,7 @@ async function runMonth(
            net_pay::text as net_pay
     from payroll_run_lines where payroll_run_id = ${runId}
   `;
-  return Object.fromEntries(
-    lines.map((line) => [line.employee_code ?? '', line]),
-  ) as Record<string, Record<string, string>>;
+  return Object.fromEntries(lines.map((line) => [line.employee_code ?? '', line]));
 }
 
 beforeAll(async () => {
@@ -466,7 +464,9 @@ describe('provident fund (0090 § 6)', () => {
         esiApplicable: false,
         ptCategory: null,
       });
-      const line = (await runMonth(`${String(year)}-08-01`))[employeeCode({ code: 'PF', year })];
+      const line = (await runMonth(`${String(year)}-08-01`))[
+        employeeCode({ code: 'PF', year })
+      ];
       expect(line).toBeDefined();
       expect(line?.pf_wages).toBe(testCase.pfWages);
       expect(line?.epf_employee).toBe(testCase.employee);
@@ -563,7 +563,9 @@ describe("employees' state insurance (0090 § 6)", () => {
         pfCovered: false,
         ptCategory: null,
       });
-      const line = (await runMonth(`${String(year)}-08-01`))[employeeCode({ code: 'ESI', year })];
+      const line = (await runMonth(`${String(year)}-08-01`))[
+        employeeCode({ code: 'ESI', year })
+      ];
       expect(line?.esi_covered).toBe(testCase.covered ? 'true' : 'false');
       expect(line?.esi_employee).toBe(testCase.employee);
       expect(line?.esi_employer).toBe(testCase.employer);
@@ -732,7 +734,9 @@ describe('the golden run, to the paisa (0090 § 6)', () => {
       taxRegime: 'new',
       year,
     });
-    const line = (await runMonth(`${String(year)}-08-01`))[employeeCode({ code: 'GOLDEN', year })];
+    const line = (await runMonth(`${String(year)}-08-01`))[
+      employeeCode({ code: 'GOLDEN', year })
+    ];
     expect(line).toBeDefined();
 
     expect(line?.gross_earnings).toBe('40000.00');
@@ -775,7 +779,9 @@ describe('the golden run, to the paisa (0090 § 6)', () => {
       esiApplicable: false,
       taxRegime: 'new',
     });
-    const line = (await runMonth(`${String(year)}-08-01`))[employeeCode({ code: 'GOLDEN-TAX', year })];
+    const line = (await runMonth(`${String(year)}-08-01`))[
+      employeeCode({ code: 'GOLDEN-TAX', year })
+    ];
     // 1,50,000 × 8 = 12,00,000 projected, less the ₹75,000 standard
     // deduction = 11,25,000 total income.
     expect(line?.projected_annual_income).toBe('1200000.00');
@@ -799,7 +805,9 @@ describe('the golden run, to the paisa (0090 § 6)', () => {
       esiApplicable: false,
       taxRegime: 'new',
     });
-    const line = (await runMonth(`${String(year)}-08-01`))[employeeCode({ code: 'GOLDEN-CESS', year })];
+    const line = (await runMonth(`${String(year)}-08-01`))[
+      employeeCode({ code: 'GOLDEN-CESS', year })
+    ];
     // 3,00,000 × 8 = 24,00,000 projected, less 75,000 = 23,25,000.
     expect(line?.projected_annual_income).toBe('2400000.00');
     // 4-8L @5% = 20,000; 8-12L @10% = 40,000; 12-16L @15% = 60,000;
@@ -866,10 +874,30 @@ describe('the run as an issued document (0090 § 7)', () => {
     );
     expect(recalculated.code).toBe('23H02');
 
+    // A finalised run takes exactly ONE further write, the cancel. Both
+    // of these are the same rule seen from two sides, and both raise the
+    // immutability code rather than the transition one: the guard holds
+    // the run by its status rather than by a list of columns, so there
+    // is no "this transition is not allowed" left to say.
     const reopened = await refused(database.pool`
       update payroll_runs set status = 'draft' where id = ${runId}
     `);
-    expect(reopened.code).toBe('23H03');
+    expect(reopened.code).toBe('23H02');
+
+    const refinalized = await refused(database.pool`
+      update payroll_runs set finalized_at = now() where id = ${runId}
+    `);
+    expect(refinalized.code).toBe('23H02');
+
+    // ...and the cancel itself is accepted, which is what makes the rule
+    // a narrowing rather than a wall.
+    await database.pool`
+      update payroll_runs
+      set status = 'cancelled', cancelled_at = now(),
+          cancelled_by_user_id = ${tenant.userId},
+          cancel_reason = 'finalised against the wrong month'
+      where id = ${runId}
+    `;
   });
 
   it('keeps a cancelled run’s number and lets the month run again', async () => {
