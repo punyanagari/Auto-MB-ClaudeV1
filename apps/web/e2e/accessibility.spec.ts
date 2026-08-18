@@ -184,7 +184,9 @@ test('organisation picker and members workspace pass the axe scan', async ({
      The REQUEST FORM is the only screen in the pack with a disabled
      primary action beside the pickers that disable it. */
   await page.getByRole('link', { name: 'Maintenance' }).click();
-  await expect(page.getByRole('heading', { name: 'Maintenance' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Maintenance', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Awaiting approval' })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Dispatching' })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Approved' })).toBeVisible();
@@ -215,7 +217,7 @@ test('organisation picker and members workspace pass the axe scan', async ({
   ).toBeVisible();
   await expectNoAxeViolations(page, 'maintenance defective returns tab');
 
-  await page.getByRole('button', { name: 'Maintenance' }).first().click();
+  await page.getByRole('button', { name: 'Maintenance', exact: true }).first().click();
   await page.getByRole('button', { name: 'New material request' }).click();
   await expect(
     page.getByRole('heading', { name: 'Site material request' }),
