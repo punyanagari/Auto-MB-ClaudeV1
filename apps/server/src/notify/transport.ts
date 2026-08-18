@@ -47,6 +47,18 @@ export class NotificationTransportError extends Error {
     /** One short line an operator can act on. Never a raw payload. */
     readonly detail: string | null = null,
     readonly httpStatus: number | null = null,
+    /**
+     * Whether the provider called this temporary — a rate limit, a
+     * throttle, an upstream fault.
+     *
+     * NOTHING RETRIES ON IT. It is recorded on the delivery log and
+     * worded into the refusal so an operator knows whether sending again
+     * is worth anything, and that is the whole of it: automatic retry
+     * needs the worker queue (0072), which is another pack's surface this
+     * wave. The flag exists now because the classification is the
+     * provider's and is lost the moment the response is discarded.
+     */
+    readonly retryable: boolean = false,
   ) {
     super(providerCode);
     this.name = 'NotificationTransportError';

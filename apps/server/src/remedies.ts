@@ -481,7 +481,15 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
 
   // ---- Notifications (0092) -------------------------------------------------
   NOTIFICATION_CHANNEL_NOT_CONFIGURED:
-    'Configure the channel under Settings and switch it on before sending; a channel that is off sends nothing rather than sending quietly.',
+    'Open the Notifications screen, fill the channel in and switch it on before sending; a channel that is off sends nothing rather than sending quietly.',
+  NOTIFICATION_CHANNEL_NUMBER_TAKEN:
+    'Check the phone number id against the Meta console and enter the one this organisation was issued; if it is already correct, ask your administrator to raise it with support.',
+  NOTIFICATION_FIELD_INVALID:
+    'Check the phone number, the address and the template name against the shapes the form describes, then save again.',
+  NOTIFICATION_OUTCOME_UNRECORDED:
+    'Compare this notification against the provider console before sending it again, because it was handed over and the log could not record what happened.',
+  NOTIFICATION_WEBHOOK_UNVERIFIED:
+    'Check that the webhook secret and verify token in the Meta app match this deployment’s configuration; nothing was recorded from this request.',
   NOTIFICATION_CHANNEL_INCOMPLETE:
     'Fill in the whole channel before enabling it — WhatsApp needs its phone number id, business account id and display number; email needs a sender address.',
   NOTIFICATION_CHANNEL_STATE:

@@ -19,12 +19,13 @@ import {
   type NotificationMessage,
   type NotificationTemplate,
 } from '@auto-mb/contracts';
+import { timingSafeEqual } from 'node:crypto';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { FastifyRequest } from 'fastify';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
-import { requireAuthorities } from '../authz.js';
+import { requireAuthorities, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import {
@@ -97,6 +98,10 @@ import {
 /** The register's default page. Sized like the signing queue's: a
  * delivery log is scrolled rather than paged through. */
 const PAGE_LIMIT = 100;
+
+/** What `notification_templates.parameter_count`'s CHECK allows. Stated
+ * here so the route refuses first, with a remedy. */
+const MAX_TEMPLATE_PARAMETERS = 20;
 
 /* --- Rows and mappers ------------------------------------------------------ */
 
@@ -333,12 +338,18 @@ export function receiptsOf(payload: unknown): readonly Receipt[] {
         const providerMessageId = readString(status.id);
         const mapped = WEBHOOK_STATUS_MAP[readString(status.status) ?? ''];
         if (providerMessageId === null || mapped === undefined) continue;
-        // Meta sends a UNIX second count as a decimal string.
+        // Meta sends a UNIX SECOND count as a decimal string. Bounded
+        // on both sides, not merely checked for finiteness: a value past
+        // ECMAScript's ±8.64e15 ms range builds an Invalid Date, whose
+        // `toISOString()` THROWS — and the throw would escape the whole
+        // handler, so one malformed entry in a batch of forty would 500
+        // the batch, and Meta would redeliver that same batch forever.
+        // Out of range falls back to arrival time, which is a worse
+        // timestamp than Meta's and an infinitely better one than none.
         const seconds = Number(readString(status.timestamp) ?? '');
-        const occurredAt =
-          Number.isFinite(seconds) && seconds > 0
-            ? new Date(seconds * 1000)
-            : new Date();
+        const withinRange =
+          Number.isFinite(seconds) && seconds > 0 && seconds * 1000 <= 8.64e15;
+        const occurredAt = withinRange ? new Date(seconds * 1000) : new Date();
         const errors = status.errors;
         const firstError = Array.isArray(errors) ? record(errors[0]) : null;
         // Meta sends the error code as a NUMBER in the Cloud API and as a
@@ -361,6 +372,16 @@ export function receiptsOf(payload: unknown): readonly Receipt[] {
     }
   }
   return receipts;
+}
+
+/** Two secrets compared without leaking where they first differ.
+ * Lengths are compared first because `timingSafeEqual` throws on
+ * mismatched buffers — and a length difference is not the secret. */
+function equalSecrets(given: string | undefined, expected: string): boolean {
+  if (given === undefined) return false;
+  const a = Buffer.from(given, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 /** Fastify parses JSON before a handler runs, so the raw bytes the
@@ -565,6 +586,17 @@ export function registerNotificationRoutes(
       // actually takes, and a client-supplied count would be a second
       // thing that can be wrong.
       const parameterCount = parameterCountOf(body.bodyText);
+      // The column's CHECK caps this at 20 and would otherwise answer a
+      // 23514 the operator reads as a 500. Meta's own limit is lower than
+      // anything a challan notice needs, so this is a typo guard rather
+      // than a real ceiling.
+      if (parameterCount > MAX_TEMPLATE_PARAMETERS) {
+        throw httpError(
+          409,
+          'NOTIFICATION_TEMPLATE_NOT_SENDABLE',
+          `This body refers to {{${String(parameterCount)}}}, and a template takes at most ${String(MAX_TEMPLATE_PARAMETERS)} parameters.`,
+        );
+      }
       const template = await tenant(async (tx) => {
         const [row] = await tx<TemplateRow[]>`
           insert into notification_templates (
@@ -815,11 +847,22 @@ export function registerNotificationRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
       // `sendTemplatedNotification` opens its OWN bound transactions, so
-      // the registrar's role and authority guard — which runs inside the
-      // `tenant()` callback below — does not cover it. The act states
-      // its own authority instead, checked as the first statement of the
-      // first transaction, before any read and long before the provider
-      // is called.
+      // the registrar's `role` and `authority` declarations above do not
+      // cover it — they run inside the `tenant()` callback, and the send
+      // happens before one is opened. BOTH halves therefore travel into
+      // the send path as its `authorise` hook, in the same order the
+      // registrar would run them.
+      //
+      // The role half is not decoration. Without it a site or viewer
+      // member holding the notifications authority put a real WhatsApp
+      // message on the wire and only THEN met the writer wall — message
+      // delivered, refusal returned, and the audit row rolled back with
+      // the transaction that would have carried it.
+      //
+      // The audit event is written by the send path itself, in the same
+      // transaction that records the outcome, for the second half of that
+      // same bug: an audit row in a LATER transaction is an audit row a
+      // later refusal can roll back off a message that really went.
       const messageId = await sendTemplatedNotification(database, transports, {
         organisationId,
         userId: user.id,
@@ -827,21 +870,12 @@ export function registerNotificationRoutes(
         contactId: body.contactId,
         ...(body.channel === undefined ? {} : { channel: body.channel }),
         parameters: body.parameters ?? [],
-        authorise: (tx) => requireAuthorities(tx, user.id, ['notifications']),
+        authorise: async (tx) => {
+          await requireWriterRole(tx, user.id);
+          await requireAuthorities(tx, user.id, ['notifications']);
+        },
       });
-      const message = await tenant(async (tx) => {
-        const sent = await readMessage(tx, messageId);
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'notification.sent',
-          'notification_messages',
-          messageId,
-          { channel: sent.channel, templateId: sent.templateId, status: sent.status },
-        );
-        return sent;
-      });
+      const message = await tenant((tx) => readMessage(tx, messageId));
       return reply.status(201).send({ message });
     },
   );
@@ -890,7 +924,12 @@ export function registerNotificationRoutes(
       if (
         transport === undefined ||
         query['hub.mode'] !== 'subscribe' ||
-        query['hub.verify_token'] !== transport.webhookVerifyToken ||
+        // Constant time, like every other secret comparison in this
+        // product. The token is short, guessable-length and compared on a
+        // PUBLIC address, so `!==` leaks its prefix to anyone willing to
+        // measure — and the prize is a subscription that redirects this
+        // organisation's delivery receipts.
+        !equalSecrets(query['hub.verify_token'], transport.webhookVerifyToken) ||
         query['hub.challenge'] === undefined
       ) {
         throw httpError(
@@ -911,14 +950,22 @@ export function registerNotificationRoutes(
      * refused with 401 — there is no branch that records anything from an
      * unverified payload.
      *
-     * AFTER that, the answer is 200 whatever the receipts turn out to be,
-     * and that is Meta's rule rather than a shrug: a non-200 makes Meta
-     * retry the whole batch, so a receipt this server has already
-     * applied — or one for a message it does not know, which is every
-     * receipt belonging to another deployment sharing the same Meta
-     * app — would be redelivered forever. Nothing is lost by answering
-     * 200, because the definer function is idempotent by construction: it
-     * only ever moves a row forwards.
+     * AFTER that, the answer is 200 for almost everything, because a
+     * non-200 makes Meta redeliver the whole batch: a receipt already
+     * applied, or one belonging to another deployment sharing the same
+     * Meta app, would be redelivered forever. The definer function is
+     * idempotent by construction — it only ever moves a row forwards — so
+     * nothing is lost by accepting those.
+     *
+     * THE ONE EXCEPTION IS `missing`, AND IT IS THE INTERESTING CASE.
+     * This organisation owns the number, but no row carries that provider
+     * message id yet — which is almost always the race the send path
+     * opens on purpose: the provider has answered and the completion
+     * transaction has not committed. Answering 200 there would throw away
+     * a delivery timestamp permanently, because Meta never sends it
+     * again. So the receiver answers 503 and lets Meta's own retry, a few
+     * seconds later, close the window. Meta gives up after its own
+     * schedule, which bounds a genuinely unknown id.
      */
     scope.post('/api/notifications/webhook', async (request: RawBodyRequest, reply) => {
       const transport = transports.whatsapp;
@@ -948,18 +995,26 @@ export function registerNotificationRoutes(
       }
 
       let applied = 0;
+      let missing = 0;
       for (const receipt of receiptsOf(request.body)) {
-        const [row] = await database<{ record_notification_receipt: boolean }[]>`
+        const [row] = await database<{ record_notification_receipt: string }[]>`
           select app_private.record_notification_receipt(
             ${receipt.phoneNumberId}, ${receipt.providerMessageId}, ${receipt.status},
             ${receipt.occurredAt}, ${receipt.failureCode}, ${receipt.failureDetail}
           )
         `;
-        if (row?.record_notification_receipt === true) applied += 1;
+        if (row?.record_notification_receipt === 'applied') applied += 1;
+        else if (row?.record_notification_receipt === 'missing') missing += 1;
       }
-      // A count and nothing else. Never a message id, a telephone number
+      // Counts and nothing else. Never a message id, a telephone number
       // or a template body (AGENTS.md rule 11).
-      request.log.info({ applied, message: 'notification receipts applied' });
+      request.log.info({ applied, missing, message: 'notification receipts applied' });
+      if (missing > 0) {
+        // Whatever else was in the batch has been applied already, and
+        // re-applying it is a no-op, so redelivering the whole batch is
+        // the cheapest way to land the part that arrived early.
+        return reply.status(503).send({ applied, missing });
+      }
       return reply.status(200).send({ applied });
     });
     done();

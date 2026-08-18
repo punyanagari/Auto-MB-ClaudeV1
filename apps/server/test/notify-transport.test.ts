@@ -5,6 +5,7 @@ import {
   readWhatsAppConfig,
 } from '../src/notify/meta-cloud.js';
 import { parameterCountOf, receiptsOf } from '../src/routes/notifications.js';
+import { consentStillStands, fallbackMessageId } from '../src/notify/send.js';
 import {
   NotificationTransportError,
   renderTemplateBody,
@@ -160,6 +161,31 @@ describe('receiptsOf', () => {
     }
   });
 
+  it('falls back to now for a timestamp outside the Date range, rather than throwing', () => {
+    // `new Date(1e18 * 1000)` is an Invalid Date and `toISOString()` on it
+    // THROWS. Unclamped, one such entry escaped the handler and 500ed the
+    // whole batch — which Meta then redelivered forever.
+    const [receipt] = receiptsOf({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: '1' },
+                statuses: [
+                  { id: 'wamid.FAR', status: 'read', timestamp: '999999999999999999' },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(receipt).toBeDefined();
+    expect(() => receipt?.occurredAt.toISOString()).not.toThrow();
+    expect(Number.isNaN(receipt?.occurredAt.getTime())).toBe(false);
+  });
+
   it('falls back to now when Meta sends no usable timestamp', () => {
     const before = Date.now();
     const [receipt] = receiptsOf({
@@ -200,6 +226,40 @@ describe('renderTemplateBody and parameterCountOf', () => {
     expect(parameterCountOf('{{1}} and {{2}}')).toBe(2);
     // A body using 1 and 3 takes THREE parameters at Meta, not two.
     expect(parameterCountOf('{{1}} and {{3}}')).toBe(3);
+  });
+});
+
+describe('consentStillStands', () => {
+  /* The predicate behind the re-read that closes the window between the
+     queued row committing and the provider being called. Tested here
+     rather than as a race because nothing a test can hook runs inside
+     that window — the transport double is already past it — so a "race"
+     test would be a test of the INSERT guard wearing this name. */
+  const address = '+919812345678';
+
+  it('stands only for an opt-in at the same address', () => {
+    expect(consentStillStands({ state: 'opted_in', address }, address)).toBe(true);
+  });
+
+  it('falls for an opt-out, a moved address, and no record at all', () => {
+    expect(consentStillStands({ state: 'opted_out', address }, address)).toBe(false);
+    // The half that is easy to drop and expensive to lose: a contact who
+    // re-consented on a NEW number has not consented to the old one.
+    expect(
+      consentStillStands({ state: 'opted_in', address: '+919000000009' }, address),
+    ).toBe(false);
+    expect(consentStillStands(null, address)).toBe(false);
+  });
+});
+
+describe('fallbackMessageId', () => {
+  it('is unique per call, because the column it fills is unique per CLUSTER', () => {
+    // A clock-derived id collided across tenants whose relays both stayed
+    // silent in the same millisecond — and the collision landed after the
+    // mail had already gone out.
+    const ids = new Set(Array.from({ length: 500 }, () => fallbackMessageId()));
+    expect(ids.size).toBe(500);
+    expect([...ids][0]).toMatch(/^smtp:[0-9a-f-]{36}$/);
   });
 });
 
@@ -382,6 +442,36 @@ describe('MetaCloudWhatsAppTransport', () => {
             : 'not a transport error',
         ),
     ).resolves.not.toContain('98123');
+  });
+
+  it('marks a throttle retryable and a bad template not', async () => {
+    // "Try again" and "never try again" are different instructions, and
+    // the provider is the one that knows which it is.
+    const throttled = transportWith(
+      () =>
+        new Response(
+          JSON.stringify({ error: { code: 130429, message: 'Throttled' } }),
+          {
+            status: 429,
+          },
+        ),
+    );
+    await expect(
+      throttled.transport.send({ phoneNumberId: '1', apiBaseUrl: null }, message),
+    ).rejects.toMatchObject({ providerCode: '130429', retryable: true });
+
+    const permanent = transportWith(
+      () =>
+        new Response(
+          JSON.stringify({
+            error: { code: 132001, message: 'Template does not exist' },
+          }),
+          { status: 400 },
+        ),
+    );
+    await expect(
+      permanent.transport.send({ phoneNumberId: '1', apiBaseUrl: null }, message),
+    ).rejects.toMatchObject({ providerCode: '132001', retryable: false });
   });
 
   it('refuses an acceptance that names no message id', async () => {

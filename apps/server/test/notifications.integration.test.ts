@@ -22,7 +22,10 @@ import type {
   TemplatedMessage,
   WhatsAppTarget,
 } from '../src/notify/transport.js';
-import { NotificationTransportError } from '../src/notify/transport.js';
+import {
+  NotificationTransportError,
+  verifyMetaSignature,
+} from '../src/notify/transport.js';
 
 /**
  * Notifications, end to end (migration 0092).
@@ -75,6 +78,7 @@ const runId = randomBytes(5).toString('hex');
 const ownerEmail = `ntf-owner-${runId}@integration.test`;
 const officeEmail = `ntf-office-${runId}@integration.test`;
 const plainEmail = `ntf-plain-${runId}@integration.test`;
+const viewerEmail = `ntf-viewer-${runId}@integration.test`;
 const outsiderEmail = `ntf-outsider-${runId}@integration.test`;
 const password = `integration-password-${runId}`;
 
@@ -96,18 +100,22 @@ interface SentCall {
   readonly parameters: readonly string[];
 }
 const sent: SentCall[] = [];
-/** Set by a test that wants the next provider call to fail. */
-let nextWhatsAppFailure: NotificationTransportError | null = null;
+/** Set by a test that wants the next provider call to fail. Typed as
+ * `Error`, not `NotificationTransportError`, because the case that used
+ * to strand a row in `queued` forever is a throw that is NOT a transport
+ * error at all. */
+let nextWhatsAppFailure: Error | null = null;
 
 const transports: NotificationTransports = {
   whatsapp: {
     provider: 'meta_cloud',
     webhookVerifyToken: VERIFY_TOKEN,
-    verifyWebhookSignature(rawBody, header) {
-      if (header === undefined || !header.startsWith('sha256=')) return false;
-      const expected = createHmac('sha256', APP_SECRET).update(rawBody).digest('hex');
-      return header.slice('sha256='.length) === expected;
-    },
+    // The REAL implementation, not a hand-rolled one. A double that
+    // re-implements a security check with `===` proves the tests pass
+    // against a comparison the product does not use — which is the one
+    // thing a double must never do.
+    verifyWebhookSignature: (rawBody, header) =>
+      verifyMetaSignature(APP_SECRET, rawBody, header),
     send(target: WhatsAppTarget, message: TemplatedMessage) {
       if (nextWhatsAppFailure !== null) {
         const failure = nextWhatsAppFailure;
@@ -154,6 +162,10 @@ interface CookieJar {
 let owner: CookieJar;
 let office: CookieJar;
 let plain: CookieJar;
+/** A viewer who DOES hold the notifications authority. The whole point of
+ * the pairing: a refusal for them proves the ROLE wall ran, because the
+ * authority wall cannot be what refused. */
+let viewer: CookieJar;
 let outsider: CookieJar;
 
 const CONSENTED_PHONE = '+919812345678';
@@ -293,6 +305,7 @@ beforeAll(async () => {
   owner = await signUp(ownerEmail, 'Notify Owner');
   office = await signUp(officeEmail, 'Notify Office');
   plain = await signUp(plainEmail, 'Notify Plain');
+  viewer = await signUp(viewerEmail, 'Notify Viewer');
   outsider = await signUp(outsiderEmail, 'Notify Outsider');
 
   const created = await authed(owner, {
@@ -311,12 +324,16 @@ beforeAll(async () => {
   expect(foreign.statusCode, foreign.body).toBe(201);
   outsiderOrganisationId = foreign.json<{ id: string }>().id;
 
-  for (const email of [officeEmail, plainEmail]) {
+  for (const [email, role] of [
+    [officeEmail, 'office'],
+    [plainEmail, 'office'],
+    [viewerEmail, 'viewer'],
+  ] as const) {
     const added = await authed(owner, {
       method: 'POST',
       url: '/api/organisations/current/members',
       organisationId,
-      payload: { email, role: 'office' },
+      payload: { email, role },
     });
     expect(added.statusCode, added.body).toBe(201);
   }
@@ -333,6 +350,11 @@ beforeAll(async () => {
     update organisation_memberships set can_issue_documents = true
     where organisation_id = ${organisationId}
       and user_id in (select "id" from auth_users where "email" = ${plainEmail})
+  `;
+  await admin`
+    update organisation_memberships set can_manage_notifications = true
+    where organisation_id = ${organisationId}
+      and user_id in (select "id" from auth_users where "email" = ${viewerEmail})
   `;
 
   for (const [org, jar, designation] of [
@@ -529,6 +551,49 @@ describe('sending', () => {
   });
 });
 
+describe('every outcome reaches the ledger', () => {
+  it('records a NON-transport throw as failed rather than leaving the row queued', async () => {
+    // The case that used to strand a row forever: the outcome shape
+    // requires a queued row to carry a NULL provider message id, and a
+    // receipt is looked up BY that id — so nothing could ever rescue it.
+    nextWhatsAppFailure = new Error('a bug in this server, not a refusal');
+    const response = await send({
+      templateId: approvedTemplateId,
+      contactId,
+      channel: 'whatsapp',
+      parameters: ['DC/2026/0600', 'WR-BCT-2026'],
+    });
+    expect(response.statusCode, response.body).toBe(502);
+    const { messages } = await log();
+    const stranded = messages.filter((message) => message.status === 'queued');
+    expect(stranded, 'no notification may be left queued').toEqual([]);
+    expect(messages[0]?.status).toBe('failed');
+    expect(messages[0]?.failureCode).toBe('transport_error');
+  });
+
+  it('carries the provider’s own retryable classification onto the log', async () => {
+    nextWhatsAppFailure = new NotificationTransportError(
+      '130429',
+      'Rate limit hit',
+      429,
+      true,
+    );
+    const response = await send({
+      templateId: approvedTemplateId,
+      contactId,
+      channel: 'whatsapp',
+      parameters: ['DC/2026/0601', 'WR-BCT-2026'],
+    });
+    expect(response.statusCode, response.body).toBe(502);
+    // The refusal says so, because "try again" and "never try again" are
+    // different instructions and the provider is the one that knows.
+    expect(response.json<{ message: string }>().message).toMatch(/temporary/i);
+    const { messages } = await log();
+    expect(messages[0]?.failureCode).toBe('130429');
+    expect(messages[0]?.failureDetail).toContain('retryable');
+  });
+});
+
 describe('consent is the gate, and it is per address', () => {
   it('refuses a contact who never opted in', async () => {
     const response = await authed(owner, {
@@ -710,11 +775,65 @@ describe('template lifecycle', () => {
       'Template content violates policy',
     );
 
-    // A rejected template is REPLACED, not resubmitted: Meta rejected a
-    // body, and the body froze the moment it was submitted.
+    // A rejected template is RESUBMITTED, which is Meta's own remedy for
+    // a rejection and what an appeal looks like from this register. An
+    // earlier draft made `rejected` terminal, which was wrong twice: the
+    // console will show the move, and `(organisation_id, name, language)`
+    // is unique with no DELETE, so a dead end burned the name forever.
     const resubmit = await moveTemplate(template.id, 'pending');
-    expect(resubmit.statusCode, resubmit.body).toBe(409);
-    expect(resubmit.json<{ code: string }>().code).toBe('NOTIFICATION_TEMPLATE_STATE');
+    expect(resubmit.statusCode, resubmit.body).toBe(200);
+    expect(resubmit.json<NotificationTemplateResponse>().template.status).toBe(
+      'pending',
+    );
+    // …and the appeal lands.
+    const approved = await moveTemplate(template.id, 'approved');
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(
+      approved.json<NotificationTemplateResponse>().template.statusReason,
+    ).toBeNull();
+  });
+
+  it('retires a draft nobody submitted, without burning its name', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/notification-templates',
+      organisationId,
+      payload: {
+        name: `retired_${runId}`,
+        language: 'en',
+        category: 'utility',
+        bodyText: 'Written by mistake.',
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { template } = created.json<NotificationTemplateResponse>();
+    const retired = await moveTemplate(template.id, 'disabled', 'Written by mistake');
+    expect(retired.statusCode, retired.body).toBe(200);
+    // Terminal, and it stays terminal: Meta withdrew it, and getting it
+    // back is a new template.
+    const revive = await moveTemplate(template.id, 'pending');
+    expect(revive.statusCode, revive.body).toBe(409);
+    expect(revive.json<{ code: string }>().code).toBe('NOTIFICATION_TEMPLATE_STATE');
+  });
+
+  it('refuses a body asking for more parameters than a template may take', async () => {
+    // The column's CHECK caps this at 20; without the route's own refusal
+    // it surfaced as a bare 23514, which an operator reads as a 500.
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/notification-templates',
+      organisationId,
+      payload: {
+        name: `too_many_${runId}`,
+        language: 'en',
+        category: 'utility',
+        bodyText: 'Values {{1}} and {{99}}.',
+      },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe(
+      'NOTIFICATION_TEMPLATE_NOT_SENDABLE',
+    );
   });
 
   it('refuses a second template with the same name and language', async () => {
@@ -752,6 +871,29 @@ describe('channel configuration', () => {
         where organisation_id = ${organisationId} and channel = 'email'
       `,
     ).rejects.toMatchObject({ code: '23K02' });
+  });
+
+  it('refuses a phone number id another organisation already holds, without saying so', async () => {
+    // The index is cluster-wide by necessity: Meta's webhook resolves a
+    // tenant by this value before any tenant is bound. So one
+    // organisation CAN type another's — the number is semi-public — and
+    // before this refusal existed that was an unmapped 500, which both
+    // blocked the true owner with no remedy and told the typist that the
+    // number was registered somewhere.
+    const response = await authed(outsider, {
+      method: 'PUT',
+      url: '/api/notification-channels/whatsapp',
+      organisationId: outsiderOrganisationId,
+      payload: { enabled: false, wabaPhoneNumberId: phoneNumberId },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    const refusal = response.json<{ code: string; message: string; remedy?: string }>();
+    expect(refusal.code).toBe('NOTIFICATION_CHANNEL_NUMBER_TAKEN');
+    // Non-oracular: it must not name the holder, nor confirm there is one.
+    expect(`${refusal.message} ${refusal.remedy ?? ''}`).not.toContain(
+      'Notify Constructions',
+    );
+    expect(refusal.message).not.toMatch(/another organisation|already registered by/i);
   });
 
   it('reports whether the DEPLOYMENT can send, not only whether the organisation is set up', async () => {
@@ -838,13 +980,73 @@ describe('the webhook', () => {
   });
 
   it('moves nothing when the receipt names another organisation’s number', async () => {
+    // THE TENANCY PROPERTY. The receipt arrives on an organisation this
+    // cluster does know — it owns `foreignPhoneNumberId` — but names a
+    // message belonging to somebody else. Scoping the lookup by BOTH the
+    // phone number id and the message id is what makes that a miss
+    // instead of a cross-tenant write.
     const providerMessageId = await sendAndCapture();
     const response = await webhook(
       statusPayload(providerMessageId, 'delivered', { phone: foreignPhoneNumberId }),
     );
-    expect(response.statusCode).toBe(200);
     expect(response.json<{ applied: number }>().applied).toBe(0);
     expect(await statusOf(providerMessageId)).toBe('sent');
+    // It reads as `missing` — that organisation has no such message — so
+    // the receiver asks for a redelivery, which will miss identically.
+    // Meta's own retry schedule is what bounds it; the alternative is
+    // answering 200 to the race this status exists to catch.
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('answers 200, and never asks again, for a number no organisation here owns', async () => {
+    // Another deployment sharing the same Meta app. It will never become
+    // ours, so a retry would be a redelivery loop with no end.
+    const response = await webhook(
+      statusPayload(`wamid.SOMEBODYELSE.${runId}`, 'delivered', {
+        phone: '999999999999999',
+      }),
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<{ applied: number }>().applied).toBe(0);
+  });
+
+  it('asks Meta to redeliver a receipt whose message row it cannot see yet', async () => {
+    // The race the two-phase send opens: the provider has answered and
+    // the completion transaction has not committed, so the receipt
+    // arrives before the row carries its id. Answering 200 there loses
+    // the delivery timestamp permanently, because Meta never sends it
+    // again — so the receiver asks for a redelivery instead.
+    const response = await webhook(
+      statusPayload(`wamid.NOTYETCOMMITTED.${runId}`, 'delivered'),
+    );
+    expect(response.statusCode, response.body).toBe(503);
+    expect(response.json<{ applied: number; missing: number }>()).toMatchObject({
+      applied: 0,
+      missing: 1,
+    });
+  });
+
+  it('applies the rest of a batch even when one entry is unusable', async () => {
+    // A timestamp past the Date range used to build an Invalid Date whose
+    // toISOString() threw, and the throw escaped the whole handler — so
+    // one malformed entry 500ed a batch of forty and Meta redelivered
+    // that same batch forever.
+    const providerMessageId = await sendAndCapture();
+    const payload = statusPayload(providerMessageId, 'delivered');
+    const entry = (
+      payload as { entry: { changes: { value: { statuses: unknown[] } }[] }[] }
+    ).entry[0];
+    entry?.changes[0]?.value.statuses.unshift({
+      id: `wamid.BADCLOCK.${runId}`,
+      status: 'read',
+      timestamp: '999999999999999999',
+    });
+    const response = await webhook(payload);
+    // The good receipt landed; the bad one was treated as a receipt for a
+    // row that does not exist, which is what it is.
+    expect([200, 503]).toContain(response.statusCode);
+    expect(response.json<{ applied: number }>().applied).toBe(1);
+    expect(await statusOf(providerMessageId)).toBe('delivered');
   });
 
   it('ignores inbound replies and anything it does not recognise', async () => {
@@ -885,6 +1087,10 @@ describe('the webhook', () => {
     expect(good.body).toBe('1234567890');
 
     for (const query of [
+      // Same length as the real token, so a comparison that returned
+      // early on the first differing byte would still refuse — the point
+      // is that it refuses without telling anyone WHERE it differs.
+      `hub.mode=subscribe&hub.verify_token=${'x'.repeat(VERIFY_TOKEN.length)}&hub.challenge=1234567890`,
       'hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1234567890',
       `hub.mode=unsubscribe&hub.verify_token=${VERIFY_TOKEN}&hub.challenge=1234567890`,
       `hub.mode=subscribe&hub.verify_token=${VERIFY_TOKEN}`,
@@ -931,6 +1137,45 @@ describe('the walls', () => {
     expect(response.statusCode, response.body).toBe(403);
     expect(response.json<{ code: string }>().code).toBe('AUTHORITY_REQUIRED');
     expect(sent).toHaveLength(before);
+  });
+
+  it('refuses a NON-WRITER holding the authority before anything is sent', async () => {
+    // The registrar's `role: 'writer'` runs inside the tenant callback,
+    // and the send opens its own transactions — so before the role
+    // travelled into the `authorise` hook, a site or viewer member with
+    // the authority put a real message on the wire and only THEN met the
+    // wall, with the audit row rolled back off a delivery that happened.
+    const before = sent.length;
+    const beforeLog = (await log()).messages.length;
+    const response = await send(
+      {
+        templateId: approvedTemplateId,
+        contactId,
+        channel: 'whatsapp',
+        parameters: ['DC/2026/0700', 'WR-BCT-2026'],
+      },
+      viewer,
+    );
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.json<{ code: string }>().code).toBe('ROLE_FORBIDDEN');
+    expect(sent, 'nothing may reach the transport').toHaveLength(before);
+    expect((await log()).messages).toHaveLength(beforeLog);
+  });
+
+  it('writes the audit event in the same transaction that records the send', async () => {
+    const response = await send({
+      templateId: approvedTemplateId,
+      contactId,
+      channel: 'whatsapp',
+      parameters: ['DC/2026/0701', 'WR-BCT-2026'],
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const { message } = response.json<NotificationMessageResponse>();
+    const [event] = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId} and entity_id = ${message.id}
+    `;
+    expect(event?.action).toBe('notification.sent');
   });
 
   it('lets a non-owner holding the authority read and send, but not save a channel', async () => {

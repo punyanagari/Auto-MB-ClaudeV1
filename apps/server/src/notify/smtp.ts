@@ -17,8 +17,19 @@
  * platform's.
  */
 import { createTransport, type Transporter } from 'nodemailer';
+import { fallbackMessageId } from './send.js';
 import type { EmailTarget, EmailTransport, TemplatedMessage } from './transport.js';
 import { NotificationTransportError, renderTemplateBody } from './transport.js';
+
+/**
+ * How long a relay gets, at each of the three stages nodemailer can hang
+ * at. Bounded at all because of the shape of the send path rather than
+ * out of politeness: the delivery-log row is committed `queued` before
+ * this call and completed after it, so a relay that accepts a TCP
+ * connection and then says nothing holds that row open for as long as the
+ * socket lives. Node's own default is no timeout whatsoever.
+ */
+const RELAY_TIMEOUT_MS = 10_000;
 
 /** The relay this deployment sends notification mail through, or null
  * when it has none. `SMTP_URL` is the whole connection, credentials
@@ -34,7 +45,13 @@ export class SmtpEmailTransport implements EmailTransport {
   private readonly transporter: Transporter;
 
   constructor(smtpUrl: string, transporter?: Transporter) {
-    this.transporter = transporter ?? createTransport(smtpUrl);
+    this.transporter =
+      transporter ??
+      createTransport(smtpUrl, {
+        connectionTimeout: RELAY_TIMEOUT_MS,
+        greetingTimeout: RELAY_TIMEOUT_MS,
+        socketTimeout: RELAY_TIMEOUT_MS,
+      });
   }
 
   async send(target: EmailTarget, message: TemplatedMessage): Promise<string> {
@@ -63,7 +80,7 @@ export class SmtpEmailTransport implements EmailTransport {
           : undefined;
       return typeof messageId === 'string' && messageId !== ''
         ? messageId
-        : `smtp:${String(Date.now())}`;
+        : fallbackMessageId();
     } catch (cause) {
       // The errno and nothing else. A nodemailer transport error carries
       // the recipient address and the whole SMTP conversation, neither of
@@ -72,11 +89,21 @@ export class SmtpEmailTransport implements EmailTransport {
         typeof cause === 'object' && cause !== null && 'code' in cause
           ? cause.code
           : undefined;
+      // A 4xx SMTP reply, a timeout and a refused connection are all
+      // temporary; a 5xx reply is the relay saying never. `responseCode`
+      // is nodemailer's own copy of the SMTP status.
+      const responseCode: unknown =
+        typeof cause === 'object' && cause !== null && 'responseCode' in cause
+          ? cause.responseCode
+          : undefined;
+      const permanent = typeof responseCode === 'number' && responseCode >= 500;
       throw new NotificationTransportError(
         typeof code === 'string' && /^[A-Z][A-Z0-9_]{1,31}$/.test(code)
           ? code
           : 'mail_transport_failed',
         'The mail relay refused the message.',
+        typeof responseCode === 'number' ? responseCode : null,
+        !permanent,
       );
     }
   }

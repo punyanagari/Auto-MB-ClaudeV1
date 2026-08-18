@@ -676,8 +676,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     // rather than by the exemption: they are throttled on different
     // budgets, and a shared counter would let a burst of webhook receipts
     // lock out the kiosk.
-    const isNotificationWebhook =
-      request.method === 'POST' && routePattern === '/api/notifications/webhook';
+    // BOTH methods, not only the POST. The subscription handshake is a
+    // GET on the same public address that compares a secret, so leaving
+    // it outside the budget left an unauthenticated verify-token oracle
+    // with no rate limit at all in front of it.
+    const isNotificationWebhook = routePattern === '/api/notifications/webhook';
     const isKioskSigning =
       routePattern !== undefined &&
       !isNotificationWebhook &&

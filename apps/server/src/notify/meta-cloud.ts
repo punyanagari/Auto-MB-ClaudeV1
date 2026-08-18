@@ -135,6 +135,24 @@ function messageIdOf(payload: unknown): string {
   return id;
 }
 
+/**
+ * Meta's own temporary failures.
+ *
+ * 130429 is the throughput throttle, 131056 the per-pair rate limit,
+ * 131026 an undeliverable that clears, and 80007 the business-account
+ * rate limit; every one of them means "the same message would work
+ * later". Anything else — a template that does not exist, a number that
+ * is not on WhatsApp — is permanent, and telling an operator to try again
+ * would be telling them to waste an afternoon.
+ */
+const RETRYABLE_META_CODES = new Set(['130429', '131056', '80007', '131026']);
+
+function isRetryable(code: string, status: number): boolean {
+  // 429 and 5xx are HTTP's own way of saying the same thing, and cover a
+  // BSP relay that answers with its own status rather than Meta's body.
+  return RETRYABLE_META_CODES.has(code) || status === 429 || status >= 500;
+}
+
 /** Meta's error envelope, reduced to a symbolic code and one line. The
  * body is NOT carried through: it echoes the recipient's number back. */
 function refusalOf(status: number, payload: unknown): NotificationTransportErrorType {
@@ -151,7 +169,12 @@ function refusalOf(status: number, payload: unknown): NotificationTransportError
   // ("Template name does not exist in the translation"), not the payload.
   const message =
     typeof error?.message === 'string' ? error.message.slice(0, 500) : null;
-  return new NotificationTransportError(code, message, status);
+  return new NotificationTransportError(
+    code,
+    message,
+    status,
+    isRetryable(code, status),
+  );
 }
 
 export class MetaCloudWhatsAppTransport implements WhatsAppTransport {
@@ -228,6 +251,10 @@ export class MetaCloudWhatsAppTransport implements WhatsAppTransport {
           ? code
           : 'unreachable',
         'The provider could not be reached.',
+        null,
+        // A network failure is temporary by definition: nothing about
+        // this message was rejected.
+        true,
       );
     }
 

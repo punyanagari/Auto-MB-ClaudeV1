@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  Contact,
   NotificationChannel,
   NotificationConsent,
   NotificationMessage,
@@ -121,12 +122,21 @@ function message(overrides: Partial<NotificationMessage> = {}): NotificationMess
   };
 }
 
+/** The two fields the screen's pickers read. Narrowed rather than filled
+ * in full: a fixture that restates every column of the contact master is
+ * a fixture that breaks when the master gains one. */
+const CONTACT = {
+  id: '55555555-5555-4555-8555-555555555555',
+  designation: 'Sr. DEE (G) CR Nagpur',
+} as Contact;
+
 function renderNotifications(
   options: {
     readonly channels?: readonly NotificationChannel[];
     readonly templates?: readonly NotificationTemplate[];
     readonly consents?: readonly NotificationConsent[];
     readonly messages?: readonly NotificationMessage[];
+    readonly contacts?: readonly Contact[];
     readonly isOwner?: boolean;
   } = {},
 ) {
@@ -150,6 +160,10 @@ function renderNotifications(
       .fn()
       .mockResolvedValue({ channel: whatsappChannel({ enabled: false }) }),
     createNotificationTemplate: vi.fn().mockResolvedValue({ template: template() }),
+    setNotificationTemplateStatus: vi.fn().mockResolvedValue({ template: template() }),
+    recordNotificationConsent: vi.fn().mockResolvedValue({ consent: consent() }),
+    sendNotification: vi.fn().mockResolvedValue({ message: message() }),
+    listContacts: vi.fn().mockResolvedValue(options.contacts ?? [CONTACT]),
   });
   render(
     <Notifications
@@ -232,6 +246,101 @@ describe('the notifications screen', () => {
     });
     expect(await screen.findByText('failed')).toBeTruthy();
     expect(screen.getByText('131047')).toBeTruthy();
+  });
+
+  it('offers exactly the statuses Meta’s lifecycle allows from where the template is', async () => {
+    // The control is drawn from the same edge set migration 0092's guard
+    // admits, so anything offered here is something the server accepts.
+    // `rejected` is the interesting one: an earlier draft made it a dead
+    // end, which burned the template name forever.
+    renderNotifications({ templates: [template({ status: 'rejected' })] });
+    const control = await screen.findByLabelText(/New status for challan_issued/);
+    const offered = [...(control as HTMLSelectElement).options].map(
+      (option) => option.value,
+    );
+    expect(offered).toEqual(['', 'pending', 'disabled']);
+  });
+
+  it('draws no status control for a template Meta has withdrawn', async () => {
+    renderNotifications({ templates: [template({ status: 'disabled' })] });
+    expect(await screen.findByText('Withdrawn by Meta')).toBeTruthy();
+    expect(screen.queryByLabelText(/New status for/)).toBeNull();
+  });
+
+  it('records what Meta said, with the reason box only where Meta explains itself', async () => {
+    const api = renderNotifications({ templates: [template({ status: 'pending' })] });
+    const control = await screen.findByLabelText(/New status for challan_issued/);
+
+    // Approving is not something Meta explains, so no reason box.
+    fireEvent.change(control, { target: { value: 'approved' } });
+    expect(screen.queryByLabelText(/What Meta said/)).toBeNull();
+
+    // Rejecting is.
+    fireEvent.change(control, { target: { value: 'rejected' } });
+    fireEvent.change(screen.getByLabelText(/What Meta said/), {
+      target: { value: 'Template content violates policy' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }));
+    await waitFor(() => {
+      expect(api.setNotificationTemplateStatus).toHaveBeenCalled();
+    });
+    expect(vi.mocked(api.setNotificationTemplateStatus).mock.calls[0]?.[2]).toEqual({
+      status: 'rejected',
+      reason: 'Template content violates policy',
+    });
+  });
+
+  it('records a consent against the address it was given for', async () => {
+    const api = renderNotifications();
+    fireEvent.click(await screen.findByText('Record a consent'));
+    fireEvent.change(screen.getByLabelText('Contact'), {
+      target: { value: '55555555-5555-4555-8555-555555555555' },
+    });
+    fireEvent.change(screen.getByLabelText('Address'), {
+      target: { value: '+919812345678' },
+    });
+    fireEvent.change(screen.getByLabelText('How it was obtained'), {
+      target: { value: 'Signed the delivery acknowledgement' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record consent' }));
+    await waitFor(() => {
+      expect(api.recordNotificationConsent).toHaveBeenCalled();
+    });
+    expect(vi.mocked(api.recordNotificationConsent).mock.calls[0]?.[1]).toEqual({
+      contactId: '55555555-5555-4555-8555-555555555555',
+      channel: 'whatsapp',
+      address: '+919812345678',
+      state: 'opted_in',
+      evidence: 'Signed the delivery acknowledgement',
+    });
+  });
+
+  it('sends a template to a contact and never names an address', async () => {
+    const api = renderNotifications();
+    fireEvent.click(await screen.findByText('Send a message'));
+    fireEvent.change(screen.getByLabelText('Template'), {
+      target: { value: '33333333-3333-4333-8333-333333333333' },
+    });
+    fireEvent.change(screen.getByLabelText('Contact'), {
+      target: { value: '55555555-5555-4555-8555-555555555555' },
+    });
+    fireEvent.change(screen.getByLabelText('Parameters'), {
+      target: { value: 'DC/2026/0042 | WR-BCT-2026' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => {
+      expect(api.sendNotification).toHaveBeenCalled();
+    });
+    const body = vi.mocked(api.sendNotification).mock.calls[0]?.[1];
+    expect(body).toEqual({
+      templateId: '33333333-3333-4333-8333-333333333333',
+      contactId: '55555555-5555-4555-8555-555555555555',
+      parameters: ['DC/2026/0042', 'WR-BCT-2026'],
+    });
+    // The rule, expressed as a missing field: the address comes from the
+    // consent record, and a caller who could pass one could send
+    // somewhere nobody agreed to.
+    expect(body).not.toHaveProperty('address');
   });
 
   it('hides the channel forms from a member who is not the owner', async () => {

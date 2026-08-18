@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
+  Contact,
   NotificationChannel,
   NotificationChannelName,
   NotificationConsent,
@@ -40,6 +41,17 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
  * here to fix. Each section draws its own skeleton, its own empty state
  * and its own retry.
  *
+ * ## Every control an operator needs is here, and that took a fix
+ *
+ * The first draft shipped four read-only registers whose empty states
+ * told an operator to do things the screen could not do: record a Meta
+ * status, record a consent, send a message. Nothing could ever leave
+ * `draft`, so WhatsApp refused everything; no consent row could be
+ * created, so both channels refused everything. The feature was
+ * unreachable from the product it was in. The three controls are wired
+ * now — a status control per template row, a consent form, and a send
+ * form — and `docs/UX.md` § 17 records what is still deliberately absent.
+ *
  * ## What it says that a settings screen normally does not
  *
  * Whether the DEPLOYMENT can send at all. An organisation can complete
@@ -58,6 +70,10 @@ const CHANNEL_LABELS: Readonly<Record<NotificationChannelName, string>> = {
   whatsapp: 'WhatsApp',
   email: 'Email',
 };
+
+/** The statuses a member may record. `draft` is absent because a template
+ * is created as one and never returns to it. */
+type TemplateMove = 'pending' | 'approved' | 'rejected' | 'paused' | 'disabled';
 
 interface NotificationsProps {
   readonly api: ApiClient;
@@ -80,9 +96,22 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
   const [messages, setMessages] = useState<readonly NotificationMessage[] | null>(null);
   const [messageError, setMessageError] = useState<string | null>(null);
 
+  const [contacts, setContacts] = useState<readonly Contact[]>([]);
+  /** Which registers have more rows than one page holds. There is no
+   * load-more control: these three grow slowly, a page of fifty is the
+   * whole of what most organisations will ever have, and a paging control
+   * on a register nobody has filled yet is furniture. What the screen
+   * must not do is show fifty of two hundred and say nothing — so it says
+   * so, and the honest upgrade when somebody hits it is a cursor button
+   * here rather than a redesign. */
+  const [truncated, setTruncated] = useState<Readonly<Record<string, boolean>>>({});
+
   const [loadVersion, reload] = useReload();
   const channelAction = useAction('The channel could not be saved.');
   const templateAction = useAction('The template could not be saved.');
+  const statusAction = useAction('The template status could not be recorded.');
+  const consentAction = useAction('The consent could not be recorded.');
+  const sendAction = useAction('The message could not be sent.');
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +141,12 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
     api
       .listNotificationTemplates(organisationId, { limit: PAGE_SIZE })
       .then((loaded) => {
-        if (!cancelled) setTemplates(loaded.templates);
+        if (cancelled) return;
+        setTemplates(loaded.templates);
+        setTruncated((current) => ({
+          ...current,
+          templates: loaded.nextCursor !== null,
+        }));
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
@@ -128,10 +162,21 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
     let cancelled = false;
     setConsents(null);
     setConsentError(null);
-    api
-      .listNotificationConsents(organisationId, { limit: PAGE_SIZE })
-      .then((loaded) => {
-        if (!cancelled) setConsents(loaded.consents);
+    Promise.all([
+      api.listNotificationConsents(organisationId, { limit: PAGE_SIZE }),
+      // The picker both write forms on this screen need. Loaded with the
+      // register rather than on its own, because a consent form with no
+      // contacts to choose from is the same failure as an empty register.
+      api.listContacts(organisationId),
+    ])
+      .then(([loaded, loadedContacts]) => {
+        if (cancelled) return;
+        setConsents(loaded.consents);
+        setContacts(loadedContacts);
+        setTruncated((current) => ({
+          ...current,
+          consents: loaded.nextCursor !== null,
+        }));
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
@@ -150,7 +195,12 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
     api
       .listNotifications(organisationId, { limit: PAGE_SIZE })
       .then((loaded) => {
-        if (!cancelled) setMessages(loaded.messages);
+        if (cancelled) return;
+        setMessages(loaded.messages);
+        setTruncated((current) => ({
+          ...current,
+          messages: loaded.nextCursor !== null,
+        }));
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
@@ -188,6 +238,56 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
       }, `${CHANNEL_LABELS[channel]} settings saved.`);
     },
     [api, organisationId, channelAction, reload],
+  );
+
+  const recordStatus = useCallback(
+    async (template: NotificationTemplate, status: TemplateMove, reason: string) => {
+      await statusAction.act(async () => {
+        await api.setNotificationTemplateStatus(organisationId, template.id, {
+          status,
+          ...(reason.trim() === '' ? {} : { reason: reason.trim() }),
+        });
+        reload();
+      }, `${template.name} is now ${status}.`);
+    },
+    [api, organisationId, statusAction, reload],
+  );
+
+  const recordConsent = useCallback(
+    async (form: HTMLFormElement) => {
+      const data = new FormData(form);
+      await consentAction.act(async () => {
+        await api.recordNotificationConsent(organisationId, {
+          contactId: formValue(data, 'contactId'),
+          channel: formValue(data, 'channel') as NotificationChannelName,
+          address: formValue(data, 'address').trim(),
+          state: formValue(data, 'state') as NotificationConsent['state'],
+          evidence: formValue(data, 'evidence').trim(),
+        });
+        form.reset();
+        reload();
+      }, 'Consent recorded.');
+    },
+    [api, organisationId, consentAction, reload],
+  );
+
+  const sendMessage = useCallback(
+    async (form: HTMLFormElement) => {
+      const data = new FormData(form);
+      const parameters = formValue(data, 'parameters')
+        .split('|')
+        .map((value) => value.trim())
+        .filter((value) => value !== '');
+      await sendAction.act(async () => {
+        await api.sendNotification(organisationId, {
+          templateId: formValue(data, 'templateId'),
+          contactId: formValue(data, 'contactId'),
+          ...(parameters.length === 0 ? {} : { parameters }),
+        });
+        reload();
+      }, 'Message sent.');
+    },
+    [api, organisationId, sendAction, reload],
   );
 
   const createTemplate = useCallback(
@@ -235,18 +335,47 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
         <TemplatesSection
           templates={templates}
           error={templateError}
-          pending={templateAction.pending}
-          notice={templateAction.notice}
-          actionError={templateAction.actionError}
+          pending={templateAction.pending || statusAction.pending}
+          notice={templateAction.notice ?? statusAction.notice}
+          actionError={templateAction.actionError ?? statusAction.actionError}
           onRetry={reload}
           onCreate={(form) => {
             void createTemplate(form);
           }}
+          onRecordStatus={(template, status, reason) => {
+            void recordStatus(template, status, reason);
+          }}
+          truncated={truncated.templates === true}
         />
 
-        <ConsentSection consents={consents} error={consentError} onRetry={reload} />
+        <ConsentSection
+          consents={consents}
+          contacts={contacts}
+          error={consentError}
+          pending={consentAction.pending}
+          notice={consentAction.notice}
+          actionError={consentAction.actionError}
+          onRetry={reload}
+          onRecord={(form) => {
+            void recordConsent(form);
+          }}
+          truncated={truncated.consents === true}
+        />
 
-        <DeliveryLogSection messages={messages} error={messageError} onRetry={reload} />
+        <DeliveryLogSection
+          messages={messages}
+          templates={templates ?? []}
+          contacts={contacts}
+          error={messageError}
+          pending={sendAction.pending}
+          notice={sendAction.notice}
+          actionError={sendAction.actionError}
+          onRetry={reload}
+          onSend={(form) => {
+            void sendMessage(form);
+          }}
+          truncated={truncated.messages === true}
+        />
       </div>
     </>
   );
@@ -472,6 +601,30 @@ function ChannelsSection({
 
 /* --- Templates -------------------------------------------------------------- */
 
+/**
+ * What an operator may record next, per status.
+ *
+ * The map is Meta's lifecycle read from the operator's side: it is the
+ * same set of edges migration 0092's guard admits, so a control drawn
+ * here is a control the server will accept. `disabled` is terminal and
+ * therefore absent.
+ */
+const NEXT_STATUSES: Readonly<Record<string, readonly TemplateMove[]>> = {
+  draft: ['pending', 'disabled'],
+  pending: ['approved', 'rejected'],
+  // Not a dead end: Meta's own remedy for a rejection is to edit and
+  // resubmit, and an appeal can carry it back through review.
+  rejected: ['pending', 'disabled'],
+  approved: ['paused', 'disabled'],
+  paused: ['approved', 'disabled'],
+  disabled: [],
+};
+
+/** Meta explains itself only when it has refused, paused or withdrawn
+ * something, and 0092's CHECK says the same — so the reason box is drawn
+ * for exactly those three. */
+const REASONED_STATUSES: readonly string[] = ['rejected', 'paused', 'disabled'];
+
 function TemplatesSection({
   templates,
   error,
@@ -480,14 +633,22 @@ function TemplatesSection({
   actionError,
   onRetry,
   onCreate,
+  onRecordStatus,
+  truncated,
 }: {
   readonly templates: readonly NotificationTemplate[] | null;
+  readonly truncated: boolean;
   readonly error: string | null;
   readonly pending: boolean;
   readonly notice: string | null;
   readonly actionError: string | null;
   readonly onRetry: () => void;
   readonly onCreate: (form: HTMLFormElement) => void;
+  readonly onRecordStatus: (
+    template: NotificationTemplate,
+    status: TemplateMove,
+    reason: string,
+  ) => void;
 }) {
   return (
     <Card>
@@ -522,6 +683,7 @@ function TemplatesSection({
               <th scope="col">Parameters</th>
               <th scope="col">Email subject</th>
               <th scope="col">Status</th>
+              <th scope="col">Record what Meta said</th>
             </tr>
           </thead>
           <tbody>
@@ -546,11 +708,20 @@ function TemplatesSection({
                     </span>
                   )}
                 </td>
+                <td>
+                  <StatusControl
+                    template={template}
+                    pending={pending}
+                    onRecordStatus={onRecordStatus}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
         </DataTable>
       )}
+
+      {truncated && <Hint>Showing the first {PAGE_SIZE} templates by name.</Hint>}
 
       <Disclosure label="Write a template">
         <form
@@ -623,12 +794,24 @@ function TemplatesSection({
 
 function ConsentSection({
   consents,
+  contacts,
   error,
+  pending,
+  notice,
+  actionError,
   onRetry,
+  onRecord,
+  truncated,
 }: {
   readonly consents: readonly NotificationConsent[] | null;
+  readonly truncated: boolean;
+  readonly contacts: readonly Contact[];
   readonly error: string | null;
+  readonly pending: boolean;
+  readonly notice: string | null;
+  readonly actionError: string | null;
   readonly onRetry: () => void;
+  readonly onRecord: (form: HTMLFormElement) => void;
 }) {
   return (
     <Card>
@@ -691,7 +874,166 @@ function ConsentSection({
           </tbody>
         </DataTable>
       )}
+
+      {truncated && (
+        <Hint>Showing the {PAGE_SIZE} most recently recorded consents.</Hint>
+      )}
+
+      <Disclosure label="Record a consent">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onRecord(event.currentTarget);
+          }}
+        >
+          <FieldRow>
+            <Field>
+              <label htmlFor="consent-contact">Contact</label>
+              <select id="consent-contact" name="contactId" required defaultValue="">
+                <option value="" disabled>
+                  Select a contact
+                </option>
+                {contacts.map((contact) => (
+                  <option key={contact.id} value={contact.id}>
+                    {contact.designation}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field>
+              <label htmlFor="consent-channel">Channel</label>
+              <select id="consent-channel" name="channel" defaultValue="whatsapp">
+                <option value="whatsapp">WhatsApp</option>
+                <option value="email">Email</option>
+              </select>
+            </Field>
+            <Field>
+              <label htmlFor="consent-state">State</label>
+              <select id="consent-state" name="state" defaultValue="opted_in">
+                <option value="opted_in">Opted in</option>
+                <option value="opted_out">Opted out</option>
+              </select>
+            </Field>
+          </FieldRow>
+          <Field>
+            <label htmlFor="consent-address">Address</label>
+            <input id="consent-address" name="address" type="text" required />
+            <Hint>
+              The number or address the agreement was given for &mdash; +919812345678
+              for WhatsApp. Consent is recorded against this exact value.
+            </Hint>
+          </Field>
+          <Field>
+            <label htmlFor="consent-evidence">How it was obtained</label>
+            <input
+              id="consent-evidence"
+              name="evidence"
+              type="text"
+              required
+              minLength={3}
+              maxLength={500}
+            />
+            <Hint>
+              In your own words. Required for an opt-out too, where it records who asked
+              to stop.
+            </Hint>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending || contacts.length === 0}>
+              Record consent
+            </Button>
+          </Actions>
+        </form>
+      </Disclosure>
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
     </Card>
+  );
+}
+
+/**
+ * What Meta did to one template, recorded by the member reading the
+ * console.
+ *
+ * A select and a button rather than a button per status: `pending` has
+ * two possible answers and `approved` has two, so a row of buttons would
+ * be a row of two buttons that changes shape as the status moves. The
+ * reason box appears only for the three statuses Meta actually explains,
+ * which is also the only three 0092's CHECK will store one for.
+ */
+function StatusControl({
+  template,
+  pending,
+  onRecordStatus,
+}: {
+  readonly template: NotificationTemplate;
+  readonly pending: boolean;
+  readonly onRecordStatus: (
+    item: NotificationTemplate,
+    status: TemplateMove,
+    reason: string,
+  ) => void;
+}) {
+  const moves = NEXT_STATUSES[template.status] ?? [];
+  const [status, setStatus] = useState<TemplateMove | ''>('');
+  const [reason, setReason] = useState('');
+  if (moves.length === 0) {
+    return <span className="text-xs text-muted-foreground">Withdrawn by Meta</span>;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="sr-only" htmlFor={`status-${template.id}`}>
+        New status for {template.name}
+      </label>
+      <select
+        id={`status-${template.id}`}
+        value={status}
+        onChange={(event) => {
+          setStatus(event.target.value as TemplateMove | '');
+        }}
+      >
+        <option value="">No change</option>
+        {moves.map((move) => (
+          /* "Record as rejected", not "rejected": the bare status word is
+             also what the chip in the next cell says, and a dropdown that
+             repeats the current state as an option reads as a label
+             rather than an action. */
+          <option key={move} value={move}>
+            Record as {move}
+          </option>
+        ))}
+      </select>
+      {REASONED_STATUSES.includes(status) && (
+        <>
+          <label className="sr-only" htmlFor={`reason-${template.id}`}>
+            What Meta said about {template.name}
+          </label>
+          <input
+            id={`reason-${template.id}`}
+            type="text"
+            value={reason}
+            maxLength={500}
+            placeholder="What Meta said"
+            onChange={(event) => {
+              setReason(event.target.value);
+            }}
+          />
+        </>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={pending || status === ''}
+        onClick={() => {
+          if (status === '') return;
+          onRecordStatus(template, status, reason);
+          setStatus('');
+          setReason('');
+        }}
+      >
+        Record
+      </Button>
+    </div>
   );
 }
 
@@ -699,12 +1041,26 @@ function ConsentSection({
 
 function DeliveryLogSection({
   messages,
+  templates,
+  contacts,
   error,
+  pending,
+  notice,
+  actionError,
   onRetry,
+  onSend,
+  truncated,
 }: {
   readonly messages: readonly NotificationMessage[] | null;
+  readonly truncated: boolean;
+  readonly templates: readonly NotificationTemplate[];
+  readonly contacts: readonly Contact[];
   readonly error: string | null;
+  readonly pending: boolean;
+  readonly notice: string | null;
+  readonly actionError: string | null;
   readonly onRetry: () => void;
+  readonly onSend: (form: HTMLFormElement) => void;
 }) {
   return (
     <Card>
@@ -778,6 +1134,73 @@ function DeliveryLogSection({
           </tbody>
         </DataTable>
       )}
+
+      {truncated && <Hint>Showing the {PAGE_SIZE} most recent messages.</Hint>}
+
+      {/* Sending from here is deliberately the ONLY send in the product
+          today: no document act calls it yet, so without this control the
+          delivery log could never hold a row and a channel could never be
+          proved to work. Document delivery will send from the document,
+          which is where the act belongs (docs/UX.md § 17). */}
+      <Disclosure label="Send a message">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSend(event.currentTarget);
+          }}
+        >
+          <FieldRow>
+            <Field>
+              <label htmlFor="send-template">Template</label>
+              <select id="send-template" name="templateId" required defaultValue="">
+                <option value="" disabled>
+                  Select a template
+                </option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name} ({template.language})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field>
+              <label htmlFor="send-contact">Contact</label>
+              <select id="send-contact" name="contactId" required defaultValue="">
+                <option value="" disabled>
+                  Select a contact
+                </option>
+                {contacts.map((contact) => (
+                  <option key={contact.id} value={contact.id}>
+                    {contact.designation}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </FieldRow>
+          <Field>
+            <label htmlFor="send-parameters">Parameters</label>
+            <input id="send-parameters" name="parameters" type="text" />
+            <Hint>
+              The values for {'{{1}}'}, {'{{2}}'} and so on, separated by a vertical
+              bar. Leave empty for a template that takes none.
+            </Hint>
+          </Field>
+          <Actions>
+            <Button
+              type="submit"
+              disabled={pending || templates.length === 0 || contacts.length === 0}
+            >
+              Send
+            </Button>
+          </Actions>
+          <Hint>
+            The address is not yours to choose: it comes from the contact&rsquo;s own
+            consent record, and a contact who has not opted in cannot be messaged.
+          </Hint>
+        </form>
+      </Disclosure>
+      {notice !== null && <FormNotice>{notice}</FormNotice>}
+      {actionError !== null && <FormError>{actionError}</FormError>}
     </Card>
   );
 }

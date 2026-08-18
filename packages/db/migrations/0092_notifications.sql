@@ -158,7 +158,10 @@ BEGIN
 
   INSERT INTO organisations (id, name, slug) VALUES (p_id, p_name, p_slug);
 
-  -- Four authorities, three of them inherited from earlier replacements.
+  -- FIVE authorities, four of them inherited from earlier replacements
+  -- of this same function. A CREATE OR REPLACE states the whole body,
+  -- so every one of them has to be restated here or it is silently
+  -- revoked from every founder created afterwards.
   INSERT INTO organisation_memberships (
     organisation_id, user_id, role, work_scope,
     can_issue_documents, can_cancel_documents, can_sign_documents,
@@ -591,6 +594,14 @@ CREATE TABLE notification_messages (
 
   requested_by_user_id text NOT NULL,
   queued_at timestamptz NOT NULL DEFAULT now(),
+  -- THESE FOUR ARE META'S CLOCK, NOT OURS, and nothing constrains them
+  -- to be in order. `queued_at` is this server's; the rest are the
+  -- instants the provider reported, and a handset that was offline can
+  -- produce a `read` receipt whose timestamp precedes the `delivered`
+  -- one it was batched with. A CHECK enforcing monotonicity would refuse
+  -- a receipt for being true, so the STATUS is what moves forwards (the
+  -- guard's own arm) and the timestamps are recorded as reported. A
+  -- reader comparing two of them is comparing Meta's clock with itself.
   sent_at timestamptz,
   delivered_at timestamptz,
   read_at timestamptz,
@@ -709,11 +720,26 @@ $$;
 -- monotonicity rule below holds against Meta exactly as it holds against
 -- the application.
 --
--- OUT-OF-ORDER RECEIPTS ARE A NO-OP, NOT A REFUSAL. Meta re-delivers, and
--- `delivered` arriving after `read` is routine. The WHERE clause admits
--- only a forward move, so a late receipt updates nothing and the function
--- answers false — the receiver then still answers Meta 200, because a
--- non-200 makes Meta retry a receipt that was already applied.
+-- IT ANSWERS WHY IT DID NOTHING, AND THAT DISTINCTION IS LOAD-BEARING.
+-- A boolean was the first shape and it was wrong, because the receiver
+-- has to treat two of these three failures completely differently:
+--
+--   applied          the row moved.
+--   ahead            the row exists and is already at or past this status.
+--                    Meta re-delivers constantly and `delivered` arriving
+--                    after `read` is routine, so this is a no-op and the
+--                    receiver answers 200 — a non-200 would make Meta
+--                    redeliver a receipt that was already applied, forever.
+--   missing          the organisation owns the number but no row carries
+--                    that provider message id YET. Almost always the race
+--                    this design opens on purpose: the provider answered
+--                    and the completion transaction has not committed. The
+--                    receiver answers a RETRYABLE status so Meta redelivers
+--                    in a few seconds and the receipt lands. Answering 200
+--                    here loses the delivery timestamp permanently.
+--   unknown_channel  no organisation on this cluster owns that number.
+--                    Another deployment sharing the same Meta app. 200,
+--                    and never a retry, because it will never be ours.
 -- ---------------------------------------------------------------------
 CREATE FUNCTION app_private.record_notification_receipt(
   p_phone_number_id text,
@@ -723,7 +749,7 @@ CREATE FUNCTION app_private.record_notification_receipt(
   p_failure_code text,
   p_failure_detail text
 )
-RETURNS boolean
+RETURNS text
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
@@ -734,7 +760,7 @@ DECLARE
   v_updated integer;
 BEGIN
   IF p_status NOT IN ('sent', 'delivered', 'read', 'failed') THEN
-    RETURN false;
+    RETURN 'unknown_channel';
   END IF;
 
   SELECT c.organisation_id INTO v_organisation_id
@@ -742,18 +768,22 @@ BEGIN
   WHERE c.waba_phone_number_id = p_phone_number_id;
 
   IF v_organisation_id IS NULL THEN
-    RETURN false;
+    RETURN 'unknown_channel';
+  END IF;
+
+  -- Existence first, so `missing` and `ahead` can be told apart. Both
+  -- read as "nothing moved" from the UPDATE alone, and only one of them
+  -- should make Meta try again.
+  IF NOT EXISTS (
+    SELECT 1 FROM notification_messages m
+    WHERE m.organisation_id = v_organisation_id
+      AND m.provider_message_id = p_provider_message_id
+  ) THEN
+    RETURN 'missing';
   END IF;
 
   UPDATE notification_messages m
   SET status = p_status,
-      -- A failure never invents a send. Every other forward state implies
-      -- one, so a `delivered` that overtook its own `sent` fills the gap
-      -- with the instant it can actually prove.
-      sent_at = CASE
-        WHEN p_status = 'failed' THEN m.sent_at
-        ELSE coalesce(m.sent_at, p_occurred_at)
-      END,
       delivered_at = CASE
         WHEN p_status IN ('delivered', 'read') THEN coalesce(m.delivered_at, p_occurred_at)
         ELSE m.delivered_at
@@ -775,19 +805,26 @@ BEGIN
         CASE WHEN p_status = 'failed' THEN p_failure_detail ELSE m.failure_detail END
   WHERE m.organisation_id = v_organisation_id
     AND m.provider_message_id = p_provider_message_id
-    -- Forward only. The ordering is the ledger's own:
-    -- queued < sent < delivered < read, and failed is terminal from
-    -- either queued or sent.
+    -- Forward only, and NO `queued` arm anywhere, which is not an
+    -- oversight: `notification_messages_outcome_shape` requires a queued
+    -- row to carry a NULL provider_message_id, and this function finds a
+    -- row BY that id. A queued row is therefore unreachable from here by
+    -- construction, and a arm admitting it would be a branch no test
+    -- could ever cover. The application's own send path is what moves a
+    -- row off `queued`.
+    --
+    -- `sent` has no arm either, for the mirror reason: a row this
+    -- function can see is already at least `sent`, so Meta's own `sent`
+    -- receipt is always `ahead`.
     AND CASE p_status
-      WHEN 'sent' THEN m.status = 'queued'
-      WHEN 'delivered' THEN m.status IN ('queued', 'sent')
-      WHEN 'read' THEN m.status IN ('queued', 'sent', 'delivered')
-      WHEN 'failed' THEN m.status IN ('queued', 'sent')
+      WHEN 'delivered' THEN m.status = 'sent'
+      WHEN 'read' THEN m.status IN ('sent', 'delivered')
+      WHEN 'failed' THEN m.status = 'sent'
       ELSE false
     END;
 
   GET DIAGNOSTICS v_updated = ROW_COUNT;
-  RETURN v_updated = 1;
+  RETURN CASE WHEN v_updated = 1 THEN 'applied' ELSE 'ahead' END;
 END
 $$;
 
@@ -811,7 +848,7 @@ $$;
 COMMENT ON FUNCTION app_private.record_notification_receipt(
   text, text, text, timestamptz, text, text
 ) IS
-  'The one write that crosses tenancy for the notifications lane: a webhook receipt from Meta, applied to at most one message row, forward only. Meta is not a member of anything, so there is no member to bind as; this is the narrowest surface that can record the fact. Returns whether a row moved — a late or duplicate receipt moves nothing and is not an error.';
+  'The one write that crosses tenancy for the notifications lane: a webhook receipt from Meta, applied to at most one message row, forward only. Meta is not a member of anything, so there is no member to bind as; this is the narrowest surface that can record the fact. Answers applied / ahead / missing / unknown_channel, because the receiver must retry a `missing` receipt (the send has not committed yet) and must never retry the other two.';
 
 -- ---------------------------------------------------------------------
 -- 6. The write guards.
@@ -913,32 +950,51 @@ BEGIN
       USING ERRCODE = '23K03';
   END IF;
 
-  IF OLD.status <> 'draft'
+  -- The body is editable exactly while Meta is not holding it: a draft
+  -- nobody has submitted, and a rejected template whose whole remedy is
+  -- to change the text and send it back. Anything Meta currently holds —
+  -- pending, approved, paused — is frozen, because the WABA's copy is
+  -- what actually gets sent and a register showing a different text would
+  -- be lying about the message.
+  IF OLD.status NOT IN ('draft', 'rejected')
      AND ROW(NEW.body_text, NEW.parameter_count, NEW.category)
          IS DISTINCT FROM ROW(OLD.body_text, OLD.parameter_count, OLD.category) THEN
     RAISE EXCEPTION
-      'the body of a submitted template cannot be edited: Meta holds the reviewed text, and it is that text which is sent'
+      'the body of a submitted template cannot be edited while Meta holds it: the WABA''s copy is what is sent'
       USING ERRCODE = '23K03';
   END IF;
 
   -- Meta's lifecycle, stated once:
   --
-  --   draft    -> pending
+  --   draft    -> pending | disabled
   --   pending  -> approved | rejected
+  --   rejected -> pending | disabled
   --   approved -> paused | disabled
   --   paused   -> approved | disabled
-  --   rejected -> pending   (resubmitted after the body was… no: see below)
   --   disabled -> (terminal)
   --
-  -- A rejected template does NOT return to pending here, and that is
-  -- deliberate rather than an omission: Meta rejects a body, the body is
-  -- frozen once submitted, and a resubmission is therefore a different
-  -- template. Letting a rejected row go back to pending would produce a
-  -- row claiming review of a text nobody changed.
+  -- REJECTED IS NOT A DEAD END, and an earlier draft of this guard made it
+  -- one. That was wrong twice over. Meta's own flow is reject, edit,
+  -- resubmit — and separately an appeal that can move a rejection to
+  -- approved through a `pending` review — so a register whose whole
+  -- premise is "record what the Meta console says" cannot refuse to record
+  -- what the console will actually show. And because `(organisation_id,
+  -- name, language)` is unique and nothing deletes, a dead end would burn
+  -- the template name forever: the operator could neither resubmit it nor
+  -- create a replacement under the name Meta already knows.
+  --
+  -- `draft -> disabled` is here for the other end of the same problem: a
+  -- template written by mistake has to be retirable without a submission
+  -- it never wanted, and without a DELETE grant that would take the
+  -- delivery log's provenance with it.
+  --
+  -- `disabled` stays terminal. Meta withdrew it; getting it back is a new
+  -- template, which is the one case where a new name is the honest answer.
   IF NEW.status <> OLD.status THEN
     IF NOT (
-      (OLD.status = 'draft' AND NEW.status = 'pending')
+      (OLD.status = 'draft' AND NEW.status IN ('pending', 'disabled'))
       OR (OLD.status = 'pending' AND NEW.status IN ('approved', 'rejected'))
+      OR (OLD.status = 'rejected' AND NEW.status IN ('pending', 'disabled'))
       OR (OLD.status = 'approved' AND NEW.status IN ('paused', 'disabled'))
       OR (OLD.status = 'paused' AND NEW.status IN ('approved', 'disabled'))
     ) THEN

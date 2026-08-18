@@ -2231,6 +2231,35 @@ describe('tenant migration contract', () => {
     expect(sql).not.toMatch(/NEW\.status = 'queued'/);
     expect(sql).toContain('notification_messages_outcome_shape');
 
+    // …and the receipt path carries NO `queued` arm at all, which is not
+    // an oversight but a consequence: the outcome shape requires a queued
+    // row to hold a NULL provider_message_id, and this function finds a
+    // row BY that id. An arm admitting `queued` would be a branch no test
+    // could ever cover, which is how dead code gets documented as live.
+    const receipt = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.record_notification_receipt'),
+      sql.indexOf('CREATE FUNCTION app_private.guard_notification_channel'),
+    );
+    expect(receipt).toContain("WHEN 'delivered' THEN m.status = 'sent'");
+    expect(receipt).not.toMatch(/m\.status IN \('queued'/);
+
+    // THE TEMPLATE LIFECYCLE ADMITS WHAT META ACTUALLY DOES. A rejection
+    // is not terminal — Meta's own remedy is edit and resubmit, and an
+    // appeal reaches approval through review — and because
+    // (organisation_id, name, language) is unique with no DELETE grant, a
+    // dead end would burn the template name forever.
+    expect(sql).toContain(
+      "OR (OLD.status = 'rejected' AND NEW.status IN ('pending', 'disabled'))",
+    );
+    expect(sql).toContain(
+      "(OLD.status = 'draft' AND NEW.status IN ('pending', 'disabled'))",
+    );
+    // …and `disabled` stays terminal: Meta withdrew it, and getting it
+    // back is a new template.
+    expect(sql).not.toMatch(/OLD\.status = 'disabled'/);
+    // The body is editable exactly while Meta is not holding it.
+    expect(sql).toContain("IF OLD.status NOT IN ('draft', 'rejected')");
+
     // All four tables in the ADR-0010 InitPlan policy shape, and none of
     // them grants DELETE.
     for (const table of [
@@ -2276,7 +2305,14 @@ describe('tenant migration contract', () => {
     // the phone number id and the provider message id: a forged receipt
     // cannot move a row belonging to the organisation that does not own
     // the number it arrived on.
-    expect(sql).toContain('RETURNS boolean');
+    // It answers WHY it did nothing, not merely whether. The receiver has
+    // to retry a `missing` receipt — the send's completion transaction
+    // has not committed yet — and must never retry the other two, so a
+    // boolean could not carry the decision.
+    expect(sql).toContain('RETURNS text');
+    for (const outcome of ["'applied'", "'ahead'", "'missing'", "'unknown_channel'"]) {
+      expect(sql, outcome).toContain(outcome);
+    }
     expect(sql).toContain('WHERE c.waba_phone_number_id = p_phone_number_id');
     expect(sql).toContain('AND m.provider_message_id = p_provider_message_id');
 
