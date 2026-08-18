@@ -657,26 +657,49 @@ export function registerMaintenanceRoutes(
         `.catch(rethrowWriteRefusal);
         if (!row) throw new Error('maintenance request insert returned no row');
 
-        let position = 0;
-        for (const line of input.lines) {
-          position += 1;
+        // Every line in ONE statement. A hundred material lines is a
+        // hundred round-trips inside the transaction holding this
+        // request's locks, which is what `test/query-write-loop-census`
+        // exists to stop. The serials column is a `text[]` per row, so it
+        // travels as a JSON array and is cast back on arrival — an
+        // `unnest` of arrays cannot carry an array element.
+        const prepared = input.lines.map((line, index) => {
           const item = line.itemId === undefined ? undefined : byId.get(line.itemId);
-          await tx`
-            insert into maintenance_request_lines (
-              organisation_id, maintenance_request_id, production_item_id,
-              description, unit, quantity, purpose, expected_return_quantity,
-              asset_serials, position
-            )
-            values (
-              ${organisationId}, ${row.id}, ${line.itemId ?? null},
-              ${item?.name ?? line.description.trim()},
-              ${item?.unit ?? line.unit.trim()},
-              ${line.quantity}, ${optionalTrimmed(line.purpose) ?? null},
-              ${line.expectedReturnQuantity}, ${line.assetSerials ?? []},
-              ${position}
-            )
-          `.catch(rethrowWriteRefusal);
-        }
+          return {
+            itemId: line.itemId ?? null,
+            description: item?.name ?? line.description.trim(),
+            unit: item?.unit ?? line.unit.trim(),
+            quantity: line.quantity,
+            purpose: optionalTrimmed(line.purpose) ?? null,
+            expectedReturn: line.expectedReturnQuantity,
+            serials: JSON.stringify(line.assetSerials ?? []),
+            position: index + 1,
+          };
+        });
+        await tx`
+          insert into maintenance_request_lines (
+            organisation_id, maintenance_request_id, production_item_id,
+            description, unit, quantity, purpose, expected_return_quantity,
+            asset_serials, position
+          )
+          select ${organisationId}, ${row.id}, entry.item_id, entry.description,
+                 entry.unit, entry.quantity, entry.purpose, entry.expected_return,
+                 array(select jsonb_array_elements_text(entry.serials::jsonb)),
+                 entry.position
+          from unnest(
+            ${prepared.map((entry) => entry.itemId)}::uuid[],
+            ${prepared.map((entry) => entry.description)}::text[],
+            ${prepared.map((entry) => entry.unit)}::text[],
+            ${prepared.map((entry) => entry.quantity)}::quantity_amount[],
+            ${prepared.map((entry) => entry.purpose)}::text[],
+            ${prepared.map((entry) => entry.expectedReturn)}::quantity_amount[],
+            ${prepared.map((entry) => entry.serials)}::text[],
+            ${prepared.map((entry) => entry.position)}::int[]
+          ) as entry(
+            item_id, description, unit, quantity, purpose, expected_return,
+            serials, position
+          )
+        `.catch(rethrowWriteRefusal);
 
         await audit(
           tx,
@@ -828,39 +851,47 @@ export function registerMaintenanceRoutes(
         `.catch(rethrowWriteRefusal);
         if (!dispatch) throw new Error('maintenance dispatch insert returned no row');
 
-        for (const requested of input.lines) {
-          const line = byId.get(requested.lineId);
-          if (!line) continue;
-          await tx`
-            insert into maintenance_dispatch_lines (
-              organisation_id, maintenance_dispatch_id,
-              maintenance_request_line_id, quantity
-            )
-            values (
-              ${organisationId}, ${dispatch.id}, ${requested.lineId},
-              ${requested.quantity}
-            )
-          `.catch(rethrowWriteRefusal);
+        // Both writes in one statement each, for the reason the request
+        // lines above give. The per-row guards still run: they are
+        // `FOR EACH ROW` triggers, so a hundred-line challan takes a
+        // hundred row locks in one round trip rather than a hundred.
+        const chosen = input.lines.filter((requested) => byId.has(requested.lineId));
+        await tx`
+          insert into maintenance_dispatch_lines (
+            organisation_id, maintenance_dispatch_id,
+            maintenance_request_line_id, quantity
+          )
+          select ${organisationId}, ${dispatch.id}, entry.line_id, entry.quantity
+          from unnest(
+            ${chosen.map((requested) => requested.lineId)}::uuid[],
+            ${chosen.map((requested) => requested.quantity)}::quantity_amount[]
+          ) as entry(line_id, quantity)
+        `.catch(rethrowWriteRefusal);
 
-          // MATERIAL LEAVING THE STORE IS A STOCK ISSUE. A line naming a
-          // part posts one against the ledger, in this transaction,
-          // naming this challan; a custom line has nothing on a shelf
-          // behind it and posts nothing. The ledger's own guard refuses a
-          // balance below zero, which is the real "is there any" check —
-          // the screen's `onHand` is a reading, this is the rule.
-          if (line.production_item_id !== null) {
-            await tx`
-              insert into stock_movements (
-                organisation_id, production_item_id, movement_type, quantity,
-                movement_date, maintenance_dispatch_id, created_by_user_id
-              )
-              values (
-                ${organisationId}, ${line.production_item_id}, 'issue',
-                ${`-${requested.quantity}`}, ${dispatchDate}, ${dispatch.id},
-                ${user.id}
-              )
-            `.catch(rethrowWriteRefusal);
-          }
+        // MATERIAL LEAVING THE STORE IS A STOCK ISSUE. A line naming a
+        // part posts one against the ledger, in this transaction, naming
+        // this challan; a custom line has nothing on a shelf behind it
+        // and posts nothing. The ledger's own guard refuses a balance
+        // below zero, which is the real "is there any" check — the
+        // screen's `onHand` is a reading, this is the rule.
+        const stocked = chosen.filter(
+          (requested) => byId.get(requested.lineId)?.production_item_id !== null,
+        );
+        if (stocked.length > 0) {
+          await tx`
+            insert into stock_movements (
+              organisation_id, production_item_id, movement_type, quantity,
+              movement_date, maintenance_dispatch_id, created_by_user_id
+            )
+            select ${organisationId}, entry.item_id, 'issue', -entry.quantity,
+                   ${dispatchDate}, ${dispatch.id}, ${user.id}
+            from unnest(
+              ${stocked.map(
+                (requested) => byId.get(requested.lineId)?.production_item_id ?? null,
+              )}::uuid[],
+              ${stocked.map((requested) => requested.quantity)}::quantity_amount[]
+            ) as entry(item_id, quantity)
+          `.catch(rethrowWriteRefusal);
         }
 
         if (existing.status !== 'partially_dispatched') {
