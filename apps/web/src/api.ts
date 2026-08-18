@@ -1216,6 +1216,14 @@ export interface ApiClient {
     workId: string,
     body: SaveWorkRetentionTermsRequest,
   ) => Promise<WorkRetentionTerms>;
+  /** Clears them. The one delete in the module: a terms row can never be
+   * edited down to nothing, so without it a Work whose letter was misread
+   * would carry the wrong rates forever. Every assessment already made
+   * keeps its own snapshot and is unaffected. */
+  readonly clearWorkRetentionTerms: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<void>;
   /** Records retention the railway gave back. Refused beyond what it
    * actually withheld. */
   readonly recordRetentionRelease: (
@@ -3785,6 +3793,12 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<WorkRetentionTerms>(`/api/works/${workId}/retention-terms`, {
         method: 'PUT',
         body,
+        organisationId,
+      });
+    },
+    async clearWorkRetentionTerms(organisationId, workId) {
+      await request<void>(`/api/works/${workId}/retention-terms`, {
+        method: 'DELETE',
         organisationId,
       });
     },

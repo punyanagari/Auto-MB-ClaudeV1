@@ -90,7 +90,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0089_employees.sql': 4,
   '0090_payroll.sql': 6,
   '0091_signing_requests.sql': 2,
-  '0098_retention_and_liquidated_damages.sql': 5,
+  '0098_retention_and_liquidated_damages.sql': 6,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(

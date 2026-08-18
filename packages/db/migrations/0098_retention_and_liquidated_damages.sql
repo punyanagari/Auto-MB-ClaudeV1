@@ -82,6 +82,7 @@ SET LOCAL statement_timeout = '5min';
 --   23P05  an assessment's facts are frozen and its states run one way
 --   23P06  the levied amount exceeds the assessment it is levied against
 --   23P07  the row names a Work this transaction cannot read
+--   23P08  withdrawing this receipt would strand a retention release
 --
 -- Each also carries `CONSTRAINT`, so `error.constraint_name` names the
 -- rule in a log without anybody decoding the number.
@@ -197,13 +198,14 @@ CREATE TABLE work_retention_terms (
   -- contract term it was never told.
   --
   -- So the term is stored as the number of DAYS in one chargeable period.
-  -- The screen offers 7 (per week) and 30 (per month) and lets the clerk
-  -- type any other number the contract states. The arithmetic is then one
-  -- exact integer division with no calendar in it, the stored value says
-  -- exactly what was charged, and a contract that really does say
-  -- "calendar month" is recorded by whoever read it rather than guessed
-  -- at by whoever wrote this file. `docs/UX.md` § 21 records the
-  -- divergence.
+  -- The screen offers the two figures railway clauses actually state — 7
+  -- for a week and 30 for a month — and carries any other value already
+  -- recorded through as a third choice rather than losing it. The
+  -- arithmetic is then one exact integer division with no calendar in it,
+  -- the stored value says exactly what was charged, and a contract that
+  -- really does say "calendar month" is recorded by whoever read it
+  -- rather than guessed at by whoever wrote this file. `docs/UX.md` § 21
+  -- records the divergence.
   ld_period_days integer
     CHECK (ld_period_days IS NULL OR ld_period_days BETWEEN 1 AND 366),
 
@@ -831,6 +833,98 @@ FOR EACH ROW EXECUTE FUNCTION app_private.guard_retention_release_write();
 CREATE TRIGGER retention_releases_touch_updated_at
 BEFORE UPDATE ON retention_releases
 FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
+
+-- ── 5b. The other end of the same invariant ──────────────────────────
+--
+-- THE HOLE THIS CLOSES, because it is not obvious from section 5 and it
+-- needs no concurrency at all to open.
+--
+-- Retention held is DERIVED from the `SECURITY_DEPOSIT` deductions of the
+-- live payments of a Work's bills, and a recorded receipt may be WITHDRAWN
+-- (0067 § 1). So the held side can go DOWN after a release has already
+-- been recorded against it, in three ordinary steps:
+--
+--   1. the railway's advice withholds ₹30,000, recorded as a receipt;
+--   2. the railway releases ₹30,000 at the acceptance certificate,
+--      recorded here, and the balance is correctly zero;
+--   3. the operator notices the advice was recorded against the wrong
+--      bill and withdraws it — and the ledger now says ₹30,000 has been
+--      released against nothing ever withheld.
+--
+-- Section 5's guard cannot see this: it fires on a write to
+-- `retention_releases`, and step 3 does not write one. The invariant is
+-- "released never exceeds held", and it has two ends; this is the other
+-- one.
+--
+-- A SEPARATE TRIGGER RATHER THAN A REPLACEMENT of 0067's
+-- `guard_bill_payment_write`, deliberately. That function is the payment
+-- register's own money guard and re-creating it here would put this
+-- migration's name on rules it did not write; an additive trigger says
+-- exactly what it adds. It fires FIRST — trigger order is alphabetical
+-- and `bill_payments_retention_guard` precedes both of 0067's — which is
+-- why it returns early on anything that is not a FRESH void: a re-void of
+-- an already-withdrawn receipt has to meet 0067's own 23A04 refusal, not
+-- an arithmetic complaint about a state it never reached.
+CREATE FUNCTION app_private.guard_retention_survives_payment_void()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_work_id uuid;
+  v_withdrawn numeric;
+  v_held numeric;
+  v_released numeric;
+BEGIN
+  -- Only a fresh withdrawal reduces the held side. Everything else —
+  -- an insert, a re-void, a touch — is somebody else's rule.
+  IF NEW.voided_at IS NULL OR OLD.voided_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT b.work_id INTO v_work_id
+  FROM bills b
+  WHERE b.organisation_id = NEW.organisation_id AND b.id = NEW.bill_id;
+
+  -- Not this trigger's refusal to make: 0067's own guard reports an
+  -- unreadable bill, with its own code and its own sentence.
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT coalesce(sum(d.amount::numeric), 0) INTO v_withdrawn
+  FROM bill_payment_deductions d
+  WHERE d.organisation_id = NEW.organisation_id
+    AND d.bill_payment_id = NEW.id
+    AND d.category = 'SECURITY_DEPOSIT';
+
+  IF v_withdrawn = 0 THEN
+    RETURN NEW;
+  END IF;
+
+  v_held := app_private.work_retention_held(v_work_id);
+  v_released := app_private.work_retention_released(v_work_id);
+
+  -- `v_held` still counts this receipt: the row is being updated and the
+  -- BEFORE trigger sees the pre-void state, so the figure after the
+  -- withdrawal is `v_held - v_withdrawn`.
+  IF v_released > v_held - v_withdrawn THEN
+    RAISE EXCEPTION
+      'withdrawing this receipt would leave % released against % withheld on Work %',
+      v_released, v_held - v_withdrawn, v_work_id
+      USING ERRCODE = '23P08', CONSTRAINT = 'retention_release_stranded';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+COMMENT ON FUNCTION app_private.guard_retention_survives_payment_void() IS
+  'The other end of the retention invariant: withdrawing a receipt reduces what was ever withheld, and it may not reduce it below what has already been released. Additive to 0067''s own payment guard rather than a replacement of it, and it fires only on a fresh withdrawal so a re-void still meets 0067''s refusal.';
+
+CREATE TRIGGER bill_payments_retention_guard
+BEFORE UPDATE ON bill_payments
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_retention_survives_payment_void();
 
 -- ── 6. Assessing, levying and waiving ────────────────────────────────
 CREATE FUNCTION app_private.guard_ld_assessment_write()

@@ -267,6 +267,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     voidBillPayment: vi.fn(),
     getWorkRetention: vi.fn(),
     saveWorkRetentionTerms: vi.fn(),
+    clearWorkRetentionTerms: vi.fn(),
     recordRetentionRelease: vi.fn(),
     voidRetentionRelease: vi.fn(),
     assessLd: vi.fn(),

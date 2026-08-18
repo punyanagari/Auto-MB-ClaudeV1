@@ -506,6 +506,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Check whether this release letter is already in the register under the same reference, and withdraw the earlier one first if it was recorded in error.',
   RETENTION_RELEASE_DATE_FUTURE:
     'Check the year on the release letter; a release is dated the day the railway released the money, which cannot be later than today.',
+  RETENTION_RELEASE_STRANDED:
+    "Withdraw the release on the Work's Instruments tab first; retention that was never withheld cannot have come back, and the two records have to be retracted in that order.",
   RETENTION_RELEASE_UNDESCRIBED:
     'Say what the release is for in the description, because an unnamed release cannot be reconciled against the railway’s own letter later.',
   RETENTION_INSTRUMENT_REQUIRED:

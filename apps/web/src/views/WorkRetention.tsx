@@ -66,11 +66,12 @@ const BASIS_LABELS: Record<RetentionReleaseBasis, string> = {
   other: 'Other',
 };
 
-/** The two chargeable periods a railway clause actually states, plus the
- * escape hatch for one that states something else. The value is a number
- * of DAYS for the reason migration 0098 § 1 gives at length: a calendar
- * month is not a fixed quantity, so "per month" over a delay measured in
- * days has two defensible readings that give different money. */
+/** The two chargeable periods a railway clause actually states. The value
+ * is a number of DAYS for the reason migration 0098 § 1 gives at length: a
+ * calendar month is not a fixed quantity, so "per month" over a delay
+ * measured in days has two defensible readings that give different money.
+ * A recorded period outside these two is rendered as a third option
+ * beside them, so it survives a save rather than reading as unset. */
 const PERIOD_CHOICES: readonly { readonly days: number; readonly label: string }[] = [
   { days: 7, label: 'Per week (7 days)' },
   { days: 30, label: 'Per month (30 days)' },
@@ -148,11 +149,22 @@ export function WorkRetention({
     };
   }, [api, organisationId, workId, loadVersion]);
 
+  /**
+   * One mutation, then a re-read of the whole position.
+   *
+   * The re-read is on SUCCESS only, and the flag is what makes that
+   * possible: `useAction` never rejects, so an unconditional `refresh()`
+   * would run after a refusal too — replacing the section with its
+   * skeleton and blinking the inline error off the screen just as the
+   * operator started reading it.
+   */
   async function run(work: () => Promise<void>, done: string) {
+    let succeeded = false;
     await act(async () => {
       await work();
+      succeeded = true;
     }, done);
-    refresh();
+    if (succeeded) refresh();
   }
 
   if (loadError !== null) {
@@ -360,6 +372,11 @@ export function WorkRetention({
                   type="number"
                   min={0}
                   max={120}
+                  // A liability period is a count of months. Without the
+                  // step the browser accepts "1.5", which the request
+                  // builder then drops silently rather than sending — a
+                  // field that appears to save and does not.
+                  step={1}
                   disabled={pending}
                   defaultValue={terms?.defectLiabilityMonths ?? ''}
                   className="font-mono tabular-nums"
@@ -395,6 +412,19 @@ export function WorkRetention({
                       {choice.label}
                     </option>
                   ))}
+                  {/* A period the two choices do not cover, kept as an
+                      option so it survives. Without it a Work whose
+                      contract states a fortnight would silently lose the
+                      term on the next save — the select would show "Not
+                      recorded" and the whole-record PUT would mean it. */}
+                  {terms?.ldPeriodDays != null &&
+                    !PERIOD_CHOICES.some(
+                      (choice) => choice.days === terms.ldPeriodDays,
+                    ) && (
+                      <option value={terms.ldPeriodDays}>
+                        Per {String(terms.ldPeriodDays)} days
+                      </option>
+                    )}
                 </select>
                 <Hint>
                   A period is a number of days, so no calendar has to be guessed at.
@@ -435,6 +465,28 @@ export function WorkRetention({
               <Button type="submit" disabled={pending}>
                 Save terms
               </Button>
+              {/* No confirmation dialog, deliberately, and the reason is
+                  what makes this different from the two acts that get
+                  one: clearing the terms destroys no record. Every
+                  assessment already made carries its own frozen snapshot
+                  of the rates it used, so nothing an operator has taken
+                  to the railway changes — and a Work whose letter was
+                  misread has to be able to stop asserting terms it does
+                  not have. */}
+              {terms !== null && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    void run(async () => {
+                      await api.clearWorkRetentionTerms(organisationId, workId);
+                    }, 'Contract terms cleared; assessments already made keep the rates they used.');
+                  }}
+                >
+                  Clear terms
+                </Button>
+              )}
             </Actions>
           </form>
         </Disclosure>

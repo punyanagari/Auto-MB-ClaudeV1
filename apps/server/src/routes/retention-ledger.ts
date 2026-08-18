@@ -17,6 +17,7 @@ import {
   type WorkRetentionResponse,
   type WorkRetentionTerms,
 } from '@auto-mb/contracts';
+import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
@@ -297,12 +298,33 @@ function rethrowWriteRefusal(error: unknown): never {
     // indistinguishable — the same posture `assertWorkAccess` takes.
     throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
   }
+  if (code === '22003') {
+    // The assessment's arithmetic is wider than the numeric(18,2) column
+    // it is generated into: a basis near the column's own ceiling, a rate
+    // near 100%, and a delay of years multiply out past it. A 22003
+    // carries no HTTP status, so unnamed it reaches the operator as "The
+    // request could not be completed." — the exact failure the
+    // purchase-order and quotation routes already name for the same
+    // reason. The window is what a mistyped year moves, so that is what
+    // the sentence points at.
+    throw httpError(
+      400,
+      'LD_ASSESSMENT_WINDOW_INVALID',
+      'The rate, the basis and the delay multiply out to an amount too large to record — check for a mistyped year or a mistyped digit in the basis.',
+    );
+  }
   if (code === '23505') {
     // The one-live-release-per-reference index and the one-draft-per-Work
-    // index (0098). Both are checked first by the route under the Work's
-    // lock, so this is the concurrent-insert arm of the same two rules.
-    // They are told apart by the index name because the remedies are
-    // different: one is a duplicate advice, the other is a second draft.
+    // index (0098). They are told apart by the index name because the
+    // remedies are different: one is a duplicate advice, the other is a
+    // second draft.
+    //
+    // The draft rule is ALSO checked by the route first, under the Work's
+    // lock, so an operator normally meets a sentence rather than a
+    // constraint. The reference rule deliberately is not: a pre-check
+    // would be a second read to catch a mistake the index already names
+    // exactly, and unlike the draft rule there is nothing more useful the
+    // route could say than the sentence below.
     const constraint =
       error !== null && typeof error === 'object' && 'constraint_name' in error
         ? String(error.constraint_name)
@@ -589,6 +611,65 @@ export function registerRetentionLedgerRoutes(
         );
         return terms;
       });
+    },
+  );
+
+  // --- Clearing them -------------------------------------------------------
+  //
+  // The one delete in this module, and it exists to close a dead end
+  // rather than for symmetry. The not-empty CHECK means a terms row can
+  // never be edited down to nothing, so without this a Work whose letter
+  // was misread would carry the wrong rates forever — and a wrong rate is
+  // not inert here: it is what a later assessment computes from.
+  //
+  // Nothing is lost by it. Every assessment already made carries its own
+  // frozen snapshot of the terms it used (migration 0098 § 3), so
+  // clearing the row rewrites no figure anybody has taken to the railway.
+  tenantRoute(
+    {
+      method: 'DELETE',
+      url: '/api/works/:id/retention-terms',
+      schema: {
+        params: IdParamsSchema,
+        response: { 204: Type.Null(), ...errorResponses },
+      },
+      role: 'writer',
+      authority: 'retention',
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: workId } = request.params;
+      await tenant(async (tx) => {
+        await assertWorkAccess(tx, user.id, workId);
+        const before = await readTerms(tx, workId);
+        if (before === null) {
+          throw httpError(
+            404,
+            'RETENTION_TERMS_NOT_FOUND',
+            'This Work has no recorded retention or liquidated-damages terms.',
+          );
+        }
+        const [removed] = await tx<{ id: string }[]>`
+          delete from work_retention_terms where work_id = ${workId}
+          returning id
+        `;
+        if (!removed) {
+          throw httpError(
+            404,
+            'RETENTION_TERMS_NOT_FOUND',
+            'This Work has no recorded retention or liquidated-damages terms.',
+          );
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'retention.terms.cleared',
+          'work_retention_terms',
+          removed.id,
+          { workId, before },
+        );
+      });
+      return reply.status(204).send();
     },
   );
 
@@ -887,7 +968,23 @@ export function registerRetentionLedgerRoutes(
         // number. The rate, period and cap are NEVER taken from the
         // request — they come from the recorded terms, so an assessment
         // cannot quietly be computed at a rate the contract never stated.
+        //
+        // A Work whose contract value is zero cannot be the default: the
+        // column refuses a basis of zero (damages on nothing are nothing,
+        // and a row asserting them is noise), and without this the
+        // operator would meet that CHECK as a bare 500 rather than a
+        // sentence naming the field they have to fill.
         const basisAmount = body.basisAmount ?? work.contract_value;
+        const [positive] = await tx<{ ok: boolean }[]>`
+          select ${basisAmount}::numeric > 0 as ok
+        `;
+        if (positive?.ok !== true) {
+          throw httpError(
+            400,
+            'LD_ASSESSMENT_WINDOW_INVALID',
+            'Liquidated damages need a basis greater than zero. This Work carries no contract value, so the basis has to be given — the value of the delayed portion, or whatever the contract charges damages on.',
+          );
+        }
         const basisLabel =
           trimmedOrNull(body.basisLabel) ??
           (body.basisAmount === undefined

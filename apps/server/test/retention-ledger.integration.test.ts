@@ -95,7 +95,7 @@ function authed(options: InjectOptions & { organisationId?: string }) {
   });
 }
 
-function post(url: string, payload: unknown) {
+function post(url: string, payload: Record<string, unknown>) {
   return authed({
     method: 'POST',
     url,
@@ -105,7 +105,7 @@ function post(url: string, payload: unknown) {
   });
 }
 
-function put(url: string, payload: unknown) {
+function put(url: string, payload: Record<string, unknown>) {
   return authed({
     method: 'PUT',
     url,
@@ -415,6 +415,62 @@ describe('the retention ledger', () => {
     // The refusal names what is left, because "too much" without a figure
     // sends the operator to a spreadsheet to work out what would fit.
     expect(tooMuch.json<{ message: string }>().message).toContain('15000.00');
+  });
+
+  /**
+   * The other end of the same invariant, and it needs no concurrency to
+   * open: the held side is DERIVED, so withdrawing the receipt that
+   * withheld the retention can strand a release recorded against it. This
+   * is the case the ceiling check in the release route cannot see, because
+   * the act that breaks it does not write a release.
+   */
+  it('refuses to withdraw the receipt that withheld retention already released', async () => {
+    const { workId, billId } = await seedWork('RETSTRAND');
+    const paymentId = await withhold(
+      billId,
+      '470000.00',
+      '30000.00',
+      'UTR-RETSTRAND-1',
+    );
+    const release = await post(`/api/works/${workId}/retention-releases`, {
+      releasedOn: '2026-06-10',
+      amount: '30000.00',
+      basis: 'pac',
+    });
+    expect(release.statusCode, release.body).toBe(201);
+
+    const blocked = await post(`/api/bill-payments/${paymentId}/void`, {
+      reason: 'Advice was recorded against the wrong bill',
+    });
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(blocked.json<{ code: string }>().code).toBe('RETENTION_RELEASE_STRANDED');
+
+    // And from the database, for a writer that arrives around the route.
+    await expect(
+      admin`
+        update bill_payments
+        set voided_at = now(), voided_by_user_id = ${ownerUserId},
+            void_reason = 'Around the route'
+        where id = ${paymentId}
+      `,
+    ).rejects.toMatchObject({ code: '23P08' });
+
+    // The order the refusal asks for actually works, which is what makes
+    // it a remedy rather than a dead end: withdraw the release, then the
+    // receipt.
+    const withdrawn = await post(
+      `/api/retention-releases/${release.json<RetentionRelease>().id}/void`,
+      { reason: 'Recorded against the wrong receipt' },
+    );
+    expect(withdrawn.statusCode, withdrawn.body).toBe(200);
+    const now = await post(`/api/bill-payments/${paymentId}/void`, {
+      reason: 'Advice was recorded against the wrong bill',
+    });
+    expect(now.statusCode, now.body).toBe(200);
+    const position = (await read(workId)).json<WorkRetentionResponse>().position;
+    expect(position.retentionHeldTotal).toBe('0.00');
+    expect(position.retentionReleasedTotal).toBe('0.00');
+    expect(position.retentionBalance).toBe('0.00');
   });
 
   it('refuses the same release recorded twice, and frees the reference once it is withdrawn', async () => {
@@ -819,6 +875,32 @@ describe('liquidated damages', () => {
     expect(position.retentionCeilingAmount).toBe('500000.00');
     expect(position.contractValue).toBe(CONTRACT_VALUE);
   });
+
+  it('names the basis a Work with no contract value cannot default, rather than raising a CHECK', async () => {
+    const { workId } = await seedWork('LDZERO');
+    await admin`
+      update works set contract_value = '0.00' where id = ${workId}
+    `;
+    await recordTerms(workId);
+    const response = await post(`/api/works/${workId}/ld-assessments`, {
+      assessedOn: '2023-05-01',
+      assessedToDate: '2023-04-15',
+    });
+    // Without the route check this is `basis_amount > 0` as a bare 23514,
+    // which reaches the operator as "The request could not be completed."
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('LD_ASSESSMENT_WINDOW_INVALID');
+
+    // And the way out works: state the basis the contract charges on.
+    const withBasis = await post(`/api/works/${workId}/ld-assessments`, {
+      assessedOn: '2023-05-01',
+      assessedToDate: '2023-04-15',
+      basisAmount: '1000000.00',
+      basisLabel: 'Value of the delayed portion',
+    });
+    expect(withBasis.statusCode, withBasis.body).toBe(201);
+    expect(withBasis.json<LdAssessment>().assessedAmount).toBe('75000.00');
+  });
 });
 
 describe('the contract terms', () => {
@@ -851,5 +933,49 @@ describe('the contract terms', () => {
     // over-read letter uncorrectable.
     expect(terms?.ldRatePercent).toBeNull();
     expect(terms?.defectLiabilityMonths).toBeNull();
+  });
+
+  it('clears them entirely, and leaves every assessment already made alone', async () => {
+    const { workId } = await seedWork('TERMDEL');
+    await recordTerms(workId);
+    const assessed = await post(`/api/works/${workId}/ld-assessments`, {
+      assessedOn: '2023-05-01',
+      assessedToDate: '2023-04-15',
+    });
+    expect(assessed.statusCode, assessed.body).toBe(201);
+
+    const removed = await authed({
+      method: 'DELETE',
+      url: `/api/works/${workId}/retention-terms`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
+
+    const after = (await read(workId)).json<WorkRetentionResponse>();
+    expect(after.terms).toBeNull();
+    // The not-empty CHECK means a terms row can never be edited down to
+    // nothing, so without this route a Work whose letter was misread
+    // would assert the wrong rates forever. What it must NOT do is
+    // rewrite a figure already put in front of the railway.
+    expect(after.assessments[0]?.ldRatePercent).toBe('0.500');
+    expect(after.assessments[0]?.assessedAmount).toBe('750000.00');
+
+    // And nothing new can be assessed until the terms are read again.
+    const blocked = await post(`/api/works/${workId}/ld-assessments`, {
+      assessedOn: '2023-05-02',
+      assessedToDate: '2023-04-16',
+    });
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(blocked.json<{ code: string }>().code).toBe('LD_TERMS_MISSING');
+
+    const again = await authed({
+      method: 'DELETE',
+      url: `/api/works/${workId}/retention-terms`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+    });
+    expect(again.statusCode, again.body).toBe(404);
+    expect(again.json<{ code: string }>().code).toBe('RETENTION_TERMS_NOT_FOUND');
   });
 });

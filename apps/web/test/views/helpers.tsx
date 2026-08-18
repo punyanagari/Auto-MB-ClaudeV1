@@ -440,6 +440,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       instruments: [],
     }),
     saveWorkRetentionTerms: vi.fn<ApiClient['saveWorkRetentionTerms']>(),
+    clearWorkRetentionTerms: vi.fn<ApiClient['clearWorkRetentionTerms']>(),
     recordRetentionRelease: vi.fn<ApiClient['recordRetentionRelease']>(),
     voidRetentionRelease: vi.fn<ApiClient['voidRetentionRelease']>(),
     assessLd: vi.fn<ApiClient['assessLd']>(),
