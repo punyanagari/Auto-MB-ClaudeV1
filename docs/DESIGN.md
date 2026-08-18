@@ -284,7 +284,7 @@ Statuses mapped at `fdfe5ef`:
 - **Success** — `active`, `paid`, `approved`, `accepted`, `confirmed`, `passed`,
   `received`, `valid`, `awarded`
 - **Warning** — `on-hold`, `pending`, `needs-review`, `recording`, `partial`,
-  `expiring`, `opened`
+  `expiring`, `opened`, `in-production`
 - **Destructive** — `cancelled`, `rejected`, `declined`, `expired`, `lost`
 - **Primary** — `issued`, `sent`, `checked`, `replied`, `submitted`
 - **Neutral** — `draft`, `completed`, `ordered`, `returned`, `released`,
@@ -302,6 +302,21 @@ being assembled is inert, not in progress and not good news — and mapping it t
 warning would put an amber lamp on every tender the moment it is created, which
 is the state most tenders are in most of the time. A chip that is always lit
 says nothing.
+
+`in-production` is the production job card's (migration 0084), and its
+sibling `planned` is **deliberately unmapped**, for the same reason
+`drafted` above is neutral: a job card that has been raised and not
+started is inert, and amber on every card the day it is created is a lamp
+that is always lit. `completed` and `cancelled` are the other two states
+and both already carry the reading this module wants.
+
+Checked against the vocabularies already here before it was added:
+nothing else in the product says `in-production`, and the hyphen keeps it
+out of the way of the bare words — `production` alone would be a module
+name, not a state. The three states a job card does NOT get are the
+mock's `material-short`, `material-ready` and `dispatch-ready`, which are
+derived from stock and serial counts rather than decided by anybody
+(`docs/UX.md` § 11).
 
 `valid` and `archived` are the application's, added for the company document
 library (owner decision 2026-08-18, `docs/UX.md` § Approved divergences 8).

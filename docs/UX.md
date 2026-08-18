@@ -267,6 +267,48 @@ All three are built from the mock's own components — its cards, its rows,
 its status badge, its readiness panel — so the grammar is unchanged even
 where the behaviour is.
 
+### 11. Production screens — PROPOSED, owner ruling pending
+
+**Status: PROPOSED, not approved.** Same footing as § 9 and § 10, and the
+same convergence path: change the mock in v0 and each entry retires.
+
+The screens themselves are ported (`app/production/page.tsx`,
+`app/production/items/page.tsx`, `components/production-job-card-page.tsx`
+at `fdfe5ef`). What is listed here is behaviour inside them the mock
+implements as a `useState` fiction over `lib/data.ts`, plus one whole
+column family that depends on a table this wave has not built yet.
+
+The test applied throughout is the same one § 10 states: would
+replicating the pixel make the product claim something untrue?
+
+| #   | The mock draws                                                                                        | The application ships                                                                                                | Why                                                                                                                                                                                                                                                                                                       |
+| --- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11a | A Material column badging "2277 units short", and a Materials tab with Available and Shortage columns | A Material column counting the bill of material, and a Materials tab with Required only, captioned as such           | Shortage is required minus on-hand, and on-hand is the Inventory pack's stock ledger, which does not exist yet. Computed against no stock it reads zero for everything — "nothing is short" — and would flip to alarming the day stock arrived. The requirement half is real and is shipped.              |
+| 11b | Six job-card statuses, three of them derived (`material-short`, `material-ready`, `dispatch-ready`)   | Four stored states — planned, in production, completed, cancelled — with readiness derived on read                   | The mock's own fixture disagrees with itself: two of its three plans carry a `status` its `planMaterial` contradicts, so its "Ready" branch is dead and every card renders "Material blocked". A stored copy of a computed fact is a field that can disagree with the fact.                               |
+| 11c | Component serials as a bag of strings per PLAN, keyed by bill-of-material node                        | Component serials captured per FINISHED UNIT, with the unit chosen on the Serials tab                                | The mock can say a batch of twelve boards consumed twelve power supplies and cannot say which board holds which. That is the question a field failure asks — this board is dead, whose supply is in it, what else has one from that batch — and it is the whole point of traceability.                    |
+| 11d | A "Create delivery challan" button on the Dispatch tab                                                | A "Release to stock" action, and copy saying the Delivery Challan is raised separately                               | A Delivery Challan is a statutory document with a consignee, a number series, an e-way bill and an inspection interlock behind it. A button on the factory floor that appeared to issue one would claim an act it does not perform. Production releases units; the challan is a later act against a Work. |
+| 11e | "Complete one unit" and "Generate next serial" as two independent controls                            | One act: recording a unit mints its serial from the item's counter                                                   | In the mock the counter and the serial list can disagree, and its own `canComplete` has to compare them. A unit that exists and is unnameable is not a unit this product can trace, deliver or install.                                                                                                   |
+| 11f | `BomNode.type` ('raw' / 'sub-assembly'), `unit` and `serialControlled` stored per NODE                | All three derived or moved to the item: type from whether the node has a bill, unit and serial control from the part | The same bolt would otherwise be Nos in one assembly and Kg in another, and serialised in one place and not in another. They are facts about the PART, and `type` is precisely "has children or does not".                                                                                                |
+| 11g | A `nextSerial` figure printed in the item's serial-series well                                        | The series SHAPE (`IPDB6-00000`) and the words "Claimed per unit, gap-free"                                          | The next number is claimed from a counter at the moment a unit is built. Any figure rendered here is stale the instant a second operator builds one, and a wrong next-serial on a screen an operator plans labels from is worse than no figure.                                                           |
+| 11h | A status-free register, with state encoded in the Material badge                                      | The product's status chip, plus the Material badge                                                                   | `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label chip the single vocabulary for record state, and the mock's own fixture shows why one badge cannot carry both readings at once.                                                                                                        |
+
+Two additions of the application's own, on the same ruling:
+
+- **A withdraw control on a release.** A despatch raised in error would
+  otherwise lock its units out of production for good. It is deliberately
+  self-closing: the moment Inventory's stock ledger references a
+  despatch, the foreign key refuses the delete (migration 0084 § 7).
+- **A remove control on a captured component serial**, live only while
+  the unit is still in the factory. A scanner typo on a unit on the bench
+  is a data-entry error; after despatch the record is the only account of
+  what is inside a unit somewhere else, and nothing removes it.
+
+**The Production rail entry is not a divergence.** It is the first item
+of the mock's own Operations group (`docs/UX.md` § Settled information
+architecture), and it left the omitted list this wave. Inventory,
+Purchase orders and Maintenance stay omitted rather than drawn as dead
+entries.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

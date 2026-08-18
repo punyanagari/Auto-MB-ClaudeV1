@@ -1,0 +1,613 @@
+import { useEffect, useState } from 'react';
+import { Boxes, Factory, PackageCheck, Plus, X } from 'lucide-react';
+import type { JobCardSummary, ProductionItem, Work } from '@auto-mb/contracts';
+import { RequestFailedError, type ApiClient } from '../api.js';
+import { formatDate, todayISO } from '../format.js';
+import {
+  navigateOnClick,
+  productionHash,
+  productionJobCardHash,
+} from '../lib/workspace-routes.js';
+import { Badge } from '../ui/badge.js';
+import { Button } from '../ui/button.js';
+import { Card, CardHeader } from '../ui/card.js';
+import { StatusChip } from '../ui/chip.js';
+import { Actions, Field, FieldRow, FormError } from '../ui/form.js';
+import { PageHeader } from '../ui/page-header.js';
+import { ProgressBar } from '../ui/progress.js';
+import { Stat } from '../ui/stat.js';
+import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
+import { DataTable, numericCell } from '../ui/table.js';
+
+/**
+ * The production register.
+ *
+ * Replicates `app/production/page.tsx` of the frozen mock at fdfe5ef:
+ * three metric tiles over a six-column table — Plan / source, OEM item,
+ * Material, Manufacturing, Dispatch, Due — with the plan number in mono
+ * primary, the source line beneath it, and a progress bar in the
+ * Manufacturing cell.
+ *
+ * Three departures, each recorded in `docs/UX.md` § 11 and each because
+ * replicating the pixel would make the screen say something untrue:
+ *
+ *   * **The Material column counts the bill of material, not a
+ *     shortage.** The mock badges "2277 units short" from
+ *     `stockItems.onHand`, which is the Inventory pack's ledger and does
+ *     not exist yet. A shortage computed against no stock reads zero for
+ *     everything, and would flip to alarming the day stock arrived.
+ *   * **The middle tile counts job cards in production**, not material
+ *     shortages, for the same reason.
+ *   * **The status chip is here and the mock has none.** The mock encodes
+ *     state in the Material badge, which is why its own fixture shows
+ *     "Material blocked" on a plan it also calls `dispatch-ready`.
+ *     `docs/DESIGN.md` § Status badge semantics makes the dot-plus-label
+ *     chip the product's single vocabulary for record state.
+ *
+ * The mock's "New plan" button is absent until a Work is chosen, because
+ * a job card is raised against a Work's schedule line or a private order
+ * and the register has neither in hand. Its "Item master" button is the
+ * mock's own and stays.
+ */
+
+interface ProductionProps {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  /** The mock's `?work=` deep link. Present, the register reads one Work
+   * and says so with a dismissible chip. */
+  readonly workId: string | null;
+  /** Recording production is shop-floor work, exactly as the server
+   * gates it: owner, office and site may, a viewer reads. */
+  readonly canRecord: boolean;
+  readonly onOpenJobCard: (jobCardId: string) => void;
+  readonly onOpenItemMaster: () => void;
+}
+
+export function Production({
+  api,
+  organisationId,
+  workId,
+  canRecord,
+  onOpenJobCard,
+  onOpenItemMaster,
+}: ProductionProps) {
+  const [cards, setCards] = useState<readonly JobCardSummary[] | null>(null);
+  const [counts, setCounts] = useState({ open: 0, inProduction: 0, ready: 0 });
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadVersion, setLoadVersion] = useState(0);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCards(null);
+    setLoadError(null);
+    api
+      .listJobCards(organisationId, workId ?? undefined)
+      .then((loaded) => {
+        if (cancelled) return;
+        setCards(loaded.jobCards);
+        setCounts({
+          open: loaded.openCount,
+          inProduction: loaded.inProductionCount,
+          ready: loaded.dispatchReadyCount,
+        });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setLoadError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The job cards could not be loaded.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, workId, loadVersion]);
+
+  const header = (
+    <PageHeader
+      eyebrow="Operations"
+      title="Production"
+      titleId="production-title"
+      description="Plan OEM manufacturing from Railway LOAs and private purchase orders, with material and serial traceability."
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={onOpenItemMaster}>
+            <Boxes data-icon="inline-start" aria-hidden="true" />
+            Item master
+          </Button>
+          {canRecord && (
+            <Button
+              onClick={() => {
+                setCreating((open) => !open);
+              }}
+            >
+              <Plus data-icon="inline-start" aria-hidden="true" />
+              New job card
+            </Button>
+          )}
+        </div>
+      }
+    />
+  );
+
+  if (loadError !== null) {
+    return (
+      <>
+        {header}
+        <ErrorState
+          onRetry={() => {
+            setLoadVersion((current) => current + 1);
+          }}
+          retryLabel="Retry job cards"
+        >
+          {loadError}
+        </ErrorState>
+      </>
+    );
+  }
+
+  if (cards === null) {
+    return (
+      <>
+        {header}
+        <LoadingState label="the job cards" rows={4} columns={6} />
+      </>
+    );
+  }
+
+  const workFilter = cards.find((card) => card.workId === workId);
+
+  return (
+    <>
+      {header}
+      <div className="flex flex-col gap-6">
+        {creating && (
+          <JobCardForm
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            onCreated={(created) => {
+              setCreating(false);
+              onOpenJobCard(created.id);
+            }}
+            onCancel={() => {
+              setCreating(false);
+            }}
+          />
+        )}
+
+        {/* The mock's three tiles, in its order and with its icons. The
+            figure is the shared `ui/stat`, so a row of tiles here keeps
+            its digits in the same columns as every other screen's. */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {(
+            [
+              [
+                <Factory
+                  key="open"
+                  className="size-5 text-primary"
+                  aria-hidden="true"
+                />,
+                'Open job cards',
+                counts.open,
+              ],
+              [
+                <Boxes
+                  key="running"
+                  className="size-5 text-warning-foreground"
+                  aria-hidden="true"
+                />,
+                'In production',
+                counts.inProduction,
+              ],
+              [
+                <PackageCheck
+                  key="ready"
+                  className="size-5 text-success"
+                  aria-hidden="true"
+                />,
+                'Dispatch ready',
+                counts.ready,
+              ],
+            ] as const
+          ).map(([icon, label, value]) => (
+            <Card key={label}>
+              {icon}
+              <Stat className="mt-3" label={label} value={String(value)} />
+            </Card>
+          ))}
+        </div>
+
+        {/* The mock's `?work=` chip. Its clear control is a real link
+            back to the unfiltered register, not a state reset, so Back
+            works and the address always says what is shown. */}
+        {workId !== null && (
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">
+              Work {workFilter?.workCode ?? workId.slice(0, 8)}
+            </Badge>
+            <a
+              href={productionHash(null)}
+              className="inline-flex items-center gap-1 text-sm text-muted-foreground no-underline hover:text-foreground"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+              Clear filter
+            </a>
+          </div>
+        )}
+
+        {cards.length === 0 ? (
+          <EmptyState>
+            {workId === null
+              ? 'No job card has been raised yet. Define what the agency manufactures in the item master, then raise a job card against a Work or a private purchase order.'
+              : 'No job card has been raised for this Work.'}
+          </EmptyState>
+        ) : (
+          <DataTable>
+            <caption className="sr-only">
+              Production job cards with source, OEM item, bill-of-material size,
+              manufacturing progress, despatch count, status and due date
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Plan / source</th>
+                <th scope="col">OEM item</th>
+                <th scope="col">Material</th>
+                <th scope="col">Manufacturing</th>
+                <th scope="col" className={numericCell}>
+                  Dispatch
+                </th>
+                <th scope="col">Status</th>
+                <th scope="col">Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cards.map((card) => (
+                <tr key={card.id}>
+                  <th scope="row">
+                    {/* A real anchor, not a div with a handler:
+                        middle-click and open-in-new-tab have to work on a
+                        register row. */}
+                    <a
+                      href={productionJobCardHash(card.id)}
+                      onClick={navigateOnClick(() => {
+                        onOpenJobCard(card.id);
+                      })}
+                      className="font-mono text-sm font-semibold tabular-nums text-primary no-underline hover:underline"
+                    >
+                      {card.number}
+                    </a>
+                    <p className="m-0 mt-1 max-w-52 truncate text-xs font-normal text-muted-foreground">
+                      {card.sourceType === 'work' ? 'Railway LOA' : 'Private PO'} ·{' '}
+                      {card.sourceReference}
+                    </p>
+                  </th>
+                  <td>
+                    <p className="m-0 font-medium">{card.itemName}</p>
+                    <p className="m-0 font-mono text-xs tabular-nums text-muted-foreground">
+                      {card.itemCode} · {card.quantity} Nos
+                    </p>
+                  </td>
+                  <td>
+                    <Badge
+                      variant={card.materialLines === 0 ? 'destructive' : 'neutral'}
+                    >
+                      {card.materialLines === 0
+                        ? 'No bill of material'
+                        : `${String(card.materialLines)} parts`}
+                    </Badge>
+                  </td>
+                  <td>
+                    <div className="min-w-32">
+                      <div className="mb-1 flex justify-between font-mono text-xs tabular-nums">
+                        <span>
+                          {card.manufactured}/{card.quantity}
+                        </span>
+                        <span>{percentOf(card.manufactured, card.quantity)}%</span>
+                      </div>
+                      <ProgressBar
+                        value={percentOf(card.manufactured, card.quantity)}
+                        label={`Units built on job card ${card.number}`}
+                      />
+                    </div>
+                  </td>
+                  <td className={numericCell}>
+                    {card.dispatched}/{card.quantity}
+                  </td>
+                  <td>
+                    <StatusChip status={statusKeyOf(card)}>
+                      {statusLabelOf(card)}
+                    </StatusChip>
+                  </td>
+                  <td>{formatDate(card.dueDate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Raising a job card.
+ *
+ * Inline on the register rather than behind a route or a modal: the
+ * mock's "New plan" button opens nothing, so there is no dialog to
+ * replicate, and five fields do not earn a focus trap or an address of
+ * their own.
+ *
+ * The source is a Work OR a private customer and never both — the same
+ * rule the route states and the schema shapes — so the form makes it a
+ * choice rather than two fields an operator can fill in together.
+ */
+function JobCardForm({
+  api,
+  organisationId,
+  workId,
+  onCreated,
+  onCancel,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  /** The register's `?work=` filter, used as the form's default so
+   * raising a card from a filtered register does not ask again. */
+  readonly workId: string | null;
+  readonly onCreated: (card: JobCardSummary) => void;
+  readonly onCancel: () => void;
+}) {
+  const [items, setItems] = useState<readonly ProductionItem[]>([]);
+  const [works, setWorks] = useState<readonly Work[]>([]);
+  const [itemId, setItemId] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [source, setSource] = useState<'work' | 'private'>(
+    workId === null ? 'work' : 'work',
+  );
+  const [chosenWorkId, setChosenWorkId] = useState(workId ?? '');
+  const [customerName, setCustomerName] = useState('');
+  const [sourceReference, setSourceReference] = useState('');
+  const [dueDate, setDueDate] = useState(todayISO());
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      api.listProductionItems(organisationId),
+      api.listWorks(organisationId),
+    ])
+      .then(([catalogue, loadedWorks]) => {
+        if (cancelled) return;
+        // Only a manufactured item may carry a job card, which is what
+        // the route refuses and what this select spares the operator.
+        setItems(catalogue.items.filter((item) => item.manufactured));
+        setWorks(loadedWorks);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The item master could not be loaded.',
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="text-base font-semibold">New job card</h2>
+        <p className="m-0 text-sm text-muted-foreground">
+          Build a manufactured item for a Railway LOA or a private purchase order.
+        </p>
+      </CardHeader>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          setError(null);
+          setPending(true);
+          api
+            .createJobCard(organisationId, {
+              itemId,
+              quantity: Number(quantity),
+              sourceReference,
+              dueDate,
+              ...(source === 'work' ? { workId: chosenWorkId } : { customerName }),
+            })
+            .then(onCreated)
+            .catch((cause: unknown) => {
+              setError(
+                cause instanceof RequestFailedError
+                  ? cause.message
+                  : 'The job card could not be raised.',
+              );
+            })
+            .finally(() => {
+              setPending(false);
+            });
+        }}
+      >
+        <FieldRow>
+          <Field>
+            <label htmlFor="job-card-item">OEM item</label>
+            <select
+              id="job-card-item"
+              required
+              value={itemId}
+              onChange={(event) => {
+                setItemId(event.currentTarget.value);
+              }}
+            >
+              <option value="">Choose a manufactured item</option>
+              {items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.itemCode} · {item.name}
+                </option>
+              ))}
+            </select>
+            {items.length === 0 && (
+              <p className="m-0 text-xs text-muted-foreground">
+                Nothing is marked as manufactured yet. Add a product in the item master
+                first.
+              </p>
+            )}
+          </Field>
+          <Field>
+            <label htmlFor="job-card-quantity">Quantity</label>
+            <input
+              id="job-card-quantity"
+              required
+              type="number"
+              min={1}
+              max={100000}
+              step={1}
+              value={quantity}
+              onChange={(event) => {
+                setQuantity(event.currentTarget.value);
+              }}
+            />
+            <p className="m-0 text-xs text-muted-foreground">
+              Whole units. Every one becomes a serial.
+            </p>
+          </Field>
+        </FieldRow>
+
+        <Field>
+          <span className="text-sm leading-snug font-medium">Source</span>
+          <div className="flex flex-wrap gap-4">
+            {(
+              [
+                ['work', 'A Work'],
+                ['private', 'A private purchase order'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-sm font-normal">
+                <input
+                  type="radio"
+                  name="job-card-source"
+                  value={key}
+                  checked={source === key}
+                  onChange={() => {
+                    setSource(key);
+                  }}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        {source === 'work' ? (
+          <Field>
+            <label htmlFor="job-card-work">Work</label>
+            <select
+              id="job-card-work"
+              required
+              value={chosenWorkId}
+              onChange={(event) => {
+                setChosenWorkId(event.currentTarget.value);
+              }}
+            >
+              <option value="">Choose a Work</option>
+              {works.map((work) => (
+                <option key={work.id} value={work.id}>
+                  {work.workCode} · {work.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <Field>
+            <label htmlFor="job-card-customer">Customer</label>
+            <input
+              id="job-card-customer"
+              required
+              minLength={2}
+              maxLength={200}
+              value={customerName}
+              onChange={(event) => {
+                setCustomerName(event.currentTarget.value);
+              }}
+            />
+          </Field>
+        )}
+
+        <FieldRow>
+          <Field>
+            <label htmlFor="job-card-reference">Source reference</label>
+            <input
+              id="job-card-reference"
+              required
+              maxLength={200}
+              placeholder={
+                source === 'work' ? 'Schedule line, e.g. A2/1' : 'PO/KE/2026/177'
+              }
+              value={sourceReference}
+              onChange={(event) => {
+                setSourceReference(event.currentTarget.value);
+              }}
+            />
+          </Field>
+          <Field>
+            <label htmlFor="job-card-due">Due</label>
+            <input
+              id="job-card-due"
+              required
+              type="date"
+              value={dueDate}
+              onChange={(event) => {
+                setDueDate(event.currentTarget.value);
+              }}
+            />
+          </Field>
+        </FieldRow>
+
+        {error !== null && <FormError>{error}</FormError>}
+        <Actions>
+          <Button type="submit" disabled={pending || items.length === 0}>
+            Raise job card
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </Actions>
+      </form>
+    </Card>
+  );
+}
+
+/** Whole percent, and never a division by zero — the schema forbids a
+ * zero-quantity job card, but the register must not render NaN if one
+ * ever reached it. */
+function percentOf(part: number, whole: number): number {
+  return whole === 0 ? 0 : Math.round((part / whole) * 100);
+}
+
+/** The chip's key.
+ *
+ * `in_production` is hyphenated for the chip's vocabulary, which is a
+ * word-per-state map rather than a column-name map: `docs/DESIGN.md`
+ * § Status badge semantics spells multi-word statuses with a hyphen and
+ * gives them a display label. */
+function statusKeyOf(card: JobCardSummary): string {
+  return card.status === 'in_production' ? 'in-production' : card.status;
+}
+
+function statusLabelOf(card: JobCardSummary): string {
+  switch (card.status) {
+    case 'in_production':
+      return 'In production';
+    case 'planned':
+      return 'Planned';
+    case 'completed':
+      return 'Completed';
+    case 'cancelled':
+      return 'Cancelled';
+  }
+}
