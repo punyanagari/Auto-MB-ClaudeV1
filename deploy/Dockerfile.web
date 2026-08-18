@@ -18,6 +18,11 @@ COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile --filter "@auto-mb/web..." \
   && pnpm --filter @auto-mb/web build
 
-FROM caddy:2.10.0-alpine@sha256:ae4458638da8e1a91aafffb231c5f8778e964bca650c8a8cb23a7e8ac557aa3c
+FROM caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+# Upgrade the image's Alpine packages in place: the published image lags
+# fixed advisories for its own OS layer. The Go-module findings compiled
+# into the caddy binary itself are not fixable here; they are accepted
+# individually in deploy/.trivyignore with their rationale.
+RUN apk upgrade --no-cache
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/apps/web/dist /srv/web
