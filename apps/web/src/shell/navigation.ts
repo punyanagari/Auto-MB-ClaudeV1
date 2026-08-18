@@ -7,6 +7,7 @@ import {
   FileText,
   FolderKanban,
   Gavel,
+  Hammer,
   HandCoins,
   Landmark,
   LayoutDashboard,
@@ -41,6 +42,7 @@ export type ModuleKey =
   | 'production'
   | 'stock'
   | 'employees'
+  | 'maintenance'
   | 'masters'
   | 'members'
   | 'settings';
@@ -72,6 +74,12 @@ export interface NavGroup {
  * Operations, and Correspondence the last under Documents. Employees
  * (0089, 0090) leaves it in this one, taking the mock's own first place
  * under Administration.
+ * Purchase orders, Employees — and those are omitted rather than
+ * rendered as dead entries. Production (migration 0084), Correspondence
+ * (0086), Inventory (0087) and Maintenance (0088) have all left that
+ * list: Production, Inventory and Maintenance take the places the mock
+ * gives them under Operations, and Correspondence the last under
+ * Documents.
  * Quotations runs the other way: the mock draws it under Documents in its
  * own list, so it keeps its place here.
  *
@@ -128,6 +136,11 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'installations', label: 'Installations', icon: Wrench },
       { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
       { key: 'stock', label: 'Inventory', icon: Boxes },
+      // The mock gives Maintenance `ClipboardCheck`, which is already
+      // Inspection's lamp on this rail. Two identical icons in one group
+      // is worse than one substituted, so it takes `Hammer` — recorded
+      // in `docs/UX.md` § 14.
+      { key: 'maintenance', label: 'Maintenance', icon: Hammer },
       { key: 'search', label: 'Global search', icon: ScanSearch },
     ],
   },
@@ -171,6 +184,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'correspondence' };
     case 'company-documents':
       return { name: 'company-documents' };
+    case 'maintenance':
+      return { name: 'maintenance' };
     case 'inspection':
       return { name: 'inspection' };
     case 'payments':
@@ -240,6 +255,11 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'employees':
     case 'payroll':
       return 'employees';
+    // The register, the request form and an opened job card are one
+    // place, so all three light one lamp (0088).
+    case 'maintenance-new':
+    case 'maintenance-request':
+      return 'maintenance';
     case 'dashboard':
     case 'challans':
     case 'invoices':
@@ -252,6 +272,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'tenders':
     case 'approvals':
     case 'search':
+    case 'maintenance':
     case 'installations':
     case 'production':
     case 'masters':
@@ -313,6 +334,12 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Manufactured items';
     case 'production-job-card':
       return 'Job card';
+    case 'maintenance':
+      return 'Maintenance';
+    case 'maintenance-new':
+      return 'Site material request';
+    case 'maintenance-request':
+      return 'Maintenance job card';
     case 'payments':
       return 'Payments';
     case 'tenders':

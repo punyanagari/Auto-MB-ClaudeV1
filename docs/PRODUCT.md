@@ -2213,6 +2213,54 @@ the job card and through the purchase order as well as through a directly
 named Work, at the route and again at the database — or the indirect arms
 would be the way around the direct one.
 
+### Maintenance: the site material request
+
+A platform display fails. The site engineer raises a **maintenance request**
+against the Work and the station: the fault, what it is doing to services,
+the parts needed, and how many of the failed units the site will send back.
+The request takes a gap-free number in an organisation-wide series that
+restarts each financial year — `MR/26-27/00142` — because a store clerk's
+queue is read across every contract at once and the number is quoted on the
+phone before anybody looks up which Work the station belongs to.
+
+**This is not the LOA's annual maintenance schedule.** An AMC item (§ 5.4) is
+a contract line, served over a period and certified; nothing here is billable
+and no quantity here counts against an LOA ceiling. The two share a word.
+
+**Approval is whole-request and it is the owner's.** Raising a request is
+site work; committing the store's material to it is not. The approval
+comment is written once and stays on the record. There is no reject: a
+request that should not be fulfilled is approved, written off line by line
+with a reason, and closed — the same evidence a rejection would carry, filed
+against the lines rather than the header.
+
+**A dispatch is a numbered challan and a real stock issue.** Material leaves
+the store on a `PL-281/MNT/001` challan, gap-free per Work like every other
+challan series, and every line naming a catalogue part posts an `issue`
+against the stock ledger naming that challan. A line with no catalogue part
+is a custom material bought for this fault alone and moves no stock. The
+ledger refuses a balance below zero, so "is there any" is decided by the
+shelf and not by the screen.
+
+**The defective return posts nothing.** A failed unit received back at the
+office is on a repair bench, not on a shelf; adding it to the available
+balance would let somebody dispatch it again. What the office records is the
+quantity, the serials, the condition and the repair disposition — and it may
+not record more than actually went out.
+
+**Three of the line's quantities are stored and the rest are derived.** What
+was asked for, how many failed units are promised back, and how much of the
+balance has been written off are facts somebody states. What is reserved, what
+has gone out, what has come back and what is on the shelf are all computed
+from the challans, the receipts and the ledger, so none of them can drift
+from its own evidence.
+
+**The closure gate.** A request closes only when every line has been
+dispatched or written off, and every failed unit that actually went out has
+come back. The write-off is what makes the gate reachable: a request whose
+stock never arrives, or whose Work is superseded mid-flight, cancels its
+balance with a reason and closes. A closed request is terminal.
+
 ## 9. Current non-goals and release boundaries
 
 - security-deposit deductions, price variation, and other bill maths not
@@ -2234,6 +2282,10 @@ would be the way around the direct one.
 - tender-document generation and per-tender file storage: a bid attaches
   credentials the company document library already holds, and the product
   does not become a third place to keep documents;
+- cancelling a maintenance dispatch challan: reversing one means reversing
+  its stock movements, which the ledger deliberately makes somebody justify
+  with a typed adjustment, and the correction belongs with that adjustment
+  rather than beside the challan;
 - broad reporting;
 - mobile-native apps;
 - offline sync;

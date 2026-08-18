@@ -128,11 +128,7 @@ export async function requireEvidenceRole(
  * a different act from issuing a document of our own, so it carries its
  * own grant on top of issue/cancel rather than replacing them. */
 export type DocumentAuthority =
-  | 'issue'
-  | 'cancel'
-  | 'statutory'
-  | 'payments'
-  | 'payroll';
+  'issue' | 'cancel' | 'statutory' | 'payments' | 'payroll';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */

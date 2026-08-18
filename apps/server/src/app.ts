@@ -70,6 +70,7 @@ import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
 import { registerHrRoutes } from './routes/hr.js';
+import { registerMaintenanceRoutes } from './routes/maintenance.js';
 import { registerMeasurementBookRoutes } from './routes/measurement-books/index.js';
 import { registerTaxInvoiceRoutes } from './routes/tax-invoices/index.js';
 import { registerCreditNoteRoutes } from './routes/credit-notes.js';
@@ -911,6 +912,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerQuotationRoutes(app, authInstance, database);
     registerPurchaseOrderRoutes(app, authInstance, database);
     registerInventoryRoutes(app, authInstance, database);
+    registerMaintenanceRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);
     registerSearchRoutes(app, authInstance, database);

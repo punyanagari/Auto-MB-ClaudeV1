@@ -441,6 +441,14 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn(),
     finalizePayrollRun: vi.fn(),
     cancelPayrollRun: vi.fn(),
+    listMaintenanceRequests: vi.fn(),
+    getMaintenanceRequest: vi.fn(),
+    createMaintenanceRequest: vi.fn(),
+    approveMaintenanceRequest: vi.fn(),
+    recordMaintenanceDispatch: vi.fn(),
+    receiveMaintenanceReturn: vi.fn(),
+    cancelMaintenanceLine: vi.fn(),
+    closeMaintenanceRequest: vi.fn(),
     ...overrides,
   };
 }

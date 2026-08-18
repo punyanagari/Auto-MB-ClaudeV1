@@ -203,6 +203,34 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'updated_at',
   ],
 
+  // A site material request (0088). There is no draft state, so the whole
+  // of what was asked for — the Work, the station, the requester, the
+  // priority, the fault, the number — is frozen from the moment the row
+  // exists. The approval triple is write-once on the same terms as a
+  // letter's cancellation above: the first comparison exempts it so the
+  // approving UPDATE can write it, and the second refuses any change once
+  // `approved_at` is set, which the freeze detector reads as frozen.
+  //
+  // What is genuinely mutable is the lifecycle and the closure evidence.
+  // The closure pair is write-once in practice — the guard's first
+  // statement refuses every update to a closed request — but it is
+  // declared here rather than left to the detector, because "no update at
+  // all once closed" is a rule about the ROW and not a comparison of
+  // those two columns.
+  maintenance_requests: [
+    'id',
+    'updated_at',
+    'status',
+    'closed_by_user_id',
+    'closed_at',
+  ],
+
+  // A material line (0088). Everything asked for is frozen; the write-off
+  // is the one later fact, and it is write-once — the guard refuses a
+  // second one outright rather than comparing the columns, so both are
+  // declared here.
+  maintenance_request_lines: ['id', 'cancelled_quantity', 'cancellation_reason'],
+
   // A reusable company credential (0079). Its provenance is frozen; the
   // name and category stay editable so a mis-typed credential can be
   // corrected without discarding its version history, and archiving is

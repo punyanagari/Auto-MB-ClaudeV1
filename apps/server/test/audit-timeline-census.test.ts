@@ -245,4 +245,37 @@ describe('audit-events timeline census', () => {
     );
     expect(unwritten, 'whitelisted entity types nothing writes').toEqual([]);
   });
+
+  /**
+   * Membership in `TIMELINE_ENTITY_TYPES` is only half of being on the
+   * timeline. The other half is an arm in `workEventPredicate`, which is
+   * what actually joins the entity back to a Work — and a type with the
+   * first and not the second is INVISIBLE: it passes every assertion
+   * above, is accepted by `?entityTypes=`, and returns an empty page
+   * forever. Maintenance (0088) shipped exactly that way and the census
+   * above did not notice, which is why this second half exists.
+   *
+   * `works` is the one exemption: it is the timeline's own subject and
+   * its arm matches the id directly rather than through a table.
+   */
+  it('gives every timeline entity type a scoping arm in the predicate', async () => {
+    const source = await readFile(
+      path.join(serverSource, 'routes', 'timeline.ts'),
+      'utf8',
+    );
+    const predicate = source.slice(
+      source.indexOf('function workEventPredicate'),
+      source.indexOf('function parseEntityTypes'),
+    );
+    expect(predicate.length).toBeGreaterThan(0);
+    const missing = TIMELINE_ENTITY_TYPES.filter(
+      (entity) => !predicate.includes(`ae.entity_type = '${entity}'`),
+    );
+    expect(
+      missing,
+      `timeline entity types with no arm in workEventPredicate: ${missing.join(', ')}. ` +
+        'Membership alone renders an empty page — add the arm that joins the ' +
+        'entity back to its Work.',
+    ).toEqual([]);
+  });
 });

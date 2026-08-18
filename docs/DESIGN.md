@@ -328,6 +328,27 @@ is finished rather than currently bad, exactly as `completed` and `archived`
 are. Collision-checked against every status already listed here — all three
 words are new to the vocabulary.
 
+`awaiting-approval`, `partially-dispatched` and `closed` are the maintenance
+module's (migration 0088). The first two are warning for the reasons already
+listed one paragraph up: a request nobody has decided is waiting on somebody,
+and one part-way through its dispatches is work in hand — which is what
+`pending` and `partial` already read as. Their fourth sibling `approved` was
+already mapped success and needs nothing.
+
+`closed` is **neutral**, for the same reason `completed` is: a maintenance job
+whose material has all gone out and whose defective units have all come back is
+finished, not currently good news. It is a new word in this vocabulary —
+collision-checked against every status listed here — and it is deliberately not
+`completed`, because a Work being completed and a maintenance job being closed
+are different acts and the register shows both.
+
+Priority is NOT a status here. A maintenance request carries `routine`,
+`urgent` or `critical` beside its stage chip, and none of the three enters this
+map: the mock badges `critical` destructive, and destructive is
+cancelled/rejected/declined. A critical fault is urgent, not failed. It renders
+as plain capitalised text, which is what keeps the dot-plus-label vocabulary
+meaning record state and nothing else (`docs/UX.md` § 14).
+
 `valid` and `archived` are the application's, added for the company document
 library (owner decision 2026-08-18, `docs/UX.md` § Approved divergences 8).
 They are the derived-validity vocabulary of a credential: `valid` inside its

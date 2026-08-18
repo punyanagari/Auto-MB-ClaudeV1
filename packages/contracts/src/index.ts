@@ -39,3 +39,4 @@ export * from './correspondence.js';
 export * from './production.js';
 export * from './inventory.js';
 export * from './hr.js';
+export * from './maintenance.js';

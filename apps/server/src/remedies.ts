@@ -183,6 +183,22 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the correction notice and act on it in its current state.',
   EXTENSION_STATUS_CONFLICT:
     'Reload the extension; once a response is recorded the extension is a record of what the railway granted, not a draft.',
+  MAINTENANCE_REQUEST_NOT_FOUND:
+    'Open the maintenance register and pick the request again; it may belong to a Work you are not assigned to.',
+  MAINTENANCE_LINE_NOT_FOUND:
+    'Reload the request and pick a material line from the list it shows.',
+  MAINTENANCE_STATE_INVALID:
+    'Reload the request; approval, dispatch and closure each need the stage before them, and somebody may have moved it.',
+  MAINTENANCE_DISPATCH_EXCEEDS_OUTSTANDING:
+    'Dispatch no more than the line still has outstanding; material already on a challan has left the store and is neither dispatchable nor cancellable again.',
+  MAINTENANCE_RETURN_EXCEEDS_EXPECTED:
+    'Receive only what the line promised back; a unit nobody expected belongs on a request of its own.',
+  MAINTENANCE_NOT_CLOSEABLE:
+    'Dispatch or write off the outstanding quantity on every line, and receive the defective units the site owes back, before closing the request.',
+  MAINTENANCE_REQUEST_IMMUTABLE:
+    'Close the request and raise the corrected one; what a request asked for is fixed the moment it is raised.',
+  MAINTENANCE_NUMBER_CONFLICT:
+    'Record the request or the dispatch again; it takes the next number in the series.',
   CORRESPONDENCE_LETTER_CANCELLED:
     'File the correct letter as a new one; a cancelled letter keeps its number forever and is never reinstated.',
   CORRESPONDENCE_LETTER_ANSWERED:

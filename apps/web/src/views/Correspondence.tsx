@@ -15,6 +15,7 @@ import { StatusChip } from '../ui/chip.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { PageHeader } from '../ui/page-header.js';
 import { DataTable } from '../ui/table.js';
+import { TabRail } from '../ui/tab-rail.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 /**
@@ -204,38 +205,15 @@ export function Correspondence({
         </div>
       )}
 
-      {/* The mock's boxed tab list. `aria-pressed` toggles rather than a
-          `role="tablist"`, for the reason `docs/UX.md` § 9 gives for the
-          inspection agency pills: these filter one panel in place, and
-          `test/a11y-invariants` refuses a tablist without the roving
-          tabindex pattern to match. */}
-      <div className="overflow-x-auto pb-1">
-        <div
-          className="inline-flex items-center gap-1 rounded-lg bg-muted p-1"
-          role="group"
-          aria-label="Correspondence register"
-        >
-          {TABS.map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={tab === key}
-              className={cn(
-                'h-8 shrink-0 rounded-md px-3 text-sm font-medium transition-colors',
-                tab === key
-                  ? 'bg-card text-foreground shadow-[0_1px_2px_0_rgb(15_23_42/0.05)]'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              onClick={() => {
-                setTab(key);
-              }}
-            >
-              {label}
-              {counts === null ? '' : ` (${String(counts[key])})`}
-            </button>
-          ))}
-        </div>
-      </div>
+      <TabRail
+        label="Correspondence register"
+        tabs={TABS.map(([key, label]) => [
+          key,
+          counts === null ? label : `${label} (${String(counts[key])})`,
+        ])}
+        active={tab}
+        onSelect={setTab}
+      />
 
       <div className="mt-4">
         {entries === null ? (

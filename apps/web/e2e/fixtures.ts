@@ -793,6 +793,222 @@ const STOCK_REGISTER = {
   summary: { partsTracked: 3, partsBelowReorderLevel: 1, partsShort: 1 },
 };
 
+/* Maintenance (migration 0088). Three requests, one in each of the
+   stages that carries a tint — awaiting approval (warning), dispatching
+   (warning) and closed (neutral) — plus an approved one, so the axe scan
+   sees every chip this module can render at once. The detail fixture is
+   the dispatching request, with one line part-dispatched and owing a
+   defective unit back and one line written off, which is every state the
+   Materials table draws. */
+const MAINTENANCE_REQUEST_ID = 'b41c7d29-5e83-4f16-9a27-3d5c8b1e6f40';
+const MAINTENANCE_LINE_ID = 'c52d8e3a-6f94-4027-8b38-4e6d9c2f7a51';
+const MAINTENANCE_LINE_TWO_ID = 'd63e9f4b-7a05-4138-9c49-5f7e0d3a8b62';
+
+const MAINTENANCE_LIST = {
+  requests: [
+    {
+      id: MAINTENANCE_REQUEST_ID,
+      requestNumber: 'MR/26-27/00142',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Churchgate',
+      requesterName: 'Amit Patil',
+      priority: 'critical',
+      requiredBy: '2026-08-20',
+      faultSummary: 'Replace failed platform display power supplies',
+      status: 'partially_dispatched',
+      createdAt: '2026-08-15T08:30:00.000Z',
+    },
+    {
+      id: 'e74f0a5c-8b16-4249-8d5a-6a8f1e4b9c73',
+      requestNumber: 'MR/26-27/00141',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Marine Lines',
+      requesterName: 'Sunita Rao',
+      priority: 'urgent',
+      requiredBy: null,
+      faultSummary: 'Announcement amplifier tripping on load',
+      status: 'awaiting_approval',
+      createdAt: '2026-08-14T06:10:00.000Z',
+    },
+    {
+      id: 'f85a1b6d-9c27-435a-9e6b-7b9a2f5c0d84',
+      requestNumber: 'MR/26-27/00140',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Grant Road',
+      requesterName: 'Imran Shaikh',
+      priority: 'routine',
+      requiredBy: null,
+      faultSummary: 'Spare Ethernet controller for display cabinet',
+      status: 'approved',
+      createdAt: '2026-08-12T09:45:00.000Z',
+    },
+    {
+      id: '096b2c7e-0d38-446b-8f7c-8c0b3a6d1e95',
+      requestNumber: 'MR/26-27/00139',
+      workId: WORK_ID,
+      workCode: 'PL-281',
+      station: 'Charni Road',
+      requesterName: 'Amit Patil',
+      priority: 'routine',
+      requiredBy: null,
+      faultSummary: 'Replaced cabinet lock set',
+      status: 'closed',
+      createdAt: '2026-08-05T11:20:00.000Z',
+    },
+  ],
+  nextCursor: null,
+  counts: {
+    awaitingApproval: 1,
+    approved: 1,
+    partiallyDispatched: 1,
+    closed: 1,
+  },
+};
+
+export const MAINTENANCE_AWAITING_APPROVAL = {
+  request: {
+    id: 'e74f0a5c-8b16-4249-8d5a-6a8f1e4b9c73',
+    requestNumber: 'MR/26-27/00141',
+    workId: WORK_ID,
+    workCode: 'PL-281',
+    station: 'Marine Lines',
+    requesterName: 'Sunita Rao',
+    requesterPhone: null,
+    priority: 'urgent',
+    requiredBy: null,
+    faultSummary: 'Announcement amplifier tripping on load',
+    operationalImpact: null,
+    deliveryInstructions: null,
+    status: 'awaiting_approval',
+    approvalComment: null,
+    createdAt: '2026-08-14T06:10:00.000Z',
+  },
+  lines: [
+    {
+      id: 'a1b2c3d4-5e6f-4708-8a19-2b3c4d5e6f70',
+      position: 1,
+      itemId: '3b7e5a91-2c48-4d6f-9a03-8e1b6c2f7d54',
+      itemCode: 'EL-CTRL-ETH',
+      description: 'Ethernet controller card',
+      unit: 'Nos',
+      purpose: null,
+      quantity: '1.000',
+      outstandingQuantity: '1.000',
+      dispatchedQuantity: '0.000',
+      cancelledQuantity: '0.000',
+      cancellationReason: null,
+      expectedReturnQuantity: '1.000',
+      receivedReturnQuantity: '0.000',
+      returnDueQuantity: '0.000',
+      onHand: '9.000',
+      assetSerials: [],
+      resolved: false,
+    },
+  ],
+  dispatches: [],
+  returns: [],
+  canClose: false,
+};
+
+const MAINTENANCE_DETAIL = {
+  request: {
+    id: MAINTENANCE_REQUEST_ID,
+    requestNumber: 'MR/26-27/00142',
+    workId: WORK_ID,
+    workCode: 'PL-281',
+    station: 'Churchgate',
+    requesterName: 'Amit Patil',
+    requesterPhone: '+91 98765 41021',
+    priority: 'critical',
+    requiredBy: '2026-08-20',
+    faultSummary: 'Replace failed platform display power supplies',
+    operationalImpact: 'Two display boards unavailable',
+    deliveryInstructions: 'Hand over to site supervisor',
+    status: 'partially_dispatched',
+    approvalComment: 'Approved for issue against available maintenance stock',
+    createdAt: '2026-08-15T08:30:00.000Z',
+  },
+  lines: [
+    {
+      id: MAINTENANCE_LINE_ID,
+      position: 1,
+      itemId: '9f2c1d84-6b3a-4e57-8c10-2a5d7e9f4b31',
+      itemCode: 'EL-SMPS-2410',
+      description: '24 V 10 A SMPS',
+      unit: 'Nos',
+      purpose: 'Replacement',
+      quantity: '4.000',
+      outstandingQuantity: '2.000',
+      dispatchedQuantity: '2.000',
+      cancelledQuantity: '0.000',
+      cancellationReason: null,
+      expectedReturnQuantity: '4.000',
+      receivedReturnQuantity: '1.000',
+      returnDueQuantity: '3.000',
+      onHand: '30.000',
+      assetSerials: ['SMPS-2019-4471'],
+      resolved: false,
+    },
+    {
+      id: MAINTENANCE_LINE_TWO_ID,
+      position: 2,
+      itemId: null,
+      itemCode: null,
+      description: 'Weatherproof gland kit',
+      unit: 'Set',
+      purpose: null,
+      quantity: '2.000',
+      outstandingQuantity: '0.000',
+      dispatchedQuantity: '0.000',
+      cancelledQuantity: '2.000',
+      cancellationReason: 'Site sourced locally',
+      expectedReturnQuantity: '0.000',
+      receivedReturnQuantity: '0.000',
+      returnDueQuantity: '0.000',
+      onHand: null,
+      assetSerials: [],
+      resolved: true,
+    },
+  ],
+  dispatches: [
+    {
+      id: '1a7c3d8e-2b49-4c5a-9d6b-3e8f0a1b2c4d',
+      challanNumber: 'PL-281/MNT/001',
+      dispatchDate: '2026-08-16',
+      stockLocation: 'Central store',
+      receiverName: 'Site supervisor',
+      transporter: 'MH-01-AB-4412',
+      notes: null,
+      lines: [
+        {
+          lineId: MAINTENANCE_LINE_ID,
+          description: '24 V 10 A SMPS',
+          unit: 'Nos',
+          quantity: '2.000',
+        },
+      ],
+    },
+  ],
+  returns: [
+    {
+      id: '2b8d4e9f-3c50-4d6b-8e7c-4f9a1b2c3d5e',
+      lineId: MAINTENANCE_LINE_ID,
+      lineDescription: '24 V 10 A SMPS',
+      quantity: '1.000',
+      receivedOn: '2026-08-17',
+      serials: ['SMPS-2019-4471'],
+      conditionNote: 'Burnt output stage',
+      repairDisposition: 'Bench repair',
+      receivedBy: 'Store clerk',
+      notes: null,
+    },
+  ],
+  canClose: false,
+};
+
 const STOCK_MOVEMENTS = {
   movements: [
     {
@@ -1307,6 +1523,16 @@ export async function mockWorkspace(
   );
   await page.route('**/api/stock/shortages*', (route) =>
     route.fulfill(json(STOCK_SHORTAGES)),
+  );
+  /* Maintenance (0088). The detail route is registered BEFORE the bare
+     register for the reason the production handlers above give:
+     Playwright matches the last registered handler, so a bare pattern
+     would swallow the one carrying an id. */
+  await page.route('**/api/maintenance/*', (route) =>
+    route.fulfill(json(MAINTENANCE_DETAIL)),
+  );
+  await page.route('**/api/maintenance*', (route) =>
+    route.fulfill(json(MAINTENANCE_LIST)),
   );
   await page.route('**/api/masters/contacts*', (route) =>
     route.fulfill(json({ contacts: [] })),

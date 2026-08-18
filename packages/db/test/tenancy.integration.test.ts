@@ -199,6 +199,17 @@ const TENANT_TABLES = [
   'payroll_run_counters',
   'payroll_runs',
   'payroll_run_lines',
+  // Maintenance (0088): the request, what it asked for, the dispatch
+  // challans that answered it and the defective units that came back.
+  // Counters precede the documents they number, and the request precedes
+  // everything that hangs off it.
+  'maintenance_request_counters',
+  'maintenance_requests',
+  'maintenance_request_lines',
+  'maintenance_dispatch_counters',
+  'maintenance_dispatches',
+  'maintenance_dispatch_lines',
+  'maintenance_returns',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -257,7 +268,16 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // edited is not a ledger. The application role holds no UPDATE, so a
     // cross-tenant one raises 42501 rather than matching zero rows
     // (0087).
-    table !== 'stock_movements',
+    table !== 'stock_movements' &&
+    // The dispatch challan, its lines and a defective-unit receipt all
+    // record something that physically happened: material left a store,
+    // a receiver signed, a broken unit arrived at a bench. The
+    // application role holds no UPDATE on any of the three, so a
+    // cross-tenant one raises 42501 rather than matching zero rows
+    // (0088).
+    table !== 'maintenance_dispatches' &&
+    table !== 'maintenance_dispatch_lines' &&
+    table !== 'maintenance_returns',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -379,6 +399,18 @@ const DELETE_REVOKED_TABLES = [
   // gone (0087).
   'stock_movements',
   'stock_movement_counters',
+  // A maintenance request carries a number from the moment it is raised
+  // and closes rather than disappearing; its lines are cancelled with a
+  // reason rather than removed; the challan, its lines and the defective
+  // receipts are the record of material that moved. Nothing here deletes
+  // (0088).
+  'maintenance_request_counters',
+  'maintenance_requests',
+  'maintenance_request_lines',
+  'maintenance_dispatch_counters',
+  'maintenance_dispatches',
+  'maintenance_dispatch_lines',
+  'maintenance_returns',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
@@ -1746,6 +1778,96 @@ async function seedTenantGraph(
     `;
     if (!payrollRun) throw new Error('seed payroll run returned no row');
     await tx`select app_private.calculate_payroll_run(${payrollRun.id})`;
+    // Maintenance (0088): one request, one material line naming the part
+    // seeded above, one dispatch challan against it, and one defective
+    // unit received back. A real chain rather than seven bare rows —
+    // every guard in the module runs over this seed, so a rule that
+    // contradicts its own lifecycle fails here rather than in review.
+    await tx`
+      insert into maintenance_request_counters (organisation_id, fy_label, next_value)
+      values (${organisationId}, '2026-27', 2)
+    `;
+    const [maintenanceRequest] = await tx<{ id: string }[]>`
+      insert into maintenance_requests (
+        organisation_id, work_id, request_number, financial_year,
+        sequence_number, station, requester_name, priority, fault_summary,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${`MR/26-27/${workCode.slice(-4)}`},
+        '2026-27', 1, 'Churchgate', 'Amit Patil', 'urgent',
+        'Replace failed platform display power supplies', ${userId}
+      )
+      returning id
+    `;
+    if (!maintenanceRequest)
+      throw new Error('seed maintenance request returned no row');
+    const [maintenanceLine] = await tx<{ id: string }[]>`
+      insert into maintenance_request_lines (
+        organisation_id, maintenance_request_id, production_item_id,
+        description, unit, quantity, expected_return_quantity, position
+      )
+      values (
+        ${organisationId}, ${maintenanceRequest.id}, ${component.id},
+        '24V industrial SMPS', 'Nos', 2, 2, 1
+      )
+      returning id
+    `;
+    if (!maintenanceLine) throw new Error('seed maintenance line returned no row');
+    // Approved AFTER its lines exist, because that is the order the
+    // lifecycle runs in and the line-insert guard enforces it: a request
+    // that is already approved takes no further material.
+    await tx`
+      update maintenance_requests
+      set status = 'approved',
+          approval_comment = 'Approved against available maintenance stock',
+          approved_by_user_id = ${userId}, approved_at = now()
+      where id = ${maintenanceRequest.id}
+    `;
+    await tx`
+      insert into maintenance_dispatch_counters (organisation_id, work_id, next_value)
+      values (${organisationId}, ${work.id}, 2)
+    `;
+    const [maintenanceDispatch] = await tx<{ id: string }[]>`
+      insert into maintenance_dispatches (
+        organisation_id, maintenance_request_id, work_id, challan_number,
+        sequence_number, dispatch_date, stock_location, receiver_name,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${maintenanceRequest.id}, ${work.id},
+        ${`${workCode}/MNT/001`}, 1,
+        -- The dispatch guard refuses a date after the organisation's own
+        -- today, so the seed dates it in the past.
+        current_date - 1, 'Central store', 'Site supervisor', ${userId}
+      )
+      returning id
+    `;
+    if (!maintenanceDispatch) {
+      throw new Error('seed maintenance dispatch returned no row');
+    }
+    await tx`
+      insert into maintenance_dispatch_lines (
+        organisation_id, maintenance_dispatch_id, maintenance_request_line_id,
+        quantity
+      )
+      values (
+        ${organisationId}, ${maintenanceDispatch.id}, ${maintenanceLine.id}, 2
+      )
+    `;
+    await tx`
+      insert into maintenance_returns (
+        organisation_id, maintenance_request_id, maintenance_request_line_id,
+        quantity, received_on, condition_note, repair_disposition, received_by,
+        created_by_user_id
+      )
+      values (
+        ${organisationId}, ${maintenanceRequest.id}, ${maintenanceLine.id}, 1,
+        current_date - 1, 'Burnt output stage', 'Bench repair',
+        'Store clerk', ${userId}
+      )
+      returning id
+    `;
 
     return {
       workId: work.id,
