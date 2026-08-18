@@ -368,7 +368,16 @@ CREATE TABLE notification_templates (
   -- Meta's template name rules, enforced here so a name that cannot be
   -- submitted is refused at the moment somebody types it rather than
   -- weeks later at review.
-  name text NOT NULL CHECK (name ~ '^[a-z0-9_]{1,512}$'),
+  --
+  -- The bound is a `length` test and not a `{1,512}` repetition, because
+  -- PostgreSQL's regular expressions cap a repetition count at 255 and
+  -- refuse the pattern outright with 2201B — at CHECK evaluation time,
+  -- so it reads as a 500 on the first insert rather than as a migration
+  -- that would not apply. The API schema states the same rule as a
+  -- JavaScript pattern, where 512 is legal.
+  name text NOT NULL CHECK (
+    name ~ '^[a-z0-9_]+$' AND length(name) BETWEEN 1 AND 512
+  ),
   -- Meta's language code: 'en', 'en_US', 'hi'. A template is identified by
   -- name AND language at the WABA, and so it is here.
   language text NOT NULL CHECK (language ~ '^[a-z]{2}(_[A-Z]{2})?$'),

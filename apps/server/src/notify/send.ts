@@ -29,7 +29,7 @@
  * entirely.
  */
 import type { ErrorCode, NotificationChannelName } from '@auto-mb/contracts';
-import type { Sql } from '@auto-mb/db';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 import { httpError } from '../http.js';
 import { withBoundTenant } from '../tenant-context.js';
 import {
@@ -112,6 +112,26 @@ export interface SendTemplatedNotificationInput {
    * of this pack. */
   readonly channel?: NotificationChannelName;
   readonly parameters: readonly string[];
+  /**
+   * The caller's own authority check, run as the FIRST statement of the
+   * first bound transaction — before any read, and long before the
+   * provider is called.
+   *
+   * It is a parameter rather than a fixed `requireAuthorities(…,
+   * ['notifications'])` because the authority a send needs belongs to the
+   * ACT, not to the transport. Configuring a channel from the
+   * notifications screen needs the notifications authority; delivering an
+   * issued challan over WhatsApp will need the issue authority, and
+   * making that caller also hold the notifications one would mean every
+   * clerk who may issue a document could also repoint the organisation's
+   * outbound number.
+   *
+   * It is not optional, and that is the point: this function opens its
+   * own transactions rather than running inside the route's, so the
+   * registrar's guard does not cover it. A caller that had nothing to
+   * check would have to say so out loud.
+   */
+  readonly authorise: (tx: TransactionSql) => Promise<void>;
 }
 
 interface TemplateRow {
@@ -214,6 +234,12 @@ export async function sendTemplatedNotification(
     input.organisationId,
     input.userId,
     async (tx) => {
+      // First statement of the first transaction: the membership floor
+      // has just been proved by the bind, and this is the act's own
+      // authority on top of it. Nothing is read and nothing is sent
+      // before it passes.
+      await input.authorise(tx);
+
       const [template] = await tx<TemplateRow[]>`
         select id, name, language, status, body_text, parameter_count, email_subject
         from notification_templates where id = ${input.templateId}

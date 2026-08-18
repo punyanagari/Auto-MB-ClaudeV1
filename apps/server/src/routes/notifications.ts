@@ -24,6 +24,7 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { FastifyRequest } from 'fastify';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
+import { requireAuthorities } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import {
@@ -427,14 +428,22 @@ export function registerNotificationRoutes(
         fromAddress: whatsapp ? null : (body.fromAddress ?? null),
         replyToAddress: whatsapp ? null : (body.replyToAddress ?? null),
       };
-      // The route makes the same refusal 0092's guard makes, first and
-      // under no lock, so the operator gets a remedy rather than a
-      // SQLSTATE.
-      if (body.enabled && whatsapp) {
+      const saved = await tenant(async (tx) => {
+        // The route makes the same refusal 0092's guard makes, first and
+        // under no lock, so the operator gets a remedy rather than a
+        // SQLSTATE.
+        //
+        // INSIDE the bound transaction, not before it: the registrar
+        // proves membership, role and authority as this callback opens,
+        // and a state refusal that ran ahead of them would answer a
+        // non-member with 409 instead of 403. The route inventory's
+        // non-member sweep is what caught that.
         if (
-          values.wabaPhoneNumberId === null ||
-          values.wabaBusinessAccountId === null ||
-          values.displayPhoneNumber === null
+          body.enabled &&
+          whatsapp &&
+          (values.wabaPhoneNumberId === null ||
+            values.wabaBusinessAccountId === null ||
+            values.displayPhoneNumber === null)
         ) {
           throw httpError(
             409,
@@ -442,16 +451,13 @@ export function registerNotificationRoutes(
             'The WhatsApp channel needs its phone number id, business account id and display number before it can be enabled.',
           );
         }
-      }
-      if (body.enabled && !whatsapp && values.fromAddress === null) {
-        throw httpError(
-          409,
-          'NOTIFICATION_CHANNEL_INCOMPLETE',
-          'The email channel needs a sender address before it can be enabled.',
-        );
-      }
-
-      const saved = await tenant(async (tx) => {
+        if (body.enabled && !whatsapp && values.fromAddress === null) {
+          throw httpError(
+            409,
+            'NOTIFICATION_CHANNEL_INCOMPLETE',
+            'The email channel needs a sender address before it can be enabled.',
+          );
+        }
         const [row] = await tx<ChannelRow[]>`
           insert into notification_channels (
             organisation_id, channel, enabled, waba_phone_number_id,
@@ -794,6 +800,12 @@ export function registerNotificationRoutes(
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
+      // `sendTemplatedNotification` opens its OWN bound transactions, so
+      // the registrar's role and authority guard — which runs inside the
+      // `tenant()` callback below — does not cover it. The act states
+      // its own authority instead, checked as the first statement of the
+      // first transaction, before any read and long before the provider
+      // is called.
       const messageId = await sendTemplatedNotification(database, transports, {
         organisationId,
         userId: user.id,
@@ -801,6 +813,7 @@ export function registerNotificationRoutes(
         contactId: body.contactId,
         ...(body.channel === undefined ? {} : { channel: body.channel }),
         parameters: body.parameters ?? [],
+        authorise: (tx) => requireAuthorities(tx, user.id, ['notifications']),
       });
       const message = await tenant(async (tx) => {
         const sent = await readMessage(tx, messageId);

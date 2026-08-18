@@ -217,10 +217,10 @@ export const CreateNotificationTemplateSchema = Type.Object(
     name: Type.String({ pattern: '^[a-z0-9_]{1,512}$' }),
     language: Type.String({ pattern: '^[a-z]{2}(_[A-Z]{2})?$' }),
     category: NotificationTemplateCategorySchema,
-    bodyText: nonBlankString({ minLength: 1, maxLength: 1024 }),
+    bodyText: nonBlankString({ minLength: 2, maxLength: 1024 }),
     /** Optional, and its absence is a decision: a template with no
      * subject is WhatsApp-only. */
-    emailSubject: Type.Optional(nonBlankString({ minLength: 1, maxLength: 200 })),
+    emailSubject: Type.Optional(nonBlankString({ minLength: 2, maxLength: 200 })),
   },
   { additionalProperties: false },
 );
@@ -241,7 +241,7 @@ export const SetNotificationTemplateStatusSchema = Type.Object(
         Type.Literal(value),
       ),
     ),
-    reason: Type.Optional(nonBlankString({ minLength: 1, maxLength: 500 })),
+    reason: Type.Optional(nonBlankString({ minLength: 2, maxLength: 500 })),
   },
   { additionalProperties: false },
 );
@@ -384,8 +384,11 @@ export const SendNotificationSchema = Type.Object(
     templateId: UuidSchema,
     contactId: UuidSchema,
     channel: Type.Optional(NotificationChannelNameSchema),
+    /** A single character is a legitimate parameter value — a quantity,
+     * a wagon letter — so this is a plain bounded string rather than
+     * `nonBlankString`, whose shortest honest minimum is two. */
     parameters: Type.Optional(
-      Type.Array(nonBlankString({ minLength: 1, maxLength: 1024 }), { maxItems: 20 }),
+      Type.Array(Type.String({ minLength: 1, maxLength: 1024 }), { maxItems: 20 }),
     ),
   },
   { additionalProperties: false },
