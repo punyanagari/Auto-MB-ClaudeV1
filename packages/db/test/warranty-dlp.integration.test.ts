@@ -234,9 +234,7 @@ describe('starting a defect liability period', () => {
 
   it('refuses a start before the installation date, and one in the future', async () => {
     const installation = await recordInstallation(today);
-    const early = await refused(
-      startPeriod(installation, { startOn: '2025-06-02' }),
-    );
+    const early = await refused(startPeriod(installation, { startOn: '2025-06-02' }));
     expect(early.code).toBe('23Q02');
 
     const [ahead] = await database.pool<{ day: string }[]>`
@@ -481,8 +479,7 @@ describe('a live defect liability period', () => {
 
     const removed = await refused(
       asTenant(
-        async (tx) =>
-          await tx`delete from installation_warranties where id = ${id}`,
+        async (tx) => await tx`delete from installation_warranties where id = ${id}`,
       ),
     );
     // The application role holds no DELETE at all, so the privilege wall

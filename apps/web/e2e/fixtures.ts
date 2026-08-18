@@ -793,6 +793,82 @@ const SIGNING_QUEUE = {
   ],
 };
 
+/* The warranty register (0099). Populated with all five readings the
+   standing chip can carry at once — running, expiring, elapsed,
+   discharged, voided — because the chip is the only colour this screen
+   puts on a word and a scan of an empty register proves nothing about
+   chips it never drew. Two Works, so the Work column is scanned with more
+   than one value in it. */
+const WARRANTY_REGISTER = {
+  warranties: (
+    [
+      ['elapsed', 'active', '2026-06-01', -78],
+      ['expiring', 'active', '2026-10-02', 45],
+      ['active', 'active', '2028-02-02', 533],
+      ['closed', 'closed', '2026-03-31', null],
+      ['voided', 'voided', '2027-01-31', null],
+    ] as const
+  ).map(([standing, status, dlpExpiresOn, daysToExpiry], index) => ({
+    id: `1111111${String(index)}-1111-4111-8111-111111111111`,
+    workId: '33333333-3333-4333-8333-333333333333',
+    workCode: index % 2 === 0 ? 'PL270-CRB' : 'RE-2026-11',
+    workTitle: index % 2 === 0 ? 'Signalling gear, CR Bhusawal' : 'Point machines',
+    installationId: `2222222${String(index)}-2222-4222-8222-222222222222`,
+    itemNumber: `A/${String(index + 1)}`,
+    quantity: '2.500',
+    installedOn: '2026-02-03',
+    locationName: 'Nashik Road station',
+    dlpMonths: 24,
+    startBasis: 'installation',
+    pacReference: null,
+    dlpStartOn: '2026-02-03',
+    originalExpiresOn: dlpExpiresOn,
+    dlpExpiresOn,
+    status,
+    standing,
+    daysToExpiry,
+    closedOn: status === 'closed' ? '2026-04-01' : null,
+    closureNote: status === 'closed' ? 'No defect reported in the period' : null,
+    voidNote: status === 'voided' ? 'Started against the wrong installation' : null,
+    createdAt: '2026-02-03T05:00:00.000Z',
+  })),
+  nextCursor: null,
+};
+
+/* The Work's own defect liability card, scanned inside the Instruments
+   tab. Drawn with a guarantee that lapses BEFORE the warranty does, so
+   the shortfall chip — the one warning tint this card carries — is on
+   screen, and with one candidate so the start table and its action are
+   scanned too. */
+export const WORK_WARRANTY = {
+  terms: {
+    dlpMonths: 24,
+    startBasis: 'installation',
+    notes: 'Clause 12.2 of the special conditions',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+  },
+  pbgCover: {
+    requiredByLetter: true,
+    dlpCoverUntil: '2028-02-02',
+    instrumentReference: 'BG/22',
+    instrumentExpiresOn: '2027-12-19',
+    shortfallDays: 45,
+  },
+  candidates: [
+    {
+      installationId: '44444444-4444-4444-8444-444444444446',
+      itemNumber: 'A/9',
+      quantity: '1.000',
+      installedOn: '2026-08-01',
+      locationName: 'Bhusawal yard',
+      pacOptions: [],
+    },
+  ],
+  candidatesTruncated: false,
+  warranties: WARRANTY_REGISTER.warranties.slice(0, 3),
+  nextCursor: null,
+};
+
 const STOCK_REGISTER = {
   items: [
     {
@@ -1566,6 +1642,14 @@ export async function mockWorkspace(
      scan has to check the contrast of. */
   await page.route('**/api/signing-requests*', (route) =>
     route.fulfill(json(SIGNING_QUEUE)),
+  );
+  /* The defect liability period (0099): the cross-Work register, and the
+     Work-scoped read the Instruments tab makes. */
+  await page.route('**/api/warranties*', (route) =>
+    route.fulfill(json(WARRANTY_REGISTER)),
+  );
+  await page.route('**/api/works/*/warranty*', (route) =>
+    route.fulfill(json(WORK_WARRANTY)),
   );
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),

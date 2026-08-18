@@ -2192,9 +2192,7 @@ describe('tenant migration contract', () => {
       'SELECT (start_on + make_interval(months => months))::date - 1',
     );
     expect(sql).toContain('NEW.dlp_expires_on := app_private.warranty_expiry(');
-    expect(sql).toContain(
-      'app_private.warranty_expiry(NEW.dlp_start_on, 120)',
-    );
+    expect(sql).toContain('app_private.warranty_expiry(NEW.dlp_start_on, 120)');
 
     // The end date is DERIVED, never taken from the writer: the guard
     // overwrites both columns on insert, the 0077 posture.
@@ -2243,9 +2241,7 @@ describe('tenant migration contract', () => {
     // Referential integrity cannot use a partial index, so the two keys
     // the partial indexes above would otherwise appear to cover get plain
     // ones of their own.
-    expect(sql).toContain(
-      'CREATE INDEX installation_warranties_installation_idx',
-    );
+    expect(sql).toContain('CREATE INDEX installation_warranties_installation_idx');
     expect(sql).toContain('CREATE INDEX installation_warranties_pac_idx');
 
     // Every guard function pins its search_path.

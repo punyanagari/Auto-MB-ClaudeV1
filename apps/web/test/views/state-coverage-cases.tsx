@@ -15,6 +15,8 @@ import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
 import { IssueChallans } from '../../src/views/IssueChallans.js';
 import { Installations } from '../../src/views/Installations.js';
 import { InstallationsRegister } from '../../src/views/InstallationsRegister.js';
+import { Warranties } from '../../src/views/Warranties.js';
+import { WorkWarranty } from '../../src/views/WorkWarranty.js';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
@@ -282,6 +284,33 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry installations/,
     empty: { text: /No installations recorded yet/ },
+  },
+  {
+    view: 'Warranties.tsx',
+    name: 'the warranty register',
+    loads: ['listWarranties'],
+    render: (api) => (
+      <Warranties
+        api={api}
+        organisationId={ORG_ID}
+        workId={null}
+        onOpenWork={noop}
+        onOpenWorks={noop}
+        onClearWorkFilter={noop}
+      />
+    ),
+    retry: /Retry warranties/,
+    empty: { text: /No defect liability period has been started yet/ },
+  },
+  {
+    view: 'WorkWarranty.tsx',
+    name: "the Work's defect liability card",
+    loads: ['getWorkWarranty'],
+    render: (api) => (
+      <WorkWarranty api={api} organisationId={ORG_ID} workId={WORK_ID} canModify />
+    ),
+    retry: /Retry defect liability/,
+    empty: { text: /No defect liability period has been started on this Work/ },
   },
   {
     view: 'InvoicesRegister.tsx',
