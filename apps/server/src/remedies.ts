@@ -328,6 +328,13 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the register: somebody else approved, paid or closed this request while you were looking at it.',
   PAYMENT_REQUEST_FROZEN:
     'Reject this request and raise a new one for the corrected amount; what an approver agreed to does not change underneath them.',
+  // Crossed the three-throw coverage bar when the payroll handoff (0090)
+  // became a third caller of the payment-request series. It is an
+  // internal impossibility rather than an operator mistake, so the
+  // remedy says what is safe to do rather than what to correct: the
+  // whole transaction rolls back, and nothing is half-written.
+  PAYMENT_REQUEST_NUMBER_FAILED:
+    'Try again; the request took no number, so nothing was written and no money was authorised.',
 
   // Payroll (migrations 0089 and 0090). A payroll refusal is almost
   // always about a schedule that has not been recorded or a run that has

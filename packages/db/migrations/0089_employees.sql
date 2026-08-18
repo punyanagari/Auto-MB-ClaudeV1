@@ -183,7 +183,7 @@ CREATE TABLE employees (
   -- the whole point of it is to name one person.
   employee_code text NOT NULL CHECK (
     btrim(employee_code) = employee_code
-    AND length(employee_code) BETWEEN 1 AND 40
+    AND length(employee_code) BETWEEN 2 AND 40
   ),
 
   department text CHECK (

@@ -165,9 +165,12 @@ export type Employee = Static<typeof EmployeeSchema>;
  * masters start disagreeing. Creating an employee therefore names an
  * existing contact.
  */
-const EmployeeFieldsSchema = Type.Object(
-  {
-    employeeCode: nonBlankString({ minLength: 1, maxLength: 40 }),
+const EMPLOYEE_FIELDS = {
+    /** Two characters at least. `nonBlankString` cannot express a
+     * one-character minimum — its pattern needs a non-space at each end
+     * — and a single-character employee code is not worth a second
+     * validator, so the floor is two here and two in the CHECK. */
+    employeeCode: nonBlankString({ minLength: 2, maxLength: 40 }),
     department: Type.Optional(
       Type.Union([nonBlankString({ minLength: 2, maxLength: 100 }), Type.Null()]),
     ),
@@ -208,17 +211,26 @@ const EmployeeFieldsSchema = Type.Object(
     dearnessAllowanceMonthly: Type.Optional(NonNegativeMoneyStringSchema),
     houseRentAllowanceMonthly: Type.Optional(NonNegativeMoneyStringSchema),
     otherAllowancesMonthly: Type.Optional(NonNegativeMoneyStringSchema),
-  },
+} as const;
+
+/**
+ * Spread into one flat object rather than composed with `Type.Intersect`.
+ *
+ * An intersect of two objects that each carry `additionalProperties:
+ * false` can never validate: each half refuses the other half's
+ * properties, and the refusal arrives as a 400 saying a property that IS
+ * present is missing. A flat object is what the validator can actually
+ * check, and every other request schema in this package is one.
+ */
+export const CreateEmployeeSchema = Type.Object(
+  { contactId: UuidSchema, ...EMPLOYEE_FIELDS },
   { additionalProperties: false },
 );
-
-export const CreateEmployeeSchema = Type.Intersect([
-  Type.Object({ contactId: UuidSchema }, { additionalProperties: false }),
-  EmployeeFieldsSchema,
-]);
 export type CreateEmployee = Static<typeof CreateEmployeeSchema>;
 
-export const UpdateEmployeeSchema = EmployeeFieldsSchema;
+export const UpdateEmployeeSchema = Type.Object(EMPLOYEE_FIELDS, {
+  additionalProperties: false,
+});
 export type UpdateEmployee = Static<typeof UpdateEmployeeSchema>;
 
 export const EmployeeResponseSchema = Type.Object(
@@ -357,25 +369,24 @@ export const PayrollStatutoryBasisSchema = Type.Object(
 );
 export type PayrollStatutoryBasis = Static<typeof PayrollStatutoryBasisSchema>;
 
-export const PayrollRunSchema = Type.Intersect([
-  PayrollRunSummarySchema,
-  Type.Object(
-    {
-      lines: Type.Array(PayrollRunLineSchema),
-      /** Employer-side totals, summed in SQL. What the organisation
-       * remits, as against what it deducts. */
-      totalEpfEmployee: NonNegativeMoneyStringSchema,
-      totalEpfEmployer: NonNegativeMoneyStringSchema,
-      totalEpsEmployer: NonNegativeMoneyStringSchema,
-      totalEsiEmployee: NonNegativeMoneyStringSchema,
-      totalEsiEmployer: NonNegativeMoneyStringSchema,
-      totalProfessionalTax: NonNegativeMoneyStringSchema,
-      totalTds: NonNegativeMoneyStringSchema,
-      statutoryBasis: Type.Array(PayrollStatutoryBasisSchema),
-    },
-    { additionalProperties: false },
-  ),
-]);
+/** Flat, for the reason `CreateEmployeeSchema` above gives. */
+export const PayrollRunSchema = Type.Object(
+  {
+    ...PayrollRunSummarySchema.properties,
+    lines: Type.Array(PayrollRunLineSchema),
+    /** Employer-side totals, summed in SQL. What the organisation
+     * remits, as against what it deducts. */
+    totalEpfEmployee: NonNegativeMoneyStringSchema,
+    totalEpfEmployer: NonNegativeMoneyStringSchema,
+    totalEpsEmployer: NonNegativeMoneyStringSchema,
+    totalEsiEmployee: NonNegativeMoneyStringSchema,
+    totalEsiEmployer: NonNegativeMoneyStringSchema,
+    totalProfessionalTax: NonNegativeMoneyStringSchema,
+    totalTds: NonNegativeMoneyStringSchema,
+    statutoryBasis: Type.Array(PayrollStatutoryBasisSchema),
+  },
+  { additionalProperties: false },
+);
 export type PayrollRun = Static<typeof PayrollRunSchema>;
 
 export const PayrollRunResponseSchema = Type.Object(
