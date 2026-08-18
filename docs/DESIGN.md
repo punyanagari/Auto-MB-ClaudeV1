@@ -404,7 +404,8 @@ The tender-bidding module left that list with migration 0083, which gave it a
 server. Its screens are ported (`app/tenders/page.tsx`, `app/tenders/new`,
 `app/tenders/[id]`); the parts of them the mock fakes — a per-tender document
 store, a declaration generator, an upload "simulation" — are not, and
-`docs/UX.md` § Approved divergences 4 records each one.
+`docs/UX.md` § Approved divergences 10 records each one, approved by the owner
+on 2026-08-18.
 
 Icons are Lucide, matching the mock's imports. No second icon set, no emoji.
 
