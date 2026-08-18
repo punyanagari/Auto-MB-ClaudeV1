@@ -1518,6 +1518,12 @@ test('the signing queue passes the axe scan', async ({ page }) => {
 });
 
 test('the imports register passes the axe scan', async ({ page }) => {
+  // Four scans, so eight axe runs — the heaviest single test in this
+  // file. The same budget the picker journey takes, for the same reason:
+  // a lazily-loaded view whose chunk is fetched while the preview server
+  // is still serving the previous test's scans has to be waited for, not
+  // raced.
+  test.slow();
   await mockWorkspace(page);
   await page.goto('/#/imports');
 
