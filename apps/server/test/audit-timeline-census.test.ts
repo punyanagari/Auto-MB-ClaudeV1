@@ -79,6 +79,8 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level (0092): an agreement to be messaged is between the agency and a contact, and the same agreement covers every Work that contact is involved in.',
   notification_messages:
     'Organisation-level (0092): nothing this pack sends is about a Work — the messages are configuration and test traffic. When document delivery lands (E-whatsapp-delivery) its messages WILL name a Work, and promoting this table then means a whitelist entry, a scoping arm in routes/timeline.ts, web labels and tests, exactly as received_railway_bills got.',
+  spreadsheet_import_batches:
+    'Organisation-level (0094): an import fills a master register — contacts, the item catalogue — and both are already organisation-level here. A batch names no Work and could not; if a Work-scoped register ever gains an importer, the batch gains a work_id and this entry goes with it.',
   organisation_entitlements:
     'Organisation-level (0096): whether a MODULE is available to the organisation. It governs every Work equally and belongs to none of them, which is the same reason document_number_series is here.',
   statutory_job_schedules:
@@ -149,6 +151,11 @@ const DYNAMIC_SITES: Record<
     sites: 1,
     reason:
       'The master-data route factory passes options.entityType; the registry’s `entityType:` literals are collected by the property scan.',
+  },
+  'routes/imports.ts': {
+    sites: 1,
+    reason:
+      'The spreadsheet importer (0094) writes one audit row per imported record in a single statement, so its action and entity type come from the target descriptor (import-targets.ts § audit) rather than being literals at the write site. Nothing is lost to the census: the two entity types it can write, `contacts` and `canonical_items`, are the registers routes/masters.ts already writes and are collected from there — and both are documented below as organisation-level master data. A target added with an entity type nothing else audits would need collecting; that is what this reason is here to make somebody check.',
   },
 };
 

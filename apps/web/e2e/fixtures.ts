@@ -36,16 +36,21 @@ export const ME = {
       // the rail carries no Employees door and both payroll screens
       // refuse. The owner of a new organisation holds it implicitly.
       canManagePayroll: true,
+      canManageEntitlements: true,
+      canExportOrg: true,
+      // The audit authority (0095). Granted so the audit register renders
+      // its rows and its filters under the scan; without it the screen is
+      // one refusal paragraph, which is a different set of nodes.
+      canViewAuditTrail: true,
       // The notifications authority (0092). Without it the Notifications
       // screen mounts its refusal panel instead of its four registers,
       // and the axe scan would be scanning two paragraphs in a card.
       canManageNotifications: true,
-      // The platform controls (0096). Both granted so the Settings page
-      // renders the two panels the scan below covers: without the first
-      // the modules and schedules panel returns null, and without the
-      // second the export panel does.
-      canManageEntitlements: true,
-      canExportOrg: true,
+      // The import authority (0094). Granted so the Imports screen draws
+      // its upload panel and its write button under the scan — without
+      // it the screen is a read-only history and the controls whose
+      // contrast matters are never rendered.
+      canImportData: true,
       status: 'active',
     },
   ],
@@ -878,6 +883,247 @@ const NOTIFICATION_MESSAGES = {
 };
 
 const SIGNING_THUMBPRINT = 'CFD1D2EF23018CEC652D1F380FC57FDCF5C0C4E4';
+/* Spreadsheet imports (0094). Both batch chips and both row chips are on
+   screen at once, because the chip is the only colour this screen puts on
+   a word — and the row errors below them are 11px prose in the muted ink,
+   which is the pairing most likely to miss AA. */
+const IMPORT_COLUMNS = [
+  {
+    key: 'designation',
+    header: 'Designation',
+    required: true,
+    note: 'Required. The office or firm as it is written on the paperwork.',
+  },
+  { key: 'address', header: 'Address', required: false, note: 'Optional.' },
+  { key: 'gstin', header: 'GSTIN', required: false, note: 'Optional. 15 characters.' },
+];
+
+const IMPORT_BATCHES = {
+  batches: [
+    {
+      id: '00000000-0000-4000-8000-000000000941',
+      target: 'contacts',
+      status: 'validated',
+      originalFilename: 'vendors-2026.xlsx',
+      sourceSha256: 'b'.repeat(64),
+      rowCount: 3,
+      validRowCount: 2,
+      errorRowCount: 1,
+      importedRowCount: 0,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-18T09:15:00.000Z',
+      completedAt: null,
+      cancelledAt: null,
+      cancelledReason: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000942',
+      target: 'canonical_items',
+      status: 'completed',
+      originalFilename: 'catalogue.xlsx',
+      sourceSha256: 'c'.repeat(64),
+      rowCount: 12,
+      validRowCount: 12,
+      errorRowCount: 0,
+      importedRowCount: 12,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-17T11:00:00.000Z',
+      completedAt: '2026-08-17T11:02:00.000Z',
+      cancelledAt: null,
+      cancelledReason: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000943',
+      target: 'contacts',
+      status: 'cancelled',
+      originalFilename: 'wrong-sheet.xlsx',
+      sourceSha256: 'd'.repeat(64),
+      rowCount: 4,
+      validRowCount: 4,
+      errorRowCount: 0,
+      importedRowCount: 0,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-16T08:00:00.000Z',
+      completedAt: null,
+      cancelledAt: '2026-08-16T08:05:00.000Z',
+      cancelledReason: 'Uploaded the wrong sheet',
+    },
+  ],
+  nextCursor: null,
+  targets: [
+    { key: 'contacts', label: 'Contacts', columns: IMPORT_COLUMNS },
+    {
+      key: 'canonical_items',
+      label: 'Catalogue items',
+      columns: [
+        {
+          key: 'name',
+          header: 'Item name',
+          required: true,
+          note: 'Required. Unique in the catalogue.',
+        },
+      ],
+    },
+  ],
+};
+
+const IMPORT_BATCH_DETAIL = {
+  batch: IMPORT_BATCHES.batches[0],
+  columns: IMPORT_COLUMNS,
+  // One page, exhausted — so the scan sees the "Show the rows that
+  // passed" control rather than "Load more". Both are the same button
+  // variant; this is the one an operator reaches first.
+  nextRowCursor: null,
+  rows: [
+    {
+      id: '00000000-0000-4000-8000-000000000951',
+      rowNumber: 2,
+      status: 'error',
+      cells: { designation: 'Sr.DFM Bhusawal', address: 'DRM Office', gstin: '27BAD' },
+      errors: [
+        {
+          column: 'designation',
+          message:
+            'Bill-paying authorities (Sr.DFM/DFM/ADFM) and awarding authorities (Sr.DSTE) are never consignees (rule R16); record the consignee named on the document instead.',
+        },
+        {
+          column: 'gstin',
+          message:
+            'The GSTIN must be 15 characters: 2-digit state code + PAN + entity code + Z + check character, or a TDS-deductor GSTIN ending in D (railway units).',
+        },
+      ],
+      importedRecordId: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000952',
+      rowNumber: 3,
+      status: 'valid',
+      cells: {
+        designation: 'Nagpur Signalling Works',
+        address: 'Nagpur',
+        gstin: '27AAAPZ1234C1ZV',
+      },
+      errors: [],
+      importedRecordId: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000953',
+      rowNumber: 4,
+      status: 'valid',
+      cells: { designation: 'Akola Traction Supplies', address: 'Akola', gstin: '' },
+      errors: [],
+      importedRecordId: null,
+    },
+  ],
+};
+
+/** The organisation-wide audit register (0095). One row of each shape the
+ * screen draws differently: an update carrying a before/after diff, a
+ * creation carrying context facts, and an organisation-level event with no
+ * record id at all — which is the row that renders a dash where every
+ * other row renders a monospace identifier. */
+const AUDIT_REGISTER = {
+  events: [
+    {
+      id: 'a1111111-1111-4111-8111-111111111111',
+      occurredAt: '2026-08-11T09:15:00.000Z',
+      actorUserId: 'user-a',
+      actorName: 'Anand Sharma',
+      action: 'challan.issued',
+      entityType: 'delivery_challans',
+      entityId: 'a2222222-2222-4222-8222-222222222222',
+      details: {
+        before: { status: 'draft' },
+        after: { status: 'issued' },
+      },
+    },
+    {
+      id: 'a3333333-3333-4333-8333-333333333333',
+      occurredAt: '2026-08-10T11:40:00.000Z',
+      actorUserId: 'user-a',
+      actorName: 'Anand Sharma',
+      action: 'membership.updated',
+      entityType: 'organisation_memberships',
+      entityId: null,
+      details: {
+        before: { canManagePayments: false },
+        after: { canManagePayments: true },
+      },
+    },
+    {
+      id: 'a4444444-4444-4444-8444-444444444444',
+      occurredAt: '2026-08-09T05:05:00.000Z',
+      actorUserId: 'user-a',
+      actorName: 'Anand Sharma',
+      action: 'work.created',
+      entityType: 'works',
+      entityId: 'a5555555-5555-4555-8555-555555555555',
+      details: { number: 'NWR-114' },
+    },
+  ],
+  nextCursor: null,
+  windowFrom: '2018-08-01',
+  retentionMonths: 96,
+};
+
+const AUDIT_FACETS = {
+  actions: ['challan.issued', 'membership.updated', 'work.created'],
+  entityTypes: ['delivery_challans', 'organisation_memberships', 'works'],
+  actors: [{ userId: 'user-a', name: 'Anand Sharma' }],
+};
+
+/** The management summary (0095). Two months so the table has more than
+ * one row, all five ageing bands because the screen always draws all five,
+ * and a payroll month so the third table is not its empty state. */
+const MIS_SUMMARY = {
+  outputTax: [
+    {
+      month: '2026-08',
+      invoiceCount: 4,
+      taxableValue: '4820000.00',
+      cgst: '433800.00',
+      sgst: '433800.00',
+      igst: '0.00',
+      gstTotal: '867600.00',
+      total: '5687600.00',
+      creditNoteCount: 1,
+      creditTaxableValue: '120000.00',
+      creditTotal: '141600.00',
+    },
+    {
+      month: '2026-07',
+      invoiceCount: 2,
+      taxableValue: '1960000.00',
+      cgst: '0.00',
+      sgst: '0.00',
+      igst: '352800.00',
+      gstTotal: '352800.00',
+      total: '2312800.00',
+      creditNoteCount: 0,
+      creditTaxableValue: '0.00',
+      creditTotal: '0.00',
+    },
+  ],
+  receivablesAgeing: [
+    { bucket: 'unsubmitted', billCount: 1, outstanding: '0.00' },
+    { bucket: '0-30', billCount: 3, outstanding: '1840000.00' },
+    { bucket: '31-60', billCount: 1, outstanding: '620000.00' },
+    { bucket: '61-90', billCount: 0, outstanding: '0.00' },
+    { bucket: '90+', billCount: 2, outstanding: '2410000.00' },
+  ],
+  indeterminateBills: 1,
+  payrollCost: [
+    {
+      month: '2026-07',
+      runCount: 1,
+      headcount: 14,
+      grossPay: '842000.00',
+      deductions: '96400.00',
+      netPay: '745600.00',
+    },
+  ],
+};
+
 /* The platform controls (0096). One configured flag and one untouched,
    because the row says something different in each case; one schedule and
    one completed run, so the history table is drawn rather than its empty
@@ -1793,6 +2039,19 @@ export async function mockWorkspace(
   await page.route('**/api/signing-requests*', (route) =>
     route.fulfill(json(SIGNING_QUEUE)),
   );
+  /* The platform controls (0096). The entitlements list is DRIVEN by the
+     product declaration rather than by rows, so the fixture answers with
+     both flags — one configured and off, one untouched — because the two
+     render different sentences and the scan should see both. */
+  await page.route('**/api/platform/entitlements*', (route) =>
+    route.fulfill(json(PLATFORM_ENTITLEMENTS)),
+  );
+  await page.route('**/api/platform/job-schedules*', (route) =>
+    route.fulfill(json(PLATFORM_SCHEDULES)),
+  );
+  await page.route('**/api/platform/exports*', (route) =>
+    route.fulfill(json(PLATFORM_EXPORTS)),
+  );
   // Notifications (0092). Four registers, four handlers. Playwright
   // matches the LAST registered pattern, so a broader one added after
   // these would swallow them; the three hyphenated paths are registered
@@ -1810,19 +2069,25 @@ export async function mockWorkspace(
   await page.route('**/api/notifications*', (route) =>
     route.fulfill(json(NOTIFICATION_MESSAGES)),
   );
-  /* The platform controls (0096). The entitlements list is DRIVEN by the
-     product declaration rather than by rows, so the fixture answers with
-     both flags — one configured and off, one untouched — because the two
-     render different sentences and the scan should see both. */
-  await page.route('**/api/platform/entitlements*', (route) =>
-    route.fulfill(json(PLATFORM_ENTITLEMENTS)),
+  /* Spreadsheet imports (0094). The LIST is registered first and the
+     per-batch read second, because Playwright matches the LAST handler
+     that matches — the same ordering trap the correspondence routes
+     above carry a note about. */
+  await page.route('**/api/imports*', (route) => route.fulfill(json(IMPORT_BATCHES)));
+  await page.route('**/api/imports/00000000-0000-4000-8000-*', (route) =>
+    route.fulfill(json(IMPORT_BATCH_DETAIL)),
   );
-  await page.route('**/api/platform/job-schedules*', (route) =>
-    route.fulfill(json(PLATFORM_SCHEDULES)),
+  // The audit register and the management summary (0095). The two audit
+  // patterns do not overlap: a Playwright glob's star does not cross a
+  // slash, so the bare audit-events pattern answers the register and the
+  // workbook and never the facets route beneath it.
+  await page.route('**/api/audit-events/facets*', (route) =>
+    route.fulfill(json(AUDIT_FACETS)),
   );
-  await page.route('**/api/platform/exports*', (route) =>
-    route.fulfill(json(PLATFORM_EXPORTS)),
+  await page.route('**/api/audit-events*', (route) =>
+    route.fulfill(json(AUDIT_REGISTER)),
   );
+  await page.route('**/api/mis/summary*', (route) => route.fulfill(json(MIS_SUMMARY)));
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),
   );

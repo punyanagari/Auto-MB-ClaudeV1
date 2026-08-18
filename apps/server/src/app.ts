@@ -61,6 +61,8 @@ import { registerLoaRoutes } from './routes/loa.js';
 import { registerMasterRoutes } from './routes/masters.js';
 import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
+import { registerAuditRoutes } from './routes/audit.js';
+import { registerMisRoutes } from './routes/mis.js';
 import { registerSearchRoutes } from './routes/search.js';
 import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
@@ -68,6 +70,7 @@ import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
+import { registerImportRoutes } from './routes/imports.js';
 import { registerPlatformRoutes } from './routes/platform.js';
 import { registerSigningRoutes } from './routes/signing.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
@@ -977,9 +980,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     });
     registerIdentityRoutes(app, authInstance, database);
 
-    // Raw bodies for the upload endpoints (LOA PDFs, organisation logo);
-    // every other route keeps the default JSON-only content types.
-    for (const contentType of ['application/pdf', 'image/png', 'image/jpeg']) {
+    // Raw bodies for the upload endpoints (LOA PDFs, organisation logo,
+    // imported workbooks); every other route keeps the default JSON-only
+    // content types.
+    for (const contentType of [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]) {
       app.addContentTypeParser(
         contentType,
         { parseAs: 'buffer' },
@@ -1001,8 +1010,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerQuotationRoutes(app, authInstance, database);
     registerPurchaseOrderRoutes(app, authInstance, database);
     registerInventoryRoutes(app, authInstance, database);
+    registerImportRoutes(app, authInstance, database, scanner);
     registerMaintenanceRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
+    registerAuditRoutes(app, authInstance, database);
+    registerMisRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);
     registerSearchRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);

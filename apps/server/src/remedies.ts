@@ -150,6 +150,12 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // came from is the way back.
   CURSOR_INVALID:
     'Reload the register and page through it again; a cursor from an older list, or one naming a record outside your Works, no longer places a page.',
+  // One code for three refusals, all of them about the same thing: the
+  // dates an export was asked for. Two of them are the audit register's
+  // and the Tally file's "starts after it ends"; the third is the Tally
+  // file's span cap.
+  EXPORT_WINDOW_INVALID:
+    'Set the start of the window on or before its end, and keep a Tally export to one financial year at a time.',
   // Crossed the coverage bar when P12 collapsed three spellings of "that
   // letter was discarded" into one code — which is the dedupe paying for
   // itself: one refusal now earns one reviewed sentence.
@@ -516,6 +522,27 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Ask your administrator to configure this deployment’s WhatsApp access token or its mail relay; the organisation’s own settings are complete but the server has nothing to send through.',
   NOTIFICATION_SEND_FAILED:
     'Read the delivery log for the provider’s own reason, fix it and send again; nothing was delivered and the attempt is on the record.',
+  // ---- Importing a register from a spreadsheet (0094) -----------------------
+  IMPORT_TARGET_UNKNOWN:
+    'Choose one of the registers listed on the Imports screen; only those have an importer behind them.',
+  IMPORT_SHEET_UNREADABLE:
+    'Open the file in Excel and save it again as an .xlsx workbook, then upload the saved copy.',
+  IMPORT_SHEET_EMPTY:
+    'Check that the rows are on the first sheet of the workbook and that the header row is the top row.',
+  IMPORT_SHEET_HEADERS_UNRECOGNISED:
+    'Download the template for this register and copy your rows into it, so the header row names the columns the importer reads.',
+  IMPORT_BATCH_NOT_FOUND:
+    'Reload the Imports screen; this import may have been withdrawn from another session.',
+  IMPORT_BATCH_FINISHED:
+    'Reload the Imports screen and act on what it shows now; a finished import keeps its record and cannot be run or withdrawn twice.',
+  IMPORT_BATCH_NOT_VALIDATED:
+    'Reload the import and wait for every row to carry a verdict before writing any of them to the register.',
+  IMPORT_BATCH_SUPERSEDED:
+    'Open the newest import for this register and run that one; uploading a corrected sheet retires the sheet it corrects.',
+  IMPORT_ROW_IMMUTABLE:
+    'Correct the row in your workbook and upload it again; a staged row is the record of what the file contained.',
+  IMPORT_NOTHING_TO_IMPORT:
+    'Correct the rows this import lists as errors and upload the sheet again; nothing was written to the register.',
 
   // ---- The envelope's own codes -------------------------------------------
   //

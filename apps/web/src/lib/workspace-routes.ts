@@ -136,6 +136,14 @@ export type WorkspaceView =
    * to, and what became of every message. Not per Work — nothing this
    * pack sends is about one. */
   | { name: 'notifications' }
+  /** Bringing a register in from a spreadsheet (migration 0094).
+   * Organisation-level, because the registers it fills are: a party
+   * master and an item catalogue belong to the agency, not to a
+   * contract. One address, and the batch it is looking at is state
+   * inside the screen rather than a route — an import is a conversation
+   * that lasts one sitting, not a record anybody links to. No mock
+   * screen — see docs/UX.md § 18. */
+  | { name: 'imports' }
   /** The employee master and the monthly payroll run (0089, 0090).
    * Organisation-level, and deliberately: a salary is paid by the agency
    * and not by a contract, so neither carries a Work.
@@ -150,6 +158,16 @@ export type WorkspaceView =
   | { name: 'employees' }
   | { name: 'payroll' }
   | { name: 'members' }
+  /** The organisation-wide audit register (0095). Not the per-Work
+   * timeline, which stays a Work workspace section: this one is filtered
+   * by actor and action across every module, and is gated on the audit
+   * authority AND full work scope. */
+  | { name: 'audit' }
+  /** The management summary (0095): output tax by month, receivables
+   * ageing, payroll cost. Separate from the landing dashboard on purpose
+   * — see `packages/contracts/src/mis.ts` — because these are month-end
+   * roll-ups nobody needs on every sign-in. */
+  | { name: 'mis' }
   | { name: 'settings' };
 
 /** A parsed location: the view plus the tab state some views carry
@@ -297,6 +315,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/signing';
     case 'notifications':
       return '#/notifications';
+    case 'imports':
+      return '#/imports';
     case 'stock':
       return '#/inventory';
     case 'stock-shortages':
@@ -333,6 +353,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/correspondence/new/inward';
     case 'members':
       return '#/members';
+    case 'audit':
+      return '#/audit';
+    case 'mis':
+      return '#/reports';
     case 'settings':
       return '#/settings';
   }
@@ -628,9 +652,16 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'receivables':
     case 'signing':
     case 'notifications':
+    case 'imports':
     case 'members':
+    case 'audit':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;
+    // The management summary answers to `#/reports`, which is what an
+    // operator would type and what the rail calls it. `mis` is the
+    // internal name and never appears in an address.
+    case 'reports':
+      return rest.length === 0 ? { view: { name: 'mis' } } : null;
     default:
       return null;
   }

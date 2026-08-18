@@ -113,6 +113,10 @@ const Masters = lazy(() =>
 const Members = lazy(() =>
   import('./Members.js').then((module) => ({ default: module.Members })),
 );
+const AuditTrail = lazy(() =>
+  import('./AuditTrail.js').then((module) => ({ default: module.AuditTrail })),
+);
+const Mis = lazy(() => import('./Mis.js').then((module) => ({ default: module.Mis })));
 const OperationsDashboard = lazy(() =>
   import('./OperationsDashboard.js').then((module) => ({
     default: module.OperationsDashboard,
@@ -183,6 +187,9 @@ const SigningQueue = lazy(() =>
 );
 const Notifications = lazy(() =>
   import('./Notifications.js').then((module) => ({ default: module.Notifications })),
+);
+const Imports = lazy(() =>
+  import('./Imports.js').then((module) => ({ default: module.Imports })),
 );
 const StockRegister = lazy(() =>
   import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
@@ -475,6 +482,12 @@ export function OperationsWorkspace({
   // manager must not see salaries, PAN, UAN or bank details by default.
   const canManagePayroll = membership?.canManagePayroll ?? false;
   const canManageNotifications = membership?.canManageNotifications ?? false;
+  // The import authority (migration 0094). The screen stays on the rail
+  // for every writer, because reading which imports an organisation ran
+  // — and why eleven rows were refused — is ordinary register history.
+  // What the authority gates is the half that WRITES: the upload panel
+  // and the button that commits. The server refuses either way.
+  const canImport = membership?.canImportData ?? false;
   // The platform controls (migration 0096). `canManageEntitlements` is
   // owner-only in effect — every route needs the owner role beside it —
   // so the panel takes both and renders for neither alone.
@@ -1287,6 +1300,13 @@ export function OperationsWorkspace({
                 canModify={canModify}
               />
             )}
+            {view.name === 'imports' && (
+              <Imports
+                api={api}
+                organisationId={organisation.id}
+                canImport={canImport}
+              />
+            )}
 
             {/* Gated at the SCREEN rather than at a control, because
                 every read this view makes needs the authority: the
@@ -1715,6 +1735,22 @@ export function OperationsWorkspace({
                 organisationId={organisation.id}
                 currentUserId={me.user.id}
               />
+            )}
+
+            {/* Both screens keep their rail door and refuse at the screen,
+                which is the majority precedent here — Employees is the one
+                module whose door is hidden, because a register of salaries
+                is not something to advertise a way into. That an audit
+                trail EXISTS is not a secret; every operator should know
+                their actions are recorded. So the door stays and the
+                server's own refusal is what the screen renders, naming
+                which of its two walls stopped the read. */}
+            {view.name === 'audit' && (
+              <AuditTrail api={api} organisationId={organisation.id} />
+            )}
+
+            {view.name === 'mis' && (
+              <Mis api={api} organisationId={organisation.id} isOwner={isOwner} />
             )}
           </Suspense>
         </main>

@@ -11,6 +11,8 @@ export interface MembershipRow {
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
   can_manage_notifications: boolean;
+  can_import_data: boolean;
+  can_view_audit_trail: boolean;
   can_manage_entitlements: boolean;
   can_export_org: boolean;
 }
@@ -23,6 +25,7 @@ export async function membershipOf(
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
            can_sign_documents, can_manage_payroll, can_manage_notifications,
+           can_import_data, can_view_audit_trail,
            can_manage_entitlements, can_export_org
     from organisation_memberships
     where user_id = ${userId}
@@ -151,6 +154,17 @@ export type DocumentAuthority =
    * account, and a member who may approve a vendor payment has no
    * business reading any of that by default. */
   | 'payroll'
+  /** Opening the organisation-wide audit register and exporting it (0095,
+   * owner ruling 2026-08-18). Separate from every other authority because
+   * the register is not about documents at all: it answers "what did this
+   * person do" across every Work and every module, and prints the
+   * before/after of each change. The per-Work timeline stays open to every
+   * member whose scope reaches the Work — that is a Work's history shown to
+   * the people working on it — and this gates the cross-Work, cross-member
+   * view, which is a different object. Full work scope is required on top,
+   * because audit_events carries no work_id and the entity-to-Work mapping
+   * covers no organisation-level fact — see migration 0095. */
+  | 'audit'
   /** Configuring the channels the organisation speaks through, the
    * templates it may say, and who has consented to be spoken to (0092).
    * Separate from `issue` because issuing a document commits words a
@@ -158,6 +172,14 @@ export type DocumentAuthority =
    * from — and who else may be messaged — is a different decision about
    * the organisation's outbound voice. */
   | 'notifications'
+  /** Pointing a spreadsheet at a register and committing the rows it
+   * staged (0094, owner ruling). Separate from the writer role the
+   * registers themselves require, because the two acts are not the same
+   * size: adding one contact is a considered act with a form in front of
+   * it, and committing a batch writes eight hundred rows from a file
+   * somebody forwarded. It confers nothing on its own — a batch still
+   * commits into the register's own role and its own constraints. */
+  | 'import'
   /** Switching this organisation's modules on and off, and configuring
    * its recurring statutory checks (0096). OWNER-ONLY IN EFFECT: every
    * route that declares this authority also declares `role: 'owner'`, so
@@ -190,6 +212,10 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
     'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
   notifications:
     'Your membership does not carry the notifications authority, which is required to configure a messaging channel, maintain a message template, record a recipient’s consent, or send a message.',
+  import:
+    'Your membership does not carry the import authority, which is required to upload a spreadsheet against a register and to commit the rows it stages. It is separate from the writer role because adding one record and adding eight hundred from a forwarded file are not the same act.',
+  audit:
+    'Your membership does not carry the audit authority, which is required to open the organisation-wide audit register and to export it. A Work’s own timeline stays open to everyone assigned to it.',
   entitlements:
     'Your membership does not carry the entitlements authority, which is required to switch this organisation’s modules on or off and to configure its recurring statutory checks. It is granted to owners only.',
   export:
@@ -210,6 +236,8 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_sign_documents'
     | 'can_manage_payroll'
     | 'can_manage_notifications'
+    | 'can_import_data'
+    | 'can_view_audit_trail'
     | 'can_manage_entitlements'
     | 'can_export_org'
   >
@@ -221,6 +249,8 @@ const AUTHORITY_COLUMNS: Record<
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
   notifications: 'can_manage_notifications',
+  import: 'can_import_data',
+  audit: 'can_view_audit_trail',
   entitlements: 'can_manage_entitlements',
   export: 'can_export_org',
 };
@@ -231,6 +261,29 @@ function authorityGranted(
 ): boolean {
   if (membership === undefined) return false;
   return membership[AUTHORITY_COLUMNS[authority]];
+}
+
+/**
+ * Whether this member holds an authority, as a QUESTION rather than an
+ * assertion — the same relationship `isWriterRole` has to
+ * `requireWriterRole`.
+ *
+ * For a screen that shows less rather than refusing: the MIS view's payroll
+ * cost panel is answered as null for a member without the payroll
+ * authority, because a management summary that 403s as a whole because one
+ * of its four panels is out of reach would be useless to everyone who is
+ * not an owner. The panel is absent, the rest of the summary is served, and
+ * the screen says which authority would fill it.
+ *
+ * A MISSING membership answers false, exactly as `hasFullWorkScope` does:
+ * the safe default is "sees less", never "sees everything".
+ */
+export async function hasAuthority(
+  tx: TransactionSql,
+  userId: string,
+  authority: DocumentAuthority,
+): Promise<boolean> {
+  return authorityGranted(await membershipOf(tx, userId), authority);
 }
 
 export async function requireAuthority(

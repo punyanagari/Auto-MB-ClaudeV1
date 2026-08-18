@@ -620,6 +620,45 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'failed_at',
     'updated_at',
   ],
+  // An import batch's identity — the file it was, its digest, and the
+  // register it aims at — is written once, because the rows beneath it
+  // were judged against that answer. What moves is where it has got to
+  // and the census of what happened there.
+  spreadsheet_import_batches: [
+    'status',
+    'row_count',
+    'valid_row_count',
+    'error_row_count',
+    'imported_row_count',
+    'completed_at',
+    'completed_by_user_id',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancelled_reason',
+    'updated_at',
+  ],
+  // A staged row's CELLS are evidence: they are what the sheet
+  // contained, and a row whose content could be corrected in place is one
+  // where nobody can tell what was uploaded from what was fixed
+  // afterwards. The verdict written over them is the outcome.
+  //
+  // `cells` and `imported_record_id` are deliberately NOT here, and the
+  // reason is worth stating because it looks like an omission.
+  //
+  // `cells` may be EMPTIED and may never be changed — the route forgets
+  // a sheet's own text as its batch turns terminal, because a contacts
+  // sheet carries account numbers the direct path never logs. Destroying
+  // evidence is not restating it, so the freeze the scan below reads is
+  // the right reading of the rule.
+  //
+  // `imported_record_id` is WRITE-ONCE
+  // rather than mutable: null until the row reaches the register, and
+  // frozen from that moment, because re-pointing it at a second record
+  // would leave the first orphaned from the row that explains it. The
+  // scan above reads that rule as a freeze — it sees `NEW.x IS DISTINCT
+  // FROM OLD.x` and cannot see the `OLD.x IS NOT NULL` in front of it —
+  // and for this census's purpose that reading is the correct one.
+  spreadsheet_import_rows: ['status', 'errors'],
 
   // A recurring check's identity is its organisation and its kind (0096),
   // and both are frozen: letting either move would silently repoint a run

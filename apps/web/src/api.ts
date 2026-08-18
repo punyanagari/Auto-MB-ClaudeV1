@@ -1,4 +1,9 @@
 import type {
+  AuditFacetsResponse,
+  AuditRegisterQuery,
+  AuditRegisterResponse,
+  ExportableRegister,
+  MisSummaryResponse,
   EntitlementFlagKey,
   EntitlementListResponse,
   EntitlementResponse,
@@ -41,6 +46,10 @@ import type {
   RegisterSigningAgent,
   RegisterSigningAgentResponse,
   SigningAgentResponse,
+  ImportBatchDetail,
+  ImportBatchList,
+  ImportRowStatus,
+  ImportTargetKey,
   SigningQueueResponse,
   CreateNotificationTemplate,
   NotificationChannelListResponse,
@@ -695,6 +704,42 @@ export interface ApiClient {
     entityId: string,
     options?: { readonly cursor?: string; readonly limit?: number },
   ) => Promise<TimelineResponse>;
+  /** The organisation-wide audit register (0095). Gated on the audit
+   * authority AND full work scope; a member without either gets a 403
+   * that names which wall, and the register view renders the sentence
+   * rather than a retry. */
+  readonly auditRegister: (
+    organisationId: string,
+    options?: AuditRegisterQuery,
+  ) => Promise<AuditRegisterResponse>;
+  /** The filter vocabularies, read from the trail itself rather than
+   * hand-maintained on the client — the action list grows every wave. */
+  readonly auditFacets: (organisationId: string) => Promise<AuditFacetsResponse>;
+  /** The management summary: three aggregates the landing dashboard does
+   * not carry. `payrollCost` is null for a caller without the payroll
+   * authority; the rest is still served. */
+  readonly misSummary: (
+    organisationId: string,
+    options?: { readonly months?: number },
+  ) => Promise<MisSummaryResponse>;
+  /** Any major register as an .xlsx workbook. Work-scoped registers
+   * narrow to the caller's assignments; organisation-wide ones refuse a
+   * caller who cannot see every Work. */
+  readonly downloadRegisterWorkbook: (
+    organisationId: string,
+    register: ExportableRegister,
+  ) => Promise<Blob>;
+  /** The audit register as a workbook, under the same filters the screen
+   * is showing. */
+  readonly downloadAuditWorkbook: (
+    organisationId: string,
+    options?: AuditRegisterQuery,
+  ) => Promise<Blob>;
+  /** The accountant's Tally import file for one window. Owner-only. */
+  readonly downloadTallyExport: (
+    organisationId: string,
+    window: { readonly from: string; readonly to: string },
+  ) => Promise<Blob>;
   /** Master data (pickers only): `save` with a null id creates, with an id
    * updates; `setActive` retires (false) or reactivates (true). */
   readonly listContacts: (
@@ -2022,6 +2067,43 @@ export interface ApiClient {
     organisationId: string,
     body: RegisterSigningAgent,
   ) => Promise<RegisterSigningAgentResponse>;
+  /** Bringing a register in from a spreadsheet (migration 0094). The
+   * listing carries the registers that accept one alongside the batches,
+   * because the screen needs them on an organisation's first day. */
+  readonly listImportBatches: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<ImportBatchList>;
+  readonly readImportBatch: (
+    organisationId: string,
+    batchId: string,
+    options?: {
+      readonly limit?: number;
+      /** The `rowNumber` of the last row of the previous page. */
+      readonly cursor?: number;
+      readonly status?: ImportRowStatus;
+    },
+  ) => Promise<ImportBatchDetail>;
+  /** Stages a workbook. Writes nothing to the register — that is
+   * `commitImportBatch`, and the separation is the whole feature. */
+  readonly uploadImportWorkbook: (
+    organisationId: string,
+    target: ImportTargetKey,
+    file: File,
+  ) => Promise<ImportBatchDetail>;
+  readonly commitImportBatch: (
+    organisationId: string,
+    batchId: string,
+  ) => Promise<ImportBatchDetail>;
+  readonly cancelImportBatch: (
+    organisationId: string,
+    batchId: string,
+    body: { readonly reason: string },
+  ) => Promise<ImportBatchDetail>;
+  readonly downloadImportTemplate: (
+    organisationId: string,
+    target: ImportTargetKey,
+  ) => Promise<Blob>;
   readonly revokeSigningAgent: (
     organisationId: string,
     agentId: string,
@@ -2484,6 +2566,18 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     });
     if (!response.ok) throw await parseError(response);
     return response.blob();
+  }
+
+  /** The audit register's filters, as a query string. ONE builder, two
+   * callers: the paged read and the workbook. A workbook produced under
+   * different filters from the screen that offered it would be a file the
+   * operator has to re-check by hand. */
+  function auditQuery(options: AuditRegisterQuery): string {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== '') query.set(key, String(value));
+    }
+    return query.size > 0 ? `?${query.toString()}` : '';
   }
 
   /** Both company-document uploads post the same thing and answer the same
@@ -3103,6 +3197,37 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/audit/entity/${entityType}/${entityId}${suffix}`,
         { organisationId },
       );
+    },
+    async auditRegister(organisationId, options = {}) {
+      return request<AuditRegisterResponse>(`/api/audit-events${auditQuery(options)}`, {
+        organisationId,
+      });
+    },
+    async auditFacets(organisationId) {
+      return request<AuditFacetsResponse>('/api/audit-events/facets', {
+        organisationId,
+      });
+    },
+    async misSummary(organisationId, options = {}) {
+      const query = new URLSearchParams();
+      if (options.months !== undefined) query.set('months', String(options.months));
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      return request<MisSummaryResponse>(`/api/mis/summary${suffix}`, {
+        organisationId,
+      });
+    },
+    async downloadRegisterWorkbook(organisationId, register) {
+      return downloadBlob(`/api/registers/${register}/workbook.xlsx`, organisationId);
+    },
+    async downloadAuditWorkbook(organisationId, options = {}) {
+      return downloadBlob(
+        `/api/audit-events.xlsx${auditQuery(options)}`,
+        organisationId,
+      );
+    },
+    async downloadTallyExport(organisationId, window) {
+      const query = new URLSearchParams({ from: window.from, to: window.to });
+      return downloadBlob(`/api/exports/tally.xml?${query.toString()}`, organisationId);
     },
     async listContacts(organisationId, options = {}) {
       const query = new URLSearchParams();
@@ -4823,6 +4948,57 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/signing-requests/${requestId}/cancel`,
         { method: 'POST', body, organisationId },
       );
+    },
+    async listImportBatches(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchList>(`/api/imports${suffix}`, { organisationId });
+    },
+    async readImportBatch(organisationId, batchId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', String(options.cursor));
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchDetail>(`/api/imports/${batchId}${suffix}`, {
+        organisationId,
+      });
+    },
+    async uploadImportWorkbook(organisationId, target, file) {
+      // The raw Blob, exactly as `uploadPdf` sends a PDF — there is no
+      // FormData anywhere in this client. The file's own name rides the
+      // querystring because it is what the operator calls the import.
+      const query = uploadQuery({ target, filename: file.name });
+      const response = await fetchImpl(`/api/imports?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ImportBatchDetail;
+    },
+    async commitImportBatch(organisationId, batchId) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/import`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelImportBatch(organisationId, batchId, body) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async downloadImportTemplate(organisationId, target) {
+      return downloadBlob(`/api/imports/templates/${target}`, organisationId);
     },
     async downloadSignedPdf(organisationId, requestId) {
       // Fetched rather than linked, like every other PDF here: the
