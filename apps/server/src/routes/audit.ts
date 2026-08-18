@@ -11,7 +11,7 @@ import type { Auth } from '../auth.js';
 import { hasFullWorkScope } from '../authz.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
-import { XLSX_CONTENT_TYPE, buildXlsx } from '../xlsx.js';
+import { XLSX_MEDIA_TYPE, buildXlsx } from '../xlsx.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 import { audit, errorResponses } from './shared.js';
@@ -450,7 +450,7 @@ export function registerAuditRoutes(app: AppInstance, auth: Auth, database: Sql)
           bytes: buildXlsx('Audit trail', AUDIT_COLUMNS, cells),
         };
       });
-      void reply.type(XLSX_CONTENT_TYPE);
+      void reply.type(XLSX_MEDIA_TYPE);
       // The window in the NAME, so a file sitting on a desktop a month
       // later still says which days it covers — the same reason the Tally
       // export carries its own.

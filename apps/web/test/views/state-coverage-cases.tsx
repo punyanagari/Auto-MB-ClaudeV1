@@ -42,7 +42,9 @@ import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
 import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
 import { SigningKioskSettings } from '../../src/views/SigningKioskSettings.js';
+import { Imports } from '../../src/views/Imports.js';
 import { SigningQueue } from '../../src/views/SigningQueue.js';
+import { Notifications } from '../../src/views/Notifications.js';
 import { Employees } from '../../src/views/Employees.js';
 import { PayrollRun } from '../../src/views/PayrollRun.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
@@ -618,6 +620,55 @@ export const STATE_CASES: readonly StateCase[] = [
     render: (api) => <SigningQueue api={api} organisationId={ORG_ID} canModify />,
     retry: /Retry the signing queue/,
     empty: { text: /No document has been sent for signature yet/ },
+  },
+  // Four cases, because the screen makes four INDEPENDENT loads: a
+  // delivery log that cannot be reached must not blank the channel
+  // configuration an operator came here to fix.
+  {
+    view: 'Notifications.tsx',
+    name: 'the notification channels',
+    loads: ['listNotificationChannels'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the notification channels/,
+    empty: {
+      notApplicable:
+        'Both channels are always drawn, configured or not: an unconfigured channel is the state an operator came here to change, so it is visible rather than absent.',
+    },
+  },
+  {
+    view: 'Notifications.tsx',
+    name: 'the message templates',
+    loads: ['listNotificationTemplates'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the message templates/,
+    empty: { text: /No message template has been written yet/ },
+  },
+  {
+    view: 'Notifications.tsx',
+    name: 'the consent register',
+    loads: ['listNotificationConsents'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the consent register/,
+    empty: { text: /Nobody has been recorded as consenting yet/ },
+  },
+  {
+    view: 'Notifications.tsx',
+    name: 'the delivery log',
+    loads: ['listNotifications'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the delivery log/,
+    empty: { text: /Nothing has been sent yet/ },
+  },
+  {
+    view: 'Imports.tsx',
+    name: 'the imports register',
+    // One read on mount, and it carries the registers that accept a
+    // sheet alongside the batches — the screen needs those on an
+    // organisation's first day, when there is nothing else to show.
+    loads: ['listImportBatches'],
+    render: (api) => <Imports api={api} organisationId={ORG_ID} canImport />,
+    retry: /Retry the imports/,
+    empty: { text: /No spreadsheet has been imported yet/ },
   },
   {
     view: 'AuditTrail.tsx',

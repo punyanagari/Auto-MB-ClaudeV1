@@ -693,6 +693,52 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
     finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
     cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
+    listNotificationChannels: vi
+      .fn<ApiClient['listNotificationChannels']>()
+      .mockResolvedValue({ channels: [] }),
+    saveNotificationChannel: vi.fn<ApiClient['saveNotificationChannel']>(),
+    listNotificationTemplates: vi
+      .fn<ApiClient['listNotificationTemplates']>()
+      .mockResolvedValue({ templates: [], nextCursor: null }),
+    createNotificationTemplate: vi.fn<ApiClient['createNotificationTemplate']>(),
+    setNotificationTemplateStatus: vi.fn<ApiClient['setNotificationTemplateStatus']>(),
+    listNotificationConsents: vi
+      .fn<ApiClient['listNotificationConsents']>()
+      .mockResolvedValue({ consents: [], nextCursor: null }),
+    recordNotificationConsent: vi.fn<ApiClient['recordNotificationConsent']>(),
+    listNotifications: vi
+      .fn<ApiClient['listNotifications']>()
+      .mockResolvedValue({ messages: [], nextCursor: null }),
+    sendNotification: vi.fn<ApiClient['sendNotification']>(),
+    // Spreadsheet imports (0094). Empty batches by default, for the same
+    // reason the signing read above answers empty — but the TARGETS are
+    // never empty, because they are a property of the build rather than
+    // of the organisation, and a screen that offered no register to
+    // import into would be untestable in exactly the state a new
+    // organisation is in.
+    listImportBatches: vi.fn<ApiClient['listImportBatches']>().mockResolvedValue({
+      batches: [],
+      nextCursor: null,
+      targets: [
+        {
+          key: 'contacts',
+          label: 'Contacts',
+          columns: [
+            {
+              key: 'designation',
+              header: 'Designation',
+              required: true,
+              note: 'Required. The office or firm as it is written on the paperwork.',
+            },
+          ],
+        },
+      ],
+    }),
+    readImportBatch: vi.fn<ApiClient['readImportBatch']>(),
+    uploadImportWorkbook: vi.fn<ApiClient['uploadImportWorkbook']>(),
+    commitImportBatch: vi.fn<ApiClient['commitImportBatch']>(),
+    cancelImportBatch: vi.fn<ApiClient['cancelImportBatch']>(),
+    downloadImportTemplate: vi.fn<ApiClient['downloadImportTemplate']>(),
     auditRegister: vi.fn<ApiClient['auditRegister']>().mockResolvedValue({
       events: [],
       nextCursor: null,
@@ -830,6 +876,8 @@ export function membership(overrides: Partial<Membership>): Membership {
     canManagePayments: false,
     canSignDocuments: false,
     canManagePayroll: true,
+    canManageNotifications: true,
+    canImportData: true,
     canViewAuditTrail: true,
     twoFactorEnabled: false,
     status: 'active',

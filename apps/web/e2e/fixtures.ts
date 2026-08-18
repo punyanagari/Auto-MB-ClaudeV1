@@ -40,6 +40,15 @@ export const ME = {
       // its rows and its filters under the scan; without it the screen is
       // one refusal paragraph, which is a different set of nodes.
       canViewAuditTrail: true,
+      // The notifications authority (0092). Without it the Notifications
+      // screen mounts its refusal panel instead of its four registers,
+      // and the axe scan would be scanning two paragraphs in a card.
+      canManageNotifications: true,
+      // The import authority (0094). Granted so the Imports screen draws
+      // its upload panel and its write button under the scan — without
+      // it the screen is a read-only history and the controls whose
+      // contrast matters are never rendered.
+      canImportData: true,
       status: 'active',
     },
   ],
@@ -749,7 +758,263 @@ const PRODUCTION_BOM = {
    once — pending, claimed, signed, failed — because the status chip is
    the only colour this screen puts on a word, and a scan of an empty
    register proves nothing about chips it never drew. */
+/* Notifications (0092). Every tint the screen can draw, at once.
+   The channel block carries an ENABLED channel whose deployment has no
+   transport, because that two-lamp state is the one thing on this screen
+   with no precedent in the mock and the only place a success chip and a
+   warning chip sit side by side. The template list carries the four
+   statuses that tint differently — approved, pending, rejected, paused —
+   and one draft, which is the deliberate neutral. The delivery log
+   carries queued, sent, delivered, read and failed, so the scan sees the
+   whole ledger vocabulary rather than whichever end of it the fixture
+   happened to reach. */
+const NOTIFICATION_CHANNELS = {
+  channels: [
+    {
+      id: '11111111-0092-4000-8000-000000000001',
+      channel: 'whatsapp',
+      enabled: true,
+      wabaPhoneNumberId: '109876543210987',
+      wabaBusinessAccountId: '209876543210987',
+      displayPhoneNumber: '+919000000001',
+      apiBaseUrl: null,
+      fromAddress: null,
+      replyToAddress: null,
+      // The lie a single lamp would have to tell: set up here, and the
+      // server it runs on cannot send.
+      transportConfigured: false,
+      updatedAt: '2026-08-18T09:00:00.000Z',
+    },
+    {
+      id: '11111111-0092-4000-8000-000000000002',
+      channel: 'email',
+      enabled: true,
+      wabaPhoneNumberId: null,
+      wabaBusinessAccountId: null,
+      displayPhoneNumber: null,
+      apiBaseUrl: null,
+      fromAddress: 'no-reply@punyanagari.example',
+      replyToAddress: 'accounts@punyanagari.example',
+      transportConfigured: true,
+      updatedAt: '2026-08-18T09:00:00.000Z',
+    },
+  ],
+};
+
+const NOTIFICATION_TEMPLATES = {
+  templates: [
+    ['challan_issued', 'approved', null, 'Challan issued'],
+    ['bill_submitted', 'pending', null, 'Bill submitted'],
+    ['payment_due', 'rejected', 'Template content violates policy', 'Payment due'],
+    ['inspection_call', 'paused', 'Quality rating dropped to medium', null],
+    ['warranty_note', 'draft', null, null],
+  ].map(([name, status, statusReason, emailSubject], index) => ({
+    id: `22222222-0092-4000-8000-00000000000${String(index)}`,
+    name,
+    language: 'en',
+    category: 'utility',
+    status,
+    statusReason,
+    bodyText: 'Document {{1}} for work {{2}} has been recorded.',
+    parameterCount: 2,
+    emailSubject,
+    createdAt: '2026-08-18T09:00:00.000Z',
+    updatedAt: '2026-08-18T09:00:00.000Z',
+  })),
+  nextCursor: null,
+};
+
+const NOTIFICATION_CONSENTS = {
+  consents: [
+    ['Sr. DEE (G) CR Nagpur', 'whatsapp', '+919812345678', 'opted_in'],
+    ['Dy. CME Ajni', 'email', 'dycme.ajni@railways.example', 'opted_in'],
+    ['Sr. DME Bhusaval', 'whatsapp', '+919812345679', 'opted_out'],
+  ].map(([contactDesignation, channel, address, state], index) => ({
+    id: `33333333-0092-4000-8000-00000000000${String(index)}`,
+    contactId: `44444444-0092-4000-8000-00000000000${String(index)}`,
+    contactDesignation,
+    channel,
+    address,
+    state,
+    evidence:
+      state === 'opted_in'
+        ? 'Signed the delivery acknowledgement on 12 Aug 2026'
+        : 'Asked to stop on the site call of 14 Aug 2026',
+    recordedByUserId: 'user-1',
+    recordedAt: '2026-08-18T09:00:00.000Z',
+    updatedAt: '2026-08-18T09:00:00.000Z',
+  })),
+  nextCursor: null,
+};
+
+const NOTIFICATION_MESSAGES = {
+  messages: [
+    ['queued', null, null],
+    ['sent', null, null],
+    ['delivered', null, null],
+    ['read', null, null],
+    ['failed', '131047', 'Re-engagement message'],
+  ].map(([status, failureCode, failureDetail], index) => ({
+    id: `55555555-0092-4000-8000-00000000000${String(index)}`,
+    channel: index % 2 === 0 ? 'whatsapp' : 'email',
+    templateId: '22222222-0092-4000-8000-000000000000',
+    templateName: 'challan_issued',
+    templateLanguage: 'en',
+    contactId: '44444444-0092-4000-8000-000000000000',
+    contactDesignation: 'Sr. DEE (G) CR Nagpur',
+    toAddress: index % 2 === 0 ? '+919812345678' : 'dycme.ajni@railways.example',
+    parameters: ['DC/2026/0042', 'RE-2026-11'],
+    status,
+    provider: index % 2 === 0 ? 'meta_cloud' : 'smtp',
+    providerMessageId: status === 'queued' ? null : `wamid.00${String(index)}`,
+    failureCode,
+    failureDetail,
+    requestedByUserId: 'user-1',
+    queuedAt: '2026-08-18T09:00:00.000Z',
+    sentAt: status === 'queued' ? null : '2026-08-18T09:00:01.000Z',
+    deliveredAt:
+      status === 'delivered' || status === 'read' ? '2026-08-18T09:00:05.000Z' : null,
+    readAt: status === 'read' ? '2026-08-18T09:00:09.000Z' : null,
+    failedAt: status === 'failed' ? '2026-08-18T09:00:03.000Z' : null,
+  })),
+  nextCursor: null,
+};
+
 const SIGNING_THUMBPRINT = 'CFD1D2EF23018CEC652D1F380FC57FDCF5C0C4E4';
+/* Spreadsheet imports (0094). Both batch chips and both row chips are on
+   screen at once, because the chip is the only colour this screen puts on
+   a word — and the row errors below them are 11px prose in the muted ink,
+   which is the pairing most likely to miss AA. */
+const IMPORT_COLUMNS = [
+  {
+    key: 'designation',
+    header: 'Designation',
+    required: true,
+    note: 'Required. The office or firm as it is written on the paperwork.',
+  },
+  { key: 'address', header: 'Address', required: false, note: 'Optional.' },
+  { key: 'gstin', header: 'GSTIN', required: false, note: 'Optional. 15 characters.' },
+];
+
+const IMPORT_BATCHES = {
+  batches: [
+    {
+      id: '00000000-0000-4000-8000-000000000941',
+      target: 'contacts',
+      status: 'validated',
+      originalFilename: 'vendors-2026.xlsx',
+      sourceSha256: 'b'.repeat(64),
+      rowCount: 3,
+      validRowCount: 2,
+      errorRowCount: 1,
+      importedRowCount: 0,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-18T09:15:00.000Z',
+      completedAt: null,
+      cancelledAt: null,
+      cancelledReason: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000942',
+      target: 'canonical_items',
+      status: 'completed',
+      originalFilename: 'catalogue.xlsx',
+      sourceSha256: 'c'.repeat(64),
+      rowCount: 12,
+      validRowCount: 12,
+      errorRowCount: 0,
+      importedRowCount: 12,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-17T11:00:00.000Z',
+      completedAt: '2026-08-17T11:02:00.000Z',
+      cancelledAt: null,
+      cancelledReason: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000943',
+      target: 'contacts',
+      status: 'cancelled',
+      originalFilename: 'wrong-sheet.xlsx',
+      sourceSha256: 'd'.repeat(64),
+      rowCount: 4,
+      validRowCount: 4,
+      errorRowCount: 0,
+      importedRowCount: 0,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-16T08:00:00.000Z',
+      completedAt: null,
+      cancelledAt: '2026-08-16T08:05:00.000Z',
+      cancelledReason: 'Uploaded the wrong sheet',
+    },
+  ],
+  nextCursor: null,
+  targets: [
+    { key: 'contacts', label: 'Contacts', columns: IMPORT_COLUMNS },
+    {
+      key: 'canonical_items',
+      label: 'Catalogue items',
+      columns: [
+        {
+          key: 'name',
+          header: 'Item name',
+          required: true,
+          note: 'Required. Unique in the catalogue.',
+        },
+      ],
+    },
+  ],
+};
+
+const IMPORT_BATCH_DETAIL = {
+  batch: IMPORT_BATCHES.batches[0],
+  columns: IMPORT_COLUMNS,
+  // One page, exhausted — so the scan sees the "Show the rows that
+  // passed" control rather than "Load more". Both are the same button
+  // variant; this is the one an operator reaches first.
+  nextRowCursor: null,
+  rows: [
+    {
+      id: '00000000-0000-4000-8000-000000000951',
+      rowNumber: 2,
+      status: 'error',
+      cells: { designation: 'Sr.DFM Bhusawal', address: 'DRM Office', gstin: '27BAD' },
+      errors: [
+        {
+          column: 'designation',
+          message:
+            'Bill-paying authorities (Sr.DFM/DFM/ADFM) and awarding authorities (Sr.DSTE) are never consignees (rule R16); record the consignee named on the document instead.',
+        },
+        {
+          column: 'gstin',
+          message:
+            'The GSTIN must be 15 characters: 2-digit state code + PAN + entity code + Z + check character, or a TDS-deductor GSTIN ending in D (railway units).',
+        },
+      ],
+      importedRecordId: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000952',
+      rowNumber: 3,
+      status: 'valid',
+      cells: {
+        designation: 'Nagpur Signalling Works',
+        address: 'Nagpur',
+        gstin: '27AAAPZ1234C1ZV',
+      },
+      errors: [],
+      importedRecordId: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000953',
+      rowNumber: 4,
+      status: 'valid',
+      cells: { designation: 'Akola Traction Supplies', address: 'Akola', gstin: '' },
+      errors: [],
+      importedRecordId: null,
+    },
+  ],
+};
+
 /** The organisation-wide audit register (0095). One row of each shape the
  * screen draws differently: an update carrying a before/after diff, a
  * creation carrying context facts, and an organisation-level event with no
@@ -1677,6 +1942,31 @@ export async function mockWorkspace(
      scan has to check the contrast of. */
   await page.route('**/api/signing-requests*', (route) =>
     route.fulfill(json(SIGNING_QUEUE)),
+  );
+  // Notifications (0092). Four registers, four handlers. Playwright
+  // matches the LAST registered pattern, so a broader one added after
+  // these would swallow them; the three hyphenated paths are registered
+  // ahead of the bare `notifications` one, and the order is kept explicit
+  // rather than relied on, because the paths only happen not to overlap.
+  await page.route('**/api/notification-channels*', (route) =>
+    route.fulfill(json(NOTIFICATION_CHANNELS)),
+  );
+  await page.route('**/api/notification-templates*', (route) =>
+    route.fulfill(json(NOTIFICATION_TEMPLATES)),
+  );
+  await page.route('**/api/notification-consents*', (route) =>
+    route.fulfill(json(NOTIFICATION_CONSENTS)),
+  );
+  await page.route('**/api/notifications*', (route) =>
+    route.fulfill(json(NOTIFICATION_MESSAGES)),
+  );
+  /* Spreadsheet imports (0094). The LIST is registered first and the
+     per-batch read second, because Playwright matches the LAST handler
+     that matches — the same ordering trap the correspondence routes
+     above carry a note about. */
+  await page.route('**/api/imports*', (route) => route.fulfill(json(IMPORT_BATCHES)));
+  await page.route('**/api/imports/00000000-0000-4000-8000-*', (route) =>
+    route.fulfill(json(IMPORT_BATCH_DETAIL)),
   );
   // The audit register and the management summary (0095). The two audit
   // patterns do not overlap: a Playwright glob's star does not cross a

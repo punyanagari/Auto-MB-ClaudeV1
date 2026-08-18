@@ -80,6 +80,24 @@ const UNBOUND_ROUTES = new Set([
   'POST /api/organisations',
   'POST /api/signing/agent/claim',
   'POST /api/signing/agent/requests/:id/result',
+  // Meta's WhatsApp webhook (0092). A delivery receipt is a fact from
+  // OUTSIDE the organisation: Meta is not a member of anything, so there
+  // is no session for `requireUser` to prove and no member to bind a
+  // transaction as. What stands in place of a session is the HMAC — the
+  // receiver verifies `X-Hub-Signature-256` over the raw body before it
+  // reads a field — and the write it makes is one narrow SECURITY
+  // DEFINER call that moves at most one row, forwards only. The GET is
+  // Meta's subscription handshake, which echoes a challenge only when
+  // the verify token matches and has no side effect at all.
+  //
+  // Being listed here exempts them from the 401 and 403 sweeps below, so
+  // the replacements are standing tests of their own in
+  // `test/notifications.integration.test.ts`: an unsigned body, a
+  // malformed signature header and one signed with the wrong secret are
+  // each proved to be refused, and a receipt naming another
+  // organisation's phone number id is proved to move nothing.
+  'GET /api/notifications/webhook',
+  'POST /api/notifications/webhook',
 ]);
 
 /**
@@ -120,6 +138,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   [
     'GET /api/mis/summary',
     'the management summary: three aggregates whose arrays are one row per MONTH (capped by the route at 60) and one row per ageing band (five, always all five). Paging a summary would page the answer to a question that has one screen',
+  ],
+  [
+    'GET /api/notification-channels',
+    'two channels, WhatsApp and email, and the product has no third: the response is at most two rows and a page control over it would be furniture',
   ],
   [
     'GET /api/masters/contacts',
@@ -495,6 +517,10 @@ const PAYLOAD_OVERRIDES = new Map<string, unknown>([
 
 const PDF_MAGIC = Buffer.from('%PDF-1.4 inventory probe');
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+/** A local file header, which is how every ZIP — and therefore every
+ * .xlsx — begins. Enough to pass the signature guard; the sweep this
+ * feeds never gets far enough to need a readable workbook behind it. */
+const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]);
 
 interface SynthesisedRequest {
   url: string;
@@ -558,6 +584,19 @@ function synthesiseRequest(record: TenantRouteRecord): SynthesisedRequest {
     (record.method === 'POST' || record.method === 'PUT')
   ) {
     const isImageUpload = record.url.includes('/logo');
+    // The spreadsheet importer (0094) takes a ZIP container, which is
+    // what an .xlsx is. Its guard refuses anything else by signature
+    // before the membership wall is reached, so a PDF here would answer
+    // 400 and the sweep below would never see the 403 it is checking for.
+    const isWorkbookUpload = record.url === '/api/imports';
+    if (isWorkbookUpload) {
+      return {
+        url: url + query,
+        payload: ZIP_MAGIC,
+        contentType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      };
+    }
     return {
       url: url + query,
       payload: isImageUpload ? PNG_MAGIC : PDF_MAGIC,

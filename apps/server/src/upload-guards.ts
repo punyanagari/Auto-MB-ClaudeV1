@@ -25,9 +25,26 @@ import { recordUploadScanFailure } from './metrics.js';
  * the throttle derived in app.ts. */
 export const MAX_PDF_UPLOAD_BYTES = 25 * 1024 * 1024;
 
+/**
+ * The ceiling on an imported workbook (0094).
+ *
+ * A third of the PDF cap, and lower on purpose. A spreadsheet is
+ * COMPRESSED text: the 5,000-row sheets this feature is sized for are
+ * tens of kilobytes, and the largest real register anyone has produced is
+ * under a megabyte. Eight is generous for the honest case and small
+ * enough that the decompression the parser has to do on hostile bytes is
+ * bounded well below `XLSX_LIMITS.maxInflatedBytes` before it starts.
+ */
+export const MAX_XLSX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
 const PDF_MAGIC = Buffer.from('%PDF-');
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
+/** Every .xlsx is a ZIP, and every ZIP begins with a local file header.
+ * This proves the container and nothing beyond it — that the container
+ * holds a workbook rather than a photograph of one is `xlsx.ts`'s
+ * question, and it answers by refusing to find the parts. */
+const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
 interface ConsumedUpload<MediaType extends string> {
   /** The request body, proven non-empty and proven to carry the format's
@@ -50,6 +67,11 @@ interface ImageUploadSpec {
   readonly description: string;
 }
 
+interface XlsxUploadSpec {
+  readonly format: 'xlsx';
+  readonly description: string;
+}
+
 export function consumeUpload(
   body: unknown,
   spec: PdfUploadSpec,
@@ -58,6 +80,10 @@ export function consumeUpload(
   body: unknown,
   spec: ImageUploadSpec,
 ): ConsumedUpload<'image/png' | 'image/jpeg'>;
+export function consumeUpload(
+  body: unknown,
+  spec: XlsxUploadSpec,
+): ConsumedUpload<'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'>;
 /**
  * Validates a raw request body and hands back the bytes with the media
  * type its signature proves. Every refusal is a 400 with the code the
@@ -66,8 +92,32 @@ export function consumeUpload(
  */
 export function consumeUpload(
   body: unknown,
-  spec: PdfUploadSpec | ImageUploadSpec,
+  spec: PdfUploadSpec | ImageUploadSpec | XlsxUploadSpec,
 ): ConsumedUpload<string> {
+  if (spec.format === 'xlsx') {
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      throw httpError(
+        400,
+        'IMPORT_SHEET_UNREADABLE',
+        `Send ${spec.description} as an .xlsx request body.`,
+      );
+    }
+    if (!body.subarray(0, ZIP_MAGIC.length).equals(ZIP_MAGIC)) {
+      // The commonest real cause is an .xls — the pre-2007 binary format,
+      // which is not a ZIP and which this reader does not open — so the
+      // refusal says what to do rather than only what went wrong.
+      throw httpError(
+        400,
+        'IMPORT_SHEET_UNREADABLE',
+        'That file is not an .xlsx workbook; open it in Excel and use Save As to write a .xlsx.',
+      );
+    }
+    return {
+      bytes: body,
+      mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+  }
+
   if (spec.format === 'pdf') {
     if (!Buffer.isBuffer(body) || body.length === 0) {
       throw httpError(

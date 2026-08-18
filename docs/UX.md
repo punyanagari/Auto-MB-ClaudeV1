@@ -695,6 +695,263 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
+### 17. Notifications — a screen the mock does not draw
+
+**Status: PROPOSED. Application-first, owner ruling not yet taken.**
+Numbered 17 by coordinator allocation; 14, 15 and 16 belong to the packs
+that landed ahead of it.
+
+**There is no mock citation for this screen, and this entry exists so
+that absence is a recorded decision rather than an omission a reviewer
+has to guess at.** `app/settings/page.tsx` at
+`punyanagari/Auto-MB-Vercel-du@fdfd610` has five tabs — Company,
+Documents, Digital signatures, Appearance, Account & organisations — and
+none of them is this. `components/app-topbar.tsx` draws a bell with a
+"2 notifications" tooltip, but that is an in-app alert badge and not the
+outbound messaging this pack is about; nothing in the mock models a
+channel, a template, a consent or a delivery.
+
+That puts the screen under § Design contract 4 — "behaviour the mock
+cannot express is built inside the mock's visual grammar using its
+existing components, without inventing new visual language" — and
+§ Approved divergences 4, "screens the mock does not cover", whose list
+this extends. Concretely, every element on it is one the mock already
+ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Section panels          | `Card` + `CardHeader`, one per section, as `app/settings/page.tsx` stacks its own   |
+| Templates, consent, log | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Collapsed forms         | `Disclosure`, the same anatomy the Settings number-series editor uses               |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+**Four chip words join the shared vocabulary** rather than being styled
+locally, because each means the same thing wherever it appears:
+`delivered` and `read` join the success family beside `paid` and
+`signed` — a message that reached the handset and one the recipient
+opened are both the proceed state of a delivery; `queued` joins the
+notice family beside `pending` and `sent`, because a message waiting on
+a provider is a queue and not a caution; and `paused` joins the warning
+family beside `in-production`, because a template Meta throttled for
+quality is work to do rather than something that failed. Unmapped, all
+four rendered neutral — identical to a draft, which is the one reading
+they must not have.
+
+**Three pairs are toned LOCALLY instead**, per `ui/chip.tsx`'s own rule
+that a word whose meaning is screen-specific must not enter the shared
+map: `enabled`/`disabled` for a channel, and `opted in`/`opted out` for a
+consent. "Enabled" is not a lifecycle stage anywhere else in the product,
+and an opted-out contact is a deliberate, correct state rather than a
+cancellation — so it is neutral, not destructive.
+
+**One thing on this screen has no precedent in the mock, and it is
+deliberate: a channel can show two lamps at once.** A channel that the
+organisation has switched on, on a deployment that has no access token or
+no mail relay, draws its green `enabled` chip AND an amber `no transport`
+chip beside it, with a sentence naming who to ask. The two facts belong
+to two different people — Meta's onboarding is the agency's, the server's
+environment is the administrator's — and they genuinely come true months
+apart. A single lamp would have to lie about one of them, and a green one
+over a server that cannot send is the worse lie.
+
+**Every control the feature needs is on this screen, and the first draft
+of it shipped without three of them.** That is recorded here rather than
+quietly fixed, because the shape of the mistake is one this document
+exists to catch: four read-only registers whose empty states instructed
+an operator to record a Meta status, record a consent and send a
+message — none of which the screen could do. Nothing could leave `draft`,
+so WhatsApp refused everything; no consent row could be created, so both
+channels refused everything. The feature was unreachable from the product
+it was in while every one of its API routes worked perfectly.
+
+The three controls are:
+
+| Control               | Where                          | Why there                                                                                 |
+| --------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
+| Record what Meta said | A cell on each template row    | The status belongs to one template, and a separate form would need to name which          |
+| Record a consent      | A `Disclosure` in the register | Consent is per channel AND per address; a checkbox on a contact row could express neither |
+| Send a message        | A `Disclosure` in the log      | It is the only send in the product today, so without it the log can never hold a row      |
+
+The status control offers exactly the moves migration 0092's guard
+admits, so anything it draws is something the server accepts, and the
+reason box appears only for the three statuses Meta actually explains.
+The send form has no address field, and that absence is the consent rule
+made visible: the address comes from the consent record, and a caller who
+could pass one could send somewhere nobody agreed to.
+
+**What the screen still deliberately does not do:**
+
+- **Send from a document.** Sending a _document_ belongs on the document
+  being sent, and that is the next pack's outcome. The send form here is
+  the operator's own — proving a channel works, and messaging a
+  counterparty about something with no document behind it. When document
+  delivery lands, it adds a button to the challan, not a second picker
+  here.
+- **Poll Meta for template status.** The status is recorded by a member
+  reading the Meta console. There is no WABA to poll yet, and a screen
+  that pretended to poll one would be drawing a mechanism that does not
+  exist.
+- **Page any of the four registers.** Each reads the first fifty rows and
+  says so when there are more. A paging control on a register nobody has
+  filled is furniture; the honest upgrade when an organisation reaches
+  fifty templates is a cursor button, not a redesign.
+- **Read inbound replies.** The webhook ignores them. What a reply of
+  "STOP" does to a consent record is an owner's rule to state, and until
+  it is stated the register shows only what a member recorded.
+
+**Where it sits.** Administration, between Members and Settings, with the
+`MessageSquare` lamp — the one icon on that rail not already spoken for.
+Administration rather than Documents because it configures how the
+organisation speaks, in the same family as who belongs to it and how it
+is set up. It is NOT a sixth tab inside Settings: the delivery log and
+the consent register are registers people go looking for, and a register
+behind a tab behind a settings page is a register nobody finds.
+
+**Gated at the screen, not at a control.** Every read this view makes
+needs the notifications authority — the consent register is a list of
+counterparties' personal telephone numbers and the delivery log says who
+was messaged — so a member without it gets a refusal panel rather than
+four failed loads. The rail door stays visible, unlike Employees': that
+door leaks that a salary register exists, and this one leaks nothing an
+ordinary member should not know the product has.
+
+**When the mock grows a notifications screen, the mock wins.** This entry
+retires the moment there is something to cite, on the § 4 iteration
+pipeline: change it in v0, merge it, diff, port the delta.
+
+### 18. Import screens — a screen the mock does not draw at all
+
+**Status: application-first, owner ruling not yet taken.** Numbered 18 by
+coordinator allocation; 17 belongs to the notifications pack of this wave.
+
+**There is no mock citation for this screen, and this entry exists so that
+absence is a recorded decision rather than an omission a reviewer has to
+guess at.** `AGENTS.md` § Design contract says a pull request touching a
+visible surface must cite the mock screen it replicates. So: there is
+nothing at `punyanagari/Auto-MB-Vercel-du@fdfd610` to cite. The mock has no
+importer, no upload panel and no staging concept — it draws the registers
+an import fills, and nothing about filling them from a file.
+
+That puts the screen under § Design contract 4 and § Approved divergences
+4, "screens the mock does not cover", whose list this extends. Every
+element on it is one the mock already ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Upload panel            | `Card` + `CardHeader`, the mock's `data-surface` panel                              |
+| Register picker         | The `field`/`select` pair every form on the product uses                            |
+| Both tables             | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Withdrawal              | `ConfirmDialog`, destructive tone, the same anatomy every cancel flow uses          |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+**Two chip words join the shared vocabulary** rather than being styled
+locally. `validated` takes the warning family beside `claimed` and
+`awaiting-approval`: a batch whose rows have all been judged is waiting on
+a person, which is exactly what that family means. `error` takes the
+destructive family beside `cancelled` and `rejected` — and the distinction
+from `low-stock`, which is deliberately warning, is the one worth stating:
+a part that needs reordering is a thing to do, and a row that cannot be
+written is a thing that failed. `pending`, `completed`, `cancelled` and
+`superseded` were already mapped and keep their readings — `superseded`
+arrived with the tax-invoice replacement (0051) and reads the same way
+here: not a failure, and no longer the live document either.
+
+**One icon is new to the rail: `Upload`**, for the Imports entry, checked
+against every icon already on it. The screen sits directly beneath Masters
+in Administration, because the two registers it fills are the two Masters
+owns and an operator who has just found the Contacts screen should be one
+row from the way to fill it eight hundred at a time.
+
+**The screen is a conversation rather than a button, and the layout says
+so.** An import is never "did it work"; it is "which eleven rows are wrong
+and why". The batch list is the history, the open batch beneath it is the
+argument, and the register is untouched until one button is pressed — which
+is why that button counts the rows it will write ("Import 2 rows") and the
+paragraph above it says, in words, that nothing has been written yet.
+Errors sort to the top of the row table whatever their line number, because
+burying eleven refusals under four hundred passes is how an operator
+concludes an import simply failed.
+
+**Three things the Imports screen does not do**, each because the
+alternative would be a second place to do something, or a worse answer:
+
+- **Edit a cell.** A staged row is what the sheet contained, and migration
+  0094 refuses to rewrite it. An operator who could patch row 412 here
+  would produce a register nobody can reconcile against the file it came
+  from — and the file is what their colleague sends again next quarter.
+  They fix the workbook, which is the only fix that survives.
+- **Poll for progress.** Parsing is synchronous, so a batch is judged by
+  the time the upload answers. There is nothing to wait for, and inventing
+  a spinner for it would be inventing the wait as well.
+- **Undo a committed import.** The rows are ordinary register records once
+  they are written, and they are retired the way every other record of that
+  register is. A bulk undo would be a second, weaker delete path around
+  rules the registers already have.
+- **Update an existing record.** An importer CREATES; a row whose natural
+  key already exists is reported as a duplicate, in the register's own
+  words, and never overwrites what is there. Match-and-update is a
+  different feature with a different failure mode — a mistyped key
+  silently rewriting the wrong party's bank details — and it needs a
+  column to match on that the operator chooses deliberately.
+- **Accept a sheet of unlimited size.** Five thousand rows, eight
+  megabytes, and a ceiling on the text the cells expand to. Past any of
+  them the refusal says to split the file, because a synchronous parse is
+  what buys the immediate verdict this screen is built around; the job
+  queue is there when a register arrives that genuinely cannot be split.
+
+**One divergence from the product's own habit, stated so it is not
+mistaken for an oversight:** the row table renders the sheet's raw cells
+beside the errors, unformatted and untruncated. Every other register in
+this product formats what it shows. These are not the product's values —
+they are what somebody typed into Excel, shown so it can be compared with
+the workbook still open on the other monitor.
+
+**Those cells do not outlive the decision.** The moment a batch is
+committed or withdrawn its staged cells are emptied, and they are not in
+the organisation export at all. A contacts sheet is a column of bank
+account numbers and IFSCs, and the single-record path is deliberately
+discreet about both — `contact-fields.ts` says of them that they are
+"never audited and never logged". Keeping a second unredacted copy in a
+staging table, echoed on every read and published in a recovery package,
+would be the one place that discretion did not reach. What survives is
+what happened: the row number, the verdict, the error in the register's
+own words, and the record the row became.
+
+That is also why the two reads are gated differently. The batch LIST is
+ordinary register history and every writer sees it — which files were
+imported, when, and how many rows each refused. Opening a batch shows the
+cells, so the batch DETAIL carries the import authority, and the screen
+draws the "Open" control only for a member who holds it. Nobody is
+offered a door that answers 403.
+
+**Uploading a sheet for a register retires the open ones aimed at it**,
+and the batch says `superseded`. The alternative was leaving a validated
+batch committable indefinitely, which turns the ordinary correction loop
+into a trap: upload, read the eleven errors, fix the workbook, upload
+again — and now two batches are committable, the corrected one and the
+one with the typo still in it. Committing the wrong one writes a
+known-bad row and reports success.
+
+**An imported record gets the register's own creation event**, the same
+one the form writes, with the batch id in its payload. A contact brought
+in by a sheet therefore has the history panel a contact typed into the
+form has, and "who added this vendor" is answerable from the vendor
+rather than only from this screen. The batch keeps an event of its own
+beside them, as the provenance those records point back at.
+
+**The row table pages, and the paging is real.** The screen asks for the
+error rows first and the valid ones on request, and both are requests
+against the server's own cursor — not a slice of a response that already
+carried five thousand rows. A batch's rows are never sent in full.
+
+**When the mock grows an import screen, the mock wins.** This entry retires
+the moment there is something to cite, on the § 4 iteration pipeline:
+change it in v0, merge it, diff, port the delta.
+
 ### 19. Audit trail, Reports, and an export on every register — PROPOSED
 
 **Status: application-first, owner ruling not yet taken.** Numbered 19 by
@@ -1257,7 +1514,7 @@ matrix dialog · PAC certificate issuance · Completion extensions · Measuremen
 Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invoice
 IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
 recovery · Password recovery · Account security · Organisation access settings ·
-Appearance settings · Monthly payroll
+Appearance settings · Monthly payroll · Spreadsheet imports
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.

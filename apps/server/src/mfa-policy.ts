@@ -106,6 +106,19 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // export the lot in one request. A read can be worth stealing an account
   // for, and this one is.
   audit: true,
+  // Whoever may configure a channel can point the organisation's outbound
+  // voice at a number they control, and whoever may record a consent can
+  // authorise a recipient nobody agreed to. A stolen session that can do
+  // either can impersonate the agency to its own customers.
+  notifications: true,
+  // Importing is the one authority whose damage is measured in rows. A
+  // stolen session holding it can commit a prepared workbook that rewrites
+  // a party master — every consignee address, every vendor's bank account
+  // — in a single call, and the payment advices generated afterwards would
+  // carry the attacker's account numbers while looking exactly like the
+  // organisation's own. Bulk is the reason it is on the wall, not an
+  // argument for leaving it off.
+  import: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -118,6 +131,8 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  notifications: 'can_manage_notifications',
+  import: 'can_import_data',
   audit: 'can_view_audit_trail',
 };
 

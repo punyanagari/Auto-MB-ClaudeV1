@@ -19,7 +19,7 @@ import {
   type TallyInvoice,
   type TallyReceipt,
 } from '../tally-xml.js';
-import { XLSX_CONTENT_TYPE, buildXlsx, type XlsxColumn } from '../xlsx.js';
+import { XLSX_MEDIA_TYPE, buildXlsx, type XlsxColumn } from '../xlsx.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 import { EXPORT_ROW_CAP } from './audit.js';
@@ -721,7 +721,7 @@ export function registerMisRoutes(app: AppInstance, auth: Auth, database: Sql): 
           ]),
         };
       });
-      void reply.type(XLSX_CONTENT_TYPE);
+      void reply.type(XLSX_MEDIA_TYPE);
       void reply.header(
         'content-disposition',
         `attachment; filename="${register.filename}.xlsx"`,

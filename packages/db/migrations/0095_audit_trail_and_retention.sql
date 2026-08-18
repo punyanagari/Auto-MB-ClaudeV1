@@ -73,21 +73,27 @@ COMMENT ON COLUMN organisation_memberships.can_view_audit_trail IS
 -- false. This is the fourth restatement and the same rule applies to the
 -- next.
 --
--- AND IT CARRIES TWO GRANTS THAT ARE NOT THIS PACK'S. Migrations 0092
--- (can_manage_notifications) and 0094 (can_import_data) replace this same
--- function earlier in the same wave, and 0095 runs after both, so this body
--- is the one that survives — a plain restatement of only this pack's
--- columns would silently revoke theirs from every organisation created
--- afterwards. They are set through the guarded loop below rather than named
--- in the INSERT above, because this file must also apply to a database that
--- does NOT have those columns: its own branch before the train is
--- assembled, and any rollback that drops a sibling migration. The list is a
--- CLOSED LITERAL, never the catalog — a new authority must not become
--- granted-by-default just by existing, which is the rule
--- `apps/server/src/authz.ts` states about silent defaults.
+-- SEVEN AUTHORITIES, AND ONLY ONE IS THIS PACK'S. The other six are
+-- 0004's issue and cancel, 0089's payroll, 0091's signing, 0092's
+-- notifications and 0094's import — restated because a replacement that
+-- omits one REVOKES it from every organisation created afterwards, with no
+-- error anywhere, because nothing refuses a column left false.
 --
--- ponytail: delete the loop and add the two columns to the INSERT once
--- 0092 and 0094 are on main and no supported database lacks them.
+-- 0094's own header records that this hazard is not theoretical: it fired
+-- between 0092 and 0094, and the first composition of those two silently
+-- dropped the notifications grant from every founder. It was caught by
+-- reading the live function out of `pg_proc` at the merge rather than by
+-- any test. This file is the third writer of the same function in one
+-- wave and the last, so this list is the one that survives; the assertion
+-- in `packages/db/test/migration-contract.test.ts` pins all seven.
+--
+-- `can_approve_amendments` is deliberately NOT here, and neither is
+-- `can_manage_payments`: 0080 withholds the payments grant from the
+-- founder on purpose, because sending money out of the bank is the one act
+-- it refuses to make automatic. A founder self-grants both on the Members
+-- screen. That is why this list is written out rather than swept from the
+-- catalog — a new authority must not become granted-by-default merely by
+-- existing.
 --
 -- This is NOT a backfill: it reaches new organisations only. An owner of an
 -- organisation that already exists self-grants the authority on the Members
@@ -104,7 +110,6 @@ SET search_path = public, app_private, pg_temp
 AS $$
 DECLARE
   v_user_id text;
-  v_column text;
 BEGIN
   v_user_id := nullif(current_setting('app.user_id', true), '');
   IF v_user_id IS NULL THEN
@@ -117,28 +122,13 @@ BEGIN
   INSERT INTO organisation_memberships (
     organisation_id, user_id, role, work_scope,
     can_issue_documents, can_cancel_documents, can_sign_documents,
-    can_manage_payroll, can_view_audit_trail, status
+    can_manage_payroll, can_manage_notifications, can_import_data,
+    can_view_audit_trail, status
   )
-  VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, true, 'active');
-
-  -- The sibling authorities of this wave, each granted only where its
-  -- column exists. See the note above the function for why this is a loop
-  -- over a literal list rather than two more values in the INSERT.
-  FOR v_column IN
-    SELECT name
-    FROM unnest(ARRAY['can_manage_notifications', 'can_import_data']) AS name
-    WHERE EXISTS (
-      SELECT 1 FROM pg_attribute
-      WHERE attrelid = 'public.organisation_memberships'::regclass
-        AND attname = name AND attnum > 0 AND NOT attisdropped
-    )
-  LOOP
-    EXECUTE format(
-      'UPDATE organisation_memberships SET %I = true'
-      || ' WHERE organisation_id = $1 AND user_id = $2',
-      v_column
-    ) USING p_id, v_user_id;
-  END LOOP;
+  VALUES (
+    p_id, v_user_id, 'owner', 'all', true, true, true, true, true, true, true,
+    'active'
+  );
 
   INSERT INTO audit_events (
     organisation_id, actor_user_id, action, entity_type, entity_id

@@ -36,7 +36,25 @@ import type {
   RegisterSigningAgent,
   RegisterSigningAgentResponse,
   SigningAgentResponse,
+  ImportBatchDetail,
+  ImportBatchList,
+  ImportRowStatus,
+  ImportTargetKey,
   SigningQueueResponse,
+  CreateNotificationTemplate,
+  NotificationChannelListResponse,
+  NotificationChannelName,
+  NotificationChannelResponse,
+  NotificationConsentListResponse,
+  NotificationConsentResponse,
+  NotificationMessageListResponse,
+  NotificationMessageResponse,
+  NotificationTemplateListResponse,
+  NotificationTemplateResponse,
+  RecordNotificationConsent,
+  SaveNotificationChannel,
+  SendNotification,
+  SetNotificationTemplateStatus,
   SigningRequestResponse,
   SigningRequestStatus,
   ApiError,
@@ -2039,10 +2057,95 @@ export interface ApiClient {
     organisationId: string,
     body: RegisterSigningAgent,
   ) => Promise<RegisterSigningAgentResponse>;
+  /** Bringing a register in from a spreadsheet (migration 0094). The
+   * listing carries the registers that accept one alongside the batches,
+   * because the screen needs them on an organisation's first day. */
+  readonly listImportBatches: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<ImportBatchList>;
+  readonly readImportBatch: (
+    organisationId: string,
+    batchId: string,
+    options?: {
+      readonly limit?: number;
+      /** The `rowNumber` of the last row of the previous page. */
+      readonly cursor?: number;
+      readonly status?: ImportRowStatus;
+    },
+  ) => Promise<ImportBatchDetail>;
+  /** Stages a workbook. Writes nothing to the register — that is
+   * `commitImportBatch`, and the separation is the whole feature. */
+  readonly uploadImportWorkbook: (
+    organisationId: string,
+    target: ImportTargetKey,
+    file: File,
+  ) => Promise<ImportBatchDetail>;
+  readonly commitImportBatch: (
+    organisationId: string,
+    batchId: string,
+  ) => Promise<ImportBatchDetail>;
+  readonly cancelImportBatch: (
+    organisationId: string,
+    batchId: string,
+    body: { readonly reason: string },
+  ) => Promise<ImportBatchDetail>;
+  readonly downloadImportTemplate: (
+    organisationId: string,
+    target: ImportTargetKey,
+  ) => Promise<Blob>;
   readonly revokeSigningAgent: (
     organisationId: string,
     agentId: string,
   ) => Promise<SigningAgentResponse>;
+
+  /** Notifications (migration 0092): the channels the organisation
+   * speaks through, the templates it may say, who has consented to be
+   * spoken to, and the log of what was actually sent.
+   *
+   * Every one of these needs the `notifications` authority, READS
+   * INCLUDED — a consent register is a list of counterparties' personal
+   * telephone numbers — so the screen that renders them is behind
+   * `canManageNotifications`. Saving a channel additionally needs the
+   * owner role, because it decides which number the organisation speaks
+   * from. */
+  readonly listNotificationChannels: (
+    organisationId: string,
+  ) => Promise<NotificationChannelListResponse>;
+  readonly saveNotificationChannel: (
+    organisationId: string,
+    channel: NotificationChannelName,
+    body: SaveNotificationChannel,
+  ) => Promise<NotificationChannelResponse>;
+  readonly listNotificationTemplates: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationTemplateListResponse>;
+  readonly createNotificationTemplate: (
+    organisationId: string,
+    body: CreateNotificationTemplate,
+  ) => Promise<NotificationTemplateResponse>;
+  readonly setNotificationTemplateStatus: (
+    organisationId: string,
+    templateId: string,
+    body: SetNotificationTemplateStatus,
+  ) => Promise<NotificationTemplateResponse>;
+  readonly listNotificationConsents: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationConsentListResponse>;
+  readonly recordNotificationConsent: (
+    organisationId: string,
+    body: RecordNotificationConsent,
+  ) => Promise<NotificationConsentResponse>;
+  readonly listNotifications: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationMessageListResponse>;
+  readonly sendNotification: (
+    organisationId: string,
+    body: SendNotification,
+  ) => Promise<NotificationMessageResponse>;
 
   /** The employee master and the monthly payroll run (migrations 0089
    * and 0090). Organisation-level, not per Work: a salary is paid by the
@@ -2321,6 +2424,19 @@ function uploadQuery(details: Record<string, string | undefined>): string {
     if (value !== undefined && value !== '') query.set(key, value);
   }
   return query.toString();
+}
+
+/** The keyset pagination pair as a querystring suffix, or the empty
+ * string. Omitting both is what asks for the whole register, which is the
+ * compatibility rule `packages/contracts/src/pagination.ts` encodes. */
+function pageQuery(options?: {
+  readonly limit?: number;
+  readonly cursor?: string;
+}): string {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set('limit', String(options.limit));
+  if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+  return query.size === 0 ? '' : `?${query.toString()}`;
 }
 
 export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
@@ -4790,6 +4906,57 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { method: 'POST', body, organisationId },
       );
     },
+    async listImportBatches(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchList>(`/api/imports${suffix}`, { organisationId });
+    },
+    async readImportBatch(organisationId, batchId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', String(options.cursor));
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchDetail>(`/api/imports/${batchId}${suffix}`, {
+        organisationId,
+      });
+    },
+    async uploadImportWorkbook(organisationId, target, file) {
+      // The raw Blob, exactly as `uploadPdf` sends a PDF — there is no
+      // FormData anywhere in this client. The file's own name rides the
+      // querystring because it is what the operator calls the import.
+      const query = uploadQuery({ target, filename: file.name });
+      const response = await fetchImpl(`/api/imports?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ImportBatchDetail;
+    },
+    async commitImportBatch(organisationId, batchId) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/import`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelImportBatch(organisationId, batchId, body) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async downloadImportTemplate(organisationId, target) {
+      return downloadBlob(`/api/imports/templates/${target}`, organisationId);
+    },
     async downloadSignedPdf(organisationId, requestId) {
       // Fetched rather than linked, like every other PDF here: the
       // tenant header travels on every scoped request and an <a href>
@@ -4811,6 +4978,63 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     async revokeSigningAgent(organisationId, agentId) {
       return request<SigningAgentResponse>(`/api/signing-agents/${agentId}/revoke`, {
         method: 'POST',
+        organisationId,
+      });
+    },
+
+    async listNotificationChannels(organisationId) {
+      return request<NotificationChannelListResponse>('/api/notification-channels', {
+        organisationId,
+      });
+    },
+    async saveNotificationChannel(organisationId, channel, body) {
+      return request<NotificationChannelResponse>(
+        `/api/notification-channels/${channel}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async listNotificationTemplates(organisationId, options) {
+      return request<NotificationTemplateListResponse>(
+        `/api/notification-templates${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async createNotificationTemplate(organisationId, body) {
+      return request<NotificationTemplateResponse>('/api/notification-templates', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async setNotificationTemplateStatus(organisationId, templateId, body) {
+      return request<NotificationTemplateResponse>(
+        `/api/notification-templates/${templateId}/status`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async listNotificationConsents(organisationId, options) {
+      return request<NotificationConsentListResponse>(
+        `/api/notification-consents${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async recordNotificationConsent(organisationId, body) {
+      return request<NotificationConsentResponse>('/api/notification-consents', {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listNotifications(organisationId, options) {
+      return request<NotificationMessageListResponse>(
+        `/api/notifications${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async sendNotification(organisationId, body) {
+      return request<NotificationMessageResponse>('/api/notifications', {
+        method: 'POST',
+        body,
         organisationId,
       });
     },

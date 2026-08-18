@@ -560,6 +560,105 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // of which changes what the credential IS, which is the property every
   // signature already made depends on.
   signing_agents: ['last_seen_at', 'revoked_at', 'revoked_by_user_id'],
+
+  // Notifications (0092). A channel's identity is which organisation and
+  // which channel; everything else about it is configuration an operator
+  // revises as Meta onboarding progresses, which is the whole reason the
+  // row exists before it is complete.
+  notification_channels: [
+    'enabled',
+    'waba_phone_number_id',
+    'waba_business_account_id',
+    'display_phone_number',
+    'api_base_url',
+    'from_address',
+    'reply_to_address',
+    'configured_by_user_id',
+    'updated_at',
+  ],
+  // A template's identity is the name and language Meta knows it by, and
+  // its body freezes at submission because the WABA then holds the
+  // reviewed text and it is that text which is sent.
+  //
+  // `body_text`, `parameter_count` and `category` are absent from this
+  // list and therefore counted as FROZEN, which is the conservative half
+  // of a truth the census's binary model cannot state: the guard's second
+  // arm refuses them only once the status has left `draft`, so they are
+  // editable exactly while nobody outside this system has seen them. The
+  // reader sees the ROW comparison and reads it as a freeze; listing them
+  // as mutable instead would claim they are editable after submission,
+  // which is the direction that would matter if it were wrong.
+  notification_templates: ['status', 'status_reason', 'email_subject', 'updated_at'],
+  // Which contact and which channel a consent is about are written once.
+  // The address, the state and the evidence are revised: an agreement
+  // given for a new number is a new agreement on the same row, with its
+  // own evidence sentence.
+  notification_consents: [
+    'address',
+    'state',
+    'evidence',
+    'recorded_by_user_id',
+    'updated_at',
+  ],
+  // What was sent, to whom, through what, is frozen. What moves is the
+  // delivery ledger — forwards only, and its own guard arm proves that
+  // separately.
+  //
+  // `provider_message_id` is absent for the same reason the template's
+  // body is: the guard freezes it with a scalar comparison the moment it
+  // stops being NULL, which the reader sees as a freeze. It is written
+  // once, by the transaction that records what the provider answered, and
+  // never again — rewriting it would re-point every future receipt at a
+  // row it is not about.
+  notification_messages: [
+    'status',
+    'failure_code',
+    'failure_detail',
+    'sent_at',
+    'delivered_at',
+    'read_at',
+    'failed_at',
+    'updated_at',
+  ],
+  // An import batch's identity — the file it was, its digest, and the
+  // register it aims at — is written once, because the rows beneath it
+  // were judged against that answer. What moves is where it has got to
+  // and the census of what happened there.
+  spreadsheet_import_batches: [
+    'status',
+    'row_count',
+    'valid_row_count',
+    'error_row_count',
+    'imported_row_count',
+    'completed_at',
+    'completed_by_user_id',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancelled_reason',
+    'updated_at',
+  ],
+  // A staged row's CELLS are evidence: they are what the sheet
+  // contained, and a row whose content could be corrected in place is one
+  // where nobody can tell what was uploaded from what was fixed
+  // afterwards. The verdict written over them is the outcome.
+  //
+  // `cells` and `imported_record_id` are deliberately NOT here, and the
+  // reason is worth stating because it looks like an omission.
+  //
+  // `cells` may be EMPTIED and may never be changed — the route forgets
+  // a sheet's own text as its batch turns terminal, because a contacts
+  // sheet carries account numbers the direct path never logs. Destroying
+  // evidence is not restating it, so the freeze the scan below reads is
+  // the right reading of the rule.
+  //
+  // `imported_record_id` is WRITE-ONCE
+  // rather than mutable: null until the row reaches the register, and
+  // frozen from that moment, because re-pointing it at a second record
+  // would leave the first orphaned from the row that explains it. The
+  // scan above reads that rule as a freeze — it sees `NEW.x IS DISTINCT
+  // FROM OLD.x` and cannot see the `OLD.x IS NOT NULL` in front of it —
+  // and for this census's purpose that reading is the correct one.
+  spreadsheet_import_rows: ['status', 'errors'],
 };
 
 /**
