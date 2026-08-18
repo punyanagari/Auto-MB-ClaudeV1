@@ -39,7 +39,7 @@
  *   `RSACng.SignHash(hash, SHA256, Pkcs1)` produces.
  */
 
-import { createHash, X509Certificate } from 'node:crypto';
+import { createHash, type X509Certificate } from 'node:crypto';
 import { certificateIdentity } from '../pdf-signature/cms.js';
 import { algorithmIdentifier, der } from './der.js';
 

@@ -39,6 +39,11 @@ const CHIP_TONES = {
   // An inward letter on file (0086). Receiving the paper is what closes
   // the step; whether it has been answered is `replied`.
   received: 'success',
+  // A document the organisation's own certificate is now on (0091), and
+  // whose signature this server's verifier read as signed_and_intact
+  // before it would store the bytes. The one terminal success of the
+  // signing queue.
+  signed: 'success',
 
   // A tender whose technical bid has been opened: the result is with
   // the railway and nobody here can do anything about it (0083).
@@ -58,6 +63,12 @@ const CHIP_TONES = {
   // UNMAPPED so they read neutral — being in stock is not an
   // achievement, and a retired part is finished rather than bad.
   'low-stock': 'warning',
+
+  // A signing request the kiosk has taken and is working on (0091):
+  // work in hand, the same reading `in-production` carries. Its sibling
+  // `pending` is already mapped above and stays there — a request
+  // waiting for a kiosk is a queue, not a caution.
+  claimed: 'warning',
 
   review: 'warning',
   prepared: 'warning',

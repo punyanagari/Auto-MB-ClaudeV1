@@ -962,7 +962,7 @@ export function registerSigningRoutes(
       response: { 200: SubmitSignatureResponseSchema, ...upstreamErrorResponses },
     },
     handler: async (request) => {
-      const { id } = request.params as { id: string };
+      const { id } = request.params;
       const body = request.body as
         | { signature: string; failureReason?: undefined }
         | { failureReason: string; signature?: undefined };

@@ -57,7 +57,7 @@ import { createTestPki, unsignedPdf, type TestPki } from './helpers/signed-pdf.j
  *
  * The token is absent, here and in CI, so the one operation it performs
  * is the `DetachedDigestSigner` double described in `pdf-signing.test.ts`.
- * The real-token proof is `tools/kiosk-signing-check.mjs`, run by the
+ * The real-token proof is `tools/kiosk-signing-check.ps1`, run by the
  * owner at the kiosk.
  */
 
@@ -478,10 +478,11 @@ describe('the signing round trip', () => {
     const key = stored?.signed_object_key ?? '';
     // A NEW key, tenant-prefixed, never the unsigned render's.
     expect(key).not.toBe(challan.objectKey);
-    expect(key).toMatch(
-      new RegExp(
-        `^${organisationId}/sig/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.pdf$`,
-      ),
+    // Tenant-prefixed, in its own storage area, and a server-minted uuid:
+    // the three things `assertSafeObjectKey` holds a key to on the way in.
+    expect(key.startsWith(`${organisationId}/sig/`)).toBe(true);
+    expect(key.slice(`${organisationId}/sig/`.length)).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/,
     );
     const bytes = await createFileSystemStorage(storageDir).get(key);
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(result.signedSha256);

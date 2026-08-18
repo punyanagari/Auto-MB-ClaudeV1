@@ -425,6 +425,11 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     recordProductionReceipt: vi.fn(),
     listStockShortages: vi.fn(),
     createShortagePurchaseOrder: vi.fn(),
+    listSigningRequests: vi.fn(),
+    createSigningRequest: vi.fn(),
+    cancelSigningRequest: vi.fn(),
+    registerSigningAgent: vi.fn(),
+    revokeSigningAgent: vi.fn(),
     ...overrides,
   };
 }

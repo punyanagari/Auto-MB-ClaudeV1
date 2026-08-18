@@ -10,6 +10,14 @@ import type {
   StockMovementResponse,
   StockRegisterResponse,
   StockShortageResponse,
+  CancelSigningRequest,
+  CreateSigningRequest,
+  RegisterSigningAgent,
+  RegisterSigningAgentResponse,
+  SigningAgentResponse,
+  SigningQueueResponse,
+  SigningRequestResponse,
+  SigningRequestStatus,
   ApiError,
   ApprovalRequest,
   ApprovalStatus,
@@ -1901,6 +1909,34 @@ export interface ApiClient {
     organisationId: string,
     body: CreateShortagePurchaseOrderRequest,
   ) => Promise<PurchaseOrderDetailResponse>;
+  /** The signing queue (migration 0091, ADR-0012 lane 2). One list for
+   * the whole organisation: the kiosk is one machine, and the person
+   * watching it watches one queue. */
+  readonly listSigningRequests: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly status?: SigningRequestStatus;
+    },
+  ) => Promise<SigningQueueResponse>;
+  readonly createSigningRequest: (
+    organisationId: string,
+    body: CreateSigningRequest,
+  ) => Promise<SigningRequestResponse>;
+  readonly cancelSigningRequest: (
+    organisationId: string,
+    requestId: string,
+    body: CancelSigningRequest,
+  ) => Promise<SigningRequestResponse>;
+  readonly registerSigningAgent: (
+    organisationId: string,
+    body: RegisterSigningAgent,
+  ) => Promise<RegisterSigningAgentResponse>;
+  readonly revokeSigningAgent: (
+    organisationId: string,
+    agentId: string,
+  ) => Promise<SigningAgentResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -4464,6 +4500,42 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         '/api/stock/shortages/purchase-order',
         { method: 'POST', body, organisationId },
       );
+    },
+    async listSigningRequests(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<SigningQueueResponse>(`/api/signing-requests${suffix}`, {
+        organisationId,
+      });
+    },
+    async createSigningRequest(organisationId, body) {
+      return request<SigningRequestResponse>('/api/signing-requests', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async cancelSigningRequest(organisationId, requestId, body) {
+      return request<SigningRequestResponse>(
+        `/api/signing-requests/${requestId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async registerSigningAgent(organisationId, body) {
+      return request<RegisterSigningAgentResponse>('/api/signing-agents', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async revokeSigningAgent(organisationId, agentId) {
+      return request<SigningAgentResponse>(`/api/signing-agents/${agentId}/revoke`, {
+        method: 'POST',
+        organisationId,
+      });
     },
   };
 }

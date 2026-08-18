@@ -391,6 +391,69 @@ grammar. The mock has no production despatch to receive, and a released
 despatch nobody takes in leaves the register quietly understating the shelf.
 The quantity is the despatch's own unit count and there is no field for it.
 
+### 16. Signing queue — a screen the mock does not draw at all
+
+**Status: application-first, owner ruling not yet taken.** Numbered 16 by
+coordinator allocation; 14 and 15 belong to the two packs of this wave that
+land ahead of it.
+
+**There is no mock citation for this screen, and this entry exists so that
+absence is a recorded decision rather than an omission a reviewer has to
+guess at.** `AGENTS.md` § Design contract says a pull request touching a
+visible surface must cite the mock screen it replicates, and that reviewers
+"who cannot find the citation should treat the change as unapproved visual
+invention". So: there is nothing at `punyanagari/Auto-MB-Vercel-du@fdfd610`
+to cite. The mock has no signing module, no signature status, and no kiosk
+— outbound signing was settled by ADR-0012 as an architectural question
+months after the mock was designed, and the mock has never been asked to
+express it.
+
+That puts the screen under § Design contract 4 — "behaviour the mock cannot
+express is built inside the mock's visual grammar using its existing
+components, without inventing new visual language" — and § Approved
+divergences 4, "screens the mock does not cover", whose list this extends.
+Concretely, every element on it is one the mock already ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Kiosk panel             | `Card` + `CardHeader`, the mock's `data-surface` panel                              |
+| The queue               | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Withdrawal              | `ConfirmDialog`, destructive tone, the same anatomy the cancel flows use            |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+Two chip words are added to the shared vocabulary rather than styled
+locally: `signed` joins the success family beside `paid` and `approved`, and
+`claimed` joins the warning family beside `in-production` — work in hand.
+`pending` was already mapped and keeps its reading as a queue rather than a
+caution.
+
+**One thing on this screen has no precedent anywhere in the mock, and it is
+deliberate: the full SHA-256 of the bytes each signature will cover, printed
+complete and monospaced on every row.** ADR-0012 § "The approval is the
+authority, and it must be bound to the bytes" requires the person
+authorising a signature to see the hash of what they are authorising, and
+the kiosk prints the same string to its own console before the token's PIN
+dialog opens. The two are meant to be compared by eye. A truncated hash — the
+usual register treatment, and what a designer would reach for — compares
+nothing, so it is not truncated.
+
+**Three things the screen does not do**, each because the alternative would
+be a second place to do something:
+
+- **Raise a request.** That belongs on the document being signed. A picker
+  here would be a second way to choose a challan.
+- **Register a kiosk.** That belongs in Settings: it hands out a credential
+  and is owner-only. The panel here reports whether one exists and when it
+  last polled, which is the fact that explains a queue that has stopped.
+- **Show the signed PDF inline.** The document register already owns
+  document viewing.
+
+**When the mock grows a signing screen, the mock wins.** This entry retires
+the moment there is something to cite, on the § 4 iteration pipeline: change
+it in v0, merge it, diff, port the delta.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

@@ -1622,12 +1622,10 @@ describe('tenant migration contract', () => {
     // of it are NOT NULL columns rather than a convention the route keeps.
     // ADR-0012 § "The approval is the authority, and it must be bound to
     // the bytes" is unimplementable if any of them can be absent.
-    expect(sql).toContain(
-      "authorised_digest text NOT NULL CHECK (authorised_digest ~ '^[0-9a-f]{64}$')",
-    );
-    expect(sql).toContain(
-      "source_sha256 text NOT NULL CHECK (source_sha256 ~ '^[0-9a-f]{64}$')",
-    );
+    // 0065's domain, so the shape cannot drift from every other digest
+    // column in the schema.
+    expect(sql).toContain('authorised_digest sha256_hex NOT NULL');
+    expect(sql).toContain('source_sha256 sha256_hex NOT NULL');
     expect(sql).toContain('expires_at timestamptz NOT NULL');
     // …and the entries that go INSIDE the signed bytes are stored, not
     // recomputed. A preparation taken from the clock at completion time
@@ -1637,7 +1635,7 @@ describe('tenant migration contract', () => {
 
     // THE TOKEN IS NEVER STORED. Only its digest, in the one shape the
     // resolver can look up.
-    expect(sql).toContain("token_hash text NOT NULL CHECK (token_hash ~ '^[0-9a-f]{64}$')");
+    expect(sql).toContain('token_hash sha256_hex NOT NULL');
     expect(sql).not.toMatch(/^\s*(token|secret|bearer_token) text\b/im);
 
     // THE CERTIFICATE IS PINNED BY THUMBPRINT AND NOTHING ELSE. A
@@ -1665,10 +1663,16 @@ describe('tenant migration contract', () => {
     // nullable arms to the declared type.
     expect(sql).toContain('signing_requests_document_shape');
     expect(sql).toContain(
-      'FOREIGN KEY (organisation_id, delivery_challan_id)\n    REFERENCES delivery_challans (organisation_id, id)',
+      'FOREIGN KEY (organisation_id, delivery_challan_id, work_id)\n    REFERENCES delivery_challans (organisation_id, id, work_id)',
     );
     expect(sql).toContain(
-      'FOREIGN KEY (organisation_id, tax_invoice_id)\n    REFERENCES tax_invoices (organisation_id, id)',
+      'FOREIGN KEY (organisation_id, tax_invoice_id, work_id)\n    REFERENCES tax_invoices (organisation_id, id, work_id)',
+    );
+    // The THIRD column is what makes the denormalised work_id
+    // unfalsifiable rather than merely conventional, so the key the
+    // invoice register gains for it is asserted too.
+    expect(sql).toContain(
+      'ADD CONSTRAINT tax_invoices_organisation_id_id_work_id_key\n  UNIQUE (organisation_id, id, work_id);',
     );
 
     // SIGNED BYTES EXIST EXACTLY WHEN THE VERDICT SAYS SO. The outcome
@@ -1707,7 +1711,9 @@ describe('tenant migration contract', () => {
       return source.slice(0, source.indexOf('$$;')).includes('SECURITY DEFINER');
     });
     expect(definers).toEqual(['CREATE FUNCTION app_private.resolve_signing_agent']);
-    expect(sql).toContain('CREATE FUNCTION app_private.resolve_signing_agent(p_token_hash text)');
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.resolve_signing_agent(p_token_hash text)',
+    );
     expect(sql).toContain(
       'ALTER FUNCTION app_private.resolve_signing_agent(text) OWNER TO auto_mb_definer;',
     );

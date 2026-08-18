@@ -1308,3 +1308,37 @@ test('production register, job card and item master pass the axe scan', async ({
   await expect(page.getByRole('heading', { name: 'Bill of material' })).toBeVisible();
   await expectNoAxeViolations(page, 'production item master');
 });
+
+test('the signing queue passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/signing');
+
+  /* The signing queue (0091, ADR-0012). Its own top-level test rather
+     than a leg of an existing journey, for the reason Receivables and
+     Correspondence took theirs: the big picker journey is already
+     budgeted with test.slow() and does not need another leg.
+
+     Scanned with all four statuses on screen at once, because the chip is
+     the only colour this screen puts on a word — and with the kiosk panel
+     above them, whose success lamp and warning border are the only other
+     two. The full SHA-256 in every row is the reason the target-size and
+     the contrast rules matter here more than on a normal register: it is
+     11px monospace, wrapped, and it is what an operator compares against
+     the kiosk's console. */
+  await expect(page.getByRole('heading', { name: 'Signing queue' })).toBeVisible();
+  await expect(page.getByText('Cabin kiosk')).toBeVisible();
+  for (const label of ['pending', 'claimed', 'signed', 'failed']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByText('a'.repeat(64)).first()).toBeVisible();
+  await expectNoAxeViolations(page, 'signing queue');
+
+  // The withdrawal dialog: a destructive confirm whose primary action is
+  // disabled until a reason is typed, which is a contrast state a scan of
+  // the register behind it never reaches.
+  await page.getByRole('button', { name: 'Withdraw' }).first().click();
+  await expect(
+    page.getByRole('heading', { name: 'Withdraw this signing request' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'signing withdrawal dialog');
+});

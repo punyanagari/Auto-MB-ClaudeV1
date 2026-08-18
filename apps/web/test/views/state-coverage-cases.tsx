@@ -36,6 +36,7 @@ import {
 import { Production } from '../../src/views/Production.js';
 import { ProductionItems } from '../../src/views/ProductionItems.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
+import { SigningQueue } from '../../src/views/SigningQueue.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
 import { StockShortages } from '../../src/views/StockShortages.js';
 import { Tenders } from '../../src/views/Tenders.js';
@@ -590,6 +591,14 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'An upload form has no register to be empty; the pickers simply come back empty.',
     },
+  },
+  {
+    view: 'SigningQueue.tsx',
+    name: 'the signing queue',
+    loads: ['listSigningRequests'],
+    render: (api) => <SigningQueue api={api} organisationId={ORG_ID} canModify />,
+    retry: /Retry the signing queue/,
+    empty: { text: /No document has been sent for signature yet/ },
   },
   {
     view: 'StockRegister.tsx',

@@ -238,6 +238,13 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // ever climbs.
   stock_movements: 'SELECT, INSERT',
   stock_movement_counters: 'SELECT, INSERT, UPDATE',
+  // The signing queue (0091). No DELETE on either: a signature on an
+  // issued document is a record of an act, and the credential that made
+  // it outlives the machine it sat in. A request raised in error is
+  // cancelled with a reason and an agent is revoked, both of which are
+  // updates.
+  signing_requests: 'SELECT, INSERT, UPDATE',
+  signing_agents: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

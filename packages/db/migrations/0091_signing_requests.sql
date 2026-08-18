@@ -139,7 +139,9 @@ CREATE TABLE signing_agents (
   ),
 
   -- SHA-256 of the bearer token, lowercase hex. Never the token.
-  token_hash text NOT NULL CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+  -- 0065's domain, not a hand-rolled CHECK: a digest column that spells
+  -- its own shape is a digest column that drifts.
+  token_hash sha256_hex NOT NULL,
 
   -- SHA-1 of the certificate's DER encoding, uppercase hex: the value
   -- Windows, certutil and the MMC snap-in all call the thumbprint. An
@@ -348,12 +350,12 @@ CREATE TABLE signing_requests (
   source_object_key text NOT NULL CHECK (
     source_object_key LIKE organisation_id::text || '/%'
   ),
-  source_sha256 text NOT NULL CHECK (source_sha256 ~ '^[0-9a-f]{64}$'),
+  source_sha256 sha256_hex NOT NULL,
 
   -- The single-use authorisation: SHA-256 of the CMS signed attributes
   -- prepared over the source above. Re-derived at completion and refused
   -- on mismatch; see the header.
-  authorised_digest text NOT NULL CHECK (authorised_digest ~ '^[0-9a-f]{64}$'),
+  authorised_digest sha256_hex NOT NULL,
 
   -- The signature dictionary's own entries, fixed when the request is
   -- raised. They are INSIDE the signed bytes, so the preparation is only
@@ -392,7 +394,7 @@ CREATE TABLE signing_requests (
     signed_object_key IS NULL
     OR signed_object_key LIKE organisation_id::text || '/%'
   ),
-  signed_sha256 text CHECK (signed_sha256 IS NULL OR signed_sha256 ~ '^[0-9a-f]{64}$'),
+  signed_sha256 sha256_hex,
 
   -- Migration 0060's evidence shape, the third consumer of it. The
   -- difference from the other two is the direction: they record a verdict

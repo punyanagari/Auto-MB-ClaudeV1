@@ -27,7 +27,7 @@ import { createTestPki, unsignedPdf, type TestPki } from './helpers/signed-pdf.j
  * in the path is the production code: the PDF revision, the ByteRange, the
  * CMS assembly, the embedding, and the 0060 verifier reading the result.
  *
- * The real-token half is `tools/kiosk-signing-check.mjs`, which the owner
+ * The real-token half is `tools/kiosk-signing-check.ps1`, which the owner
  * runs at the kiosk. It exercises this same pipeline with the CNG signer
  * in place of the double, and it cannot run here: the token's PIN dialog
  * only reaches an interactive desktop.

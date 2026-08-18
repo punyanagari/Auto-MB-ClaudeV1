@@ -154,6 +154,9 @@ const ProductionJobCard = lazy(() =>
     default: module.ProductionJobCard,
   })),
 );
+const SigningQueue = lazy(() =>
+  import('./SigningQueue.js').then((module) => ({ default: module.SigningQueue })),
+);
 const StockRegister = lazy(() =>
   import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
 );
@@ -1190,6 +1193,14 @@ export function OperationsWorkspace({
                 onBack={() => {
                   navigate({ name: 'production', workId: null });
                 }}
+              />
+            )}
+
+            {view.name === 'signing' && (
+              <SigningQueue
+                api={api}
+                organisationId={organisation.id}
+                canModify={canModify}
               />
             )}
 

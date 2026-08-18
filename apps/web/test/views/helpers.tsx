@@ -662,6 +662,17 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       purchaseOrdersTruncated: false,
     }),
     createShortagePurchaseOrder: vi.fn<ApiClient['createShortagePurchaseOrder']>(),
+    // The signing queue (0091). The one read answers empty by default,
+    // for the same reason the stock reads do.
+    listSigningRequests: vi.fn<ApiClient['listSigningRequests']>().mockResolvedValue({
+      requests: [],
+      nextCursor: null,
+      agents: [],
+    }),
+    createSigningRequest: vi.fn<ApiClient['createSigningRequest']>(),
+    cancelSigningRequest: vi.fn<ApiClient['cancelSigningRequest']>(),
+    registerSigningAgent: vi.fn<ApiClient['registerSigningAgent']>(),
+    revokeSigningAgent: vi.fn<ApiClient['revokeSigningAgent']>(),
     ...overrides,
   };
 }

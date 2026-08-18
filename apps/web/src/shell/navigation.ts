@@ -11,6 +11,7 @@ import {
   Landmark,
   LayoutDashboard,
   Mails,
+  PenTool,
   Receipt,
   ScanSearch,
   Settings as SettingsIcon,
@@ -40,6 +41,7 @@ export type ModuleKey =
   | 'installations'
   | 'production'
   | 'stock'
+  | 'signing'
   | 'masters'
   | 'members'
   | 'settings';
@@ -116,6 +118,10 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'quotations', label: 'Quotations', icon: FileText },
       { key: 'correspondence', label: 'Correspondence', icon: Mails },
       { key: 'company-documents', label: 'Company documents', icon: FileBadge },
+      // The signing queue (0091). Grouped with the documents it signs,
+      // not with Administration: it is a register of acts on outward
+      // paper, and the mock has no cell for it at all (docs/UX.md § 16).
+      { key: 'signing', label: 'Signing queue', icon: PenTool },
     ],
   },
   {
@@ -179,6 +185,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'production', workId: null };
     case 'stock':
       return { name: 'stock' };
+    case 'signing':
+      return { name: 'signing' };
     case 'masters':
       return { name: 'masters' };
     case 'members':
@@ -318,6 +326,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Inventory';
     case 'stock-shortages':
       return 'Shortage procurement';
+    case 'signing':
+      return 'Signing queue';
     case 'masters':
       return 'Masters';
     case 'members':

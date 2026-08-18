@@ -725,6 +725,58 @@ const PRODUCTION_BOM = {
    and the number the shortage screen orders against. The shortage row
    carries both a Work-backed job card and a private one, because the
    second renders a badge with no Work code beside it. */
+/* The signing queue (0091). Populated with all four terminal shapes at
+   once — pending, claimed, signed, failed — because the status chip is
+   the only colour this screen puts on a word, and a scan of an empty
+   register proves nothing about chips it never drew. */
+const SIGNING_THUMBPRINT = 'CFD1D2EF23018CEC652D1F380FC57FDCF5C0C4E4';
+const SIGNING_QUEUE = {
+  requests: [
+    ['pending', null, null],
+    ['claimed', null, null],
+    ['signed', 'b'.repeat(64), null],
+    ['failed', null, 'The token PIN dialog was cancelled'],
+  ].map(([status, signedSha256, failureReason], index) => ({
+    id: `0000000${String(index)}-0000-4000-8000-000000000000`,
+    documentType: 'delivery_challan',
+    documentId: '99999999-9999-4999-8999-999999999999',
+    documentNumber: `DC/2026/00${String(41 + index)}`,
+    workCode: 'RE-2026-11',
+    channel: 'kiosk_dsc',
+    status,
+    sourceSha256: 'a'.repeat(64),
+    signedSha256,
+    certificateThumbprint: SIGNING_THUMBPRINT,
+    signerName: 'A K SHARMA',
+    signingReason: 'Issued by the contractor',
+    signingLocation: 'Nagpur',
+    requestedByUserId: 'user-1',
+    requestedAt: '2026-08-18T09:30:00.000Z',
+    expiresAt: '2026-08-25T09:30:00.000Z',
+    claimedAt: status === 'pending' ? null : '2026-08-18T09:31:00.000Z',
+    completedAt:
+      signedSha256 === null && failureReason === null
+        ? null
+        : '2026-08-18T09:32:00.000Z',
+    signatureVerdict: null,
+    failureReason,
+  })),
+  nextCursor: null,
+  agents: [
+    {
+      id: '88888888-8888-4888-8888-888888888888',
+      label: 'Cabin kiosk',
+      certificateThumbprint: SIGNING_THUMBPRINT,
+      certificateSubject: 'CN=A K SHARMA, O=PUNYA NAGARI ENTERPRISES, C=IN',
+      certificateNotAfter: '2027-05-23T00:00:00.000Z',
+      operatorUserId: 'user-1',
+      createdAt: '2026-08-17T05:00:00.000Z',
+      lastSeenAt: '2026-08-18T09:31:00.000Z',
+      revokedAt: null,
+    },
+  ],
+};
+
 const STOCK_REGISTER = {
   items: [
     {
@@ -1079,6 +1131,9 @@ export async function mockWorkspace(
      an empty list — so the picker renders its "Select a vendor" option and
      the primary action stays correctly disabled, which is the state the
      scan has to check the contrast of. */
+  await page.route('**/api/signing-requests*', (route) =>
+    route.fulfill(json(SIGNING_QUEUE)),
+  );
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),
   );
