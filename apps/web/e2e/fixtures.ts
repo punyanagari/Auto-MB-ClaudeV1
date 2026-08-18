@@ -32,6 +32,10 @@ export const ME = {
       // workspace renders its write controls under the axe scan — a
       // read-only register would not exercise the buttons.
       canManagePayments: true,
+      // The payroll authority (0089), distinct from payments: without it
+      // the rail carries no Employees door and both payroll screens
+      // refuse. The owner of a new organisation holds it implicitly.
+      canManagePayroll: true,
       status: 'active',
     },
   ],
@@ -979,9 +983,9 @@ const PAYROLL_LINES = [
     projectedAnnualTax: '18408.00',
     tds: '1534.00',
     netPay: '64666.00',
-    paymentRequestId: null,
-    paymentRequestNumber: null,
-    paymentRequestStatus: null,
+    paymentRequestId: 'pr000001-1111-4111-8111-aaaaaaaaaaaa',
+    paymentRequestNumber: 'PR/2026-27/007',
+    paymentRequestStatus: 'submitted',
   },
   {
     id: 'll000002-1111-4111-8111-aaaaaaaaaaaa',
@@ -1011,9 +1015,9 @@ const PAYROLL_LINES = [
     projectedAnnualTax: '0.00',
     tds: '0.00',
     netPay: '17272.59',
-    paymentRequestId: null,
-    paymentRequestNumber: null,
-    paymentRequestStatus: null,
+    paymentRequestId: 'pr000002-1111-4111-8111-aaaaaaaaaaaa',
+    paymentRequestNumber: 'PR/2026-27/008',
+    paymentRequestStatus: 'submitted',
   },
 ];
 
@@ -1022,9 +1026,9 @@ const PAYROLL_RUN = {
     id: 'rr000001-1111-4111-8111-aaaaaaaaaaaa',
     runNumber: 'PAY/2026-27/001',
     periodMonth: '2026-07-01',
-    status: 'draft' as const,
+    status: 'finalized' as const,
     calculatedAt: '2026-08-01T06:30:00.000Z',
-    finalizedAt: null,
+    finalizedAt: '2026-08-01T07:00:00.000Z',
     cancelledAt: null,
     cancelReason: null,
     employeeCount: 2,
@@ -1063,7 +1067,7 @@ const PAYROLL_RUN_LIST = {
       periodMonth: PAYROLL_RUN.run.periodMonth,
       status: PAYROLL_RUN.run.status,
       calculatedAt: PAYROLL_RUN.run.calculatedAt,
-      finalizedAt: null,
+      finalizedAt: PAYROLL_RUN.run.finalizedAt,
       cancelledAt: null,
       cancelReason: null,
       employeeCount: PAYROLL_RUN.run.employeeCount,
@@ -1256,9 +1260,21 @@ export async function mockWorkspace(
   await page.route('**/api/payroll-runs*', (route) =>
     route.fulfill(json(PAYROLL_RUN_LIST)),
   );
-  await page.route('**/api/employees*', (route) =>
-    route.fulfill(json(EMPLOYEE_REGISTER)),
-  );
+  // Honours the `status` query the register sends: the default view
+  // (`current`) hides the one employee who has left, and ticking "Include
+  // people who have left" (`all`) shows them — so the "Left" chip and the
+  // toggle actually exercise the path rather than always rendering.
+  await page.route('**/api/employees*', async (route) => {
+    const status = new URL(route.request().url()).searchParams.get('status');
+    const current = EMPLOYEE_REGISTER.employees.filter((employee) => employee.employed);
+    const employees = status === 'all' ? EMPLOYEE_REGISTER.employees : current;
+    await route.fulfill(
+      json({
+        ...EMPLOYEE_REGISTER,
+        employees,
+      }),
+    );
+  });
   // OEM production (migration 0084). The detail routes are registered
   // BEFORE the bare registers, because Playwright matches the last
   // registered handler and a bare pattern would otherwise swallow the

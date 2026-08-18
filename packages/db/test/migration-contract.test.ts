@@ -1314,7 +1314,7 @@ describe('tenant migration contract', () => {
     // this migration is the first to use, so the route maps it to a code
     // instead of surfacing a bare 23514 as a 500.
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
-    expect(raises.length).toBeGreaterThanOrEqual(14);
+    expect(raises.length).toBeGreaterThanOrEqual(15);
     expect(sql.match(/USING ERRCODE = '23D\d\d'/g)?.length).toBe(raises.length);
 
     // The despatch boundary is documented where the next pack will look
@@ -1685,12 +1685,18 @@ describe('tenant migration contract', () => {
       ).not.toContain('SECURITY DEFINER');
     }
 
-    // Every RAISE carries a named SQLSTATE from the 23H block, which this
-    // pack is the first to use, so `routes/hr.ts` maps it to a code
-    // instead of surfacing a bare 23514 as a 500.
+    // Every RAISE carries a named SQLSTATE, and every one that is a
+    // payroll refusal is from the 23H block this pack opened, so
+    // `routes/hr.ts` maps it to a code instead of surfacing a bare 23514
+    // as a 500. The one exception is the bootstrap function this file
+    // re-states to grant the owner the payroll authority (create_
+    // organisation_with_owner, 0004): its single RAISE keeps 0004's own
+    // 28000 "no authenticated user" code, which is not a payroll refusal.
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
-    expect(raises.length).toBeGreaterThanOrEqual(2);
-    expect(sql.match(/USING ERRCODE = '23H\d\d'/g)?.length).toBe(raises.length);
+    const namedPayroll = sql.match(/USING ERRCODE = '23H\d\d'/g) ?? [];
+    const bootstrapRaise = sql.match(/USING ERRCODE = '28000'/g) ?? [];
+    expect(namedPayroll.length).toBeGreaterThanOrEqual(2);
+    expect(namedPayroll.length + bootstrapRaise.length).toBe(raises.length);
   });
 
   it('binds the payroll run in 0090', async () => {
@@ -1756,8 +1762,13 @@ describe('tenant migration contract', () => {
     expect(sql).toContain("USING ERRCODE = '23H05'");
     expect(sql).toContain('v_total_income > v_surcharge_floor');
 
-    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
-    expect(functions.length).toBeGreaterThanOrEqual(4);
+    // Includes the CREATE OR REPLACE of 0080's payment-request guard,
+    // which this file re-states to exempt a salary request from
+    // maker-checker (§ 4b). Every function here pins its search_path and
+    // none is a definer.
+    const functions =
+      sql.match(/CREATE (?:OR REPLACE )?FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBeGreaterThanOrEqual(5);
     expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
       functions.length,
     );
@@ -1770,8 +1781,14 @@ describe('tenant migration contract', () => {
       ).not.toContain('SECURITY DEFINER');
     }
 
+    // Every RAISE carries a named SQLSTATE. The payroll refusals use the
+    // 23H block this pack opened; the re-stated 0080 payment-request
+    // guard (§ 4b) keeps 0080's own 23B codes, since those are payments
+    // refusals `routes/payments.ts` already maps, not payroll ones.
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
-    expect(raises.length).toBeGreaterThanOrEqual(15);
-    expect(sql.match(/USING ERRCODE = '23H\d\d'/g)?.length).toBe(raises.length);
+    const namedPayroll = sql.match(/USING ERRCODE = '23H\d\d'/g) ?? [];
+    const namedPayments = sql.match(/USING ERRCODE = '23B\d\d'/g) ?? [];
+    expect(namedPayroll.length).toBeGreaterThanOrEqual(15);
+    expect(namedPayroll.length + namedPayments.length).toBe(raises.length);
   });
 });

@@ -16,6 +16,7 @@ import {
   type ErrorCode,
   type PayrollRun,
   type PayrollRunLine,
+  type PayrollStatutoryBasis,
   type PayrollRunSummary,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
@@ -58,24 +59,27 @@ import { audit, errorResponses, IdParamsSchema, optionalTrimmed } from './shared
  * when a writer reaches the table another way, and the arm that holds
  * under concurrency, which the route cannot.
  *
- * ## Authority, and why there is no new one
+ * ## Authority — its own grant, `can_manage_payroll`
  *
- * Every route here declares `authority: 'payments'`, reads included.
+ * Every route here declares `authority: 'payroll'`, reads included.
  *
- * A new `can_manage_payroll` grant was considered and deliberately not
- * added. Payroll IS money going out, and it goes out through the very
- * `payment_requests` machinery `can_manage_payments` was created to gate
- * (migration 0080) — a second grant for one act is a second thing an
- * owner has to remember. The argument the other way is real and is
- * recorded rather than dismissed: this authority now also reveals what
- * every colleague is paid, which is a different kind of secret from a
- * travel advance. `docs/UX.md` § 15 puts it to the owner. If the answer
- * is to split them, it is one migration and one line here.
+ * Owner ruling of 2026-08-18: payroll gets its own authority, distinct
+ * from `can_manage_payments` (migration 0089). The two were nearly
+ * merged — payroll's disbursement flows through the very
+ * `payment_requests` machinery `can_manage_payments` gates — but reading
+ * the employee register is reading every colleague's salary, PAN, UAN and
+ * bank account, and a vendor-payment manager has no business seeing any
+ * of that by default. So the money still flows through 0080, but the
+ * VISIBILITY and the RUN are gated separately. A `can_manage_payments`
+ * holder without the new grant is refused every route here and sees no
+ * Employees door.
  *
  * The READS are gated too, and that is the point of gating them: a
  * register of salaries is not something a member without the authority
  * should be able to fetch, and a route that guarded only the writes
- * would have published it.
+ * would have published it. The owner of a new organisation holds the
+ * grant implicitly (the bootstrap in 0089); everyone else is granted it
+ * on the Members screen.
  *
  * ## Work-scope
  *
@@ -335,16 +339,21 @@ interface PayrollRunRow {
   finalized_at: Date | null;
   cancelled_at: Date | null;
   cancel_reason: string | null;
+  statutory_basis: PayrollStatutoryBasis[] | null;
   employee_count: string;
   total_gross: string;
   total_net: string;
 }
 
 /** Every register read of a run, with its line totals summed in SQL —
- * never by adding up a page in the browser. */
+ * never by adding up a page in the browser. `statutory_basis` is the
+ * FROZEN snapshot the calculate function wrote (migration 0090), read
+ * back rather than re-derived, so an org rate edit cannot restate a
+ * finalised run's evidence. */
 const RUN_SELECT = `
   select r.id, r.run_number, r.period_month::text as period_month, r.status,
          r.calculated_at, r.finalized_at, r.cancelled_at, r.cancel_reason,
+         r.statutory_basis,
          coalesce(t.employee_count, 0)::text as employee_count,
          coalesce(t.total_gross, 0)::text as total_gross,
          coalesce(t.total_net, 0)::text as total_net
@@ -514,25 +523,6 @@ async function loadRun(
     from payroll_run_lines where payroll_run_id = ${runId}
   `;
 
-  // What the run was computed against, as it stood on its own month.
-  // A projection of the run's inputs so a reader — and the practitioner
-  // signing the arithmetic off — can see them without a database client.
-  const basis = await tx<
-    {
-      parameter: string;
-      value: string;
-      effective_from: string;
-      notification: string;
-    }[]
-  >`
-    select s.parameter, s.value::text as value,
-           s.effective_from::text as effective_from, s.notification
-    from payroll_statutory_rates s
-    where s.effective_from <= ${row.period_month}::date
-      and (s.effective_to is null or s.effective_to >= ${row.period_month}::date)
-    order by s.parameter
-  `;
-
   return {
     ...toRunSummary(row),
     lines: lines.map(toRunLine),
@@ -543,12 +533,12 @@ async function loadRun(
     totalEsiEmployer: totals?.esi_employer ?? '0',
     totalProfessionalTax: totals?.professional_tax ?? '0',
     totalTds: totals?.tds ?? '0',
-    statutoryBasis: basis.map((entry) => ({
-      parameter: entry.parameter,
-      value: entry.value,
-      effectiveFrom: entry.effective_from,
-      notification: entry.notification,
-    })),
+    // The FROZEN snapshot, read back verbatim. Null before the run is
+    // first calculated, when there is no basis to show. Never re-derived
+    // from the live schedule — that was the S6 defect: an org rate edit
+    // restated a finalised run's evidence panel while its line figures
+    // stayed old.
+    statutoryBasis: row.statutory_basis ?? [],
   };
 }
 
@@ -573,7 +563,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         querystring: withKeysetQuery(EmployeeListQuerySchema),
         response: { 200: EmployeeListResponseSchema, ...errorResponses },
       },
-      authority: 'payments',
+      authority: 'payroll',
     },
     // No `organisationId`: RLS has already narrowed every read inside the
     // bound transaction, so a predicate here would be a second, weaker
@@ -630,7 +620,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         response: { 201: EmployeeResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
@@ -727,7 +717,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         params: IdParamsSchema,
         response: { 200: EmployeeResponseSchema, ...errorResponses },
       },
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, tenant }) => {
       const { id } = request.params;
@@ -745,7 +735,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         response: { 200: EmployeeResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -810,7 +800,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         querystring: KeysetQuerySchema,
         response: { 200: PayrollRunListResponseSchema, ...errorResponses },
       },
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, tenant }) => {
       const query = request.query;
@@ -838,7 +828,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         response: { 201: PayrollRunResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
@@ -932,7 +922,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         params: IdParamsSchema,
         response: { 200: PayrollRunResponseSchema, ...errorResponses },
       },
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, organisationId, tenant }) => {
       const { id } = request.params;
@@ -949,7 +939,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         response: { 200: PayrollRunResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -995,7 +985,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         response: { 200: PayrollRunResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id, lineId } = request.params;
@@ -1009,18 +999,35 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
             `${run.runNumber} is ${run.status}; its payslips are a record of what was paid.`,
           );
         }
-        const updated = await tx`
-          update payroll_run_lines
-          set lop_days = ${body.lopDays}::numeric(5,2)
+        // The line exists and the loss of pay fits the month — checked
+        // here, before the update, so an over-count is a named 409 rather
+        // than the bare 23514 the `lop_days <= calendar_days` CHECK would
+        // raise (unmapped, a 500). The CHECK stays as the backstop; this
+        // is the message. '31' in a 30-day month, '29' in February.
+        const [line] = await tx<{ calendar_days: number }[]>`
+          select calendar_days from payroll_run_lines
           where id = ${lineId} and payroll_run_id = ${id}
-        `.catch(rethrowWriteRefusal);
-        if (updated.count === 0) {
+        `;
+        if (line === undefined) {
           throw httpError(
             404,
             'PAYROLL_LINE_NOT_FOUND',
             'No such payslip on this payroll run.',
           );
         }
+        if (Number(body.lopDays) > line.calendar_days) {
+          throw httpError(
+            409,
+            'PAYROLL_LINE_INVALID',
+            `Loss of pay cannot exceed the ${String(line.calendar_days)} days in the month.`,
+            { field: 'lopDays' },
+          );
+        }
+        await tx`
+          update payroll_run_lines
+          set lop_days = ${body.lopDays}::numeric(5,2)
+          where id = ${lineId} and payroll_run_id = ${id}
+        `.catch(rethrowWriteRefusal);
         // Recomputed immediately rather than left for the operator to
         // remember: a stated loss of pay that has not been applied is a
         // register showing a net somebody is not going to be paid.
@@ -1051,7 +1058,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         response: { 200: PayrollRunResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -1129,7 +1136,7 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
         response: { 200: PayrollRunResponseSchema, ...errorResponses },
       },
       role: 'writer',
-      authority: 'payments',
+      authority: 'payroll',
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
@@ -1144,25 +1151,52 @@ export function registerHrRoutes(app: AppInstance, auth: Auth, database: Sql): v
           );
         }
 
-        // A finalised run has already raised its salary requests, and
-        // some of them may have been paid. Cancelling the run cannot
-        // unpay them, so it is refused while any request it raised has
-        // moved past the decision — the paperwork is chased on the
-        // payments register, where the money actually is.
-        const [moved] = await tx<{ request_number: string }[]>`
-          select p.request_number
+        // COMMITTED MONEY BLOCKS THE CANCEL; an open obligation does not.
+        //
+        // A finalised run has raised one salary request per payslip. If
+        // any of them is approved, paid or settled the money is committed
+        // and cancelling the run cannot un-commit it — so that, and only
+        // that, refuses the cancel. A request that is merely SUBMITTED is
+        // an open obligation the cancel is about to close, and one that
+        // was REJECTED is already closed; neither blocks. Blocking on
+        // "anything past submitted" was the S2 dead-end: a single rejected
+        // request left the month un-cancellable, un-recalculable (the run
+        // is finalised) and un-re-runnable (one live run per month).
+        const [committed] = await tx<{ request_number: string; status: string }[]>`
+          select p.request_number, p.status
           from payroll_run_lines l
           join payment_requests p on p.id = l.payment_request_id
-          where l.payroll_run_id = ${id} and p.status <> 'submitted'
+          where l.payroll_run_id = ${id}
+            and p.status in ('approved', 'paid', 'settled')
           limit 1
         `;
-        if (moved !== undefined) {
+        if (committed !== undefined) {
           throw httpError(
             409,
             'PAYROLL_RUN_STATE_CONFLICT',
-            `${moved.request_number} has already been decided on the Payments register, so this run cannot be cancelled. Reject the outstanding salary requests there first.`,
+            `${committed.request_number} is already ${committed.status} on the Payments register, so the salaries this run authorised have been committed and it cannot be cancelled.`,
           );
         }
+
+        // Close the open obligations in the SAME transaction, so a
+        // cancelled run never leaves live salary requests that a later
+        // re-finalise would double (the S1 double-pay). They are rejected
+        // — the terminal-negative status the payment machinery already has
+        // — with the run's cancellation as the reason. The canceller may
+        // be the finaliser: a salary request is exempt from maker-checker
+        // (migration 0090 § 4b), so closing one's own run's obligations is
+        // allowed. Already-rejected requests are left as they are.
+        await tx`
+          update payment_requests
+          set status = 'rejected', decided_by_user_id = ${user.id},
+              decided_at = now(),
+              decision_note = ${`Payroll run ${run.runNumber} cancelled: ${body.reason}`}
+          where id in (
+            select l.payment_request_id from payroll_run_lines l
+            where l.payroll_run_id = ${id} and l.payment_request_id is not null
+          )
+            and status = 'submitted'
+        `.catch(rethrowWriteRefusal);
 
         const cancelled = await tx`
           update payroll_runs

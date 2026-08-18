@@ -776,6 +776,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canApproveAmendments: false,
     canManageStatutoryReporting: false,
     canManagePayments: false,
+    canManagePayroll: true,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,

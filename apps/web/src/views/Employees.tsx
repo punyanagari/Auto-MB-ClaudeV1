@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Search, Users } from 'lucide-react';
 import type { Contact, Employee, EmployeeSummary } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
@@ -43,9 +43,9 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 interface EmployeesProps {
   readonly api: ApiClient;
   readonly organisationId: string;
-  /** Holds `can_manage_payments`, which is what gates this whole module
+  /** Holds `can_manage_payroll`, which is what gates this whole module
    * — reads included. Without it the screen is never reached. */
-  readonly canManagePayments: boolean;
+  readonly canManagePayroll: boolean;
   /** Role-level write permission, on top of the authority. */
   readonly canModify: boolean;
   readonly onOpenPayroll: () => void;
@@ -58,7 +58,7 @@ const REGISTER_PAGE = 50;
 export function Employees({
   api,
   organisationId,
-  canManagePayments,
+  canManagePayroll,
   canModify,
   onOpenPayroll,
 }: EmployeesProps) {
@@ -72,6 +72,12 @@ export function Employees({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [paging, setPaging] = useState(false);
   const [search, setSearch] = useState('');
+  // Debounced so a keystroke is not a request, but the query runs on the
+  // SERVER — a browser-only filter over the first page would answer "no
+  // match" for an employee at position 130 of a 180-strong register who
+  // is on the payroll. The server searches code, name and department
+  // across the whole register.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [includeLeavers, setIncludeLeavers] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
@@ -81,6 +87,15 @@ export function Employees({
   }, []);
 
   useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 250);
+    return () => {
+      clearTimeout(handle);
+    };
+  }, [search]);
+
+  useEffect(() => {
     let cancelled = false;
     setEmployees(null);
     setLoadError(null);
@@ -88,6 +103,7 @@ export function Employees({
       .listEmployees(organisationId, {
         limit: REGISTER_PAGE,
         status: includeLeavers ? 'all' : 'current',
+        ...(debouncedSearch === '' ? {} : { search: debouncedSearch }),
       })
       .then((page) => {
         if (cancelled) return;
@@ -104,7 +120,7 @@ export function Employees({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, includeLeavers, loadVersion]);
+  }, [api, organisationId, includeLeavers, debouncedSearch, loadVersion]);
 
   const loadMore = () => {
     if (cursor === null) return;
@@ -114,6 +130,7 @@ export function Employees({
         limit: REGISTER_PAGE,
         cursor,
         status: includeLeavers ? 'all' : 'current',
+        ...(debouncedSearch === '' ? {} : { search: debouncedSearch }),
       })
       .then((page) => {
         setEmployees((current) => [...(current ?? []), ...page.employees]);
@@ -127,19 +144,10 @@ export function Employees({
       });
   };
 
-  /* Filtered in the browser over the page already fetched, which is what
-     the search box on every other register here does. The server takes a
-     `search` too, and the register falls back to it only when the
-     operator asks for more than one page. */
-  const shown = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (needle === '' || employees === null) return employees ?? [];
-    return employees.filter((employee) =>
-      `${employee.employeeCode} ${employee.name} ${employee.department ?? ''}`
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [employees, search]);
+  // The server has already filtered by the debounced search; the page IS
+  // the result, so there is no browser-side filter to disagree with it.
+  const shown = employees ?? [];
+  const searching = debouncedSearch !== '';
 
   const header = (
     <PageHeader
@@ -246,9 +254,9 @@ export function Employees({
 
         {shown.length === 0 ? (
           <EmptyState>
-            {employees.length === 0
-              ? 'Nobody is on the payroll yet. An employee is a contact from Masters with employment and salary details recorded against them.'
-              : 'No employee here matches that search.'}
+            {searching
+              ? 'No employee matches that search.'
+              : 'Nobody is on the payroll yet. An employee is a contact from Masters with employment and salary details recorded against them.'}
           </EmptyState>
         ) : (
           <DataTable>
@@ -330,7 +338,7 @@ export function Employees({
         )}
       </Card>
 
-      {composerOpen && canManagePayments && (
+      {composerOpen && canManagePayroll && (
         <EmployeeComposer
           api={api}
           organisationId={organisationId}

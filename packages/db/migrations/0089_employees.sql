@@ -148,6 +148,80 @@ COMMENT ON INDEX contacts_org_designation_address_active IS
   'A railway contact is a designation posted at an address, and two of those is a duplicate (0028). A PERSON is not: two employees of one name is ordinary, so employee rows are outside the rule and carry their uniqueness on employees.employee_code instead (0089).';
 
 -- ---------------------------------------------------------------------
+-- 1b. The payroll authority, distinct from the payments one.
+--
+-- Owner ruling of 2026-08-18. A new explicit per-member authority
+-- following 0080's `can_manage_payments` precedent exactly: defaulting to
+-- false, deliberately NOT backfilled, granted per member by an owner.
+--
+-- WHY IT IS NOT `can_manage_payments`. Payroll's disbursement still flows
+-- through the payments workspace — a finalised run raises payment
+-- requests, and paying them is `can_manage_payments`. But SEEING and
+-- RUNNING payroll is a different secret from approving a travel advance:
+-- the employee register carries every colleague's salary, PAN, UAN and
+-- bank account, and a vendor-payment manager has no business reading any
+-- of it by default. So the two authorities separate — the money still
+-- flows through 0080, only the visibility and the run are gated here.
+--
+-- The owner holds it implicitly, exactly as it holds every other
+-- authority: `requireAuthorities` is checked on top of the role, and an
+-- owner is granted the column at bootstrap. It requires MFA, like every
+-- authority worth stealing an account for.
+ALTER TABLE organisation_memberships
+  ADD COLUMN can_manage_payroll boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN organisation_memberships.can_manage_payroll IS
+  'Authority to see the employee register and run payroll (0089/0090). Separate from can_manage_payments because reading what every colleague earns is a different secret from approving a vendor payment, even though the salary disbursement itself flows through the payments workspace. Not backfilled: an owner grants it per member.';
+
+-- The owner of a NEW organisation holds it implicitly, the same way the
+-- bootstrap already grants issue and cancel (0004). CREATE OR REPLACE
+-- changes only the function body — ownership, search_path binding and the
+-- EXECUTE grant are preserved — so this restates the definer verbatim and
+-- adds one column to the owner's insert.
+--
+-- This is NOT a backfill: it reaches new organisations only. An owner of
+-- an organisation that already exists self-grants the authority on the
+-- Members screen, exactly as they would grant any other. `can_manage_
+-- payments` is deliberately left as it was — the owner still self-grants
+-- the authority to PAY the salary requests a run raises, because sending
+-- money out of the bank is the one act 0080 refuses to make automatic.
+CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(
+  p_name text,
+  p_slug text,
+  p_id uuid DEFAULT gen_random_uuid()
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, app_private, pg_temp
+AS $$
+DECLARE
+  v_user_id text;
+BEGIN
+  v_user_id := nullif(current_setting('app.user_id', true), '');
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'organisation creation requires an authenticated user context'
+      USING ERRCODE = '28000';
+  END IF;
+
+  INSERT INTO organisations (id, name, slug) VALUES (p_id, p_name, p_slug);
+
+  INSERT INTO organisation_memberships (
+    organisation_id, user_id, role, work_scope,
+    can_issue_documents, can_cancel_documents, can_manage_payroll, status
+  )
+  VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, 'active');
+
+  INSERT INTO audit_events (
+    organisation_id, actor_user_id, action, entity_type, entity_id
+  )
+  VALUES (p_id, v_user_id, 'organisation.created', 'organisations', p_id);
+
+  RETURN p_id;
+END
+$$;
+
+-- ---------------------------------------------------------------------
 -- 2. The employee.
 --
 -- One row per employed person, hanging off the `contacts` row that

@@ -32,6 +32,7 @@ interface MembershipRow {
   can_approve_amendments: boolean;
   can_manage_statutory_reporting: boolean;
   can_manage_payments: boolean;
+  can_manage_payroll: boolean;
   /** From auth_users."twoFactorEnabled" (nullable there; coalesced in SQL).
    * Surfaced so owners can see enrolment BEFORE granting authority —
    * granting to an unenrolled account walls them off on their next
@@ -51,6 +52,7 @@ function toMembership(row: MembershipRow): Membership {
     canApproveAmendments: row.can_approve_amendments,
     canManageStatutoryReporting: row.can_manage_statutory_reporting,
     canManagePayments: row.can_manage_payments,
+    canManagePayroll: row.can_manage_payroll,
     twoFactorEnabled: row.two_factor_enabled,
     status: row.status,
   };
@@ -77,7 +79,7 @@ export function registerIdentityRoutes(
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
-                   m.can_manage_payments,
+                   m.can_manage_payments, m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -205,7 +207,7 @@ export function registerIdentityRoutes(
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
-                   m.can_manage_payments,
+                   m.can_manage_payments, m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -260,7 +262,7 @@ export function registerIdentityRoutes(
               organisation_id, user_id, role, work_scope,
               can_issue_documents, can_cancel_documents,
               can_approve_amendments, can_manage_statutory_reporting,
-              can_manage_payments, status
+              can_manage_payments, can_manage_payroll, status
             )
             values (
               ${organisationId}, ${target.id}, ${body.role},
@@ -270,6 +272,7 @@ export function registerIdentityRoutes(
               ${body.canApproveAmendments ?? false},
               ${body.canManageStatutoryReporting ?? false},
               ${body.canManagePayments ?? false},
+              ${body.canManagePayroll ?? false},
               'active'
             )
           `.catch((error: unknown) => {
@@ -298,7 +301,7 @@ export function registerIdentityRoutes(
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
-                   m.can_manage_payments,
+                   m.can_manage_payments, m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -358,11 +361,13 @@ export function registerIdentityRoutes(
             can_approve_amendments: boolean;
             can_manage_statutory_reporting: boolean;
             can_manage_payments: boolean;
+            can_manage_payroll: boolean;
           }[]
         >`
             select role, status, work_scope, can_issue_documents,
                    can_cancel_documents, can_approve_amendments,
-                   can_manage_statutory_reporting, can_manage_payments
+                   can_manage_statutory_reporting, can_manage_payments,
+                   can_manage_payroll
             from organisation_memberships
             where user_id = ${memberUserId}
               and organisation_id = app_private.current_organisation_id()
@@ -417,6 +422,8 @@ export function registerIdentityRoutes(
                 ),
               can_manage_payments =
                 coalesce(${body.canManagePayments ?? null}, can_manage_payments),
+              can_manage_payroll =
+                coalesce(${body.canManagePayroll ?? null}, can_manage_payroll),
               status = coalesce(${body.status ?? null}, status),
               updated_at = now()
             where user_id = ${memberUserId}
@@ -438,6 +445,7 @@ export function registerIdentityRoutes(
             canApproveAmendments: current.can_approve_amendments,
             canManageStatutoryReporting: current.can_manage_statutory_reporting,
             canManagePayments: current.can_manage_payments,
+            canManagePayroll: current.can_manage_payroll,
             status: current.status,
           },
           {
@@ -451,6 +459,7 @@ export function registerIdentityRoutes(
               body.canManageStatutoryReporting ??
               current.can_manage_statutory_reporting,
             canManagePayments: body.canManagePayments ?? current.can_manage_payments,
+            canManagePayroll: body.canManagePayroll ?? current.can_manage_payroll,
             status: body.status ?? current.status,
           },
         );
@@ -468,7 +477,7 @@ export function registerIdentityRoutes(
             select m.organisation_id, m.user_id, m.role, m.work_scope,
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
-                   m.can_manage_payments,
+                   m.can_manage_payments, m.can_manage_payroll,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m

@@ -3,11 +3,16 @@ import { CalendarX2, ChevronDown, ChevronRight, LockKeyhole } from 'lucide-react
 import type {
   PayrollRun as PayrollRunRecord,
   PayrollRunLine,
+  PayrollRunSummary,
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatDate, formatInr } from '../format.js';
+import { formatDate, formatInr, formatTimestampDate } from '../format.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
-import { employeeRegisterHash, navigateOnClick } from '../lib/workspace-routes.js';
+import {
+  employeeRegisterHash,
+  navigateOnClick,
+  paymentsHash,
+} from '../lib/workspace-routes.js';
 import { Button, buttonVariants } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -66,6 +71,41 @@ function monthLabel(periodMonth: string): string {
   return `${names[Number(month) - 1] ?? month} ${year ?? ''}`.trim();
 }
 
+/** Tokens in a statutory-parameter name that are acronyms or provisions,
+ * uppercased so the CA-facing basis table reads "ESI employee" and
+ * "Rebate 87A", not "esi employee" or the raw column key. */
+const PARAMETER_ACRONYMS = new Set(['epf', 'eps', 'esi', 'tds', 'hra', '87a']);
+
+/**
+ * A statutory parameter, decoded for the Statutory-basis table the
+ * chartered accountant reads. The unit is in the name's suffix
+ * (`_percent` / `_rupees`), so `esi_employee_percent` `0.7500` becomes
+ * "ESI employee" at "0.75%", and `epf_monthly_wage_ceiling_rupees`
+ * `15000.0000` becomes "EPF monthly wage ceiling" at "₹15,000". No raw
+ * keys, no unitless numbers.
+ */
+function decodeStatutoryParameter(
+  parameter: string,
+  value: string,
+): {
+  readonly label: string;
+  readonly display: string;
+} {
+  const isPercent = parameter.endsWith('_percent');
+  const isRupees = parameter.endsWith('_rupees');
+  const words = parameter
+    .replace(/_(percent|rupees)$/, '')
+    .split('_')
+    .map((word) => (PARAMETER_ACRONYMS.has(word) ? word.toUpperCase() : word));
+  const label = words.join(' ').replace(/^./, (c) => c.toUpperCase());
+  const display = isPercent
+    ? `${String(Number(value))}%`
+    : isRupees
+      ? formatInr(value)
+      : value;
+  return { label, display };
+}
+
 const RUN_STATUS_LABELS: Record<PayrollRunRecord['status'], string> = {
   draft: 'Draft',
   finalized: 'Finalised',
@@ -78,9 +118,10 @@ export function PayrollRun({
   canModify,
   onOpenEmployees,
 }: PayrollRunProps) {
-  const [runs, setRuns] = useState<
-    readonly { id: string; periodMonth: string }[] | null
-  >(null);
+  // The whole summary, not a stripped {id, periodMonth}. Two runs for one
+  // month — a cancelled one and its live replacement — both read "August
+  // 2026" without the number and the status beside them.
+  const [runs, setRuns] = useState<readonly PayrollRunSummary[] | null>(null);
   const [run, setRun] = useState<PayrollRunRecord | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -103,23 +144,35 @@ export function PayrollRun({
     setRun(null);
     setRuns(null);
     setLoadError(null);
-    api
-      .listPayrollRuns(organisationId, { limit: 24 })
-      .then(async (page) => {
+    void (async () => {
+      try {
+        // Every run, paged through to the end rather than the first 24 —
+        // a four-year organisation has fifty-odd monthly runs and a
+        // silent truncation would hide the older half of them from the
+        // picker. The count is bounded (twelve a year), so the whole
+        // register is a handful of pages, not a growing list.
+        const all: PayrollRunSummary[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await api.listPayrollRuns(organisationId, {
+            limit: 100,
+            ...(cursor === undefined ? {} : { cursor }),
+          });
+          all.push(...page.runs);
+          cursor = page.nextCursor ?? undefined;
+        } while (cursor !== undefined && !cancelled);
         if (cancelled) return;
-        setRuns(
-          page.runs.map((entry) => ({ id: entry.id, periodMonth: entry.periodMonth })),
-        );
-        const newest = page.runs[0];
+        setRuns(all);
+        const newest = all[0];
         if (newest === undefined) return;
         const detail = await api.getPayrollRun(organisationId, newest.id);
         if (!cancelled) setRun(detail.run);
-      })
-      .catch((cause: unknown) => {
+      } catch (cause: unknown) {
         if (cancelled) return;
         setRuns(null);
         setLoadError(describeLoadFailure(cause, 'The payroll register').message);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -130,7 +183,15 @@ export function PayrollRun({
     setActionError(null);
     setNotice(null);
     try {
-      setRun(await work());
+      const updated = await work();
+      setRun(updated);
+      // Keep the picker's option in step with the detail: a run just
+      // cancelled must not still read "Draft" in the month dropdown.
+      setRuns(
+        (current) =>
+          current?.map((entry) => (entry.id === updated.id ? updated : entry)) ??
+          current,
+      );
       setNotice(success);
     } catch (cause: unknown) {
       setActionError(
@@ -210,7 +271,8 @@ export function PayrollRun({
               {runs.length === 0 && <option value="">No run yet</option>}
               {runs.map((entry) => (
                 <option key={entry.id} value={entry.id}>
-                  {monthLabel(entry.periodMonth)}
+                  {monthLabel(entry.periodMonth)} · {entry.runNumber} ·{' '}
+                  {RUN_STATUS_LABELS[entry.status]}
                 </option>
               ))}
             </select>
@@ -221,10 +283,9 @@ export function PayrollRun({
               organisationId={organisationId}
               busy={busy}
               onOpened={(opened) => {
-                setRuns((current) => [
-                  { id: opened.id, periodMonth: opened.periodMonth },
-                  ...(current ?? []),
-                ]);
+                // The full record IS a summary plus lines; store it so the
+                // picker's new option carries the number and status.
+                setRuns((current) => [opened, ...(current ?? [])]);
                 setRun(opened);
                 setNotice(`${opened.runNumber} opened.`);
               }}
@@ -269,13 +330,26 @@ export function PayrollRun({
                   {' · '}
                   {run.calculatedAt === null
                     ? 'Not yet calculated'
-                    : `Calculated ${formatDate(run.calculatedAt.slice(0, 10))}`}
+                    : `Calculated ${formatTimestampDate(run.calculatedAt)}`}
                 </p>
                 <p className="m-0 mt-2">
                   <StatusChip status={run.status}>
                     {RUN_STATUS_LABELS[run.status]}
                   </StatusChip>
                 </p>
+                {run.status === 'finalized' && (
+                  // The door the finalise toast used to point at without
+                  // one: the salary requests this run raised are on the
+                  // Payments register, waiting to be approved and paid.
+                  <p className="m-0 mt-2 text-sm">
+                    <a
+                      href={paymentsHash()}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      Its salary requests are on the Payments register →
+                    </a>
+                  </p>
+                )}
                 {run.cancelReason !== null && (
                   <p className="m-0 mt-2 text-sm text-muted-foreground">
                     Cancelled: {run.cancelReason}
@@ -356,14 +430,35 @@ export function PayrollRun({
                   paid, earnings, each statutory deduction with the employer&rsquo;s
                   matching contribution, and the net
                 </caption>
+                {/* The mock's grouped two-row header: Earnings, then the
+                    five Statutory-deduction columns, then Net. It is the
+                    CA-facing table and the grouping is the readability —
+                    it says at a glance which columns come OFF the gross
+                    and which is the result. `colgroup` borders and the
+                    `colSpan` groups are the mock's own. */}
                 <thead>
                   <tr>
-                    <th scope="col">Employee</th>
-                    <th scope="col">Attendance</th>
+                    <th scope="col" rowSpan={2}>
+                      Employee
+                    </th>
+                    <th scope="col" rowSpan={2}>
+                      Attendance
+                    </th>
+                    <th scope="col" className="text-center!">
+                      Earnings
+                    </th>
+                    <th scope="col" colSpan={5} className="border-l text-center!">
+                      Statutory deductions
+                    </th>
+                    <th scope="col" className="border-l text-center!">
+                      Net
+                    </th>
+                  </tr>
+                  <tr>
                     <th scope="col" className="text-right!">
                       Gross
                     </th>
-                    <th scope="col" className="text-right!">
+                    <th scope="col" className="border-l text-right!">
                       PF employee
                     </th>
                     <th scope="col" className="text-right!">
@@ -378,30 +473,39 @@ export function PayrollRun({
                     <th scope="col" className="text-right!">
                       TDS s.192
                     </th>
-                    <th scope="col" className="text-right!">
+                    <th scope="col" className="border-l text-right!">
                       Net pay
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {run.lines.map((line) => (
-                    <Fragment key={line.id}>
+                    // Keyed on the EMPLOYEE, not the line id. Recalculating
+                    // a draft deletes every line and writes fresh ones with
+                    // new ids (migration 0090), so keying the open panel on
+                    // line.id would collapse it and drop focus to the body
+                    // on every recalculation — a keyboard user re-tabs from
+                    // the top for each of forty people. The employee is
+                    // stable across the rebuild.
+                    <Fragment key={line.employeeId}>
                       <tr>
                         <th scope="row" className={wrapCell}>
                           <button
                             type="button"
                             className="flex items-center gap-2 text-left"
-                            aria-expanded={expanded === line.id}
+                            aria-expanded={expanded === line.employeeId}
                             /* Names the panel it opens. `aria-expanded`
                                alone tells a screen reader that SOMETHING
                                expanded and not what, which is what
                                `test/a11y-invariants.test.ts` refuses. */
-                            aria-controls={`payslip-${line.id}`}
+                            aria-controls={`payslip-${line.employeeId}`}
                             onClick={() => {
-                              setExpanded(expanded === line.id ? null : line.id);
+                              setExpanded(
+                                expanded === line.employeeId ? null : line.employeeId,
+                              );
                             }}
                           >
-                            {expanded === line.id ? (
+                            {expanded === line.employeeId ? (
                               <ChevronDown className="size-4" aria-hidden="true" />
                             ) : (
                               <ChevronRight className="size-4" aria-hidden="true" />
@@ -421,12 +525,25 @@ export function PayrollRun({
                             {line.paidDays}/{line.calendarDays}
                           </span>{' '}
                           days
-                          <span className="block text-muted-foreground">
+                          {/* Warning-toned when there IS a loss of pay,
+                              muted when there is none — the mock tints it,
+                              and a paid-days shortfall is exactly the row a
+                              payroll clerk scans for. Colour is not the
+                              only signal: the number itself carries it. */}
+                          <span
+                            className={`block ${
+                              Number(line.lopDays) > 0
+                                ? 'text-warning-foreground'
+                                : 'text-muted-foreground'
+                            }`}
+                          >
                             Loss of pay {line.lopDays}
                           </span>
                         </td>
                         <td className={numericCell}>{formatInr(line.grossEarnings)}</td>
-                        <td className={numericCell}>{formatInr(line.epfEmployee)}</td>
+                        <td className={`${numericCell} border-l`}>
+                          {formatInr(line.epfEmployee)}
+                        </td>
                         <td className={numericCell}>{formatInr(line.epfEmployer)}</td>
                         <td className={numericCell}>
                           {line.esiCovered
@@ -437,19 +554,26 @@ export function PayrollRun({
                           {formatInr(line.professionalTax)}
                         </td>
                         <td className={numericCell}>{formatInr(line.tds)}</td>
-                        <td className={`${numericCell} font-semibold`}>
+                        <td className={`${numericCell} border-l font-semibold`}>
                           {formatInr(line.netPay)}
                         </td>
                       </tr>
-                      {expanded === line.id && (
+                      {expanded === line.employeeId && (
                         <tr>
                           <td
-                            id={`payslip-${line.id}`}
+                            id={`payslip-${line.employeeId}`}
                             colSpan={9}
                             className="bg-muted/25 px-4 py-4"
                           >
                             <LineBreakdown
                               line={line}
+                              esiCeiling={
+                                run.statutoryBasis.find(
+                                  (entry) =>
+                                    entry.parameter ===
+                                    'esi_monthly_gross_ceiling_rupees',
+                                )?.value ?? null
+                              }
                               runId={run.id}
                               draft={run.status === 'draft' && canModify}
                               busy={busy}
@@ -559,18 +683,22 @@ export function PayrollRun({
                     </tr>
                   </thead>
                   <tbody>
-                    {run.statutoryBasis.map((entry) => (
-                      <tr key={`${entry.parameter}-${entry.effectiveFrom}`}>
-                        <th scope="row" className="font-mono text-xs">
-                          {entry.parameter}
-                        </th>
-                        <td className={numericCell}>{entry.value}</td>
-                        <td className="font-mono text-[13px] tabular-nums">
-                          {formatDate(entry.effectiveFrom)}
-                        </td>
-                        <td className={wrapCell}>{entry.notification}</td>
-                      </tr>
-                    ))}
+                    {run.statutoryBasis.map((entry) => {
+                      const decoded = decodeStatutoryParameter(
+                        entry.parameter,
+                        entry.value,
+                      );
+                      return (
+                        <tr key={`${entry.parameter}-${entry.effectiveFrom}`}>
+                          <th scope="row">{decoded.label}</th>
+                          <td className={numericCell}>{decoded.display}</td>
+                          <td className="font-mono text-[13px] tabular-nums">
+                            {formatDate(entry.effectiveFrom)}
+                          </td>
+                          <td className={wrapCell}>{entry.notification}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </DataTable>
               </Card>
@@ -613,14 +741,36 @@ export function PayrollRun({
  * it has no basis for. What is shown is the regime the employee actually
  * elected and the year this run estimated under it.
  */
+/**
+ * The reason an employee is not in ESI this month, in the employee's own
+ * words. Three genuinely different answers the mock collapsed into one
+ * "above the ceiling", which is wrong for the two-thirds of them that are
+ * not: a ₹19,800 earner in an uncovered establishment reads "Not covered"
+ * in the table and must not read "above the ceiling" in the breakdown.
+ *
+ * Derived from the figures already on screen — the line's gross against
+ * the ceiling the run was computed with (its snapshot basis) — so no new
+ * server field is needed. Not money arithmetic: a comparison for wording.
+ */
+function esiNotCoveredReason(gross: string, ceiling: string | null): string {
+  if (ceiling === null) return 'Not covered';
+  return Number(gross) > Number(ceiling)
+    ? `Above the ${formatInr(ceiling)} wage ceiling`
+    : 'Establishment not covered';
+}
+
 function LineBreakdown({
   line,
+  esiCeiling,
   runId,
   draft,
   busy,
   onSetLossOfPay,
 }: {
   readonly line: PayrollRunLine;
+  /** The ESI gross ceiling this run was computed against, from its basis
+   * snapshot; null if the run recorded none. */
+  readonly esiCeiling: string | null;
   readonly runId: string;
   readonly draft: boolean;
   readonly busy: boolean;
@@ -648,7 +798,7 @@ function LineBreakdown({
             value={
               line.esiCovered
                 ? `− ${formatInr(line.esiEmployee)}`
-                : 'Above the wage ceiling'
+                : esiNotCoveredReason(line.grossEarnings, esiCeiling)
             }
           />
           <Line label="Profession tax" value={`− ${formatInr(line.professionalTax)}`} />
@@ -821,7 +971,7 @@ function CancelRunDialog({
         The run keeps its number forever and nothing reuses it. The month can then be
         run again.
         {finalized
-          ? ' This run has already raised its salary requests; any that have been decided on the Payments register have to be rejected there first.'
+          ? ' This run has raised its salary requests; cancelling closes the ones still awaiting approval. It is refused if any has already been approved or paid on the Payments register — that money is committed.'
           : ''}
       </p>
       <Field className="mt-4">

@@ -189,6 +189,19 @@ const FEATURES = [
     authority: 'Payments authority',
     change: 'Payments authority',
   },
+  {
+    /* The payroll authority (migration 0089): who may see the employee
+       register and run payroll. Separate from the payments authority
+       because the register carries every colleague's salary, PAN, UAN
+       and bank account — a vendor-payment manager has no business
+       reading any of that by default. The salary disbursement still
+       flows through the payments workspace; only the visibility and the
+       run are gated here. */
+    key: 'canManagePayroll',
+    heading: 'Can run payroll',
+    authority: 'Payroll authority',
+    change: 'Payroll authority',
+  },
 ] as const satisfies readonly {
   key: keyof Membership & `can${string}`;
   heading: string;

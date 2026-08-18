@@ -898,6 +898,65 @@ describe('the run as an issued document (0090 § 7)', () => {
           cancel_reason = 'finalised against the wrong month'
       where id = ${runId}
     `;
+
+    // The cancel does NOT erase `finalized_at`. It records that the run
+    // WAS finalised, which stays true after it is cancelled — the fact a
+    // provident-fund inspector reads to see what happened. Reverting the
+    // shape CHECK (which once demanded finalized_at be cleared, and made
+    // the cancel above impossible) fails right here.
+    const [cancelled] = await database.pool<
+      { status: string; finalized_at: Date | null }[]
+    >`
+      select status, finalized_at from payroll_runs where id = ${runId}
+    `;
+    expect(cancelled?.status).toBe('cancelled');
+    expect(cancelled?.finalized_at).not.toBeNull();
+  });
+
+  it('refuses to sum two income-tax ladders that both cover the month', async () => {
+    // S3: the ladder is summed over EVERY covering row, so a second
+    // ladder recorded without end-dating the first would double the
+    // year's tax on a finalised, issued document. The resolver refuses
+    // an ambiguous cover, exactly as the profession-tax and the rate
+    // resolvers do — the income-tax ladder was the one that did not.
+    const year = nextYear();
+    // A duplicate general/new-regime ladder, one band is enough to make
+    // the count of distinct effective_from exceed one.
+    await database.pool`
+      insert into income_tax_slabs (
+        organisation_id, regime, payee_category, effective_from,
+        annual_income_from, annual_income_to, rate, notification
+      )
+      values (
+        ${tenant.organisationId}, 'new', 'general', '2025-05-01'::date,
+        0, null, 5, 'duplicate ladder, not end-dated'
+      )
+    `;
+    await createEmployee({
+      code: 'LADDER-DUP',
+      year,
+      // Born thirty years before the run, so the taxpayer resolves to the
+      // 'general' age category the duplicate ladder above is for — the
+      // isolation year climbs across the suite, and a fixed 1990 birthday
+      // would tip into 'senior' at the high years and read a different
+      // (unambiguous) ladder.
+      dateOfBirth: `${String(year - 30)}-06-15`,
+      basic: '200000.00',
+      pfCovered: false,
+      esiApplicable: false,
+      ptCategory: null,
+      taxRegime: 'new',
+    });
+    const failure = await refused(calculateFor(`${String(year)}-08-01`));
+    expect(failure.code).toBe('23H01');
+    expect(failure.message).toContain('versions in force');
+
+    // Clean the duplicate up so it does not leak into a later test's run.
+    await database.pool`
+      delete from income_tax_slabs
+      where organisation_id = ${tenant.organisationId}
+        and notification = 'duplicate ladder, not end-dated'
+    `;
   });
 
   it('keeps a cancelled run’s number and lets the month run again', async () => {

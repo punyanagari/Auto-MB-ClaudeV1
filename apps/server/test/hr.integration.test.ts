@@ -167,25 +167,30 @@ beforeAll(async () => {
   ownerUserId = membership?.user_id ?? '';
   expect(ownerUserId).not.toBe('');
 
-  // Migration 0080 grants the payments authority to nobody, deliberately.
-  // A test that did not grant it would be testing the refusal.
+  // The owner holds the PAYROLL authority implicitly — the 0089 bootstrap
+  // grants can_manage_payroll to a new organisation's owner — so nothing
+  // is done here for it. can_manage_payments IS granted, because the
+  // owner also approves and pays the salary requests a finalised run
+  // raises, and 0080 grants that to nobody by default.
   await admin`
     update organisation_memberships set can_manage_payments = true
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
   `;
 
-  // A second member with a full role and NO payments authority. This is
-  // the account the read-gating assertions are made against — the whole
-  // question is whether an ordinary office member can fetch salaries.
+  // The R1 negative control: a member who holds the PAYMENTS authority
+  // and NOT the payroll one. This is the account the gating assertions
+  // are made against — the whole point of the owner ruling is that a
+  // vendor-payment manager must not see salaries, PAN, UAN or bank
+  // details, so `can_manage_payments` alone must open no payroll door.
   clerkCookie = await signUp(clerkEmail, 'HR Clerk');
   const [clerk] = await admin<{ id: string }[]>`
     select id from auth_users where email = ${clerkEmail}
   `;
   await admin`
     insert into organisation_memberships (
-      organisation_id, user_id, role, work_scope, status
+      organisation_id, user_id, role, work_scope, can_manage_payments, status
     )
-    values (${organisationId}, ${clerk?.id ?? ''}, 'office', 'all', 'active')
+    values (${organisationId}, ${clerk?.id ?? ''}, 'office', 'all', true, 'active')
   `;
 
   strangerCookie = await signUp(strangerEmail, 'HR Stranger');
@@ -247,11 +252,14 @@ describe('the statutory schedules a new organisation arrives with', () => {
   });
 });
 
-describe('the payments authority gates the whole module', () => {
-  it('refuses a member without it, on the READS as much as the writes', async () => {
-    // The point of gating the reads. A member with a full office role and
-    // no payments authority can raise a challan and approve nothing about
-    // money — and must not be able to fetch what every colleague earns.
+describe('the payroll authority gates the whole module', () => {
+  it('refuses a payments-holder without the payroll grant, reads and writes alike', async () => {
+    // R1's negative control. The clerk holds `can_manage_payments` and
+    // NOT `can_manage_payroll`, and that is exactly the account the owner
+    // ruling protects against: a vendor-payment manager may approve an
+    // advance and must not be able to fetch what every colleague earns.
+    // Reads first, because a register of salaries is the payload that
+    // matters — a route guarding only its writes would have published it.
     for (const url of ['/api/employees', '/api/payroll-runs']) {
       const response = await authed({
         method: 'GET',
@@ -436,6 +444,174 @@ describe('a payroll run, opened to finalised', () => {
     expect(recalculated.json<{ remedy?: string }>().remedy).toContain(
       'Cancel this run',
     );
+  });
+});
+
+describe('cancelling a run closes the salaries it raised (S1, S2)', () => {
+  // A dedicated month and its own cohort, so the counts are unambiguous.
+  const MONTH = '2026-06-01';
+
+  // A second employee so the cohort is more than one — a double-pay is
+  // "four live requests where there should be two", which one employee
+  // could not show.
+  beforeAll(async () => {
+    const contactId = await createEmployeeContact(`Rohit Salary ${runId}`);
+    const created = await post('/api/employees', {
+      contactId,
+      employeeCode: 'EMP-S1',
+      dateOfJoining: '2023-01-01',
+      dateOfBirth: '1991-03-03',
+      pfCovered: true,
+      pfWageBasis: 'ceiling',
+      esiApplicable: true,
+      taxRegime: 'new',
+      basicMonthly: '25000.00',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+  }, 60_000);
+
+  async function activeEmployeeCount(): Promise<number> {
+    const [row] = await admin<{ count: string }[]>`
+      select count(*)::text as count from employees
+      where organisation_id = ${organisationId} and date_of_exit is null
+    `;
+    return Number(row?.count ?? '0');
+  }
+
+  async function submittedSalaries(): Promise<number> {
+    const [row] = await admin<{ count: string }[]>`
+      select count(*)::text as count from payment_requests
+      where organisation_id = ${organisationId} and kind = 'salary'
+        and status = 'submitted'
+        and purpose like ${'Salary for 2026-06%'}
+    `;
+    return Number(row?.count ?? '0');
+  }
+
+  async function openCalculateFinalize(): Promise<string> {
+    const opened = await post('/api/payroll-runs', { periodMonth: MONTH });
+    expect(opened.statusCode, opened.body).toBe(201);
+    const runId = opened.json<PayrollRunResponse>().run.id;
+    expect((await post(`/api/payroll-runs/${runId}/calculate`)).statusCode).toBe(200);
+    expect((await post(`/api/payroll-runs/${runId}/finalize`)).statusCode).toBe(200);
+    return runId;
+  }
+
+  it('cancels the requests it raised, and re-finalising does NOT double them', async () => {
+    const cohort = await activeEmployeeCount();
+    expect(cohort).toBeGreaterThan(0);
+
+    const firstRun = await openCalculateFinalize();
+    // Every payslip is now an open salary request.
+    expect(await submittedSalaries()).toBe(cohort);
+
+    // Cancel the run. The ordinary case: every request is still
+    // 'submitted', and cancelling must close them all in the same
+    // transaction — the S1 double-pay is exactly a cancel that leaves
+    // them live.
+    const cancel = await post(`/api/payroll-runs/${firstRun}/cancel`, {
+      reason: 'opened against the wrong figures',
+    });
+    expect(cancel.statusCode, cancel.body).toBe(200);
+    expect(cancel.json<PayrollRunResponse>().run.status).toBe('cancelled');
+
+    // Nothing the first run raised is live any more.
+    expect(await submittedSalaries()).toBe(0);
+    const [rejected] = await admin<{ count: string }[]>`
+      select count(*)::text as count from payment_requests p
+      join payroll_run_lines l on l.payment_request_id = p.id
+      where l.payroll_run_id = ${firstRun} and p.status = 'rejected'
+    `;
+    expect(Number(rejected?.count ?? '0')).toBe(cohort);
+
+    // Run the month again. Exactly one live cohort exists for it — the
+    // second run's — not two.
+    const secondRun = await openCalculateFinalize();
+    expect(secondRun).not.toBe(firstRun);
+    expect(await submittedSalaries()).toBe(cohort);
+
+    // Tidy up so the count assertions of the next test start clean.
+    await post(`/api/payroll-runs/${secondRun}/cancel`, {
+      reason: 'test teardown',
+    });
+    expect(await submittedSalaries()).toBe(0);
+  });
+
+  it('a rejected salary request does not brick the month (S2)', async () => {
+    const runId = await openCalculateFinalize();
+
+    // Reject ONE of the salary requests through the Payments register.
+    // The owner is the finaliser AND the approver here; a salary request
+    // is exempt from maker-checker (0090 § 4b), so a single-manager
+    // agency can decide its own payroll.
+    const requests = await authed({
+      method: 'GET',
+      url: '/api/payment-requests',
+      organisationId,
+    });
+    const target = requests
+      .json<PaymentRequestListResponse>()
+      .requests.find(
+        (request) =>
+          request.kind === 'salary' &&
+          request.status === 'submitted' &&
+          request.purpose.startsWith('Salary for 2026-06'),
+      );
+    expect(target).toBeDefined();
+    const rejected = await post(`/api/payment-requests/${target?.id ?? ''}/decision`, {
+      decision: 'reject',
+      note: 'wrong bank account on file',
+    });
+    expect(rejected.statusCode, rejected.body).toBe(200);
+
+    // The old guard blocked cancel on "anything past submitted", so one
+    // rejected request left the month un-cancellable, un-recalculable and
+    // un-re-runnable. It must cancel now.
+    const cancel = await post(`/api/payroll-runs/${runId}/cancel`, {
+      reason: 'a payslip was rejected, running again',
+    });
+    expect(cancel.statusCode, cancel.body).toBe(200);
+    expect(await submittedSalaries()).toBe(0);
+
+    // And the month is free to run again.
+    const reopened = await post('/api/payroll-runs', { periodMonth: MONTH });
+    expect(reopened.statusCode, reopened.body).toBe(201);
+    await post(
+      `/api/payroll-runs/${reopened.json<PayrollRunResponse>().run.id}/cancel`,
+      {
+        reason: 'test teardown',
+      },
+    );
+  });
+
+  it('refuses to cancel once a salary has been approved (committed money)', async () => {
+    const runId = await openCalculateFinalize();
+    const requests = await authed({
+      method: 'GET',
+      url: '/api/payment-requests',
+      organisationId,
+    });
+    const target = requests
+      .json<PaymentRequestListResponse>()
+      .requests.find(
+        (request) =>
+          request.kind === 'salary' &&
+          request.status === 'submitted' &&
+          request.purpose.startsWith('Salary for 2026-06'),
+      );
+    const approved = await post(`/api/payment-requests/${target?.id ?? ''}/decision`, {
+      decision: 'approve',
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    // An approved salary is committed money; cancelling the run cannot
+    // un-commit it, so the cancel is refused rather than silently
+    // closing an approved request.
+    const cancel = await post(`/api/payroll-runs/${runId}/cancel`, {
+      reason: 'too late',
+    });
+    expect(cancel.statusCode, cancel.body).toBe(409);
+    expect(cancel.json<{ code: string }>().code).toBe('PAYROLL_RUN_STATE_CONFLICT');
   });
 });
 

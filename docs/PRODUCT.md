@@ -1209,11 +1209,21 @@ about a payroll passes through JavaScript floating point.
   who crosses the ceiling in the middle of a contribution period goes on
   contributing to the end of it, read off the finalised runs behind.
   Both shares round **up** to the next rupee: rounding an insurance
-  contribution down is a short remittance.
+  contribution down is a short remittance. One divergence is recorded
+  rather than hidden: monthly eligibility is re-tested on the
+  loss-of-pay-prorated gross, not the un-prorated full-month entitlement,
+  so an employee whose entitlement sits just above the ₹21,000 ceiling
+  can be pulled INTO ESI for a month in which unpaid leave drops their
+  prorated gross to or below it — and the mid-period continuation rule
+  then keeps them in for the rest of the contribution period. See
+  `docs/UX.md` § 15.
 - **Profession tax** is a State levy under Article 276, so there is no
   national rate. Maharashtra's schedule is seeded and no other is; an
   organisation elsewhere is refused by name rather than deducted
-  Maharashtra's figures. The schedule distinguishes men from women — the
+  Maharashtra's figures. Building an editor for other States' schedules
+  is a deferred decision — whether it belongs to this product or to its
+  support desk is not yet answered, and until it is the composer's State
+  select stays Maharashtra-only. The schedule distinguishes men from women — the
   2023 amendment put the women's exemption at ₹25,000 a month against
   ₹7,500 — and February collects ₹300 rather than ₹200, because the
   annual figure is ₹2,500 and does not divide by twelve.
@@ -1226,7 +1236,11 @@ about a payroll passes through JavaScript floating point.
   their Form 12BB; the new regime deducts the standard deduction and
   almost nothing else. Section 87A is applied as a capped rebate, with
   the new regime's marginal relief. Cess follows, and the year's tax
-  rounds to the nearest ten rupees under section 288B.
+  rounds to the nearest ten rupees under section 288B. Known limitation:
+  the old-regime computation does not subtract the employee's own EPF
+  contribution under section 80C, nor any other 80C investment — so an
+  old-regime employee is mildly OVER-deducted, and recovers the
+  difference as a refund on filing.
 - **Surcharge is not computed, and the answer is a refusal.** An employee
   whose projected total income exceeds the first surcharge threshold is
   refused by name and sent to a practitioner. Computing the slab tax
@@ -1256,12 +1270,16 @@ were not. A run whose salary requests have already been decided cannot be
 cancelled — the paperwork is unwound on the payments register, where the
 money is.
 
-**Authority.** The whole module is behind `can_manage_payments`, **reads
-included**. An employee register is a register of salaries, and a member
-without the authority to move the organisation's money out has no
-business fetching what every colleague earns. Whether that grant should
-be split — seeing salaries is a different secret from approving a travel
-advance — is recorded for the owner in `docs/UX.md` § 15.
+**Authority.** Payroll has its own grant, `can_manage_payroll` (0089),
+distinct from `can_manage_payments` — an owner ruling of 2026-08-18. The
+register carries every colleague's salary, PAN, UAN and bank account, and
+a member who may approve a vendor payment must not see that by default:
+seeing what everyone earns is a different secret from moving the
+organisation's money out. The salary DISBURSEMENT still flows through the
+payments workspace; only the register's visibility and the payroll run —
+reads included — are gated on the new authority. The owner of a new
+organisation holds it implicitly, and it requires MFA, like every other
+authority.
 
 **The arithmetic awaits a practitioner's sign-off**, as a pre-production
 gate on the same footing as §5.9's vendor-side TDS table. Every seeded

@@ -268,7 +268,7 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 status, created_at
+                 can_manage_payroll, status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,

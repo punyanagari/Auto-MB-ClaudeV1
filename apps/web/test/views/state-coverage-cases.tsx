@@ -601,7 +601,7 @@ export const STATE_CASES: readonly StateCase[] = [
       <Employees
         api={api}
         organisationId={ORG_ID}
-        canManagePayments
+        canManagePayroll
         canModify
         onOpenPayroll={noop}
       />

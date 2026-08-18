@@ -85,6 +85,14 @@ const CHIP_TONES = {
   // "fixes" later.
   draft: 'neutral',
 
+  // A finalised payroll run (0090) is an issued document — numbered,
+  // immutable, the record of what was paid. `docs/DESIGN.md` § Status
+  // badge semantics gives a completed, correct, proceed-state record the
+  // success family, and the v0 mock tints its finalised run the same way;
+  // unmapped it rendered neutral, identical to a draft, which is the one
+  // reading it must not have.
+  finalized: 'success',
+
   // A tender that was not won, or was not pursued (0083). Not a system
   // failure, but the end of that pipeline either way.
   lost: 'destructive',

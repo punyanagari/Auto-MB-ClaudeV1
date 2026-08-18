@@ -115,6 +115,9 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'updated_at',
     'status',
     'calculated_at',
+    // The frozen basis snapshot moves at calculate time, beside
+    // calculated_at, and is held by the same status rule after that (0090).
+    'statutory_basis',
     'finalized_at',
     'finalized_by_user_id',
     'cancelled_at',

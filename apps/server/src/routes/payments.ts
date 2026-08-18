@@ -60,7 +60,9 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
 interface PaymentRequestRow {
   id: string;
   request_number: string;
-  kind: 'advance' | 'reimbursement';
+  // 'salary' since migration 0090 — raised by the payroll handoff, and
+  // exempt from maker-checker and the advance/bills rules.
+  kind: PaymentRequest['kind'];
   status: PaymentRequest['status'];
   work_id: string | null;
   work_code: string | null;
@@ -630,8 +632,12 @@ export function registerPaymentsWorkspaceRoutes(
         }
         // Deciding on one's own request is the control this whole flow
         // exists to provide, so it is refused here rather than left to
-        // an operator's discretion.
-        if (existing.requested_by_user_id === user.id) {
+        // an operator's discretion — for an advance or a reimbursement,
+        // which are the requester's OWN claim. A salary request is a
+        // payroll run's computed obligation, not the finaliser's claim
+        // (migration 0090 § 4b), so maker-checker does not apply: a
+        // single-manager agency must be able to release its own payroll.
+        if (existing.kind !== 'salary' && existing.requested_by_user_id === user.id) {
           throw httpError(
             409,
             'PAYMENT_REQUEST_SELF_DECISION',
