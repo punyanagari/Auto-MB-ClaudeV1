@@ -99,6 +99,14 @@ const NON_TIMELINE: Record<string, string> = {
     'Outbound money (0080): what a vendor billed this organisation. Organisation-level by nature — the optional Work link is cost attribution, not a contract event, on the same reasoning as payment_request above.',
   vendor_payment:
     'Outbound money (0080): a payment against a vendor invoice, which is itself off the timeline.',
+  employees:
+    'People and payroll (0089): the employee master is organisation-level and carries no Work at all. A Work’s timeline answers what happened to the contract; who joined the payroll is not that.',
+  payroll_runs:
+    'People and payroll (0090): a payroll run pays the whole organisation for a month. It is deliberately not per Work — the same site engineer works on three contracts in a month and no honest apportionment of one payslip across them exists — so there is no Work whose timeline it could join.',
+  payroll_run_lines:
+    'People and payroll (0090): one payslip of the run above, and off the timeline for the same reason it is.',
+  payroll_statutory_rates:
+    'People and payroll (0089): the notified rate schedule seeded at organisation creation. Reference data for the whole tenant, with no Work anywhere near it.',
 };
 
 /**

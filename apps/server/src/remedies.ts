@@ -344,6 +344,42 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the register: somebody else approved, paid or closed this request while you were looking at it.',
   PAYMENT_REQUEST_FROZEN:
     'Reject this request and raise a new one for the corrected amount; what an approver agreed to does not change underneath them.',
+  // Crossed the three-throw coverage bar when the payroll handoff (0090)
+  // became a third caller of the payment-request series. It is an
+  // internal impossibility rather than an operator mistake, so the
+  // remedy says what is safe to do rather than what to correct: the
+  // whole transaction rolls back, and nothing is half-written.
+  PAYMENT_REQUEST_NUMBER_FAILED:
+    'Try again; the request took no number, so nothing was written and no money was authorised.',
+
+  // Payroll (migrations 0089 and 0090). A payroll refusal is almost
+  // always about a schedule that has not been recorded or a run that has
+  // already been settled, so every remedy names the thing to record or
+  // the register to read rather than suggesting a retry.
+  EMPLOYEE_NOT_FOUND:
+    'Open the employee from the Employees register; one removed from the payroll is no longer reachable by an old link.',
+  EMPLOYEE_CODE_TAKEN:
+    'Give this employee a code no other employee in the organisation holds; the code is what a provident-fund return names them by.',
+  EMPLOYEE_INVALID:
+    'Check the dates and the profession-tax State against the employment record before saving; a State without the arm of its schedule that applies cannot produce a deduction.',
+  PAYROLL_RUN_NOT_FOUND:
+    'Open the run from the Payroll register; a cancelled run is still listed there.',
+  PAYROLL_RUN_EXISTS:
+    'Open the run that already covers this month, or cancel it with a reason before running the month again.',
+  PAYROLL_RUN_IMMUTABLE:
+    'Cancel this run with a reason and run the month again; a finalised payroll is the record of what was paid and its payslips do not move.',
+  PAYROLL_RUN_STATE_CONFLICT:
+    'Reload the run and read where it stands; a run is calculated, finalised once, and then only cancelled.',
+  PAYROLL_RUN_NOT_CALCULATED:
+    'Calculate the run before finalising it, so the payslips exist to be finalised.',
+  PAYROLL_RUN_EMPTY:
+    'Add the employees to the Employees register before running the month; a run with nobody on it pays nobody.',
+  PAYROLL_LINE_INVALID:
+    'Check the loss-of-pay days against the days in the month, then calculate the run again.',
+  PAYROLL_SCHEDULE_MISSING:
+    'Ask an organisation owner to record the notified rate or State profession-tax schedule this month needs before running it; the run reads the schedule in force on its own month and will not guess one.',
+  PAYROLL_TAX_OUT_OF_SCOPE:
+    'Take this employee off the run and have their tax computed by a practitioner; income above the surcharge threshold is deliberately outside what this product deducts.',
   BILL_ALREADY_PAID:
     'Record the correction as a receipt or a deduction against a later bill, the way a billed Measurement Book is corrected on a subsequent one, because the register of a paid bill is closed in both directions.',
   RAILWAY_BILL_EXTRACTION_FAILED:

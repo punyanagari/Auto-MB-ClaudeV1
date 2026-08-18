@@ -17,6 +17,42 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v23: the employee master, the dated statutory schedules and the
+ * payroll runs (0089, 0090) join the package.
+ *
+ * Six sections and a counter, and the reason all of them travel is one
+ * sentence: an organisation restored without its payroll history cannot
+ * answer a provident-fund inspector. The payslips are the primary record
+ * of every contribution the agency deducted and every one it owed, and
+ * unlike a challan or an invoice they exist nowhere else — there is no
+ * counterparty holding a copy.
+ *
+ * The THREE SCHEDULE TABLES travel too, and that is not decoration. A run
+ * snapshots the rates it used onto each line, so a restore can still read
+ * what was deducted; what it could not do without the schedules is
+ * compute the NEXT month, and it could not show an inspector the
+ * notification the organisation was relying on. They are also editable
+ * per organisation, so a restore that re-seeded them from the migration
+ * would silently discard an owner's own corrections.
+ *
+ * `employees` carries the PAN, the UAN, the ESIC number and — through the
+ * `contacts` section that has done so since v13 — the salary bank
+ * account. That is the same posture v13 recorded for the bank accounts:
+ * the API withholds those columns because no screen needs them back,
+ * while this export is the contractor's own portability snapshot and an
+ * export you cannot restore a payroll from is not one. No Aadhaar exists
+ * anywhere in the schema to travel.
+ *
+ * v22 (maintenance) is the pack of this wave that landed ahead of it. The
+ * numbers were ALLOCATED by the coordinator rather than claimed on merge,
+ * for the reason the v15 and v17 notes record at length: a version string
+ * identifies a format, two formats sharing one string is the failure that
+ * matters, and a gap is not.
+ *
+ * No manifest bucket: payroll stores no PDFs. A payslip is rendered from
+ * the frozen columns that travel here, so a restored export can reprint
+ * every one it holds — the same reasoning the v20 note gives for outward
+ * letters.
  * export-v22: maintenance (0088) joins the package — the site material
  * requests, what each asked for, the dispatch challans that answered
  * them, the quantities each challan carried, the defective units
@@ -141,7 +177,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v22';
+const EXPORT_FORMAT_VERSION = 'export-v23';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -235,7 +271,7 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 status, created_at
+                 can_manage_payroll, status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -955,6 +991,48 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'productionDispatchCounters',
     sql: `select * from production_dispatch_counters order by job_card_id`,
+  },
+  // Payroll (0089, 0090). Ordered parents before children, and the
+  // schedules before the runs that read them, so a restore replaying
+  // this package in section order never references a row it has not
+  // written yet.
+  {
+    key: 'payrollStatutoryRates',
+    sql: `select * from payroll_statutory_rates
+          order by parameter, effective_from, id`,
+  },
+  {
+    key: 'professionalTaxSlabs',
+    sql: `select * from professional_tax_slabs
+          order by state_code, payee_category, effective_from,
+                   monthly_wage_from, id`,
+  },
+  {
+    key: 'incomeTaxSlabs',
+    sql: `select * from income_tax_slabs
+          order by regime, payee_category, effective_from,
+                   annual_income_from, id`,
+  },
+  {
+    key: 'employees',
+    sql: `select * from employees order by employee_code, id`,
+  },
+  {
+    key: 'payrollRuns',
+    sql: `select * from payroll_runs order by fy_label, sequence_number, id`,
+  },
+  {
+    key: 'payrollRunLines',
+    sql: `select * from payroll_run_lines
+          order by payroll_run_id, employee_code, id`,
+  },
+  // The payroll counter, for the reason the production note above gives:
+  // a restore that reset it would hand out a run number the organisation
+  // has already used, and a gap-free series a provident-fund inspector
+  // reads is the one thing a payroll number is for.
+  {
+    key: 'payrollRunCounters',
+    sql: `select * from payroll_run_counters order by fy_label`,
   },
 ];
 

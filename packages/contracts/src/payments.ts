@@ -24,11 +24,39 @@ import { TdsPayeeClassSchema, TdsSectionSchema } from './statutory.js';
 
 // ── Employee payment requests ────────────────────────────────────────
 
-export const PAYMENT_REQUEST_KINDS = ['advance', 'reimbursement'] as const;
+/**
+ * `salary` joins the two of migration 0080 with 0090's payroll.
+ *
+ * A salary is neither an advance nor a reimbursement, and filing it as
+ * one would misstate a register somebody reconciles against a bank
+ * statement. It behaves like a reimbursement in the one place the
+ * lifecycle branches — paying it settles it, because there are no later
+ * bills to record — and the one-open-advance gate does not touch it.
+ */
+export const PAYMENT_REQUEST_KINDS = ['advance', 'reimbursement', 'salary'] as const;
 export const PaymentRequestKindSchema = Type.Union(
   PAYMENT_REQUEST_KINDS.map((kind) => Type.Literal(kind)),
 );
 export type PaymentRequestKind = Static<typeof PaymentRequestKindSchema>;
+
+/**
+ * The kinds a person may raise by hand.
+ *
+ * `salary` is deliberately absent. A salary request exists only because
+ * a payroll run was finalised, and it carries that run's figures; one
+ * typed straight into this form would be money leaving the bank with no
+ * payslip behind it and nothing to reconcile against the PF and TDS
+ * actually remitted. Keeping the create schema narrower than the read
+ * schema is what makes that a compile-time fact rather than a rule in a
+ * route comment.
+ */
+export const CREATABLE_PAYMENT_REQUEST_KINDS = ['advance', 'reimbursement'] as const;
+export const CreatablePaymentRequestKindSchema = Type.Union(
+  CREATABLE_PAYMENT_REQUEST_KINDS.map((kind) => Type.Literal(kind)),
+);
+export type CreatablePaymentRequestKind = Static<
+  typeof CreatablePaymentRequestKindSchema
+>;
 
 /**
  * Submitted is waiting on a decision;
@@ -52,17 +80,36 @@ export const PaymentRequestStatusSchema = Type.Union(
 );
 export type PaymentRequestStatus = Static<typeof PaymentRequestStatusSchema>;
 
+/** `payroll` is 0090's, and is not `labour`: labour means a labour
+ * contractor's bill, which is a vendor liability and not a salary. */
 export const PAYMENT_REQUEST_CATEGORIES = [
   'travel',
   'materials',
   'labour',
   'site_expenses',
   'general',
+  'payroll',
 ] as const;
 export const PaymentRequestCategorySchema = Type.Union(
   PAYMENT_REQUEST_CATEGORIES.map((category) => Type.Literal(category)),
 );
 export type PaymentRequestCategory = Static<typeof PaymentRequestCategorySchema>;
+
+/** As with the kinds above: `payroll` is reachable only through a
+ * finalised run, so the create form cannot offer it. */
+export const CREATABLE_PAYMENT_REQUEST_CATEGORIES = [
+  'travel',
+  'materials',
+  'labour',
+  'site_expenses',
+  'general',
+] as const;
+export const CreatablePaymentRequestCategorySchema = Type.Union(
+  CREATABLE_PAYMENT_REQUEST_CATEGORIES.map((category) => Type.Literal(category)),
+);
+export type CreatablePaymentRequestCategory = Static<
+  typeof CreatablePaymentRequestCategorySchema
+>;
 
 export const PaymentRequestSchema = Type.Object(
   {
@@ -95,11 +142,11 @@ export type PaymentRequest = Static<typeof PaymentRequestSchema>;
 
 export const CreatePaymentRequestSchema = Type.Object(
   {
-    kind: PaymentRequestKindSchema,
+    kind: CreatablePaymentRequestKindSchema,
     beneficiaryContactId: UuidSchema,
     workId: Type.Optional(UuidSchema),
     purpose: nonBlankString({ minLength: 3, maxLength: 500 }),
-    category: PaymentRequestCategorySchema,
+    category: CreatablePaymentRequestCategorySchema,
     amount: PositiveMoneyStringSchema,
     /**
      * What the claim rests on — the estimate, quotation or bill, named.

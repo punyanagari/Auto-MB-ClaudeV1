@@ -1154,6 +1154,146 @@ payables into one summary — is also not built; the register is a plain
 two-tab table until the owner's v0 round for this screen settles how the
 batch surface should look.
 
+### 5.9a People and payroll
+
+§5.9 is money going out to vendors and on employee claims. This is the
+other recurring payment an executing agency makes, and the one with the
+most law attached to it: the monthly salary, and the five statutory heads
+that come off it or sit beside it.
+
+**An employee is a contact with employment facts recorded against them.**
+Name, phone, PAN and the salary bank account are the `contacts` row
+§5.9 already pays; what payroll adds is the employment: a code, the
+dates, the provident-fund and insurance elections, the profession-tax
+State, the income-tax regime, and the monthly salary structure. This is
+not tidiness — the payments workspace pays a CONTACT, so an employee who
+was not one could not be paid at all.
+
+**No Aadhaar, anywhere.** Not a column, not a payload, not a log line.
+The UAN is the identifier a provident-fund return needs, and the Aadhaar
+Act restricts who may hold the number and for what.
+
+**Statutory rates live in dated tables, never in constants.** This is the
+one place the product departs from `packages/contracts/src/statutory.ts`,
+and the reason is about payroll rather than taste. A vendor payment is
+deducted once, on one day, and the rate is frozen on the row. A payroll
+run is RE-COMPUTED: a draft is calculated, corrected and calculated
+again, and a run for a past month has to produce the figures that month
+produced. Rates move mid-year by notification — the employee's ESI share
+went from 1.75% to 0.75% on 1 July 2019 — and a constant in a deployed
+build cannot answer for June and July at once. The precedent taken is the
+GST rate master: org-editable rows with the range of dates each was in
+force, seeded for every organisation, retired by end-dating and never
+deleted.
+
+**The arithmetic, head by head.** All of it runs in SQL numeric; nothing
+about a payroll passes through JavaScript floating point.
+
+- **Earnings** are pro-rated to the paisa over the days actually paid.
+  Loss-of-pay days are stated per payslip by the payroll clerk: the
+  product has no attendance subsystem, deliberately, and a monthly
+  payroll consumes a number of unpaid days rather than a punch record.
+- **Provident fund.** The wage is basic plus dearness allowance and
+  nothing else, capped at the statutory ceiling where the organisation
+  has elected to restrict it. The employee contributes 12%. The employer
+  contributes 12%, of which 8.33% of the wage **capped at the pension
+  ceiling** goes to the Pension Scheme and **the remainder** goes to the
+  fund. The widely quoted "3.67%" is that remainder and is only exactly
+  3.67% at or below the ceiling; above it the fund share is larger, and a
+  product that asserted 3.67% as a rate would under-fund every employee
+  earning more than the ceiling in basic. Contributions round to the
+  nearest rupee.
+- **Employees' State Insurance.** 0.75% employee and 3.25% employer of
+  the gross, while the gross does **not exceed** the wage ceiling — so
+  the ceiling itself is covered and a paisa over it is not. An employee
+  who crosses the ceiling in the middle of a contribution period goes on
+  contributing to the end of it, read off the finalised runs behind.
+  Both shares round **up** to the next rupee: rounding an insurance
+  contribution down is a short remittance. One divergence is recorded
+  rather than hidden: monthly eligibility is re-tested on the
+  loss-of-pay-prorated gross, not the un-prorated full-month entitlement,
+  so an employee whose entitlement sits just above the ₹21,000 ceiling
+  can be pulled INTO ESI for a month in which unpaid leave drops their
+  prorated gross to or below it — and the mid-period continuation rule
+  then keeps them in for the rest of the contribution period. See
+  `docs/UX.md` § 15.
+- **Profession tax** is a State levy under Article 276, so there is no
+  national rate. Maharashtra's schedule is seeded and no other is; an
+  organisation elsewhere is refused by name rather than deducted
+  Maharashtra's figures. Building an editor for other States' schedules
+  is a deferred decision — whether it belongs to this product or to its
+  support desk is not yet answered, and until it is the composer's State
+  select stays Maharashtra-only. The schedule distinguishes men from women — the
+  2023 amendment put the women's exemption at ₹25,000 a month against
+  ₹7,500 — and February collects ₹300 rather than ₹200, because the
+  annual figure is ₹2,500 and does not divide by twelve.
+- **Income tax under section 192** is the year's estimated tax on the
+  employee's elected regime, less what has already been deducted, spread
+  over the months still to be paid. The projection is the finalised runs
+  behind plus this month at its own rate for every month remaining. The
+  old regime deducts the standard deduction, the year's profession tax
+  under section 16(iii), and the two totals the employee declared on
+  their Form 12BB; the new regime deducts the standard deduction and
+  almost nothing else. Section 87A is applied as a capped rebate, with
+  the new regime's marginal relief. Cess follows, and the year's tax
+  rounds to the nearest ten rupees under section 288B. Known limitation:
+  the old-regime computation does not subtract the employee's own EPF
+  contribution under section 80C, nor any other 80C investment — so an
+  old-regime employee is mildly OVER-deducted, and recovers the
+  difference as a refund on filing.
+- **Surcharge is not computed, and the answer is a refusal.** An employee
+  whose projected total income exceeds the first surcharge threshold is
+  refused by name and sent to a practitioner. Computing the slab tax
+  alone for them would UNDER-deduct, and an under-deduction under section
+  192 is the employer's own liability with interest.
+
+**A finalised run is an issued document.** It is numbered gap-free per
+organisation per financial year off a counter claimed by upsert, keyed by
+the month being PAID rather than by today — so March's payroll, run in
+April, belongs to the year it pays for. It is immutable once finalised;
+it is cancelled with a reason rather than deleted; a cancelled run keeps
+its number forever and the month may then be run again. One live run per
+month is impossible rather than merely refused. Every figure a payslip
+rests on is snapshotted onto it, **including the rates**, because the
+schedules are org-editable and a run that re-derived them on read would
+restate a finalised month the day an owner corrected a notification.
+
+**Disbursement is the payments workspace's, not a second one.**
+Finalising raises one payment request per payslip, of a new kind
+`salary`, for the net and no other figure, with the run number standing
+in as its proof. Each then moves through the approval, the maker-checker
+rule and the paid-once guard §5.9 already holds, and settles on payment
+because a salary has no later bills to record. The handoff is idempotent:
+a retried finalise is refused by the run's own guard, and the unique
+index on the link would refuse a second request per payslip even if it
+were not. A run whose salary requests have already been decided cannot be
+cancelled — the paperwork is unwound on the payments register, where the
+money is.
+
+**Authority.** Payroll has its own grant, `can_manage_payroll` (0089),
+distinct from `can_manage_payments` — an owner ruling of 2026-08-18. The
+register carries every colleague's salary, PAN, UAN and bank account, and
+a member who may approve a vendor payment must not see that by default:
+seeing what everyone earns is a different secret from moving the
+organisation's money out. The salary DISBURSEMENT still flows through the
+payments workspace; only the register's visibility and the payroll run —
+reads included — are gated on the new authority. The owner of a new
+organisation holds it implicitly, and it requires MFA, like every other
+authority.
+
+**The arithmetic awaits a practitioner's sign-off**, as a pre-production
+gate on the same footing as §5.9's vendor-side TDS table. Every seeded
+rate, ceiling, slab and threshold was written from an engineer's reading
+of the provision cited beside it. Building did not wait for the gate;
+using the product to file a provident-fund, insurance, profession-tax or
+24Q return does.
+
+**Not built yet.** Attendance capture, a leave ledger, ID cards, and the
+generation of the Government return files themselves. The figures every
+one of those returns carries are on the payslip; writing the file formats
+is a pack with its own certification, and the mock's own "Generate"
+buttons produce nothing today.
+
 ### 5.10 Inspection gates despatch
 
 Nothing manufactured for Indian Railways moves until somebody the railway

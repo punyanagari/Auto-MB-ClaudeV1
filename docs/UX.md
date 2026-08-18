@@ -499,6 +499,113 @@ behind the requests:
   because it changes another module's screen. **Owner question: fold it
   in?**
 
+### 15. Employee and payroll screens — PROPOSED
+
+**Status: PROPOSED, owner ruling pending.** Every other numbered entry in
+this list is APPROVED; this one is the first written before its ruling,
+because the pack it belongs to landed inside one wave rather than after
+one. The convergence path is the same as § 9–§ 13's: change the mock in
+v0 and each entry retires.
+
+**The section number is allocated, not sequential.** § 14 belongs to the
+maintenance pack of this wave and lands with it, exactly as the export
+format versions are allocated by the coordinator rather than claimed on
+merge. A gap here is not a defect; two sections sharing a number would
+be.
+
+The two screens are ported (`app/employees/page.tsx` and
+`app/hr/payroll/page.tsx` at **`fdfd610`**, through
+`components/hr/employee-workspace.tsx` and
+`components/payroll-run-workspace.tsx`) inside the mock's own grammar:
+its page header, its stat tiles, its dense tables, its expandable
+computation row, its status badge.
+
+There are more entries here than in any previous section, and the reason
+is on the mock's own screen rather than in this build's reading of it.
+The employee workspace carries a banner saying what it is — "**Functional
+prototype:** sensitive HR data, photos and attendance are stored only on
+this browser. Do not use real employee or banking data until secure
+authentication, database and private storage are connected" — and four of
+its six tabs are behind features the product does not have and this pack
+was not scoped to build.
+
+The test applied throughout is the one § 10 states: would replicating the
+pixel make the product claim something untrue?
+
+| #   | The mock draws                                                                                    | The application ships                                                                                                                                                                                                                                                                 | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15a | A six-tab employee workspace: Directory, Attendance, Leave, Payroll, Payslips, ID cards           | Two screens — the Directory as the Employees register, and Payroll as a workspace of its own                                                                                                                                                                                          | The remaining four are whole features, not tabs. Each is listed below rather than swept into one row, because each is refused for its own reason and each would retire on its own.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 15b | Attendance clocked against a geofence, with a distance and an accuracy per punch                  | Loss-of-pay DAYS, typed per payslip on the draft run                                                                                                                                                                                                                                  | Attendance is a product: a device policy, a punch record, an exception queue, a correction trail. What a monthly payroll actually consumes is a number of unpaid days, and that is what is collected. The mock's own store keeps every punch in the browser, which is what its banner is warning about.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 15c | A leave request form, a balance, and an admin approval queue                                      | Absent                                                                                                                                                                                                                                                                                | Same reason as 15b, plus one the mock's own arithmetic supplies: its loss-of-pay figure subtracts a leave BALANCE from an approved leave's length, which double-counts every leave already inside the balance. A leave ledger that fed payroll would have to be right about this, and it is a pack of its own.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 15d | An ID-photo upload with an approval state, and printable ID cards                                 | Absent                                                                                                                                                                                                                                                                                | A photograph of an employee is the most sensitive object the product would hold, and the mock stores it as a data URI in the browser. Storing one properly means a private bucket, an access rule per viewer, and a retention answer. None of that is payroll, and half of it would be worse than not having it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 15e | A "Reset sample" button and an admin/employee role switch in the page header                      | Neither                                                                                                                                                                                                                                                                               | Both are the prototype driving itself. The role switch is the product's own membership and authority; the reset button empties a browser store this build does not have.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 15f | A new-employee dialog collecting name, email, phone, bank name, account number and IFSC           | A dialog collecting the EMPLOYMENT facts, against a contact chosen from Masters                                                                                                                                                                                                       | The name, phone, email, PAN and bank details live on the `contacts` row (0028, 0078, 0080), edited in Masters, and a second form writing those columns is how two masters start disagreeing. Not everything the mock collects is a contact field, though: department is an employment fact on the `employees` table and IS collected in the composer, and the mock's `designation` is not stored as an employee column at all — it is the contact's. It is also load-bearing: `payment_requests` pays a CONTACT, so an employee who is not one could not be paid at all.                                                                                                                                                                                                                                                                      |
+| 15g | Bank account and salary shown in the directory table, for the admin view                          | The monthly gross ships — a column and a register-wide stat tile; the account, PAN, UAN and ESIC number do not, and the detail shows the account masked to its last four digits                                                                                                       | The projection rule is deliberate on both sides. The list payload carries NO PAN, UAN, ESIC number or bank account — those are on the detail, the account masked (the mock masks it too, `maskAccount`) — because a register is the payload most likely to reach a log, a cache or a screenshot. But it DOES carry the monthly gross, because a payroll register that hid the pay could not answer the question a payroll clerk opens it to ask. The real divergence is who sees it: the mock gates the salary cell behind an in-page admin/employee role toggle (`isAdmin`); the port has no such toggle — that toggle was the prototype driving itself (15e) — and shows the gross to every holder of the new `can_manage_payroll` authority instead. So the salary is visible to a narrower, authority-gated audience, not hidden per-row. |
+| 15h | Four stat tiles: active employees, present today, leave queue, month payroll                      | Two — people on the payroll, and the monthly gross                                                                                                                                                                                                                                    | The middle two are 15b and 15c. The payroll figure moves to the run, where it is a computed total rather than an estimate of one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 15i | A payroll page its own sidebar cannot reach                                                       | The same page, reached from a "Monthly payroll" action on the Employees register                                                                                                                                                                                                      | `components/app-sidebar.tsx` at fdfd610 lists Employees under Administration and nothing under it. The screen exists and has no door. The Inventory pack's register-to-shortage link is the precedent, and it keeps one rail lamp for one module the mock lists once.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 15j | An "Income-tax regime" card comparing the old and new regimes, one badged **Recommended**         | The regime the employee ELECTED, with the year this run estimated under it                                                                                                                                                                                                            | Telling a named person which tax regime to choose is advice. The counterfactual also depends on declarations that employee may not have made — the old regime's figure is only meaningful once a Form 12BB exists — so the product would be badging a recommendation it has no basis for.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 15k | A "Statutory filings" card: Generate a PF ECR, an ESI file, a PT return and a 24Q, and Mark filed | A "What is remitted" table and a "Statutory basis" table                                                                                                                                                                                                                              | The mock's Generate produces nothing. A button that appears to have written a Government return is the § 10c entry with teeth, on a document whose deadline carries interest. What ships instead is the two things a filing actually needs: the figures, both halves, and the notification each rate came from.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 15l | Six employees' worth of hard-coded rows, and a month picker over three literal months             | The register, and a month opened deliberately                                                                                                                                                                                                                                         | The mock's payroll is seed data. Opening a month here CLAIMS A NUMBER off a counter, which is not something a select should do as a side effect of being changed — so the picker chooses among runs that exist and a separate control opens a new one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 15m | `esi: null` on every row, rendered as an em dash                                                  | A covered/not-covered fact per month, and where not covered the breakdown names the true reason for the case — below the ceiling but the establishment is not covered, the establishment not covered, or the gross above the ceiling — rather than always reading "above the ceiling" | The mock's own fixture has nobody under the ESI ceiling, so its ESI column is dead. Here coverage is a real per-month answer — the gross against the ceiling, plus the rule that keeps a mid-period riser contributing to the end of the contribution period — and a dash could not say which of the two it meant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+Four things the application draws that the mock does not, each because
+the mock had no server to need it:
+
+- **The employer's own contributions**, beside the employee's. A payroll
+  screen that showed only what is deducted cannot tell an operator what
+  the organisation owes the EPFO and the ESIC this month, which is the
+  figure the remittance is actually made for.
+- **A statutory-basis table** on every run: each rate and ceiling in
+  force in that month, with the notification it comes from. It is also
+  what the pre-production CA sign-off reads.
+- **A cancel action with a required reason.** A payroll run is an issued
+  document and the table takes no DELETE, so a run opened against the
+  wrong month would otherwise be permanent.
+- **A refusal where the surcharge starts.** An employee whose projected
+  income passes ₹50,00,000 is refused by name rather than computed
+  without surcharge, because an under-deduction under section 192 is the
+  employer's liability with interest.
+
+**Two decisions the owner has since ruled on (2026-08-18).**
+
+- **Payroll gets its own authority `can_manage_payroll`, not a reuse of
+  `can_manage_payments`.** Owner ruling of 2026-08-18, settled. The
+  argument that carried it: this authority also reveals what every
+  colleague is paid, which is a different kind of secret from a travel
+  advance, so a vendor-payment manager must not hold it by default. The
+  salary DISBURSEMENT still flows through the `payment_requests`
+  machinery that grant was created for (0080) — only VISIBILITY and RUN
+  authority are separated. The employee register and the payroll run,
+  reads included, are gated on `can_manage_payroll` (0089); a
+  `can_manage_payments` holder without it is refused every payroll route
+  and sees no Employees door. The owner of a new organisation holds it
+  implicitly, and it requires MFA.
+- **The editor for other States' profession-tax schedules is deferred,
+  not open.** Owner ruling of 2026-08-18: only Maharashtra's schedule is
+  seeded, an organisation in another State meets a named
+  `PAYROLL_SCHEDULE_MISSING` refusal rather than Maharashtra's figures,
+  and whether such an editor belongs to this product or to its support
+  desk is a DEFERRED decision — not an open question. The composer's
+  State select stays "Maharashtra + none" for now; that is the known
+  bound.
+
+**One divergence recorded for the owner to rule on.** ESI monthly
+eligibility is re-tested each month on the loss-of-pay-PRORATED gross,
+not on the un-prorated full-month entitlement. The consequence, stated
+plainly: an employee whose full entitlement sits just above the ₹21,000
+ceiling can be pulled INTO ESI for a month in which unpaid leave drops
+their prorated gross to or below the ceiling — and the mid-period
+continuation rule then keeps them contributing to the end of the
+contribution period. This is recorded as a divergence to be ruled on
+rather than hidden.
+
+**The Employees rail entry is not a divergence.** It is the first item of
+the mock's own Administration group, and it left the omitted list this
+wave. E-Way Bills, Purchase orders and Maintenance stay omitted rather
+than drawn as dead entries. Its icon is `Users`, which is also Members'
+two rows down — that is the mock's own choice, and a different icon here
+would be pixel drift rather than a fix.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
@@ -941,7 +1048,7 @@ matrix dialog · PAC certificate issuance · Completion extensions · Measuremen
 Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invoice
 IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
 recovery · Password recovery · Account security · Organisation access settings ·
-Appearance settings
+Appearance settings · Monthly payroll
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.

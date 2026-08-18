@@ -125,6 +125,16 @@ const COUNTER_TABLES = [
     refusal: 'stock_movement_counters',
   },
   {
+    // The payroll-run sequence (0090), per organisation and per financial
+    // year like the payment requests above it — and keyed by the month
+    // being PAID rather than by today, so March's run opened in April
+    // belongs to the year it pays for. Monotonic: a cancelled run keeps
+    // its number, so rewinding would hand one out twice.
+    table: 'payroll_run_counters',
+    scope: 'financial-year',
+    refusal: 'payroll_run_counters',
+  },
+  {
     table: 'tax_invoice_counters',
     scope: 'financial-year',
     refusal: 'tax_invoice_counters',

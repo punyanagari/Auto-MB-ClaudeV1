@@ -32,6 +32,10 @@ export const ME = {
       // workspace renders its write controls under the axe scan — a
       // read-only register would not exercise the buttons.
       canManagePayments: true,
+      // The payroll authority (0089), distinct from payments: without it
+      // the rail carries no Employees door and both payroll screens
+      // refuse. The owner of a new organisation holds it implicitly.
+      canManagePayroll: true,
       status: 'active',
     },
   ],
@@ -1112,6 +1116,184 @@ const STOCK_SHORTAGES = {
   ],
 };
 
+/* People and payroll (migrations 0089, 0090). Populated on purpose: an
+   empty register scans the EmptyState and proves nothing about the row,
+   the status chip or the numeric columns, which is where a contrast or
+   target-size failure would actually be.
+
+   The three employees are chosen to put every tinted word and every
+   awkward figure on the screen at once — one employed and one who has
+   left, one covered by insurance and one above the ceiling, and a
+   profession tax of zero beside one of ₹200. */
+const EMPLOYEE_REGISTER = {
+  employees: [
+    {
+      id: 'ee000001-1111-4111-8111-aaaaaaaaaaaa',
+      employeeCode: 'EMP-001',
+      name: 'Anita Deshmukh',
+      designation: 'Project coordinator',
+      department: 'Projects',
+      dateOfJoining: '2022-04-11',
+      dateOfExit: null,
+      employed: true,
+      monthlyGross: '68200.00',
+      pfCovered: true,
+      esiApplicable: true,
+    },
+    {
+      id: 'ee000002-1111-4111-8111-aaaaaaaaaaaa',
+      employeeCode: 'EMP-005',
+      name: 'Kavita More',
+      designation: 'Office assistant',
+      department: 'Administration',
+      dateOfJoining: '2024-01-08',
+      dateOfExit: null,
+      employed: true,
+      monthlyGross: '19800.00',
+      pfCovered: true,
+      esiApplicable: true,
+    },
+    {
+      id: 'ee000003-1111-4111-8111-aaaaaaaaaaaa',
+      employeeCode: 'EMP-011',
+      name: 'Suresh Patil',
+      designation: 'Senior technician',
+      department: 'Installation',
+      dateOfJoining: '2021-06-01',
+      dateOfExit: '2026-05-31',
+      employed: false,
+      monthlyGross: '32600.00',
+      pfCovered: false,
+      esiApplicable: false,
+    },
+  ],
+  nextCursor: null,
+  currentCount: 2,
+  currentMonthlyGross: '88000.00',
+};
+
+const PAYROLL_LINES = [
+  {
+    id: 'll000001-1111-4111-8111-aaaaaaaaaaaa',
+    employeeId: 'ee000001-1111-4111-8111-aaaaaaaaaaaa',
+    employeeCode: 'EMP-001',
+    employeeName: 'Anita Deshmukh',
+    calendarDays: 31,
+    lopDays: '0.00',
+    paidDays: '31.00',
+    basic: '34100.00',
+    dearnessAllowance: '0.00',
+    houseRentAllowance: '17050.00',
+    otherAllowances: '17050.00',
+    grossEarnings: '68200.00',
+    pfWages: '15000.00',
+    epfEmployee: '1800.00',
+    epfEmployer: '550.00',
+    epsEmployer: '1250.00',
+    esiCovered: false,
+    esiEmployee: '0.00',
+    esiEmployer: '0.00',
+    professionalTax: '200.00',
+    taxRegime: 'new' as const,
+    projectedAnnualIncome: '818400.00',
+    projectedAnnualTax: '18408.00',
+    tds: '1534.00',
+    netPay: '64666.00',
+    paymentRequestId: 'pr000001-1111-4111-8111-aaaaaaaaaaaa',
+    paymentRequestNumber: 'PR/2026-27/007',
+    paymentRequestStatus: 'submitted',
+  },
+  {
+    id: 'll000002-1111-4111-8111-aaaaaaaaaaaa',
+    employeeId: 'ee000002-1111-4111-8111-aaaaaaaaaaaa',
+    employeeCode: 'EMP-005',
+    employeeName: 'Kavita More',
+    calendarDays: 31,
+    /* A loss of pay, so the warning-toned attendance line is on screen
+       rather than only its neutral sibling. */
+    lopDays: '2.00',
+    paidDays: '29.00',
+    basic: '9261.29',
+    dearnessAllowance: '0.00',
+    houseRentAllowance: '4630.65',
+    otherAllowances: '4630.65',
+    grossEarnings: '18522.59',
+    pfWages: '9261.29',
+    epfEmployee: '1111.00',
+    epfEmployer: '340.00',
+    epsEmployer: '771.00',
+    esiCovered: true,
+    esiEmployee: '139.00',
+    esiEmployer: '603.00',
+    professionalTax: '0.00',
+    taxRegime: 'new' as const,
+    projectedAnnualIncome: '222271.08',
+    projectedAnnualTax: '0.00',
+    tds: '0.00',
+    netPay: '17272.59',
+    paymentRequestId: 'pr000002-1111-4111-8111-aaaaaaaaaaaa',
+    paymentRequestNumber: 'PR/2026-27/008',
+    paymentRequestStatus: 'submitted',
+  },
+];
+
+const PAYROLL_RUN = {
+  run: {
+    id: 'rr000001-1111-4111-8111-aaaaaaaaaaaa',
+    runNumber: 'PAY/2026-27/001',
+    periodMonth: '2026-07-01',
+    status: 'finalized' as const,
+    calculatedAt: '2026-08-01T06:30:00.000Z',
+    finalizedAt: '2026-08-01T07:00:00.000Z',
+    cancelledAt: null,
+    cancelReason: null,
+    employeeCount: 2,
+    totalGross: '86722.59',
+    totalNet: '81938.59',
+    lines: PAYROLL_LINES,
+    totalEpfEmployee: '2911.00',
+    totalEpfEmployer: '890.00',
+    totalEpsEmployer: '2021.00',
+    totalEsiEmployee: '139.00',
+    totalEsiEmployer: '603.00',
+    totalProfessionalTax: '200.00',
+    totalTds: '1534.00',
+    statutoryBasis: [
+      {
+        parameter: 'epf_employee_percent',
+        value: '12.0000',
+        effectiveFrom: '2014-09-01',
+        notification: "Paragraph 29, Employees' Provident Funds Scheme, 1952",
+      },
+      {
+        parameter: 'esi_employee_percent',
+        value: '0.7500',
+        effectiveFrom: '2019-07-01',
+        notification: 'G.S.R. 423(E) dated 13 June 2019, effective 1 July 2019',
+      },
+    ],
+  },
+};
+
+const PAYROLL_RUN_LIST = {
+  runs: [
+    {
+      id: PAYROLL_RUN.run.id,
+      runNumber: PAYROLL_RUN.run.runNumber,
+      periodMonth: PAYROLL_RUN.run.periodMonth,
+      status: PAYROLL_RUN.run.status,
+      calculatedAt: PAYROLL_RUN.run.calculatedAt,
+      finalizedAt: PAYROLL_RUN.run.finalizedAt,
+      cancelledAt: null,
+      cancelReason: null,
+      employeeCount: PAYROLL_RUN.run.employeeCount,
+      totalGross: PAYROLL_RUN.run.totalGross,
+      totalNet: PAYROLL_RUN.run.totalNet,
+    },
+  ],
+  nextCursor: null,
+};
+
 const TENDER_LIST = {
   tenders: [
     {
@@ -1286,6 +1468,29 @@ export async function mockWorkspace(
   // bare-register pattern would otherwise swallow the one with an id.
   await page.route('**/api/tenders/*', (route) => route.fulfill(json(TENDER_DETAIL)));
   await page.route('**/api/tenders', (route) => route.fulfill(json(TENDER_LIST)));
+  // People and payroll (0089, 0090). The run detail is registered BEFORE
+  // the bare register, for the reason the production routes above give.
+  await page.route('**/api/payroll-runs/*', (route) =>
+    route.fulfill(json(PAYROLL_RUN)),
+  );
+  await page.route('**/api/payroll-runs*', (route) =>
+    route.fulfill(json(PAYROLL_RUN_LIST)),
+  );
+  // Honours the `status` query the register sends: the default view
+  // (`current`) hides the one employee who has left, and ticking "Include
+  // people who have left" (`all`) shows them — so the "Left" chip and the
+  // toggle actually exercise the path rather than always rendering.
+  await page.route('**/api/employees*', async (route) => {
+    const status = new URL(route.request().url()).searchParams.get('status');
+    const current = EMPLOYEE_REGISTER.employees.filter((employee) => employee.employed);
+    const employees = status === 'all' ? EMPLOYEE_REGISTER.employees : current;
+    await route.fulfill(
+      json({
+        ...EMPLOYEE_REGISTER,
+        employees,
+      }),
+    );
+  });
   // OEM production (migration 0084). The detail routes are registered
   // BEFORE the bare registers, because Playwright matches the last
   // registered handler and a bare pattern would otherwise swallow the

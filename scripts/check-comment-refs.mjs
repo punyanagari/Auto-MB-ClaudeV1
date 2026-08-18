@@ -212,6 +212,22 @@ const ALLOWED_EXTERNAL_PATHS = new Map([
     'the v0 mock screen the OEM item master replicates',
   ],
   [
+    'app/employees/page.tsx',
+    'the v0 mock screen the employee register replicates (fdfd610)',
+  ],
+  [
+    'app/hr/payroll/page.tsx',
+    'the v0 mock screen the monthly payroll workspace replicates (fdfd610)',
+  ],
+  [
+    'components/hr/employee-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the employee register, and by migration 0089, for the six-tab workspace whose Directory tab it replicates',
+  ],
+  [
+    'components/payroll-run-workspace.tsx',
+    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the payroll screen, and by migration 0090, for the grouped deduction table and expandable computation it replicates',
+  ],
+  [
     'production-job-card-page.tsx',
     'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the production job card for the four-tab layout it replicates',
   ],

@@ -218,6 +218,9 @@ describe('MFA authority census', () => {
       // organisation's bank, so it joins the wall rather than sitting
       // beside it.
       'payments',
+      // The payroll authority (0089/0090) reveals every salary and PAN and
+      // authorises the salaries a run pays, so it joins the wall too.
+      'payroll',
       'statutory',
     ]);
     expect(Object.values(MFA_REQUIRING_AUTHORITIES)).not.toContain(false);

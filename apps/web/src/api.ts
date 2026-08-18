@@ -7,6 +7,15 @@ import type {
   ReceiveMaintenanceReturn,
   RecordMaintenanceDispatch,
   AddMemberRequest,
+  CancelPayrollRun,
+  CreateEmployee,
+  EmployeeListResponse,
+  EmployeeResponse,
+  OpenPayrollRun,
+  PayrollRunListResponse,
+  PayrollRunResponse,
+  SetPayrollLineLop,
+  UpdateEmployee,
   CreateShortagePurchaseOrderRequest,
   CreateStockMovementRequest,
   PendingProductionReceiptListResponse,
@@ -1951,6 +1960,72 @@ export interface ApiClient {
     organisationId: string,
     body: CreateShortagePurchaseOrderRequest,
   ) => Promise<PurchaseOrderDetailResponse>;
+
+  /** The employee master and the monthly payroll run (migrations 0089
+   * and 0090). Organisation-level, not per Work: a salary is paid by the
+   * agency and not by a contract.
+   *
+   * Every one of these needs the `payments` authority, READS INCLUDED —
+   * a register of salaries is not something a member without it should
+   * be able to fetch — so a screen that renders them is behind
+   * `canManagePayments`.
+   *
+   * Nothing here is computed in the browser. A payslip's figures, the
+   * run's totals and the year's projected tax all arrive as decimal
+   * strings PostgreSQL produced. */
+  readonly listEmployees: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly status?: 'all' | 'current';
+      readonly search?: string;
+    },
+  ) => Promise<EmployeeListResponse>;
+  readonly getEmployee: (
+    organisationId: string,
+    employeeId: string,
+  ) => Promise<EmployeeResponse>;
+  readonly createEmployee: (
+    organisationId: string,
+    body: CreateEmployee,
+  ) => Promise<EmployeeResponse>;
+  readonly updateEmployee: (
+    organisationId: string,
+    employeeId: string,
+    body: UpdateEmployee,
+  ) => Promise<EmployeeResponse>;
+  readonly listPayrollRuns: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<PayrollRunListResponse>;
+  readonly getPayrollRun: (
+    organisationId: string,
+    runId: string,
+  ) => Promise<PayrollRunResponse>;
+  readonly openPayrollRun: (
+    organisationId: string,
+    body: OpenPayrollRun,
+  ) => Promise<PayrollRunResponse>;
+  readonly calculatePayrollRun: (
+    organisationId: string,
+    runId: string,
+  ) => Promise<PayrollRunResponse>;
+  readonly setPayrollLineLossOfPay: (
+    organisationId: string,
+    runId: string,
+    lineId: string,
+    body: SetPayrollLineLop,
+  ) => Promise<PayrollRunResponse>;
+  readonly finalizePayrollRun: (
+    organisationId: string,
+    runId: string,
+  ) => Promise<PayrollRunResponse>;
+  readonly cancelPayrollRun: (
+    organisationId: string,
+    runId: string,
+    body: CancelPayrollRun,
+  ) => Promise<PayrollRunResponse>;
 }
 
 /** FormData.get can return a File; forms here only carry text inputs, so
@@ -4565,6 +4640,85 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         '/api/stock/shortages/purchase-order',
         { method: 'POST', body, organisationId },
       );
+    },
+
+    async listEmployees(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.status !== undefined) query.set('status', options.status);
+      if (options?.search !== undefined && options.search !== '') {
+        query.set('search', options.search);
+      }
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<EmployeeListResponse>(`/api/employees${suffix}`, {
+        organisationId,
+      });
+    },
+    async getEmployee(organisationId, employeeId) {
+      return request<EmployeeResponse>(`/api/employees/${employeeId}`, {
+        organisationId,
+      });
+    },
+    async createEmployee(organisationId, body) {
+      return request<EmployeeResponse>('/api/employees', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async updateEmployee(organisationId, employeeId, body) {
+      return request<EmployeeResponse>(`/api/employees/${employeeId}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listPayrollRuns(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<PayrollRunListResponse>(`/api/payroll-runs${suffix}`, {
+        organisationId,
+      });
+    },
+    async getPayrollRun(organisationId, runId) {
+      return request<PayrollRunResponse>(`/api/payroll-runs/${runId}`, {
+        organisationId,
+      });
+    },
+    async openPayrollRun(organisationId, body) {
+      return request<PayrollRunResponse>('/api/payroll-runs', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async calculatePayrollRun(organisationId, runId) {
+      return request<PayrollRunResponse>(`/api/payroll-runs/${runId}/calculate`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async setPayrollLineLossOfPay(organisationId, runId, lineId, body) {
+      return request<PayrollRunResponse>(
+        `/api/payroll-runs/${runId}/lines/${lineId}/loss-of-pay`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async finalizePayrollRun(organisationId, runId) {
+      return request<PayrollRunResponse>(`/api/payroll-runs/${runId}/finalize`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelPayrollRun(organisationId, runId, body) {
+      return request<PayrollRunResponse>(`/api/payroll-runs/${runId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
     },
   };
 }

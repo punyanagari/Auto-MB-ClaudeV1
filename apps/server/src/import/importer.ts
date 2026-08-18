@@ -8,6 +8,7 @@ class InspectionGateSkip extends Error {}
 import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
 import { CHALLAN_TEMPLATE_VERSION, type ChallanSnapshot } from '../challan-html.js';
 import { seedDefaultGstRates } from '../gst-rates.js';
+import { seedDefaultPayrollSchedules } from '../payroll-rates.js';
 import { canonicalRateText } from '../rate-text.js';
 import { fingerprintOf } from './canonical.js';
 import { quantize } from './decimal.js';
@@ -474,6 +475,9 @@ async function importOrganisation(
     // ran, and an imported organisation must be able to raise invoices
     // the rate guard accepts. Idempotent, like the rest of the importer.
     await seedDefaultGstRates(tx, organisationId);
+    // The payroll schedules (0089), for the same reason: an imported
+    // organisation must be able to run a payroll the arithmetic accepts.
+    await seedDefaultPayrollSchedules(tx, organisationId);
   }
 
   // 2. Open the batch.

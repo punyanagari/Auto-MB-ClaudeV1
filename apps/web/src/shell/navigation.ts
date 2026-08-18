@@ -41,6 +41,7 @@ export type ModuleKey =
   | 'installations'
   | 'production'
   | 'stock'
+  | 'employees'
   | 'maintenance'
   | 'masters'
   | 'members'
@@ -66,6 +67,13 @@ export interface NavGroup {
  * then Documents, Operations and Administration.
  *
  * The mock draws modules this build has no route for — E-Way Bills,
+ * Purchase orders, Maintenance — and those are omitted rather than
+ * rendered as dead entries. Production (migration 0084), Correspondence
+ * (0086) and Inventory (0087) all left that list in the previous wave:
+ * Production and Inventory take the places the mock gives them under
+ * Operations, and Correspondence the last under Documents. Employees
+ * (0089, 0090) leaves it in this one, taking the mock's own first place
+ * under Administration.
  * Purchase orders, Employees — and those are omitted rather than
  * rendered as dead entries. Production (migration 0084), Correspondence
  * (0086), Inventory (0087) and Maintenance (0088) have all left that
@@ -139,6 +147,11 @@ export const NAVIGATION: readonly NavGroup[] = [
   {
     label: 'Administration',
     items: [
+      // `Users`, which is also Members' icon two rows down. That is the
+      // mock's own choice (`components/app-sidebar.tsx` at fdfd610 gives
+      // both entries `Users`), and the design contract makes the mock
+      // binding: a different icon here would be pixel drift, not a fix.
+      { key: 'employees', label: 'Employees', icon: Users },
       { key: 'approvals', label: 'Approvals', icon: CircleCheckBig },
       { key: 'masters', label: 'Masters', icon: Database },
       { key: 'members', label: 'Members', icon: Users },
@@ -189,6 +202,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'production', workId: null };
     case 'stock':
       return { name: 'stock' };
+    case 'employees':
+      return { name: 'employees' };
     case 'masters':
       return { name: 'masters' };
     case 'members':
@@ -235,6 +250,11 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'stock':
     case 'stock-shortages':
       return 'stock';
+    // The employee register and the payroll workspace under it are one
+    // place too. The mock's own rail reaches only the first of them.
+    case 'employees':
+    case 'payroll':
+      return 'employees';
     // The register, the request form and an opened job card are one
     // place, so all three light one lamp (0088).
     case 'maintenance-new':
@@ -340,6 +360,10 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Inventory';
     case 'stock-shortages':
       return 'Shortage procurement';
+    case 'employees':
+      return 'Employees';
+    case 'payroll':
+      return 'Monthly payroll';
     case 'masters':
       return 'Masters';
     case 'members':

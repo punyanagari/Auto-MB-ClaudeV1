@@ -39,6 +39,8 @@ import { Maintenance } from '../../src/views/Maintenance.js';
 import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
 import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
+import { Employees } from '../../src/views/Employees.js';
+import { PayrollRun } from '../../src/views/PayrollRun.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
 import { StockShortages } from '../../src/views/StockShortages.js';
 import { Tenders } from '../../src/views/Tenders.js';
@@ -593,6 +595,36 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'An upload form has no register to be empty; the pickers simply come back empty.',
     },
+  },
+  {
+    view: 'Employees.tsx',
+    name: 'the employee register',
+    loads: ['listEmployees'],
+    render: (api) => (
+      <Employees
+        api={api}
+        organisationId={ORG_ID}
+        canManagePayroll
+        canModify
+        onOpenPayroll={noop}
+      />
+    ),
+    retry: /Retry the employee register/,
+    empty: { text: /Nobody is on the payroll yet/ },
+  },
+  {
+    view: 'PayrollRun.tsx',
+    name: 'the payroll run workspace',
+    // One read on mount. The run detail is a SECOND request made only
+    // once the register has answered, so a failed register is the
+    // screen's failure and a failed detail is an inline one — which is
+    // why only the register read is listed here.
+    loads: ['listPayrollRuns'],
+    render: (api) => (
+      <PayrollRun api={api} organisationId={ORG_ID} canModify onOpenEmployees={noop} />
+    ),
+    retry: /Retry the payroll register/,
+    empty: { text: /No payroll run has been opened/ },
   },
   {
     view: 'StockRegister.tsx',

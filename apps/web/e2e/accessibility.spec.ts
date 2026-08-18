@@ -278,6 +278,60 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
 
+/* People and payroll (0089, 0090) — its OWN test, not another leg of the
+   picker journey above, which was already close to the 30s budget and
+   tipped over it when these two scans were appended (the receivables
+   precedent below).
+
+   The two screens put colour on a word in different places. The REGISTER
+   carries the employed/left status chips; the "Include people who have
+   left" toggle is exercised, because the default view hides the leaver
+   and the "Left" chip has to be brought on screen honestly rather than
+   by a fixture that ignores the status filter. The PAYROLL run is
+   finalised, so its SUCCESS-toned status chip, the salary-requests link,
+   the WARNING-toned loss-of-pay line, the grouped two-row deduction
+   header and the CA-facing basis table are all on screen at once. The
+   computation is expanded before the scan — a collapsed row proves
+   nothing about the panel inside it. */
+test('the employee register and the finalised payroll run pass the axe scan', async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await page.getByRole('link', { name: 'Employees' }).click();
+  await expect(page.getByRole('heading', { name: 'Employees' })).toBeVisible();
+  await expect(page.getByText('Anita Deshmukh')).toBeVisible();
+  await expect(page.getByText('Employed', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Provident fund · ESI').first()).toBeVisible();
+  // Bring the leaver on screen through the real toggle, so the neutral
+  // "Left" chip is scanned in the state it actually renders in.
+  await page.getByRole('checkbox', { name: 'Include people who have left' }).check();
+  await expect(page.getByText('Left', { exact: true })).toBeVisible();
+  await expectNoAxeViolations(page, 'employee register');
+
+  await page.getByRole('link', { name: 'Monthly payroll' }).click();
+  await expect(page.getByRole('heading', { name: 'Monthly payroll' })).toBeVisible();
+  // The run number is on screen twice — the header's own mono span (its
+  // whole text) and the picker option (embedded in a longer label). An
+  // exact match takes the header span, not the option, which is inside a
+  // closed select and never visible anyway.
+  await expect(page.getByText('PAY/2026-27/001', { exact: true })).toBeVisible();
+  // The success-toned finalised chip and the door to its salary requests.
+  await expect(page.getByText('Finalised', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: /salary requests are on the Payments register/ }),
+  ).toBeVisible();
+  await expect(page.getByText('Not covered')).toBeVisible();
+  // The warning-toned loss-of-pay line.
+  await expect(page.getByText('Loss of pay 2.00')).toBeVisible();
+  await page.getByRole('button', { name: /Anita Deshmukh/ }).click();
+  await expect(page.getByText('Monthly computation')).toBeVisible();
+  await expect(page.getByText('Statutory basis')).toBeVisible();
+  await expectNoAxeViolations(page, 'finalised monthly payroll run');
+});
+
 /* Its own test rather than another leg of the picker journey above, which
    was already close to the 30s budget and tipped over it when these two
    scans were appended. A module gets its own test here for the same reason

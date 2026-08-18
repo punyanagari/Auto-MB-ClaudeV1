@@ -43,12 +43,21 @@ import {
   type ModuleKey,
 } from '../shell/navigation.js';
 import { Badge } from '../ui/badge.js';
+import { Card } from '../ui/card.js';
+import { PageHeader } from '../ui/page-header.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Modal } from '../ui/dialog.js';
 import { Sheet } from '../ui/sheet.js';
 import type { MastersTab } from './Masters.js';
 import type { WorkTab } from './WorkDetail.js';
+
+/** The rail-hiding sets, module-level so they are stable references and a
+ * memoised sidebar is not re-rendered by a fresh Set each pass. Employees
+ * (migration 0089) is the only door hidden by authority; every other
+ * module gates at the screen. */
+const NO_HIDDEN_MODULES: ReadonlySet<ModuleKey> = new Set();
+const EMPLOYEES_HIDDEN: ReadonlySet<ModuleKey> = new Set(['employees']);
 
 /* The views are code-split at this switch.
  *
@@ -161,6 +170,12 @@ const StockShortages = lazy(() =>
   import('./StockShortages.js').then((module) => ({
     default: module.StockShortages,
   })),
+);
+const Employees = lazy(() =>
+  import('./Employees.js').then((module) => ({ default: module.Employees })),
+);
+const PayrollRun = lazy(() =>
+  import('./PayrollRun.js').then((module) => ({ default: module.PayrollRun })),
 );
 const Maintenance = lazy(() =>
   import('./Maintenance.js').then((module) => ({ default: module.Maintenance })),
@@ -429,6 +444,14 @@ export function OperationsWorkspace({
   // either way; hiding the controls only spares the useless attempt.
   const canManageStatutory = membership?.canManageStatutoryReporting ?? false;
   const canManagePayments = membership?.canManagePayments ?? false;
+  // The payroll authority (migration 0089), distinct from payments: it
+  // gates the employee register and the payroll run — a vendor-payment
+  // manager must not see salaries, PAN, UAN or bank details by default.
+  const canManagePayroll = membership?.canManagePayroll ?? false;
+  // Without it the rail carries no door to Employees at all — a register
+  // of salaries is not something to advertise a way into. The server
+  // refuses the route regardless; this only spares the useless attempt.
+  const hiddenModules = canManagePayroll ? NO_HIDDEN_MODULES : EMPLOYEES_HIDDEN;
   const isOwner = membership?.role === 'owner';
   const canSwitchOrganisation = organisations.length > 1;
   const identityRole =
@@ -867,6 +890,7 @@ export function OperationsWorkspace({
         activeModule={activeModule}
         pendingApprovals={pendingApprovals}
         subItems={subItems}
+        hiddenModules={hiddenModules}
         collapsed={sidebarCollapsed}
         canModify={canModify}
         canSwitchOrganisation={canSwitchOrganisation}
@@ -1228,6 +1252,40 @@ export function OperationsWorkspace({
               />
             )}
 
+            {/* Both screens are gated on `can_manage_payroll`, reads
+                included: an employee register is a register of salaries,
+                PAN, UAN and bank details, and a member who may approve a
+                vendor payment has no business reading any of that by
+                default (owner ruling, migration 0089). The server refuses
+                them the same way, so this is the door and not the lock. */}
+            {view.name === 'employees' &&
+              (canManagePayroll ? (
+                <Employees
+                  api={api}
+                  organisationId={organisation.id}
+                  canManagePayroll={canManagePayroll}
+                  canModify={canModify}
+                  onOpenPayroll={() => {
+                    navigate({ name: 'payroll' });
+                  }}
+                />
+              ) : (
+                <PayrollAuthorityRequired title="Employees" />
+              ))}
+
+            {view.name === 'payroll' &&
+              (canManagePayroll ? (
+                <PayrollRun
+                  api={api}
+                  organisationId={organisation.id}
+                  canModify={canModify}
+                  onOpenEmployees={() => {
+                    navigate({ name: 'employees' });
+                  }}
+                />
+              ) : (
+                <PayrollAuthorityRequired title="Monthly payroll" />
+              ))}
             {view.name === 'maintenance' && (
               <Maintenance
                 api={api}
@@ -1626,6 +1684,7 @@ export function OperationsWorkspace({
               activeModule={activeModule}
               pendingApprovals={pendingApprovals}
               subItems={subItems}
+              hiddenModules={hiddenModules}
               onOpenModule={openModule}
               onSelected={() => {
                 setMobileMenuOpen(false);
@@ -1824,27 +1883,29 @@ export function OperationsWorkspace({
           }}
         >
           <div className="grid gap-2 pb-4">
-            {MOBILE_MORE_ITEMS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Button
-                  key={item.key}
-                  variant="outline"
-                  className={MOBILE_SHEET_ROW}
-                  onClick={() => {
-                    openModule(item.key);
-                  }}
-                >
-                  <Icon data-icon="inline-start" aria-hidden="true" />
-                  {item.label}
-                  {item.key === 'approvals' && pendingApprovals > 0 && (
-                    <Badge className="ml-auto" variant="destructive">
-                      {pendingApprovals}
-                    </Badge>
-                  )}
-                </Button>
-              );
-            })}
+            {MOBILE_MORE_ITEMS.filter((item) => !hiddenModules.has(item.key)).map(
+              (item) => {
+                const Icon = item.icon;
+                return (
+                  <Button
+                    key={item.key}
+                    variant="outline"
+                    className={MOBILE_SHEET_ROW}
+                    onClick={() => {
+                      openModule(item.key);
+                    }}
+                  >
+                    <Icon data-icon="inline-start" aria-hidden="true" />
+                    {item.label}
+                    {item.key === 'approvals' && pendingApprovals > 0 && (
+                      <Badge className="ml-auto" variant="destructive">
+                        {pendingApprovals}
+                      </Badge>
+                    )}
+                  </Button>
+                );
+              },
+            )}
             <Button
               variant="destructive"
               className={MOBILE_SHEET_ROW}
@@ -1874,5 +1935,45 @@ export function OperationsWorkspace({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * What a member without `can_manage_payroll` sees where the payroll
+ * screens would be — for a member who never reaches this, because the
+ * rail hides the door; it is the backstop for a pasted or bookmarked
+ * fragment.
+ *
+ * Deliberately NOT an `ErrorState`. `docs/UX.md` § Shared states settles
+ * it: a 403 does not become a success on the second attempt, so offering
+ * a Retry would offer a control that refuses identically. It reads as an
+ * inline refusal naming the authority and where it is granted, which is
+ * the same shape `remedies.ts` gives `AUTHORITY_REQUIRED`.
+ *
+ * The title tracks which of the two screens was addressed, so the h1
+ * matches the topbar's section title rather than always reading
+ * "Employees" over a payroll fragment.
+ */
+function PayrollAuthorityRequired({ title }: { readonly title: string }) {
+  return (
+    <>
+      <PageHeader
+        eyebrow="People and payroll"
+        title={title}
+        titleId="payroll-authority-title"
+        description="Employee records and payroll."
+      />
+      <Card>
+        <p className="m-0 text-sm">
+          Payroll is behind the payroll authority, and this account does not hold it.
+          The register carries every colleague&rsquo;s salary, PAN and bank details, so
+          it is granted per member rather than by role.
+        </p>
+        <p className="m-0 mt-2 text-sm text-muted-foreground">
+          Ask an owner to grant it on the Members screen, or ask a member who already
+          holds it to run the month.
+        </p>
+      </Card>
+    </>
   );
 }
