@@ -96,6 +96,13 @@ export type WorkspaceView =
   | { name: 'production'; workId: string | null }
   | { name: 'production-items' }
   | { name: 'production-job-card'; jobCardId: string }
+  /** Maintenance (migration 0088). Three addresses, exactly as the mock
+   * draws three screens: the register, the request form, and one job
+   * card. Organisation level — a request names a Work, but the register
+   * is read across every Work a store clerk serves. */
+  | { name: 'maintenance' }
+  | { name: 'maintenance-new' }
+  | { name: 'maintenance-request'; requestId: string }
   | { name: 'tender-new' }
   | { name: 'tender'; tenderId: string }
   /** The railway receivables register: every prepared bill's position with
@@ -275,6 +282,12 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/production/items';
     case 'production-job-card':
       return `#/production/${view.jobCardId}`;
+    case 'maintenance':
+      return '#/maintenance';
+    case 'maintenance-new':
+      return '#/maintenance/new';
+    case 'maintenance-request':
+      return `#/maintenance/${view.requestId}`;
     case 'tender-new':
       return '#/tenders/new';
     case 'tender':
@@ -352,6 +365,11 @@ export function productionHash(workId: string | null = null): string {
 /** `#/production/<id>` — what a register row links to. */
 export function productionJobCardHash(jobCardId: string): string {
   return workspaceHashOf({ view: { name: 'production-job-card', jobCardId } });
+}
+
+/** `#/maintenance/<id>` — what a maintenance register row links to. */
+export function maintenanceRequestHash(requestId: string): string {
+  return workspaceHashOf({ view: { name: 'maintenance-request', requestId } });
 }
 
 /** `#/inventory` and its shortage screen, as plain hrefs — what the link
@@ -552,6 +570,15 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (second !== undefined || extra.length > 0) return null;
       return isRecordId(first)
         ? { view: { name: 'production-job-card', jobCardId: first } }
+        : null;
+    }
+    case 'maintenance': {
+      const [first, ...extra] = rest;
+      if (extra.length > 0) return null;
+      if (first === undefined) return { view: { name: 'maintenance' } };
+      if (first === 'new') return { view: { name: 'maintenance-new' } };
+      return isRecordId(first)
+        ? { view: { name: 'maintenance-request', requestId: first } }
         : null;
     }
     case 'quotations':

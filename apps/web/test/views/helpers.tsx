@@ -663,6 +663,28 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       purchaseOrdersTruncated: false,
     }),
     createShortagePurchaseOrder: vi.fn<ApiClient['createShortagePurchaseOrder']>(),
+    // Maintenance (0088). The register answers empty by default, for the
+    // reason the stock reads above do: a view that opens it renders its
+    // own empty state rather than hanging on an unresolved mock.
+    listMaintenanceRequests: vi
+      .fn<ApiClient['listMaintenanceRequests']>()
+      .mockResolvedValue({
+        requests: [],
+        nextCursor: null,
+        counts: {
+          awaitingApproval: 0,
+          approved: 0,
+          partiallyDispatched: 0,
+          closed: 0,
+        },
+      }),
+    getMaintenanceRequest: vi.fn<ApiClient['getMaintenanceRequest']>(),
+    createMaintenanceRequest: vi.fn<ApiClient['createMaintenanceRequest']>(),
+    approveMaintenanceRequest: vi.fn<ApiClient['approveMaintenanceRequest']>(),
+    recordMaintenanceDispatch: vi.fn<ApiClient['recordMaintenanceDispatch']>(),
+    receiveMaintenanceReturn: vi.fn<ApiClient['receiveMaintenanceReturn']>(),
+    cancelMaintenanceLine: vi.fn<ApiClient['cancelMaintenanceLine']>(),
+    closeMaintenanceRequest: vi.fn<ApiClient['closeMaintenanceRequest']>(),
     ...overrides,
   };
 }

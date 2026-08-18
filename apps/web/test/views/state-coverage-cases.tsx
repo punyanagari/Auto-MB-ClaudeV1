@@ -35,6 +35,9 @@ import {
 } from '../../src/views/CorrespondenceComposer.js';
 import { Production } from '../../src/views/Production.js';
 import { ProductionItems } from '../../src/views/ProductionItems.js';
+import { Maintenance } from '../../src/views/Maintenance.js';
+import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
+import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
 import { StockShortages } from '../../src/views/StockShortages.js';
@@ -608,6 +611,65 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry the stock register/,
     empty: { text: /No part is in the item master yet/ },
+  },
+  {
+    view: 'Maintenance.tsx',
+    name: 'the maintenance register',
+    loads: ['listMaintenanceRequests'],
+    render: (api) => (
+      <Maintenance
+        api={api}
+        organisationId={ORG_ID}
+        canModify
+        onNewRequest={noop}
+        onOpenRequest={noop}
+      />
+    ),
+    retry: /Retry maintenance/,
+    empty: { text: /No maintenance request has been raised yet/ },
+  },
+  {
+    view: 'MaintenanceJobCard.tsx',
+    name: 'one maintenance job card',
+    loads: ['getMaintenanceRequest'],
+    render: (api) => (
+      <MaintenanceJobCard
+        api={api}
+        organisationId={ORG_ID}
+        requestId={WORK_ID}
+        canModify
+        canApprove
+        canIssue
+        onBack={noop}
+      />
+    ),
+    retry: /Retry the maintenance request/,
+    empty: {
+      notApplicable:
+        'A job card shows one request or none at all; the emptiness inside it — nothing dispatched, nothing owed back — belongs to its tabs, and each of those says so in its own words.',
+    },
+  },
+  {
+    view: 'MaintenanceRequestForm.tsx',
+    name: 'the site material request form',
+    // Two pickers, and the failure of either is the screen's failure: a
+    // form that offered no Work cannot be submitted, and one that
+    // silently offered no catalogue part would push every line to a
+    // custom material that moves no stock.
+    loads: ['listWorks', 'listStockItems'],
+    render: (api) => (
+      <MaintenanceRequestForm
+        api={api}
+        organisationId={ORG_ID}
+        onDone={noop}
+        onCancel={noop}
+      />
+    ),
+    retry: /Retry/,
+    empty: {
+      notApplicable:
+        'A request form has no register to be empty: an organisation with no catalogue parts still gets the form, and every line becomes a custom material.',
+    },
   },
   {
     view: 'StockShortages.tsx',

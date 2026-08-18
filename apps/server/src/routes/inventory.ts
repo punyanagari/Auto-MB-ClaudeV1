@@ -444,6 +444,11 @@ const MOVEMENTS_SQL = `
                  || lpad(card.sequence_number::text, 3, '0')
                else null
              end
+           when m.maintenance_dispatch_id is not null then
+             case when ${workVisibleSql('$2', '$1', 'maintenance.work_id')}
+               then maintenance.challan_number
+               else null
+             end
            when m.work_id is not null then
              case when ${workVisibleSql('$2', '$1', 'm.work_id')}
                then work.work_code
@@ -454,6 +459,8 @@ const MOVEMENTS_SQL = `
          m.created_at
   from stock_movements m
   join production_items i on i.id = m.production_item_id
+  left join maintenance_dispatches maintenance
+    on maintenance.id = m.maintenance_dispatch_id
   left join production_dispatches dispatch on dispatch.id = m.production_dispatch_id
   left join production_job_cards dispatch_card
     on dispatch_card.id = dispatch.job_card_id

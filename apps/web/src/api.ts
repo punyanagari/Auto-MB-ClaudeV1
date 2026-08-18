@@ -1,4 +1,11 @@
 import type {
+  ApproveMaintenanceRequest,
+  CancelMaintenanceLine,
+  CreateMaintenanceRequest,
+  MaintenanceDetailResponse,
+  MaintenanceListResponse,
+  ReceiveMaintenanceReturn,
+  RecordMaintenanceDispatch,
   AddMemberRequest,
   CreateShortagePurchaseOrderRequest,
   CreateStockMovementRequest,
@@ -1879,6 +1886,49 @@ export interface ApiClient {
     itemId: string,
     body: SetReorderLevelRequest,
   ) => Promise<StockItemResponse>;
+
+  /** Maintenance: the site material request (migration 0088). Every
+   * mutation answers with the WHOLE request, so the screen never patches
+   * a fragment of state the server might disagree with — the four line
+   * quantities the mock stores are all derived, and a client that
+   * recomputed one of them locally would be the drift 0088 refused. */
+  readonly listMaintenanceRequests: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<MaintenanceListResponse>;
+  readonly getMaintenanceRequest: (
+    organisationId: string,
+    requestId: string,
+  ) => Promise<MaintenanceDetailResponse>;
+  readonly createMaintenanceRequest: (
+    organisationId: string,
+    body: CreateMaintenanceRequest,
+  ) => Promise<{ readonly id: string; readonly number: string }>;
+  readonly approveMaintenanceRequest: (
+    organisationId: string,
+    requestId: string,
+    body: ApproveMaintenanceRequest,
+  ) => Promise<MaintenanceDetailResponse>;
+  readonly recordMaintenanceDispatch: (
+    organisationId: string,
+    requestId: string,
+    body: RecordMaintenanceDispatch,
+  ) => Promise<MaintenanceDetailResponse>;
+  readonly receiveMaintenanceReturn: (
+    organisationId: string,
+    requestId: string,
+    body: ReceiveMaintenanceReturn,
+  ) => Promise<MaintenanceDetailResponse>;
+  readonly cancelMaintenanceLine: (
+    organisationId: string,
+    requestId: string,
+    lineId: string,
+    body: CancelMaintenanceLine,
+  ) => Promise<MaintenanceDetailResponse>;
+  readonly closeMaintenanceRequest: (
+    organisationId: string,
+    requestId: string,
+  ) => Promise<MaintenanceDetailResponse>;
   readonly listStockMovements: (
     organisationId: string,
     options?: { readonly limit?: number; readonly cursor?: string },
@@ -4422,6 +4472,57 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<StockItemResponse>(`/api/stock/items/${itemId}/reorder-level`, {
         method: 'PUT',
         body,
+        organisationId,
+      });
+    },
+    async listMaintenanceRequests(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<MaintenanceListResponse>(`/api/maintenance${suffix}`, {
+        organisationId,
+      });
+    },
+    async getMaintenanceRequest(organisationId, requestId) {
+      return request<MaintenanceDetailResponse>(`/api/maintenance/${requestId}`, {
+        organisationId,
+      });
+    },
+    async createMaintenanceRequest(organisationId, body) {
+      return request<{ id: string; number: string }>('/api/maintenance', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async approveMaintenanceRequest(organisationId, requestId, body) {
+      return request<MaintenanceDetailResponse>(
+        `/api/maintenance/${requestId}/approve`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async recordMaintenanceDispatch(organisationId, requestId, body) {
+      return request<MaintenanceDetailResponse>(
+        `/api/maintenance/${requestId}/dispatches`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async receiveMaintenanceReturn(organisationId, requestId, body) {
+      return request<MaintenanceDetailResponse>(
+        `/api/maintenance/${requestId}/returns`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async cancelMaintenanceLine(organisationId, requestId, lineId, body) {
+      return request<MaintenanceDetailResponse>(
+        `/api/maintenance/${requestId}/lines/${lineId}/cancel`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async closeMaintenanceRequest(organisationId, requestId) {
+      return request<MaintenanceDetailResponse>(`/api/maintenance/${requestId}/close`, {
+        method: 'POST',
         organisationId,
       });
     },

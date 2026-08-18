@@ -59,6 +59,18 @@ const CHIP_TONES = {
   // achievement, and a retired part is finished rather than bad.
   'low-stock': 'warning',
 
+  // A maintenance request nobody has decided yet, and one part-way
+  // through its dispatches (0088). `docs/DESIGN.md` § Status badge
+  // semantics puts both in the warning family — the first is waiting on
+  // somebody, the second is work in hand, which is what `pending` and
+  // `partial` already read as. Their siblings `approved` and `closed`
+  // are above and below: `approved` is already mapped success, and
+  // `closed` is neutral for the reason `completed` is — a finished job
+  // is not currently good news.
+  'awaiting-approval': 'warning',
+  'partially-dispatched': 'warning',
+  closed: 'neutral',
+
   review: 'warning',
   prepared: 'warning',
   // A company document whose newest version lapses inside the warning

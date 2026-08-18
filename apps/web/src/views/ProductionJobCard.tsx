@@ -20,6 +20,7 @@ import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FormError } from '../ui/form.js';
 import { ProgressBar } from '../ui/progress.js';
 import { Stat } from '../ui/stat.js';
+import { TabRail } from '../ui/tab-rail.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell } from '../ui/table.js';
 
@@ -178,41 +179,19 @@ export function ProductionJobCard({
         </Card>
       )}
 
-      {/* The mock's boxed tab list. Four panels swapped in place, so it is
-          a `role="group"` of `aria-pressed` toggles rather than a
-          `role="tablist"` this build would then owe the roving-tabindex
-          pattern (`test/a11y-invariants`). */}
-      <div
-        className="inline-flex items-center gap-1 rounded-lg bg-muted p-1"
-        role="group"
-        aria-label="Job card sections"
-      >
-        {(
+      <TabRail
+        label="Job card sections"
+        tabs={
           [
             ['overview', 'Overview'],
             ['materials', 'Materials'],
             ['serials', 'Serials'],
             ['dispatch', 'Dispatch'],
           ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={tab === key}
-            className={cn(
-              'h-8 rounded-md px-3 text-sm font-medium transition-colors',
-              tab === key
-                ? 'bg-card text-foreground shadow-[0_1px_2px_0_rgb(15_23_42/0.05)]'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-            onClick={() => {
-              setTab(key);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+        }
+        active={tab}
+        onSelect={setTab}
+      />
 
       {actionError !== null && <FormError>{actionError}</FormError>}
 
