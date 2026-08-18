@@ -260,6 +260,9 @@ describe('OperationsWorkspace mobile shell', () => {
       'Works',
       'Tenders',
       'Payments',
+      // Appended to the mock's own main list, where its `app-sidebar`
+      // at fdfd610 puts it.
+      'Receivables',
       'Challans',
       'Invoices',
       'Quotations',
@@ -304,6 +307,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Works', '#/works'],
       ['Tenders', '#/tenders'],
       ['Payments', '#/payments'],
+      ['Receivables', '#/receivables'],
       ['Challans', '#/challans'],
       ['Invoices', '#/invoices'],
       ['Quotations', '#/quotations'],

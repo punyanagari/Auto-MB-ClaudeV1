@@ -143,6 +143,7 @@ import type {
   BillPayment,
   BillSettlementPosition,
   BillSettlementResponse,
+  ReceivablesRegisterResponse,
   RecordBillPaymentRequest,
   MeasurementBookListResponse,
   SetMbSourcesRequest,
@@ -1119,6 +1120,13 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<BillSettlementPosition[]>;
+  /** The same positions across every Work the caller may see, with the
+   * register's four totals. Its own read rather than a loop over the
+   * per-Work one: the totals are the organisation's and have to be summed
+   * where the rows are, in SQL. */
+  readonly listReceivables: (
+    organisationId: string,
+  ) => Promise<ReceivablesRegisterResponse>;
   /** A receipt and its deduction breakup, recorded as one act — a payment
    * advice arrives as one document and a half-entered one is a wrong
    * position rather than an incomplete one. */
@@ -3302,6 +3310,11 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { organisationId },
       );
       return positions;
+    },
+    async listReceivables(organisationId) {
+      return request<ReceivablesRegisterResponse>('/api/bill-settlement', {
+        organisationId,
+      });
     },
     async recordBillPayment(organisationId, billId, body) {
       return request<BillPayment>(`/api/bills/${billId}/payments`, {

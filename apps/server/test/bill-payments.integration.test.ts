@@ -6,6 +6,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   BillPayment,
   BillSettlementResponse,
+  ReceivablesRegisterResponse,
   RecordBillPaymentRequest,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
@@ -211,6 +212,16 @@ function settlement(workId: string) {
     method: 'GET',
     url: `/api/works/${workId}/bill-settlement`,
     organisationId,
+  });
+}
+
+/** The organisation-wide register, across every Work in reach. */
+function register(as?: string) {
+  return authed({
+    method: 'GET',
+    url: '/api/bill-settlement',
+    organisationId: as === undefined ? organisationId : strangerOrganisationId,
+    ...(as === undefined ? {} : { as }),
   });
 }
 
@@ -439,6 +450,112 @@ describe('outstanding with the railway', () => {
     expect(position?.outstandingAmount).toBeNull();
     expect(position?.measurementClosedAt).toBeNull();
     expect(position?.preparedAmount).toBe(RAILWAY_BILL_AMOUNT);
+  });
+});
+
+describe('the organisation-wide receivables register', () => {
+  it('reports the register facts and sums its totals in SQL', async () => {
+    const { billId } = await seedBill('BPX');
+    expect((await record(billId, HALF)).statusCode).toBe(201);
+
+    const response = await register();
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json<ReceivablesRegisterResponse>();
+    const entry = body.entries.find((row) => row.billId === billId);
+    if (entry === undefined) throw new Error('seeded bill missing from register');
+
+    // The four things the register adds to a per-Work position.
+    expect(entry.workCode).toBe(`BPX-${runId.toUpperCase()}`);
+    expect(entry.workTitle).toBe('Train information display boards');
+    // The railway bill is dated 2026-05-11, which is Indian FY 2026-27 —
+    // derived from the RAILWAY's date, not the agency's.
+    expect(entry.financialYear).toBe('2026-27');
+    // ₹10,00,000 billed less the ₹30,000 kept.
+    expect(entry.netPayableAmount).toBe('970000.00');
+
+    // The waterfall's heads, aggregated per head across live receipts and
+    // ordered by category, never summed in the browser.
+    expect(entry.deductionsByHead).toEqual([
+      { category: 'GST_TDS', amount: '10000.00' },
+      { category: 'INCOME_TAX_TDS', amount: '5000.00' },
+      { category: 'SECURITY_DEPOSIT', amount: '15000.00' },
+    ]);
+
+    // Totals are over the whole scoped register, so they can only be
+    // asserted as "at least this bill's contribution" while other tests
+    // seed their own Works into the same organisation. The invariant that
+    // matters is that they are exact decimal strings at the money scale.
+    for (const total of Object.values(body.summary)) {
+      expect(total).toMatch(/^-?\d+\.\d{2}$/);
+    }
+  });
+
+  it('reports a bill the railway has not passed without inventing a year', async () => {
+    const { billId } = await seedBill('BPY', { closed: false });
+    const body = (await register()).json<ReceivablesRegisterResponse>();
+    const entry = body.entries.find((row) => row.billId === billId);
+    // Null throughout rather than zero: an unacknowledged bill is not a
+    // receivable in any financial year, and it owes nothing net.
+    expect(entry?.railwayBillAmount).toBeNull();
+    expect(entry?.financialYear).toBeNull();
+    expect(entry?.netPayableAmount).toBeNull();
+    expect(entry?.outstandingAmount).toBeNull();
+    expect(entry?.deductionsByHead).toEqual([]);
+  });
+
+  it('drops a withdrawn receipt out of the waterfall heads', async () => {
+    const { billId } = await seedBill('BPZ');
+    const created = await record(billId, HALF);
+    expect(created.statusCode).toBe(201);
+    const paymentId = created.json<{ id: string }>().id;
+
+    const voided = await authed({
+      method: 'POST',
+      url: `/api/bill-payments/${paymentId}/void`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { reason: 'Advice withdrawn by the railway' },
+    });
+    expect(voided.statusCode, voided.body).toBe(200);
+
+    const body = (await register()).json<ReceivablesRegisterResponse>();
+    const entry = body.entries.find((row) => row.billId === billId);
+    // The heads have to follow the same `voided_at is null` filter the
+    // position view uses, or they would sum past a deductionTotal that
+    // has already dropped them.
+    expect(entry?.deductionsByHead).toEqual([]);
+    expect(entry?.deductionTotal).toBe('0.00');
+    expect(entry?.netPayableAmount).toBe(RAILWAY_BILL_AMOUNT);
+  });
+
+  it('shows another organisation nothing of this one, and an assigned member nothing unassigned', async () => {
+    const { billId } = await seedBill('BP1');
+
+    const stranger = (
+      await register(strangerCookie)
+    ).json<ReceivablesRegisterResponse>();
+    expect(stranger.entries).toEqual([]);
+    expect(stranger.summary.claimedTotal).toBe('0.00');
+
+    await admin`
+      update organisation_memberships set work_scope = 'assigned'
+      where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+    `;
+    try {
+      const scoped = (await register()).json<ReceivablesRegisterResponse>();
+      // The register is a list rather than one Work, so an out-of-scope
+      // row is absent rather than a 404 — and absent from the TOTALS too,
+      // which is the half a duplicated scope predicate would get wrong.
+      expect(scoped.entries.some((row) => row.billId === billId)).toBe(false);
+      expect(scoped.entries).toEqual([]);
+      expect(scoped.summary.claimedTotal).toBe('0.00');
+      expect(scoped.summary.outstandingTotal).toBe('0.00');
+    } finally {
+      await admin`
+        update organisation_memberships set work_scope = 'all'
+        where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+      `;
+    }
   });
 });
 

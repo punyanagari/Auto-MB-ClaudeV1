@@ -123,6 +123,9 @@ const Inspection = lazy(() =>
 const Tenders = lazy(() =>
   import('./Tenders.js').then((module) => ({ default: module.Tenders })),
 );
+const Receivables = lazy(() =>
+  import('./Receivables.js').then((module) => ({ default: module.Receivables })),
+);
 const NitIntake = lazy(() =>
   import('./NitIntake.js').then((module) => ({ default: module.NitIntake })),
 );
@@ -1087,6 +1090,16 @@ export function OperationsWorkspace({
                 }}
                 onUploadNotice={() => {
                   navigate({ name: 'tender-new' });
+                }}
+              />
+            )}
+
+            {view.name === 'receivables' && (
+              <Receivables
+                api={api}
+                organisationId={organisation.id}
+                onOpenWork={(workId) => {
+                  navigate({ name: 'work', workId }, { workTab: 'bills' });
                 }}
               />
             )}

@@ -360,6 +360,130 @@ function closingIn(days: number): {
   };
 }
 
+/**
+ * The receivables register, with one bill in each state the screen draws
+ * differently.
+ *
+ * The scan needs all three status chips on screen at once, and it needs
+ * both halves of the sheet's branch: a bill the railway has passed, which
+ * draws the deduction waterfall, and one it has not, which draws the
+ * sentence instead. The paid row carries two heads so the waterfall has
+ * more than one deduction line in it.
+ */
+const RECEIVABLES_REGISTER = {
+  entries: [
+    {
+      billId: '88888888-8888-4888-8888-888888888801',
+      workId: WORK_ID,
+      billNumber: 8,
+      status: 'paid',
+      preparedAmount: '374056.20',
+      measurementBookId: '88888888-8888-4888-8888-8888888888a1',
+      measurementBookNumber: 'MB-08',
+      measurementClosedAt: '2026-08-11T06:00:00.000Z',
+      receivedRailwayBillId: '88888888-8888-4888-8888-8888888888b1',
+      railwayBillNumber: 'WR/OAM/FL2/08',
+      railwayBillDate: '2026-08-11',
+      railwayBillAmount: '374056.20',
+      receivedTotal: '354536.39',
+      deductionTotal: '19519.81',
+      outstandingAmount: '0.00',
+      payments: [
+        {
+          id: '88888888-8888-4888-8888-8888888888c1',
+          billId: '88888888-8888-4888-8888-888888888801',
+          receivedOn: '2026-08-14',
+          receivedAmount: '354536.39',
+          reference: 'WR-PAY-809144',
+          remarks: null,
+          deductions: [
+            {
+              id: '88888888-8888-4888-8888-8888888888d1',
+              category: 'SECURITY_DEPOSIT',
+              amount: '16349.81',
+              description: null,
+            },
+            {
+              id: '88888888-8888-4888-8888-8888888888d2',
+              category: 'BOCW_CESS',
+              amount: '3170.00',
+              description: null,
+            },
+          ],
+          deductionTotal: '19519.81',
+          grossAmount: '374056.20',
+          voidedAt: null,
+          voidReason: null,
+          createdAt: '2026-08-14T09:00:00.000Z',
+        },
+      ],
+      workCode: 'PL-281',
+      workTitle: 'Passenger information systems, Mumbai division',
+      submittedAt: '2026-08-05T05:30:00.000Z',
+      financialYear: '2026-27',
+      netPayableAmount: '354536.39',
+      deductionsByHead: [
+        { category: 'SECURITY_DEPOSIT', amount: '16349.81' },
+        { category: 'BOCW_CESS', amount: '3170.00' },
+      ],
+    },
+    {
+      billId: '88888888-8888-4888-8888-888888888802',
+      workId: WORK_ID,
+      billNumber: 7,
+      status: 'submitted',
+      preparedAmount: '818400.00',
+      measurementBookId: '88888888-8888-4888-8888-8888888888a2',
+      measurementBookNumber: 'MB-07',
+      measurementClosedAt: null,
+      receivedRailwayBillId: null,
+      railwayBillNumber: null,
+      railwayBillDate: null,
+      railwayBillAmount: null,
+      receivedTotal: '0.00',
+      deductionTotal: '0.00',
+      outstandingAmount: null,
+      payments: [],
+      workCode: 'PL-281',
+      workTitle: 'Passenger information systems, Mumbai division',
+      submittedAt: '2026-08-12T05:30:00.000Z',
+      financialYear: null,
+      netPayableAmount: null,
+      deductionsByHead: [],
+    },
+    {
+      billId: '88888888-8888-4888-8888-888888888803',
+      workId: WORK_ID,
+      billNumber: 6,
+      status: 'prepared',
+      preparedAmount: '642800.00',
+      measurementBookId: '88888888-8888-4888-8888-8888888888a3',
+      measurementBookNumber: 'MB-06',
+      measurementClosedAt: null,
+      receivedRailwayBillId: null,
+      railwayBillNumber: null,
+      railwayBillDate: null,
+      railwayBillAmount: null,
+      receivedTotal: '0.00',
+      deductionTotal: '0.00',
+      outstandingAmount: null,
+      payments: [],
+      workCode: 'PL-281',
+      workTitle: 'Passenger information systems, Mumbai division',
+      submittedAt: null,
+      financialYear: null,
+      netPayableAmount: null,
+      deductionsByHead: [],
+    },
+  ],
+  summary: {
+    claimedTotal: '1835256.20',
+    passedTotal: '374056.20',
+    receivedTotal: '354536.39',
+    outstandingTotal: '0.00',
+  },
+};
+
 /** One tender in each of the three states the register tints, so a scan
  * sees the whole status vocabulary at once: an open bid with blocking
  * lines, one already submitted, and one that was won. */
@@ -511,6 +635,13 @@ export async function mockWorkspace(
      place this screen puts colour on a word. */
   await page.route('**/api/company-documents', (route) =>
     route.fulfill(json(COMPANY_DOCUMENT_LIBRARY)),
+  );
+  /* The organisation-wide receivables register. The per-Work settlement
+     read is a different path (`/api/works/<id>/bill-settlement`) and this
+     pattern cannot swallow it: `**` has to end at `/api/bill-settlement`,
+     which a Work-scoped URL does not. */
+  await page.route('**/api/bill-settlement', (route) =>
+    route.fulfill(json(RECEIVABLES_REGISTER)),
   );
   // The tender pipeline (migration 0083). The detail route is registered
   // first because Playwright matches the LAST registered handler, so the

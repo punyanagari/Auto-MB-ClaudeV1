@@ -90,6 +90,12 @@ export type WorkspaceView =
   | { name: 'tenders' }
   | { name: 'tender-new' }
   | { name: 'tender'; tenderId: string }
+  /** The railway receivables register: every prepared bill's position with
+   * the railway, across every Work the caller may see. One register and no
+   * record page — a bill opens in a sheet over the register, and recording
+   * money against it stays on its Work's Bills tab, where the receipt form
+   * and its withdrawal path already live. */
+  | { name: 'receivables' }
   | { name: 'members' }
   | { name: 'settings' };
 
@@ -240,6 +246,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/tenders/new';
     case 'tender':
       return `#/tenders/${view.tenderId}`;
+    case 'receivables':
+      return '#/receivables';
     case 'members':
       return '#/members';
     case 'settings':
@@ -450,6 +458,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'approvals':
     case 'company-documents':
     case 'inspection':
+    case 'receivables':
     case 'members':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;

@@ -94,6 +94,41 @@ between the two commits is `app/globals.css` only — every component is
 byte-identical — so porting the delta was the token re-sync already
 shipped, and the pointer advance changes no component citation.
 
+**Pointer advance, 2026-08-18: `fdfe5ef` → `fdfd610`.** `git diff --stat
+fdfe5ef..fdfd610` is eight files carrying exactly three changes, and they
+are dispositioned differently:
+
+1. **The railway receivables register** — `app/receivables/page.tsx`,
+   `components/railway-receivables-workspace.tsx`, the `RailwayBill`
+   fixture widening in `lib/data.ts`, and the rail/topbar/mobile
+   registrations for it. Ported in the pull request that advances this
+   pointer.
+2. **The payroll run workspace** — `app/hr/payroll/page.tsx` and
+   `components/payroll-run-workspace.tsx`. Recorded here as the Wave C
+   UI contract and **not** ported now: the application has no payroll
+   module behind it yet, and a screen ported ahead of its server is the
+   decoration this ADR exists to refuse. The Wave C payroll pack cites
+   these two paths at this commit.
+3. **The mobile More cell's icon**, `Menu` → `MoreHorizontal`. This one is
+   a **convergence, not a port**: the application already draws that cell
+   with `MoreHorizontal`, and the mock has now adopted it. `docs/UX.md`
+   § Approved divergences 6 is therefore marked resolved-by-upstream at
+   this commit rather than deleted — the list is a historical record of
+   what was decided and why, and an entry that vanishes takes its
+   reasoning with it.
+
+One caution for anyone re-deriving this delta. The receivables feature
+first reached the mock repository as commit `5cd3170`, whose parent was a
+fresh squashed export from v0 rather than the existing history. Diffing
+`fdfe5ef..5cd3170` therefore shows six unrelated files as phantom
+reversions — the `app/globals.css` contrast fixes recorded in the
+paragraph above, plus `app/works/[code]/page.tsx`,
+`components/document-register.tsx`, `components/installations-workspace.tsx`
+and `components/work-section-nav.tsx` — because that snapshot predated
+them. The `fdfd610` merge resolved every one of them back to the frozen
+values, which is why the diff against `fdfe5ef` is clean. Cite `fdfd610`;
+never `5cd3170`.
+
 ### 4. The v0 iteration pipeline
 
 Design changes and behaviour changes travel different routes, and neither route

@@ -1,18 +1,22 @@
 import {
   BillPaymentSchema,
   BillSettlementResponseSchema,
+  ReceivablesRegisterResponseSchema,
   RecordBillPaymentRequestSchema,
   VoidBillPaymentRequestSchema,
   type BillDeductionCategory,
+  type BillDeductionHeadTotal,
   type BillPayment,
   type BillPaymentDeduction,
   type BillSettlementPosition,
   type BillStatus,
   type ErrorCode,
+  type ReceivablesRegisterEntry,
 } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
+import { financialYearLabel } from '../financial-year.js';
 import { httpError } from '../http.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -95,6 +99,71 @@ interface DeductionRow {
   readonly category: BillDeductionCategory;
   readonly amount: string;
   readonly description: string | null;
+}
+
+/**
+ * A position as the organisation-wide register reads it: the per-Work row
+ * plus its Work's identity, the bill's own submission, the net figure, and
+ * the four register totals riding along on every row (see the route).
+ */
+interface RegisterRow extends BillPositionRow {
+  readonly work_code: string;
+  readonly work_title: string;
+  readonly submitted_at: Date | null;
+  readonly net_payable_amount: string | null;
+  readonly claimed_total: string;
+  readonly passed_total: string;
+  readonly register_received_total: string;
+  readonly outstanding_total: string;
+}
+
+interface HeadTotalRow {
+  readonly bill_id: string;
+  readonly category: BillDeductionCategory;
+  readonly amount: string;
+}
+
+/** An empty register still has four figures, and they are zeroes rather
+ * than blanks. Written at the money domain's own scale so a register with
+ * no rows and a register whose rows sum to nothing print identically. */
+const EMPTY_REGISTER_TOTALS = {
+  claimedTotal: '0.00',
+  passedTotal: '0.00',
+  receivedTotal: '0.00',
+  outstandingTotal: '0.00',
+} as const;
+
+/**
+ * What the railway kept against each bill, by head, over live receipts
+ * only.
+ *
+ * `voided_at is null` mirrors the position view's own filter: a withdrawn
+ * receipt stops counting towards the bill, so its deductions must stop
+ * counting towards the waterfall too, or the heads would sum past a
+ * `deductionTotal` that had already dropped them.
+ */
+async function deductionHeadsForBills(
+  tx: TransactionSql,
+  billIds: readonly string[],
+): Promise<Map<string, BillDeductionHeadTotal[]>> {
+  const byBill = new Map<string, BillDeductionHeadTotal[]>();
+  if (billIds.length === 0) return byBill;
+  const rows = await tx<HeadTotalRow[]>`
+    select bp.bill_id, d.category, sum(d.amount)::money_amount::text as amount
+    from bill_payments bp
+    join bill_payment_deductions d
+      on d.organisation_id = bp.organisation_id and d.bill_payment_id = bp.id
+    where bp.bill_id = any(${[...billIds]}::uuid[]) and bp.voided_at is null
+    group by bp.bill_id, d.category
+    order by bp.bill_id, d.category
+  `;
+  for (const row of rows) {
+    const head = { category: row.category, amount: row.amount };
+    const existing = byBill.get(row.bill_id);
+    if (existing === undefined) byBill.set(row.bill_id, [head]);
+    else existing.push(head);
+  }
+  return byBill;
 }
 
 /** The columns every read of the position view selects, in one place so a
@@ -321,6 +390,109 @@ export function registerBillPaymentRoutes(
   database: Sql,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+
+  /**
+   * The organisation's receivables register: every bill's position with
+   * the railway, across every Work the caller may see.
+   *
+   * A sibling of the per-Work read below rather than a replacement for it.
+   * The question is genuinely different — "what is the railway holding of
+   * ours, everywhere" is asked by whoever chases payment, and answering it
+   * by fetching one Work at a time would be a request per Work and a
+   * browser adding money up at the end of it.
+   *
+   * Three things are worth knowing about the shape:
+   *
+   *   * **The scope predicate is written once.** It is an authorization
+   *     rule, and a rule duplicated across a rows query and a totals query
+   *     is a rule that can drift into reporting totals over Works the
+   *     caller cannot see. So the totals are window aggregates over the
+   *     same scoped set, computed in the same statement, and they ride
+   *     along on every row.
+   *   * **The totals are over the whole register, never a page of it.**
+   *     `sum(...) over ()` has no frame clause, so it partitions over
+   *     everything the WHERE admitted. Tiles that summed a page would
+   *     quietly answer a different question than the table beneath them.
+   *   * **`sum` ignores nulls, which is the wanted behaviour.** A bill the
+   *     railway has not passed contributes nothing to `passedTotal` rather
+   *     than contributing what the agency prepared.
+   */
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/bill-settlement',
+      schema: {
+        response: { 200: ReceivablesRegisterResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ user, tenant }) => {
+      return tenant(async (tx) => {
+        const full = await hasFullWorkScope(tx, user.id);
+        const rows = await tx<RegisterRow[]>`
+          select ${tx.unsafe(POSITION_COLUMNS)},
+            w.work_code, w.title as work_title,
+            b.submitted_at,
+            case
+              when p.railway_bill_amount is null then null
+              else (p.railway_bill_amount - p.deduction_total)::money_amount::text
+            end as net_payable_amount,
+            coalesce(sum(p.prepared_amount) over (), 0)::numeric(18,2)::text
+              as claimed_total,
+            coalesce(sum(p.railway_bill_amount) over (), 0)::numeric(18,2)::text
+              as passed_total,
+            coalesce(sum(p.received_total) over (), 0)::numeric(18,2)::text
+              as register_received_total,
+            coalesce(sum(p.outstanding_amount) over (), 0)::numeric(18,2)::text
+              as outstanding_total
+          from bill_settlement_positions p
+          join works w on w.id = p.work_id and w.deleted_at is null
+          join bills b on b.id = p.bill_id
+          where (${full} or exists (
+            select 1 from work_assignments wa
+            where wa.work_id = p.work_id and wa.user_id = ${user.id}
+          ))
+          -- The same order the per-Work read and the dashboard use: the
+          -- view carries no created_at, and Work code then bill number is
+          -- both the operator's own register order and stable where a
+          -- timestamp on two bills prepared in one second is not. Newest
+          -- bill first within a Work, because that is the one being chased.
+          order by w.work_code asc, p.bill_number desc
+        `;
+        const billIds = rows.map((row) => row.bill_id);
+        const [payments, heads] = await Promise.all([
+          paymentsForBills(tx, billIds),
+          deductionHeadsForBills(tx, billIds),
+        ]);
+        const entries: ReceivablesRegisterEntry[] = rows.map((row) => ({
+          ...toPosition(row, payments.get(row.bill_id) ?? []),
+          workCode: row.work_code,
+          workTitle: row.work_title,
+          submittedAt: row.submitted_at?.toISOString() ?? null,
+          // Null with `railwayBillAmount`, by construction: the year a
+          // receivable falls in is the year the railway acknowledged it.
+          financialYear:
+            row.railway_bill_date === null
+              ? null
+              : financialYearLabel(row.railway_bill_date),
+          netPayableAmount: row.net_payable_amount,
+          deductionsByHead: heads.get(row.bill_id) ?? [],
+        }));
+        const [first] = rows;
+        return {
+          entries,
+          summary:
+            first === undefined
+              ? EMPTY_REGISTER_TOTALS
+              : {
+                  claimedTotal: first.claimed_total,
+                  passedTotal: first.passed_total,
+                  receivedTotal: first.register_received_total,
+                  outstandingTotal: first.outstanding_total,
+                },
+        };
+      });
+    },
+  );
 
   tenantRoute(
     {
