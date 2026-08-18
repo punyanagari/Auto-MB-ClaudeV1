@@ -71,6 +71,12 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level (0087): one shelf serves every contract, so a movement is not a fact about a Work even when it names one. The ledger is its own trail, read on the part.',
   signing_agents:
     'Organisation-level (0091): a kiosk credential belongs to the company and outlives every Work it signs for. What it did to a Work IS on the timeline, as signing_requests.',
+  organisation_entitlements:
+    'Organisation-level (0096): whether a MODULE is available to the organisation. It governs every Work equally and belongs to none of them, which is the same reason document_number_series is here.',
+  statutory_job_schedules:
+    'Organisation-level (0096): a recurring check runs across the whole organisation on a clock. What one RUN found about a particular guarantee is audited separately, against work_instruments, and that is the row a Work timeline would want.',
+  organisation_export_requests:
+    'Organisation-level (0096): taking a copy of the whole organisation away is a disclosure of every Work at once, so hanging it on one of them would be a lie about which. It is on the organisation trail, which is where a data-protection question is asked.',
   organisation_bank_accounts:
     'Organisation-level: the company’s own accounts, not anything a Work did.',
   document_number_series: 'Organisation-level numbering configuration.',
