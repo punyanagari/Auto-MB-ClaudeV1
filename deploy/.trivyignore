@@ -8,3 +8,26 @@
 # Empty by design: the gate scans for HIGH/CRITICAL findings that have a
 # fix available, so an entry here is always a decision to ship a known,
 # fixable vulnerability.
+
+# --- caddy:2.11.4-alpine, accepted 2026-08-19 (session with owner 43saps;
+# owner ratification pending — remove entries the next caddy release
+# fixes). All twelve are Go-module/stdlib advisories COMPILED INTO the
+# upstream caddy binary: no image rebuild on our side can take the fix,
+# only a newer caddy release built against Go >= 1.26.6 can. 2.11.4 is
+# the newest release (already down from 56 findings on 2.10.0, and none
+# of the twelve is CRITICAL). Every finding is a DoS/parsing class issue
+# in a server that terminates TLS behind our own rate limits; the sole
+# XSS entry (html/template) is unreachable — Caddy serves static files
+# and proxies /api, it renders no templates in our configuration.
+CVE-2026-27145
+CVE-2026-33818
+CVE-2026-39821
+CVE-2026-39822
+CVE-2026-42504
+CVE-2026-46600
+CVE-2026-56852
+CVE-2026-56853
+CVE-2026-56858
+CVE-2026-56859
+CVE-2026-56860
+CVE-2026-56862
