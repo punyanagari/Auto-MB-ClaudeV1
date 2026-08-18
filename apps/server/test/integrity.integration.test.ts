@@ -508,6 +508,12 @@ describe('export completeness', () => {
       // export-v24: the signing trail (0091).
       'signingAgents',
       'signingRequests',
+      // export-v25: notifications (0092). The consent register is the one
+      // an organisation cannot reconstruct from anywhere else.
+      'notificationChannels',
+      'notificationTemplates',
+      'notificationConsents',
+      'notificationMessages',
     ]) {
       expect(Array.isArray(exported[section])).toBe(true);
     }
@@ -714,17 +720,17 @@ describe('export completeness is catalog-driven', () => {
         and column_name like 'can\_%'
       order by column_name
     `;
-    // The live count, not a floor with slack in it. Eight grants exist at
-    // 0094 — issue, cancel, approve amendments, statutory, payments,
-    // sign, payroll, import — and a floor of six would let two of them
-    // disappear from the catalog without this failing, which is the same
-    // shape of hole the census exists to close. A ninth authority edits
-    // this number, which is the point at which somebody reads the list.
+    // The live list, not a floor with slack in it. A floor of six would
+    // let three of these disappear from the catalog without this failing,
+    // which is the same shape of hole the census exists to close. A tenth
+    // authority edits this list, which is the point at which somebody
+    // reads it.
     expect(grants.map((row) => row.column_name)).toEqual([
       'can_approve_amendments',
       'can_cancel_documents',
       'can_import_data',
       'can_issue_documents',
+      'can_manage_notifications',
       'can_manage_payments',
       'can_manage_payroll',
       'can_manage_statutory_reporting',

@@ -296,6 +296,7 @@ describe('OperationsWorkspace mobile shell', () => {
       'Masters',
       'Imports',
       'Members',
+      'Notifications',
       'Settings',
     ]);
     // Serial Lookup is not a module: `#/serials` merged into Global search
@@ -341,6 +342,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Masters', '#/masters'],
       ['Imports', '#/imports'],
       ['Members', '#/members'],
+      ['Notifications', '#/notifications'],
       ['Settings', '#/settings'],
     ]);
   });

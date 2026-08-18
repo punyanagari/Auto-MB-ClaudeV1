@@ -693,6 +693,23 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
     finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
     cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
+    listNotificationChannels: vi
+      .fn<ApiClient['listNotificationChannels']>()
+      .mockResolvedValue({ channels: [] }),
+    saveNotificationChannel: vi.fn<ApiClient['saveNotificationChannel']>(),
+    listNotificationTemplates: vi
+      .fn<ApiClient['listNotificationTemplates']>()
+      .mockResolvedValue({ templates: [], nextCursor: null }),
+    createNotificationTemplate: vi.fn<ApiClient['createNotificationTemplate']>(),
+    setNotificationTemplateStatus: vi.fn<ApiClient['setNotificationTemplateStatus']>(),
+    listNotificationConsents: vi
+      .fn<ApiClient['listNotificationConsents']>()
+      .mockResolvedValue({ consents: [], nextCursor: null }),
+    recordNotificationConsent: vi.fn<ApiClient['recordNotificationConsent']>(),
+    listNotifications: vi
+      .fn<ApiClient['listNotifications']>()
+      .mockResolvedValue({ messages: [], nextCursor: null }),
+    sendNotification: vi.fn<ApiClient['sendNotification']>(),
     // Spreadsheet imports (0094). Empty batches by default, for the same
     // reason the signing read above answers empty — but the TARGETS are
     // never empty, because they are a property of the build rather than
@@ -841,6 +858,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canManagePayments: false,
     canSignDocuments: false,
     canManagePayroll: true,
+    canManageNotifications: true,
     canImportData: true,
     twoFactorEnabled: false,
     status: 'active',

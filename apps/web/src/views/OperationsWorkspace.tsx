@@ -171,6 +171,9 @@ const SigningKioskSettings = lazy(() =>
 const SigningQueue = lazy(() =>
   import('./SigningQueue.js').then((module) => ({ default: module.SigningQueue })),
 );
+const Notifications = lazy(() =>
+  import('./Notifications.js').then((module) => ({ default: module.Notifications })),
+);
 const Imports = lazy(() =>
   import('./Imports.js').then((module) => ({ default: module.Imports })),
 );
@@ -464,6 +467,7 @@ export function OperationsWorkspace({
   // gates the employee register and the payroll run — a vendor-payment
   // manager must not see salaries, PAN, UAN or bank details by default.
   const canManagePayroll = membership?.canManagePayroll ?? false;
+  const canManageNotifications = membership?.canManageNotifications ?? false;
   // The import authority (migration 0094). The screen stays on the rail
   // for every writer, because reading which imports an organisation ran
   // — and why eleven rows were refused — is ordinary register history.
@@ -1272,6 +1276,26 @@ export function OperationsWorkspace({
               />
             )}
 
+            {/* Gated at the SCREEN rather than at a control, because
+                every read this view makes needs the authority: the
+                consent register is a list of counterparties' personal
+                telephone numbers, and the delivery log says who was
+                messaged and when. The rail door stays visible — unlike
+                Employees, whose door leaks that a salary register
+                exists, this one leaks nothing an ordinary member should
+                not know the product has. The server refuses the reads
+                the same way, so this is the door and not the lock. */}
+            {view.name === 'notifications' &&
+              (canManageNotifications ? (
+                <Notifications
+                  api={api}
+                  organisationId={organisation.id}
+                  isOwner={isOwner}
+                />
+              ) : (
+                <NotificationsAuthorityRequired />
+              ))}
+
             {view.name === 'stock' && (
               <StockRegister
                 api={api}
@@ -1999,6 +2023,30 @@ export function OperationsWorkspace({
  * matches the topbar's section title rather than always reading
  * "Employees" over a payroll fragment.
  */
+function NotificationsAuthorityRequired() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="Administration"
+        title="Notifications"
+        titleId="notifications-authority-title"
+        description="Messaging channels, templates, consent and delivery."
+      />
+      <Card>
+        <p className="m-0 text-sm">
+          Notifications are behind the notifications authority, and this account does
+          not hold it. The consent register carries counterparties&rsquo; personal
+          telephone numbers and the delivery log says who was messaged, so it is granted
+          per member rather than by role.
+        </p>
+        <p className="m-0 mt-2 text-sm text-muted-foreground">
+          Ask an owner to grant it on the Members screen.
+        </p>
+      </Card>
+    </>
+  );
+}
+
 function PayrollAuthorityRequired({ title }: { readonly title: string }) {
   return (
     <>

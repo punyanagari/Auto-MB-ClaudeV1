@@ -68,6 +68,11 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'maintenance-request', requestId: WORK_ID } },
   { view: { name: 'receivables' } },
   { view: { name: 'members' } },
+  // The signing queue (0091) was missing from this list until the
+  // notifications pack added its own beside it, so the serializer's
+  // exhaustiveness proof had a hole exactly the size of one view.
+  { view: { name: 'signing' } },
+  { view: { name: 'notifications' } },
   { view: { name: 'settings' } },
 ];
 

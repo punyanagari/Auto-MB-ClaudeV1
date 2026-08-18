@@ -131,6 +131,11 @@ export type WorkspaceView =
    * the kiosk is one machine and the person watching it watches one
    * list. No mock screen — see docs/UX.md § 16. */
   | { name: 'signing' }
+  /** Notifications (migration 0092). Organisation-level: which channels
+   * the agency speaks through, what it may say, who agreed to be spoken
+   * to, and what became of every message. Not per Work — nothing this
+   * pack sends is about one. */
+  | { name: 'notifications' }
   /** Bringing a register in from a spreadsheet (migration 0094).
    * Organisation-level, because the registers it fills are: a party
    * master and an item catalogue belong to the agency, not to a
@@ -298,6 +303,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/inspection';
     case 'signing':
       return '#/signing';
+    case 'notifications':
+      return '#/notifications';
     case 'imports':
       return '#/imports';
     case 'stock':
@@ -630,6 +637,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'inspection':
     case 'receivables':
     case 'signing':
+    case 'notifications':
     case 'imports':
     case 'members':
     case 'settings':

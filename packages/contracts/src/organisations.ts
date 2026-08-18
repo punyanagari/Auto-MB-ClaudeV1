@@ -61,6 +61,14 @@ const MembershipSchema = Type.Object(
      * salaries, PAN, UAN or bank details by default. Defaults false; the
      * owner of a new organisation holds it implicitly. */
     canManagePayroll: Type.Boolean(),
+    /** The notifications authority (migration 0092): may configure the
+     * WhatsApp and email channels, maintain message templates, record
+     * recipient consent and send a message. Separate from
+     * canIssueDocuments because choosing the number the organisation
+     * speaks from — and who else may be messaged — is a different
+     * decision from committing the words of a document. Defaults false;
+     * the owner of a new organisation holds it implicitly. */
+    canManageNotifications: Type.Boolean(),
     /** The import authority (migration 0094): may upload a spreadsheet
      * against a register and commit the rows it stages. Separate from the
      * writer role the registers themselves require, because adding one
@@ -103,6 +111,7 @@ export const AddMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageNotifications: Type.Optional(Type.Boolean()),
     canImportData: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
@@ -420,6 +429,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageNotifications: Type.Optional(Type.Boolean()),
     canImportData: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),

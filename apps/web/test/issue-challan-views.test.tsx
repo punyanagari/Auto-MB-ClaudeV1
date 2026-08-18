@@ -447,6 +447,19 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn(),
     finalizePayrollRun: vi.fn(),
     cancelPayrollRun: vi.fn(),
+    listNotificationChannels: vi.fn().mockResolvedValue({ channels: [] }),
+    saveNotificationChannel: vi.fn(),
+    listNotificationTemplates: vi
+      .fn()
+      .mockResolvedValue({ templates: [], nextCursor: null }),
+    createNotificationTemplate: vi.fn(),
+    setNotificationTemplateStatus: vi.fn(),
+    listNotificationConsents: vi
+      .fn()
+      .mockResolvedValue({ consents: [], nextCursor: null }),
+    recordNotificationConsent: vi.fn(),
+    listNotifications: vi.fn().mockResolvedValue({ messages: [], nextCursor: null }),
+    sendNotification: vi.fn(),
     listImportBatches: vi.fn(),
     readImportBatch: vi.fn(),
     uploadImportWorkbook: vi.fn(),

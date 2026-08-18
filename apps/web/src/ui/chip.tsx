@@ -69,6 +69,26 @@ const CHIP_TONES = {
   // `pending` is already mapped above and stays there — a request
   // waiting for a kiosk is a queue, not a caution.
   claimed: 'warning',
+  // A message the provider has accepted but nothing has acknowledged
+  // yet, and one written before the provider was even called (0092).
+  // Both are queues rather than cautions, which is the reading `pending`
+  // already carries; `sent` is mapped info above for the same reason.
+  queued: 'info',
+  // The two acknowledgements a WhatsApp receipt brings back (0092). A
+  // message that reached the handset, and one the recipient opened: both
+  // are the proceed state of a delivery, which is what `docs/DESIGN.md`
+  // § Status badge semantics gives the success family. Unmapped they
+  // rendered neutral — identical to a queued message, which is the one
+  // reading they must not have.
+  delivered: 'success',
+  read: 'success',
+  // A template Meta approved and then throttled for poor quality (0092).
+  // Work to do — the organisation has to fix the template or its
+  // engagement — which is the warning family, not the destructive one:
+  // nothing was refused and nothing failed. Its sibling `disabled` stays
+  // unmapped and reads neutral, because a withdrawn template is finished
+  // rather than bad.
+  paused: 'warning',
   // An import batch whose every row has been judged and which is waiting
   // for somebody to decide (0094). Warning is the family for "awaiting
   // someone", and that is exactly what a validated batch is: the machine

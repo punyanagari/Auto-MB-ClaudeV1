@@ -127,7 +127,9 @@ COMMENT ON COLUMN organisation_memberships.can_import_data IS
 -- Disjoint migration numbers do not help: they all touch this one body,
 -- and the LAST one to apply wins outright. Whoever merges this wave must
 -- reconcile the replacements into a single final grant list rather than
--- assuming three independently-correct migrations compose. The
+-- assuming three independently-correct migrations compose — which is
+-- not a hypothetical: 0092 arrived first and its grant had to be added
+-- to the list below by hand at the merge. The
 -- migration-contract test pins the VALUES line so a dropped grant fails
 -- there rather than in a founder's first import.
 CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(
@@ -151,15 +153,26 @@ BEGIN
 
   INSERT INTO organisations (id, name, slug) VALUES (p_id, p_name, p_slug);
 
-  -- Five authorities, and only the last is this migration's own. The
-  -- other four are 0091's, 0089's and 0004's, restated because a
-  -- replacement that omits one revokes it.
+  -- Six authorities, and only the last is this migration's own. The
+  -- other five are 0004's two, 0089's, 0091's and 0092's, restated
+  -- because a replacement that omits one revokes it.
+  --
+  -- `can_manage_notifications` is here because the hazard this header
+  -- warns about ACTUALLY FIRED. 0092 and 0094 were written in parallel
+  -- against a main that had neither; 0092 merged first, and because
+  -- 0094 applies second its body is the one that survives — so the
+  -- first composition of the two silently dropped the notifications
+  -- grant from every founder. Caught at the merge by reading the live
+  -- function out of `pg_proc`, not by any test, which is why the
+  -- assertion below now pins all six.
   INSERT INTO organisation_memberships (
     organisation_id, user_id, role, work_scope,
     can_issue_documents, can_cancel_documents, can_sign_documents,
-    can_manage_payroll, can_import_data, status
+    can_manage_payroll, can_manage_notifications, can_import_data, status
   )
-  VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, true, 'active');
+  VALUES (
+    p_id, v_user_id, 'owner', 'all', true, true, true, true, true, true, 'active'
+  );
 
   INSERT INTO audit_events (
     organisation_id, actor_user_id, action, entity_type, entity_id

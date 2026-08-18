@@ -220,6 +220,11 @@ describe('MFA authority census', () => {
       // organisation's own.
       'import',
       'issue',
+      // The notifications authority (0092). Whoever holds it can point
+      // the organisation's outbound voice at a number they control and
+      // authorise a recipient nobody agreed to, which is impersonating
+      // the agency to its own customers.
+      'notifications',
       // The payments authority (migration 0080) moves money out of the
       // organisation's bank, so it joins the wall rather than sitting
       // beside it.

@@ -212,6 +212,18 @@ const FEATURES = [
     change: 'Payroll authority',
   },
   {
+    /* The notifications authority (migration 0092): who may configure the
+       WhatsApp and email channels, maintain the message templates, record
+       a recipient's consent and send a message. Separate from the issue
+       authority because choosing the number the organisation speaks from,
+       and deciding who else may be messaged, is not the same decision as
+       committing the words of a document. */
+    key: 'canManageNotifications',
+    heading: 'Can message',
+    authority: 'Notifications authority',
+    change: 'Notifications authority',
+  },
+  {
     /* The import authority (migration 0094): who may point a spreadsheet
        at a register and commit the rows it stages. Separate from the
        writer role the registers themselves require, because adding one

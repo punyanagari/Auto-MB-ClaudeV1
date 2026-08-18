@@ -1,5 +1,8 @@
 import { assertProductionSecret, buildApp, SERVER_LIMITS } from './app.js';
 import { WhitebooksProvider, readWhitebooksConfig } from './gsp/whitebooks.js';
+import { MetaCloudWhatsAppTransport, readWhatsAppConfig } from './notify/meta-cloud.js';
+import { SmtpEmailTransport, readNotificationMailUrl } from './notify/smtp.js';
+import type { NotificationTransports } from './notify/transport.js';
 import { assertProductionMfaEnforcement } from './mfa-policy.js';
 import { TRUST_ANCHOR_PATH_ENV, loadTrustAnchors } from '@auto-mb/documents';
 
@@ -17,6 +20,26 @@ if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
 
 const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
 const whitebooksConfig = readWhitebooksConfig(process.env);
+
+// The notification transports (0092). The environment decides only
+// WHETHER a real adapter exists; nothing about it reaches a route or a
+// column. An absent half is not an error — an agency running email only
+// while its WABA is in onboarding is the expected state for months, and
+// the routes name the gap rather than failing at the provider call.
+//
+// The mail transport is the deployment's EXISTING relay (SMTP_URL), the
+// same one password recovery uses. The sender is per organisation and
+// comes from that organisation's own channel row, not from MAIL_FROM.
+const whatsAppConfig = readWhatsAppConfig(process.env);
+const notificationMailUrl = readNotificationMailUrl(process.env);
+const notificationTransports: NotificationTransports = {
+  ...(whatsAppConfig === null
+    ? {}
+    : { whatsapp: new MetaCloudWhatsAppTransport(whatsAppConfig) }),
+  ...(notificationMailUrl === null
+    ? {}
+    : { email: new SmtpEmailTransport(notificationMailUrl) }),
+};
 
 /** A positive-integer environment override, or the built-in default. A
  * misconfigured limit refuses to boot rather than silently falling back:
@@ -94,6 +117,7 @@ const app = await buildApp({
         ...(whitebooksConfig === null
           ? {}
           : { statutoryProvider: new WhitebooksProvider(whitebooksConfig) }),
+        notificationTransports,
         ...(process.env.OBJECT_STORAGE_DIR
           ? { objectStorageDir: process.env.OBJECT_STORAGE_DIR }
           : {}),

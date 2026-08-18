@@ -34,6 +34,7 @@ interface MembershipRow {
   can_manage_payments: boolean;
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
+  can_manage_notifications: boolean;
   can_import_data: boolean;
   /** From auth_users."twoFactorEnabled" (nullable there; coalesced in SQL).
    * Surfaced so owners can see enrolment BEFORE granting authority —
@@ -56,6 +57,7 @@ function toMembership(row: MembershipRow): Membership {
     canManagePayments: row.can_manage_payments,
     canSignDocuments: row.can_sign_documents,
     canManagePayroll: row.can_manage_payroll,
+    canManageNotifications: row.can_manage_notifications,
     canImportData: row.can_import_data,
     twoFactorEnabled: row.two_factor_enabled,
     status: row.status,
@@ -84,7 +86,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll, m.can_import_data,
+                   m.can_manage_payroll, m.can_manage_notifications,
+                   m.can_import_data,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -213,7 +216,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll, m.can_import_data,
+                   m.can_manage_payroll, m.can_manage_notifications,
+                   m.can_import_data,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -269,7 +273,8 @@ export function registerIdentityRoutes(
               can_issue_documents, can_cancel_documents,
               can_approve_amendments, can_manage_statutory_reporting,
               can_manage_payments, can_sign_documents,
-              can_manage_payroll, can_import_data, status
+              can_manage_payroll, can_manage_notifications, can_import_data,
+              status
             )
             values (
               ${organisationId}, ${target.id}, ${body.role},
@@ -281,6 +286,7 @@ export function registerIdentityRoutes(
               ${body.canManagePayments ?? false},
               ${body.canSignDocuments ?? false},
               ${body.canManagePayroll ?? false},
+              ${body.canManageNotifications ?? false},
               ${body.canImportData ?? false},
               'active'
             )
@@ -311,7 +317,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll, m.can_import_data,
+                   m.can_manage_payroll, m.can_manage_notifications,
+                   m.can_import_data,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -373,13 +380,15 @@ export function registerIdentityRoutes(
             can_manage_payments: boolean;
             can_sign_documents: boolean;
             can_manage_payroll: boolean;
+            can_manage_notifications: boolean;
             can_import_data: boolean;
           }[]
         >`
             select role, status, work_scope, can_issue_documents,
                    can_cancel_documents, can_approve_amendments,
                    can_manage_statutory_reporting, can_manage_payments,
-                   can_sign_documents, can_manage_payroll, can_import_data
+                   can_sign_documents, can_manage_payroll,
+                   can_manage_notifications, can_import_data
             from organisation_memberships
             where user_id = ${memberUserId}
               and organisation_id = app_private.current_organisation_id()
@@ -438,6 +447,11 @@ export function registerIdentityRoutes(
                 coalesce(${body.canSignDocuments ?? null}, can_sign_documents),
               can_manage_payroll =
                 coalesce(${body.canManagePayroll ?? null}, can_manage_payroll),
+              can_manage_notifications =
+                coalesce(
+                  ${body.canManageNotifications ?? null},
+                  can_manage_notifications
+                ),
               can_import_data =
                 coalesce(${body.canImportData ?? null}, can_import_data),
               status = coalesce(${body.status ?? null}, status),
@@ -463,6 +477,7 @@ export function registerIdentityRoutes(
             canManagePayments: current.can_manage_payments,
             canSignDocuments: current.can_sign_documents,
             canManagePayroll: current.can_manage_payroll,
+            canManageNotifications: current.can_manage_notifications,
             canImportData: current.can_import_data,
             status: current.status,
           },
@@ -479,6 +494,8 @@ export function registerIdentityRoutes(
             canManagePayments: body.canManagePayments ?? current.can_manage_payments,
             canSignDocuments: body.canSignDocuments ?? current.can_sign_documents,
             canManagePayroll: body.canManagePayroll ?? current.can_manage_payroll,
+            canManageNotifications:
+              body.canManageNotifications ?? current.can_manage_notifications,
             canImportData: body.canImportData ?? current.can_import_data,
             status: body.status ?? current.status,
           },
@@ -498,7 +515,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll, m.can_import_data,
+                   m.can_manage_payroll, m.can_manage_notifications,
+                   m.can_import_data,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
