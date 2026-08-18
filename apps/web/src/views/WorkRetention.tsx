@@ -52,11 +52,24 @@ interface WorkRetentionProps {
   readonly canManageRetention: boolean;
 }
 
-/** The shape a money field has to have before it is worth sending: a
+/**
+ * The shape a money field has to have before it is worth sending: a
  * non-negative rupee figure with at most two decimals, which is what the
- * `money_amount` column stores and what the contract schema admits. Used
- * only to enable a confirm button — whether the AMOUNT is within the
- * assessment is money arithmetic and is decided by the server, twice. */
+ * `money_amount` column stores.
+ *
+ * It mirrors `NonNegativeMoneyStringSchema` in `@auto-mb/contracts`, and
+ * that schema stays the authority — the server validates against it
+ * whatever this does. So the worst a drift between the two can do is
+ * enable a button the server then refuses, or disable one it would have
+ * accepted; it can never let a bad figure through. Whether the amount is
+ * within the ASSESSMENT is a different question again, and is money
+ * arithmetic the server decides, twice.
+ */
+// Fully anchored, one digit run then a fraction bounded to two digits.
+// Each repetition consumes a digit no other branch can also consume, so
+// this is linear on every input — the same reasoning `apps/server/src/money.ts`
+// records against the same shape.
+// eslint-disable-next-line security/detect-unsafe-regex
 const MONEY_PATTERN = /^(?:0|[1-9]\d{0,14})(?:\.\d{1,2})?$/;
 
 const BASIS_LABELS: Record<RetentionReleaseBasis, string> = {
