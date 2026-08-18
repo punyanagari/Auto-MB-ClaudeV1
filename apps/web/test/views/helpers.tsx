@@ -715,6 +715,87 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
     finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
     cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
+    listNotificationChannels: vi
+      .fn<ApiClient['listNotificationChannels']>()
+      .mockResolvedValue({ channels: [] }),
+    saveNotificationChannel: vi.fn<ApiClient['saveNotificationChannel']>(),
+    listNotificationTemplates: vi
+      .fn<ApiClient['listNotificationTemplates']>()
+      .mockResolvedValue({ templates: [], nextCursor: null }),
+    createNotificationTemplate: vi.fn<ApiClient['createNotificationTemplate']>(),
+    setNotificationTemplateStatus: vi.fn<ApiClient['setNotificationTemplateStatus']>(),
+    listNotificationConsents: vi
+      .fn<ApiClient['listNotificationConsents']>()
+      .mockResolvedValue({ consents: [], nextCursor: null }),
+    recordNotificationConsent: vi.fn<ApiClient['recordNotificationConsent']>(),
+    listNotifications: vi
+      .fn<ApiClient['listNotifications']>()
+      .mockResolvedValue({ messages: [], nextCursor: null }),
+    sendNotification: vi.fn<ApiClient['sendNotification']>(),
+    // Spreadsheet imports (0094). Empty batches by default, for the same
+    // reason the signing read above answers empty — but the TARGETS are
+    // never empty, because they are a property of the build rather than
+    // of the organisation, and a screen that offered no register to
+    // import into would be untestable in exactly the state a new
+    // organisation is in.
+    listImportBatches: vi.fn<ApiClient['listImportBatches']>().mockResolvedValue({
+      batches: [],
+      nextCursor: null,
+      targets: [
+        {
+          key: 'contacts',
+          label: 'Contacts',
+          columns: [
+            {
+              key: 'designation',
+              header: 'Designation',
+              required: true,
+              note: 'Required. The office or firm as it is written on the paperwork.',
+            },
+          ],
+        },
+      ],
+    }),
+    readImportBatch: vi.fn<ApiClient['readImportBatch']>(),
+    uploadImportWorkbook: vi.fn<ApiClient['uploadImportWorkbook']>(),
+    commitImportBatch: vi.fn<ApiClient['commitImportBatch']>(),
+    cancelImportBatch: vi.fn<ApiClient['cancelImportBatch']>(),
+    downloadImportTemplate: vi.fn<ApiClient['downloadImportTemplate']>(),
+    auditRegister: vi.fn<ApiClient['auditRegister']>().mockResolvedValue({
+      events: [],
+      nextCursor: null,
+      windowFrom: '2018-08-19',
+      retentionMonths: 96,
+    }),
+    auditFacets: vi
+      .fn<ApiClient['auditFacets']>()
+      .mockResolvedValue({ actions: [], entityTypes: [], actors: [] }),
+    misSummary: vi.fn<ApiClient['misSummary']>().mockResolvedValue({
+      outputTax: [],
+      receivablesAgeing: [],
+      indeterminateBills: 0,
+      payrollCost: null,
+    }),
+    downloadRegisterWorkbook: vi.fn<ApiClient['downloadRegisterWorkbook']>(),
+    downloadAuditWorkbook: vi.fn<ApiClient['downloadAuditWorkbook']>(),
+    downloadTallyExport: vi.fn<ApiClient['downloadTallyExport']>(),
+    // The platform controls (0096). Both lists answer empty by default,
+    // for the reason the stock reads below do: a view that opens one
+    // renders its own empty state rather than hanging on an unresolved
+    // mock.
+    listEntitlements: vi
+      .fn<ApiClient['listEntitlements']>()
+      .mockResolvedValue({ entitlements: [] }),
+    setEntitlement: vi.fn<ApiClient['setEntitlement']>(),
+    listJobSchedules: vi
+      .fn<ApiClient['listJobSchedules']>()
+      .mockResolvedValue({ schedules: [], runs: [] }),
+    setJobSchedule: vi.fn<ApiClient['setJobSchedule']>(),
+    listOrganisationExports: vi
+      .fn<ApiClient['listOrganisationExports']>()
+      .mockResolvedValue({ exports: [], retentionHours: 168 }),
+    requestOrganisationExport: vi.fn<ApiClient['requestOrganisationExport']>(),
+    downloadOrganisationExport: vi.fn<ApiClient['downloadOrganisationExport']>(),
     // Maintenance (0088). The register answers empty by default, for the
     // reason the stock reads above do: a view that opens it renders its
     // own empty state rather than hanging on an unresolved mock.
@@ -834,6 +915,11 @@ export function membership(overrides: Partial<Membership>): Membership {
     canManagePayments: false,
     canSignDocuments: false,
     canManagePayroll: true,
+    canManageNotifications: true,
+    canImportData: true,
+    canViewAuditTrail: true,
+    canManageEntitlements: true,
+    canExportOrg: true,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,

@@ -22,6 +22,10 @@
     "./handlers/loa-document-intake": {
       "types": "./src/handlers/loa-document-intake.ts",
       "default": "./src/handlers/loa-document-intake.ts"
+    },
+    "./handlers/instrument-expiry-review": {
+      "types": "./src/handlers/instrument-expiry-review.ts",
+      "default": "./src/handlers/instrument-expiry-review.ts"
     }
   }
 }

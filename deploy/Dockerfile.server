@@ -104,6 +104,22 @@ RUN cd apps/worker/dist \
 # --- runtime ------------------------------------------------------------
 FROM node:22.16.0-alpine3.21@sha256:9f3ae04faa4d2188825803bf890792f33cc39033c9241fc6bb201149470436ca
 
+# The pinned digest predates several fixed Alpine advisories (openssl
+# heap overflow among them) and upstream has not rebuilt the tag, so the
+# runtime stage upgrades its OS packages from the same Alpine 3.21
+# branch. This deliberately does NOT move the Alpine release: the
+# poppler-utils pin below depends on the version 3.21 carries, and a
+# release bump must travel with poppler-version.txt and the CI runner.
+RUN apk upgrade --no-cache
+
+# The runtime never runs npm, npx or corepack — the entry points are
+# plain `node` invocations (server.mjs, worker.mjs, bootstrap.mjs) — so
+# npm's bundled node_modules would only exist here as attack surface and
+# as a stream of Trivy findings nothing in this image can reach. Removed.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm \
+  /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn* \
+  /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
 # pdftotext (poppler-utils) is the LOA text-extraction system dependency
 # (docs/DEPENDENCIES.md). Pinned to the ONE version this repository runs at,
 # read from the file CI reads too so the two cannot drift apart silently —

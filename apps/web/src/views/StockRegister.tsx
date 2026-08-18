@@ -25,6 +25,7 @@ import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
 import { Modal } from '../ui/dialog.js';
 import { Field } from '../ui/form.js';
+import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -235,17 +236,28 @@ export function StockRegister({
       titleId="stock-title"
       description="What is on the shelf, how it got there, and what the open job cards are short of. Every balance is the ledger below — nothing here stores one."
       action={
-        /* A real anchor with a hash href rather than a button with a
-           handler: `docs/UX.md` § navigation asks that every mock `Link`
-           become an address middle-click and open-in-new-tab can use. */
-        <a
-          href={STOCK_SHORTAGES_HASH}
-          onClick={navigateOnClick(onOpenShortages)}
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          <ShoppingCart data-icon="inline-start" aria-hidden="true" />
-          Shortage procurement
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The movements ledger as a workbook — the balances above it
+              are derived from exactly these rows. */}
+          <DownloadButton
+            label="Export .xlsx"
+            filename="stock-movements.xlsx"
+            fetchBlob={() =>
+              api.downloadRegisterWorkbook(organisationId, 'stock-movements')
+            }
+          />
+          {/* A real anchor with a hash href rather than a button with a
+              handler: `docs/UX.md` § navigation asks that every mock `Link`
+              become an address middle-click and open-in-new-tab can use. */}
+          <a
+            href={STOCK_SHORTAGES_HASH}
+            onClick={navigateOnClick(onOpenShortages)}
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            <ShoppingCart data-icon="inline-start" aria-hidden="true" />
+            Shortage procurement
+          </a>
+        </div>
       }
     />
   );

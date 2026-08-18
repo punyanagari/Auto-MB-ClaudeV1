@@ -1,0 +1,59 @@
+{
+  "fixtureVersion": "tally-vouchers-v2",
+  "$comment": "Input for test/tally-xml.test.ts, whose golden output is tally-vouchers.v1.xml beside it. One of each voucher type, with figures chosen so every rule is visible: the first invoice is intra-state (CGST+SGST, no IGST), the second is inter-state (IGST alone) and unregistered (no GSTIN), the credit note reverses the first at full value the way migration 0051's columns do, one buyer name carries the ampersand Tally's parser is strictest about, and the two receipts cover a bank reference present and absent. BOTH RECEIPTS CREDIT THE SAME PARTY LEDGER THE FIRST SALE DEBITS, which is the property that makes the vouchers reconcile: a receipt posted to a ledger no sale ever debits leaves the party account open forever. Version 1 of this fixture credited a hardcoded placeholder and did not. Every money value is written as it comes off a frozen numeric(18,2) snapshot column: two decimals, no symbol, no sign.",
+  "invoices": [
+    {
+      "invoiceNumber": "AMB/2026-27/0001",
+      "invoiceDate": "2026-05-14",
+      "buyerName": "North Western Railway & Co",
+      "buyerGstin": "08AAACR1234M1ZK",
+      "taxableValue": "1250000.00",
+      "cgst": "112500.00",
+      "sgst": "112500.00",
+      "igst": "0.00",
+      "total": "1475000.00",
+      "serviceDescription": "Supply and installation of signalling equipment"
+    },
+    {
+      "invoiceNumber": "AMB/2026-27/0002",
+      "invoiceDate": "2026-06-02",
+      "buyerName": "South Central Railway",
+      "buyerGstin": null,
+      "taxableValue": "400000.00",
+      "cgst": "0.00",
+      "sgst": "0.00",
+      "igst": "72000.00",
+      "total": "472000.00",
+      "serviceDescription": "Track circuit maintenance"
+    }
+  ],
+  "creditNotes": [
+    {
+      "noteNumber": "CN/2026-27/0001",
+      "noteDate": "2026-06-20",
+      "buyerName": "North Western Railway & Co",
+      "taxableValue": "1250000.00",
+      "cgst": "112500.00",
+      "sgst": "112500.00",
+      "igst": "0.00",
+      "total": "1475000.00",
+      "reason": "Invoice superseded after re-measurement"
+    }
+  ],
+  "receipts": [
+    {
+      "reference": "UTR2026061400931",
+      "receivedOn": "2026-06-14",
+      "payerName": "North Western Railway & Co",
+      "amount": "900000.00",
+      "narration": "Receipt against NWR-114 bill 3"
+    },
+    {
+      "reference": "NWR-114 bill 4",
+      "receivedOn": "2026-07-01",
+      "payerName": "North Western Railway & Co",
+      "amount": "250000.50",
+      "narration": "Receipt against NWR-114 bill 4"
+    }
+  ]
+}

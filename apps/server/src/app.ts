@@ -61,6 +61,8 @@ import { registerLoaRoutes } from './routes/loa.js';
 import { registerMasterRoutes } from './routes/masters.js';
 import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
+import { registerAuditRoutes } from './routes/audit.js';
+import { registerMisRoutes } from './routes/mis.js';
 import { registerSearchRoutes } from './routes/search.js';
 import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
@@ -68,8 +70,11 @@ import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
+import { registerImportRoutes } from './routes/imports.js';
+import { registerPlatformRoutes } from './routes/platform.js';
 import { registerSigningRoutes } from './routes/signing.js';
 import { registerWarrantyRoutes } from './routes/warranty.js';
+import { registerNotificationRoutes } from './routes/notifications.js';
 import { registerHrRoutes } from './routes/hr.js';
 import { registerMaintenanceRoutes } from './routes/maintenance.js';
 import { registerMeasurementBookRoutes } from './routes/measurement-books/index.js';
@@ -87,6 +92,7 @@ import {
 import { recordRegisteredRoutes, tenantRoutesOf } from './tenant-route.js';
 import { assertProductionMalwareScanning } from './upload-guards.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
+import type { NotificationTransports } from './notify/transport.js';
 import { createMutationOriginGuard, isOriginExemptRoute } from './origin-guard.js';
 
 interface BuildAppOptions {
@@ -100,6 +106,15 @@ interface BuildAppOptions {
   /** Optional statutory transport. Credentials live inside the injected
    * adapter and are never accepted by HTTP routes or persisted. */
   readonly statutoryProvider?: StatutoryProvider;
+  /** Optional notification transports (0092): WhatsApp over the Meta
+   * Cloud API, and mail over the deployment's relay. Same posture as the
+   * statutory provider — the access token, the webhook app secret and the
+   * SMTP credentials live inside the injected adapters, are never
+   * accepted by an HTTP route and are never persisted. Absent means the
+   * routes refuse by name rather than failing at the provider call, and
+   * the webhook receiver refuses everything because it has no secret to
+   * verify a signature with. */
+  readonly notificationTransports?: NotificationTransports;
   /** Root directory for uploaded objects (LOA PDFs). Defaults to
    * ./local-data/objects (gitignored); tests point it at a disposable
    * directory. */
@@ -132,6 +147,7 @@ interface BuildAppOptions {
     readonly auth?: RateLimitRule;
     readonly upload?: RateLimitRule;
     readonly signing?: RateLimitRule;
+    readonly notificationWebhook?: RateLimitRule;
     readonly accountLockout?: AccountLockoutRule;
   };
   /** Namespace for the PostgreSQL-backed throttle state (finding 38,
@@ -588,6 +604,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   // a minute leaves fifteen times the headroom a real kiosk needs and
   // still bounds a grinder.
   const signingRule = options.rateLimits?.signing ?? { windowMs: 60_000, max: 60 };
+  // Meta's delivery-receipt webhook (0092). A public address that costs an
+  // HMAC before it can refuse anything, so it is throttled per address
+  // like the kiosk lane — and sized against Meta's own behaviour rather
+  // than the kiosk's, because receipts arrive in bursts of a few dozen
+  // after a batch goes out rather than on a poll timer.
+  const notificationWebhookRule = options.rateLimits?.notificationWebhook ?? {
+    windowMs: 60_000,
+    max: 300,
+  };
   const throttleNamespace =
     options.throttleNamespace ??
     (process.env.NODE_ENV === 'test' ? crypto.randomUUID() : 'deployment');
@@ -600,6 +625,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
   const signingLimiter = database
     ? createPgRateLimiter(database, 'signing', signingRule, throttleNamespace)
     : createRateLimiter(signingRule, 'signing');
+  const notificationWebhookLimiter = database
+    ? createPgRateLimiter(
+        database,
+        'notification_webhook',
+        notificationWebhookRule,
+        throttleNamespace,
+      )
+    : createRateLimiter(notificationWebhookRule, 'notification_webhook');
   // Second throttling dimension for sign-in only: the per-address window
   // above is trivially bypassed by rotating source addresses, so repeated
   // failures against ONE account (keyed by a hash of the normalised
@@ -644,15 +677,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       routePattern !== undefined &&
       tenantRoutesOf(app).get(`${request.method} ${routePattern}`)?.bodyLimit !==
         undefined;
+    // Both unbound lanes are origin-exempt, so they are separated by name
+    // rather than by the exemption: they are throttled on different
+    // budgets, and a shared counter would let a burst of webhook receipts
+    // lock out the kiosk.
+    // BOTH methods, not only the POST. The subscription handshake is a
+    // GET on the same public address that compares a secret, so leaving
+    // it outside the budget left an unauthenticated verify-token oracle
+    // with no rate limit at all in front of it.
+    const isNotificationWebhook = routePattern === '/api/notifications/webhook';
     const isKioskSigning =
-      routePattern !== undefined && isOriginExemptRoute(request.method, routePattern);
+      routePattern !== undefined &&
+      !isNotificationWebhook &&
+      isOriginExemptRoute(request.method, routePattern);
+    // The whole-organisation export (0096), on the upload budget. It is
+    // NOT derived like the uploads above, because the signal that makes
+    // uploads derivable — a declared `bodyLimit` — is about a request
+    // body, and the cost here is on the way OUT: one call starts a
+    // snapshot over sixty tables, and the other streams the file that
+    // produced. Two patterns are the honest cost of that; the moment
+    // there is a third, the pair belongs in the registrar as a declared
+    // "expensive" flag rather than here.
+    const isOrganisationExport =
+      (request.method === 'POST' && routePattern === '/api/platform/exports') ||
+      (request.method === 'GET' &&
+        routePattern === '/api/platform/exports/:id/download');
     const limiter = isAuthAttempt
       ? authLimiter
-      : isUpload
+      : isUpload || isOrganisationExport
         ? uploadLimiter
         : isKioskSigning
           ? signingLimiter
-          : null;
+          : isNotificationWebhook
+            ? notificationWebhookLimiter
+            : null;
     // Fail closed: a database failure here throws, and the error handler
     // answers 503 — the protected endpoints could not have served the
     // request without the database anyway.
@@ -923,9 +981,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     });
     registerIdentityRoutes(app, authInstance, database);
 
-    // Raw bodies for the upload endpoints (LOA PDFs, organisation logo);
-    // every other route keeps the default JSON-only content types.
-    for (const contentType of ['application/pdf', 'image/png', 'image/jpeg']) {
+    // Raw bodies for the upload endpoints (LOA PDFs, organisation logo,
+    // imported workbooks); every other route keeps the default JSON-only
+    // content types.
+    for (const contentType of [
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]) {
       app.addContentTypeParser(
         contentType,
         { parseAs: 'buffer' },
@@ -938,6 +1002,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;
     registerExportRoutes(app, authInstance, database);
+    registerPlatformRoutes(app, authInstance, database, storage);
     registerAmendmentRoutes(app, authInstance, database, storage, scanner);
     registerDashboardRoutes(app, authInstance, database);
     registerOrganisationRoutes(app, authInstance, database, storage, scanner);
@@ -946,8 +1011,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerQuotationRoutes(app, authInstance, database);
     registerPurchaseOrderRoutes(app, authInstance, database);
     registerInventoryRoutes(app, authInstance, database);
+    registerImportRoutes(app, authInstance, database, scanner);
     registerMaintenanceRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
+    registerAuditRoutes(app, authInstance, database);
+    registerMisRoutes(app, authInstance, database);
     registerSerialRoutes(app, authInstance, database);
     registerSearchRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);
@@ -989,6 +1057,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     // (0091, ADR-0012): the kiosk lane refuses to store a signature its
     // own verifier does not read as signed_and_intact.
     registerSigningRoutes(app, authInstance, database, storage, pdfTrustAnchors);
+    registerNotificationRoutes(
+      app,
+      authInstance,
+      database,
+      options.notificationTransports ?? {},
+    );
     registerChallanRoutes(app, authInstance, database, storage, gotenbergUrl, scanner);
     registerExtensionRoutes(
       app,

@@ -150,6 +150,12 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // came from is the way back.
   CURSOR_INVALID:
     'Reload the register and page through it again; a cursor from an older list, or one naming a record outside your Works, no longer places a page.',
+  // One code for three refusals, all of them about the same thing: the
+  // dates an export was asked for. Two of them are the audit register's
+  // and the Tally file's "starts after it ends"; the third is the Tally
+  // file's span cap.
+  EXPORT_WINDOW_INVALID:
+    'Set the start of the window on or before its end, and keep a Tally export to one financial year at a time.',
   // Crossed the coverage bar when P12 collapsed three spellings of "that
   // letter was discarded" into one code — which is the dedupe paying for
   // itself: one refusal now earns one reviewed sentence.
@@ -464,6 +470,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the signing queue and act on what it shows now; a request that has reached the kiosk or finished cannot be changed.',
   SIGNING_REQUEST_NOT_FOUND:
     'Reload the signing queue; the request may have been withdrawn or completed since this screen was opened.',
+  EXPORT_EXPIRED:
+    'Request a new export; a built package is deliberately short-lived, because a complete copy of the organisation is not something to leave sitting in storage, and its file is deleted when the window closes.',
   SIGNING_REQUEST_EXPIRED:
     'Raise the signing request again; an authorisation lapses so that a document nobody signed for a week is reviewed before it is.',
   SIGNING_SOURCE_CHANGED:
@@ -479,6 +487,62 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   SIGNED_OUTPUT_REJECTED:
     'Check that the certificate chain the kiosk holds reaches a trust anchor installed on this server, then raise the request again.',
 
+  // ---- Notifications (0092) -------------------------------------------------
+  NOTIFICATION_CHANNEL_NOT_CONFIGURED:
+    'Open the Notifications screen, fill the channel in and switch it on before sending; a channel that is off sends nothing rather than sending quietly.',
+  NOTIFICATION_CHANNEL_NUMBER_TAKEN:
+    'Check the phone number id against the Meta console and enter the one this organisation was issued; if it is already correct, ask your administrator to raise it with support.',
+  NOTIFICATION_FIELD_INVALID:
+    'Check the phone number, the address and the template name against the shapes the form describes, then save again.',
+  NOTIFICATION_OUTCOME_UNRECORDED:
+    'Compare this notification against the provider console before sending it again, because it was handed over and the log could not record what happened.',
+  NOTIFICATION_WEBHOOK_UNVERIFIED:
+    'Check that the webhook secret and verify token in the Meta app match this deployment’s configuration; nothing was recorded from this request.',
+  NOTIFICATION_CHANNEL_INCOMPLETE:
+    'Fill in the whole channel before enabling it — WhatsApp needs its phone number id, business account id and display number; email needs a sender address.',
+  NOTIFICATION_CHANNEL_STATE:
+    'Reload the notifications settings; which organisation and which channel a configuration is for cannot be changed, so edit the other channel instead.',
+  NOTIFICATION_TEMPLATE_NOT_FOUND:
+    'Reload the template list; this template may have been created or renamed in another session.',
+  NOTIFICATION_TEMPLATE_EXISTS:
+    'Open the template that already holds this name and language, or choose a different name; Meta identifies a template by both.',
+  NOTIFICATION_TEMPLATE_STATE:
+    'Reload the template list and act on the status it shows now; a submitted body cannot be edited, and a rejected template is replaced by a new one rather than resubmitted.',
+  NOTIFICATION_TEMPLATE_NOT_SENDABLE:
+    'Use a template Meta has approved for WhatsApp, or give the template a subject line so it can go by email; check the parameter count matches what the body takes.',
+  NOTIFICATION_CONSENT_MISSING:
+    'Record the contact’s opt-in for this channel and address on the consent register first; a message is only sent to an address somebody agreed to.',
+  NOTIFICATION_CONSENT_STATE:
+    'Record the consent against the contact and channel it is actually about; an existing record cannot be re-pointed at a different contact.',
+  NOTIFICATION_CONTACT_NOT_FOUND:
+    'Reload the contact list; this contact may have been retired since this screen was opened.',
+  NOTIFICATION_MESSAGE_STATE:
+    'Reload the delivery log and read what it shows now; what was sent is written once, and a delivery status only ever moves forwards.',
+  NOTIFICATION_TRANSPORT_NOT_CONFIGURED:
+    'Ask your administrator to configure this deployment’s WhatsApp access token or its mail relay; the organisation’s own settings are complete but the server has nothing to send through.',
+  NOTIFICATION_SEND_FAILED:
+    'Read the delivery log for the provider’s own reason, fix it and send again; nothing was delivered and the attempt is on the record.',
+  // ---- Importing a register from a spreadsheet (0094) -----------------------
+  IMPORT_TARGET_UNKNOWN:
+    'Choose one of the registers listed on the Imports screen; only those have an importer behind them.',
+  IMPORT_SHEET_UNREADABLE:
+    'Open the file in Excel and save it again as an .xlsx workbook, then upload the saved copy.',
+  IMPORT_SHEET_EMPTY:
+    'Check that the rows are on the first sheet of the workbook and that the header row is the top row.',
+  IMPORT_SHEET_HEADERS_UNRECOGNISED:
+    'Download the template for this register and copy your rows into it, so the header row names the columns the importer reads.',
+  IMPORT_BATCH_NOT_FOUND:
+    'Reload the Imports screen; this import may have been withdrawn from another session.',
+  IMPORT_BATCH_FINISHED:
+    'Reload the Imports screen and act on what it shows now; a finished import keeps its record and cannot be run or withdrawn twice.',
+  IMPORT_BATCH_NOT_VALIDATED:
+    'Reload the import and wait for every row to carry a verdict before writing any of them to the register.',
+  IMPORT_BATCH_SUPERSEDED:
+    'Open the newest import for this register and run that one; uploading a corrected sheet retires the sheet it corrects.',
+  IMPORT_ROW_IMMUTABLE:
+    'Correct the row in your workbook and upload it again; a staged row is the record of what the file contained.',
+  IMPORT_NOTHING_TO_IMPORT:
+    'Correct the rows this import lists as errors and upload the sheet again; nothing was written to the register.',
   // ---- Defect liability periods (0099) ------------------------------------
   //
   // The module has no document to open and no number to quote, so every

@@ -49,6 +49,26 @@ export function describeLoadFailure(cause: unknown, subject: string): LoadFailur
 }
 
 /**
+ * The same classification, but keeping the SERVER's own refusal sentence.
+ *
+ * `describeLoadFailure` replaces a 403's message on purpose: most walls in
+ * this product are the tenancy floor or a work-scope filter, and the
+ * server's wording there is a rule name rather than something an operator
+ * can act on. A few screens are the other way round — the audit register
+ * and the management summary each sit behind two different walls, and the
+ * server's refusal is the only thing that says WHICH one, and where the
+ * authority is granted. Those screens use this instead, and they carry the
+ * same `retryable: false` so the refusal is still stated rather than
+ * offered a retry button.
+ */
+export function describeRefusal(cause: unknown, subject: string): LoadFailure {
+  if (cause instanceof RequestFailedError && cause.status === 403) {
+    return { message: cause.message, retryable: false };
+  }
+  return describeLoadFailure(cause, subject);
+}
+
+/**
  * The sentence a failed ACTION renders, as opposed to a failed read.
  *
  * The server's own refusal is always the better sentence — it names the

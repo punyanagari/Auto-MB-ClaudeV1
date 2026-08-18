@@ -300,7 +300,13 @@ describe('OperationsWorkspace mobile shell', () => {
       'Employees',
       'Approvals',
       'Masters',
+      'Imports',
       'Members',
+      // The two screens 0095 adds, both under Administration and neither
+      // drawn by the mock at fdfd610 — recorded as docs/UX.md § 19.
+      'Audit trail',
+      'Reports',
+      'Notifications',
       'Settings',
     ]);
     // Serial Lookup is not a module: `#/serials` merged into Global search
@@ -345,7 +351,13 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Employees', '#/employees'],
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],
+      ['Imports', '#/imports'],
       ['Members', '#/members'],
+      ['Audit trail', '#/audit'],
+      // The management summary answers to `#/reports`, which is what the
+      // rail calls it; `mis` is the internal view name.
+      ['Reports', '#/reports'],
+      ['Notifications', '#/notifications'],
       ['Settings', '#/settings'],
     ]);
   });

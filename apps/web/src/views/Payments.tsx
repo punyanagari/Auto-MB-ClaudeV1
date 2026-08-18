@@ -21,6 +21,7 @@ import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FormError, FormNotice } from '../ui/form.js';
+import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -227,6 +228,17 @@ export function Payments({
         eyebrow="Finance operations"
         title="Payments"
         description="Employee advances and reimbursements, and what this organisation owes its vendors."
+        action={
+          /* Vendor payments, with their TDS facts as they were
+             snapshotted. Organisation-wide, so the server refuses a
+             member whose scope is limited to assigned Works — the button
+             prints that refusal rather than an empty file. */
+          <DownloadButton
+            label="Export .xlsx"
+            filename="vendor-payments.xlsx"
+            fetchBlob={() => api.downloadRegisterWorkbook(organisationId, 'payments')}
+          />
+        }
       />
 
       {/* The tiles belong to the register on screen. Only that register

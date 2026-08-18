@@ -37,14 +37,26 @@ function thrownCodes(): ReadonlyMap<string, number> {
       // The ordinary throw, with the code written at the call site.
       /httpError\(\s*\d{3}\s*,\s*'([A-Z0-9_]+)'/g,
       /* The table-driven throw. A module that maps its database's
-       * SQLSTATEs to named refusals (`bill-payments.ts`, `payments.ts`)
-       * throws `httpError(409, refusal[0], refusal[1])`, so the code is
-       * a variable at the call site and the literal only appears in the
-       * table. Those codes ARE thrown — a trigger firing is exactly when
-       * an operator meets them — and counting only the call site left
-       * the census blind to a whole idiom, which is how a remedy for a
-       * live code looked stale. */
-      /^\s*'[0-9A-Z]{5}':\s*\[\s*'([A-Z0-9_]+)'/gm,
+       * refusals to named codes (`bill-payments.ts`, `payments.ts`,
+       * `notify/send.ts`) throws `httpError(409, refusal[0],
+       * refusal[1])`, so the code is a variable at the call site and the
+       * literal only appears in the table. Those codes ARE thrown — a
+       * trigger firing is exactly when an operator meets them — and
+       * counting only the call site left the census blind to a whole
+       * idiom, which is how a remedy for a live code looked stale.
+       *
+       * TWO key shapes, spelled out rather than generalised to "any
+       * identifier". A quoted five-character SQLSTATE is the original;
+       * `notify/send.ts` added a second table keyed by CONSTRAINT NAME,
+       * because PostgreSQL's own `23505` says only "something was
+       * already taken" and the constraint is what names which rule
+       * broke. Those keys are bare snake_case ending in `_key`, which
+       * is how PostgreSQL names a unique constraint — and a code
+       * reachable only through that table read as an orphaned remedy
+       * until this pattern learned the shape. Kept as an alternation so
+       * the census cannot start counting arbitrary object literals whose
+       * first element happens to be a screaming-case string. */
+      /^\s*(?:'[0-9A-Z]{5}'|[a-z][a-z0-9_]*_key):\s*\[\s*'([A-Z0-9_]+)'/gm,
     ];
     for (const pattern of patterns) {
       let match = pattern.exec(text);

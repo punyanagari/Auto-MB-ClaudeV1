@@ -348,9 +348,25 @@ Activated with Milestone 4 (pilot engineering):
   constant-time: both sides fold through SHA-256 and compare with
   `crypto.timingSafeEqual`, so neither the token's length nor its bytes
   leak through response timing;
-- export — owner-only full-organisation export, audit-logged, as the
-  incident procedure's evidence snapshot and the contractor's data
-  portability;
+- export — full-organisation export, audit-logged, as the incident
+  procedure's evidence snapshot and the contractor's data portability. Two
+  routes, and the difference is the authority: `GET /api/export` streams
+  the package synchronously and stays OWNER-ONLY, while the self-service
+  route added by migration 0096 builds the same package into object
+  storage and needs `can_export_org` plus full Work scope — the scope test
+  because the package is not Work-scoped, so an assigned-scope member
+  would otherwise receive every Work the product hides from them. The
+  stored artefact EXPIRES, enforced twice: the download route refuses a
+  lapsed row and the worker sweep deletes its bytes. There is no token and
+  no signed URL anywhere on that path, deliberately — a credential that
+  outlives the membership is the one property an expiring link cannot
+  have;
+- entitlements — per-organisation module availability (migration 0096).
+  Not a permission and not a substitute for one: a membership says what a
+  PERSON may do, an entitlement says whether a MODULE is available to the
+  organisation at all, and both must pass. Managing them needs the owner
+  role AND `can_manage_entitlements`, because switching a module off
+  changes what every member can reach;
 - backup/restore — scripted, manifest-sealed, and proven by an automated
   dump→restore→verify test; the operational drill cadence lives in
   docs/RUNBOOK.md.

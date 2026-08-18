@@ -34,11 +34,10 @@ import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import {
-  assertBankDetailsComplete,
-  normaliseBankAccountNumber,
+  assertNotAuthorityDesignation,
+  normaliseContactBankDetails,
   normaliseEmail,
   normaliseGstin,
-  normaliseIfsc,
 } from '../contact-fields.js';
 import { httpError } from '../http.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
@@ -145,71 +144,6 @@ const CONTACT_COLUMNS = `
 // for the contractor itself and must prove them identically (its values
 // are printed on every generated document, and its bank accounts are the
 // ones money arrives in), so the set is shared rather than duplicated.
-
-/**
- * The bank beneficiary block of a contact save, normalised and proved
- * before any transaction opens (migration 0078).
- *
- * Written once because create and full-update both take
- * `SaveContactRequestSchema` and both must answer the same way. The
- * completeness rule is asserted here rather than left to the database so
- * the operator gets the sentence rather than a constraint name; 0078's
- * `contacts_bank_details_shape_check` refuses the same partial row
- * against a writer that never came this way.
- *
- * These values are never audited and never logged. `contact.created` and
- * `contact.updated` record the designation and the roles, and the audit
- * payload below deliberately does not gain an account number.
- */
-function normaliseContactBankDetails(body: {
-  readonly bankAccountHolder?: string;
-  readonly bankName?: string;
-  readonly bankAccountNumber?: string;
-  readonly bankIfsc?: string;
-  readonly bankBranch?: string;
-  readonly bankAccountType?: string;
-}) {
-  const holder = body.bankAccountHolder?.trim() ?? null;
-  const bankName = body.bankName?.trim() ?? null;
-  const accountNumber = normaliseBankAccountNumber(body.bankAccountNumber);
-  const ifsc = normaliseIfsc(body.bankIfsc);
-  assertBankDetailsComplete({ holder, bankName, accountNumber, ifsc });
-  return {
-    holder,
-    bankName,
-    accountNumber,
-    ifsc,
-    branch: body.bankBranch?.trim() ?? null,
-    accountType: body.bankAccountType?.trim() ?? null,
-  };
-}
-
-/** Legacy rule R16: bill-paying authorities (Sr.DFM / DFM / ADFM) and
- * awarding authorities (Sr.DSTE) are NEVER consignees. The designation is
- * normalised (uppercase, dots and extra spaces removed) and matched
- * against those documented tokens as whole words; "Sr. DEE (G)" and the
- * other legitimate consignee designations pass. The pattern list is
- * exactly the spec's: DFM, ADFM (any prefix) and the SR-prefixed DSTE —
- * a plain DSTE post can legitimately receive material. */
-const CONSIGNEE_AUTHORITY_PATTERNS: readonly RegExp[] = [
-  /(^|[^A-Z])A?DFM([^A-Z]|$)/, // Sr.DFM, DFM, ADFM — bill-paying
-  /(^|[^A-Z])SR ?DSTE([^A-Z]|$)/, // Sr.DSTE — awarding
-];
-
-function assertNotAuthorityDesignation(designation: string): void {
-  const normalised = designation
-    .toUpperCase()
-    .replaceAll('.', ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (CONSIGNEE_AUTHORITY_PATTERNS.some((pattern) => pattern.test(normalised))) {
-    throw httpError(
-      400,
-      'CONSIGNEE_AUTHORITY_FORBIDDEN',
-      'Bill-paying authorities (Sr.DFM/DFM/ADFM) and awarding authorities (Sr.DSTE) are never consignees (rule R16); record the consignee named on the document instead.',
-    );
-  }
-}
 
 // --- Canonical items (migration 0078) ---------------------------------------
 

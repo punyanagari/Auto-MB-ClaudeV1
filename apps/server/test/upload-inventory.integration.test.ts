@@ -8,7 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
-import { MAX_PDF_UPLOAD_BYTES } from '../src/upload-guards.js';
+import { MAX_PDF_UPLOAD_BYTES, MAX_XLSX_UPLOAD_BYTES } from '../src/upload-guards.js';
 import { tenantRoutesOf } from '../src/tenant-route.js';
 
 /**
@@ -41,7 +41,7 @@ interface UploadRouteExpectation {
   readonly key: string;
   /** The route file that must call `consumeUpload()`. */
   readonly sourceFile: string;
-  readonly format: 'pdf' | 'image';
+  readonly format: 'pdf' | 'image' | 'xlsx';
   readonly bodyLimit: number;
   /** Appended verbatim; the routes below either need one or take none. */
   readonly query?: string;
@@ -177,6 +177,17 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     format: 'image',
     bodyLimit: LOGO_MAX_BYTES,
   },
+  {
+    // The spreadsheet importer (0094). The one upload here whose bytes
+    // are PARSED rather than stored, so it is also the one with a
+    // smaller ceiling: a workbook is compressed text, and the row cap
+    // bounds what the parser can be made to do long before 8 MB.
+    key: 'POST /api/imports',
+    sourceFile: 'routes/imports.ts',
+    format: 'xlsx',
+    bodyLimit: MAX_XLSX_UPLOAD_BYTES,
+    query: '?target=contacts&filename=inventory.xlsx',
+  },
 ];
 
 /** What each format's shared refusal answers for a body whose signature
@@ -185,11 +196,18 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
 const WRONG_SIGNATURE_CODE = {
   pdf: 'NOT_A_PDF',
   image: 'INVALID_IMAGE',
+  // The importer's guard answers the code the whole feature answers for
+  // bytes it cannot read, rather than minting a NOT_AN_XLSX nobody else
+  // would ever see: to an operator, a file that is not a workbook and a
+  // file that is a broken workbook are the same problem with the same
+  // fix, and the sentence names it (0094).
+  xlsx: 'IMPORT_SHEET_UNREADABLE',
 } as const;
 
 const UPLOAD_CONTENT_TYPE = {
   pdf: 'application/pdf',
   image: 'image/png',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 } as const;
 
 /**
@@ -202,13 +220,24 @@ const UPLOAD_CONTENT_TYPE = {
  * document, which is an outbound-dependency check with its own bound and
  * timeout behaviour (see its own tests).
  */
-const MAGIC_BYTE_ALLOWLIST = new Set(['upload-guards.ts', 'pdf-render.ts']);
+const MAGIC_BYTE_ALLOWLIST = new Set([
+  'upload-guards.ts',
+  'pdf-render.ts',
+  // The ZIP reader itself (0094). Its signature constants ARE the format
+  // parser, not a copied upload guard — the guard in `upload-guards.ts`
+  // proves the container and this proves the parts inside it.
+  'xlsx.ts',
+]);
 
-/** PDF, PNG and JPEG signatures as they are spelled in this codebase. */
+/** PDF, PNG, JPEG and ZIP signatures as they are spelled in this
+ * codebase. The ZIP one arrived with the spreadsheet importer (0094):
+ * `xlsx.ts` reads the container itself and is allowlisted below, because
+ * a reader that cannot recognise a local file header is not a reader. */
 const MAGIC_BYTE_PATTERNS = [
   /%PDF-/,
   /0x89,\s*0x50,\s*0x4e,\s*0x47/i,
   /0xff,\s*0xd8,\s*0xff/i,
+  /0x50,\s*0x4b,\s*0x03,\s*0x04/i,
 ];
 
 const adminUrl =
