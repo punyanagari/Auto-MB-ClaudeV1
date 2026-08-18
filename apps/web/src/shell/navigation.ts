@@ -12,6 +12,7 @@ import {
   Landmark,
   LayoutDashboard,
   Mails,
+  MessageSquare,
   PenTool,
   Receipt,
   ScanSearch,
@@ -43,6 +44,7 @@ export type ModuleKey =
   | 'production'
   | 'stock'
   | 'signing'
+  | 'notifications'
   | 'employees'
   | 'maintenance'
   | 'masters'
@@ -161,6 +163,12 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'approvals', label: 'Approvals', icon: CircleCheckBig },
       { key: 'masters', label: 'Masters', icon: Database },
       { key: 'members', label: 'Members', icon: Users },
+      // Notifications (0092). Administration rather than Documents: it
+      // configures how the organisation speaks, in the same family as who
+      // belongs to it and how it is set up. The mock has no cell for it
+      // at all (docs/UX.md § 17), and `MessageSquare` is the one lamp on
+      // this rail that is not already spoken for.
+      { key: 'notifications', label: 'Notifications', icon: MessageSquare },
       { key: 'settings', label: 'Settings', icon: SettingsIcon },
     ],
   },
@@ -210,6 +218,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'stock' };
     case 'signing':
       return { name: 'signing' };
+    case 'notifications':
+      return { name: 'notifications' };
     case 'employees':
       return { name: 'employees' };
     case 'masters':
@@ -289,6 +299,8 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
       return view.name;
     case 'signing':
       return 'signing';
+    case 'notifications':
+      return 'notifications';
     // Everything the WORKS module owns: the register, one Work, and every
     // screen that is really a step inside one — LOA upload and review, the
     // challan and issue-challan editors, an opened challan.
@@ -393,6 +405,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Shortage procurement';
     case 'signing':
       return 'Signing queue';
+    case 'notifications':
+      return 'Notifications';
     case 'employees':
       return 'Employees';
     case 'payroll':

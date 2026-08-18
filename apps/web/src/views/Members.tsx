@@ -211,6 +211,18 @@ const FEATURES = [
     authority: 'Payroll authority',
     change: 'Payroll authority',
   },
+  {
+    /* The notifications authority (migration 0092): who may configure the
+       WhatsApp and email channels, maintain the message templates, record
+       a recipient's consent and send a message. Separate from the issue
+       authority because choosing the number the organisation speaks from,
+       and deciding who else may be messaged, is not the same decision as
+       committing the words of a document. */
+    key: 'canManageNotifications',
+    heading: 'Can message',
+    authority: 'Notifications authority',
+    change: 'Notifications authority',
+  },
 ] as const satisfies readonly {
   key: keyof Membership & `can${string}`;
   heading: string;

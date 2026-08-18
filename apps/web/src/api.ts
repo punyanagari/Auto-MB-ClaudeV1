@@ -32,6 +32,20 @@ import type {
   RegisterSigningAgentResponse,
   SigningAgentResponse,
   SigningQueueResponse,
+  CreateNotificationTemplate,
+  NotificationChannelListResponse,
+  NotificationChannelName,
+  NotificationChannelResponse,
+  NotificationConsentListResponse,
+  NotificationConsentResponse,
+  NotificationMessageListResponse,
+  NotificationMessageResponse,
+  NotificationTemplateListResponse,
+  NotificationTemplateResponse,
+  RecordNotificationConsent,
+  SaveNotificationChannel,
+  SendNotification,
+  SetNotificationTemplateStatus,
   SigningRequestResponse,
   SigningRequestStatus,
   ApiError,
@@ -2003,6 +2017,54 @@ export interface ApiClient {
     agentId: string,
   ) => Promise<SigningAgentResponse>;
 
+  /** Notifications (migration 0092): the channels the organisation
+   * speaks through, the templates it may say, who has consented to be
+   * spoken to, and the log of what was actually sent.
+   *
+   * Every one of these needs the `notifications` authority, READS
+   * INCLUDED — a consent register is a list of counterparties' personal
+   * telephone numbers — so the screen that renders them is behind
+   * `canManageNotifications`. Saving a channel additionally needs the
+   * owner role, because it decides which number the organisation speaks
+   * from. */
+  readonly listNotificationChannels: (
+    organisationId: string,
+  ) => Promise<NotificationChannelListResponse>;
+  readonly saveNotificationChannel: (
+    organisationId: string,
+    channel: NotificationChannelName,
+    body: SaveNotificationChannel,
+  ) => Promise<NotificationChannelResponse>;
+  readonly listNotificationTemplates: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationTemplateListResponse>;
+  readonly createNotificationTemplate: (
+    organisationId: string,
+    body: CreateNotificationTemplate,
+  ) => Promise<NotificationTemplateResponse>;
+  readonly setNotificationTemplateStatus: (
+    organisationId: string,
+    templateId: string,
+    body: SetNotificationTemplateStatus,
+  ) => Promise<NotificationTemplateResponse>;
+  readonly listNotificationConsents: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationConsentListResponse>;
+  readonly recordNotificationConsent: (
+    organisationId: string,
+    body: RecordNotificationConsent,
+  ) => Promise<NotificationConsentResponse>;
+  readonly listNotifications: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationMessageListResponse>;
+  readonly sendNotification: (
+    organisationId: string,
+    body: SendNotification,
+  ) => Promise<NotificationMessageResponse>;
+
   /** The employee master and the monthly payroll run (migrations 0089
    * and 0090). Organisation-level, not per Work: a salary is paid by the
    * agency and not by a contract.
@@ -2280,6 +2342,19 @@ function uploadQuery(details: Record<string, string | undefined>): string {
     if (value !== undefined && value !== '') query.set(key, value);
   }
   return query.toString();
+}
+
+/** The keyset pagination pair as a querystring suffix, or the empty
+ * string. Omitting both is what asks for the whole register, which is the
+ * compatibility rule `packages/contracts/src/pagination.ts` encodes. */
+function pageQuery(options?: {
+  readonly limit?: number;
+  readonly cursor?: string;
+}): string {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set('limit', String(options.limit));
+  if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+  return query.size === 0 ? '' : `?${query.toString()}`;
 }
 
 export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
@@ -4727,6 +4802,63 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     async revokeSigningAgent(organisationId, agentId) {
       return request<SigningAgentResponse>(`/api/signing-agents/${agentId}/revoke`, {
         method: 'POST',
+        organisationId,
+      });
+    },
+
+    async listNotificationChannels(organisationId) {
+      return request<NotificationChannelListResponse>('/api/notification-channels', {
+        organisationId,
+      });
+    },
+    async saveNotificationChannel(organisationId, channel, body) {
+      return request<NotificationChannelResponse>(
+        `/api/notification-channels/${channel}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async listNotificationTemplates(organisationId, options) {
+      return request<NotificationTemplateListResponse>(
+        `/api/notification-templates${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async createNotificationTemplate(organisationId, body) {
+      return request<NotificationTemplateResponse>('/api/notification-templates', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async setNotificationTemplateStatus(organisationId, templateId, body) {
+      return request<NotificationTemplateResponse>(
+        `/api/notification-templates/${templateId}/status`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async listNotificationConsents(organisationId, options) {
+      return request<NotificationConsentListResponse>(
+        `/api/notification-consents${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async recordNotificationConsent(organisationId, body) {
+      return request<NotificationConsentResponse>('/api/notification-consents', {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listNotifications(organisationId, options) {
+      return request<NotificationMessageListResponse>(
+        `/api/notifications${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async sendNotification(organisationId, body) {
+      return request<NotificationMessageResponse>('/api/notifications', {
+        method: 'POST',
+        body,
         organisationId,
       });
     },
