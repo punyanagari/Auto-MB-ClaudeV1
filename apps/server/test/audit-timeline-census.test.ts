@@ -81,6 +81,12 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level (0092): nothing this pack sends is about a Work — the messages are configuration and test traffic. When document delivery lands (E-whatsapp-delivery) its messages WILL name a Work, and promoting this table then means a whitelist entry, a scoping arm in routes/timeline.ts, web labels and tests, exactly as received_railway_bills got.',
   spreadsheet_import_batches:
     'Organisation-level (0094): an import fills a master register — contacts, the item catalogue — and both are already organisation-level here. A batch names no Work and could not; if a Work-scoped register ever gains an importer, the batch gains a work_id and this entry goes with it.',
+  organisation_entitlements:
+    'Organisation-level (0096): whether a MODULE is available to the organisation. It governs every Work equally and belongs to none of them, which is the same reason document_number_series is here.',
+  statutory_job_schedules:
+    'Organisation-level (0096): a recurring check runs across the whole organisation on a clock. What one RUN found about a particular guarantee is audited separately, against work_instruments, and that is the row a Work timeline would want.',
+  organisation_export_requests:
+    'Organisation-level (0096): taking a copy of the whole organisation away is a disclosure of every Work at once, so hanging it on one of them would be a lie about which. It is on the organisation trail, which is where a data-protection question is asked.',
   organisation_bank_accounts:
     'Organisation-level: the company’s own accounts, not anything a Work did.',
   document_number_series: 'Organisation-level numbering configuration.',

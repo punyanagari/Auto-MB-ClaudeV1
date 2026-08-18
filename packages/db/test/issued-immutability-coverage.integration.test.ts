@@ -659,6 +659,42 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // FROM OLD.x` and cannot see the `OLD.x IS NOT NULL` in front of it —
   // and for this census's purpose that reading is the correct one.
   spreadsheet_import_rows: ['status', 'errors'],
+
+  // A recurring check's identity is its organisation and its kind (0096),
+  // and both are frozen: letting either move would silently repoint a run
+  // history at a different check. Everything else on the row is a setting
+  // an owner is meant to change or state the scheduler maintains — which
+  // is exactly the split this census exists to make explicit.
+  statutory_job_schedules: [
+    'enabled',
+    'cadence',
+    'horizon_days',
+    'next_run_at',
+    'last_run_at',
+    'last_job_id',
+    'authority_user_id',
+    'disabled_reason',
+    'updated_at',
+  ],
+
+  // An export request (0096). Who asked and when is frozen outright, and
+  // the six artefact facts — key, size, digest, format, expiry,
+  // completion — are frozen from the moment the artefact exists, which is
+  // why none of them appears below: the build writes them on the
+  // `running -> ready` transition and nothing may touch them afterwards.
+  // (The one carve-out is in the guard itself: the expiry sweep clears
+  // `object_key` to NULL as it deletes the bytes.)
+  //
+  // What is genuinely mutable is the state walk, the build's own
+  // timestamps, the failure reason and the download counters.
+  organisation_export_requests: [
+    'state',
+    'started_at',
+    'failure_reason',
+    'download_count',
+    'last_downloaded_at',
+    'updated_at',
+  ],
 };
 
 /**

@@ -598,6 +598,64 @@ window under a day, and is owner-only — bulk deletion is deliberately not
 something the application role can reach. Monthly is ample; the table
 gains roughly one row per uploaded letter.
 
+## 7c. Recurring checks and the export sweep
+
+The worker does two things besides running jobs (migration 0096), both on
+a tick that defaults to once a minute (`WORKER_TICK_INTERVAL_MS`). Neither
+is a separate process: **if the worker is down, both stop, and § 7b's
+queue reading is the signal.** There is no cron, no timer and no leader
+election to check.
+
+### A recurring check has stopped running
+
+```sql
+SELECT s.kind, s.enabled, s.cadence, s.next_run_at, s.last_run_at,
+       s.authority_user_id, o.name
+FROM statutory_job_schedules s JOIN organisations o ON o.id = s.organisation_id
+ORDER BY s.next_run_at;
+```
+
+| What you see                                   | What it means                                     | What to do                                                              |
+| ---------------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------- |
+| `enabled = false`                              | an owner switched it off                          | nothing; it is visible on their Settings → Platform screen              |
+| `next_run_at` in the past and the worker is up | the tick is failing                               | read the worker log for `scheduler tick failed`                         |
+| the check's last job is `refused_bind` (§ 7b)  | `authority_user_id` is no longer an active member | the owner re-saves the check on Settings → Platform, which re-stamps it |
+
+The last row is the one worth knowing about. **A schedule borrows a real
+membership** — ADR-0011 gives the queue no service identity — so a check
+enabled by somebody who has since left parks its next run rather than
+running on their authority. The remedy is entirely in the product and needs
+no operator action.
+
+### An export artefact is taking up space, or has not gone
+
+Ready artefacts and their expiry:
+
+```sql
+SELECT id, organisation_id, state, byte_size, expires_at, object_key
+FROM organisation_export_requests
+WHERE state IN ('queued', 'running', 'ready')
+ORDER BY requested_at DESC;
+```
+
+- A `ready` row past its `expires_at` is already **unreachable** — the
+  download route refuses it — and the next tick will mark it `expired` and
+  delete the bytes. A row that stays `ready` past its expiry means the
+  worker is down.
+- A `queued` or `running` row whose build died — the build runs in the API
+  process, not the worker, and `routes/platform.ts` argues why — **is
+  reconciled automatically**. The tick fails anything older than an hour
+  with a stated reason, and there is deliberately no manual step: the
+  partial unique index admits one live build per organisation, so a single
+  stranded row would otherwise disable self-service export for that tenant
+  for ever. If you see one older than an hour still sitting there, the
+  worker is down.
+
+- The worker logs `an expired export artefact could not be deleted; it is
+orphaned` when the row was marked but the file survived. That file is
+  inert — its key is on no row, so nothing can fetch it — and it is
+  reclaimed by hand from the object storage directory.
+
 ## 8. Design-partner onboarding checklist
 
 Per partner (3–5 for the pilot):

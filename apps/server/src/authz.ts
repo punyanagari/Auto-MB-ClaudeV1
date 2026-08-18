@@ -13,6 +13,8 @@ export interface MembershipRow {
   can_manage_notifications: boolean;
   can_import_data: boolean;
   can_view_audit_trail: boolean;
+  can_manage_entitlements: boolean;
+  can_export_org: boolean;
 }
 
 export async function membershipOf(
@@ -23,7 +25,8 @@ export async function membershipOf(
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
            can_sign_documents, can_manage_payroll, can_manage_notifications,
-           can_import_data, can_view_audit_trail
+           can_import_data, can_view_audit_trail,
+           can_manage_entitlements, can_export_org
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -176,7 +179,23 @@ export type DocumentAuthority =
    * it, and committing a batch writes eight hundred rows from a file
    * somebody forwarded. It confers nothing on its own — a batch still
    * commits into the register's own role and its own constraints. */
-  | 'import';
+  | 'import'
+  /** Switching this organisation's modules on and off, and configuring
+   * its recurring statutory checks (0096). OWNER-ONLY IN EFFECT: every
+   * route that declares this authority also declares `role: 'owner'`, so
+   * the grant confers nothing on its own. It is still a per-member column
+   * rather than a bare role check because the finding-36 census
+   * classifies grants, not roles, and an operator control that never
+   * appears in that census is one nobody can see. */
+  | 'entitlements'
+  /** Requesting and downloading a copy of the whole organisation record
+   * (0096). Separate from the owner role deliberately: an owner who wants
+   * their accountant to pull the annual package should not have to hand
+   * over the organisation to do it. The route adds one test this
+   * authority cannot express — full work scope — because the package is
+   * not work-scoped and an assigned-scope member would otherwise receive
+   * every Work the product hides from them. */
+  | 'export';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -197,6 +216,10 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
     'Your membership does not carry the import authority, which is required to upload a spreadsheet against a register and to commit the rows it stages. It is separate from the writer role because adding one record and adding eight hundred from a forwarded file are not the same act.',
   audit:
     'Your membership does not carry the audit authority, which is required to open the organisation-wide audit register and to export it. A Work’s own timeline stays open to everyone assigned to it.',
+  entitlements:
+    'Your membership does not carry the entitlements authority, which is required to switch this organisation’s modules on or off and to configure its recurring statutory checks. It is granted to owners only.',
+  export:
+    'Your membership does not carry the organisation-export authority, which is required to request or download a copy of the whole organisation record.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -215,6 +238,8 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_manage_notifications'
     | 'can_import_data'
     | 'can_view_audit_trail'
+    | 'can_manage_entitlements'
+    | 'can_export_org'
   >
 > = {
   issue: 'can_issue_documents',
@@ -226,6 +251,8 @@ const AUTHORITY_COLUMNS: Record<
   notifications: 'can_manage_notifications',
   import: 'can_import_data',
   audit: 'can_view_audit_trail',
+  entitlements: 'can_manage_entitlements',
+  export: 'can_export_org',
 };
 
 function authorityGranted(

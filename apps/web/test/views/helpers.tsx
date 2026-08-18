@@ -757,6 +757,23 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     downloadRegisterWorkbook: vi.fn<ApiClient['downloadRegisterWorkbook']>(),
     downloadAuditWorkbook: vi.fn<ApiClient['downloadAuditWorkbook']>(),
     downloadTallyExport: vi.fn<ApiClient['downloadTallyExport']>(),
+    // The platform controls (0096). Both lists answer empty by default,
+    // for the reason the stock reads below do: a view that opens one
+    // renders its own empty state rather than hanging on an unresolved
+    // mock.
+    listEntitlements: vi
+      .fn<ApiClient['listEntitlements']>()
+      .mockResolvedValue({ entitlements: [] }),
+    setEntitlement: vi.fn<ApiClient['setEntitlement']>(),
+    listJobSchedules: vi
+      .fn<ApiClient['listJobSchedules']>()
+      .mockResolvedValue({ schedules: [], runs: [] }),
+    setJobSchedule: vi.fn<ApiClient['setJobSchedule']>(),
+    listOrganisationExports: vi
+      .fn<ApiClient['listOrganisationExports']>()
+      .mockResolvedValue({ exports: [], retentionHours: 168 }),
+    requestOrganisationExport: vi.fn<ApiClient['requestOrganisationExport']>(),
+    downloadOrganisationExport: vi.fn<ApiClient['downloadOrganisationExport']>(),
     // Maintenance (0088). The register answers empty by default, for the
     // reason the stock reads above do: a view that opens it renders its
     // own empty state rather than hanging on an unresolved mock.
@@ -879,6 +896,8 @@ export function membership(overrides: Partial<Membership>): Membership {
     canManageNotifications: true,
     canImportData: true,
     canViewAuditTrail: true,
+    canManageEntitlements: true,
+    canExportOrg: true,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,

@@ -220,6 +220,15 @@ describe('MFA authority census', () => {
       // stealing an account for.
       'audit',
       'cancel',
+      // The entitlements authority (0096) decides which modules the
+      // organisation may use at all: a stolen owner session that can turn
+      // the e-way bill module on is one that can start speaking to a
+      // government portal in the organisation's name.
+      'entitlements',
+      // The organisation-export authority (0096) takes the whole
+      // organisation away in one file — every contract, price, payslip and
+      // bank detail it holds. The single highest-value read in the product.
+      'export',
       // The import authority (migration 0094). Its damage is measured in
       // rows: a stolen session holding it can commit a prepared workbook
       // that rewrites every vendor's bank account in a single call, and

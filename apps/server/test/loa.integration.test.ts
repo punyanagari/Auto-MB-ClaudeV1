@@ -594,7 +594,7 @@ describe('LOA upload and extraction', () => {
 
     const realStorage = createFileSystemStorage(storageDir);
     const discardingStorage = {
-      put: (key: string, bytes: Buffer) => realStorage.put(key, bytes),
+      ...realStorage,
       get: async (key: string) => {
         const bytes = await realStorage.get(key);
         await admin`

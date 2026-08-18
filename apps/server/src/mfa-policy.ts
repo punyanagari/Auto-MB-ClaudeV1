@@ -119,6 +119,15 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // organisation's own. Bulk is the reason it is on the wall, not an
   // argument for leaving it off.
   import: true,
+  // Entitlements decide which modules the organisation may use at all. A
+  // stolen owner session that can turn the e-way bill module on is a
+  // stolen session that can start speaking to a government portal in the
+  // organisation's name.
+  entitlements: true,
+  // The whole organisation in one file — every contract, price, payslip
+  // and bank detail it holds. This is the single highest-value read in
+  // the product, so it sits on the wall beside payments and payroll.
+  export: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -134,6 +143,8 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   notifications: 'can_manage_notifications',
   import: 'can_import_data',
   audit: 'can_view_audit_trail',
+  entitlements: 'can_manage_entitlements',
+  export: 'can_export_org',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

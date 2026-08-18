@@ -225,8 +225,11 @@ describe('the schema at head names all three shapes', () => {
     // password-equivalent stored only as its SHA-256; 34 after 0094 adds
     // the import batch's source_sha256, the digest of the uploaded
     // workbook — which is what the bytes were kept for, since the file
-    // itself is not stored.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(34);
+    // itself is not stored; 35 after 0096 adds
+    // organisation_export_requests.sha256, the digest of the stored
+    // whole-organisation package, which is what a recipient checks the
+    // file they were handed against.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(35);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

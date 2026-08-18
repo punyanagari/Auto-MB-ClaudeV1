@@ -41,6 +41,8 @@ import { Maintenance } from '../../src/views/Maintenance.js';
 import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
 import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
+import { OrganisationExportSettings } from '../../src/views/OrganisationExportSettings.js';
+import { PlatformSettings } from '../../src/views/PlatformSettings.js';
 import { SigningKioskSettings } from '../../src/views/SigningKioskSettings.js';
 import { Imports } from '../../src/views/Imports.js';
 import { SigningQueue } from '../../src/views/SigningQueue.js';
@@ -612,6 +614,44 @@ export const STATE_CASES: readonly StateCase[] = [
     render: (api) => <SigningKioskSettings api={api} organisationId={ORG_ID} isOwner />,
     retry: /Retry the signing kiosks/,
     empty: { text: /No kiosk is registered/ },
+  },
+  {
+    view: 'PlatformSettings.tsx',
+    name: 'the platform settings',
+    // Two reads in one Promise.all: the flags and the schedules with
+    // their run history. Either failing puts the whole panel in its
+    // error state, because a screen that showed modules but not the
+    // checks that depend on them would be half a truth.
+    loads: ['listEntitlements', 'listJobSchedules'],
+    render: (api) => (
+      <PlatformSettings
+        api={api}
+        organisationId={ORG_ID}
+        isOwner
+        canManageEntitlements
+        currentUserId="user-a"
+      />
+    ),
+    retry: /Retry the platform settings/,
+    empty: {
+      notApplicable:
+        'The modules list is driven by the product declaration, not by rows, so it is never empty. The schedules and the run history below it have their own empty states inside a panel that has already rendered.',
+    },
+  },
+  {
+    view: 'OrganisationExportSettings.tsx',
+    name: 'the organisation export panel',
+    loads: ['listOrganisationExports'],
+    render: (api) => (
+      <OrganisationExportSettings
+        api={api}
+        organisationId={ORG_ID}
+        canExportOrg
+        currentUserId="user-a"
+      />
+    ),
+    retry: /Retry the export history/,
+    empty: { text: /No export has been taken of this organisation/ },
   },
   {
     view: 'SigningQueue.tsx',

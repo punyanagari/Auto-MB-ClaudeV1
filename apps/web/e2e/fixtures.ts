@@ -36,6 +36,8 @@ export const ME = {
       // the rail carries no Employees door and both payroll screens
       // refuse. The owner of a new organisation holds it implicitly.
       canManagePayroll: true,
+      canManageEntitlements: true,
+      canExportOrg: true,
       // The audit authority (0095). Granted so the audit register renders
       // its rows and its filters under the scan; without it the screen is
       // one refusal paragraph, which is a different set of nodes.
@@ -1122,6 +1124,100 @@ const MIS_SUMMARY = {
   ],
 };
 
+/* The platform controls (0096). One configured flag and one untouched,
+   because the row says something different in each case; one schedule and
+   one completed run, so the history table is drawn rather than its empty
+   state; and one READY export, so the digest, the size and the download
+   action are all on screen for the contrast scan. */
+const PLATFORM_ENTITLEMENTS = {
+  entitlements: [
+    {
+      key: 'eway_bill',
+      label: 'E-way bill',
+      description:
+        'Generating, cancelling and reconciling NIC E-way Bills. Switch this off for an organisation whose NIC re-certification has not landed.',
+      enabled: false,
+      defaultEnabled: true,
+      configured: true,
+      note: 'waiting on NIC re-certification',
+      setBy: 'user-a',
+      updatedAt: '2026-08-18T10:00:00.000Z',
+    },
+    {
+      key: 'outbound_signing',
+      label: 'Outbound signing',
+      description:
+        'Sending an issued document for the organisation’s own digital signature.',
+      enabled: true,
+      defaultEnabled: true,
+      configured: false,
+      note: null,
+      setBy: null,
+      updatedAt: null,
+    },
+  ],
+};
+
+const PLATFORM_SCHEDULES = {
+  schedules: [
+    {
+      id: '3f1c8a52-6d4b-4e77-9c1a-8b2d5e6f7a90',
+      kind: 'instrument_expiry_review',
+      label: 'Guarantee and certificate expiry',
+      description:
+        'Reports the performance guarantees and PAC certificates whose expiry falls inside the horizon.',
+      enabled: true,
+      cadence: 'weekly',
+      horizonDays: 45,
+      nextRunAt: '2026-08-25T04:00:00.000Z',
+      lastEnqueuedAt: '2026-08-18T04:00:00.000Z',
+      authorityUserId: 'user-a',
+      disabledReason: null,
+    },
+  ],
+  runs: [
+    {
+      id: '4a2d9b63-7e5c-4f88-8d2b-9c3e6f7a8b01',
+      kind: 'instrument_expiry_review',
+      state: 'done',
+      attempts: 1,
+      createdAt: '2026-08-18T04:00:00.000Z',
+      finishedAt: '2026-08-18T04:00:02.000Z',
+      outcome: { reviewed: 3, lapsed: 0 },
+      lastError: null,
+    },
+    {
+      id: '5b3e0c74-8f6d-4099-9e3c-0d4f7a8b9c12',
+      kind: 'instrument_expiry_review',
+      state: 'refused_bind',
+      attempts: 1,
+      createdAt: '2026-08-11T04:00:00.000Z',
+      finishedAt: '2026-08-11T04:00:01.000Z',
+      outcome: null,
+      lastError: null,
+    },
+  ],
+};
+
+const PLATFORM_EXPORTS = {
+  exports: [
+    {
+      id: '6c4f1d85-9a7e-41aa-8f4d-1e5a8b9c0d23',
+      state: 'ready',
+      requestedBy: 'user-a',
+      requestedAt: '2026-08-18T10:00:00.000Z',
+      completedAt: '2026-08-18T10:04:00.000Z',
+      formatVersion: 'export-v28',
+      byteSize: '4194304',
+      sha256: 'f'.repeat(64),
+      expiresAt: '2026-08-25T10:04:00.000Z',
+      failureReason: null,
+      downloadCount: 0,
+    },
+  ],
+  retentionHours: 168,
+};
+
 const SIGNING_QUEUE = {
   requests: [
     ['pending', null, null],
@@ -1942,6 +2038,19 @@ export async function mockWorkspace(
      scan has to check the contrast of. */
   await page.route('**/api/signing-requests*', (route) =>
     route.fulfill(json(SIGNING_QUEUE)),
+  );
+  /* The platform controls (0096). The entitlements list is DRIVEN by the
+     product declaration rather than by rows, so the fixture answers with
+     both flags — one configured and off, one untouched — because the two
+     render different sentences and the scan should see both. */
+  await page.route('**/api/platform/entitlements*', (route) =>
+    route.fulfill(json(PLATFORM_ENTITLEMENTS)),
+  );
+  await page.route('**/api/platform/job-schedules*', (route) =>
+    route.fulfill(json(PLATFORM_SCHEDULES)),
+  );
+  await page.route('**/api/platform/exports*', (route) =>
+    route.fulfill(json(PLATFORM_EXPORTS)),
   );
   // Notifications (0092). Four registers, four handlers. Playwright
   // matches the LAST registered pattern, so a broader one added after

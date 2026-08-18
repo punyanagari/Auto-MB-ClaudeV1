@@ -470,6 +470,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the signing queue and act on what it shows now; a request that has reached the kiosk or finished cannot be changed.',
   SIGNING_REQUEST_NOT_FOUND:
     'Reload the signing queue; the request may have been withdrawn or completed since this screen was opened.',
+  EXPORT_EXPIRED:
+    'Request a new export; a built package is deliberately short-lived, because a complete copy of the organisation is not something to leave sitting in storage, and its file is deleted when the window closes.',
   SIGNING_REQUEST_EXPIRED:
     'Raise the signing request again; an authorisation lapses so that a document nobody signed for a week is reviewed before it is.',
   SIGNING_SOURCE_CHANGED:

@@ -4,6 +4,16 @@ import type {
   AuditRegisterResponse,
   ExportableRegister,
   MisSummaryResponse,
+  EntitlementFlagKey,
+  EntitlementListResponse,
+  EntitlementResponse,
+  JobScheduleListResponse,
+  JobScheduleResponse,
+  OrganisationExportListResponse,
+  OrganisationExportResponse,
+  ScheduledJobKind,
+  SetEntitlementRequest,
+  UpdateJobScheduleRequest,
   ApproveMaintenanceRequest,
   CancelMaintenanceLine,
   CreateMaintenanceRequest,
@@ -2146,6 +2156,39 @@ export interface ApiClient {
     organisationId: string,
     body: SendNotification,
   ) => Promise<NotificationMessageResponse>;
+  /** The platform controls (migration 0096). Owner-only in effect: the
+   * two entitlement/schedule surfaces need `role: owner` AND the
+   * entitlements authority, and the screen simply does not render for
+   * anyone else. The export needs `canExportOrg` and full Work scope. */
+  readonly listEntitlements: (
+    organisationId: string,
+  ) => Promise<EntitlementListResponse>;
+  readonly setEntitlement: (
+    organisationId: string,
+    key: EntitlementFlagKey,
+    body: SetEntitlementRequest,
+  ) => Promise<EntitlementResponse>;
+  readonly listJobSchedules: (
+    organisationId: string,
+  ) => Promise<JobScheduleListResponse>;
+  readonly setJobSchedule: (
+    organisationId: string,
+    kind: ScheduledJobKind,
+    body: UpdateJobScheduleRequest,
+  ) => Promise<JobScheduleResponse>;
+  readonly listOrganisationExports: (
+    organisationId: string,
+  ) => Promise<OrganisationExportListResponse>;
+  readonly requestOrganisationExport: (
+    organisationId: string,
+  ) => Promise<OrganisationExportResponse>;
+  /** Fetched rather than linked, like every other stored file here: the
+   * tenant header travels on every scoped request and an `<a href>`
+   * cannot carry one. */
+  readonly downloadOrganisationExport: (
+    organisationId: string,
+    exportId: string,
+  ) => Promise<Blob>;
 
   /** The employee master and the monthly payroll run (migrations 0089
    * and 0090). Organisation-level, not per Work: a salary is paid by the
@@ -5037,6 +5080,50 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+
+    async listEntitlements(organisationId) {
+      return request<EntitlementListResponse>('/api/platform/entitlements', {
+        organisationId,
+      });
+    },
+    async setEntitlement(organisationId, key, body) {
+      return request<EntitlementResponse>(`/api/platform/entitlements/${key}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listJobSchedules(organisationId) {
+      return request<JobScheduleListResponse>('/api/platform/job-schedules', {
+        organisationId,
+      });
+    },
+    async setJobSchedule(organisationId, kind, body) {
+      return request<JobScheduleResponse>(`/api/platform/job-schedules/${kind}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listOrganisationExports(organisationId) {
+      return request<OrganisationExportListResponse>('/api/platform/exports', {
+        organisationId,
+      });
+    },
+    async requestOrganisationExport(organisationId) {
+      return request<OrganisationExportResponse>('/api/platform/exports', {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async downloadOrganisationExport(organisationId, exportId) {
+      const response = await fetchImpl(`/api/platform/exports/${exportId}/download`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
 
     async listEmployees(organisationId, options) {

@@ -92,6 +92,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0091_signing_requests.sql': 2,
   '0092_notifications.sql': 4,
   '0094_data_imports.sql': 2,
+  '0096_platform_controls.sql': 5,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -2577,5 +2578,193 @@ describe('the audit register and its retention policy (0095)', () => {
       'ALTER FUNCTION app_private.create_organisation_with_owner(text, text, uuid)\n  OWNER TO auto_mb_definer;',
     );
     expect(sql).toContain('SET search_path = public, app_private, pg_temp');
+  });
+
+  it('binds the platform controls in 0096', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0096_platform_controls.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // All three tables in the ADR-0010 InitPlan policy shape, and none of
+    // them grants DELETE. An entitlement row deleted would silently
+    // restore the shipped default and erase who decided otherwise; a
+    // schedule is switched off rather than forgotten; and an export is a
+    // disclosure of the whole organisation, which is not a record that may
+    // be removed.
+    for (const table of [
+      'organisation_entitlements',
+      'statutory_job_schedules',
+      'organisation_export_requests',
+    ]) {
+      expect(sql, table).toContain(
+        'USING (organisation_id = (SELECT app_private.current_organisation_id()))',
+      );
+      expect(sql, table).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).toContain(
+        `GRANT SELECT, INSERT, UPDATE ON ${table} TO auto_mb_app;`,
+      );
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+
+    // THE ARTEFACT'S KEY IS TENANT-PREFIXED IN SQL AS WELL AS IN CODE.
+    // `assertSafeObjectKey` validates the shape in
+    // packages/documents/src/storage.ts; this refuses a key that names
+    // another organisation's directory even when the shape is perfect. Two
+    // layers, because a path is a filesystem escape.
+    expect(sql).toContain(
+      "object_key IS NULL OR object_key LIKE organisation_id::text || '/%'",
+    );
+    // The digest takes 0065's domain rather than a hand-rolled CHECK.
+    expect(sql).toContain('sha256 sha256_hex');
+
+    // A READY ARTEFACT IS ONE FACT WITH SEVERAL PARTS. Without this a row
+    // could claim `ready` with no key to fetch, which is the shape that
+    // turns a failed build into a download button that 500s.
+    expect(sql).toContain('organisation_export_requests_ready_shape');
+
+    // ONE BUILD AT A TIME HAS A DATABASE ARM. It was the one rule in this
+    // file enforced only by a route read, which two requests can both
+    // pass before either inserts.
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX organisation_export_requests_one_build_idx',
+    );
+    expect(sql).toContain("WHERE state IN ('queued', 'running');");
+    // …and the index is only safe because something reconciles a build
+    // that nothing will finish. Without the sweep, one dead build
+    // disables self-service export for that organisation for ever.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.fail_stalled_organisation_exports(',
+    );
+    expect(sql).toContain(
+      "'the build did not finish; the server process handling it stopped'",
+    );
+
+    // A SCHEDULE WHOSE MEMBER HAS LEFT PAUSES ITSELF rather than
+    // re-refusing every cadence for ever, and says which kind of "off"
+    // it is in so the screen can offer a remedy for one and not the
+    // other.
+    expect(sql).toContain('disabled_reason text CHECK (');
+    expect(sql).toContain(
+      "'the member this check ran as is no longer in the organisation'",
+    );
+
+    // THE SCHEDULE CARRIES A REAL MEMBERSHIP, not a service identity.
+    // ADR-0011 gives the queue no service user, so the recurring facility
+    // borrows the membership of whoever enabled the schedule and
+    // `bind_tenant` re-proves it at execution.
+    expect(sql).toContain('authority_user_id text NOT NULL');
+    expect(sql).toContain('v_due.authority_user_id');
+
+    // THE SCHEDULER ENQUEUES AND ADVANCES IN ONE TRANSACTION, under SKIP
+    // LOCKED. Two workers ticking together must not produce two identical
+    // monthly reports, and a worker that dies mid-tick must have done
+    // both or neither.
+    expect(sql).toContain('FOR UPDATE SKIP LOCKED');
+    expect(sql).toContain('SET last_run_at = now(),');
+
+    // THE QUEUE LEARNS THE SCHEDULED KIND, and the CHECK stays the
+    // authority (0072 section 1) rather than the TypeScript union.
+    expect(sql).toContain("'instrument_expiry_review'");
+    expect(sql).toContain(
+      'ALTER TABLE worker_jobs DROP CONSTRAINT worker_jobs_kind_check;',
+    );
+
+    // THREE SECURITY DEFINERS, each argued, and every function in the file
+    // pins its search_path.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions).toHaveLength(6);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(
+      functions.length,
+    );
+    const definers = functions.filter((declaration) => {
+      const source = sql.slice(sql.indexOf(declaration));
+      return source.slice(0, source.indexOf('$$;')).includes('SECURITY DEFINER');
+    });
+    expect(definers).toEqual([
+      'CREATE FUNCTION app_private.enqueue_due_statutory_jobs',
+      'CREATE FUNCTION app_private.expire_lapsed_organisation_exports',
+      'CREATE FUNCTION app_private.fail_stalled_organisation_exports',
+      'CREATE FUNCTION app_private.organisation_job_history',
+    ]);
+    for (const signature of [
+      'app_private.organisation_job_history(integer)',
+      'app_private.enqueue_due_statutory_jobs(integer)',
+      'app_private.expire_lapsed_organisation_exports(integer)',
+      'app_private.fail_stalled_organisation_exports(interval, integer)',
+    ]) {
+      expect(sql, signature).toContain(`REVOKE ALL ON FUNCTION ${signature}`);
+      expect(sql, signature).toContain(`ALTER FUNCTION ${signature}`);
+    }
+
+    // THE HISTORY READ IS BOUND, NOT PARAMETERISED. It takes no
+    // organisation and refuses an unbound caller outright, which is what
+    // keeps 0072's zero-grant posture on `worker_jobs` from being widened
+    // into an enumeration oracle. It never returns the claim token.
+    expect(sql).toContain(
+      'v_organisation_id := app_private.current_organisation_id();',
+    );
+    expect(sql).toContain(
+      "'job history can only be read inside a bound tenant transaction'",
+    );
+    const history = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.organisation_job_history'),
+    );
+    expect(history.slice(0, history.indexOf('$$;'))).not.toContain('claim_token');
+
+    // BOTH AUTHORITIES REACH THE FOUNDER, and the replacement restates
+    // every grant that was already there. 0089 and 0091 each replaced this
+    // function before this one did, so a replacement that forgot either
+    // would silently revoke payroll or signing from every founder — the
+    // 0089/0091 collision is the burned precedent this assertion exists
+    // against.
+    expect(sql).toContain(
+      'ALTER TABLE organisation_memberships\n  ADD COLUMN can_manage_entitlements boolean NOT NULL DEFAULT false;',
+    );
+    expect(sql).toContain(
+      'ALTER TABLE organisation_memberships\n  ADD COLUMN can_export_org boolean NOT NULL DEFAULT false;',
+    );
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(',
+    );
+    expect(sql).toContain(
+      "'can_manage_payroll, can_manage_entitlements, can_export_org%s, status'",
+    );
+    expect(sql).toContain(
+      "') VALUES ($1, $2, ''owner'', ''all'', true, true, true, true, true, true%s, ''active'')'",
+    );
+    // AND ALL THREE SIBLING AUTHORITIES OF THE WAVE. 0096 is the last
+    // writer of the train (v25 -> v26 -> v27 -> v28), so a replacement
+    // that named only its own two would silently revoke notifications,
+    // import and audit-trail from every founder created afterwards. Each
+    // is set only where its column exists, so this file also runs on a
+    // branch that has none of them.
+    for (const column of [
+      'can_manage_notifications',
+      'can_import_data',
+      'can_view_audit_trail',
+    ]) {
+      expect(sql, column).toContain(`'${column}'`);
+    }
+    expect(sql).toContain('FOREACH v_column IN ARRAY ARRAY[');
+
+    // Every RAISE in the migration's OWN guards carries a named SQLSTATE
+    // from the 23N block, so `routes/platform.ts` maps it to a code
+    // instead of surfacing a bare 23514 as a 500. Scoped to the guards:
+    // the file also re-creates `create_organisation_with_owner` verbatim
+    // from 0004 (plus two columns) and that function carries 0004's own
+    // 28000, and the two sweeps refuse a bad limit argument with
+    // `check_violation` — a programming error no remedy text helps with,
+    // which is the same distinction 0072's `claim_next_job` draws.
+    const guards = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.guard_organisation_export_request'),
+      sql.indexOf('-- 5. The two cross-tenant sweeps'),
+    );
+    const raises = guards.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(5);
+    expect(guards.match(/USING ERRCODE = '23N\d\d'/g)?.length).toBe(raises.length);
   });
 });

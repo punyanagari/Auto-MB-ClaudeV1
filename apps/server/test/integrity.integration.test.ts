@@ -722,14 +722,17 @@ describe('export completeness is catalog-driven', () => {
     `;
     // The live list, not a floor with slack in it. A floor of six would
     // let three of these disappear from the catalog without this failing,
-    // which is the same shape of hole the census exists to close. A tenth
-    // authority edits this list, which is the point at which somebody
-    // reads it.
+    // which is the same shape of hole the census exists to close. A
+    // thirteenth authority edits this list, which is the point at which
+    // somebody reads it. Twelve after 0096 adds the two platform
+    // controls.
     expect(grants.map((row) => row.column_name)).toEqual([
       'can_approve_amendments',
       'can_cancel_documents',
+      'can_export_org',
       'can_import_data',
       'can_issue_documents',
+      'can_manage_entitlements',
       'can_manage_notifications',
       'can_manage_payments',
       'can_manage_payroll',

@@ -1074,6 +1074,160 @@ their Tally edits to return.
 moment there is something to cite, on the § 4 iteration pipeline: change it
 in v0, merge it, diff, port the delta.
 
+### 20. Platform controls — three surfaces the mock does not draw
+
+**Status: application-first, owner ruling not yet taken.** Numbered 20 by
+coordinator allocation; 17, 18 and 19 belong to the three sibling packs of
+this wave.
+
+**There is no mock citation for these panels, and this entry exists so that
+absence is a recorded decision rather than an omission a reviewer has to
+guess at.** There is nothing at `punyanagari/Auto-MB-Vercel-du@fdfd610` to
+cite: the mock has no module switch, no job scheduler and no export
+request. It could not — an entitlement exists because a government
+certification has not landed, a schedule exists because a bank guarantee
+lapses whether or not anybody is looking, and an export exists because a
+contractor is entitled to their own data. None of those is a screen a
+designer would draw unprompted.
+
+That puts all three under § Design contract 4 — "behaviour the mock cannot
+express is built inside the mock's visual grammar using its existing
+components, without inventing new visual language" — and § Approved
+divergences 4, "screens the mock does not cover", whose list this extends.
+Every element is one the mock already ships:
+
+| Element                 | Taken from                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| The two panels          | `Card` + `CardHeader`, the mock's `data-surface` panel, sitting in Settings           |
+| Module and check rows   | The bordered list rows `components/company-document-library.tsx` uses for credentials |
+| On / off                | The shared dot-plus-label `StatusChip`, in the product's own tone families            |
+| Run history             | `DataTable`, with the sr-only caption `test/a11y-invariants` requires                 |
+| Export register         | `DataTable`, right-aligned mono numerics, one action column                           |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares   |
+
+**No chip word is added.** Every state here is spelled with a word the
+vocabulary already carries, and each is chosen for the tone `ui/chip.tsx`
+already gives it: a module reads `active` or `disabled`, an export walks
+`pending` → `processing` → `active` / `failed` / `expired`, and a run reads
+`pending` / `claimed` / `completed` / `failed`.
+
+**A switched-off check has two readings and they must not look the same.**
+One the SCHEDULER stopped — because the member it ran as has left — is work
+to do, and reads `paused`, which is the warning tone § 17 gave a throttled
+template for exactly that reason. One an OPERATOR stopped is inert, and
+reads `disabled`: unmapped and therefore neutral, which `ui/chip.tsx`
+records as a decision beside `paused` rather than leaving it to accident.
+
+**A refused run reads `review`, in the WARNING family and not the
+destructive one.** It is not a run that broke: it is a run the database
+declined to start because the member behind it has gone, and it has a
+one-click remedy on the row above. `docs/DESIGN.md` § Status badge
+semantics gives the destructive family to cancelled/rejected/declined; a
+to-do with a remedy belongs to warning.
+
+**Timestamps on these two tables are mono and tabular but LEFT-aligned**,
+where every other register right-aligns its numerics. The rule the
+registers follow is about quantities and money, where the decimal point
+carrying down a column is what makes two figures comparable at a glance.
+Nothing on these screens is compared that way — an operator reads one run's
+instant, not a column of them — and a right-aligned instant beside a
+left-aligned check name reads as a mis-set column rather than a number.
+Amounts on this screen (the export's size) keep the right-aligned numeric
+treatment.
+
+#### Where they live, and why not in the rail
+
+**Settings, beside the signing kiosk, and deliberately not a top-level
+module.** The rail is the operator's working day — Works, challans, bills,
+payments. These three are the organisation's posture: what it may use, what
+it checks on a clock, and whether it has taken a copy of itself. An
+operator visits them when something changes, not when something is due, and
+a rail entry for a screen visited twice a year costs every other screen a
+row of attention. `docs/UX.md` § Settled information architecture already
+puts organisation administration here.
+
+#### The one thing an operator has to be able to read
+
+**A recurring check runs under the authority of the member who last saved
+it, and the screen says so on the row.** ADR-0011 gives the queue no
+service identity, so a schedule borrows a real membership; when that member
+leaves, the queue parks the run in `refused_bind` rather than running on a
+departed person's authority.
+
+That state is not a failure and must not read as one. The run-history row
+carries a sentence rather than an error — "the member this check runs as is
+no longer in the organisation; save the check again to run it as yourself"
+— because the remedy is a different act from every other failure's, and a
+red chip alone would send an operator looking for a bug.
+
+#### The remedy is a control, never a sentence pointing at one
+
+The row for a paused check carries **Run as me** beside its on/off switch.
+An earlier draft said "save the check again" in prose while the only button
+on the row switched it off — which would have made an operator disable a
+statutory check in order to fix its custody. A remedy the screen names is a
+remedy the screen has to offer.
+
+The scheduler pauses the check on the FIRST refusal rather than after a
+count. A monthly check that re-refused every cadence would otherwise turn
+into an unbounded stream of terminal rows nobody reads, and the queue's own
+`refused_bind` count would stop meaning anything.
+
+#### What a cadence promises, and what it does not
+
+Stated here because it is a choice rather than an accident, and because the
+screen shows both numbers:
+
+- **The next run is `now + one cadence`, measured from when the run was
+  enqueued.** So a run drifts by however long the tick took to notice it,
+  and a monthly check saved on the 31st lands on the 28th in February and
+  stays there. Neither matters for a check that answers "what lapses in the
+  next N days" — N is the horizon, which the operator sets, not the
+  cadence. Anchoring to a calendar day would need a day-of-month column and
+  a catch-up rule, which is a schedule engine and not this.
+- **A missed window is not recorded.** A worker that was down for a week
+  produces one run on its return, not seven, and the run history shows one
+  row rather than a gap. The alternative — a marker row per skipped
+  occurrence — would put rows on the operator's screen describing work that
+  never happened, to answer a question the queue's own health already
+  answers (`docs/RUNBOOK.md` § 7b).
+- **A check switched back on runs once straight away**, then on its
+  cadence. The screen's copy says so, because a schedule resuming after a
+  long pause would otherwise look like it had fired for no reason.
+
+#### Two divergences from the product's own habits, stated so they are not mistaken for oversights
+
+**The export digest is printed in full, 64 characters, monospaced and
+wrapped**, where every other register truncates a long identifier. It is
+the only way a recipient can check that the file they were handed is the
+file this organisation built, and half a digest checks nothing. § 16 prints
+its SHA-256 the same way and for the same reason.
+
+**A module nobody has configured says so in words** — "never configured —
+using the shipped default (on)" — rather than rendering as though somebody
+chose. The distinction between "we decided this" and "nobody has ever
+touched it" is the whole value of the panel to the person auditing it six
+months later. The same reasoning puts the operator's NOTE on the row: "off"
+without "waiting on NIC re-certification" is a fact nobody can act on, and
+the note survives a plain on/off toggle because the screen sends only the
+new state and the contract treats an absent note as "leave what is there".
+
+#### What these screens deliberately do not do
+
+- **Grant an authority.** That is the Members screen, and a second place to
+  change a permission is a second place for the two to disagree.
+- **Show the queue.** The run history is this organisation's own scheduled
+  checks and nothing else. A queue browser would be a cross-tenant surface
+  the product does not have and should not grow.
+- **Offer a shareable download link.** The export is fetched with the
+  session, like every other file here. A link that works without one is a
+  copy of the whole business with a longer half-life than the decision to
+  make it.
+
+**When the mock grows these screens, the mock wins.** This entry retires
+the moment there is something to cite, on the § 4 iteration pipeline:
+change it in v0, merge it, diff, port the delta.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

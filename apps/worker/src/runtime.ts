@@ -198,6 +198,32 @@ export interface WorkerLoopOptions {
   readonly log: JobLogger;
   /** Injected so tests can drive the loop without real time passing. */
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /**
+   * Periodic work that is not a job (migration 0096): enqueueing recurring
+   * checks that have come due, and reclaiming expired export artefacts.
+   *
+   * A TICK ON THIS LOOP RATHER THAN A SCHEDULER, and the reason is
+   * operational rather than aesthetic. pg_cron needs an extension the
+   * managed-database story does not promise, a host crontab needs a second
+   * deployment artefact with its own credential and its own monitoring,
+   * and a timer inside this process needs leader election the moment there
+   * are two workers. All three buy a precision these daily and monthly
+   * checks do not want, at the price of a component that can fail
+   * silently. This cannot: if the worker is down the queue is visibly not
+   * draining, which is the first thing docs/RUNBOOK.md § 7b tells an
+   * operator to look at.
+   *
+   * A tick that throws is logged and the loop carries on — a scheduler
+   * that killed the worker would take the job queue down with it.
+   */
+  readonly tick?: () => Promise<void>;
+  /** How rarely the tick may run. Not the poll interval: an idle worker
+   * polls every second, and running two cross-tenant sweeps that often
+   * would be a steady background load for checks whose useful resolution
+   * is hours. */
+  readonly tickIntervalMs?: number;
+  /** Injected so tests can drive the tick without real time passing. */
+  readonly now?: () => number;
 }
 
 /**
@@ -214,10 +240,34 @@ export async function runWorkerLoop(
   options: WorkerLoopOptions,
 ): Promise<void> {
   const sleep = options.sleep ?? defaultSleep;
+  const now = options.now ?? Date.now;
+  const tickIntervalMs = options.tickIntervalMs ?? 60_000;
   let consecutiveClaimFailures = 0;
   let consecutiveOutcomeFailures = 0;
+  // Negative infinity, so the FIRST iteration ticks rather than waiting a
+  // minute: a worker that has just been restarted after being down is
+  // exactly when a due schedule is most likely to be waiting. Zero would
+  // read the same and would not be — a fake clock starting at zero, and a
+  // real one immediately after an epoch reset, both make `now() - 0` less
+  // than the interval.
+  let lastTickAt = Number.NEGATIVE_INFINITY;
 
   while (!options.signal.aborted) {
+    // BEFORE the claim, so a schedule that comes due is picked up by the
+    // same iteration that then claims its job, instead of waiting for the
+    // next poll.
+    if (options.tick !== undefined && now() - lastTickAt >= tickIntervalMs) {
+      lastTickAt = now();
+      try {
+        await options.tick();
+      } catch (error) {
+        options.log.error({
+          message: 'the scheduler tick failed; it will be retried',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     let job: ClaimedJob | undefined;
     try {
       job = await claimNextJob(sql, options.claimedBy, options.leaseSeconds);

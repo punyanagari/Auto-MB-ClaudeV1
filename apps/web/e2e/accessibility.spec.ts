@@ -1726,3 +1726,42 @@ test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   ).toBeVisible();
   await expectNoAxeViolations(page, 'signing kiosk revoke dialog');
 });
+
+test('the platform settings pass the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/settings');
+
+  /* The owner-only operator controls (0096). Their own scan rather than a
+     leg of another journey, because between them they draw four things a
+     register never does: a chip whose meaning is "off" rather than
+     "cancelled", a dense run-history table with an outcome column, a
+     64-character digest printed in full and wrapped, and a primary action
+     that is DISABLED while a build is in flight — which is a contrast
+     state nothing else on the page reaches. */
+  await expect(page.getByRole('heading', { name: 'Platform' })).toBeVisible();
+  await expect(page.getByText('E-way bill', { exact: true })).toBeVisible();
+  await expect(page.getByText(/never configured/)).toBeVisible();
+  await expect(page.getByText('Guarantee and certificate expiry')).toBeVisible();
+  // The note that says WHY a module is off — the fact the column exists
+  // to carry, and one a panel could store and never show.
+  await expect(page.getByText(/waiting on NIC re-certification/)).toBeVisible();
+  // The refused-bind run's remedy, which is the one sentence on this
+  // screen an operator has to act on, and the CONTROL it names. A remedy
+  // whose only button switches the check off would make the operator
+  // disable a statutory check to fix its custody.
+  await expect(page.getByText(/no longer in the organisation/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Run as me' })).toBeVisible();
+  // The two settings the screen displays and used to have no way to
+  // change: a select and a bounded number input, both of which are
+  // label-association and focus-order surfaces a table never reaches.
+  await expect(page.getByLabel('How often')).toBeVisible();
+  await expect(page.getByLabel('Days ahead')).toBeVisible();
+  await expectNoAxeViolations(page, 'platform settings');
+
+  await expect(
+    page.getByRole('heading', { name: 'Organisation export' }),
+  ).toBeVisible();
+  await expect(page.getByText('f'.repeat(64))).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download' })).toBeVisible();
+  await expectNoAxeViolations(page, 'organisation export panel');
+});

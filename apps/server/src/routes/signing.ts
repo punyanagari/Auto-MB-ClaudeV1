@@ -34,6 +34,7 @@ import type { FastifyRequest } from 'fastify';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope, membershipOf } from '../authz.js';
+import { requireEntitlement } from '../entitlements.js';
 import { httpError } from '../http.js';
 import { parseJsonbColumn } from '../jsonb-column.js';
 import { keysetPage, sqlLimit, workScopedCursorRowId } from '../pagination.js';
@@ -637,6 +638,15 @@ export function registerSigningRoutes(
       // may be signed and by which kiosk, the read fetches the bytes, and
       // the third writes the authorisation those bytes produced.
       const context = await tenant(async (tx) => {
+        // The organisation must be entitled to the module at all (0096).
+        // Gated on RAISING only: an organisation whose ESP/TSA
+        // procurement has not landed cannot fill the queue with requests
+        // nothing can fulfil, and can still read and withdraw whatever it
+        // already raised. Before work-scope, because it is a property of
+        // the organisation rather than of the document, and so discloses
+        // nothing about the id in the body.
+        await requireEntitlement(tx, 'outbound_signing');
+
         // WORK-SCOPE FIRST, then the document's state. The other order is
         // a status oracle: `readSigningSource` refuses a draft challan
         // with a 409 and a missing one with a 404, so a member who may
