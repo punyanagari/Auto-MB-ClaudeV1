@@ -109,7 +109,7 @@ export type SetWorkItemPaymentCategoryRequest = Static<
  * category it configures plus its four stage percentages. Same values as
  * the per-row upsert body, with the category inside the object because
  * the whole matrix travels in one request. */
-export const PaymentSetupMatrixRowSchema = Type.Object(
+const PaymentSetupMatrixRowSchema = Type.Object(
   {
     category: PaymentMatrixCategorySchema,
     pctSupply: DecimalStringSchema,
@@ -119,9 +119,8 @@ export const PaymentSetupMatrixRowSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type PaymentSetupMatrixRow = Static<typeof PaymentSetupMatrixRowSchema>;
 
-export const PaymentSetupItemCategorySchema = Type.Object(
+const PaymentSetupItemCategorySchema = Type.Object(
   {
     workItemId: UuidSchema,
     paymentCategory: Type.Union([WorkItemPaymentCategorySchema, Type.Null()]),

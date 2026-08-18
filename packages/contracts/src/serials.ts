@@ -8,9 +8,6 @@ export const UpdateWorkItemSerialsRequestSchema = Type.Object(
   { requiresSerials: Type.Boolean() },
   { additionalProperties: false },
 );
-export type UpdateWorkItemSerialsRequest = Static<
-  typeof UpdateWorkItemSerialsRequestSchema
->;
 
 export const WorkItemSerialsResponseSchema = Type.Object(
   {
@@ -34,7 +31,6 @@ export const SerialSearchQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type SerialSearchQuery = Static<typeof SerialSearchQuerySchema>;
 
 /** Where a matched serial came from.
  *
@@ -43,13 +39,12 @@ export type SerialSearchQuery = Static<typeof SerialSearchQuerySchema>;
  * factory built (migration 0084), which may have no Work at all — a job
  * card raised against a private purchase order is the ordinary case —
  * and has not been despatched under any challan yet. */
-export const SerialSourceSchema = Type.Union([
+const SerialSourceSchema = Type.Union([
   Type.Literal('delivery'),
   Type.Literal('production'),
 ]);
-export type SerialSource = Static<typeof SerialSourceSchema>;
 
-export const SerialSearchMatchSchema = Type.Object(
+const SerialSearchMatchSchema = Type.Object(
   {
     id: UuidSchema,
     serialNumber: Type.String(),

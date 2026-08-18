@@ -13,7 +13,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { isApprover } from './amendments.js';
@@ -528,7 +527,7 @@ export function registerExtensionRoutes(
               ${organisationId}, ${workId}, 'finalised', 'manual',
               ${body.reference}, ${body.proposedCompletionDate}, ${body.reason},
               ${body.addressee}, ${body.letterDate}, ${sequence},
-              ${requestNumber}, ${jsonb(tx, snapshot)},
+              ${requestNumber}, ${tx.json(snapshot as never)},
               ${MANUAL_TEMPLATE_VERSION}, ${user.id}, ${user.id}, ${finalisedAt}
             )
             returning id
@@ -786,7 +785,7 @@ export function registerExtensionRoutes(
             update extension_requests
             set status = 'finalised', sequence_number = ${sequence},
                 request_number = ${requestNumber},
-                finalised_snapshot = ${jsonb(tx, snapshot)},
+                finalised_snapshot = ${tx.json(snapshot as never)},
                 template_version = ${EXTENSION_TEMPLATE_VERSION},
                 finalised_by_user_id = ${user.id}, finalised_at = ${finalisedAt}
             where id = ${id}

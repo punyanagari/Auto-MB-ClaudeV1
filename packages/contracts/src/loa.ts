@@ -5,7 +5,7 @@ import {
   StoredPdfSignatureStatusSchema,
 } from './pdf-signature.js';
 
-export const ExtractionStatusSchema = Type.Union([
+const ExtractionStatusSchema = Type.Union([
   Type.Literal('pending'),
   Type.Literal('processing'),
   Type.Literal('review'),
@@ -16,9 +16,8 @@ export const ExtractionStatusSchema = Type.Union([
    * retention; the document leaves the working list. */
   Type.Literal('discarded'),
 ]);
-export type ExtractionStatus = Static<typeof ExtractionStatusSchema>;
 
-export const LoaDocumentSchema = Type.Object(
+const LoaDocumentSchema = Type.Object(
   {
     id: UuidSchema,
     originalFilename: Type.String({ minLength: 1, maxLength: 300 }),
@@ -54,7 +53,7 @@ export type LoaDocument = Static<typeof LoaDocumentSchema>;
  * the only one who can say whether this file supersedes the earlier one
  * or duplicates it by mistake.
  */
-export const LoaLetterNumberMatchSchema = Type.Object(
+const LoaLetterNumberMatchSchema = Type.Object(
   {
     /** 'work' once the earlier intake was confirmed; 'document' while it
      * is still an unconfirmed upload. */
@@ -108,15 +107,11 @@ export const DuplicateLoaDocumentDetailsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type DuplicateLoaDocumentDetails = Static<
-  typeof DuplicateLoaDocumentDetailsSchema
->;
 
 export const LoaDocumentListResponseSchema = Type.Object(
   { documents: Type.Array(LoaDocumentSchema) },
   { additionalProperties: false },
 );
-export type LoaDocumentListResponse = Static<typeof LoaDocumentListResponseSchema>;
 
 /** Discarded documents leave the working list; `includeDiscarded` brings
  * them back for the writers who run the intake workflow. */
@@ -124,7 +119,6 @@ export const ListLoaDocumentsQuerySchema = Type.Object(
   { includeDiscarded: Type.Optional(Type.Boolean()) },
   { additionalProperties: false },
 );
-export type ListLoaDocumentsQuery = Static<typeof ListLoaDocumentsQuerySchema>;
 
 /** Discarding an unconfirmed upload is a draft deletion, not the
  * cancellation of an issued document, so the reason is optional. */
@@ -132,7 +126,6 @@ export const DiscardLoaDocumentRequestSchema = Type.Object(
   { reason: Type.Optional(nonBlankString({ minLength: 3, maxLength: 500 })) },
   { additionalProperties: false },
 );
-export type DiscardLoaDocumentRequest = Static<typeof DiscardLoaDocumentRequestSchema>;
 
 /** Discarding a letter discards the intake package: the supporting
  * contract documents attached to it go with it, and are named so the
@@ -154,4 +147,3 @@ export const UploadLoaQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type UploadLoaQuery = Static<typeof UploadLoaQuerySchema>;

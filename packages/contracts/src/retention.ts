@@ -55,7 +55,7 @@ export const InstallSerialRequestSchema = Type.Object(
 );
 export type InstallSerialRequest = Static<typeof InstallSerialRequestSchema>;
 
-export const SerialSchema = Type.Object(
+const SerialSchema = Type.Object(
   {
     id: UuidSchema,
     deliveryChallanId: UuidSchema,
@@ -98,14 +98,13 @@ export type SerialListResponse = Static<typeof SerialListResponseSchema>;
 
 // --- Contract instruments (PBG / PAC / DOC) -------------------------------
 
-export const InstrumentKindSchema = Type.Union([
+const InstrumentKindSchema = Type.Union([
   Type.Literal('pbg'),
   Type.Literal('pac'),
   Type.Literal('doc'),
 ]);
-export type InstrumentKind = Static<typeof InstrumentKindSchema>;
 
-export const InstrumentStatusSchema = Type.Union([
+const InstrumentStatusSchema = Type.Union([
   Type.Literal('active'),
   Type.Literal('released'),
   Type.Literal('expired'),
@@ -157,7 +156,6 @@ export const InstrumentListResponseSchema = Type.Object(
   { instruments: Type.Array(InstrumentSchema) },
   { additionalProperties: false },
 );
-export type InstrumentListResponse = Static<typeof InstrumentListResponseSchema>;
 
 // --- Measurement Book -----------------------------------------------------
 
@@ -208,7 +206,6 @@ export const MbEntryListResponseSchema = Type.Object(
   { entries: Type.Array(MbEntrySchema), nextCursor: NextCursorSchema },
   { additionalProperties: false },
 );
-export type MbEntryListResponse = Static<typeof MbEntryListResponseSchema>;
 
 // --- Bills ----------------------------------------------------------------
 
@@ -260,7 +257,7 @@ export type Bill = Static<typeof BillSchema>;
  * - `billed` is what has been claimed from them. A bill is prepared from
  *   exactly one finalized book, so this can never exceed `measured`.
  * - `unbilled` is the difference — sanctioned value not yet claimed. */
-export const BillSummarySchema = Type.Object(
+const BillSummarySchema = Type.Object(
   {
     measured: DecimalStringSchema,
     billed: DecimalStringSchema,

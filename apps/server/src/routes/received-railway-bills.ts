@@ -11,7 +11,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
@@ -87,9 +86,7 @@ const BILL_COLUMNS = `
   b.discarded_at, b.created_at, m.mb_number as measurement_book_number
 `;
 
-export function toReceivedRailwayBill(
-  row: ReceivedRailwayBillRow,
-): ReceivedRailwayBill {
+function toReceivedRailwayBill(row: ReceivedRailwayBillRow): ReceivedRailwayBill {
   const verdict =
     (parseJsonbColumn(row.signature_verdict) as PdfSignatureReport | null) ?? null;
   // Assessed on the way out rather than stored: the rule is the owner's
@@ -357,8 +354,8 @@ export function registerReceivedRailwayBillRoutes(
               ${parsed.billDate}, ${parsed.billAmount},
               ${parsed.rateInclusiveOfGst}, ${parsed.measurement.raw},
               ${parsed.measurement.sequence}, ${parsed.agreementNumber},
-              ${parsed.letterNumber}, ${jsonb(tx, parsed)},
-              ${signature.status}, ${jsonb(tx, signature.verdict)},
+              ${parsed.letterNumber}, ${tx.json(parsed as never)},
+              ${signature.status}, ${tx.json(signature.verdict)},
               ${signature.verifiedAt}, ${user.id}
             )
             returning *

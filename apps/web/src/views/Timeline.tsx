@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TimelineEvent, TimelineResponse } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { CardHeader } from '../ui/card.js';
 import { Actions } from '../ui/form.js';
@@ -9,7 +11,7 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 /** Where the event stream comes from: a whole Work's trail (work detail
  * screen) or one record's history (challan detail reuses this). */
-export type TimelineScope =
+type TimelineScope =
   | { readonly kind: 'work'; readonly workId: string }
   | { readonly kind: 'entity'; readonly entityType: string; readonly entityId: string };
 
@@ -214,8 +216,7 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [entityFilter, setEntityFilter] = useState('');
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   const scopeKey =
     scope.kind === 'work'
@@ -252,20 +253,12 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The timeline could not be loaded.',
-        );
+        setError(errorMessage(cause, 'The timeline could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [fetchPage, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   async function loadMore() {
     if (nextCursor === null) return;
@@ -276,11 +269,7 @@ export function Timeline({ api, organisationId, scope }: TimelineProps) {
       setEvents((current) => [...(current ?? []), ...page.events]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The timeline could not be loaded.',
-      );
+      setError(errorMessage(cause, 'The timeline could not be loaded.'));
     } finally {
       setPending(false);
     }

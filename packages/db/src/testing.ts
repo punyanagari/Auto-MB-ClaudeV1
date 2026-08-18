@@ -18,7 +18,11 @@ import type { Sql } from 'postgres';
  * inside a single transaction (`set local`, so replica mode can never leak
  * back onto a pooled connection), and then runs a foreign-key census that
  * fails loudly if any orphaned reference exists anywhere in the public
- * schema. Production code must never import this module.
+ * schema.
+ *
+ * Published on the `@auto-mb/db/testing` subpath rather than the main
+ * barrel, so importing `@auto-mb/db` from production code cannot pull it
+ * in.
  */
 
 /** Quotes an identifier that came from the PostgreSQL catalog. */
@@ -31,7 +35,7 @@ function quoteIdentifier(name: string): string {
  * Discovered from the catalog so that new tenant tables are cleaned up
  * automatically instead of depending on hand-maintained per-suite lists.
  */
-export async function listTenantTables(sql: Sql): Promise<string[]> {
+async function listTenantTables(sql: Sql): Promise<string[]> {
   const rows = (await sql`
     select c.table_name as name
     from information_schema.columns c

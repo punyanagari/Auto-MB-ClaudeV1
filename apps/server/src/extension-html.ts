@@ -9,7 +9,12 @@
  * page with no external requests, so the logo is embedded as a data URI.
  */
 
-import { escapeHtml, type ChallanBranding } from './challan-html.js';
+import {
+  BASE_PDF_CSS,
+  escapeHtml,
+  WATERMARK_CSS,
+  type ChallanBranding,
+} from './challan-html.js';
 
 export const EXTENSION_TEMPLATE_VERSION = 'extension-v1';
 
@@ -19,7 +24,7 @@ export const EXTENSION_TEMPLATE_VERSION = 'extension-v1';
  * a transcription. */
 export const MANUAL_TEMPLATE_VERSION = 'extension-manual-v1';
 
-export type ExtensionBranding = ChallanBranding;
+type ExtensionBranding = ChallanBranding;
 
 export interface ExtensionSnapshot {
   readonly templateVersion: string;
@@ -43,7 +48,7 @@ export interface ExtensionSnapshot {
   readonly finalisedAt: string;
 }
 
-export interface ExtensionRenderOptions {
+interface ExtensionRenderOptions {
   /** Overlay the diagonal DRAFT watermark (legacy §5.5: the draft PDF is
    * watermarked DRAFT; only finalisation assigns a number). The preview
    * is streamed, never stored — drafts carry no render state (0011). */
@@ -71,11 +76,7 @@ export function renderExtensionHtml(
   body { font-family: Helvetica, Arial, sans-serif; color: #17221d; margin: 2rem; font-size: 12px; }
   h1 { font-size: 16px; margin: 1.2rem 0 0.4rem; }
   .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #55635c; }
-  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
-  .brand img { max-height: 56px; max-width: 180px; }
-  .brand .org { font-size: 15px; font-weight: bold; }
-  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
-  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+${BASE_PDF_CSS}
   table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
   th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }
   th { font-size: 10px; text-transform: uppercase; width: 40%; }
@@ -83,7 +84,7 @@ export function renderExtensionHtml(
   .sign div { border-top: 1px solid #17221d; padding-top: 4px; width: 30%; text-align: center; }
   .addressee { white-space: pre-line; margin: 1rem 0; }
   .body-copy p { margin: 0.5rem 0; }
-  .watermark { position: fixed; top: 45%; left: 8%; right: 8%; text-align: center; transform: rotate(-30deg); font-size: 96px; font-weight: bold; color: rgba(23, 34, 29, 0.12); letter-spacing: 0.2em; pointer-events: none; z-index: 10; }
+${WATERMARK_CSS}
 </style>
 </head>
 <body>

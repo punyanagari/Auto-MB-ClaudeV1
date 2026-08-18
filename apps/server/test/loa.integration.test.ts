@@ -13,13 +13,8 @@ import {
   type WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { createFileSystemStorage } from '@auto-mb/documents';
 import { runQueuedJobs } from './helpers/worker-jobs.js';
 import {
@@ -287,7 +282,7 @@ async function seedReviewDocument(letter: CorpusLetter): Promise<string> {
       ${`${organisationId}/loa/${documentId}.pdf`},
       ${`${letter.manifest.id}.pdf`}, ${sha256}, 'application/pdf',
       ${Buffer.byteLength(letter.text)}, 'review',
-      ${jsonb(admin, payload)}, ${ownerUserId}
+      ${admin.json(payload as never)}, ${ownerUserId}
     )
   `;
   return documentId;
@@ -886,7 +881,7 @@ describe('the LOA extracted-value lock', () => {
         ${`${letterId}-lock-${String(lockSequence)}.pdf`},
         ${createHash('sha256').update(documentId).digest('hex')},
         'application/pdf', ${Buffer.byteLength(letter.text)}, 'review',
-        ${jsonb(admin, { sourceText: letter.text, review })}, ${ownerUserId}
+        ${admin.json({ sourceText: letter.text, review } as never)}, ${ownerUserId}
       )
     `;
     const workCode = `LK${String(lockSequence)}${runId}`.toUpperCase().slice(0, 20);
@@ -1328,7 +1323,7 @@ describe('matched tender and contract-source package', () => {
       values (
         ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
         'matched-parent-loa.pdf', ${createHash('sha256').update(id).digest('hex')},
-        'application/pdf', 1, 'review', ${jsonb(admin, payload)}, ${ownerUserId}
+        'application/pdf', 1, 'review', ${admin.json(payload)}, ${ownerUserId}
       )
     `;
     return id;
@@ -1775,7 +1770,7 @@ async function seedDocumentWithLetterNumber(
       ${documentId}, ${organisationId},
       ${`${organisationId}/loa/${documentId}.pdf`}, ${filename},
       ${createHash('sha256').update(documentId).digest('hex')}, 'application/pdf',
-      512, 'review', ${jsonb(admin, payload)}, ${ownerUserId}
+      512, 'review', ${admin.json(payload)}, ${ownerUserId}
     )
   `;
   return documentId;
@@ -1981,7 +1976,7 @@ describe('discarding an unconfirmed LOA intake package', () => {
         ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
         'discardable-parent-loa.pdf',
         ${createHash('sha256').update(id).digest('hex')},
-        'application/pdf', 1, 'review', ${jsonb(admin, payload)}, ${ownerUserId}
+        'application/pdf', 1, 'review', ${admin.json(payload)}, ${ownerUserId}
       )
     `;
     return id;
@@ -2009,9 +2004,9 @@ describe('discarding an unconfirmed LOA intake package', () => {
         ${id}, ${organisationId}, ${`${organisationId}/contractsource/${id}.pdf`},
         'tender-spec.pdf', ${createHash('sha256').update(id).digest('hex')},
         'application/pdf', 256, 'review',
-        ${jsonb(admin, { sourceText: 'spec', review: {} })}, ${ownerUserId},
+        ${admin.json({ sourceText: 'spec', review: {} })}, ${ownerUserId},
         'tender_specification', ${parentId}, 'matched',
-        ${jsonb(admin, { matched: true })}
+        ${admin.json({ matched: true })}
       )
     `;
     return id;

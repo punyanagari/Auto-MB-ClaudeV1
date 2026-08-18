@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
  * handler can name the reason in the report instead of filing it as an
  * anonymous database guard. */
 class InspectionGateSkip extends Error {}
-import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 import { CHALLAN_TEMPLATE_VERSION, type ChallanSnapshot } from '../challan-html.js';
 import { seedDefaultGstRates } from '../gst-rates.js';
 import { seedDefaultPayrollSchedules } from '../payroll-rates.js';
@@ -199,7 +199,7 @@ async function insertProvenance(
     )
     values (
       ${organisationId}, ${entityType}, ${SOURCE_SYSTEM}, ${sourceId},
-      ${targetId}, ${batchId}, ${fingerprint}, ${jsonb(tx, payload)}
+      ${targetId}, ${batchId}, ${fingerprint}, ${tx.json(payload as never)}
     )
   `;
 }
@@ -468,7 +468,7 @@ async function importOrganisation(
       insert into audit_events (organisation_id, actor_user_id, action, entity_type, entity_id, details)
       values (${organisationId}, ${IMPORT_ACTOR}, 'import.organisation-created',
               'organisations', ${organisationId},
-              ${jsonb(tx, { slug: sources.slug, sourceSystem: SOURCE_SYSTEM })})
+              ${tx.json({ slug: sources.slug, sourceSystem: SOURCE_SYSTEM })})
     `;
     // The notified GST rate history every organisation carries (0048):
     // migration seeding only reached organisations that existed when it
@@ -586,14 +586,14 @@ async function importOrganisation(
   // 4. Close the batch with the reconciliation record and an audit event.
   await tx`
     update import_batches
-    set finished_at = now(), reconciliation = ${jsonb(tx, report)}
+    set finished_at = now(), reconciliation = ${tx.json(report as never)}
     where organisation_id = ${organisationId} and id = ${batchId}
   `;
   await tx`
     insert into audit_events (organisation_id, actor_user_id, action, entity_type, entity_id, details)
     values (${organisationId}, ${IMPORT_ACTOR}, 'import.batch-completed',
             'import_batches', ${batchId},
-            ${jsonb(tx, {
+            ${tx.json({
               mode: options.mode,
               exceptions: run.exceptions.length,
               works: run.count('work').imported,
@@ -1058,7 +1058,7 @@ async function importWorkItems(
             ${itemNumber}, ${description}, ${unit.unit}, ${awardedQuantity},
             ${effectiveRate}, ${effectiveQuantity},
             ${requiresSerialsItemIds.has(item.id)},
-            ${jsonb(sp, { import: { sourceSystem: SOURCE_SYSTEM, sourceId: item.id } })},
+            ${sp.json({ import: { sourceSystem: SOURCE_SYSTEM, sourceId: item.id } })},
             ${workCreatedAt}, ${workCreatedAt}
           )
         `;
@@ -1710,7 +1710,7 @@ async function importOneChallan(
         )
         values (
           ${targetId}, ${organisationId}, ${workTarget.targetId}, 'draft',
-          ${challan.date}, ${prefix}, ${jsonb(sp, consignee)}, ${IMPORT_ACTOR},
+          ${challan.date}, ${prefix}, ${sp.json(consignee)}, ${IMPORT_ACTOR},
           ${createdAt}, ${createdAt}
         )
       `;
@@ -1729,7 +1729,7 @@ async function importOneChallan(
             ${plan.itemTargetId}, ${plan.line.description}, ${plan.line.unit},
             ${plan.quantity}, ${plan.rate},
             (${plan.quantity}::numeric(18,3) * ${plan.rate}::numeric(18,6))::numeric(18,2),
-            ${jsonb(sp, { import: { sourceSystem: SOURCE_SYSTEM, sourceId: plan.line.id } })},
+            ${sp.json({ import: { sourceSystem: SOURCE_SYSTEM, sourceId: plan.line.id } })},
             ${position}
           )
         `;
@@ -1868,7 +1868,7 @@ async function importOneChallan(
           update delivery_challans
           set status = 'issued', challan_number = ${challan.challanNo},
               sequence_number = ${prepared.sequence},
-              issued_snapshot = ${jsonb(sp, snapshot)},
+              issued_snapshot = ${sp.json(snapshot as never)},
               issued_by_user_id = ${IMPORT_ACTOR}, issued_at = ${issuedAt},
               template_version = ${CHALLAN_TEMPLATE_VERSION}
           where id = ${targetId}

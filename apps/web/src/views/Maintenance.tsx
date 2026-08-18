@@ -11,8 +11,10 @@ import type {
   MaintenanceStageCounts,
   MaintenanceStatus,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate, formatTimestampDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { maintenanceRequestHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -106,11 +108,7 @@ export function Maintenance({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
-
-  const reload = useCallback(() => {
-    setLoadVersion((current) => current + 1);
-  }, []);
+  const [loadVersion, reload] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -127,9 +125,7 @@ export function Maintenance({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The maintenance register could not be loaded.',
+          errorMessage(cause, 'The maintenance register could not be loaded.'),
         );
       });
     return () => {
@@ -150,11 +146,7 @@ export function Maintenance({
         setNextCursor(page.nextCursor);
       })
       .catch((cause: unknown) => {
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The next page could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The next page could not be loaded.'));
       })
       .finally(() => {
         setLoadingMore(false);

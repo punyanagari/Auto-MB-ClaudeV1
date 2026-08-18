@@ -11,6 +11,7 @@ import type {
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { mastersHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { FormError } from '../ui/form.js';
@@ -96,7 +97,7 @@ export function WorkTaxInvoices({
   /** A picker that could not be read. The invoices still render — this
    * says which action is missing and why (audit finding 27 residue). */
   const [pickerFailure, setPickerFailure] = useState<LoadFailure | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -218,12 +219,7 @@ export function WorkTaxInvoices({
     return (
       <>
         <h2>Tax Invoices</h2>
-        <ErrorState
-          retryLabel="Retry tax invoices"
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-        >
+        <ErrorState retryLabel="Retry tax invoices" onRetry={retry}>
           Tax invoices could not be loaded. Existing invoices remain unknown, so
           drafting is paused.
         </ErrorState>
@@ -286,12 +282,7 @@ export function WorkTaxInvoices({
           offering an action that would refuse identically. */}
       {pickerFailure !== null &&
         (pickerFailure.retryable ? (
-          <ErrorState
-            retryLabel="Retry"
-            onRetry={() => {
-              setLoadVersion((current) => current + 1);
-            }}
-          >
+          <ErrorState retryLabel="Retry" onRetry={retry}>
             {pickerFailure.message} Drafting is unavailable until it loads — the
             invoices above are unaffected, and this does not mean there is nothing to
             bill.

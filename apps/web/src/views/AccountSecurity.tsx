@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
-import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Disclosure } from '../ui/disclosure.js';
@@ -106,11 +107,7 @@ export function AccountSecurity({ api }: AccountSecurityProps) {
       setFreshCodes(codes);
       setNotice('New backup codes issued. The previous codes no longer work.');
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The backup codes could not be regenerated.',
-      );
+      setError(errorMessage(cause, 'The backup codes could not be regenerated.'));
     } finally {
       setPending(false);
     }
@@ -130,11 +127,7 @@ export function AccountSecurity({ api }: AccountSecurityProps) {
     } catch (cause) {
       // MFA_REQUIRED_BY_POLICY lands here for accounts holding document
       // authority: the server refuses regardless of what this screen shows.
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'Two-factor authentication could not be disabled.',
-      );
+      setError(errorMessage(cause, 'Two-factor authentication could not be disabled.'));
     } finally {
       setPending(false);
     }

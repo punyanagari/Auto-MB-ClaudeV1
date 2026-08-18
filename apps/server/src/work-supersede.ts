@@ -355,7 +355,7 @@ function registerPredicate(register: string): string {
  * declaration order above so the operator always reads the same list in
  * the same order.
  */
-export async function readSupersedeBlockers(
+async function readSupersedeBlockers(
   tx: TransactionSql,
   workId: string,
 ): Promise<readonly SupersedeBlocker[]> {
@@ -387,7 +387,7 @@ export async function readSupersedeBlockers(
   }));
 }
 
-export interface SupersedeEligibility {
+interface SupersedeEligibility {
   readonly workId: string;
   readonly workCode: string;
   readonly letterNumber: string;
@@ -454,7 +454,7 @@ export async function readSupersedeEligibility(
 
 /** One sentence naming everything that stands in the way, so the operator
  * reads the whole list rather than discovering it one refusal at a time. */
-export function describeBlockers(blockers: readonly SupersedeBlocker[]): string {
+function describeBlockers(blockers: readonly SupersedeBlocker[]): string {
   return blockers
     .map((blocker) => blocker.label)
     .join(', ')
@@ -572,7 +572,7 @@ export async function applyWorkSupersede(
 
 /** An open supersession: the Work withdrawn, its identity, and the letter
  * released for it, read from the document being confirmed. */
-export interface OpenSupersession {
+interface OpenSupersession {
   readonly id: string;
   readonly supersededWorkId: string;
   readonly supersededWorkCode: string;

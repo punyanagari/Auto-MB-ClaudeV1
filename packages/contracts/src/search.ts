@@ -20,7 +20,7 @@ import { DateOnlySchema, UuidSchema } from './primitives.js';
  */
 
 /** The registers a result can come from. */
-export const SearchResultKindSchema = Type.Union([
+const SearchResultKindSchema = Type.Union([
   Type.Literal('work'),
   Type.Literal('delivery-challan'),
   Type.Literal('issue-challan'),
@@ -42,9 +42,8 @@ export const SearchQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type SearchQuery = Static<typeof SearchQuerySchema>;
 
-export const SearchResultSchema = Type.Object(
+const SearchResultSchema = Type.Object(
   {
     kind: SearchResultKindSchema,
     id: UuidSchema,
@@ -71,7 +70,7 @@ export const SearchResultSchema = Type.Object(
 );
 export type SearchResult = Static<typeof SearchResultSchema>;
 
-export const SearchGroupSchema = Type.Object(
+const SearchGroupSchema = Type.Object(
   {
     kind: SearchResultKindSchema,
     results: Type.Array(SearchResultSchema),

@@ -6,13 +6,13 @@ import {
   StoredPdfSignatureStatusSchema,
 } from './pdf-signature.js';
 
-export const CONTRACT_SOURCE_DOCUMENT_KINDS = [
+const CONTRACT_SOURCE_DOCUMENT_KINDS = [
   'nit',
   'contract_agreement',
   'tender_specification',
 ] as const;
 
-export const ContractSourceDocumentKindSchema = Type.Union(
+const ContractSourceDocumentKindSchema = Type.Union(
   CONTRACT_SOURCE_DOCUMENT_KINDS.map((kind) => Type.Literal(kind)),
 );
 export type ContractSourceDocumentKind = Static<
@@ -26,9 +26,8 @@ export const ContractSourceUploadQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type ContractSourceUploadQuery = Static<typeof ContractSourceUploadQuerySchema>;
 
-export const ContractSourceIdentityMatchSchema = Type.Object(
+const ContractSourceIdentityMatchSchema = Type.Object(
   {
     matched: Type.Literal(true),
     tenderNumberMatched: Type.Literal(true),
@@ -45,7 +44,7 @@ export type ContractSourceIdentityMatch = Static<
   typeof ContractSourceIdentityMatchSchema
 >;
 
-export const ContractSourceDocumentSchema = Type.Object(
+const ContractSourceDocumentSchema = Type.Object(
   {
     id: UuidSchema,
     parentLoaDocumentId: UuidSchema,
@@ -74,7 +73,7 @@ const OptionalPercentageSchema = Type.Union([
   Type.Null(),
 ]);
 
-export const TenderPaymentMatrixEvidenceSchema = Type.Object(
+const TenderPaymentMatrixEvidenceSchema = Type.Object(
   {
     sourceDocumentId: UuidSchema,
     sourceFilename: Type.String(),
@@ -92,7 +91,7 @@ export type TenderPaymentMatrixEvidence = Static<
   typeof TenderPaymentMatrixEvidenceSchema
 >;
 
-export const TenderPeriodEvidenceSchema = Type.Object(
+const TenderPeriodEvidenceSchema = Type.Object(
   {
     sourceDocumentId: UuidSchema,
     sourceFilename: Type.String(),
@@ -114,7 +113,7 @@ export const TenderPeriodEvidenceSchema = Type.Object(
 );
 export type TenderPeriodEvidence = Static<typeof TenderPeriodEvidenceSchema>;
 
-export const TenderReleaseClauseEvidenceSchema = Type.Object(
+const TenderReleaseClauseEvidenceSchema = Type.Object(
   {
     sourceDocumentId: UuidSchema,
     sourceFilename: Type.String(),
@@ -128,7 +127,7 @@ export type TenderReleaseClauseEvidence = Static<
   typeof TenderReleaseClauseEvidenceSchema
 >;
 
-export const TenderItemSpecificationEvidenceSchema = Type.Object(
+const TenderItemSpecificationEvidenceSchema = Type.Object(
   {
     sourceDocumentId: UuidSchema,
     sourceFilename: Type.String(),

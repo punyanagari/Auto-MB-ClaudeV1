@@ -16,7 +16,6 @@ import {
   type Consignee,
 } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import {
@@ -191,7 +190,7 @@ async function insertCorrectionRequest(
     )
     values (
       ${organisationId}, ${entityType}, ${entityId}, ${workId},
-      ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${reason}, ${userId}
+      ${tx.json(proposed as never)}, ${tx.json(diff as never)}, ${reason}, ${userId}
     )
     returning id, entity_id, work_id
   `.catch((error: unknown) => {

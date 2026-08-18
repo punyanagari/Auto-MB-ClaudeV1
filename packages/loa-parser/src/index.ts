@@ -21,36 +21,19 @@ import { fileURLToPath } from 'node:url';
 // package's public surface stays coherent (loadCorpus/loadLetter alongside
 // the normalisation functions that consume their output), per the ticket's
 // "Keep the public API surface coherent" instruction.
-export type { FieldResult } from './field.js';
-export { found, notFound, optionalAbsent, preview } from './field.js';
 export { isPrintFurnitureLine, stripPrintFurniture } from './furniture.js';
-export { toIsoDate, parseDdMmYyyy, isRealCalendarDate } from './dates.js';
+export { parseDdMmYyyy } from './dates.js';
 export { indianWordsToNumber, parseRupeesWords } from './words-to-number.js';
-export { flatten, paragraphs, hyphenJoin, nonBlankLines } from './text.js';
-export {
-  extractLetterNumberAndDate,
-  type LetterNumberAndDate,
-} from './letter-number.js';
+export { flatten } from './text.js';
 export {
   extractHeader,
   type LoaHeader,
-  type ContractValueField,
-  type EmdField,
-  type SecurityDepositField,
   type PerformanceGuaranteeField,
-  type CompletionPeriodField,
 } from './header.js';
 // DC-25 — item-row parsing (par-token anchoring, wrapped descriptions,
 // schedule binding). Re-exported for the same "coherent public surface"
 // reason as DC-23's header exports above.
-export {
-  parseItems,
-  type ParsedItem,
-  type ParTokenDirection,
-  type ItemScheduleBinding,
-  type ItemReconciliation,
-  type ParseItemsOptions,
-} from './items.js';
+export { parseItems, type ParsedItem } from './items.js';
 export { parseDecimalToMinorUnits, formatMinorUnits } from './decimal.js';
 // DC-24 — pricing-shape classifier (Shape A letter-level percentage vs
 // Shape B per-schedule totals; docs/reference/loa-parser-contract.md §1).
@@ -58,31 +41,17 @@ export { parseDecimalToMinorUnits, formatMinorUnits } from './decimal.js';
 // DC-25's exports above.
 export {
   classifyPricingShape,
-  parseTotalsBlockStructure,
   classifyShapeKind,
-  type PricingShapeValue,
   type LetterPercentageDirectionValue,
   type WorksPricingColumns,
   type PricingShapeResult,
-  type ShapeKind,
   type TotalsBlockStructure,
   type ScheduleTotalEntry,
-  type TotalsRoundingDivergence,
 } from './pricing-shape.js';
 export {
   reviewTenderDocument,
   matchTenderIdentity,
-  type TenderDocumentKind,
-  type TenderPeriodKind,
-  type TenderReleaseKind,
-  type TenderMatrixCategory,
-  type TenderField,
-  type TenderPaymentMatrixSuggestion,
-  type TenderPeriodSuggestion,
-  type TenderReleaseClauseSuggestion,
-  type TenderItemSpecificationSuggestion,
   type TenderReviewPayload,
-  type TenderIdentityMatch,
 } from './tender-document.js';
 // The NIT reader (migration 0083). Pre-award and standalone: it takes the
 // six first-page fields off a Notice Inviting Tender months before any
@@ -111,16 +80,8 @@ export {
   detectBannedItemsBlock,
   detectBannedItemsBranch,
   CANONICAL_UNIT_NAMES,
-  type ReviewFlagScope,
-  type FlagCode,
   type ReviewFlag,
-  type ProposedUnitCorrection,
-  type QtyDecomposition,
-  type NeedsReviewRollup,
   type LoaReviewPayload,
-  type ReviewLoaOptions,
-  type BannedBlockSpelling,
-  type BannedItemsBlockDetection,
 } from './needs-review.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

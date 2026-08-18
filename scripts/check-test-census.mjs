@@ -88,6 +88,14 @@ function testFiles() {
  *
  * Returns `{ code, comments }` — `comments` keeps the original text of each
  * comment against its line number, so the skip-reason search can read them.
+ *
+ * Hand-rolled ON PURPOSE, unlike scripts/check-comment-refs.mjs, which reads
+ * its comments off `typescript`'s parser. This script is the whole of
+ * .github/workflows/census.yml, and that job deliberately runs with NOTHING
+ * installed — checkout, Node, one script — which is what lets it run on every
+ * pull request including the documentation-only ones ci.yml skips. Importing
+ * a parser out of node_modules would put a workspace install into the one job
+ * built to avoid it. Reach for a scanner fix here, never a dependency.
  */
 function stripSourceText(source) {
   const out = new Array(source.length);
@@ -97,6 +105,10 @@ function stripSourceText(source) {
   // enclosing `${` interpolation started.
   const templateStack = [];
   let braceDepth = 0;
+  // The last non-whitespace character of real code, which is how a leading
+  // `/` is told apart from a division. Comments deliberately do not move it:
+  // `const re = // why\n /'x'/` is still a regular expression.
+  let previousSignificant = '';
 
   const blank = (from, to) => {
     for (let k = from; k < to; k += 1) {
@@ -145,6 +157,37 @@ function stripSourceText(source) {
       }
       blank(i, Math.min(k + 1, source.length));
       i = k + 1;
+      previousSignificant = ch;
+      continue;
+    }
+    // A regular-expression literal, which must be blanked like any other
+    // literal and for a sharper reason: an unblanked `/'[a-z_]+'/` hands its
+    // quote to the string branch above, which then blanks every line of live
+    // code after it and takes that file's whole test count to zero. Two files
+    // were being lost that way. Comment openers are matched before this, so
+    // `//` and `/*` never reach it — neither is a legal regular expression.
+    if (ch === '/' && /^$|[(,=:[!&|?{};+\-*%<>~^]/.test(previousSignificant)) {
+      const start = i;
+      i += 1;
+      // Character classes are tracked so that `[/]` does not close it early.
+      let inClass = false;
+      while (i < source.length) {
+        const c = source[i];
+        if (c === '\\') {
+          i += 2;
+          continue;
+        }
+        if (c === '\n') break;
+        if (c === '[') inClass = true;
+        else if (c === ']') inClass = false;
+        else if (c === '/' && !inClass) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      blank(start, Math.min(i, source.length));
+      previousSignificant = '/';
       continue;
     }
     if (ch === '`') {
@@ -187,10 +230,12 @@ function stripSourceText(source) {
         out[i] = source[i] === '\n' ? '\n' : ' ';
         i += 1;
       }
+      previousSignificant = '`';
       continue;
     }
     if (ch === '{') braceDepth += 1;
     if (ch === '}') braceDepth -= 1;
+    if (!/\s/.test(ch)) previousSignificant = ch;
     out[i] = ch;
     i += 1;
   }

@@ -37,11 +37,8 @@ import {
  * restricts it to the statutory ceiling. Both are lawful and the gap is
  * thousands of rupees a month, so it is the organisation's recorded
  * election rather than a rule the product picks. */
-export const PF_WAGE_BASES = ['actual', 'ceiling'] as const;
-export const PfWageBasisSchema = Type.Union(
-  PF_WAGE_BASES.map((basis) => Type.Literal(basis)),
-);
-export type PfWageBasis = Static<typeof PfWageBasisSchema>;
+const PF_WAGE_BASES = ['actual', 'ceiling'] as const;
+const PfWageBasisSchema = Type.Union(PF_WAGE_BASES.map((basis) => Type.Literal(basis)));
 
 /**
  * Which arm of a State's profession-tax schedule applies.
@@ -53,20 +50,16 @@ export type PfWageBasis = Static<typeof PfWageBasisSchema>;
  * distinction would deduct ₹200 a month from every woman between those
  * figures who owes nothing.
  */
-export const PROFESSIONAL_TAX_CATEGORIES = ['male', 'female'] as const;
-export const ProfessionalTaxCategorySchema = Type.Union(
+const PROFESSIONAL_TAX_CATEGORIES = ['male', 'female'] as const;
+const ProfessionalTaxCategorySchema = Type.Union(
   PROFESSIONAL_TAX_CATEGORIES.map((category) => Type.Literal(category)),
 );
-export type ProfessionalTaxCategory = Static<typeof ProfessionalTaxCategorySchema>;
 
 /** `new` is the default under section 115BAC(1A) — an employee opts OUT
  * of it rather than into it — so the product defaults the same way the
  * statute does. */
-export const TAX_REGIMES = ['old', 'new'] as const;
-export const TaxRegimeSchema = Type.Union(
-  TAX_REGIMES.map((regime) => Type.Literal(regime)),
-);
-export type TaxRegime = Static<typeof TaxRegimeSchema>;
+const TAX_REGIMES = ['old', 'new'] as const;
+const TaxRegimeSchema = Type.Union(TAX_REGIMES.map((regime) => Type.Literal(regime)));
 
 /**
  * The register's projection of an employee.
@@ -83,7 +76,7 @@ export type TaxRegime = Static<typeof TaxRegimeSchema>;
  * answer the question a payroll clerk opens it to ask, and it is the sum
  * rather than the structure.
  */
-export const EmployeeSummarySchema = Type.Object(
+const EmployeeSummarySchema = Type.Object(
   {
     id: UuidSchema,
     employeeCode: Type.String(),
@@ -104,7 +97,7 @@ export const EmployeeSummarySchema = Type.Object(
 );
 export type EmployeeSummary = Static<typeof EmployeeSummarySchema>;
 
-export const EmployeeSchema = Type.Object(
+const EmployeeSchema = Type.Object(
   {
     id: UuidSchema,
     contactId: UuidSchema,
@@ -248,7 +241,6 @@ export const EmployeeListQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type EmployeeListQuery = Static<typeof EmployeeListQuerySchema>;
 
 export const EmployeeListResponseSchema = Type.Object(
   {
@@ -267,13 +259,12 @@ export type EmployeeListResponse = Static<typeof EmployeeListResponseSchema>;
 
 // ── The payroll run ──────────────────────────────────────────────────
 
-export const PAYROLL_RUN_STATUSES = ['draft', 'finalized', 'cancelled'] as const;
-export const PayrollRunStatusSchema = Type.Union(
+const PAYROLL_RUN_STATUSES = ['draft', 'finalized', 'cancelled'] as const;
+const PayrollRunStatusSchema = Type.Union(
   PAYROLL_RUN_STATUSES.map((status) => Type.Literal(status)),
 );
-export type PayrollRunStatus = Static<typeof PayrollRunStatusSchema>;
 
-export const PayrollRunSummarySchema = Type.Object(
+const PayrollRunSummarySchema = Type.Object(
   {
     id: UuidSchema,
     runNumber: Type.String(),
@@ -302,7 +293,7 @@ export type PayrollRunSummary = Static<typeof PayrollRunSummarySchema>;
  * organisation owes the EPFO and the ESIC this month, which is the
  * figure the remittance is made for.
  */
-export const PayrollRunLineSchema = Type.Object(
+const PayrollRunLineSchema = Type.Object(
   {
     id: UuidSchema,
     employeeId: UuidSchema,
@@ -356,7 +347,7 @@ export type PayrollRunLine = Static<typeof PayrollRunLineSchema>;
  * inputs, not a second copy of the schedule: nothing writes back through
  * it, and the product has no screen that edits a notification.
  */
-export const PayrollStatutoryBasisSchema = Type.Object(
+const PayrollStatutoryBasisSchema = Type.Object(
   {
     parameter: Type.String(),
     value: Type.String(),
@@ -368,7 +359,7 @@ export const PayrollStatutoryBasisSchema = Type.Object(
 export type PayrollStatutoryBasis = Static<typeof PayrollStatutoryBasisSchema>;
 
 /** Flat, for the reason `CreateEmployeeSchema` above gives. */
-export const PayrollRunSchema = Type.Object(
+const PayrollRunSchema = Type.Object(
   {
     ...PayrollRunSummarySchema.properties,
     lines: Type.Array(PayrollRunLineSchema),

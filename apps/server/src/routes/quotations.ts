@@ -13,7 +13,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { requireAuthority, requireWriterRole } from '../authz.js';
@@ -812,7 +811,7 @@ export function registerQuotationRoutes(
         // SQL NULL, not the jsonb scalar `null` a bare json() would
         // write: "no snapshot" is the absence of a value, not a value.
         const snapshotParameter =
-          customerSnapshot === null ? null : jsonb(tx, customerSnapshot);
+          customerSnapshot === null ? null : tx.json(customerSnapshot as never);
 
         // Gapless BQ-NN per ORGANISATION (not per Work — there is no
         // Work): the counter row lock orders concurrent issues, and a

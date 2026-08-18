@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Boxes, Factory, PackageCheck, Plus, X } from 'lucide-react';
 import type { JobCardSummary, ProductionItem, Work } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatDate, todayISO } from '../format.js';
+import { type ApiClient } from '../api.js';
+import { formatDate, todayIso } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { statusKeyOf, statusLabelOf } from '../lib/production-status.js';
+import { useReload } from '../lib/view-state.js';
 import {
   navigateOnClick,
   productionHash,
@@ -83,7 +86,7 @@ export function Production({
   const [cards, setCards] = useState<readonly JobCardSummary[] | null>(null);
   const [counts, setCounts] = useState({ open: 0, inProduction: 0, ready: 0 });
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
   const [creating, setCreating] = useState(false);
   /* The register is keyset-paginated server-side, and asking for a page
      is what makes that real: without a `limit` the route answers the
@@ -114,11 +117,7 @@ export function Production({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The job cards could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The job cards could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -156,12 +155,7 @@ export function Production({
     return (
       <>
         {header}
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry job cards"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry job cards">
           {loadError}
         </ErrorState>
       </>
@@ -361,9 +355,7 @@ export function Production({
                   })
                   .catch((cause: unknown) => {
                     setLoadError(
-                      cause instanceof RequestFailedError
-                        ? cause.message
-                        : 'The next page could not be loaded.',
+                      errorMessage(cause, 'The next page could not be loaded.'),
                     );
                   })
                   .finally(() => {
@@ -443,7 +435,7 @@ function JobCardForm({
   const [chosenWorkId, setChosenWorkId] = useState(workId ?? '');
   const [customerName, setCustomerName] = useState('');
   const [sourceReference, setSourceReference] = useState('');
-  const [dueDate, setDueDate] = useState(todayISO());
+  const [dueDate, setDueDate] = useState(todayIso());
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -462,11 +454,7 @@ function JobCardForm({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The item master could not be loaded.',
-        );
+        setError(errorMessage(cause, 'The item master could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -496,11 +484,7 @@ function JobCardForm({
             })
             .then(onCreated)
             .catch((cause: unknown) => {
-              setError(
-                cause instanceof RequestFailedError
-                  ? cause.message
-                  : 'The job card could not be raised.',
-              );
+              setError(errorMessage(cause, 'The job card could not be raised.'));
             })
             .finally(() => {
               setPending(false);
@@ -661,27 +645,4 @@ function JobCardForm({
  * ever reached it. */
 function percentOf(part: number, whole: number): number {
   return whole === 0 ? 0 : Math.round((part / whole) * 100);
-}
-
-/** The chip's key.
- *
- * `in_production` is hyphenated for the chip's vocabulary, which is a
- * word-per-state map rather than a column-name map: `docs/DESIGN.md`
- * § Status badge semantics spells multi-word statuses with a hyphen and
- * gives them a display label. */
-function statusKeyOf(card: JobCardSummary): string {
-  return card.status === 'in_production' ? 'in-production' : card.status;
-}
-
-function statusLabelOf(card: JobCardSummary): string {
-  switch (card.status) {
-    case 'in_production':
-      return 'In production';
-    case 'planned':
-      return 'Planned';
-    case 'completed':
-      return 'Completed';
-    case 'cancelled':
-      return 'Cancelled';
-  }
 }

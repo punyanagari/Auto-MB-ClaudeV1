@@ -7,7 +7,7 @@
  * not this payload, become the confirmed Work.
  */
 
-export interface FieldView {
+interface FieldView {
   readonly value: string | null;
   readonly raw: string | null;
   readonly needsReview: boolean;
@@ -49,7 +49,7 @@ export interface ReviewFlagView {
  * demands — distinct from any PBG instrument the contractor later
  * records). Declared optional because older stored payloads travel
  * untyped; the review screen degrades to a blank requirement block. */
-export interface PerformanceGuaranteeView {
+interface PerformanceGuaranteeView {
   readonly amountFigures: number | null;
   readonly amountWords: string | null;
   readonly submissionDays: number | null;
@@ -59,7 +59,7 @@ export interface PerformanceGuaranteeView {
   readonly needsReview: boolean;
 }
 
-export interface ReviewPayloadView {
+interface ReviewPayloadView {
   readonly header: {
     readonly letterNumber: FieldView;
     readonly letterDate: FieldView;
@@ -158,7 +158,7 @@ export function formatMinorUnits(minor: bigint, scale: number): string {
   return kept.length > 0 ? `${whole.toString()}.${kept}` : whole.toString();
 }
 
-export interface RowTotalInput {
+interface RowTotalInput {
   readonly awardedQuantity: string;
   readonly effectiveRate: string;
 }

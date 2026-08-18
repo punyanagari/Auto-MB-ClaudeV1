@@ -1,12 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { toDataURL } from 'qrcode';
 import { Check, Copy, Download, ShieldCheck } from 'lucide-react';
-import {
-  RequestFailedError,
-  formValue,
-  type ApiClient,
-  type TwoFactorEnrolmentStart,
-} from '../api.js';
+import { formValue, type ApiClient, type TwoFactorEnrolmentStart } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { Field, Actions, FormError, Hint } from '../ui/form.js';
 
@@ -85,11 +81,7 @@ export function TwoFactorEnrolment({ api, onEnrolled }: TwoFactorEnrolmentProps)
       const start = await api.enableTwoFactor(password);
       setStep({ name: 'verify', start });
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'Enrolment could not be started. Try again.',
-      );
+      setError(errorMessage(cause, 'Enrolment could not be started. Try again.'));
     } finally {
       setPending(false);
     }
@@ -105,11 +97,7 @@ export function TwoFactorEnrolment({ api, onEnrolled }: TwoFactorEnrolmentProps)
       await api.verifyTotp(code);
       setStep({ name: 'codes', backupCodes: step.start.backupCodes });
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The code could not be verified. Try again.',
-      );
+      setError(errorMessage(cause, 'The code could not be verified. Try again.'));
     } finally {
       setPending(false);
     }

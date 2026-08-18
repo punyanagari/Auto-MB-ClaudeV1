@@ -20,7 +20,7 @@ import {
   type TenderStatusEvent,
   type TenderSummary,
 } from '@auto-mb/contracts';
-import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 import { extractPdfText, PdfToTextConfigurationError } from '@auto-mb/documents';
 import type { ObjectStorage } from '@auto-mb/documents';
 import { reviewTenderNotice, type TenderNoticeReview } from '@auto-mb/loa-parser';
@@ -743,8 +743,8 @@ export function registerTenderRoutes(
             ${review === null ? 'failed' : 'review'},
             ${
               review === null
-                ? jsonb(tx, { error: failure ?? 'extraction_failed' })
-                : jsonb(tx, { sourceText, review })
+                ? tx.json({ error: failure ?? 'extraction_failed' })
+                : tx.json({ sourceText, review } as never)
             },
             ${user.id}
           )

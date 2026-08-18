@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import type { IssueChallan } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { issueChallanHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -53,8 +55,7 @@ export function IssueChallans({
 }: IssueChallansProps) {
   const [challans, setChallans] = useState<readonly Row[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -73,11 +74,7 @@ export function IssueChallans({
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          error instanceof RequestFailedError
-            ? error.message
-            : 'The issue challans could not be loaded.',
-        );
+        setLoadError(errorMessage(error, 'The issue challans could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -87,12 +84,7 @@ export function IssueChallans({
   return (
     <section aria-label="Issue challans" className="flex flex-col gap-4">
       {loadError !== null && (
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry issue challans"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry issue challans">
           {loadError}
         </ErrorState>
       )}

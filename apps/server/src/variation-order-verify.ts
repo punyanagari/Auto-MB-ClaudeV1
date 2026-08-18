@@ -107,7 +107,7 @@ export interface VariationOrderVerdict {
 
 /** Identity read out of the order itself. Nothing here is operator input:
  * a value the document did not state stays null and fails its claim. */
-export interface VariationOrderFacts {
+interface VariationOrderFacts {
   readonly loaNumber: string | null;
   /** ISO `YYYY-MM-DD`, converted from the printed `DD/MM/YYYY`. */
   readonly loaDate: string | null;
@@ -124,7 +124,7 @@ export interface VariationOrderFacts {
 
 /** One fully-read row of the Variation Details table. A row whose columns
  * could not be told apart is never produced — it is simply not found. */
-export interface VariationOrderItemRow {
+interface VariationOrderItemRow {
   readonly scheduleType: string;
   readonly schedule: string;
   readonly itemNumber: string;

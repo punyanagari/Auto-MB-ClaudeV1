@@ -5,7 +5,9 @@ import type {
   SaveIssueChallanRequest,
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
-import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
+import { existingRecordIdOf, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Card } from '../ui/card.js';
@@ -110,8 +112,7 @@ export function IssueChallanEditor({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
   const manualSequence = useRef(0);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   const edited =
@@ -178,19 +179,13 @@ export function IssueChallanEditor({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The Issue Challan editor could not be loaded.',
+          errorMessage(cause, 'The Issue Challan editor could not be loaded.'),
         );
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, workId, challanId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   useEffect(() => {
     onDirtyChange?.(edited);
@@ -381,11 +376,7 @@ export function IssueChallanEditor({
         onSaved(existingId);
         return;
       }
-      setSaveError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The draft could not be saved.',
-      );
+      setSaveError(errorMessage(cause, 'The draft could not be saved.'));
       setPending(false);
     }
   }

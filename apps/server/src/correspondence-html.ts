@@ -14,11 +14,16 @@
  * logo travels as a data URI.
  */
 
-import { escapeHtml, type ChallanBranding } from './challan-html.js';
+import {
+  BASE_PDF_CSS,
+  escapeHtml,
+  WATERMARK_CSS,
+  type ChallanBranding,
+} from './challan-html.js';
 
-export const CORRESPONDENCE_TEMPLATE_VERSION = 'correspondence-v1';
+const CORRESPONDENCE_TEMPLATE_VERSION = 'correspondence-v1';
 
-export type CorrespondenceBranding = ChallanBranding;
+type CorrespondenceBranding = ChallanBranding;
 
 export interface OutwardLetterSnapshot {
   readonly organisationName: string;
@@ -82,17 +87,13 @@ export function renderOutwardLetterHtml(
   body { font-family: Helvetica, Arial, sans-serif; color: #17221d; margin: 2rem; font-size: 12px; }
   h1 { font-size: 16px; margin: 1.2rem 0 0.4rem; }
   .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #55635c; }
-  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
-  .brand img { max-height: 56px; max-width: 180px; }
-  .brand .org { font-size: 15px; font-weight: bold; }
-  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
-  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+${BASE_PDF_CSS}
   .addressee { white-space: pre-line; margin: 0.4rem 0 1rem; }
   .reference { margin: 0.2rem 0; }
   .body-copy p { margin: 0.6rem 0; }
   .sign { margin-top: 3rem; display: flex; justify-content: flex-end; }
   .sign div { border-top: 1px solid #17221d; padding-top: 4px; width: 30%; text-align: center; }
-  .watermark { position: fixed; top: 45%; left: 8%; right: 8%; text-align: center; transform: rotate(-30deg); font-size: 96px; font-weight: bold; color: rgba(23, 34, 29, 0.12); letter-spacing: 0.2em; pointer-events: none; z-index: 10; }
+${WATERMARK_CSS}
 </style>
 </head>
 <body>

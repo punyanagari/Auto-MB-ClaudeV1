@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import type { SigningAgent, SigningRequest } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatTimestamp } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -79,14 +81,10 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
   const [requests, setRequests] = useState<readonly SigningRequest[] | null>(null);
   const [agents, setAgents] = useState<readonly SigningAgent[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, reload] = useReload();
   const [withdrawing, setWithdrawing] = useState<SigningRequest | null>(null);
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    setLoadVersion((count) => count + 1);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,11 +99,7 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The signing queue could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The signing queue could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -121,11 +115,7 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
         setWithdrawing(null);
         reload();
       } catch (cause: unknown) {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The request could not be withdrawn.',
-        );
+        setActionError(errorMessage(cause, 'The request could not be withdrawn.'));
       } finally {
         setPending(false);
       }
@@ -139,11 +129,7 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
       try {
         await openPdf(() => api.downloadSignedPdf(organisationId, request.id));
       } catch (cause: unknown) {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The signed document could not be opened.',
-        );
+        setActionError(errorMessage(cause, 'The signed document could not be opened.'));
       }
     },
     [api, organisationId],

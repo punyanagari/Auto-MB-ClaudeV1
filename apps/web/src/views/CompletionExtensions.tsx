@@ -4,14 +4,11 @@ import type {
   ExtensionResponseOutcome,
   WorkCompletionResponse,
 } from '@auto-mb/contracts';
-import {
-  existingRecordIdOf,
-  formValue,
-  RequestFailedError,
-  type ApiClient,
-} from '../api.js';
+import { existingRecordIdOf, formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Stat } from '../ui/stat.js';
@@ -50,8 +47,7 @@ export function CompletionExtensions({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -65,19 +61,13 @@ export function CompletionExtensions({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The completion details could not be loaded.',
+          errorMessage(cause, 'The completion details could not be loaded.'),
         );
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   const reload = useCallback(async () => {
     setCompletion(await api.getWorkCompletion(organisationId, workId));
@@ -92,11 +82,7 @@ export function CompletionExtensions({
         await work();
         setNotice(done);
       } catch (cause) {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The action failed; nothing was changed.',
-        );
+        setActionError(errorMessage(cause));
         // A one-draft 409 names the draft that already occupies the slot
         // (created in another tab or by a colleague): reload so the view
         // switches to that existing draft instead of a dead-ended form.

@@ -3,7 +3,7 @@ import { twoFactor } from 'better-auth/plugins';
 import { createTransport } from 'nodemailer';
 import type pg from 'pg';
 
-export interface CreateAuthOptions {
+interface CreateAuthOptions {
   readonly pool: pg.Pool;
   readonly secret: string;
   readonly baseUrl: string;
@@ -51,7 +51,7 @@ export const RESET_TOKEN_TTL_SECONDS = 60 * 60;
  * compose stack beside whatever relay the agency already runs, and SMTP
  * is the one interface every such relay offers.
  */
-export interface MailSettings {
+interface MailSettings {
   /** A `smtp://` or `smtps://` URL, credentials included when the relay
    * requires them (nodemailer parses the whole connection from it). */
   readonly smtpUrl: string;
@@ -143,23 +143,6 @@ function transportFailureCode(cause: unknown): string {
     : 'no transport error code';
 }
 
-export type SendMail = (message: {
-  readonly to: string;
-  readonly subject: string;
-  readonly text: string;
-}) => Promise<void>;
-
-function smtpSender(settings: MailSettings): SendMail {
-  const transport = createTransport(settings.smtpUrl, { from: settings.from });
-  return async (message) => {
-    await transport.sendMail({
-      to: message.to,
-      subject: message.subject,
-      text: message.text,
-    });
-  };
-}
-
 /**
  * Better Auth owns the auth_* tables; migration 0004 carries the exact
  * shape `@better-auth/cli generate` emits for this configuration (model
@@ -193,7 +176,13 @@ export function createAuth(options: CreateAuthOptions): Auth {
     readMailSettings(),
     process.env.NODE_ENV,
   );
-  const sendMail = mailSettings === null ? null : smtpSender(mailSettings);
+  // Null when the deployment configured no transport at all: password
+  // recovery then refuses loudly at send time rather than silently
+  // dropping the mail (see sendResetPassword below).
+  const mailTransport =
+    mailSettings === null
+      ? null
+      : createTransport(mailSettings.smtpUrl, { from: mailSettings.from });
   return betterAuth({
     baseURL: options.baseUrl,
     secret: options.secret,
@@ -216,7 +205,7 @@ export function createAuth(options: CreateAuthOptions): Auth {
       // control of the account, so every existing session goes with it.
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
-        if (sendMail === null) {
+        if (mailTransport === null) {
           throw new Error(
             `Password recovery is not configured: set ${SMTP_URL_ENV} and ` +
               `${MAIL_FROM_ENV}.`,
@@ -224,7 +213,7 @@ export function createAuth(options: CreateAuthOptions): Auth {
         }
         const message = resetPasswordMessage(url);
         try {
-          await sendMail({
+          await mailTransport.sendMail({
             to: user.email,
             subject: message.subject,
             text: message.text,

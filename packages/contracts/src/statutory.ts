@@ -39,7 +39,7 @@ import { Type, type Static } from '@sinclair/typebox';
 
 /** A pointer to the law a value comes from, carried next to the value so
  * a reviewer never has to guess which statute a number is claiming. */
-export interface StatutoryProvision {
+interface StatutoryProvision {
   /** How the provision is cited in ordinary Indian practice. */
   readonly citation: string;
   /** The enactment the citation belongs to. */
@@ -57,11 +57,11 @@ export interface StatutoryProvision {
  * correctly is a section it should not offer, so the list stays short and
  * grows only when a real payment needs it.
  */
-export const TDS_SECTIONS = ['194C', '194J'] as const;
+const TDS_SECTIONS = ['194C', '194J'] as const;
 export const TdsSectionSchema = Type.Union(
   TDS_SECTIONS.map((section) => Type.Literal(section)),
 );
-export type TdsSection = Static<typeof TdsSectionSchema>;
+type TdsSection = Static<typeof TdsSectionSchema>;
 
 /**
  * Which of a section's two rates applies. 194C splits on what kind of
@@ -69,13 +69,13 @@ export type TdsSection = Static<typeof TdsSectionSchema>;
  * One discriminator serves both because both are a binary choice the
  * operator makes at capture time.
  */
-export const TDS_PAYEE_CLASSES = ['individual_huf', 'other'] as const;
+const TDS_PAYEE_CLASSES = ['individual_huf', 'other'] as const;
 export const TdsPayeeClassSchema = Type.Union(
   TDS_PAYEE_CLASSES.map((payeeClass) => Type.Literal(payeeClass)),
 );
-export type TdsPayeeClass = Static<typeof TdsPayeeClassSchema>;
+type TdsPayeeClass = Static<typeof TdsPayeeClassSchema>;
 
-export interface TdsSectionRule {
+interface TdsSectionRule {
   readonly section: TdsSection;
   readonly label: string;
   readonly provision: StatutoryProvision;
@@ -151,7 +151,7 @@ export const TDS_SECTION_RULES: readonly TdsSectionRule[] = [
  * UNVERIFIED — needs owner confirmation.
  */
 export const PAN_ABSENT_MINIMUM_RATE = '20.00';
-export const PAN_ABSENT_PROVISION: StatutoryProvision = {
+const PAN_ABSENT_PROVISION: StatutoryProvision = {
   citation: 'Section 206AA',
   act: 'Income-tax Act, 1961',
   effect:
@@ -188,9 +188,9 @@ export const BILL_DEDUCTION_HEADS = [
   'PENALTY',
   'OTHER',
 ] as const;
-export type BillDeductionHead = (typeof BILL_DEDUCTION_HEADS)[number];
+type BillDeductionHead = (typeof BILL_DEDUCTION_HEADS)[number];
 
-export interface BillDeductionHeadRule {
+interface BillDeductionHeadRule {
   readonly head: BillDeductionHead;
   readonly label: string;
   /** Where the operator reconciles or reclaims this head. Shown as the
@@ -367,7 +367,7 @@ function untaxedRemainder(left: string, right: string): string {
   return `${digits.slice(0, cut)}.${digits.slice(cut)}`;
 }
 
-export interface TdsRateQuery {
+interface TdsRateQuery {
   readonly section: TdsSection;
   readonly payeeClass: TdsPayeeClass;
   /** False when the vendor has no PAN on record, which engages the
@@ -389,9 +389,9 @@ export interface TdsRateQuery {
 /** What the rate is applied to. `payment` is the ordinary case;
  * `aggregate_catch_up` is the crossing payment, which carries the tax of
  * every earlier untaxed payment in the year as well as its own. */
-export type TdsTaxableBasis = 'payment' | 'aggregate_catch_up' | 'none';
+type TdsTaxableBasis = 'payment' | 'aggregate_catch_up' | 'none';
 
-export interface TdsRateVerdict {
+interface TdsRateVerdict {
   /** The rate to apply, as an exact decimal string. `'0.00'` when no
    * threshold has been crossed. */
   readonly rate: string;
@@ -531,7 +531,7 @@ export function addDecimalStrings(left: string, right: string): string {
 
 // ── Owner verification ───────────────────────────────────────────────
 
-export interface StatutoryVerificationItem {
+interface StatutoryVerificationItem {
   readonly value: string;
   readonly meaning: string;
   readonly provision: StatutoryProvision;

@@ -1,4 +1,5 @@
 import { httpError } from '../http.js';
+import { paiseText } from '../money.js';
 import type { EwayBillSourceFacts } from './eway-source.js';
 import { exactJsonInteger, exactJsonNumber } from './statutory-json.js';
 
@@ -302,13 +303,15 @@ export function sumDecimals(values: readonly string[]): string {
   for (const value of values) {
     paise += toPaise(value);
   }
-  const negative = paise < 0n;
-  const absolute = negative ? -paise : paise;
-  const rupees = absolute / 100n;
-  const remainder = absolute % 100n;
-  return `${negative ? '-' : ''}${rupees.toString()}.${remainder.toString().padStart(2, '0')}`;
+  return paiseText(paise);
 }
 
+/** Deliberately LAXER than `money.ts`'s parser, which is why it stays
+ * here. A tax-invoice snapshot's `decimal` grammar permits any number of
+ * fraction digits, so a frozen '100.000' reaches this builder legitimately
+ * and means 10000 paise; only a genuinely non-zero sub-paisa digit is a
+ * refusal, and it gets a message of its own naming that. The shared parser
+ * would reject both alike. */
 function toPaise(value: string): bigint {
   // Anchored, and every repetition consumes a digit that no other branch
   // can also consume: linear on all inputs.

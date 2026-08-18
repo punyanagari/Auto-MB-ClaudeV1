@@ -13,7 +13,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
 import { keysetPage, sqlLimit, workScopedCursorRowId } from '../pagination.js';
@@ -223,7 +222,7 @@ function requireStatus(row: IssueChallanRow, status: IssueChallan['status']): vo
   }
 }
 
-export interface NormalisedHeader {
+interface NormalisedHeader {
   issuedToName: string;
   issuedToRole: string | null;
   location: string | null;
@@ -823,7 +822,7 @@ export function registerIssueChallanRoutes(
             update issue_challans
             set status = 'issued', challan_number = ${challanNumber},
                 sequence_number = ${sequence},
-                issued_snapshot = ${jsonb(tx, snapshot)},
+                issued_snapshot = ${tx.json(snapshot as never)},
                 issued_by_user_id = ${user.id}, issued_at = ${issuedAt},
                 template_version = ${ISSUE_CHALLAN_TEMPLATE_VERSION}
             where id = ${id}

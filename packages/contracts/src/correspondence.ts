@@ -24,13 +24,8 @@ import { DateOnlySchema, UuidSchema, nonBlankString } from './primitives.js';
 // `CorrespondenceEntry.source` is what says which table a row came from,
 // and it is what the screen uses to decide where a row leads.
 
-export const CORRESPONDENCE_TABS = [
-  'outward',
-  'inward',
-  'extensions',
-  'inspection',
-] as const;
-export const CorrespondenceTabSchema = Type.Union(
+const CORRESPONDENCE_TABS = ['outward', 'inward', 'extensions', 'inspection'] as const;
+const CorrespondenceTabSchema = Type.Union(
   CORRESPONDENCE_TABS.map((tab) => Type.Literal(tab)),
 );
 export type CorrespondenceTab = Static<typeof CorrespondenceTabSchema>;
@@ -44,17 +39,15 @@ export type CorrespondenceTab = Static<typeof CorrespondenceTabSchema>;
  * It is also what decides whether the register's number cell is a link:
  * only a `letter` has a document this module's own route can serve. The
  * other two are reached through the module that owns them. */
-export const CORRESPONDENCE_SOURCES = ['letter', 'extension', 'inspection'] as const;
-export const CorrespondenceSourceSchema = Type.Union(
+const CORRESPONDENCE_SOURCES = ['letter', 'extension', 'inspection'] as const;
+const CorrespondenceSourceSchema = Type.Union(
   CORRESPONDENCE_SOURCES.map((source) => Type.Literal(source)),
 );
-export type CorrespondenceSource = Static<typeof CorrespondenceSourceSchema>;
 
-export const CorrespondenceDirectionSchema = Type.Union([
+const CorrespondenceDirectionSchema = Type.Union([
   Type.Literal('outward'),
   Type.Literal('inward'),
 ]);
-export type CorrespondenceDirection = Static<typeof CorrespondenceDirectionSchema>;
 
 /**
  * How a row reads on the register, in the design contract's own status
@@ -75,7 +68,7 @@ export type CorrespondenceDirection = Static<typeof CorrespondenceDirectionSchem
  *             register can show; letters here have no draft state)
  *   cancelled a cancelled letter, or a withdrawn inspection call
  */
-export const CORRESPONDENCE_STATUSES = [
+const CORRESPONDENCE_STATUSES = [
   'draft',
   'sent',
   'received',
@@ -84,12 +77,12 @@ export const CORRESPONDENCE_STATUSES = [
   'rejected',
   'cancelled',
 ] as const;
-export const CorrespondenceStatusSchema = Type.Union(
+const CorrespondenceStatusSchema = Type.Union(
   CORRESPONDENCE_STATUSES.map((status) => Type.Literal(status)),
 );
 export type CorrespondenceStatus = Static<typeof CorrespondenceStatusSchema>;
 
-export const CorrespondenceEntrySchema = Type.Object(
+const CorrespondenceEntrySchema = Type.Object(
   {
     id: UuidSchema,
     source: CorrespondenceSourceSchema,
@@ -123,7 +116,7 @@ export type CorrespondenceEntry = Static<typeof CorrespondenceEntrySchema>;
 
 /** The four tab counts, always all four: the register draws every count
  * on every tab, so one request answers the whole header. */
-export const CorrespondenceCountsSchema = Type.Object(
+const CorrespondenceCountsSchema = Type.Object(
   {
     outward: Type.Integer({ minimum: 0 }),
     inward: Type.Integer({ minimum: 0 }),
@@ -138,7 +131,6 @@ export const CorrespondenceListQuerySchema = Type.Composite(
   [Type.Object({ tab: Type.Optional(CorrespondenceTabSchema) }), KeysetQuerySchema],
   { additionalProperties: false },
 );
-export type CorrespondenceListQuery = Static<typeof CorrespondenceListQuerySchema>;
 
 export const CorrespondenceListResponseSchema = Type.Object(
   {
@@ -203,19 +195,15 @@ export const RegisterInwardLetterQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type RegisterInwardLetterQuery = Static<typeof RegisterInwardLetterQuerySchema>;
 
 export const CancelCorrespondenceLetterRequestSchema = Type.Object(
   { reason: nonBlankString({ minLength: 3, maxLength: 500 }) },
   { additionalProperties: false },
 );
-export type CancelCorrespondenceLetterRequest = Static<
-  typeof CancelCorrespondenceLetterRequestSchema
->;
 
 /** One letter, as the composer's "reply to" picker lists them: enough to
  * recognise a letter, nothing more. */
-export const CorrespondenceThreadOptionSchema = Type.Object(
+const CorrespondenceThreadOptionSchema = Type.Object(
   {
     id: UuidSchema,
     number: Type.String(),

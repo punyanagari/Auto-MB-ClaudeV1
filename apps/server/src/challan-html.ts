@@ -28,7 +28,7 @@ export interface ChallanBranding {
   readonly contactEmail?: string | null;
 }
 
-export interface ChallanSnapshotItem {
+interface ChallanSnapshotItem {
   readonly position: number;
   /** The LOA schedule item number, or '' on a manual (non-LOA) line —
    * printed as an em dash. Empty is impossible on every challan issued
@@ -82,6 +82,40 @@ export function escapeHtml(value: string): string {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 }
+
+/**
+ * The letterhead rules every generated PDF sheet needs — the brand strip
+ * (logo, organisation name, address/GSTIN/contact line) and the document
+ * title row beneath it. Every sheet this server prints carries the same
+ * letterhead by design: challans, measurement books, extension requests,
+ * correction notices and outward letters must be recognisably one
+ * organisation's paper. The rules were duplicated byte-for-byte in six
+ * templates, which meant a brand tweak was six edits and five chances to
+ * leave one sheet looking different, so they live here once.
+ *
+ * The two-space indent is part of the string: this is interpolated
+ * verbatim inside a `<style>` block, and the generated HTML is compared
+ * byte-for-byte in tests. Only the rules that were identical in all six
+ * templates are here — everything else (`body`, `.label`, `.sign div`
+ * and the per-document rules) stays inline in each template, because the
+ * templates order their style blocks differently and hoisting more would
+ * reorder the emitted CSS.
+ */
+export const BASE_PDF_CSS = `  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
+  .brand img { max-height: 56px; max-width: 180px; }
+  .brand .org { font-size: 15px; font-weight: bold; }
+  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
+  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }`;
+
+/**
+ * The diagonal overlay for sheets that can print in a provisional or
+ * void state — DRAFT on a measurement book or extension request,
+ * CANCELLED on an outward letter. Same reason as `BASE_PDF_CSS`: three
+ * templates carried an identical copy, and a watermark that renders
+ * fainter on one document than another is a document-integrity problem,
+ * not a cosmetic one. Indented to sit inside a `<style>` block.
+ */
+export const WATERMARK_CSS = `  .watermark { position: fixed; top: 45%; left: 8%; right: 8%; text-align: center; transform: rotate(-30deg); font-size: 96px; font-weight: bold; color: rgba(23, 34, 29, 0.12); letter-spacing: 0.2em; pointer-events: none; z-index: 10; }`;
 
 export function renderChallanHtml(
   snapshot: ChallanSnapshot,
@@ -170,11 +204,7 @@ export function renderChallanHtml(
   .total td { font-weight: bold; }
   .sign { margin-top: 3rem; display: flex; justify-content: space-between; }
   .sign div { border-top: 1px solid #17221d; padding-top: 4px; width: 30%; text-align: center; }
-  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
-  .brand img { max-height: 56px; max-width: 180px; }
-  .brand .org { font-size: 15px; font-weight: bold; }
-  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
-  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+${BASE_PDF_CSS}
   .warranty-page { break-before: page; page-break-before: always; }
   .warranty-text { white-space: pre-wrap; margin-top: 1rem; line-height: 1.5; }
 </style>

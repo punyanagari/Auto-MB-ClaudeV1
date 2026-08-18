@@ -11,13 +11,8 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import {
   loadLetter,
   resolveCanonicalUnitCode,
@@ -246,7 +241,7 @@ async function seedReviewDocument(
       ${`${organisationId}/loa/${documentId}.pdf`},
       ${`${letter.manifest.id}.pdf`}, ${sha256},
       'application/pdf', ${Buffer.byteLength(letter.text)}, 'review',
-      ${jsonb(admin, payload)}, ${ownerUserId}
+      ${admin.json(payload as never)}, ${ownerUserId}
     )
   `;
   return { documentId, review };
@@ -275,7 +270,7 @@ async function seedRequirementWork(
       current_date - ${letterDaysAgo}::int, 'PBG dashboard proof work',
       '1000000.00', '900000.00', 'per_schedule', ${ownerUserId},
       ${requiredAmount}, ${submissionDays}, ${extensionDays},
-      ${jsonb(admin, { provenance: 'corrected', raw: null, parser: null })}
+      ${admin.json({ provenance: 'corrected', raw: null, parser: null })}
     )
   `;
   return workId;

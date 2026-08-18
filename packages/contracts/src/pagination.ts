@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from '@sinclair/typebox';
+import { Type, type TSchema } from '@sinclair/typebox';
 import { UuidSchema } from './primitives.js';
 
 /**
@@ -39,7 +39,7 @@ import { UuidSchema } from './primitives.js';
 /** The largest page a caller may ask for. Higher than the timeline's 100
  * because these are registers a clerk scrolls rather than an event feed,
  * and low enough that one page is a bounded serialisation. */
-export const MAX_PAGE_SIZE = 200;
+const MAX_PAGE_SIZE = 200;
 
 // Cursors are validated with a pattern rather than the uuid format, for
 // the reason `timeline.ts` states: the check must not depend on which
@@ -57,7 +57,6 @@ export const KeysetQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type KeysetQuery = Static<typeof KeysetQuerySchema>;
 
 /** The response property a paginated list carries beside its rows: the id
  * to send as the next `cursor`, or null when the register is exhausted —

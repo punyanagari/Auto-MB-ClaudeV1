@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IssueChallanDetailResponse } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
@@ -90,11 +91,7 @@ export function IssueChallanDetail({
         );
       })
       .catch((cause: unknown) => {
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The Issue Challan could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The Issue Challan could not be loaded.'));
       });
   }, [api, organisationId, challanId]);
 
@@ -115,11 +112,7 @@ export function IssueChallanDetail({
       if (updated !== null) setDetail(updated);
       setNotice(done);
     } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
+      setActionError(errorMessage(cause));
     } finally {
       setPending(false);
     }

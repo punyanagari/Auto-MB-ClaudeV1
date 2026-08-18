@@ -11,7 +11,9 @@ import type { ApiClient } from '../api.js';
 // tells the operator to go and add a row; naming it "Pure installation"
 // while that screen shows "Purely installation" sends them looking for a
 // row that is not there under that name.
+import { missingOrganisationFacts } from '../lib/organisation-facts.js';
 import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
+import { useReload } from '../lib/view-state.js';
 import { mastersHash, SETTINGS_HASH, workHash } from '../lib/workspace-routes.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
@@ -42,18 +44,6 @@ function clientProfileComplete(contact: Contact): boolean {
   );
 }
 
-/** The seller facts the submit route refuses without — mirrors
- * ORG_STATE/GSTIN/ADDRESS/PINCODE/LOCALITY_REQUIRED. */
-function missingOrganisationFacts(profile: OrganisationProfile): readonly string[] {
-  return [
-    ...((profile.stateCode ?? null) === null ? ['GST state code'] : []),
-    ...(profile.gstin === null ? ['GSTIN'] : []),
-    ...(profile.address === null ? ['address'] : []),
-    ...((profile.pincode ?? null) === null ? ['PIN code'] : []),
-    ...((profile.locality ?? null) === null ? ['locality'] : []),
-  ];
-}
-
 /**
  * Whether this Work can reach a submitted GST invoice, answered before
  * the operator walks into the refusals: a payment matrix row for every
@@ -73,7 +63,7 @@ export function WorkBillingReadiness({
   const [contacts, setContacts] = useState<readonly Contact[] | null>(null);
   const [profile, setProfile] = useState<OrganisationProfile | null>(null);
   const [failed, setFailed] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -110,12 +100,7 @@ export function WorkBillingReadiness({
     return (
       <section aria-labelledby="billing-readiness-heading">
         <h2 id="billing-readiness-heading">Billing readiness</h2>
-        <ErrorState
-          retryLabel="Retry readiness check"
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-        >
+        <ErrorState retryLabel="Retry readiness check" onRetry={retry}>
           The billing prerequisites could not be checked. Invoicing itself is unaffected
           — the server still verifies everything at submit.
         </ErrorState>

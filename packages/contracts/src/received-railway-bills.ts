@@ -23,9 +23,6 @@ export const ReceivedRailwayBillUploadQuerySchema = Type.Object(
   { filename: Type.String({ minLength: 1, maxLength: 300 }) },
   { additionalProperties: false },
 );
-export type ReceivedRailwayBillUploadQuery = Static<
-  typeof ReceivedRailwayBillUploadQuerySchema
->;
 
 /**
  * Why a received bill's signatures do not permit settlement.
@@ -35,7 +32,7 @@ export type ReceivedRailwayBillUploadQuery = Static<
  * chain is a trust-anchor question for whoever runs the server, and a
  * document modified after signing is a conversation with the railway.
  */
-export const RAILWAY_BILL_VERDICT_REFUSALS = [
+const RAILWAY_BILL_VERDICT_REFUSALS = [
   'not_verified',
   'document_status',
   'signature_count',
@@ -44,12 +41,9 @@ export const RAILWAY_BILL_VERDICT_REFUSALS = [
   'signature_signers',
   'signature_coverage',
 ] as const;
-export const RailwayBillVerdictRefusalSchema = Type.Union(
+const RailwayBillVerdictRefusalSchema = Type.Union(
   RAILWAY_BILL_VERDICT_REFUSALS.map((refusal) => Type.Literal(refusal)),
 );
-export type RailwayBillVerdictRefusalCode = Static<
-  typeof RailwayBillVerdictRefusalSchema
->;
 
 export const ReceivedRailwayBillSchema = Type.Object(
   {
@@ -105,9 +99,6 @@ export const DiscardReceivedRailwayBillRequestSchema = Type.Object(
   { reason: Type.Optional(nonBlankString({ minLength: 3, maxLength: 500 })) },
   { additionalProperties: false },
 );
-export type DiscardReceivedRailwayBillRequest = Static<
-  typeof DiscardReceivedRailwayBillRequestSchema
->;
 
 /**
  * What the upload refused to read, when it refused.
@@ -121,9 +112,6 @@ export const RailwayBillParseFailureDetailsSchema = Type.Object(
   { field: Type.String() },
   { additionalProperties: false },
 );
-export type RailwayBillParseFailureDetails = Static<
-  typeof RailwayBillParseFailureDetailsSchema
->;
 
 /**
  * What the closure refusal knows about the measurement it refused to

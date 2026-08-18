@@ -18,18 +18,17 @@ import {
   WorkItemPaymentCategorySchema,
 } from './payment.js';
 
-export const PricingShapeSchema = Type.Union([
+const PricingShapeSchema = Type.Union([
   Type.Literal('letter_percentage'),
   Type.Literal('per_schedule'),
 ]);
 export type PricingShape = Static<typeof PricingShapeSchema>;
 
-export const LetterPercentageDirectionSchema = Type.Union([
+const LetterPercentageDirectionSchema = Type.Union([
   Type.Literal('below'),
   Type.Literal('at_par'),
   Type.Literal('above'),
 ]);
-export type LetterPercentageDirection = Static<typeof LetterPercentageDirectionSchema>;
 
 /** The letter's rebate or premium as a percentage of the advertised
  * value: 0 to 100. A rebate cannot exceed the whole advertised value and
@@ -79,7 +78,7 @@ export type GstBasis = Static<typeof GstBasisSchema>;
  * server records an explicit manual-entry marker as its source evidence.
  * Every item must carry exactly one of the two — the confirm endpoint
  * refuses items with neither (or both). */
-export const ConfirmWorkItemSchema = Type.Object(
+const ConfirmWorkItemSchema = Type.Object(
   {
     itemNumber: Type.String({ minLength: 1, maxLength: 100 }),
     description: Type.String({ minLength: 3 }),
@@ -109,7 +108,7 @@ export const ConfirmWorkItemSchema = Type.Object(
 );
 export type ConfirmWorkItem = Static<typeof ConfirmWorkItemSchema>;
 
-export const ConfirmWorkScheduleSchema = Type.Object(
+const ConfirmWorkScheduleSchema = Type.Object(
   {
     scheduleCode: Type.String({ minLength: 1, maxLength: 50 }),
     title: Type.String({ minLength: 1, maxLength: 1000 }),
@@ -126,7 +125,7 @@ export type ConfirmWorkSchedule = Static<typeof ConfirmWorkScheduleSchema>;
  * the stored extraction payload, and retains the printed raw source —
  * clients only ever submit the values themselves. Letters without a
  * performance-guarantee clause simply omit the whole object. */
-export const ConfirmPbgRequirementSchema = Type.Object(
+const ConfirmPbgRequirementSchema = Type.Object(
   {
     requiredAmount: DecimalStringSchema,
     submissionDays: Type.Integer({ minimum: 1, maximum: 180 }),
@@ -141,7 +140,7 @@ export type ConfirmPbgRequirement = Static<typeof ConfirmPbgRequirementSchema>;
  * Tender extraction may prefill the editor, but these values are the human
  * confirmation and remain manually editable later. The server validates
  * uniqueness, 0–100 bounds and the exact sum of 100 for every row. */
-export const ConfirmPaymentMatrixRowSchema = Type.Object(
+const ConfirmPaymentMatrixRowSchema = Type.Object(
   {
     category: PaymentMatrixCategorySchema,
     pctSupply: DecimalStringSchema,
@@ -192,7 +191,7 @@ export const ConfirmWorkRequestSchema = Type.Object(
 );
 export type ConfirmWorkRequest = Static<typeof ConfirmWorkRequestSchema>;
 
-export const WorkSchema = Type.Object(
+const WorkSchema = Type.Object(
   {
     id: UuidSchema,
     workCode: WorkCodeSchema,
@@ -244,7 +243,7 @@ export const WorkSchema = Type.Object(
 );
 export type Work = Static<typeof WorkSchema>;
 
-export const WorkItemSchema = Type.Object(
+const WorkItemSchema = Type.Object(
   {
     id: UuidSchema,
     scheduleId: UuidSchema,
@@ -310,7 +309,7 @@ export const WorkItemSchema = Type.Object(
 );
 export type WorkItem = Static<typeof WorkItemSchema>;
 
-export const WorkScheduleSchema = Type.Object(
+const WorkScheduleSchema = Type.Object(
   {
     id: UuidSchema,
     scheduleCode: Type.String({ minLength: 1, maxLength: 50 }),
@@ -326,7 +325,6 @@ export const WorkListResponseSchema = Type.Object(
   { works: Type.Array(WorkSchema) },
   { additionalProperties: false },
 );
-export type WorkListResponse = Static<typeof WorkListResponseSchema>;
 
 export const WorkDetailResponseSchema = Type.Object(
   {
@@ -357,7 +355,7 @@ export type WorkDetailResponse = Static<typeof WorkDetailResponseSchema>;
  * and they measure it TRIMMED, so the note schema does too. A note of
  * three spaces used to satisfy minLength and die at the CHECK, which the
  * operator read as a server error rather than "a note is required". */
-export const WorkCompletionNoteSchema = nonBlankString({
+const WorkCompletionNoteSchema = nonBlankString({
   minLength: 3,
   maxLength: 2000,
 });
@@ -391,7 +389,7 @@ export type WorkStatusResponse = Static<typeof WorkStatusResponseSchema>;
  * maintenance item is never delivered and never installed — the period
  * is served and the railway certifies it — so what it owes is certified
  * quantity, summed over its non-cancelled acceptance certificates. */
-export const WorkCompletionRequirementSchema = Type.Union([
+const WorkCompletionRequirementSchema = Type.Union([
   Type.Literal('delivery'),
   Type.Literal('installation'),
   Type.Literal('delivery_and_installation'),
@@ -410,13 +408,12 @@ export type WorkCompletionRequirement = Static<typeof WorkCompletionRequirementS
  * excess-delivery toggle (R4); over-INSTALLATION reaches it whenever site
  * ran ahead of the variation order that sanctions the extra work
  * (migration 0077), which is the ordinary way an item lands here. */
-export const WorkCompletionDirectionSchema = Type.Union([
+const WorkCompletionDirectionSchema = Type.Union([
   Type.Literal('short'),
   Type.Literal('excess'),
 ]);
-export type WorkCompletionDirection = Static<typeof WorkCompletionDirectionSchema>;
 
-export const UnfinishedWorkItemSchema = Type.Object(
+const UnfinishedWorkItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -452,7 +449,7 @@ export type WorkNotFullyExecutedDetails = Static<
   typeof WorkNotFullyExecutedDetailsSchema
 >;
 
-export const WORK_COMPLETION_BLOCKER_KINDS = [
+const WORK_COMPLETION_BLOCKER_KINDS = [
   'draft_delivery_challan',
   'draft_issue_challan',
   'draft_extension_request',
@@ -460,7 +457,7 @@ export const WORK_COMPLETION_BLOCKER_KINDS = [
   'pending_approval_request',
 ] as const;
 
-export const WorkCompletionBlockerSchema = Type.Object(
+const WorkCompletionBlockerSchema = Type.Object(
   {
     kind: Type.Union(WORK_COMPLETION_BLOCKER_KINDS.map((kind) => Type.Literal(kind))),
     recordId: UuidSchema,

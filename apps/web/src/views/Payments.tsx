@@ -9,14 +9,14 @@ import type {
   TdsPreviewResponse,
   VendorInvoice,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { cn } from '../lib/cn.js';
 import {
   navigateOnClick,
   paymentsHash,
   type PaymentsRegisterTab,
 } from '../lib/workspace-routes.js';
-import { formatDate, formatInr, todayISO } from '../format.js';
+import { formatDate, formatInr, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -25,7 +25,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
-import { describeLoadFailure } from '../lib/load-failure.js';
+import { errorMessage, describeLoadFailure } from '../lib/load-failure.js';
 
 /**
  * Money going out: employee advances and reimbursements, and the vendor
@@ -200,11 +200,7 @@ export function Payments({
       await run();
       setNotice(success);
     } catch (error) {
-      setFormError(
-        error instanceof RequestFailedError
-          ? error.message
-          : 'The action could not be completed.',
-      );
+      setFormError(errorMessage(error, 'The action could not be completed.'));
     } finally {
       setPending(false);
     }
@@ -770,7 +766,7 @@ function PayRequestForm({
   readonly onPaid: (updated: PaymentRequest) => void;
 }) {
   const [reference, setReference] = useState('');
-  const [paidOn, setPaidOn] = useState(todayISO);
+  const [paidOn, setPaidOn] = useState(todayIso);
 
   return (
     <Card>
@@ -1056,7 +1052,7 @@ function NewVendorInvoiceForm({
   );
   const [vendor, setVendor] = useState('');
   const [number, setNumber] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(todayISO);
+  const [invoiceDate, setInvoiceDate] = useState(todayIso);
   const [creditDays, setCreditDays] = useState('30');
   const [amount, setAmount] = useState('');
   const [section, setSection] = useState<'' | '194C' | '194J'>('');
@@ -1235,7 +1231,7 @@ function VendorPaymentForm({
   readonly onAct: (run: () => Promise<void>, success: string) => Promise<void>;
 }) {
   const [gross, setGross] = useState('');
-  const [paidOn, setPaidOn] = useState(todayISO);
+  const [paidOn, setPaidOn] = useState(todayIso);
   const [reference, setReference] = useState('');
   const [preview, setPreview] = useState<TdsPreviewResponse | null>(null);
 

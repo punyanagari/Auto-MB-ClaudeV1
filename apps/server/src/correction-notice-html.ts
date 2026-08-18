@@ -11,13 +11,13 @@
  * complete and self-contained with no external requests.
  */
 
-import { escapeHtml, type ChallanBranding } from './challan-html.js';
+import { BASE_PDF_CSS, escapeHtml, type ChallanBranding } from './challan-html.js';
 
 export const CORRECTION_NOTICE_TEMPLATE_VERSION = 'correction-notice-v1';
 
-export type CorrectionNoticeBranding = ChallanBranding;
+type CorrectionNoticeBranding = ChallanBranding;
 
-export interface CorrectionNoticeSnapshotLine {
+interface CorrectionNoticeSnapshotLine {
   readonly position: number;
   readonly itemNumber: string;
   readonly description: string;
@@ -99,11 +99,7 @@ export function renderCorrectionNoticeHtml(
   h1 { font-size: 16px; margin: 1.2rem 0 0.4rem; }
   h2 { font-size: 12px; margin: 1.2rem 0 0.3rem; text-transform: uppercase; letter-spacing: 0.05em; }
   .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #55635c; }
-  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
-  .brand img { max-height: 56px; max-width: 180px; }
-  .brand .org { font-size: 15px; font-weight: bold; }
-  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
-  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+${BASE_PDF_CSS}
   table { width: 100%; border-collapse: collapse; margin: 0.6rem 0 1rem; }
   th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }
   th { font-size: 10px; text-transform: uppercase; }

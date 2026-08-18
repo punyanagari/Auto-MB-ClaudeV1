@@ -2,18 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 
-/**
- * Object storage boundary for uploaded documents. The filesystem
- * implementation below serves development and single-node deployments; an
- * S3-compatible implementation slots in behind the same interface when the
- * deployment story (Milestone 4) needs it. Keys are server-generated and
- * tenant-prefixed — migration 0003 enforces the same prefix rule on
- * loa_documents.object_key, so the storage layout and the database agree.
- */
-export interface ObjectStorage {
-  put(key: string, bytes: Buffer): Promise<void>;
-  get(key: string): Promise<Buffer>;
-}
+/** The object storage boundary for uploaded documents, as the filesystem
+ * implementation defines it. */
+export type ObjectStorage = ReturnType<typeof createFileSystemStorage>;
 
 // <organisation uuid>/<area>/<server-generated name>[.<extension>].
 // Validated segment-by-segment with anchored single-class regexes (no
@@ -76,7 +67,15 @@ async function syncDirectory(dir: string): Promise<void> {
   }
 }
 
-export function createFileSystemStorage(rootDir: string): ObjectStorage {
+/**
+ * Object storage for uploaded documents. The filesystem implementation
+ * serves development and single-node deployments; an S3-compatible one
+ * slots in behind the same shape when the deployment story (Milestone 4)
+ * needs it. Keys are server-generated and tenant-prefixed — migration 0003
+ * enforces the same prefix rule on loa_documents.object_key, so the
+ * storage layout and the database agree.
+ */
+export function createFileSystemStorage(rootDir: string) {
   const root = path.resolve(rootDir);
 
   function resolveKey(key: string): string {
@@ -102,7 +101,7 @@ export function createFileSystemStorage(rootDir: string): ObjectStorage {
      * Orphan temp files are inert — their dotted names can never satisfy
      * assertSafeObjectKey, so no key resolves to them.
      */
-    async put(key, bytes) {
+    async put(key: string, bytes: Buffer): Promise<void> {
       const file = resolveKey(key);
       const dir = path.dirname(file);
       await mkdir(dir, { recursive: true });
@@ -117,7 +116,7 @@ export function createFileSystemStorage(rootDir: string): ObjectStorage {
       await rename(temp, file);
       await syncDirectory(dir);
     },
-    async get(key) {
+    async get(key: string): Promise<Buffer> {
       return readFile(resolveKey(key));
     },
   };

@@ -11,13 +11,13 @@
  * the paper must say the material is not an ordinary outward issue.
  */
 
-import { escapeHtml, type ChallanBranding } from './challan-html.js';
+import { BASE_PDF_CSS, escapeHtml, type ChallanBranding } from './challan-html.js';
 
 export const ISSUE_CHALLAN_TEMPLATE_VERSION = 'ic-v1';
 
-export type IssueChallanBranding = ChallanBranding;
+type IssueChallanBranding = ChallanBranding;
 
-export interface IssueChallanSnapshotLine {
+interface IssueChallanSnapshotLine {
   readonly position: number;
   /** Null for manual lines outside the LOA. */
   readonly itemNumber: string | null;
@@ -93,11 +93,7 @@ export function renderIssueChallanHtml(
   .desc { width: 50%; }
   .sign { margin-top: 3rem; display: flex; justify-content: space-between; }
   .sign div { border-top: 1px solid #17221d; padding-top: 4px; width: 30%; text-align: center; }
-  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
-  .brand img { max-height: 56px; max-width: 180px; }
-  .brand .org { font-size: 15px; font-weight: bold; }
-  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
-  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+${BASE_PDF_CSS}
   .movement { border: 1.5px solid #17221d; display: inline-block; padding: 3px 8px; margin-top: 6px; font-weight: bold; letter-spacing: 0.04em; }
   .remarks { margin-top: 1rem; }
 </style>

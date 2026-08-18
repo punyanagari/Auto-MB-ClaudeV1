@@ -6,7 +6,7 @@ import { StatusChip } from '../../ui/chip.js';
 /** The fields both the register row and the Work's list row carry about an
  * invoice's statutory standing. Deliberately a structural subset, so the
  * one badge serves `TaxInvoiceRegisterEntry` and `TaxInvoice` alike. */
-export interface IrpBadgeRow {
+interface IrpBadgeRow {
   readonly irn: string | null;
   readonly irpProvider: 'manual' | 'whitebooks' | null;
   readonly irpProviderState: IrpProviderState;

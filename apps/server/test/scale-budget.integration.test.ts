@@ -2,17 +2,20 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { PlanNode, Sql, TransactionSql } from '@auto-mb/db';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 import {
-  aggregateLoops,
   createDatabasePool,
   ensureClusterRoles,
-  explainPlan,
-  removeOrganisationResidue,
   runMigrations,
-  sharedBlocks,
   withTenant,
 } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
+import {
+  type PlanNode,
+  aggregateLoops,
+  explainPlan,
+  sharedBlocks,
+} from '@auto-mb/db/explain';
 import { writeLines as writeChallanLines } from '../src/routes/challans.js';
 import { writeLines as writeIssueChallanLines } from '../src/routes/issue-challans.js';
 import {

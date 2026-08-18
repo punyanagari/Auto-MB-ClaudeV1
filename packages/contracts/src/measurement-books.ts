@@ -26,30 +26,29 @@ import { WorkItemPaymentCategorySchema } from './payment.js';
  * (status 'merged', mergedIntoId set) or deleted while still drafts.
  */
 
-export const MEASUREMENT_BOOK_STATUSES = [
+const MEASUREMENT_BOOK_STATUSES = [
   'draft',
   'finalized',
   'cancelled',
   'merged',
 ] as const;
-export const MeasurementBookStatusSchema = Type.Union(
+const MeasurementBookStatusSchema = Type.Union(
   MEASUREMENT_BOOK_STATUSES.map((status) => Type.Literal(status)),
 );
-export type MeasurementBookStatus = Static<typeof MeasurementBookStatusSchema>;
 
-export const MEASUREMENT_BOOK_KINDS = ['record', 'on_account', 'final'] as const;
-export const MeasurementBookKindSchema = Type.Union(
+const MEASUREMENT_BOOK_KINDS = ['record', 'on_account', 'final'] as const;
+const MeasurementBookKindSchema = Type.Union(
   MEASUREMENT_BOOK_KINDS.map((kind) => Type.Literal(kind)),
 );
 export type MeasurementBookKind = Static<typeof MeasurementBookKindSchema>;
 
 /** The three billable source record types (spec §5.9 "Sources"). */
-export const MB_SOURCE_TYPES = [
+const MB_SOURCE_TYPES = [
   'delivery_challan',
   'installation',
   'pac_certificate',
 ] as const;
-export const MbSourceTypeSchema = Type.Union(
+const MbSourceTypeSchema = Type.Union(
   MB_SOURCE_TYPES.map((sourceType) => Type.Literal(sourceType)),
 );
 export type MbSourceType = Static<typeof MbSourceTypeSchema>;
@@ -89,7 +88,7 @@ export type MergeMeasurementBooksRequest = Static<
   typeof MergeMeasurementBooksRequestSchema
 >;
 
-export const MbSourceRefSchema = Type.Object(
+const MbSourceRefSchema = Type.Object(
   {
     sourceType: MbSourceTypeSchema,
     sourceId: UuidSchema,
@@ -113,11 +112,8 @@ export const CancelMeasurementBookRequestSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type CancelMeasurementBookRequest = Static<
-  typeof CancelMeasurementBookRequestSchema
->;
 
-export const MeasurementBookSchema = Type.Object(
+const MeasurementBookSchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,
@@ -168,7 +164,7 @@ export type MeasurementBook = Static<typeof MeasurementBookSchema>;
 
 /** One claimed source with a human-readable label (challan number, PAC
  * reference, or installation summary). */
-export const MeasurementBookSourceSchema = Type.Object(
+const MeasurementBookSourceSchema = Type.Object(
   {
     id: UuidSchema,
     sourceType: MbSourceTypeSchema,
@@ -183,7 +179,7 @@ export type MeasurementBookSource = Static<typeof MeasurementBookSourceSchema>;
 /** One MB line: the full per-item stage breakdown. On drafts this is
  * the live-state preview; on finalized/cancelled MBs it is the
  * immutable snapshot read back verbatim. */
-export const MeasurementBookLineSchema = Type.Object(
+const MeasurementBookLineSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -220,7 +216,7 @@ export type MeasurementBookLine = Static<typeof MeasurementBookLineSchema>;
 
 /** A draft-preview warning: an item that would appear on the MB but
  * whose category has no payment-matrix row to resolve through. */
-export const MeasurementBookWarningSchema = Type.Object(
+const MeasurementBookWarningSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -228,7 +224,6 @@ export const MeasurementBookWarningSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type MeasurementBookWarning = Static<typeof MeasurementBookWarningSchema>;
 
 export const MeasurementBookDetailResponseSchema = Type.Object(
   {

@@ -33,8 +33,8 @@ import { TdsPayeeClassSchema, TdsSectionSchema } from './statutory.js';
  * lifecycle branches — paying it settles it, because there are no later
  * bills to record — and the one-open-advance gate does not touch it.
  */
-export const PAYMENT_REQUEST_KINDS = ['advance', 'reimbursement', 'salary'] as const;
-export const PaymentRequestKindSchema = Type.Union(
+const PAYMENT_REQUEST_KINDS = ['advance', 'reimbursement', 'salary'] as const;
+const PaymentRequestKindSchema = Type.Union(
   PAYMENT_REQUEST_KINDS.map((kind) => Type.Literal(kind)),
 );
 export type PaymentRequestKind = Static<typeof PaymentRequestKindSchema>;
@@ -50,8 +50,8 @@ export type PaymentRequestKind = Static<typeof PaymentRequestKindSchema>;
  * schema is what makes that a compile-time fact rather than a rule in a
  * route comment.
  */
-export const CREATABLE_PAYMENT_REQUEST_KINDS = ['advance', 'reimbursement'] as const;
-export const CreatablePaymentRequestKindSchema = Type.Union(
+const CREATABLE_PAYMENT_REQUEST_KINDS = ['advance', 'reimbursement'] as const;
+const CreatablePaymentRequestKindSchema = Type.Union(
   CREATABLE_PAYMENT_REQUEST_KINDS.map((kind) => Type.Literal(kind)),
 );
 export type CreatablePaymentRequestKind = Static<
@@ -68,21 +68,20 @@ export type CreatablePaymentRequestKind = Static<
  * recorded afterwards — which is the state the "record final bills
  * before new advances" gate reads.
  */
-export const PAYMENT_REQUEST_STATUSES = [
+const PAYMENT_REQUEST_STATUSES = [
   'submitted',
   'approved',
   'rejected',
   'paid',
   'settled',
 ] as const;
-export const PaymentRequestStatusSchema = Type.Union(
+const PaymentRequestStatusSchema = Type.Union(
   PAYMENT_REQUEST_STATUSES.map((status) => Type.Literal(status)),
 );
-export type PaymentRequestStatus = Static<typeof PaymentRequestStatusSchema>;
 
 /** `payroll` is 0090's, and is not `labour`: labour means a labour
  * contractor's bill, which is a vendor liability and not a salary. */
-export const PAYMENT_REQUEST_CATEGORIES = [
+const PAYMENT_REQUEST_CATEGORIES = [
   'travel',
   'materials',
   'labour',
@@ -90,21 +89,21 @@ export const PAYMENT_REQUEST_CATEGORIES = [
   'general',
   'payroll',
 ] as const;
-export const PaymentRequestCategorySchema = Type.Union(
+const PaymentRequestCategorySchema = Type.Union(
   PAYMENT_REQUEST_CATEGORIES.map((category) => Type.Literal(category)),
 );
 export type PaymentRequestCategory = Static<typeof PaymentRequestCategorySchema>;
 
 /** As with the kinds above: `payroll` is reachable only through a
  * finalised run, so the create form cannot offer it. */
-export const CREATABLE_PAYMENT_REQUEST_CATEGORIES = [
+const CREATABLE_PAYMENT_REQUEST_CATEGORIES = [
   'travel',
   'materials',
   'labour',
   'site_expenses',
   'general',
 ] as const;
-export const CreatablePaymentRequestCategorySchema = Type.Union(
+const CreatablePaymentRequestCategorySchema = Type.Union(
   CREATABLE_PAYMENT_REQUEST_CATEGORIES.map((category) => Type.Literal(category)),
 );
 export type CreatablePaymentRequestCategory = Static<
@@ -402,8 +401,8 @@ export type TdsPreviewResponse = Static<typeof TdsPreviewResponseSchema>;
  * product has no spreadsheet writer and does not need one to emit rows
  * of numbers.
  */
-export const TDS_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'] as const;
-export const TdsQuarterSchema = Type.Union(
+const TDS_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'] as const;
+const TdsQuarterSchema = Type.Union(
   TDS_QUARTERS.map((quarter) => Type.Literal(quarter)),
 );
 export type TdsQuarter = Static<typeof TdsQuarterSchema>;
@@ -415,4 +414,3 @@ export const TdsReturnQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type TdsReturnQuery = Static<typeof TdsReturnQuerySchema>;

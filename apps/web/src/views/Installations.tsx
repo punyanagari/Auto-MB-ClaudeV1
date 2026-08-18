@@ -10,8 +10,10 @@ import type {
   WorkBalanceItem,
   WorkItem,
 } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
 import { formatDate, subtractDecimalStrings, todayIso } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useAction, useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
@@ -127,22 +129,19 @@ export function Installations({
   >('loading');
   const [locationsLoadVersion, setLocationsLoadVersion] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const { pending, notice, actionError, act, setActionError } = useAction();
   /** Per work item, the variation answer the server gave on the last
    * record or cancel this panel performed. See `variationPending`. */
   const [recentVariations, setRecentVariations] = useState<
     Readonly<Record<string, boolean>>
   >({});
-  const [pending, setPending] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>('');
   const [locationChoice, setLocationChoice] = useState<string>(NEW_LOCATION);
   /** Per-item delivered quantities, for the mock's balance line. A
    * courtesy read: it explains the field, it does not gate it, so a
    * failure hides the line and leaves recording alone. */
   const [balances, setBalances] = useState<readonly WorkBalanceItem[]>([]);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -158,9 +157,7 @@ export function Installations({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The installation records could not be loaded.',
+          errorMessage(cause, 'The installation records could not be loaded.'),
         );
       });
     return () => {
@@ -170,10 +167,6 @@ export function Installations({
     // and deliberately not a dependency: the load is keyed on the Work, not
     // on who is listening to its tally.
   }, [api, organisationId, workId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -219,24 +212,6 @@ export function Installations({
       cancelled = true;
     };
   }, [api, organisationId, workId, canRecordEvidence, loadVersion]);
-
-  const act = useCallback(async (work: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await work();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
 
   const refresh = useCallback(async () => {
     const [freshData, freshSerials] = await Promise.all([

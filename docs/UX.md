@@ -1077,16 +1077,14 @@ the 11px status badges, must hold WCAG AA 4.5:1 in both themes.
 It runs at the desk width for the accessibility suite (the sidebar is hidden below
 `lg`), and the responsive suite runs at 320, 768 and desk widths.
 
-**Known trap.** The `design:contrast` and `design:states` scripts
-(`scripts/design-audit.mjs`) misparse `oklab()` alpha tints on this palette, and
-the mock's status styles are built almost entirely from alpha tints
-(`bg-success/10`, `bg-warning/15`, `border-primary/20`). Their numbers on those
-pairs are wrong. **Real-render axe measurement is authoritative.** The `design:*`
-scripts also require a rendered HTML file as an argument
-(`pnpm design:a11y <file.html>`); a bare invocation refuses rather than passing.
-
-The full set, for reference: `design:contrast`, `design:states`, `design:a11y`,
-`design:rtl`, `design:taste`.
+**Real-render axe measurement is authoritative**, and it is now the only
+measurement there is. A set of five `design:*` scripts used to sit beside it,
+each auditing one rendered HTML file named by hand; they were removed because
+nothing ran them and two of them misparsed the `oklab()` alpha tints this
+palette's status styles are built from (`bg-success/10`, `bg-warning/15`,
+`border-primary/20`), so their numbers on exactly the pairs most worth checking
+were wrong. Do not reintroduce a contrast claim that was not measured on a real
+render.
 
 ### State coverage
 

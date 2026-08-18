@@ -11,14 +11,13 @@ import {
  * Same lifecycle as Delivery Challans with looser content rules by
  * design: lines may be manual (outside the LOA) and quantities may
  * exceed work quantities. */
-export const IssueChallanStatusSchema = Type.Union([
+const IssueChallanStatusSchema = Type.Union([
   Type.Literal('draft'),
   Type.Literal('issued'),
   Type.Literal('cancelled'),
 ]);
-export type IssueChallanStatus = Static<typeof IssueChallanStatusSchema>;
 
-export const IssueChallanMovementTypeSchema = Type.Union([
+const IssueChallanMovementTypeSchema = Type.Union([
   Type.Literal('issue'),
   Type.Literal('loan'),
   Type.Literal('return'),
@@ -35,18 +34,15 @@ export type IssueChallanMovementType = Static<typeof IssueChallanMovementTypeSch
  * not map, so the operator got a 500 and no idea which box to fix. The
  * FLOOR stays with the route (QUANTITY_INVALID names the line), which is
  * why these carry the storable variant and not the positive one. */
-export const IssueChallanWorkItemLineInputSchema = Type.Object(
+const IssueChallanWorkItemLineInputSchema = Type.Object(
   {
     workItemId: UuidSchema,
     quantity: StorableDecimalStringSchema,
   },
   { additionalProperties: false },
 );
-export type IssueChallanWorkItemLineInput = Static<
-  typeof IssueChallanWorkItemLineInputSchema
->;
 
-export const IssueChallanManualLineInputSchema = Type.Object(
+const IssueChallanManualLineInputSchema = Type.Object(
   {
     description: Type.String({ minLength: 3, maxLength: 1000 }),
     unit: Type.String({ minLength: 1, maxLength: 20 }),
@@ -54,11 +50,8 @@ export const IssueChallanManualLineInputSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type IssueChallanManualLineInput = Static<
-  typeof IssueChallanManualLineInputSchema
->;
 
-export const IssueChallanLineInputSchema = Type.Union([
+const IssueChallanLineInputSchema = Type.Union([
   IssueChallanWorkItemLineInputSchema,
   IssueChallanManualLineInputSchema,
 ]);
@@ -84,7 +77,7 @@ export const CancelIssueChallanRequestSchema = Type.Object(
 );
 export type CancelIssueChallanRequest = Static<typeof CancelIssueChallanRequestSchema>;
 
-export const IssueChallanLineSchema = Type.Object(
+const IssueChallanLineSchema = Type.Object(
   {
     id: UuidSchema,
     /** Null for manual lines outside the LOA. */
@@ -101,7 +94,7 @@ export const IssueChallanLineSchema = Type.Object(
 );
 export type IssueChallanLine = Static<typeof IssueChallanLineSchema>;
 
-export const IssueChallanSchema = Type.Object(
+const IssueChallanSchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,
@@ -131,13 +124,12 @@ export const IssueChallanListResponseSchema = Type.Object(
   { issueChallans: Type.Array(IssueChallanSchema) },
   { additionalProperties: false },
 );
-export type IssueChallanListResponse = Static<typeof IssueChallanListResponseSchema>;
 
 /** A register row: the challan exactly as its own Work lists it, plus the
  * Work code — the only thing a cross-Work reader needs that a per-Work
  * reader already knows. Composed from `IssueChallanSchema` rather than
  * restated, so the two lists can never drift apart. */
-export const IssueChallanRegisterEntrySchema = Type.Composite(
+const IssueChallanRegisterEntrySchema = Type.Composite(
   [IssueChallanSchema, Type.Object({ workCode: Type.String() })],
   { additionalProperties: false },
 );

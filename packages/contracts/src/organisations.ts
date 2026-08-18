@@ -13,7 +13,7 @@ import {
   UuidSchema,
 } from './primitives.js';
 
-export const MembershipRoleSchema = Type.Union([
+const MembershipRoleSchema = Type.Union([
   Type.Literal('owner'),
   Type.Literal('office'),
   Type.Literal('site'),
@@ -21,10 +21,7 @@ export const MembershipRoleSchema = Type.Union([
 ]);
 export type MembershipRole = Static<typeof MembershipRoleSchema>;
 
-export const WorkScopeSchema = Type.Union([
-  Type.Literal('all'),
-  Type.Literal('assigned'),
-]);
+const WorkScopeSchema = Type.Union([Type.Literal('all'), Type.Literal('assigned')]);
 export type WorkScope = Static<typeof WorkScopeSchema>;
 
 export const OrganisationSchema = Type.Object(
@@ -37,7 +34,7 @@ export const OrganisationSchema = Type.Object(
 );
 export type Organisation = Static<typeof OrganisationSchema>;
 
-export const MembershipSchema = Type.Object(
+const MembershipSchema = Type.Object(
   {
     organisationId: UuidSchema,
     userId: Type.String({ minLength: 1 }),
@@ -110,7 +107,6 @@ export const OrganisationListResponseSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type OrganisationListResponse = Static<typeof OrganisationListResponseSchema>;
 
 export const MemberListResponseSchema = Type.Object(
   {
@@ -118,16 +114,14 @@ export const MemberListResponseSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type MemberListResponse = Static<typeof MemberListResponseSchema>;
 
 /** The Udyam (MSME) registration number, exactly as the column's CHECK
  * holds it: UDYAM-MH-26-0224294 — two state letters, a two-digit
  * district, seven digits. */
-export const UdyamNumberSchema = Type.String({
+const UdyamNumberSchema = Type.String({
   pattern: '^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$',
   description: 'Udyam (MSME) registration number.',
 });
-export type UdyamNumber = Static<typeof UdyamNumberSchema>;
 
 /** A tax invoice number's prefix: the owner's live series runs P10 / P14,
  * so an initial letter and up to seven more uppercase alphanumerics. The
@@ -137,7 +131,6 @@ export const InvoiceNumberPrefixSchema = Type.String({
   pattern: '^[A-Z][A-Z0-9]{0,7}$',
   description: 'Tax invoice number prefix, e.g. P10.',
 });
-export type InvoiceNumberPrefix = Static<typeof InvoiceNumberPrefixSchema>;
 
 /** The owner's declaration of whether e-invoicing (IRP reporting)
  * applies to the organisation (migration 0049). The system cannot know
@@ -147,7 +140,7 @@ export type InvoiceNumberPrefix = Static<typeof InvoiceNumberPrefixSchema>;
  * registration below the mandate is not provided for, and `applicable`
  * (with the date it became so) permits it — the mandate is permanent
  * once aggregate annual turnover has ever crossed ₹5 crore. */
-export const EinvoiceApplicabilitySchema = Type.Union([
+const EinvoiceApplicabilitySchema = Type.Union([
   Type.Literal('undeclared'),
   Type.Literal('not_applicable'),
   Type.Literal('applicable'),
@@ -158,11 +151,10 @@ export type EinvoiceApplicability = Static<typeof EinvoiceApplicabilitySchema>;
  * the IRP — 30 under the rule binding AATO ≥ ₹10 crore since 1 April
  * 2025. Bounded so a typo cannot declare a window the law does not
  * offer. */
-export const IrpReportingWindowDaysSchema = Type.Integer({
+const IrpReportingWindowDaysSchema = Type.Integer({
   minimum: 1,
   maximum: 365,
 });
-export type IrpReportingWindowDays = Static<typeof IrpReportingWindowDaysSchema>;
 
 /** The six documents whose number format an organisation may define.
  * Every other numbered document keeps its fixed format. The standalone
@@ -210,7 +202,6 @@ export const NumberSeriesListResponseSchema = Type.Object(
   { series: Type.Array(NumberSeriesSchema) },
   { additionalProperties: false },
 );
-export type NumberSeriesListResponse = Static<typeof NumberSeriesListResponseSchema>;
 
 /** PUT sets a template; DELETE restores the product default. */
 export const SaveNumberSeriesRequestSchema = Type.Object(
@@ -350,9 +341,6 @@ export const OrganisationBankAccountListResponseSchema = Type.Object(
   { accounts: Type.Array(OrganisationBankAccountSchema) },
   { additionalProperties: false },
 );
-export type OrganisationBankAccountListResponse = Static<
-  typeof OrganisationBankAccountListResponseSchema
->;
 
 export const UpdateOrganisationProfileRequestSchema = Type.Object(
   {
@@ -439,7 +427,6 @@ export const SetAssignmentsRequestSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type SetAssignmentsRequest = Static<typeof SetAssignmentsRequestSchema>;
 
 export const MemberAssignmentsResponseSchema = Type.Object(
   {

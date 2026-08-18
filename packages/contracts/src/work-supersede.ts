@@ -16,7 +16,7 @@ import { UuidSchema } from './primitives.js';
  * to know which ones are non-empty. The server reads each with an
  * `EXISTS`, which stops at the first row.
  */
-export const SupersedeBlockerSchema = Type.Object(
+const SupersedeBlockerSchema = Type.Object(
   {
     /** The document register that still holds rows, e.g. `delivery_challans`. */
     register: Type.String({ minLength: 1, maxLength: 100 }),
@@ -57,7 +57,7 @@ export type ProposeWorkSupersedeRequest = Static<
 
 /** The record of a Work withdrawn and, once its letter is confirmed
  * again, of what replaced it. */
-export const WorkSupersessionSchema = Type.Object(
+const WorkSupersessionSchema = Type.Object(
   {
     id: UuidSchema,
     supersededWorkId: UuidSchema,

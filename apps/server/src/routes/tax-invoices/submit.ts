@@ -1,7 +1,6 @@
 import { TaxInvoiceDetailResponseSchema, type GstBasis } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { toTaxableBasis, type WorkGstBasis } from '../../executed-value.js';
-import { jsonb } from '@auto-mb/db';
 import { amountInWords } from '../../amount-in-words.js';
 import type { Auth } from '../../auth.js';
 import { assertGstRateNotified } from '../../gst-rates.js';
@@ -755,9 +754,9 @@ export function registerTaxInvoiceSubmitRoute(
             set status = 'submitted', invoice_number = ${invoiceNumber},
                 number_prefix = ${prefix},
                 sequence_number = ${sequence}, fy_label = ${fyLabel},
-                buyer_snapshot = ${jsonb(tx, buyerSnapshot)},
-                ship_to_snapshot = ${shipToSnapshot === null ? null : jsonb(tx, shipToSnapshot)},
-                issued_snapshot = ${jsonb(tx, issuedSnapshot)},
+                buyer_snapshot = ${tx.json(buyerSnapshot as never)},
+                ship_to_snapshot = ${shipToSnapshot === null ? null : tx.json(shipToSnapshot as never)},
+                issued_snapshot = ${tx.json(issuedSnapshot as never)},
                 taxable_value = ${money.taxable}, cgst_amount = ${money.cgst},
                 sgst_amount = ${money.sgst}, igst_amount = ${money.igst},
                 round_off = ${money.round_off}, total_amount = ${money.total},

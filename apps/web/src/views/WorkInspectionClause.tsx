@@ -9,8 +9,10 @@ import {
   type InspectionClauseRow,
   type WorkInspectionConfig,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { todayIso } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useAction, useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -78,12 +80,10 @@ export function WorkInspectionClause({
    * card says so before it happens. */
   const [inherited, setInherited] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { pending, notice, actionError, act } = useAction();
   const [requestedOn, setRequestedOn] = useState(todayIso);
   const [chosen, setChosen] = useState<readonly string[]>([]);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   const adopt = useCallback(
     (loaded: WorkInspectionConfig, forAgency: InspectionAgency) => {
@@ -108,38 +108,12 @@ export function WorkInspectionClause({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The inspection clause could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The inspection clause could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion, adopt]);
-
-  const retry = useCallback(() => {
-    setLoadVersion((version) => version + 1);
-  }, []);
-
-  const act = useCallback(async (work: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await work();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
 
   if (loadError !== null) {
     return (

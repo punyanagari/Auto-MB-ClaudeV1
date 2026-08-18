@@ -21,7 +21,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
@@ -450,7 +449,7 @@ function integerDigitCount(value: string): number {
  * caller sends none, which is the only master read that happens here: it
  * is a DRAFT-time copy, frozen at issue like the rest of the consignee
  * block, and never re-read afterwards (rule 7). */
-export interface ChallanStatutoryInput {
+interface ChallanStatutoryInput {
   readonly movementReason?: Challan['movementReason'];
   readonly consigneeGstin?: string;
   readonly transporterId?: string;
@@ -477,7 +476,7 @@ function blankToNull(value: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-export function normaliseChallanStatutory(
+function normaliseChallanStatutory(
   body: ChallanStatutoryInput,
   contactGstin: string | null,
 ): NormalisedChallanStatutory {
@@ -630,7 +629,7 @@ async function lockChallan(tx: TransactionSql, challanId: string): Promise<Chall
   return row;
 }
 
-export interface LinkedPurchaseOrderLock {
+interface LinkedPurchaseOrderLock {
   readonly id: string;
   readonly status: string;
   readonly po_number: string | null;
@@ -1316,7 +1315,7 @@ async function finaliseChallanIssue(
     update delivery_challans
     set status = 'issued', challan_number = ${minted.challanNumber},
         sequence_number = ${minted.sequence}, fy_label = ${minted.fyLabel},
-        issued_snapshot = ${jsonb(tx, snapshot)},
+        issued_snapshot = ${tx.json(snapshot as never)},
         issued_by_user_id = ${userId}, issued_at = ${issuedAt},
         template_version = ${CHALLAN_TEMPLATE_VERSION},
         warranty_template_version = ${warranty?.templateVersion ?? null},
@@ -1654,7 +1653,7 @@ export function registerChallanRoutes(
             )
             values (
               ${organisationId}, ${workId}, ${body.challanDate}, ${body.prefix},
-              ${jsonb(tx, consignee)}, ${user.id}
+              ${tx.json(consignee as never)}, ${user.id}
             )
             returning id
           `.catch((error: unknown) => {
@@ -1888,7 +1887,7 @@ export function registerChallanRoutes(
           values (
             ${organisationId}, null, 'standalone', ${body.consigneeContactId},
             ${body.challanDate}, ${body.prefix},
-            ${jsonb(tx, consignee)}, ${user.id},
+            ${tx.json(consignee as never)}, ${user.id},
             ${statutory.movementReason}, ${statutory.consigneeGstin},
             ${statutory.transporterId}, ${statutory.transporterName},
             ${statutory.vehicleNumber}, ${statutory.transportDocNumber},
@@ -1978,7 +1977,7 @@ export function registerChallanRoutes(
           update delivery_challans
           set challan_date = ${body.challanDate}, prefix = ${body.prefix},
               consignee_contact_id = ${body.consigneeContactId},
-              consignee_snapshot = ${jsonb(tx, consignee)},
+              consignee_snapshot = ${tx.json(consignee as never)},
               movement_reason = ${statutory.movementReason},
               consignee_gstin = ${statutory.consigneeGstin},
               transporter_id = ${statutory.transporterId},
@@ -2086,7 +2085,7 @@ export function registerChallanRoutes(
         await tx`
           update delivery_challans
           set challan_date = ${body.challanDate}, prefix = ${body.prefix},
-              consignee_snapshot = ${jsonb(tx, consignee)}
+              consignee_snapshot = ${tx.json(consignee)}
           where id = ${id}
         `;
         await writeLines(tx, organisationId, id, workId, body);

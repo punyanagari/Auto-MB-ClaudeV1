@@ -12,7 +12,7 @@ import { httpError } from './http.js';
  * always-reachable identity endpoints (/api/me, /api/organisations,
  * /api/auth/two-factor/*).
  */
-export interface MfaGate {
+interface MfaGate {
   /** The caller holds a privilege that requires MFA, in any organisation. */
   readonly required: boolean;
   /** The caller has completed TOTP enrolment (auth_users."twoFactorEnabled"). */

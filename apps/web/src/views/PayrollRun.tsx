@@ -1,15 +1,16 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { CalendarX2, ChevronDown, ChevronRight, LockKeyhole } from 'lucide-react';
 import type {
   PayrollRun as PayrollRunRecord,
   PayrollRunLine,
   PayrollRunSummary,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatTimestampDate } from '../format.js';
-import { describeLoadFailure } from '../lib/load-failure.js';
+import { errorMessage, describeLoadFailure } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import {
-  employeeRegisterHash,
+  EMPLOYEE_REGISTER_HASH,
   navigateOnClick,
   paymentsHash,
 } from '../lib/workspace-routes.js';
@@ -129,11 +130,7 @@ export function PayrollRun({
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
-
-  const reload = useCallback(() => {
-    setLoadVersion((current) => current + 1);
-  }, []);
+  const [loadVersion, reload] = useReload();
 
   /* One read on mount and one per selection: the register of runs, then
      whichever run is showing. The register's own rows carry no lines, so
@@ -194,11 +191,7 @@ export function PayrollRun({
       );
       setNotice(success);
     } catch (cause: unknown) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The payroll run could not be changed.',
-      );
+      setActionError(errorMessage(cause, 'The payroll run could not be changed.'));
     } finally {
       setBusy(false);
     }
@@ -213,7 +206,7 @@ export function PayrollRun({
       action={
         <div className="flex flex-wrap items-end gap-2">
           <a
-            href={employeeRegisterHash()}
+            href={EMPLOYEE_REGISTER_HASH}
             onClick={navigateOnClick(onOpenEmployees)}
             className={buttonVariants({ variant: 'outline' })}
           >
@@ -930,11 +923,7 @@ function OpenRunControl({
               onOpened(payload.run);
             })
             .catch((cause: unknown) => {
-              onError(
-                cause instanceof RequestFailedError
-                  ? cause.message
-                  : 'The payroll run could not be opened.',
-              );
+              onError(errorMessage(cause, 'The payroll run could not be opened.'));
             })
             .finally(() => {
               setPending(false);

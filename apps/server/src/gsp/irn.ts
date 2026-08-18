@@ -137,7 +137,7 @@ export function assertIrnDerivesFrom(irn: string, identity: IrpDocumentIdentity)
  * fields we can hold the response to are named; the payload carries more
  * (totals, item count, main HSN) and unknown fields are ignored rather
  * than refused, because NIC extends this structure over time. */
-export interface SignedQrClaims {
+interface SignedQrClaims {
   readonly irn: string;
   readonly sellerGstin: string | null;
   readonly documentNumber: string | null;

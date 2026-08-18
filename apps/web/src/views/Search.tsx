@@ -4,7 +4,8 @@ import type {
   SearchResult,
   SearchResultKind,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import {
   QUOTATIONS_HASH,
   challanHash,
@@ -197,11 +198,7 @@ export function Search({
         // A failed search must never render as "nothing matched"
         // (finding 27): an empty register and an unreachable one are
         // different facts and the operator has to be able to tell.
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The search could not be completed.',
-        );
+        setError(errorMessage(cause, 'The search could not be completed.'));
       })
       .finally(() => {
         if (!cancelled) setPending(false);

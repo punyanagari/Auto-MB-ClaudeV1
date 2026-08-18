@@ -20,7 +20,7 @@ import { GstBasisSchema } from './works.js';
  * them. `docs/PRODUCT.md` §5.7 states what the three mean and why money
  * the railway KEPT is settled money rather than missing money.
  */
-export const DashboardBillSettlementSchema = Type.Object(
+const DashboardBillSettlementSchema = Type.Object(
   {
     /** The railway's own On-Account Bill amount — the reference the
      * position is measured against, GST-inclusive, never the prepared
@@ -47,7 +47,7 @@ export type DashboardBillSettlement = Static<typeof DashboardBillSettlementSchem
  * soonest expiry, then work code and bill number. A client that shows only
  * the head of the list can rely on that, which is the point of ranking it
  * on the server rather than leaving each client to sort or not. */
-export const DashboardAlertSchema = Type.Object(
+const DashboardAlertSchema = Type.Object(
   {
     kind: Type.Union([
       Type.Literal('instrument_expired'),
@@ -94,7 +94,7 @@ export const DashboardAlertSchema = Type.Object(
 );
 export type DashboardAlert = Static<typeof DashboardAlertSchema>;
 
-export const DashboardWorkProgressSchema = Type.Object(
+const DashboardWorkProgressSchema = Type.Object(
   {
     workId: UuidSchema,
     workCode: Type.String(),
@@ -131,7 +131,6 @@ export const DashboardWorkProgressSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type DashboardWorkProgress = Static<typeof DashboardWorkProgressSchema>;
 
 export const DashboardResponseSchema = Type.Object(
   {

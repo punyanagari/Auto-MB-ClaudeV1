@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SerialSearchResponse } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { challanHash, navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -106,11 +107,7 @@ export function SerialTrace({
         // A failed lookup must never render as "no such serial": an empty
         // pool and an unreachable one are different facts about a unit
         // someone is standing next to.
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The serial search could not be completed.',
-        );
+        setError(errorMessage(cause, 'The serial search could not be completed.'));
       })
       .finally(() => {
         if (!cancelled) setPending(false);

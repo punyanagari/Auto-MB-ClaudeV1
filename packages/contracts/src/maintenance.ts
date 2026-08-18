@@ -18,21 +18,21 @@ import {
  * 0088's header sets out why the two share a word and nothing else.
  */
 
-export const MAINTENANCE_PRIORITIES = ['routine', 'urgent', 'critical'] as const;
-export const MaintenancePrioritySchema = Type.Union(
+const MAINTENANCE_PRIORITIES = ['routine', 'urgent', 'critical'] as const;
+const MaintenancePrioritySchema = Type.Union(
   MAINTENANCE_PRIORITIES.map((priority) => Type.Literal(priority)),
 );
 export type MaintenancePriority = Static<typeof MaintenancePrioritySchema>;
 
 /** The mock's four stages, in the stored underscore form. The chip map
  * renders them hyphenated, exactly as production's `in_production` does. */
-export const MAINTENANCE_STATUSES = [
+const MAINTENANCE_STATUSES = [
   'awaiting_approval',
   'approved',
   'partially_dispatched',
   'closed',
 ] as const;
-export const MaintenanceStatusSchema = Type.Union(
+const MaintenanceStatusSchema = Type.Union(
   MAINTENANCE_STATUSES.map((status) => Type.Literal(status)),
 );
 export type MaintenanceStatus = Static<typeof MaintenanceStatusSchema>;
@@ -64,7 +64,7 @@ const SerialsSchema = Type.Array(trimmedShortString(100), { maxItems: 100 });
  * moment the screen asks, and null for a custom line that names no part —
  * there is nothing on a shelf for it to come off.
  */
-export const MaintenanceLineSchema = Type.Object(
+const MaintenanceLineSchema = Type.Object(
   {
     id: UuidSchema,
     position: Type.Integer({ minimum: 1 }),
@@ -91,7 +91,7 @@ export const MaintenanceLineSchema = Type.Object(
 );
 export type MaintenanceLine = Static<typeof MaintenanceLineSchema>;
 
-export const MaintenanceDispatchLineSchema = Type.Object(
+const MaintenanceDispatchLineSchema = Type.Object(
   {
     lineId: UuidSchema,
     description: Type.String(),
@@ -100,9 +100,8 @@ export const MaintenanceDispatchLineSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type MaintenanceDispatchLine = Static<typeof MaintenanceDispatchLineSchema>;
 
-export const MaintenanceDispatchSchema = Type.Object(
+const MaintenanceDispatchSchema = Type.Object(
   {
     id: UuidSchema,
     challanNumber: Type.String(),
@@ -117,7 +116,7 @@ export const MaintenanceDispatchSchema = Type.Object(
 );
 export type MaintenanceDispatch = Static<typeof MaintenanceDispatchSchema>;
 
-export const MaintenanceReturnSchema = Type.Object(
+const MaintenanceReturnSchema = Type.Object(
   {
     id: UuidSchema,
     lineId: UuidSchema,
@@ -135,7 +134,7 @@ export const MaintenanceReturnSchema = Type.Object(
 export type MaintenanceReturn = Static<typeof MaintenanceReturnSchema>;
 
 /** One row of the register. */
-export const MaintenanceRequestSummarySchema = Type.Object(
+const MaintenanceRequestSummarySchema = Type.Object(
   {
     id: UuidSchema,
     requestNumber: Type.String(),
@@ -153,7 +152,7 @@ export const MaintenanceRequestSummarySchema = Type.Object(
 );
 export type MaintenanceRequestSummary = Static<typeof MaintenanceRequestSummarySchema>;
 
-export const MaintenanceRequestSchema = Type.Composite(
+const MaintenanceRequestSchema = Type.Composite(
   [
     MaintenanceRequestSummarySchema,
     Type.Object({
@@ -165,11 +164,10 @@ export const MaintenanceRequestSchema = Type.Composite(
   ],
   { additionalProperties: false },
 );
-export type MaintenanceRequest = Static<typeof MaintenanceRequestSchema>;
 
 /** The stage strip above the register: one count per stage, over the
  * whole visible register rather than the page. */
-export const MaintenanceStageCountsSchema = Type.Object(
+const MaintenanceStageCountsSchema = Type.Object(
   {
     awaitingApproval: Type.Integer({ minimum: 0 }),
     approved: Type.Integer({ minimum: 0 }),
@@ -184,7 +182,6 @@ export const MaintenanceListQuerySchema = Type.Composite(
   [Type.Object({}), KeysetQuerySchema],
   { additionalProperties: false },
 );
-export type MaintenanceListQuery = Static<typeof MaintenanceListQuerySchema>;
 
 export const MaintenanceListResponseSchema = Type.Object(
   {
@@ -215,7 +212,7 @@ export const MaintenanceDetailResponseSchema = Type.Object(
 );
 export type MaintenanceDetailResponse = Static<typeof MaintenanceDetailResponseSchema>;
 
-export const CreateMaintenanceLineSchema = Type.Object(
+const CreateMaintenanceLineSchema = Type.Object(
   {
     /** A part from the item master, or omitted for a custom material. */
     itemId: Type.Optional(UuidSchema),

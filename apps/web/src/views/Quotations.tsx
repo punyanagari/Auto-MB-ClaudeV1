@@ -7,9 +7,11 @@ import type {
   CreateBudgetaryQuotationRequest,
   GstRateMaster,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatRate } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
@@ -357,11 +359,8 @@ export function Quotations({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const { pending, notice, actionError, act, setNotice, setActionError } = useAction();
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -386,38 +385,12 @@ export function Quotations({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The quotations could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The quotations could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
-
-  const act = useCallback(async (run: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await run();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
 
   const refreshList = useCallback(async () => {
     setQuotations(await api.listBudgetaryQuotations(organisationId));

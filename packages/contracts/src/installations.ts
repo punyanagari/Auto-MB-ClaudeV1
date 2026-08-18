@@ -10,22 +10,20 @@ import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js
 // master at record time. Serial-flagged items attach exactly one delivered,
 // uninstalled serial per unit; cancellation releases them back to the pool.
 
-export const InstallationStatusSchema = Type.Union([
+const InstallationStatusSchema = Type.Union([
   Type.Literal('recorded'),
   Type.Literal('cancelled'),
 ]);
-export type InstallationStatus = Static<typeof InstallationStatusSchema>;
 
 /** Inline location creation (legacy §5.4: pick from the master or create
  * inline while recording). */
-export const NewInstallationLocationSchema = Type.Object(
+const NewInstallationLocationSchema = Type.Object(
   {
     name: Type.String({ minLength: 2, maxLength: 200 }),
     kind: LocationKindSchema,
   },
   { additionalProperties: false },
 );
-export type NewInstallationLocation = Static<typeof NewInstallationLocationSchema>;
 
 export const RecordInstallationRequestSchema = Type.Object(
   {
@@ -48,9 +46,8 @@ export const CancelInstallationRequestSchema = Type.Object(
   { note: Type.String({ minLength: 3, maxLength: 1000 }) },
   { additionalProperties: false },
 );
-export type CancelInstallationRequest = Static<typeof CancelInstallationRequestSchema>;
 
-export const InstallationSerialSchema = Type.Object(
+const InstallationSerialSchema = Type.Object(
   {
     serialId: UuidSchema,
     serialNumber: Type.String(),
@@ -58,7 +55,6 @@ export const InstallationSerialSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type InstallationSerial = Static<typeof InstallationSerialSchema>;
 
 export const InstallationSchema = Type.Object(
   {
@@ -95,7 +91,7 @@ export type Installation = Static<typeof InstallationSchema>;
 /** Per-item aggregate of non-cancelled installation quantities. This is
  * THE authoritative installed quantity — Milestone 8 stage-wise billing
  * consumes exactly this SUM. */
-export const InstallationItemSummarySchema = Type.Object(
+const InstallationItemSummarySchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -103,7 +99,6 @@ export const InstallationItemSummarySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type InstallationItemSummary = Static<typeof InstallationItemSummarySchema>;
 
 /** How many installation records a Work carries, by lifecycle state.
  *
@@ -130,7 +125,7 @@ export type InstallationCounts = Static<typeof InstallationCountsSchema>;
  * identity and a serial COUNT rather than the serial list. The record's
  * own screen — its Work's Installations tab — remains the place the
  * serial numbers, the remarks and the cancellation note are read. */
-export const InstallationRegisterEntrySchema = Type.Object(
+const InstallationRegisterEntrySchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,
@@ -172,7 +167,6 @@ export const InstallationRegisterQuerySchema = withKeysetQuery(
     { additionalProperties: false },
   ),
 );
-export type InstallationRegisterQuery = Static<typeof InstallationRegisterQuerySchema>;
 
 /** Every installation record in the organisation the caller may see,
  * newest first. Cancelled records stay listed with their status: a

@@ -14,8 +14,9 @@ import type {
   Signatory,
   UnitMaster,
 } from '@auto-mb/contracts';
-import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
@@ -62,10 +63,6 @@ const LOCATION_KIND_LABELS: Record<LocationKind, string> = {
   store: 'Store',
   other: 'Other',
 };
-
-function errorMessage(cause: unknown, fallback: string): string {
-  return cause instanceof RequestFailedError ? cause.message : fallback;
-}
 
 function StatusChip({ active }: { readonly active: boolean }) {
   return (

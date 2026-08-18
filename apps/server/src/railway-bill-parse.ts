@@ -330,7 +330,7 @@ function isDigits(value: string): boolean {
 }
 
 /** Everything read off one received railway bill. */
-export interface ParsedRailwayBill {
+interface ParsedRailwayBill {
   /** `CR/BBY/S&T/2026/0009/B1`. */
   readonly billNumber: string;
   /** Date-only `YYYY-MM-DD`. */

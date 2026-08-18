@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
 import { Building2, Plus } from 'lucide-react';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { Field, Actions, FormError, Hint } from '../ui/form.js';
 
@@ -34,9 +35,10 @@ export function OrganisationCreateForm({
       onCreated(organisation);
     } catch (cause) {
       setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The organisation could not be created. Check the connection and try again.',
+        errorMessage(
+          cause,
+          'The organisation could not be created. Check the connection and try again.',
+        ),
       );
     } finally {
       setPending(false);

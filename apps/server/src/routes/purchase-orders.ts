@@ -15,7 +15,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
@@ -321,7 +320,7 @@ export async function assertPurchaseOrderDate(
   }
 }
 
-export interface VendorRow {
+interface VendorRow {
   id: string;
   designation: string;
   contact_person: string | null;
@@ -1096,7 +1095,7 @@ export function registerPurchaseOrderRoutes(
             update purchase_orders
             set status = 'issued', po_number = ${poNumber},
                 sequence_number = ${sequence},
-                vendor_snapshot = ${jsonb(tx, vendorSnapshot(vendor))},
+                vendor_snapshot = ${tx.json(vendorSnapshot(vendor) as never)},
                 total_amount = ${total?.amount ?? '0.00'},
                 issued_by_user_id = ${user.id}, issued_at = now()
             where id = ${id}

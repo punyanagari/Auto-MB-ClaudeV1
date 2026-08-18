@@ -30,7 +30,6 @@ import {
   type PreparedPdfSignature,
   type TrustAnchorStore,
 } from '@auto-mb/documents';
-import { jsonb } from '@auto-mb/db';
 import type { FastifyRequest } from 'fastify';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
@@ -361,12 +360,13 @@ function prepare(
  * the same instant, and the string is inside the signed bytes, so the
  * preparation would stop being reproducible on a redeploy. */
 function pdfDate(at: Date): string {
-  const ist = new Date(at.getTime() + 5.5 * 60 * 60 * 1000);
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return (
-    `D:${String(ist.getUTCFullYear())}${pad(ist.getUTCMonth() + 1)}${pad(ist.getUTCDate())}` +
-    `${pad(ist.getUTCHours())}${pad(ist.getUTCMinutes())}${pad(ist.getUTCSeconds())}+05'30'`
-  );
+  // toISOString already zero-pads every field in exactly the order the PDF
+  // date syntax wants, so stripping its separators and keeping the first
+  // fourteen digits IS the format — no hand-rolled padding needed. The
+  // shift is applied to the instant, then read back in UTC, so the host
+  // timezone never enters.
+  const ist = new Date(at.getTime() + 19_800_000).toISOString();
+  return `D:${ist.replace(/\D/g, '').slice(0, 14)}+05'30'`;
 }
 
 /* --- row shapes ----------------------------------------------------------- */
@@ -1284,7 +1284,7 @@ export function registerSigningRoutes(
           set status = 'signed', completed_at = now(),
               signed_object_key = ${signedKey}, signed_sha256 = ${signedSha256},
               signature_status = ${verdict.status},
-              signature_verdict = ${jsonb(tx, verdict)},
+              signature_verdict = ${tx.json(verdict as never)},
               signature_verified_at = now()
           where id = ${row.id} and status = 'claimed' and signing_agent_id = ${agent.id}
         `.catch(rethrowWriteRefusal);

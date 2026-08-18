@@ -24,10 +24,10 @@ const DURATION_BUCKETS = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 // request data — so cardinality stays bounded by construction.
 
 export type AuthFailureSurface = 'sign_in' | 'sign_up' | 'two_factor';
-export type TenantDenialReason = 'not_a_member';
-export type RateLimitScope = 'auth' | 'upload' | 'account_lockout' | 'signing';
-export type UploadScanFailureReason = 'malware_detected' | 'scanner_unavailable';
-export type StatutoryOutcomeStatus = 'succeeded' | 'failed' | 'unknown';
+type TenantDenialReason = 'not_a_member';
+type RateLimitScope = 'auth' | 'upload' | 'account_lockout' | 'signing';
+type UploadScanFailureReason = 'malware_detected' | 'scanner_unavailable';
+type StatutoryOutcomeStatus = 'succeeded' | 'failed' | 'unknown';
 
 const STATUTORY_OPERATIONS = new Set([
   'register_irp',
@@ -169,7 +169,7 @@ function renderDatabasePool(lines: string[], sample: DatabasePoolSample): void {
   );
 }
 
-export interface MetricsRegistryOptions {
+interface MetricsRegistryOptions {
   /** Path to the last-success marker written by scripts/backup.sh (epoch
    * seconds). When set and readable it is surfaced as the
    * backup_last_success_timestamp_seconds gauge; unset, missing, or
@@ -183,13 +183,10 @@ export interface MetricsRegistryOptions {
   readonly collectDatabasePool?: () => Promise<DatabasePoolSample | null>;
 }
 
-export interface MetricsRegistry {
+interface MetricsRegistry {
   observe(method: string, route: string, statusCode: number, seconds: number): void;
-  /** Synchronous render: everything except the scrape-time database-pool
-   * sample. Unit surfaces use this directly. */
-  render(): string;
-  /** Full render for the /metrics endpoint: runs the async collectors,
-   * then renders everything. */
+  /** The one render: runs the async collectors (absent or failing ones
+   * simply omit their series), then renders everything. */
   renderAll(): Promise<string>;
 }
 
@@ -264,9 +261,6 @@ export function createMetricsRegistry(
       for (const [index, bound] of DURATION_BUCKETS.entries()) {
         if (seconds <= bound) bucketCounts[index] = (bucketCounts[index] ?? 0) + 1;
       }
-    },
-    render() {
-      return renderBody(null);
     },
     async renderAll() {
       let poolSample: DatabasePoolSample | null = null;

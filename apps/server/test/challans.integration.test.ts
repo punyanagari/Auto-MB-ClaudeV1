@@ -13,13 +13,8 @@ import type {
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 
@@ -1704,8 +1699,8 @@ describe('what a new draft carries forward, decided on the server', () => {
       )
       values (
         ${id}, ${organisationId}, ${carryWorkId}, ${row.status}, '2025-07-01',
-        ${number}, ${nextSequence}, ${row.prefix}, ${jsonb(admin, row.consignee)},
-        ${issued ? jsonb(admin, {}) : null},
+        ${number}, ${nextSequence}, ${row.prefix}, ${admin.json(row.consignee)},
+        ${issued ? admin.json({}) : null},
         ${ownerUserId}, ${issued ? ownerUserId : null},
         ${issued ? '2025-07-01T10:00:00.000Z' : null},
         ${row.status === 'cancelled' ? ownerUserId : null},

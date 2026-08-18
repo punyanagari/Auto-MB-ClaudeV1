@@ -56,7 +56,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
 
   return {
     databaseUrl,
-    claimedBy: env.WORKER_NAME ?? `auto-mb-worker@${hostname()}:${process.pid}`,
+    claimedBy: `auto-mb-worker@${hostname()}:${process.pid}`,
     // Two minutes. The slowest job kind is LOA intake, whose pdftotext
     // call is itself capped at 30 seconds per view; the lease has to
     // survive both views plus signature verification plus the storage

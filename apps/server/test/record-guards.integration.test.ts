@@ -12,13 +12,8 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -229,7 +224,7 @@ async function seedReviewDocument(filename: string): Promise<string> {
       ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
       ${filename}, ${'e'.repeat(32) + id.replaceAll('-', '')},
       'application/pdf', 1000, 'review',
-      ${jsonb(admin, { sourceText: 'RECORD GUARD LETTER TEXT' })},
+      ${admin.json({ sourceText: 'RECORD GUARD LETTER TEXT' })},
       ${ownerUserId}
     )
   `;

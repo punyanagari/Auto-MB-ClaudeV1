@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, FileUp, Send, Upload } from 'lucide-react';
 import type { Contact, CorrespondenceThreadOption, Work } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
-import { todayISO } from '../format.js';
+import { type ApiClient } from '../api.js';
+import { todayIso } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { DateField } from '../ui/date-field.js';
@@ -60,7 +62,7 @@ interface Pickers {
 function usePickers(api: ApiClient, organisationId: string) {
   const [pickers, setPickers] = useState<Pickers | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -78,9 +80,7 @@ function usePickers(api: ApiClient, organisationId: string) {
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The contacts and Works could not be loaded.',
+          errorMessage(cause, 'The contacts and Works could not be loaded.'),
         );
       });
     return () => {
@@ -91,9 +91,7 @@ function usePickers(api: ApiClient, organisationId: string) {
   return {
     pickers,
     loadError,
-    retry: () => {
-      setLoadVersion((current) => current + 1);
-    },
+    retry: retry,
   };
 }
 
@@ -226,7 +224,7 @@ export function WriteOutwardLetter({
   onCancel,
 }: ComposerProps) {
   const { pickers, loadError, retry } = usePickers(api, organisationId);
-  const [letterDate, setLetterDate] = useState(todayISO);
+  const [letterDate, setLetterDate] = useState(todayIso);
   const [contactId, setContactId] = useState('');
   const [workId, setWorkId] = useState('');
   const [replyToLetterId, setReplyToLetterId] = useState('');
@@ -282,11 +280,7 @@ export function WriteOutwardLetter({
       })
       .catch((cause: unknown) => {
         setDispatching(false);
-        setFailure(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The letter could not be dispatched.',
-        );
+        setFailure(errorMessage(cause, 'The letter could not be dispatched.'));
       });
   };
 
@@ -316,7 +310,7 @@ export function WriteOutwardLetter({
               id="outward-date"
               label="Date"
               value={letterDate}
-              max={todayISO()}
+              max={todayIso()}
               onChange={(event) => {
                 setLetterDate(event.currentTarget.value);
               }}
@@ -392,7 +386,7 @@ export function UploadInwardLetter({
   onCancel,
 }: ComposerProps) {
   const { pickers, loadError, retry } = usePickers(api, organisationId);
-  const [receivedOn, setReceivedOn] = useState(todayISO);
+  const [receivedOn, setReceivedOn] = useState(todayIso);
   const [contactId, setContactId] = useState('');
   const [workId, setWorkId] = useState('');
   const [senderReference, setSenderReference] = useState('');
@@ -457,11 +451,7 @@ export function UploadInwardLetter({
       })
       .catch((cause: unknown) => {
         setRegistering(false);
-        setFailure(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The letter could not be registered.',
-        );
+        setFailure(errorMessage(cause, 'The letter could not be registered.'));
       });
   };
 
@@ -490,7 +480,7 @@ export function UploadInwardLetter({
               id="inward-received"
               label="Received date"
               value={receivedOn}
-              max={todayISO()}
+              max={todayIso()}
               onChange={(event) => {
                 setReceivedOn(event.currentTarget.value);
               }}

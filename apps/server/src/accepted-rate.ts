@@ -41,7 +41,7 @@
  */
 
 /** The three tender outcomes, spelled as the `works` CHECK does. */
-export type ParDirection = 'below' | 'at_par' | 'above';
+type ParDirection = 'below' | 'at_par' | 'above';
 
 /** A letter's (or a schedule's) accepted-rate percentage and its
  * direction, as printed. */

@@ -17,13 +17,11 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import {
   assertNoForeignKeyOrphans,
-  createDatabasePool,
-  ensureClusterRoles,
   removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+} from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 /**

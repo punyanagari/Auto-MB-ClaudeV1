@@ -6,9 +6,11 @@ import {
   type InspectionCall,
   type InspectionCallDocument,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
+import { useReload } from '../lib/view-state.js';
 import { workHash } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
@@ -98,8 +100,7 @@ export function Inspection({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -115,20 +116,12 @@ export function Inspection({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The inspection calls could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The inspection calls could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, loadVersion]);
-
-  const retry = useCallback(() => {
-    setLoadVersion((version) => version + 1);
-  }, []);
 
   /** The register pages the way Installations does: the first request asks
    * for a page, and the button appends the next one. A workspace whose
@@ -146,11 +139,7 @@ export function Inspection({
       setCalls((current) => [...(current ?? []), ...page.calls]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The next page could not be loaded.',
-      );
+      setActionError(errorMessage(cause, 'The next page could not be loaded.'));
     } finally {
       setPending(false);
     }
@@ -169,11 +158,7 @@ export function Inspection({
       );
       setNotice(done);
     } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
+      setActionError(errorMessage(cause));
     } finally {
       setPending(false);
     }

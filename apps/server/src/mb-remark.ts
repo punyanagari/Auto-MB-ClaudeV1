@@ -27,7 +27,7 @@ export const MB_REMARK_TEMPLATE_VERSION = 'mb-remark-v1';
 /** The four payment stages, in the fixed contractual rendering order. */
 export const MB_STAGE_ORDER = ['supply', 'installation', 'pac', 'final_bill'] as const;
 
-export type MbStage = (typeof MB_STAGE_ORDER)[number];
+type MbStage = (typeof MB_STAGE_ORDER)[number];
 
 export interface MbRemarkStageInput {
   readonly stage: MbStage;
@@ -42,7 +42,7 @@ export interface MbRemarkStageInput {
   readonly deltaQuantity: string;
 }
 
-export interface MbRemarkInput {
+interface MbRemarkInput {
   /** The item's unit string, rendered verbatim (e.g. 'mtr', 'Set', 'RMT'). */
   readonly unit: string;
   /**
@@ -52,19 +52,19 @@ export interface MbRemarkInput {
   readonly stages: ReadonlyArray<MbRemarkStageInput>;
 }
 
-export interface StageAmountInput {
+interface StageAmountInput {
   readonly stage: string;
   readonly percent: string;
   readonly deltaQuantity: string;
 }
 
-export interface StageAmountsInput {
+interface StageAmountsInput {
   /** The item's effective (snapshotted) rate as an exact decimal string. */
   readonly effectiveRate: string;
   readonly stages: ReadonlyArray<StageAmountInput>;
 }
 
-export interface StageAmountsResult {
+interface StageAmountsResult {
   /** One entry per input stage, in input order; amount has exactly 2 fraction digits. */
   readonly perStage: ReadonlyArray<{ readonly stage: string; readonly amount: string }>;
   /** Sum of the LINE-ROUNDED amounts (R13); exactly 2 fraction digits. */
@@ -101,7 +101,7 @@ export interface FinalBillBaseInput {
   readonly amcCertifiedQuantity: string;
 }
 
-export interface FinalBillBaseResult {
+interface FinalBillBaseResult {
   readonly baseQuantity: string;
   readonly branch: 'delivered' | 'installed' | 'certified';
 }

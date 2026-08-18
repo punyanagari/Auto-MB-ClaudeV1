@@ -110,7 +110,7 @@ import {
 import { httpError } from './http.js';
 
 /** What the confirm audit records about the lock having run. */
-export interface ExtractedValueLockSummary {
+interface ExtractedValueLockSummary {
   readonly lockedFieldsVerified: number;
   /** Letter-level fields (header, totals block, performance guarantee) the
    * parser left null or flagged, and which this confirmation therefore

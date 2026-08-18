@@ -7,12 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { LoaDocumentDetail } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 import { createFileSystemStorage, loadTrustAnchors } from '@auto-mb/documents';
@@ -269,7 +264,7 @@ describe('signature verdicts are stored with the document', () => {
 
     await expect(
       admin`
-        update loa_documents set signature_verdict = ${jsonb(admin, { status: 'unsigned' })}
+        update loa_documents set signature_verdict = ${admin.json({ status: 'unsigned' })}
         where id = ${detail.id}
       `,
     ).rejects.toThrow(/append-once/);
@@ -309,7 +304,7 @@ describe('signature verdicts are stored with the document', () => {
     await admin`
       update loa_documents
       set signature_status = 'unsigned',
-          signature_verdict = ${jsonb(admin, { status: 'unsigned' })},
+          signature_verdict = ${admin.json({ status: 'unsigned' })},
           signature_verified_at = now()
       where id = ${id}
     `;

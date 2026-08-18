@@ -46,15 +46,10 @@ export const TAG_CLASS_UNIVERSAL = 0;
 export const TAG_CLASS_CONTEXT = 2;
 
 export const UNIVERSAL_INTEGER = 0x02;
-export const UNIVERSAL_BIT_STRING = 0x03;
 export const UNIVERSAL_OCTET_STRING = 0x04;
-export const UNIVERSAL_NULL = 0x05;
 export const UNIVERSAL_OBJECT_IDENTIFIER = 0x06;
-export const UNIVERSAL_UTF8_STRING = 0x0c;
 export const UNIVERSAL_SEQUENCE = 0x10;
 export const UNIVERSAL_SET = 0x11;
-export const UNIVERSAL_PRINTABLE_STRING = 0x13;
-export const UNIVERSAL_IA5_STRING = 0x16;
 export const UNIVERSAL_UTC_TIME = 0x17;
 export const UNIVERSAL_GENERALIZED_TIME = 0x18;
 export const UNIVERSAL_BMP_STRING = 0x1e;

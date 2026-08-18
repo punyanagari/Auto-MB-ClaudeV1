@@ -9,6 +9,7 @@ import type {
 import type { ApiClient } from '../api.js';
 import { formatDate, formatInr, formatTimestampDate } from '../format.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
@@ -89,8 +90,7 @@ export function Receivables({ api, organisationId, onOpenWork }: ReceivablesProp
   const [summary, setSummary] = useState<ReceivablesRegisterSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryable, setRetryable] = useState(true);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
   const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>(ALL);
   const [work, setWork] = useState<string>(ALL);
@@ -133,12 +133,7 @@ export function Receivables({ api, organisationId, onOpenWork }: ReceivablesProp
       <>
         {header}
         {retryable ? (
-          <ErrorState
-            onRetry={() => {
-              setLoadVersion((current) => current + 1);
-            }}
-            retryLabel="Retry receivables"
-          >
+          <ErrorState onRetry={retry} retryLabel="Retry receivables">
             {loadError}
           </ErrorState>
         ) : (

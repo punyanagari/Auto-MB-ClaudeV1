@@ -11,7 +11,7 @@ export const HealthResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export type HealthResponse = Static<typeof HealthResponseSchema>;
+type HealthResponse = Static<typeof HealthResponseSchema>;
 
 /** Runtime guard for untyped payloads (e.g. fetch responses in the web
  * shell). Format annotations are enforced via the registry in
@@ -20,7 +20,7 @@ export function isHealthResponse(value: unknown): value is HealthResponse {
   return Value.Check(HealthResponseSchema, value);
 }
 
-export const ReadinessComponentSchema = Type.Union([
+const ReadinessComponentSchema = Type.Union([
   Type.Literal('ok'),
   Type.Literal('failed'),
   Type.Literal('unconfigured'),
@@ -44,5 +44,3 @@ export const ReadinessResponseSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-export type ReadinessResponse = Static<typeof ReadinessResponseSchema>;

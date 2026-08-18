@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Plus, Send, Trash2 } from 'lucide-react';
 import type { CreateMaintenanceLine, MaintenancePriority } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
-import { todayISO } from '../format.js';
+import { type ApiClient } from '../api.js';
+import { todayIso } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Actions, Field, FieldRow, FormError, Hint } from '../ui/form.js';
@@ -94,7 +96,7 @@ export function MaintenanceRequestForm({
 }: MaintenanceRequestFormProps) {
   const [pickers, setPickers] = useState<Pickers | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   const [workId, setWorkId] = useState('');
   const [station, setStation] = useState('');
@@ -142,11 +144,7 @@ export function MaintenanceRequestForm({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The Works and parts could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The Works and parts could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -197,12 +195,7 @@ export function MaintenanceRequestForm({
       <>
         {back}
         {header}
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry">
           {loadError}
         </ErrorState>
       </>
@@ -277,11 +270,7 @@ export function MaintenanceRequestForm({
       })
       .catch((cause: unknown) => {
         setSubmitting(false);
-        setFailure(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The request could not be created.',
-        );
+        setFailure(errorMessage(cause, 'The request could not be created.'));
       });
   };
 
@@ -372,7 +361,7 @@ export function MaintenanceRequestForm({
             <input
               id="maintenance-required-by"
               type="date"
-              min={todayISO()}
+              min={todayIso()}
               value={requiredBy}
               onChange={(event) => {
                 setRequiredBy(event.currentTarget.value);

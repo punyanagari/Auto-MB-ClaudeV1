@@ -7,10 +7,12 @@ import {
   type CompanyDocumentExpiryStatus,
   type CompanyDocumentVersion,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
+import { useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -105,8 +107,7 @@ export function CompanyDocuments({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -121,11 +122,7 @@ export function CompanyDocuments({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The company documents could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The company documents could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -143,11 +140,7 @@ export function CompanyDocuments({
         setDocuments(await work());
         setNotice(done);
       } catch (cause) {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The action failed; nothing was changed.',
-        );
+        setActionError(errorMessage(cause));
       } finally {
         setPending(false);
       }
@@ -166,11 +159,7 @@ export function CompanyDocuments({
       void openPdf(() =>
         api.downloadCompanyDocumentVersion(organisationId, versionId),
       ).catch((cause: unknown) => {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The document could not be opened.',
-        );
+        setActionError(errorMessage(cause, 'The document could not be opened.'));
       });
     },
     [api, organisationId],
@@ -314,10 +303,6 @@ export function CompanyDocuments({
       </div>
     </>
   );
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 }
 
 interface UploadDetails {

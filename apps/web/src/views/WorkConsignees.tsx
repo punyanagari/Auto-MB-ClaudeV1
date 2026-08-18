@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Contact } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -39,8 +41,7 @@ export function WorkConsignees({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
   /** True while the screen has nothing on it because the load failed —
    * distinct from an action that failed with the list still on screen. */
   const [loadFailed, setLoadFailed] = useState(false);
@@ -64,20 +65,12 @@ export function WorkConsignees({
     reload().catch((cause: unknown) => {
       if (cancelled) return;
       setLoadFailed(true);
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The Work consignees could not be loaded.',
-      );
+      setError(errorMessage(cause, 'The Work consignees could not be loaded.'));
     });
     return () => {
       cancelled = true;
     };
   }, [reload, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   const act = useCallback(
     async (work: () => Promise<void>, done: string) => {
@@ -92,11 +85,7 @@ export function WorkConsignees({
         await reload();
         setNotice(done);
       } catch (cause) {
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The change could not be saved.',
-        );
+        setError(errorMessage(cause, 'The change could not be saved.'));
       } finally {
         setPending(false);
       }

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, Plus } from 'lucide-react';
 import type { LoaDocument, Work } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatCompactInr, formatDate, formatTimestampDate } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { navigateOnClick, workHash, workspaceHashOf } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
@@ -90,9 +91,10 @@ export function Works({
       setDiscardCandidate(null);
     } catch (cause) {
       setDiscardError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The document could not be discarded. Nothing was changed.',
+        errorMessage(
+          cause,
+          'The document could not be discarded. Nothing was changed.',
+        ),
       );
     } finally {
       setDiscardPending(false);
@@ -112,11 +114,7 @@ export function Works({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The Works list could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The Works list could not be loaded.'));
       });
     return () => {
       cancelled = true;

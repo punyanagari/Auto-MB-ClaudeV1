@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Boxes, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import type {
   BomNode,
   ProductionItem,
   ProductionSpecification,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -79,7 +81,7 @@ export function ProductionItems({
   const [items, setItems] = useState<readonly ProductionItem[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, reload] = useReload();
   const [includeRetired, setIncludeRetired] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -102,20 +104,12 @@ export function ProductionItems({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The item master could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The item master could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, includeRetired, loadVersion]);
-
-  const reload = useCallback(() => {
-    setLoadVersion((current) => current + 1);
-  }, []);
 
   const [creating, setCreating] = useState(false);
 
@@ -251,9 +245,7 @@ export function ProductionItems({
                   .then(reload)
                   .catch((cause: unknown) => {
                     setActionError(
-                      cause instanceof RequestFailedError
-                        ? cause.message
-                        : 'The item could not be retired.',
+                      errorMessage(cause, 'The item could not be retired.'),
                     );
                   });
               }}
@@ -311,11 +303,7 @@ function ItemForm({
             })
             .then(onSaved)
             .catch((cause: unknown) => {
-              setError(
-                cause instanceof RequestFailedError
-                  ? cause.message
-                  : 'The item could not be saved.',
-              );
+              setError(errorMessage(cause, 'The item could not be saved.'));
             })
             .finally(() => {
               setPending(false);
@@ -675,9 +663,7 @@ function SpecificationsCard({
                 })
                 .catch((cause: unknown) => {
                   setError(
-                    cause instanceof RequestFailedError
-                      ? cause.message
-                      : 'The specifications could not be saved.',
+                    errorMessage(cause, 'The specifications could not be saved.'),
                   );
                 })
                 .finally(() => {
@@ -722,7 +708,7 @@ function BillOfMaterialCard({
   const [componentId, setComponentId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [pending, setPending] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -737,11 +723,7 @@ function BillOfMaterialCard({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The bill of material could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The bill of material could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -796,11 +778,7 @@ function BillOfMaterialCard({
                 setQuantity('1');
               })
               .catch((cause: unknown) => {
-                setActionError(
-                  cause instanceof RequestFailedError
-                    ? cause.message
-                    : 'The material could not be added.',
-                );
+                setActionError(errorMessage(cause, 'The material could not be added.'));
               })
               .finally(() => {
                 setPending(false);
@@ -861,12 +839,7 @@ function BillOfMaterialCard({
       {actionError !== null && <FormError>{actionError}</FormError>}
 
       {loadError !== null ? (
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry the bill of material"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry the bill of material">
           {loadError}
         </ErrorState>
       ) : nodes === null ? (
@@ -904,9 +877,7 @@ function BillOfMaterialCard({
                     })
                     .catch((cause: unknown) => {
                       setActionError(
-                        cause instanceof RequestFailedError
-                          ? cause.message
-                          : 'The material could not be removed.',
+                        errorMessage(cause, 'The material could not be removed.'),
                       );
                     });
                 }}

@@ -37,7 +37,9 @@ import {
   formatTimestampDate,
 } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
+import { useReload } from '../lib/view-state.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
@@ -449,8 +451,7 @@ export function WorkDetail({
    * navigation that created the Work. */
   const [paymentSetupOpen, setPaymentSetupOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  /** Bumped by the failure state's retry, to re-run the Work load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retryWork] = useReload();
   const [relatedPending, setRelatedPending] = useState<ReadonlySet<RelatedLabel>>(
     new Set(),
   );
@@ -521,11 +522,7 @@ export function WorkDetail({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The Work could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The Work could not be loaded.'));
       });
 
     function settleRelated(label: RelatedLabel, failed: boolean): void {
@@ -672,10 +669,6 @@ export function WorkDetail({
     }
   }, [api, organisationId, workId, canModify]);
 
-  function retryWork(): void {
-    setLoadVersion((current) => current + 1);
-  }
-
   function retryFailedSections(): void {
     const labels = new Set(relatedFailures);
     if (labels.size === 0) return;
@@ -792,10 +785,7 @@ export function WorkDetail({
         setNotice(done);
       } catch (cause) {
         setActionError({
-          message:
-            cause instanceof RequestFailedError
-              ? cause.message
-              : 'The action failed; nothing was changed.',
+          message: errorMessage(cause),
           wayfind: wayfindingOf(cause, { workId }),
         });
       } finally {
@@ -825,10 +815,7 @@ export function WorkDetail({
         setUnfinished(unfinishedItemsOf(cause));
         setBlockers(completionBlockersOf(cause));
         setActionError({
-          message:
-            cause instanceof RequestFailedError
-              ? cause.message
-              : 'The action failed; nothing was changed.',
+          message: errorMessage(cause),
           wayfind: wayfindingOf(cause, { workId }),
         });
       } finally {

@@ -13,6 +13,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { RequestFailedError, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { Badge } from '../ui/badge.js';
@@ -187,9 +188,10 @@ export function UploadLoa({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setTenderError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The tender this letter is being uploaded for could not be read.',
+          errorMessage(
+            cause,
+            'The tender this letter is being uploaded for could not be read.',
+          ),
         );
       });
     return () => {
@@ -225,10 +227,7 @@ export function UploadLoa({
       }));
       return true;
     } catch (cause) {
-      const message =
-        cause instanceof RequestFailedError
-          ? cause.message
-          : `${definition.label} could not be uploaded.`;
+      const message = errorMessage(cause, `${definition.label} could not be uploaded.`);
       setSupportStates((current) => ({
         ...current,
         [definition.kind]: { status: 'rejected', filename: file.name, message },
@@ -310,9 +309,10 @@ export function UploadLoa({
     } catch (cause) {
       setExisting(existingRecordOf(cause));
       setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The LOA package could not be uploaded. Nothing authoritative was created.',
+        errorMessage(
+          cause,
+          'The LOA package could not be uploaded. Nothing authoritative was created.',
+        ),
       );
     } finally {
       setPending(false);

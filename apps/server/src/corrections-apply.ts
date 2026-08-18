@@ -13,7 +13,6 @@ import type {
   CorrectionNoticeEntry,
 } from '@auto-mb/contracts';
 import type { TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import {
   CORRECTION_NOTICE_TEMPLATE_VERSION,
   type CorrectionNoticeSnapshot,
@@ -74,7 +73,7 @@ async function audit(
     )
     values (
       ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
+      ${tx.json(details as never)}
     )
   `;
 }
@@ -293,7 +292,7 @@ export async function applyChallanCancelReplace(
     )
     values (
       ${organisationId}, ${challan.work_id}, ${proposed.replacement.challanDate},
-      ${proposed.replacement.prefix}, ${jsonb(tx, proposed.replacement.consignee)},
+      ${proposed.replacement.prefix}, ${tx.json(proposed.replacement.consignee as never)},
       ${userId}, ${challan.id}
     )
     returning id
@@ -574,7 +573,7 @@ export async function applyCorrectionNotice(
     )
     values (
       ${organisationId}, ${challan.work_id}, ${challan.id}, ${approvalId},
-      ${noticeNumber}, ${sequence}, ${jsonb(tx, snapshot)},
+      ${noticeNumber}, ${sequence}, ${tx.json(snapshot as never)},
       ${CORRECTION_NOTICE_TEMPLATE_VERSION}, ${userId}
     )
     returning id

@@ -8,7 +8,8 @@ import type {
   WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { proposePaymentCategory } from '../lib/payment-category-proposal.js';
 import {
   CATEGORY_LABELS,
@@ -23,6 +24,7 @@ import {
   type RowDraft,
   type StageField,
 } from '../lib/payment-matrix.js';
+import { useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Modal } from '../ui/dialog.js';
@@ -135,7 +137,7 @@ export function WorkPaymentSetup({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   /** The proposal for every item that has no category yet, computed once
    * from the items themselves. Items the reviewer already categorised are
@@ -183,11 +185,7 @@ export function WorkPaymentSetup({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The payment matrix could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The payment matrix could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -312,9 +310,10 @@ export function WorkPaymentSetup({
       // a toast that fades takes the instruction with it. The dialog stays
       // open with every entry intact — nothing was saved.
       setSaveError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The payment setup could not be saved. Nothing was changed.',
+        errorMessage(
+          cause,
+          'The payment setup could not be saved. Nothing was changed.',
+        ),
       );
     } finally {
       setPending(false);
@@ -354,12 +353,7 @@ export function WorkPaymentSetup({
       </p>
 
       {loadError !== null ? (
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry payment setup"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry payment setup">
           {loadError}
         </ErrorState>
       ) : rows === null ? (

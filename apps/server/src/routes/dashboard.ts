@@ -7,6 +7,7 @@ import {
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { executedPercent, portfolioExecutedPercent } from '../executed-value.js';
+import { paiseText, toPaise } from '../money.js';
 import type { Auth } from '../auth.js';
 import { hasFullWorkScope } from '../authz.js';
 import type { AppInstance } from '../app-instance.js';
@@ -616,23 +617,14 @@ export function registerDashboardRoutes(
           (left, right) => SEVERITY_RANK[left.severity] - SEVERITY_RANK[right.severity],
         );
 
-        const sumDecimal = (values: readonly string[]): string => {
-          // Paise-exact summation without floating point: shift to
-          // integer paise via string surgery, never via Number division.
-          let paise = 0n;
-          for (const value of values) {
-            const [rupees = '0', fraction = ''] = value.split('.');
-            const cents = (fraction + '00').slice(0, 2);
-            const sign = rupees.startsWith('-') ? -1n : 1n;
-            const whole = BigInt(rupees.replace('-', '') || '0');
-            paise += sign * (whole * 100n + BigInt(cents));
-          }
-          const sign = paise < 0n ? '-' : '';
-          const magnitude = paise < 0n ? -paise : paise;
-          const rupees = magnitude / 100n;
-          const cents = (magnitude % 100n).toString().padStart(2, '0');
-          return `${sign}${rupees.toString()}.${cents}`;
-        };
+        // Paise-exact summation without floating point. Every figure below
+        // arrives as `numeric(18,2)::text` and is already handed to
+        // `portfolioExecutedPercent`'s strict parser in this same handler,
+        // so the shared money parser accepts exactly what this loop used to
+        // accept — and now says so out loud if a figure ever stops being a
+        // money column.
+        const sumDecimal = (values: readonly string[]): string =>
+          paiseText(values.reduce((total, value) => total + toPaise(value), 0n));
 
         const gstOf = (row: ProgressRow) => ({
           basis: row.gst_basis,

@@ -24,6 +24,8 @@ import {
   formatServerPercent,
   progressPercent,
 } from '../format.js';
+import { missingOrganisationFacts } from '../lib/organisation-facts.js';
+import { useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import {
@@ -88,19 +90,6 @@ interface SetupStep {
   readonly fix: { readonly label: string; readonly hash: string };
 }
 
-/** The seller facts a submitted invoice needs — the same list
- * `WorkBillingReadiness` mirrors, asked one screen earlier so a new
- * organisation meets them before a Work depends on them. */
-function missingOrganisationFacts(profile: OrganisationProfile): readonly string[] {
-  return [
-    ...((profile.stateCode ?? null) === null ? ['GST state code'] : []),
-    ...(profile.gstin === null ? ['GSTIN'] : []),
-    ...(profile.address === null ? ['address'] : []),
-    ...((profile.pincode ?? null) === null ? ['PIN code'] : []),
-    ...((profile.locality ?? null) === null ? ['locality'] : []),
-  ];
-}
-
 /**
  * What a brand-new organisation has to do before this product can produce
  * a document, on the one screen it lands on.
@@ -136,7 +125,7 @@ function SetupChecklist({
   const [signatories, setSignatories] = useState<readonly Signatory[] | null>(null);
   const [contacts, setContacts] = useState<readonly Contact[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -201,13 +190,7 @@ function SetupChecklist({
             <Upload aria-hidden="true" />
             Upload the first LOA
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setLoadVersion((current) => current + 1);
-            }}
-          >
+          <Button variant="outline" size="sm" onClick={retry}>
             Retry the checklist
           </Button>
         </div>

@@ -48,7 +48,7 @@ export interface PaymentMatrixRowData extends PaymentMatrixPercentages {
  *   never silently substitutes another row (a categorised item does NOT
  *   fall back to the UNCATEGORISED row).
  */
-export type PaymentPercentageResolution =
+type PaymentPercentageResolution =
   | {
       readonly resolved: true;
       readonly category: PaymentMatrixCategory;

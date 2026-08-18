@@ -59,7 +59,7 @@ export const DEFAULT_TEMPLATES: Readonly<Record<NumberedDocumentType, string>> =
  * unusable in that document's template — a delivery challan has no
  * buyer division, and a template asking for one is refused when it is
  * SAVED rather than when a document is issued. */
-export interface NumberTokens {
+interface NumberTokens {
   /** The Work's code, for a document that belongs to one. */
   readonly work?: string | null;
   /** The document's own stored prefix (delivery and issue challans keep

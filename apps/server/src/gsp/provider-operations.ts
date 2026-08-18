@@ -8,7 +8,7 @@ import type {
   StatutoryProviderError,
 } from './statutory-provider.js';
 
-export type StatutoryOperation =
+type StatutoryOperation =
   | 'register_irp'
   | 'reconcile_irp'
   | 'cancel_irp'
@@ -19,9 +19,9 @@ export type StatutoryOperation =
   | 'reconcile_crn'
   | 'cancel_crn';
 
-export type StatutoryOperationStatus = 'succeeded' | 'failed' | 'unknown';
+type StatutoryOperationStatus = 'succeeded' | 'failed' | 'unknown';
 
-export interface ProviderFailure {
+interface ProviderFailure {
   readonly status: 'failed' | 'unknown';
   readonly providerCode: string | null;
   readonly httpStatus: number | null;
@@ -39,9 +39,9 @@ export function sha256Hex(value: string): string {
  * body is kept as a truncated prefix with an explicit marker — never
  * silently cut, never dropped. Truncation walks back from the byte bound
  * so a multi-byte character is never split. */
-export const LEDGER_BODY_MAX_BYTES = 262144;
+const LEDGER_BODY_MAX_BYTES = 262144;
 
-export function boundedLedgerBody(body: string | null | undefined): {
+function boundedLedgerBody(body: string | null | undefined): {
   readonly body: string | null;
   readonly truncated: boolean;
 } {

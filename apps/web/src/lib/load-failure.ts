@@ -43,10 +43,23 @@ export function describeLoadFailure(cause: unknown, subject: string): LoadFailur
     };
   }
   return {
-    message:
-      cause instanceof RequestFailedError
-        ? cause.message
-        : `${subject} could not be loaded.`,
+    message: errorMessage(cause, `${subject} could not be loaded.`),
     retryable: true,
   };
+}
+
+/**
+ * The sentence a failed ACTION renders, as opposed to a failed read.
+ *
+ * The server's own refusal is always the better sentence — it names the
+ * rule that was broken — so it is preferred wherever there is one. The
+ * fallback only covers what never reached the server, or came back as
+ * something other than a refusal, and defaults to the wording the action
+ * handlers had already converged on independently.
+ */
+export function errorMessage(
+  cause: unknown,
+  fallback = 'The action failed; nothing was changed.',
+): string {
+  return cause instanceof RequestFailedError ? cause.message : fallback;
 }

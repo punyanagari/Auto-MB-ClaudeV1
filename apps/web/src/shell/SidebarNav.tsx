@@ -36,7 +36,7 @@ export interface NavSubItem {
   readonly current: boolean;
 }
 
-export interface SidebarNavProps {
+interface SidebarNavProps {
   readonly activeModule: ModuleKey;
   readonly pendingApprovals: number;
   readonly subItems: Partial<Record<ModuleKey, readonly NavSubItem[]>>;

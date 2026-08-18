@@ -24,9 +24,9 @@ export interface RateLimitRule {
  * Both implementations of each interface count at the moment of refusal,
  * so the metric measures the control rather than any one caller's
  * bookkeeping. */
-export type RateLimitScopeName = 'auth' | 'upload' | 'account_lockout' | 'signing';
+type RateLimitScopeName = 'auth' | 'upload' | 'account_lockout' | 'signing';
 
-export interface RateLimiter {
+interface RateLimiter {
   /** Records an attempt for the key and reports whether it is allowed.
    * Synchronous for the in-process implementation, a promise for the
    * PostgreSQL-backed one; callers await either. */

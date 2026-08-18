@@ -32,7 +32,6 @@ import {
   type Asn1Element,
 } from './asn1.js';
 
-export const OID_DATA = '1.2.840.113549.1.7.1';
 export const OID_SIGNED_DATA = '1.2.840.113549.1.7.2';
 export const OID_ATTR_CONTENT_TYPE = '1.2.840.113549.1.9.3';
 export const OID_ATTR_MESSAGE_DIGEST = '1.2.840.113549.1.9.4';

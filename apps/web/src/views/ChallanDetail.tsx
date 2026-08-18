@@ -7,7 +7,8 @@ import type {
   Receipt,
   Serial,
 } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { formatInr, formatRate, formatTimestampDate, todayIso } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
@@ -326,11 +327,7 @@ export function ChallanDetail({
         setDetail(loaded);
       })
       .catch((cause: unknown) => {
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The challan could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The challan could not be loaded.'));
       });
   }, [api, organisationId, challanId]);
 
@@ -359,11 +356,7 @@ export function ChallanDetail({
       if (updated !== null) setDetail(updated);
       setNotice(done);
     } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
+      setActionError(errorMessage(cause));
       setActionWayfind(
         wayfindingOf(cause, challan?.workId == null ? {} : { workId: challan.workId }),
       );

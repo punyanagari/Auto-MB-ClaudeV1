@@ -44,7 +44,7 @@ export const PDF_SIGNATURE_DOCUMENT_STATUSES = [
   /** A signature is present but this verifier could not read it. */
   'signature_unverifiable',
 ] as const;
-export const PdfDocumentSignatureStatusSchema = Type.Union(
+const PdfDocumentSignatureStatusSchema = Type.Union(
   PDF_SIGNATURE_DOCUMENT_STATUSES.map((status) => Type.Literal(status)),
   { description: 'Document-level digital-signature verdict.' },
 );
@@ -70,7 +70,7 @@ export const StoredPdfSignatureStatusSchema = Type.Union([
 ]);
 export type StoredPdfSignatureStatus = Static<typeof StoredPdfSignatureStatusSchema>;
 
-export const SignatureIntegritySchema = Type.Union([
+const SignatureIntegritySchema = Type.Union([
   Type.Literal('intact'),
   Type.Literal('digest_mismatch'),
   Type.Literal('signature_invalid'),
@@ -80,7 +80,7 @@ export type SignatureIntegrity = Static<typeof SignatureIntegritySchema>;
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 
-export const CertificateSummarySchema = Type.Object(
+const CertificateSummarySchema = Type.Object(
   {
     subject: Type.String(),
     issuer: Type.String(),
@@ -92,7 +92,7 @@ export const CertificateSummarySchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SignatureChainSchema = Type.Object(
+const SignatureChainSchema = Type.Object(
   {
     status: Type.Union([
       Type.Literal('trusted'),
@@ -117,7 +117,7 @@ export const SignatureChainSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SignatureTimestampSchema = Type.Object(
+const SignatureTimestampSchema = Type.Object(
   {
     present: Type.Boolean(),
     time: nullableString,
@@ -132,7 +132,7 @@ export const SignatureTimestampSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SignatureCoverageSchema = Type.Object(
+const SignatureCoverageSchema = Type.Object(
   {
     coversWholeDocument: Type.Boolean(),
     signedByteCount: Type.Integer(),
@@ -147,7 +147,7 @@ export const SignatureCoverageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SignatureRevocationSchema = Type.Object(
+const SignatureRevocationSchema = Type.Object(
   {
     status: Type.Literal('not_checked'),
     reason: Type.Literal('network_egress_not_available'),
@@ -156,7 +156,7 @@ export const SignatureRevocationSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const PdfSignatureVerdictSchema = Type.Object(
+const PdfSignatureVerdictSchema = Type.Object(
   {
     index: Type.Integer({ minimum: 1 }),
     subFilter: nullableString,

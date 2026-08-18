@@ -6,7 +6,7 @@ import type {
   TenderDetail,
   TenderStatus,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import {
   formatDate,
   formatInr,
@@ -14,7 +14,9 @@ import {
   formatTimestamp,
 } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
+import { useReload } from '../lib/view-state.js';
 import { navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
@@ -126,8 +128,7 @@ export function TenderWorkspace({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [section, setSection] = useState<Section>('overview');
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -146,11 +147,7 @@ export function TenderWorkspace({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The tender could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The tender could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -172,11 +169,7 @@ export function TenderWorkspace({
         setNotice(done);
         return true;
       } catch (cause) {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The action failed; nothing was changed.',
-        );
+        setActionError(errorMessage(cause));
         return false;
       } finally {
         setPending(false);
@@ -197,12 +190,7 @@ export function TenderWorkspace({
     return (
       <>
         {header}
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry tender"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry tender">
           {loadError}
         </ErrorState>
       </>
@@ -317,11 +305,7 @@ export function TenderWorkspace({
               void openPdf(() =>
                 api.downloadTenderNotice(organisationId, noticeId),
               ).catch((cause: unknown) => {
-                setActionError(
-                  cause instanceof RequestFailedError
-                    ? cause.message
-                    : 'The notice could not be opened.',
-                );
+                setActionError(errorMessage(cause, 'The notice could not be opened.'));
               });
             }}
             onOpenWork={onOpenWork}

@@ -21,7 +21,7 @@ export const COMPANY_DOCUMENT_CATEGORIES = [
   'company',
 ] as const;
 
-export const CompanyDocumentCategorySchema = Type.Union(
+const CompanyDocumentCategorySchema = Type.Union(
   COMPANY_DOCUMENT_CATEGORIES.map((category) => Type.Literal(category)),
 );
 export type CompanyDocumentCategory = Static<typeof CompanyDocumentCategorySchema>;
@@ -46,7 +46,7 @@ export type CompanyDocumentExpiryStatus = Static<
   typeof CompanyDocumentExpiryStatusSchema
 >;
 
-export const CompanyDocumentVersionSchema = Type.Object(
+const CompanyDocumentVersionSchema = Type.Object(
   {
     id: UuidSchema,
     versionNumber: Type.Integer({ minimum: 1 }),
@@ -110,9 +110,6 @@ export const CompanyDocumentVersionUploadQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type CompanyDocumentVersionUploadQuery = Static<
-  typeof CompanyDocumentVersionUploadQuerySchema
->;
 
 /** Creating the credential and its first version is one act, because a
  * named credential with no file behind it is a row nobody can use. */
@@ -126,6 +123,3 @@ export const CompanyDocumentUploadQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type CompanyDocumentUploadQuery = Static<
-  typeof CompanyDocumentUploadQuerySchema
->;

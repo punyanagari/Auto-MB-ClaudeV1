@@ -25,7 +25,7 @@ export interface TaxInvoiceIrpRenderEvidence {
   readonly legacyEvidenceMissing: boolean;
 }
 
-export interface TaxInvoiceRenderBranding {
+interface TaxInvoiceRenderBranding {
   readonly logoDataUri?: string;
 }
 

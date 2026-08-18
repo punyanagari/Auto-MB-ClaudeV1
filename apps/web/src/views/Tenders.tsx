@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Archive, CalendarClock, FilePlus2, Search, ShieldCheck } from 'lucide-react';
 import type { TenderSummary } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatLocalDateTime } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { navigateOnClick, tenderHash } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
@@ -66,8 +68,7 @@ export function Tenders({
      paint is judged against one clock and the split cannot straddle a
      tender that closes mid-loop. */
   const now = Date.now();
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -81,11 +82,7 @@ export function Tenders({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The tenders could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The tenders could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -112,12 +109,7 @@ export function Tenders({
     return (
       <>
         {header}
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry tenders"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry tenders">
           {loadError}
         </ErrorState>
       </>

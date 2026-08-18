@@ -35,7 +35,7 @@ export interface EwayBillRenderEvidence {
   readonly legacyEvidenceMissing: boolean;
 }
 
-export interface EwayBillRenderCarriage {
+interface EwayBillRenderCarriage {
   readonly transportMode: string;
   readonly transporterId: string | null;
   readonly transporterName: string | null;

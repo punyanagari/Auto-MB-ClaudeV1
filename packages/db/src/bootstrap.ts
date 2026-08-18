@@ -5,8 +5,6 @@ import { createDatabasePool } from './pool.js';
 import { runMigrations } from './migration-runner.js';
 import { ensureApplicationRole, ensureDefinerRole } from './roles.js';
 
-export { ensureApplicationRole, ensureDefinerRole } from './roles.js';
-
 /**
  * Idempotent production bootstrap (external review, ops batch): creates
  * or updates the application role, runs migrations, then deterministically
@@ -345,13 +343,6 @@ const FUNCTION_GRANTS = [
   'app_private.release_job(uuid, uuid, text)',
 ];
 
-/** Functions that MUST be owned by the BYPASSRLS definer role: they are
- * SECURITY DEFINER and read organisation_memberships from inside the RLS
- * policies themselves. After a restore onto a fresh cluster
- * (pg_restore --no-owner) they come back owned by the restoring role and
- * organisation creation breaks; the bootstrap repairs ownership. */
-const DEFINER_FUNCTIONS = FUNCTION_GRANTS;
-
 export async function applyGrants(admin: Sql): Promise<void> {
   await admin.unsafe(`GRANT USAGE ON SCHEMA public, app_private TO auto_mb_app`);
   for (const fn of FUNCTION_GRANTS) {
@@ -396,7 +387,12 @@ export async function applyGrants(admin: Sql): Promise<void> {
   await admin.unsafe(
     `GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer`,
   );
-  for (const fn of DEFINER_FUNCTIONS) {
+  // These functions MUST be owned by the BYPASSRLS definer role: they are
+  // SECURITY DEFINER and read organisation_memberships from inside the RLS
+  // policies themselves. After a restore onto a fresh cluster
+  // (pg_restore --no-owner) they come back owned by the restoring role and
+  // organisation creation breaks; the bootstrap repairs ownership.
+  for (const fn of FUNCTION_GRANTS) {
     await admin.unsafe(`ALTER FUNCTION ${fn} OWNER TO auto_mb_definer`);
     await admin.unsafe(`REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC`);
     await admin.unsafe(`GRANT EXECUTE ON FUNCTION ${fn} TO auto_mb_app`);

@@ -7,7 +7,8 @@ import type {
   WorkBalanceResponse,
   WorkBalanceItem,
 } from '@auto-mb/contracts';
-import { existingRecordIdOf, RequestFailedError, type ApiClient } from '../api.js';
+import { existingRecordIdOf, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Badge } from '../ui/badge.js';
@@ -444,11 +445,7 @@ export function ChallanEditor({
       )
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The challan editor could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The challan editor could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -673,11 +670,7 @@ export function ChallanEditor({
         onSaved(existingId);
         return;
       }
-      setSaveError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The draft could not be saved.',
-      );
+      setSaveError(errorMessage(cause, 'The draft could not be saved.'));
       setPending(false);
     }
   }

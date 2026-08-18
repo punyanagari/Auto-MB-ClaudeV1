@@ -27,7 +27,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
 import { assertWorkOperable } from '../work-status.js';
@@ -987,7 +986,7 @@ export function registerProductionRoutes(
             ${organisationId}, ${fields.itemCode}, ${fields.name},
             ${fields.category}, ${fields.unit}, ${fields.manufactured},
             ${fields.serialPrefix}, ${fields.serialControlled},
-            ${jsonb(tx, fields.specifications)}, ${user.id}
+            ${tx.json(fields.specifications as never)}, ${user.id}
           )
           returning ${tx.unsafe(ITEM_COLUMNS)}
         `.catch((error: unknown) => {
@@ -1032,7 +1031,7 @@ export function registerProductionRoutes(
               manufactured = ${fields.manufactured},
               serial_prefix = ${fields.serialPrefix},
               serial_controlled = ${fields.serialControlled},
-              specifications = ${jsonb(tx, fields.specifications)}
+              specifications = ${tx.json(fields.specifications as never)}
           where id = ${id}
           returning ${tx.unsafe(ITEM_COLUMNS)}
         `.catch((error: unknown) => {

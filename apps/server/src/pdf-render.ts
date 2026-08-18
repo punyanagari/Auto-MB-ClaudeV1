@@ -32,11 +32,11 @@ export const MAX_RENDERED_PDF_BYTES = 20 * 1024 * 1024;
 /** Gotenberg renders these documents in seconds; 45 is generous headroom
  * and still bounded, so a hung PDF service cannot hold a request (and
  * its database connection) open indefinitely. */
-export const RENDER_TIMEOUT_MS = 45_000;
+const RENDER_TIMEOUT_MS = 45_000;
 
 /** Streams the response body under the size cap and refuses anything
  * that is not a PDF. Exported for the bound/magic tests. */
-export async function readBoundedPdfResponse(response: Response): Promise<Buffer> {
+async function readBoundedPdfResponse(response: Response): Promise<Buffer> {
   const declaredLength = Number(response.headers.get('content-length') ?? '0');
   if (
     (Number.isFinite(declaredLength) && declaredLength > MAX_RENDERED_PDF_BYTES) ||
@@ -70,7 +70,7 @@ export async function readBoundedPdfResponse(response: Response): Promise<Buffer
   return pdf;
 }
 
-export interface RenderPdfOptions {
+interface RenderPdfOptions {
   /** The public 502 message, naming the document this render leaves
    * untouched (e.g. "…the issued challan is unaffected — retry later."). */
   readonly failureMessage: string;

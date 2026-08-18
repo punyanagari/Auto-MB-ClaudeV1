@@ -23,6 +23,11 @@ local-data/
 *.loa.pdf
 fixtures-raw/
 
+# Local development launcher. Its own header says it is a git-ignored
+# session file — it carries a machine-specific pdftotext path and dev-only
+# placeholder secrets — and it was only ever ignored by never being added.
+dev-local.cmd
+
 # Local opt-out for the caveman SessionStart hook. Presence of this file
 # silences .claude/hooks/caveman-activate.sh for one working tree without
 # changing the committed default for everyone else.

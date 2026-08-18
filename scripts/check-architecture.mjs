@@ -1,5 +1,7 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { glob, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import ts from 'typescript';
 
 const root = process.cwd();
 const forbiddenRoots = ['.claude/agents', 'memory', 'tickets'];
@@ -12,41 +14,42 @@ const requiredFiles = [
   'docs/ROADMAP.md',
 ];
 
-async function exists(relativePath) {
-  try {
-    await stat(path.join(root, relativePath));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 const errors = [];
 for (const file of requiredFiles) {
-  if (!(await exists(file))) errors.push(`missing required file: ${file}`);
+  if (!existsSync(path.join(root, file))) {
+    errors.push(`missing required file: ${file}`);
+  }
 }
 for (const directory of forbiddenRoots) {
-  if (await exists(directory)) {
+  if (existsSync(path.join(root, directory))) {
     errors.push(`legacy factory surface must not return: ${directory}`);
   }
 }
 
-async function collectFiles(directory) {
+/**
+ * Directory names never walked, matched on the entry name at any depth —
+ * which is what `exclude` is handed. Build output and dependencies are the
+ * obvious ones; `.claude` is here because it holds agent worktrees (whole
+ * stale checkouts of this repository) and the fetched third-party design
+ * skills, and scanning either means auditing a copy of the tree instead of
+ * the tree.
+ */
+const NEVER_WALKED = ['node_modules', 'dist', 'coverage', '.git', '.claude'];
+
+async function collectFiles() {
   const output = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const full = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      if (['node_modules', 'dist', 'coverage', '.git'].includes(entry.name)) continue;
-      output.push(...(await collectFiles(full)));
-    } else if (/\.(ts|tsx)$/.test(entry.name)) {
-      output.push(full);
-    }
+  for await (const match of glob('**/*.{ts,tsx}', {
+    cwd: root,
+    exclude: (name) => NEVER_WALKED.includes(name),
+  })) {
+    output.push(match);
   }
   return output;
 }
 
 /**
- * Spans of `source` in which a `setView(` call is legitimate.
+ * Lines carrying a `setView(` call that is NOT reachable through the
+ * departure gate.
  *
  * Departure protection is only as good as its narrowest bypass: a view
  * change that skips `requestDeparture` discards an editor's unsaved work
@@ -56,83 +59,52 @@ async function collectFiles(directory) {
  * of `navigate`, or from a callback handed to `requestDeparture`, and
  * from nowhere else.
  *
- * The scanner is deliberately simple: it walks the source once, skipping
- * comments and string/template literals so that a brace inside either
- * cannot move the region boundaries, and pairs delimiters by depth.
+ * The structure is read off TypeScript's own parse rather than a
+ * hand-rolled scan: a sanctioned call has the `navigate` function
+ * declaration or a `requestDeparture(...)` call among its ancestors. That
+ * also disposes of the comment- and string-skipping the scan needed, since
+ * `setView(` written inside either is not a call expression at all.
  */
-function departureSafeSpans(source) {
-  const spans = [];
-  const prose = [];
-  const openers = [];
-  let index = 0;
-  while (index < source.length) {
-    const rest = source.slice(index);
-    if (rest.startsWith('//')) {
-      const end = source.indexOf('\n', index);
-      const stop = end === -1 ? source.length : end + 1;
-      prose.push([index, stop]);
-      index = stop;
-      continue;
-    }
-    if (rest.startsWith('/*')) {
-      const end = source.indexOf('*/', index + 2);
-      const stop = end === -1 ? source.length : end + 2;
-      prose.push([index, stop]);
-      index = stop;
-      continue;
-    }
-    const quote = source[index];
-    if (quote === '"' || quote === "'" || quote === '`') {
-      const start = index;
-      index += 1;
-      while (index < source.length) {
-        if (source[index] === '\\') {
-          index += 2;
-          continue;
-        }
-        if (source[index] === quote) {
-          index += 1;
-          break;
-        }
-        index += 1;
-      }
-      prose.push([start, index]);
-      continue;
-    }
-    // A sanctioned region starts at the delimiter that follows the name:
-    // `function navigate(` opens with the body brace, `requestDeparture(`
-    // with its own argument list.
-    const navigate = /^function\s+navigate\s*\([^)]*\)[^{]*\{/.exec(rest);
-    if (navigate !== null) {
-      openers.push({ close: '}', start: index + navigate[0].length - 1, depth: 0 });
-      index += navigate[0].length;
-      continue;
-    }
-    const departure = /^requestDeparture\s*\(/.exec(rest);
-    if (departure !== null) {
-      openers.push({ close: ')', start: index + departure[0].length - 1, depth: 0 });
-      index += departure[0].length;
-      continue;
-    }
-    const character = source[index];
-    const top = openers.at(-1);
-    if (top !== undefined) {
-      const open = top.close === '}' ? '{' : '(';
-      if (character === open) top.depth += 1;
-      else if (character === top.close) {
-        if (top.depth === 0) {
-          spans.push([top.start, index]);
-          openers.pop();
-        } else top.depth -= 1;
-      }
-    }
-    index += 1;
-  }
-  return { spans, prose };
-}
+function unguardedSetViewLines(source, fileName) {
+  const parsed = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
 
-function lineOf(source, index) {
-  return source.slice(0, index).split('\n').length;
+  // `setView(...)` and `something.setView(...)` alike — the scan this
+  // replaces matched the bare name, so a call through a property reads the
+  // same way here.
+  const calleeName = (expression) => {
+    if (ts.isIdentifier(expression)) return expression.text;
+    if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
+    return null;
+  };
+  const sanctioned = (node) => {
+    for (let at = node.parent; at !== undefined; at = at.parent) {
+      if (ts.isFunctionDeclaration(at) && at.name?.text === 'navigate') return true;
+      if (ts.isCallExpression(at) && calleeName(at.expression) === 'requestDeparture') {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const lines = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      calleeName(node.expression) === 'setView' &&
+      !sanctioned(node)
+    ) {
+      lines.push(parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed);
+  return lines;
 }
 
 /**
@@ -145,9 +117,8 @@ function lineOf(source, index) {
  */
 const DEPARTURE_RULE_EXEMPT = new Set([]);
 
-for (const file of await collectFiles(root)) {
-  const source = await readFile(file, 'utf8');
-  const relative = path.relative(root, file);
+for (const relative of await collectFiles()) {
+  const source = await readFile(path.join(root, relative), 'utf8');
   if (relative.startsWith('apps/web/') && /from ['"]@auto-mb\/db/.test(source)) {
     errors.push(`web must not import database package: ${relative}`);
   }
@@ -160,21 +131,14 @@ for (const file of await collectFiles(root)) {
   if (
     relative.startsWith(path.join('apps', 'web', 'src')) &&
     !DEPARTURE_RULE_EXEMPT.has(relative) &&
-    source.includes('setView(')
+    source.includes('setView')
   ) {
-    const { spans, prose } = departureSafeSpans(source);
-    for (const match of source.matchAll(/\bsetView\s*\(/g)) {
-      const at = match.index;
-      const covered =
-        spans.some(([start, end]) => at > start && at < end) ||
-        prose.some(([start, end]) => at >= start && at < end);
-      if (!covered) {
-        errors.push(
-          `view state must move through navigate()/requestDeparture(), so an ` +
-            `unsaved editor is never left without confirmation: ` +
-            `${relative}:${String(lineOf(source, at))}`,
-        );
-      }
+    for (const line of unguardedSetViewLines(source, relative)) {
+      errors.push(
+        `view state must move through navigate()/requestDeparture(), so an ` +
+          `unsaved editor is never left without confirmation: ` +
+          `${relative}:${String(line)}`,
+      );
     }
   }
 }

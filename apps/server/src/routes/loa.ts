@@ -32,7 +32,7 @@ import {
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { enqueueJob, jsonb } from '@auto-mb/db';
+import { enqueueJob } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { auditDiff } from '../audit-diff.js';
 import {
@@ -781,7 +781,7 @@ export function registerLoaRoutes(
             values (
               ${organisationId}, ${user.id}, 'loa.uploaded', 'loa_documents',
               ${documentId},
-              ${jsonb(tx, {
+              ${tx.json({
                 filename,
                 sha256,
                 sizeBytes: body.length,
@@ -1200,7 +1200,7 @@ export function registerLoaRoutes(
               ${gstBasis}, ${gstRate},
               ${pbg?.requiredAmount ?? null}, ${pbg?.submissionDays ?? null},
               ${pbg?.extensionDays ?? null}, ${pbg?.penalInterestPercent ?? null},
-              ${pbgSource === null ? null : jsonb(tx, pbgSource)},
+              ${pbgSource === null ? null : tx.json(pbgSource as never)},
               ${user.id}
             )
             returning id, work_code, letter_number, letter_date::text as letter_date,
@@ -1530,7 +1530,7 @@ export function registerLoaRoutes(
               values (
                 ${organisationId}, ${user.id}, 'work.assignments_carried',
                 'work_assignments', ${work.id},
-                ${jsonb(tx, {
+                ${tx.json({
                   supersessionId,
                   supersededWorkId: openSupersession?.supersededWorkId ?? null,
                   memberUserIds: bound.assignedUserIds,
@@ -1545,7 +1545,7 @@ export function registerLoaRoutes(
             )
             values (
               ${organisationId}, ${user.id}, 'work.created', 'works', ${work.id},
-              ${jsonb(tx, {
+              ${tx.json({
                 loaDocumentId: documentId,
                 // Present only on a reconfirmation: the supersession this
                 // Work is the successor of. The trail then answers "where
@@ -1602,7 +1602,7 @@ export function registerLoaRoutes(
                         penalInterestPercent: pbg.penalInterestPercent ?? null,
                         provenance: pbgSource?.provenance ?? null,
                       },
-              })}
+              } as never)}
             )
           `;
 
@@ -1639,11 +1639,11 @@ export function registerLoaRoutes(
               values (
                 ${organisationId}, ${user.id}, 'membership.assignments_set',
                 'work_assignments',
-                ${jsonb(tx, {
+                ${tx.json({
                   memberUserId: user.id,
                   before: assignmentChanges.before,
                   after: assignmentChanges.after,
-                })}
+                } as never)}
               )
             `;
         }

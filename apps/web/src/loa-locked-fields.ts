@@ -27,7 +27,7 @@ import type {
 import { normaliseDecimal, parseDecimalMinorUnits } from './loa-payload.js';
 
 /** The locked letter-level values. `true` means "the letter decided this". */
-export interface LetterLocks {
+interface LetterLocks {
   readonly letterNumber: boolean;
   readonly letterDate: boolean;
   readonly title: boolean;

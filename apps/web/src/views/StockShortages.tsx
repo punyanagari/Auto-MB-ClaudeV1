@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, PackagePlus, Plus } from 'lucide-react';
 import type { Contact, StockShortage, StockShortageResponse } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
-import { navigateOnClick, stockRegisterHash } from '../lib/workspace-routes.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
+import { navigateOnClick, STOCK_REGISTER_HASH } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button, buttonVariants } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -82,7 +84,7 @@ export function StockShortages({
   const [data, setData] = useState<StockShortageResponse | null>(null);
   const [vendors, setVendors] = useState<readonly Contact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [jobCardId, setJobCardId] = useState('');
   const [vendorContactId, setVendorContactId] = useState('');
@@ -111,11 +113,7 @@ export function StockShortages({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The shortage list could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The shortage list could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -130,7 +128,7 @@ export function StockShortages({
       description="What the open job cards need and the shelf does not hold. Selecting parts drafts a purchase order on the job card's Work; the quantities are the shortages the server computes, and the rates are filled in on the order itself."
       action={
         <a
-          href={stockRegisterHash()}
+          href={STOCK_REGISTER_HASH}
           onClick={navigateOnClick(onOpenRegister)}
           className={buttonVariants({ variant: 'outline' })}
         >
@@ -145,12 +143,7 @@ export function StockShortages({
     return (
       <>
         {header}
-        <ErrorState
-          onRetry={() => {
-            setLoadVersion((current) => current + 1);
-          }}
-          retryLabel="Retry the shortage list"
-        >
+        <ErrorState onRetry={retry} retryLabel="Retry the shortage list">
           {loadError}
         </ErrorState>
       </>
@@ -182,18 +175,12 @@ export function StockShortages({
         quantity: line.outstanding,
         purchaseOrderLineId: line.id,
       })
-      .then(() => {
-        // The shortage this order was raised for is now covered, so the
-        // whole screen is re-read rather than patched: the left column
-        // changes too.
-        setLoadVersion((current) => current + 1);
-      })
+      // The shortage this order was raised for is now covered, so the
+      // whole screen is re-read rather than patched: the left column
+      // changes too.
+      .then(retry)
       .catch((cause: unknown) => {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The receipt could not be recorded.',
-        );
+        setActionError(errorMessage(cause, 'The receipt could not be recorded.'));
       })
       .finally(() => {
         setReceiving(null);
@@ -211,15 +198,9 @@ export function StockShortages({
         ...(expectedOn === '' ? {} : { expectedOn }),
         productionItemIds: [...selected],
       })
-      .then(() => {
-        setLoadVersion((current) => current + 1);
-      })
+      .then(retry)
       .catch((cause: unknown) => {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The purchase order could not be drafted.',
-        );
+        setActionError(errorMessage(cause, 'The purchase order could not be drafted.'));
       })
       .finally(() => {
         setBusy(false);
