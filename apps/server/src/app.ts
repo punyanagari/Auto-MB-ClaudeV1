@@ -68,6 +68,7 @@ import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
+import { registerPlatformRoutes } from './routes/platform.js';
 import { registerSigningRoutes } from './routes/signing.js';
 import { registerHrRoutes } from './routes/hr.js';
 import { registerMaintenanceRoutes } from './routes/maintenance.js';
@@ -937,6 +938,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       ? createClamdScanner(options.clamav.host, options.clamav.port)
       : noScanner;
     registerExportRoutes(app, authInstance, database);
+    registerPlatformRoutes(app, authInstance, database, storage);
     registerAmendmentRoutes(app, authInstance, database, storage, scanner);
     registerDashboardRoutes(app, authInstance, database);
     registerOrganisationRoutes(app, authInstance, database, storage, scanner);

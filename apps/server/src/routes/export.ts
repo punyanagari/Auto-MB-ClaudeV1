@@ -17,6 +17,43 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v28: the platform controls (0096) join the package — the
+ * organisation's module entitlements, its recurring statutory schedules,
+ * and the register of the exports it has taken of itself.
+ *
+ * The last of those is the one worth arguing for, because a naive reading
+ * says an export has no business containing a list of exports. It does,
+ * and for the reason every disclosure register exists: the rows record
+ * that on a date, a named member took a complete copy of the organisation
+ * away, and that is a fact the organisation needs to keep whether or not
+ * the file it produced still exists. The artefacts themselves are not in
+ * the manifest and could not be — they expire, their bytes are deleted,
+ * and a package that promised them would promise files no restore could
+ * fetch. `object_key` is NULL on every expired row for exactly that
+ * reason, so the export carries the record and not a broken pointer.
+ *
+ * Entitlements travel because a restored organisation that came back with
+ * the e-way bill module silently on, or the signing module silently off,
+ * would be a restore that changed what the product does. Schedules travel
+ * for the same reason, and they carry `authority_user_id` — the member
+ * whose membership their jobs borrow — because a restore that lost it
+ * would leave the checks unable to say whose authority they ever ran on.
+ *
+ * No manifest bucket: none of the three stores a document.
+ *
+ * v25, v26 and v27 are the three sibling packs of this wave. The numbers
+ * were ALLOCATED by the coordinator rather than claimed on merge, for the
+ * reason the v15, v17, v21 and v24 notes record at length: a version
+ * string identifies a format, two formats sharing one string is the
+ * failure that matters, and a gap is not.
+ *
+ * ONE FIX RIDES WITH IT, and it is not this pack's own. The `members`
+ * section listed every authority column except `can_sign_documents`,
+ * which migration 0091 added: a restored organisation came back unable to
+ * sign, with nobody able to see why, which is precisely the failure that
+ * section's own comment warns about. This version restores it alongside
+ * the two columns 0096 adds.
+ *
  * export-v24: the signing trail (0091, ADR-0012) joins the package — the
  * kiosk credentials, and every request to put the organisation's own
  * Class 3 certificate on an issued document.
@@ -209,7 +246,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v24';
+export const EXPORT_FORMAT_VERSION = 'export-v28';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -305,7 +342,9 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 can_manage_payroll, status, created_at
+                 can_sign_documents, can_manage_payroll,
+                 can_manage_entitlements, can_export_org,
+                 status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -1115,6 +1154,26 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'payrollRunCounters',
     sql: `select * from payroll_run_counters order by fy_label`,
   },
+  // The platform controls (0096). Three tables, no manifest bucket: none
+  // of them stores a document.
+  {
+    key: 'organisationEntitlements',
+    sql: `select * from organisation_entitlements order by flag_key`,
+  },
+  {
+    key: 'statutoryJobSchedules',
+    sql: `select * from statutory_job_schedules order by kind`,
+  },
+  // The disclosure register, not the artefacts. Every row says that on a
+  // date a named member took a complete copy of the organisation away —
+  // a fact worth keeping whether or not the file still exists — and
+  // `object_key` is already NULL on every expired row, so nothing here
+  // promises a restore a file it cannot fetch.
+  {
+    key: 'organisationExportRequests',
+    sql: `select * from organisation_export_requests
+          order by requested_at, id`,
+  },
 ];
 
 const rowsSchema = Type.Array(Type.Record(Type.String(), Type.Unknown()));
@@ -1174,6 +1233,116 @@ class ChunkWriter {
 }
 
 /**
+ * Writes the whole package, one chunk at a time, to whatever sink the
+ * caller gives it.
+ *
+ * Extracted from the route below because migration 0096 gave the same
+ * package a second destination — a stored artefact an operator downloads
+ * later — and two copies of a sixty-table serialiser is two places for a
+ * table to be forgotten. The route pipes chunks into the response; the
+ * asynchronous build pipes them into object storage.
+ *
+ * `tx` MUST be a REPEATABLE READ transaction and must stay open for the
+ * whole call. That is not a preference: the package is around sixty
+ * sequential SELECTs, and under READ COMMITTED each takes its own
+ * snapshot, so a writer committing midway is invisible to the earlier
+ * queries and visible to the later ones and the package comes out
+ * referentially broken — challan items whose parent challan is absent,
+ * lines pointing at a document read before it existed.
+ *
+ * It writes the audit row itself, before reading `audit_events`, so the
+ * package always contains its own record of having been taken.
+ */
+export async function writeExportPackage(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  write: (chunk: string) => Promise<void>,
+): Promise<void> {
+  const manifest = new Map<ManifestBucket, ManifestEntry[]>();
+  const collect = (bucket: ManifestBucket, entries: ManifestEntry[]): void => {
+    if (entries.length === 0) return;
+    const existing = manifest.get(bucket);
+    if (existing) existing.push(...entries);
+    else manifest.set(bucket, [...entries]);
+  };
+
+  await write(
+    `{"exportedAt":${JSON.stringify(new Date().toISOString())},` +
+      `"formatVersion":${JSON.stringify(EXPORT_FORMAT_VERSION)},`,
+  );
+
+  const [organisation] = await tx<ExportRow[]>`
+    select * from organisations
+    where id = app_private.current_organisation_id()
+  `;
+  if (organisation && organisation.logo_object_key !== null) {
+    collect('organisation-logo', [
+      {
+        kind: 'organisation-logo',
+        objectKey: organisation.logo_object_key,
+        sha256: null,
+      },
+    ]);
+  }
+  await write(`"organisation":${JSON.stringify(organisation ?? null)},`);
+
+  for (const section of SECTIONS) {
+    await write(`${JSON.stringify(section.key)}:[`);
+    let separator = '';
+    // The async-iterable cursor: PostgreSQL hands back CURSOR_ROWS at a
+    // time and the section is written as it arrives, so no table is ever
+    // fully resident.
+    for await (const rows of tx
+      .unsafe(section.sql)
+      .cursor(CURSOR_ROWS) as AsyncIterable<ExportRow[]>) {
+      for (const row of rows) {
+        const parsed = parseRow(row, section.jsonbColumns ?? []);
+        if (section.manifest) {
+          collect(section.manifest.bucket, section.manifest.entries(parsed));
+        }
+        await write(separator + JSON.stringify(parsed));
+        separator = ',';
+      }
+    }
+    await write('],');
+  }
+
+  // A portable manifest of every stored object the record refers to —
+  // logo, uploaded LOAs, rendered and signed PDFs — with the recorded
+  // hashes, so an offboarding or incident package can fetch and verify
+  // the bytes (external re-audit). Emitted in a fixed bucket order, so
+  // streaming the sections did not reorder it.
+  const objectManifest = MANIFEST_ORDER.flatMap(
+    (bucket) => manifest.get(bucket) ?? [],
+  );
+  await write(`"objectManifest":${JSON.stringify(objectManifest)},`);
+
+  // Recorded before the audit section is read, so the package contains
+  // its own audit record.
+  await tx`
+    insert into audit_events (
+      organisation_id, actor_user_id, action, entity_type, details
+    )
+    values (
+      ${organisationId}, ${userId}, 'organisation.exported',
+      'organisations', '{}'::jsonb
+    )
+  `;
+  await write('"auditEvents":[');
+  let separator = '';
+  for await (const rows of tx
+    .unsafe(`select * from audit_events order by occurred_at, id`)
+    .cursor(CURSOR_ROWS) as AsyncIterable<ExportRow[]>) {
+    for (const row of rows) {
+      await write(separator + JSON.stringify(parseRow(row, ['details'])));
+      separator = ',';
+    }
+  }
+  await write(']}');
+}
+
+/**
  * Full-organisation export (docs/SECURITY.md §incident/export procedures;
  * Milestone 4 support tooling). Owner-only: this is the tenant's complete
  * business record — data portability for the contractor, and the escape
@@ -1217,89 +1386,10 @@ export function registerExportRoutes(
         reply.header('content-type', 'application/json; charset=utf-8');
         void reply.send(stream);
 
-        const manifest = new Map<ManifestBucket, ManifestEntry[]>();
-        const collect = (bucket: ManifestBucket, entries: ManifestEntry[]): void => {
-          if (entries.length === 0) return;
-          const existing = manifest.get(bucket);
-          if (existing) existing.push(...entries);
-          else manifest.set(bucket, [...entries]);
-        };
-
         try {
-          await out.write(
-            `{"exportedAt":${JSON.stringify(new Date().toISOString())},` +
-              `"formatVersion":${JSON.stringify(EXPORT_FORMAT_VERSION)},`,
+          await writeExportPackage(tx, organisationId, user.id, (chunk) =>
+            out.write(chunk),
           );
-
-          const [organisation] = await tx<ExportRow[]>`
-            select * from organisations
-            where id = app_private.current_organisation_id()
-          `;
-          if (organisation && organisation.logo_object_key !== null) {
-            collect('organisation-logo', [
-              {
-                kind: 'organisation-logo',
-                objectKey: organisation.logo_object_key,
-                sha256: null,
-              },
-            ]);
-          }
-          await out.write(`"organisation":${JSON.stringify(organisation ?? null)},`);
-
-          for (const section of SECTIONS) {
-            await out.write(`${JSON.stringify(section.key)}:[`);
-            let separator = '';
-            // The async-iterable cursor: PostgreSQL hands back
-            // CURSOR_ROWS at a time and the section is written as it
-            // arrives, so no table is ever fully resident.
-            for await (const rows of tx
-              .unsafe(section.sql)
-              .cursor(CURSOR_ROWS) as AsyncIterable<ExportRow[]>) {
-              for (const row of rows) {
-                const parsed = parseRow(row, section.jsonbColumns ?? []);
-                if (section.manifest) {
-                  collect(section.manifest.bucket, section.manifest.entries(parsed));
-                }
-                await out.write(separator + JSON.stringify(parsed));
-                separator = ',';
-              }
-            }
-            await out.write('],');
-          }
-
-          // A portable manifest of every stored object the record refers
-          // to — logo, uploaded LOAs, rendered and signed PDFs — with the
-          // recorded hashes, so an offboarding or incident package can
-          // fetch and verify the bytes (external re-audit). Emitted in a
-          // fixed bucket order, so streaming the sections did not reorder
-          // it.
-          const objectManifest = MANIFEST_ORDER.flatMap(
-            (bucket) => manifest.get(bucket) ?? [],
-          );
-          await out.write(`"objectManifest":${JSON.stringify(objectManifest)},`);
-
-          // Recorded before the audit section is read, so the package
-          // contains its own audit record.
-          await tx`
-            insert into audit_events (
-              organisation_id, actor_user_id, action, entity_type, details
-            )
-            values (
-              ${organisationId}, ${user.id}, 'organisation.exported',
-              'organisations', '{}'::jsonb
-            )
-          `;
-          await out.write('"auditEvents":[');
-          let separator = '';
-          for await (const rows of tx
-            .unsafe(`select * from audit_events order by occurred_at, id`)
-            .cursor(CURSOR_ROWS) as AsyncIterable<ExportRow[]>) {
-            for (const row of rows) {
-              await out.write(separator + JSON.stringify(parseRow(row, ['details'])));
-              separator = ',';
-            }
-          }
-          await out.write(']}');
           stream.end();
           // The transaction closes only once the client has the whole
           // package: the snapshot is what makes it internally consistent.

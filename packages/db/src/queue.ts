@@ -17,8 +17,17 @@ import { TenantBindRefusedError, withTenant } from './tenant.js';
  * to the CHECK constraint in migration 0072 — the database is the
  * authority, and an unknown kind is refused there rather than accepted
  * and then never dispatched. */
-export const JOB_KINDS = ['loa_document_intake'] as const;
+export const JOB_KINDS = ['loa_document_intake', 'instrument_expiry_review'] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
+
+/** The kinds a schedule may name (migration 0096).
+ *
+ * A subset of `JOB_KINDS`, and the narrowing is the point: `enqueue_job`
+ * is called by a request that has a reason, and the scheduler is called by
+ * a clock that does not, so only a kind that is meaningful with no input
+ * beyond "it is time" belongs here. */
+export const SCHEDULED_JOB_KINDS = ['instrument_expiry_review'] as const;
+export type ScheduledJobKind = (typeof SCHEDULED_JOB_KINDS)[number];
 
 /** Every state a queue row can hold. `refused_bind` is terminal by
  * ADR-0011: the commissioning user's membership did not survive to
@@ -245,4 +254,47 @@ export async function releaseJob(
     )
   `;
   return row?.release_job === true;
+}
+
+/**
+ * Enqueues every recurring check that has come due, and reports how many
+ * (migration 0096).
+ *
+ * Cross-tenant, and outside any binding, for the same reason
+ * `claimNextJob` is: a schedule has to be found before anyone knows whose
+ * it is. It takes no organisation, so — exactly like `enqueueJob` — there
+ * is no argument by which a caller could point it at a tenant.
+ *
+ * The advance and the enqueue happen in one statement inside the function,
+ * so calling this from several workers at once is safe: `FOR UPDATE SKIP
+ * LOCKED` gives them disjoint schedules and a schedule already being ticked
+ * is simply left for the next call.
+ */
+export async function enqueueDueStatutoryJobs(
+  sql: Sql,
+  limit: number,
+): Promise<number> {
+  const [row] = await sql<{ enqueue_due_statutory_jobs: number }[]>`
+    select app_private.enqueue_due_statutory_jobs(${limit})
+  `;
+  return row?.enqueue_due_statutory_jobs ?? 0;
+}
+
+/**
+ * Marks lapsed export artefacts expired and hands back the object keys
+ * whose bytes the caller must now delete (migration 0096).
+ *
+ * The row is marked before the bytes go, deliberately: the failure this
+ * order produces is an orphan file, which is inert and reclaimable, and
+ * the failure the other order produces is a row that still says `ready`
+ * pointing at nothing.
+ */
+export async function expireLapsedOrganisationExports(
+  sql: Sql,
+  limit: number,
+): Promise<readonly string[]> {
+  const rows = await sql<{ object_key: string }[]>`
+    select object_key from app_private.expire_lapsed_organisation_exports(${limit})
+  `;
+  return rows.map((row) => row.object_key);
 }

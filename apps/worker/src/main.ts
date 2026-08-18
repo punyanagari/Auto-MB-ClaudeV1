@@ -1,4 +1,8 @@
-import { createDatabasePool } from '@auto-mb/db';
+import {
+  createDatabasePool,
+  enqueueDueStatutoryJobs,
+  expireLapsedOrganisationExports,
+} from '@auto-mb/db';
 import {
   EMPTY_TRUST_ANCHOR_STORE,
   assertPopplerPdfToText,
@@ -6,6 +10,7 @@ import {
   loadTrustAnchors,
 } from '@auto-mb/documents';
 import { readWorkerConfig } from './config.js';
+import { createInstrumentExpiryReviewHandler } from './handlers/instrument-expiry-review.js';
 import { createLoaDocumentIntakeHandler } from './handlers/loa-document-intake.js';
 import { runWorkerLoop, type JobHandlers, type JobLogger } from './runtime.js';
 
@@ -83,12 +88,46 @@ const sql = createDatabasePool({
   applicationName: 'auto-mb-worker',
 });
 
+const storage = createFileSystemStorage(config.objectStorageDir);
+
 const handlers: JobHandlers = {
-  loa_document_intake: createLoaDocumentIntakeHandler({
-    storage: createFileSystemStorage(config.objectStorageDir),
-    trustAnchors,
-  }),
+  loa_document_intake: createLoaDocumentIntakeHandler({ storage, trustAnchors }),
+  instrument_expiry_review: createInstrumentExpiryReviewHandler(),
 };
+
+/**
+ * The periodic work that is not a job (migration 0096).
+ *
+ * Both halves are cross-tenant definer calls that take no organisation, so
+ * neither can be pointed at a tenant; both are the same
+ * `auto_mb_app` role everything else here runs as.
+ *
+ * The expiry sweep marks the row first and deletes the bytes afterwards,
+ * which is why the delete is best-effort: the failure this order produces
+ * is an orphan file whose key is on no row, and the failure the other
+ * order produces is a download button that fails for a reason nobody can
+ * see. A file that survives one sweep is not retried — nothing points at
+ * it — so it is reported rather than silently swallowed.
+ */
+async function tick(): Promise<void> {
+  const enqueued = await enqueueDueStatutoryJobs(sql, 50);
+  if (enqueued > 0) log.info({ message: 'scheduled checks enqueued', enqueued });
+
+  const lapsed = await expireLapsedOrganisationExports(sql, 50);
+  for (const key of lapsed) {
+    try {
+      await storage.remove(key);
+    } catch (error) {
+      log.error({
+        message: 'an expired export artefact could not be deleted; it is orphaned',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  if (lapsed.length > 0) {
+    log.info({ message: 'export artefacts expired', expired: lapsed.length });
+  }
+}
 
 const controller = new AbortController();
 
@@ -115,6 +154,8 @@ try {
     signal: controller.signal,
     handlers,
     log,
+    tick,
+    tickIntervalMs: config.tickIntervalMs,
   });
 } finally {
   // A job in flight keeps its claim until the lease expires; another

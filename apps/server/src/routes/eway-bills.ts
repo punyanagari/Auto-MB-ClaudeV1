@@ -56,6 +56,7 @@ import {
   renderEwayBillHtml,
   type EwayBillRenderEvidence,
 } from '../eway-bill-html.js';
+import { requireEntitlement } from '../entitlements.js';
 import { httpError } from '../http.js';
 import { renderPdfViaGotenberg } from '../pdf-render.js';
 import { assertStandaloneChallanAccess, cancellationNote } from './challans.js';
@@ -487,6 +488,13 @@ export function registerEwayBillRoutes(
       const body = normalisedSave(request.body);
       const detail = await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
+        // The organisation must be entitled to the module at all (0096).
+        // Gated on CREATE only, and deliberately: switching the module off
+        // stops an organisation whose NIC re-certification has not landed
+        // from generating anything new, and does NOT hide the bills it has
+        // already generated. A control that erased history would be a
+        // different control.
+        await requireEntitlement(tx, 'eway_bill');
         // The invoice row lock serialises this create against the
         // invoice's cancel (which refuses while a live e-way bill
         // exists) and against a concurrent create on the same invoice.
@@ -627,6 +635,9 @@ export function registerEwayBillRoutes(
       const body = normalisedSave(request.body);
       const detail = await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
+        // The module entitlement (0096), for the reason the invoice create
+        // above gives.
+        await requireEntitlement(tx, 'eway_bill');
         // The challan row lock serialises this create against the
         // challan's own cancel and against a concurrent create on the
         // same challan, exactly as the invoice lock does above.

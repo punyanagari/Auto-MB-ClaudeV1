@@ -10,6 +10,8 @@ export interface MembershipRow {
   can_manage_payments: boolean;
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
+  can_manage_entitlements: boolean;
+  can_export_org: boolean;
 }
 
 export async function membershipOf(
@@ -19,7 +21,8 @@ export async function membershipOf(
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
-           can_sign_documents, can_manage_payroll
+           can_sign_documents, can_manage_payroll,
+           can_manage_entitlements, can_export_org
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -146,7 +149,23 @@ export type DocumentAuthority =
    * register carries every colleague's salary, PAN, UAN and bank
    * account, and a member who may approve a vendor payment has no
    * business reading any of that by default. */
-  | 'payroll';
+  | 'payroll'
+  /** Switching this organisation's modules on and off, and configuring
+   * its recurring statutory checks (0096). OWNER-ONLY IN EFFECT: every
+   * route that declares this authority also declares `role: 'owner'`, so
+   * the grant confers nothing on its own. It is still a per-member column
+   * rather than a bare role check because the finding-36 census
+   * classifies grants, not roles, and an operator control that never
+   * appears in that census is one nobody can see. */
+  | 'entitlements'
+  /** Requesting and downloading a copy of the whole organisation record
+   * (0096). Separate from the owner role deliberately: an owner who wants
+   * their accountant to pull the annual package should not have to hand
+   * over the organisation to do it. The route adds one test this
+   * authority cannot express — full work scope — because the package is
+   * not work-scoped and an assigned-scope member would otherwise receive
+   * every Work the product hides from them. */
+  | 'export';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -161,6 +180,10 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
   sign: 'Your membership does not carry the signing authority, which is required to send an issued document for the organisation’s digital signature or to withdraw a request for one.',
   payroll:
     'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
+  entitlements:
+    'Your membership does not carry the entitlements authority, which is required to switch this organisation’s modules on or off and to configure its recurring statutory checks. It is granted to owners only.',
+  export:
+    'Your membership does not carry the organisation-export authority, which is required to request or download a copy of the whole organisation record.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -176,6 +199,8 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_manage_payments'
     | 'can_sign_documents'
     | 'can_manage_payroll'
+    | 'can_manage_entitlements'
+    | 'can_export_org'
   >
 > = {
   issue: 'can_issue_documents',
@@ -184,6 +209,8 @@ const AUTHORITY_COLUMNS: Record<
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  entitlements: 'can_manage_entitlements',
+  export: 'can_export_org',
 };
 
 function authorityGranted(

@@ -97,6 +97,15 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // finalising a run authorises the salaries — worth stealing on both
   // counts, so it joins the wall beside payments.
   payroll: true,
+  // Entitlements decide which modules the organisation may use at all. A
+  // stolen owner session that can turn the e-way bill module on is a
+  // stolen session that can start speaking to a government portal in the
+  // organisation's name.
+  entitlements: true,
+  // The whole organisation in one file — every contract, price, payslip
+  // and bank detail it holds. This is the single highest-value read in
+  // the product, so it sits on the wall beside payments and payroll.
+  export: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -109,6 +118,8 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  entitlements: 'can_manage_entitlements',
+  export: 'can_export_org',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

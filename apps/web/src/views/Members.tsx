@@ -211,6 +211,29 @@ const FEATURES = [
     authority: 'Payroll authority',
     change: 'Payroll authority',
   },
+  {
+    /* The entitlements authority (migration 0096). OWNER-ONLY IN EFFECT:
+       every route carrying it also requires the owner role, so granting
+       it to a non-owner is not an error and confers nothing — it is the
+       column the finding-36 MFA census classifies, and an operator
+       control that never appears in that census is one nobody can see. */
+    key: 'canManageEntitlements',
+    heading: 'Can set modules',
+    authority: 'Entitlements authority (owners only)',
+    change: 'Entitlements authority',
+  },
+  {
+    /* The organisation-export authority (migration 0096): who may take a
+       complete copy of the organisation away. Separate from the owner
+       role deliberately, so an owner can hand the annual package to an
+       accountant without handing over the organisation. Full Work access
+       is required on top — the package is not Work-scoped, so a member
+       who sees only their own Works cannot take one. */
+    key: 'canExportOrg',
+    heading: 'Can export',
+    authority: 'Organisation export authority',
+    change: 'Organisation export authority',
+  },
 ] as const satisfies readonly {
   key: keyof Membership & `can${string}`;
   heading: string;

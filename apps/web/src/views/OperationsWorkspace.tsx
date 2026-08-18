@@ -163,6 +163,16 @@ const ProductionJobCard = lazy(() =>
     default: module.ProductionJobCard,
   })),
 );
+const OrganisationExportSettings = lazy(() =>
+  import('./OrganisationExportSettings.js').then((module) => ({
+    default: module.OrganisationExportSettings,
+  })),
+);
+const PlatformSettings = lazy(() =>
+  import('./PlatformSettings.js').then((module) => ({
+    default: module.PlatformSettings,
+  })),
+);
 const SigningKioskSettings = lazy(() =>
   import('./SigningKioskSettings.js').then((module) => ({
     default: module.SigningKioskSettings,
@@ -461,6 +471,11 @@ export function OperationsWorkspace({
   // gates the employee register and the payroll run — a vendor-payment
   // manager must not see salaries, PAN, UAN or bank details by default.
   const canManagePayroll = membership?.canManagePayroll ?? false;
+  // The platform controls (migration 0096). `canManageEntitlements` is
+  // owner-only in effect — every route needs the owner role beside it —
+  // so the panel takes both and renders for neither alone.
+  const canManageEntitlements = membership?.canManageEntitlements ?? false;
+  const canExportOrg = membership?.canExportOrg ?? false;
   // Without it the rail carries no door to Employees at all — a register
   // of salaries is not something to advertise a way into. The server
   // refuses the route regardless; this only spares the useless attempt.
@@ -1026,6 +1041,17 @@ export function OperationsWorkspace({
                   api={api}
                   organisationId={organisation.id}
                   isOwner={membership?.role === 'owner'}
+                />
+                <PlatformSettings
+                  api={api}
+                  organisationId={organisation.id}
+                  isOwner={membership?.role === 'owner'}
+                  canManageEntitlements={canManageEntitlements}
+                />
+                <OrganisationExportSettings
+                  api={api}
+                  organisationId={organisation.id}
+                  canExportOrg={canExportOrg}
                 />
                 <AppearanceSettings />
                 <AccountSecurity api={api} />

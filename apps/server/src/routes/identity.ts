@@ -34,6 +34,8 @@ interface MembershipRow {
   can_manage_payments: boolean;
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
+  can_manage_entitlements: boolean;
+  can_export_org: boolean;
   /** From auth_users."twoFactorEnabled" (nullable there; coalesced in SQL).
    * Surfaced so owners can see enrolment BEFORE granting authority —
    * granting to an unenrolled account walls them off on their next
@@ -55,6 +57,8 @@ function toMembership(row: MembershipRow): Membership {
     canManagePayments: row.can_manage_payments,
     canSignDocuments: row.can_sign_documents,
     canManagePayroll: row.can_manage_payroll,
+    canManageEntitlements: row.can_manage_entitlements,
+    canExportOrg: row.can_export_org,
     twoFactorEnabled: row.two_factor_enabled,
     status: row.status,
   };
@@ -82,7 +86,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll,
+                   m.can_manage_payroll, m.can_manage_entitlements,
+                   m.can_export_org,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -211,7 +216,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll,
+                   m.can_manage_payroll, m.can_manage_entitlements,
+                   m.can_export_org,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -267,7 +273,8 @@ export function registerIdentityRoutes(
               can_issue_documents, can_cancel_documents,
               can_approve_amendments, can_manage_statutory_reporting,
               can_manage_payments, can_sign_documents,
-              can_manage_payroll, status
+              can_manage_payroll, can_manage_entitlements, can_export_org,
+              status
             )
             values (
               ${organisationId}, ${target.id}, ${body.role},
@@ -279,6 +286,8 @@ export function registerIdentityRoutes(
               ${body.canManagePayments ?? false},
               ${body.canSignDocuments ?? false},
               ${body.canManagePayroll ?? false},
+              ${body.canManageEntitlements ?? false},
+              ${body.canExportOrg ?? false},
               'active'
             )
           `.catch((error: unknown) => {
@@ -308,7 +317,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll,
+                   m.can_manage_payroll, m.can_manage_entitlements,
+                   m.can_export_org,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -370,12 +380,15 @@ export function registerIdentityRoutes(
             can_manage_payments: boolean;
             can_sign_documents: boolean;
             can_manage_payroll: boolean;
+            can_manage_entitlements: boolean;
+            can_export_org: boolean;
           }[]
         >`
             select role, status, work_scope, can_issue_documents,
                    can_cancel_documents, can_approve_amendments,
                    can_manage_statutory_reporting, can_manage_payments,
-                   can_sign_documents, can_manage_payroll
+                   can_sign_documents, can_manage_payroll,
+                   can_manage_entitlements, can_export_org
             from organisation_memberships
             where user_id = ${memberUserId}
               and organisation_id = app_private.current_organisation_id()
@@ -434,6 +447,13 @@ export function registerIdentityRoutes(
                 coalesce(${body.canSignDocuments ?? null}, can_sign_documents),
               can_manage_payroll =
                 coalesce(${body.canManagePayroll ?? null}, can_manage_payroll),
+              can_manage_entitlements =
+                coalesce(
+                  ${body.canManageEntitlements ?? null},
+                  can_manage_entitlements
+                ),
+              can_export_org =
+                coalesce(${body.canExportOrg ?? null}, can_export_org),
               status = coalesce(${body.status ?? null}, status),
               updated_at = now()
             where user_id = ${memberUserId}
@@ -457,6 +477,8 @@ export function registerIdentityRoutes(
             canManagePayments: current.can_manage_payments,
             canSignDocuments: current.can_sign_documents,
             canManagePayroll: current.can_manage_payroll,
+            canManageEntitlements: current.can_manage_entitlements,
+            canExportOrg: current.can_export_org,
             status: current.status,
           },
           {
@@ -472,6 +494,9 @@ export function registerIdentityRoutes(
             canManagePayments: body.canManagePayments ?? current.can_manage_payments,
             canSignDocuments: body.canSignDocuments ?? current.can_sign_documents,
             canManagePayroll: body.canManagePayroll ?? current.can_manage_payroll,
+            canManageEntitlements:
+              body.canManageEntitlements ?? current.can_manage_entitlements,
+            canExportOrg: body.canExportOrg ?? current.can_export_org,
             status: body.status ?? current.status,
           },
         );
@@ -490,7 +515,8 @@ export function registerIdentityRoutes(
                    m.can_issue_documents, m.can_cancel_documents,
                    m.can_approve_amendments, m.can_manage_statutory_reporting,
                    m.can_manage_payments, m.can_sign_documents,
-                   m.can_manage_payroll,
+                   m.can_manage_payroll, m.can_manage_entitlements,
+                   m.can_export_org,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m

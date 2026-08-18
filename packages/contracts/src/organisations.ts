@@ -61,6 +61,18 @@ const MembershipSchema = Type.Object(
      * salaries, PAN, UAN or bank details by default. Defaults false; the
      * owner of a new organisation holds it implicitly. */
     canManagePayroll: Type.Boolean(),
+    /** The entitlements authority (migration 0096): may switch the
+     * organisation's modules on and off and configure its recurring
+     * statutory checks. OWNER-ONLY IN EFFECT — every route carrying it
+     * also requires the owner role, so granting it to a non-owner confers
+     * nothing until that member is made an owner. */
+    canManageEntitlements: Type.Boolean(),
+    /** The organisation-export authority (migration 0096): may request
+     * and download a copy of the whole organisation record. Separate from
+     * the owner role so an owner can delegate the annual package without
+     * delegating the organisation; the route additionally requires full
+     * work scope, because the package is not work-scoped. */
+    canExportOrg: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -96,6 +108,8 @@ export const AddMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageEntitlements: Type.Optional(Type.Boolean()),
+    canExportOrg: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -412,6 +426,8 @@ export const UpdateMemberRequestSchema = Type.Object(
     canManagePayments: Type.Optional(Type.Boolean()),
     canSignDocuments: Type.Optional(Type.Boolean()),
     canManagePayroll: Type.Optional(Type.Boolean()),
+    canManageEntitlements: Type.Optional(Type.Boolean()),
+    canExportOrg: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

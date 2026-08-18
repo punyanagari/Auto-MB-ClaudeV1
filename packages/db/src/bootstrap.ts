@@ -271,6 +271,16 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   maintenance_dispatches: 'SELECT, INSERT',
   maintenance_dispatch_lines: 'SELECT, INSERT',
   maintenance_returns: 'SELECT, INSERT',
+  // The platform controls (0096). None of the three holds DELETE, and
+  // each for its own reason: deleting an entitlement row would silently
+  // restore the shipped default and erase who decided otherwise, a
+  // schedule is switched off rather than forgotten so a check an operator
+  // expected is visibly not running, and an export is a disclosure of the
+  // entire organisation — a record of a disclosure that can be removed is
+  // not a record. Expiry empties the storage, never the row.
+  organisation_entitlements: 'SELECT, INSERT, UPDATE',
+  statutory_job_schedules: 'SELECT, INSERT, UPDATE',
+  organisation_export_requests: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',
@@ -341,6 +351,18 @@ const FUNCTION_GRANTS = [
   'app_private.complete_job(uuid, uuid, jsonb)',
   'app_private.fail_job(uuid, uuid, text, timestamptz, text)',
   'app_private.release_job(uuid, uuid, text)',
+  // The two worker ticks (0096). Same restore hazard as the queue's own
+  // five: they are the ONLY way a recurring check is enqueued or a lapsed
+  // export artefact is reclaimed, and a restore that left them owned by
+  // the restoring role would stop both silently — nothing errors, the
+  // schedules simply stop firing and the whole-organisation bundles stop
+  // expiring.
+  'app_private.enqueue_due_statutory_jobs(integer)',
+  'app_private.expire_lapsed_organisation_exports(integer)',
+  // The platform screen's run history (0096). The application role holds
+  // no privilege on `worker_jobs`, so this definer read is the only way
+  // an organisation can be told what its own scheduled checks found.
+  'app_private.organisation_job_history(integer)',
 ];
 
 export async function applyGrants(admin: Sql): Promise<void> {
@@ -386,6 +408,15 @@ export async function applyGrants(admin: Sql): Promise<void> {
   );
   await admin.unsafe(
     `GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer`,
+  );
+  // Migration 0096: the two worker ticks read and advance these across
+  // tenants, because a due schedule and a lapsed artefact both have to be
+  // found before any tenant is bound. SELECT and UPDATE only — the ticks
+  // advance existing rows and never create or remove one, and the INSERT
+  // they do make goes to `worker_jobs` above.
+  await admin.unsafe(
+    `GRANT SELECT, UPDATE ON statutory_job_schedules, organisation_export_requests
+     TO auto_mb_definer`,
   );
   // These functions MUST be owned by the BYPASSRLS definer role: they are
   // SECURITY DEFINER and read organisation_memberships from inside the RLS

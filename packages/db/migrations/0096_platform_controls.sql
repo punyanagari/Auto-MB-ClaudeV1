@@ -679,6 +679,86 @@ ALTER FUNCTION app_private.expire_lapsed_organisation_exports(integer)
 REVOKE ALL ON FUNCTION app_private.expire_lapsed_organisation_exports(integer)
   FROM PUBLIC;
 
+-- The run history, and the one definer read in this migration that needs
+-- a real argument rather than a restatement of 0072's.
+--
+-- The admin screen has to be able to say what a scheduled check found and
+-- when it last failed. That answer lives in `worker_jobs`, which the
+-- application role holds NO privilege on at all — 0072's central decision,
+-- taken because a direct SELECT grant would turn any SQL-injection foothold
+-- into an enumeration oracle over every organisation's job metadata.
+--
+-- So the answer is a function rather than a grant, and it is narrowed on
+-- four axes so that it widens the reachable set by a page of one
+-- organisation's own rows and nothing else:
+--
+--   IT TAKES NO ORGANISATION. Like `enqueue_job`, it reads
+--   `current_organisation_id()` from the binding `bind_tenant` already
+--   proved, so an unbound caller gets nothing and a bound one cannot name
+--   a tenant that is not theirs. There is no argument to craft.
+--
+--   IT REFUSES THE UNBOUND CALLER outright rather than returning an empty
+--   set, so a missing binding is a fault somebody sees.
+--
+--   IT NEVER RETURNS `claim_token`, `claimed_by` or `user_id`. The token
+--   is the queue's unforgeable capability and the whole reason the table
+--   is unreachable; a read that handed it out would be worse than the
+--   grant 0072 refused. The commissioning user is already on the schedule
+--   row the screen renders beside this.
+--
+--   IT ONLY SEES SCHEDULED KINDS. `loa_document_intake` rows belong to the
+--   letter they are reading and are surfaced there; this is the platform
+--   screen's history, not a queue browser.
+--
+-- `last_error` does travel, capped at 500 characters by `fail_job` for the
+-- reason that function states. It is the organisation's own error about
+-- the organisation's own data, read back to the organisation.
+CREATE FUNCTION app_private.organisation_job_history(p_limit integer DEFAULT 50)
+RETURNS TABLE (
+  id uuid,
+  kind text,
+  state text,
+  attempts integer,
+  created_at timestamptz,
+  finished_at timestamptz,
+  outcome jsonb,
+  last_error text
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, app_private, pg_temp
+AS $$
+DECLARE
+  v_organisation_id uuid;
+BEGIN
+  v_organisation_id := app_private.current_organisation_id();
+  IF v_organisation_id IS NULL THEN
+    RAISE EXCEPTION
+      'job history can only be read inside a bound tenant transaction'
+      USING ERRCODE = '28A01';
+  END IF;
+
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 200 THEN
+    RAISE EXCEPTION 'a job history page is between one and two hundred rows'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN QUERY
+  SELECT j.id, j.kind, j.state, j.attempts, j.created_at, j.finished_at,
+         j.outcome, j.last_error
+    FROM worker_jobs AS j
+   WHERE j.organisation_id = v_organisation_id
+     AND j.kind IN ('instrument_expiry_review')
+   ORDER BY j.created_at DESC, j.id DESC
+   LIMIT p_limit;
+END
+$$;
+
+ALTER FUNCTION app_private.organisation_job_history(integer)
+  OWNER TO auto_mb_definer;
+REVOKE ALL ON FUNCTION app_private.organisation_job_history(integer) FROM PUBLIC;
+
 -- The definer role writes queue rows for the scheduler. 0072 already
 -- grants it SELECT/INSERT/UPDATE/DELETE on worker_jobs; this is stated
 -- again for the reason that migration states it — a fresh-cluster restore
@@ -701,6 +781,8 @@ BEGIN
     GRANT EXECUTE ON FUNCTION app_private.enqueue_due_statutory_jobs(integer)
       TO auto_mb_app;
     GRANT EXECUTE ON FUNCTION app_private.expire_lapsed_organisation_exports(integer)
+      TO auto_mb_app;
+    GRANT EXECUTE ON FUNCTION app_private.organisation_job_history(integer)
       TO auto_mb_app;
   END IF;
 END
