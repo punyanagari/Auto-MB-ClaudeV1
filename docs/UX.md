@@ -695,6 +695,141 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
+### 23. Offline behaviour — PROPOSED
+
+**Status: PROPOSED, owner ruling pending.** Numbered 23 by coordinator
+allocation; the numbers between this and § 16 belong to the packs of this
+wave and the one before it, and a gap here is not a defect for the reason
+§ 15 already gives — two sections sharing a number would be.
+
+**There is no mock citation for anything in this section, and that is the
+first fact about it.** `punyanagari/Auto-MB-Vercel-du@fdfd610` has no
+offline state anywhere: no connectivity indicator, no staleness label, no
+refusal copy, no cached-data treatment. Grep it for the word and there is
+nothing. So this sits under § Fidelity contract 6 and § Approved
+divergences 4 — behaviour the mock cannot express, built from components
+the mock already ships — and every element is named below so that the
+absence of a citation is a recorded decision rather than an omission a
+reviewer has to guess at.
+
+§ 2 (Full mobile shell) already carried the sentence this section
+discharges: "Offline synchronisation is not implied in copy until it is
+implemented." It is implemented now, in the narrow sense set out here,
+and § 2's sentence stands for everything this section does not do.
+
+#### What "offline" means in this product
+
+Auto-MB's outward documents are issued by the server: numbered from
+gap-free per-Work counters, guarded by lifecycle locks and approvals,
+frozen as immutable snapshots. That is what decides the shape of this
+feature, and it decides it in one direction.
+
+**A read can be stale. A write cannot be deferred.** A challan queued on a
+phone in a yard and replayed forty minutes later would be asking for a
+number in an order nobody chose, against a Work whose quantities,
+approvals and locks have moved in the meantime — and it would be doing it
+under a UI that had already told the operator it was saved. So there is no
+mutation queue, no replay, no background sync, and no optimistic write.
+This section will not grow one without a much larger argument than
+convenience.
+
+#### The four things that happen
+
+| #   | Offline surface                                                                                         | Built from                                                                                                                       | Why it is this and not more                                                                                                                                                                                                                                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 23a | **The application opens.** A service worker holds the document and the initial bundle                   | Nothing visual — the shell that was already there                                                                                | Without it a lost connection produces the browser's own error page, and an operator cannot tell a dead network from a dead product. The worker caches the shell and the hashed assets ONLY; `/api/**` never touches it (see 23e).                                                                                           |
+| 23b | **A persistent banner** at the top of the workspace, above the open view                                | The warning-tinted panel the mock's own alerts use — `rounded-lg border border-warning/30 bg-warning/15`, 14px ink, leading icon | Warning and not destructive: `docs/DESIGN.md` § Status badge semantics keeps the destructive family for cancelled/rejected/declined, and a lost signal is a thing to do something about rather than a record that failed. `role="status"`, not `alert` — it is a condition lived with, announced once, not an interruption. |
+| 23c | **A staleness sentence** inside that banner once a screen has been answered from the copy               | The same panel, with the instant in IBM Plex Mono and `tabular-nums` like every other figure                                     | The oldest copy on screen, deliberately: the sentence is a promise about everything the operator can see, and a reader told "read at 14:32" must not be looking at a column read at 09:10. It is forgotten the moment the connection returns, because by then it describes data that has been replaced.                     |
+| 23d | **Every write refused**, before anything leaves the browser, with the refusal left inline on the screen | The persistent inline action error every screen already renders for a server refusal                                             | Refused at the API client, which is the one choke point, so no screen has to remember the rule and none of them drift. The refusal carries a fact and a remedy in the envelope's own shape, so `errorMessage()` renders it exactly as it renders a 409 from the server. Reads are NOT refused — see 23f.                    |
+
+#### 23e. What is cached, and where — the tenancy argument
+
+Two caches, deliberately different in kind, because they hold different
+things.
+
+**The service worker's cache holds no tenant data at all.** Cache Storage
+is keyed by ORIGIN: it survives sign-out, it survives the tab, and it is
+readable by whoever signs in next on a shared site machine. So the worker
+caches the document and the content-hashed build assets and nothing else.
+`/api/**` and `/documentation` are passed straight through, uncached,
+every time; a browser test asserts that no path beginning `/api` is in any
+cache after a session. No session cookie, no two-factor state, no record
+ever reaches it.
+
+**The read cache holds tenant records in memory, and nowhere else.** It is
+a `Map` in the page, keyed by `<user id> <organisation id> <method>
+<arguments>`, and it dies with the tab. `localStorage`, IndexedDB and
+Cache Storage were all rejected for the same reason: each survives
+sign-out on a machine several people use, and none of them buys anything
+here, because a cold start offline does not restore a workspace anyway
+(23g).
+
+The key is the whole tenancy story and it is enforced three ways:
+
+- a read is written under the account and organisation it was read FOR,
+  and can only be served back under the identical key;
+- changing either half throws the entire cache away rather than carrying
+  it across — which covers signing out, switching organisation, being
+  returned to the chooser, and the session lapsing, because every one of
+  those leaves the workspace phase and the one effect in `App.tsx` binds
+  null;
+- a read that was started before a switch and answers after it is
+  discarded rather than written, so an in-flight request cannot deposit
+  one tenant's records under another's key.
+
+Bounded at forty entries, oldest first, so a long shift cannot grow it
+without limit.
+
+#### 23f. What a cached read is, and is not
+
+A copy is served only when BOTH the live read failed AND the browser
+reports no network. Serving it on any failure would answer a 403 with
+records the caller may no longer be allowed to see, and a 500 with a
+register that looks live; the operator would have no way to tell a stale
+screen from a current one, which is worse than the honest failure state
+every register already renders (§ Shared states).
+
+**Four reads are cached and no others:** the Dashboard, the Works
+register, the Delivery Challan register and the Installations register.
+The bar is that each is a whole screen's worth of data on its own — a
+screen that renders four of its nine panels and errors on the rest is one
+nobody can trust. The Work workspace, the editors, Masters and Search each
+read several endpoints or write, and are left to fail honestly. A register
+the operator has never opened is not available offline, and the product
+does not pretend otherwise.
+
+#### 23g. What deliberately does NOT happen, and why
+
+- **A cold start offline does not restore a workspace.** It opens the
+  shell and says so, in the mock's own centred auth card with the
+  warning-tinted icon `app/sign-in/page.tsx` gives that layout. Restoring
+  a workspace would mean caching `/api/me` — the memberships, the
+  work-scope, the per-feature permission flags — and a client-side copy of
+  an authority decision is exactly the thing this product refuses. It
+  would also mean an expired or revoked session still opening a readable
+  workspace from disk. The screen instead states two facts and makes no
+  promise: the application opened from the copy on the device, and it
+  cannot check who is signed in.
+- **No mutation queue, no replay, no background sync.** Argued above.
+- **No offline drafts.** A draft is a server record with an id, and a
+  local one would be a second kind of draft with its own reconciliation
+  rules. Refusing is smaller and it is honest.
+- **No new route, no new rail lamp, no new module.** Offline is a
+  condition of the workspace, not a place in it; `lib/workspace-routes.ts`
+  and the navigation lamp switch are untouched.
+- **The banner is not on the sign-in, chooser or onboarding screens.**
+  Those already answer their own failures, and none of them has records to
+  be stale.
+
+#### 23h. When the mock grows an offline state, the mock wins
+
+Every entry here retires on the § 4 iteration pipeline: change it in v0,
+merge it, diff, port the delta. The two elements most likely to be drawn
+differently are the banner's placement — above the view here, where the
+mock might put it in the topbar — and the staleness sentence, which the
+mock might make a chip. Neither is load-bearing; the caching rules and the
+write refusal are.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

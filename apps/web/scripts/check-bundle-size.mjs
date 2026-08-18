@@ -51,8 +51,18 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * beneath it: without a ratchet a new dependency could double the initial
  * payload and still pass. Measured at 103,192 bytes gzip when this was
  * written.
+ *
+ * Raised once since, from 115,000, by the offline pack: the connectivity
+ * hooks, the read cache and the offline banner are shell furniture and
+ * have to be in the initial payload, because the screen they explain is
+ * the one shown when nothing else can load. Measured at 115,724 bytes
+ * gzip against 114,254 before, so the whole feature costs 1,470 bytes
+ * there; the service worker itself is a separate file the browser never
+ * blocks on. The 36 kB the first cut cost — the shell reaching into
+ * `src/format.ts` and dragging the contracts runtime with it — was
+ * removed rather than absorbed (`src/format-instant.ts`).
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 115_000;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 117_000;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

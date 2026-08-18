@@ -48,6 +48,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Modal } from '../ui/dialog.js';
+import { OfflineBanner } from '../ui/offline-banner.js';
 import { Sheet } from '../ui/sheet.js';
 import type { MastersTab } from './Masters.js';
 import type { WorkTab } from './WorkDetail.js';
@@ -989,6 +990,13 @@ export function OperationsWorkspace({
              into this column and rely on it to space them. */
           className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-6 pb-24 outline-none sm:px-6 md:px-8 md:py-8 lg:px-10 lg:pb-8 [&>*]:min-w-0"
         >
+          {/* Above the view and outside the Suspense boundary, because
+              it is a fact about the whole workspace rather than about
+              the screen: it must be on the page while a code-split view
+              is still arriving, which is exactly when the network has
+              just failed. Renders nothing while there is a connection.
+              `docs/UX.md` § 23. */}
+          <OfflineBanner />
           <Suspense fallback={<ViewSkeleton />}>
             {/* Restores the heading focus the outer effect cannot take
                 while a chunk is still loading: it runs inside the

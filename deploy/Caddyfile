@@ -27,6 +27,19 @@ handle /metrics {
 	respond 403
 }
 
+# The offline shell's worker script (apps/web/src/service-worker.ts). It
+# is the one file in the build whose contents change under a fixed name,
+# and it is the file that decides which assets every offline visit is
+# served from — a cached copy of it pins a whole bundle until somebody
+# clears their browser. Browsers already bypass the HTTP cache for a
+# worker script on their own; this says so explicitly rather than relying
+# on that, because the failure it prevents is silent and long-lived.
+handle /sw.js {
+	root * /srv/web
+	header Cache-Control "no-cache"
+	file_server
+}
+
 # The single-page app; client-side routes fall back to index.html.
 handle {
 	root * /srv/web
