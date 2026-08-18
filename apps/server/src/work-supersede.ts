@@ -196,6 +196,36 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   inspection_call_items: 'the items an inspection call covers',
   inspection_call_counters: 'numbering state, not a document',
   inspection_call_documents: 'the evidence filed against an inspection call',
+  // OEM production (0084). All six are exempt, and unlike the inspection
+  // call above this is not a deferral — it is the answer.
+  //
+  // A supersede withdraws a Work whose LETTER was misread, so the letter
+  // can be re-read and a successor confirmed from it. Nothing in this
+  // module is issued to anybody or received from anybody: a job card is
+  // an internal works order, a serial names a physical object the
+  // factory built, and a despatch is a handoff from the factory floor to
+  // this organisation's own stock. Blocking on them would mean a letter
+  // read wrongly could never be corrected once manufacturing had
+  // started, which is exactly the deadlock the tender entries above
+  // describe.
+  //
+  // The despatch is the entry worth pausing on, because it is the one
+  // that looks outward. It is not. The outward act is the Delivery
+  // Challan, which is the first entry in the blocking list — so a Work
+  // whose units have actually gone to the railway is already refused,
+  // before this question is asked. Units released to stock and not yet
+  // challaned are physical objects that survive the Work being
+  // rewritten: they keep their serials, their genealogy and their job
+  // card, and the successor Work despatches them.
+  production_job_cards:
+    'an internal works order against a Work, not a document issued or received on its account — blocking would trap the correction of a misread letter behind having started manufacturing',
+  production_serials:
+    'a physical unit the factory built; it survives the Work being rewritten and keeps its number',
+  production_component_serials: 'the genealogy of a unit, which does not block',
+  production_dispatches:
+    'a handoff from the factory floor to this organisation’s own stock; the OUTWARD act is the delivery challan, which blocks',
+  production_dispatch_serials: 'the units a despatch released, which does not block',
+  production_dispatch_counters: 'numbering state, not a document',
 };
 
 /** `approval_requests` blocks only while a request is live: a pending one
