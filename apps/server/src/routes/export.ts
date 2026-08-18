@@ -17,6 +17,39 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v29: retention, security deposit and liquidated damages (0098)
+ * join the package — the contract's own deduction terms, every retention
+ * release, and every liquidated-damages assessment with the snapshot it
+ * was computed from.
+ *
+ * The requirement this section answers is the one a deduction register
+ * cannot answer alone. `bill_payment_deductions` already travels and says
+ * what the railway KEPT; on its own that is a record of money leaving and
+ * nothing else. An organisation restored from an export has to be able to
+ * say what is still HELD against a contract closed years ago, and to show
+ * the railway which completion date, which rate and which cap produced
+ * the damages it argued about. So:
+ *
+ *   held      stays derived, and needs nothing new here: it is the
+ *             SECURITY_DEPOSIT deductions of the payment register, which
+ *             this package has carried since export-v1.
+ *   released  `retentionReleases`, including the withdrawn rows and their
+ *             reasons — a release that was retracted is part of the
+ *             balance's history and dropping it would make the arithmetic
+ *             unreconstructable.
+ *   assessed  `ldAssessments`, whose generated columns travel as ordinary
+ *             values. The frozen snapshot beside them is what makes the
+ *             figures re-derivable rather than merely believable.
+ *   agreed    `workRetentionTerms`, the contract's own rates, which are
+ *             read off a letter the product may not hold a copy of.
+ *
+ * The version numbers between v24 and this one are allocated to the packs
+ * of the waves that land ahead of it. The numbers were ALLOCATED by the
+ * coordinator rather than claimed on merge, for the reason the v15, v17
+ * and v21 notes record at length: a version string identifies a format,
+ * two formats sharing one string is the failure that matters, and a gap
+ * is not.
+ *
  * export-v24: the signing trail (0091, ADR-0012) joins the package — the
  * kiosk credentials, and every request to put the organisation's own
  * Class 3 certificate on an issued document.
@@ -209,7 +242,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-const EXPORT_FORMAT_VERSION = 'export-v24';
+const EXPORT_FORMAT_VERSION = 'export-v29';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -305,7 +338,8 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select user_id, role, work_scope, can_issue_documents,
                  can_cancel_documents, can_approve_amendments,
                  can_manage_statutory_reporting, can_manage_payments,
-                 can_manage_payroll, status, created_at
+                 can_sign_documents, can_manage_payroll,
+                 can_manage_retention, status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -1114,6 +1148,30 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'payrollRunCounters',
     sql: `select * from payroll_run_counters order by fy_label`,
+  },
+  // Retention, security deposit and liquidated damages (0098). The
+  // generated columns of `ld_assessments` are exported as plain values
+  // beside the snapshot they were derived from, which is what makes a
+  // restored assessment checkable rather than merely readable: a reader
+  // years later can recompute the figure from the same four inputs and
+  // see that it matches.
+  {
+    key: 'workRetentionTerms',
+    sql: `select * from work_retention_terms order by work_id`,
+  },
+  {
+    // Withdrawn releases travel too, with their reasons. A retracted
+    // release is part of the balance's history — dropping it would leave
+    // a restored organisation unable to explain why its retention
+    // position moved, which is exactly the reconstruction an export is
+    // for.
+    key: 'retentionReleases',
+    sql: `select * from retention_releases
+          order by work_id, released_on, id`,
+  },
+  {
+    key: 'ldAssessments',
+    sql: `select * from ld_assessments order by work_id, assessed_on, id`,
   },
 ];
 

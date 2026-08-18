@@ -10,6 +10,7 @@ export interface MembershipRow {
   can_manage_payments: boolean;
   can_sign_documents: boolean;
   can_manage_payroll: boolean;
+  can_manage_retention: boolean;
 }
 
 export async function membershipOf(
@@ -19,7 +20,7 @@ export async function membershipOf(
   const [membership] = await tx<MembershipRow[]>`
     select role, work_scope, can_issue_documents, can_cancel_documents,
            can_manage_statutory_reporting, can_manage_payments,
-           can_sign_documents, can_manage_payroll
+           can_sign_documents, can_manage_payroll, can_manage_retention
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -146,7 +147,15 @@ export type DocumentAuthority =
    * register carries every colleague's salary, PAN, UAN and bank
    * account, and a member who may approve a vendor payment has no
    * business reading any of that by default. */
-  | 'payroll';
+  | 'payroll'
+  /** Stating what the railway is holding back and what it may keep
+   * (0098): the contract's retention and liquidated-damages terms, a
+   * retention release, and the assessment, levy or waiver of liquidated
+   * damages. Separate from `payments`, which governs money leaving the
+   * agency's own bank — the person who chases a security-deposit release
+   * at the end of a maintenance period is not whoever approves a travel
+   * claim, and neither grant should imply the other. */
+  | 'retention';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -161,6 +170,8 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
   sign: 'Your membership does not carry the signing authority, which is required to send an issued document for the organisation’s digital signature or to withdraw a request for one.',
   payroll:
     'Your membership does not carry the payroll authority, which is required to see the employee register and run payroll. It is separate from the payments authority because reading what every colleague earns is a different secret from approving a vendor payment.',
+  retention:
+    'Your membership does not carry the retention authority, which is required to record a contract’s retention and liquidated-damages terms, to record or withdraw a retention release, and to assess, levy or waive liquidated damages.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -176,6 +187,7 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_manage_payments'
     | 'can_sign_documents'
     | 'can_manage_payroll'
+    | 'can_manage_retention'
   >
 > = {
   issue: 'can_issue_documents',
@@ -184,6 +196,7 @@ const AUTHORITY_COLUMNS: Record<
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  retention: 'can_manage_retention',
 };
 
 function authorityGranted(

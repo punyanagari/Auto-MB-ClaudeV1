@@ -221,6 +221,11 @@ describe('MFA authority census', () => {
       // The payroll authority (0089/0090) reveals every salary and PAN and
       // authorises the salaries a run pays, so it joins the wall too.
       'payroll',
+      // The retention authority (migration 0098). A stolen session that
+      // can write a release can make the organisation's own record of an
+      // unpaid security deposit read as settled — a theft nobody would
+      // notice until the maintenance period ended.
+      'retention',
       // The signing authority (migration 0091). A stolen session that can
       // queue a signature can get a signer standing at the token to put
       // the organisation's registered certificate on it.

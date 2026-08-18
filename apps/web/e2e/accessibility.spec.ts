@@ -617,6 +617,116 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
       }),
     ),
   );
+  /* Retention and liquidated damages (0098), populated on purpose: the
+     scan has to see the tinted words, and this panel carries three of
+     them at once — a `draft` assessment reading neutral, a `levied` one
+     in the primary family and a `waived` one in the success family. An
+     empty position would scan a heading and prove nothing about the
+     contrast of the chips it is here to check. */
+  await page.route(`**/api/works/${WORK_ID}/retention`, (route) =>
+    route.fulfill(
+      json({
+        position: {
+          workId: WORK_ID,
+          contractValue: '10000000.00',
+          retentionCeilingAmount: '500000.00',
+          retentionHeldTotal: '150000.00',
+          retentionReleasedTotal: '50000.00',
+          retentionBalance: '100000.00',
+          ldLeviedTotal: '500000.00',
+          ldDeductedTotal: '400000.00',
+          ldOpenAssessments: 1,
+        },
+        terms: {
+          retentionPercent: '10.000',
+          retentionLimitPercent: '5.000',
+          defectLiabilityMonths: 24,
+          ldRatePercent: '0.500',
+          ldPeriodDays: 7,
+          ldCapPercent: '10.000',
+          sourceClause: 'GCC 17B',
+          notes: null,
+          updatedAt: '2026-06-01T00:00:00.000Z',
+        },
+        releases: [
+          {
+            id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+            workId: WORK_ID,
+            releasedOn: '2026-06-10',
+            amount: '50000.00',
+            basis: 'pac',
+            workInstrumentId: null,
+            workInstrumentReference: null,
+            reference: 'REL/2026/1',
+            description: null,
+            remarks: null,
+            voidedAt: null,
+            voidReason: null,
+            createdAt: '2026-06-10T00:00:00.000Z',
+          },
+        ],
+        assessments: [
+          {
+            id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2',
+            workId: WORK_ID,
+            assessedOn: '2026-05-01',
+            status: 'levied',
+            basisAmount: '10000000.00',
+            basisLabel: 'Contract value',
+            scheduledCompletionDate: '2026-01-01',
+            assessedToDate: '2026-04-15',
+            ldRatePercent: '0.500',
+            ldPeriodDays: 7,
+            ldCapPercent: '10.000',
+            delayDays: 104,
+            chargeablePeriods: 15,
+            uncappedAmount: '750000.00',
+            capAmount: '1000000.00',
+            assessedAmount: '750000.00',
+            leviedAmount: '500000.00',
+            levyReference: 'LD/2026/07',
+            outcomeReason: null,
+            notes: null,
+            decidedAt: '2026-05-02T00:00:00.000Z',
+            createdAt: '2026-05-01T00:00:00.000Z',
+          },
+          {
+            id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3',
+            workId: WORK_ID,
+            assessedOn: '2026-03-01',
+            status: 'waived',
+            basisAmount: '10000000.00',
+            basisLabel: 'Contract value',
+            scheduledCompletionDate: '2026-01-01',
+            assessedToDate: '2026-02-01',
+            ldRatePercent: '0.500',
+            ldPeriodDays: 7,
+            ldCapPercent: '10.000',
+            delayDays: 31,
+            chargeablePeriods: 5,
+            uncappedAmount: '250000.00',
+            capAmount: '1000000.00',
+            assessedAmount: '250000.00',
+            leviedAmount: null,
+            levyReference: null,
+            outcomeReason: 'Delay attributable to the railway’s own site handover',
+            notes: null,
+            decidedAt: '2026-03-02T00:00:00.000Z',
+            createdAt: '2026-03-01T00:00:00.000Z',
+          },
+        ],
+        currentCompletionDate: '2026-01-01',
+        instruments: [
+          {
+            id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            kind: 'pbg',
+            reference: 'BG/22',
+            amount: '45000.00',
+          },
+        ],
+      }),
+    ),
+  );
   await page.route(`**/api/works/${WORK_ID}/mb-entries`, (route) =>
     route.fulfill(
       json({
@@ -1112,6 +1222,17 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Contract instruments' }),
   ).toBeVisible();
+  // The retention ledger (0098) shares this tab, and the scan below is
+  // the one that covers it. Waiting on a rupee figure rather than on the
+  // heading is what makes the scan run against the LOADED panel — the
+  // heading is rendered beside a skeleton while the position is in
+  // flight, and a scan of a skeleton proves nothing about the chips.
+  await expect(
+    page.getByRole('heading', { name: 'Retention and liquidated damages' }),
+  ).toBeVisible();
+  await expect(page.getByText('₹1,00,000.00')).toBeVisible();
+  await expect(page.getByText('levied', { exact: true })).toBeVisible();
+  await expect(page.getByText('waived', { exact: true })).toBeVisible();
   await expectNoAxeViolations(page, 'work detail');
 
   // The challan list lives under Deliveries.

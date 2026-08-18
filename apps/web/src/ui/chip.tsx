@@ -115,6 +115,17 @@ const CHIP_TONES = {
   // reading it must not have.
   finalized: 'success',
 
+  // Liquidated damages the railway actually imposed (0098). An act that
+  // happened and is on the record, which is the primary family's own
+  // reading — the same one `issued`, `submitted` and `sent` carry. NOT
+  // destructive: that family is cancelled/rejected/declined, and a levy
+  // the contract provides for is a fact rather than a failure. Its
+  // sibling `draft` is already mapped neutral above.
+  levied: 'info',
+  // Damages the railway did not take, or gave back (0098). Money the
+  // agency keeps: the success family, beside `paid` and `approved`.
+  waived: 'success',
+
   // A tender that was not won, or was not pursued (0083). Not a system
   // failure, but the end of that pipeline either way.
   lost: 'destructive',

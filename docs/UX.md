@@ -695,6 +695,97 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
+### 21. Retention, security deposit and liquidated damages — PROPOSED
+
+**Status: PROPOSED, owner ruling pending.** Numbered 21 by coordinator
+allocation; 17 to 20 belong to the packs of this wave and the one before it
+that land ahead of it.
+
+Unlike § 16, this entry DOES have a mock citation, and the divergence is
+about what the mock's drawing turns out to mean rather than about it being
+absent.
+
+#### Where it lives, and the citation
+
+`components/work-registers.tsx` at `fdfd610` describes the Work's
+Instruments section as the place to "track bank guarantees, EMD and
+**security deposits** held against this work", and the mock's own seed data
+(`lib/data.ts`, instrument `in-3`) carries a security-deposit instrument
+whose **bank reads "Deducted from bills"**, valid till a date two years
+out, for ₹14,75,359.
+
+So the mock already says where retention money is read. The application
+puts it exactly there — a `data-surface` panel on the Instruments tab,
+under the guarantees and the PAC certificates — and adds no tab, no rail
+lamp and no address of its own. Every element is one the mock already
+ships: `Stat` tiles for the position, `DataTable` for the two registers,
+`Disclosure` for each form, `ConfirmDialog` for the two irreversible acts,
+and the shared dot-plus-label `StatusChip`.
+
+#### The four divergences, each because the mock's fiction cannot be true
+
+**1. The security deposit is not an instrument row, and cannot be.** The
+mock models it as one more card beside the PBG and the EMD, typed in with
+an amount and a validity date. In the real product that figure is not
+typed by anybody: it is the sum of the `SECURITY_DEPOSIT` deductions the
+railway actually made across the Work's bills (migration 0067), less what
+it has released. An operator who typed it would be asserting a number the
+payment register already knows and can contradict.
+
+So the panel shows the LEDGER — held, released, still held, and the
+contractual ceiling — instead of a card. The mock's card grammar is kept
+for the instruments that genuinely are documents; retention gets the
+register grammar because it genuinely is a running total. A guarantee
+lodged in substitution for cash retention is still an instrument, still
+drawn as the mock's card, and is named by the release that returned the
+cash.
+
+**2. There are two liquidated-damages figures on screen and never a
+third.** "Assessed" is this organisation's own reading of its contract;
+"deducted" is what the railway took under that head on a payment advice.
+They are two claims about the same event and their difference is a
+conversation to have with the railway, not a balance. Every instinct of a
+dashboard is to subtract them and print the remainder; the panel
+deliberately does not, and `work-retention.test.tsx` asserts the
+difference never appears. The mock has no drawing of either figure, so
+there is nothing to diverge FROM here — the entry records the decision so
+a later "tidy-up" does not quietly make it one number.
+
+**3. The chargeable period is a number of DAYS, not a calendar unit.**
+Railway conditions of contract read "0.5% per week or part thereof" and
+"2% per month". A calendar month is not a fixed quantity, so "per month"
+over a delay measured in days has two defensible readings that give
+different money. The form offers "Per week (7 days)" and "Per month (30
+days)" and stores the number, so the record says exactly what was charged
+and the product never asserts a contract term nobody told it. Migration
+0098 § 1 argues it in full. A contract that really does say "calendar
+month" is a case for the operator to type the figure their clause states,
+not for this product to guess.
+
+**4. Two chip words join the shared vocabulary** rather than being styled
+locally: `levied` in the primary family beside `issued` and `sent` — an
+act that happened and is on the record — and `waived` in the success
+family beside `paid` and `approved`, because damages the railway did not
+take are money the agency keeps. `levied` is deliberately NOT destructive:
+that family is cancelled / rejected / declined, and a levy the contract
+provides for is a fact rather than a failure. `draft` and `cancelled` were
+already mapped and keep their readings.
+
+#### Two things this panel does not do
+
+- **Record a deduction.** That belongs on the Bills tab, where the payment
+  advice is entered, and a second place to type a security-deposit figure
+  would be a second figure that can be wrong.
+- **Compute anything in the browser.** The whole liquidated-damages
+  arithmetic — the delay, the chargeable periods, the uncapped figure, the
+  cap and the assessment — is a set of generated columns on the table
+  itself, so there is one computation of it in the product and this screen
+  renders decimal strings.
+
+**When the mock draws a retention ledger, the mock wins.** This entry
+retires on the § 4 iteration pipeline: change it in v0, merge it, diff,
+port the delta.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

@@ -461,6 +461,11 @@ export function OperationsWorkspace({
   // gates the employee register and the payroll run — a vendor-payment
   // manager must not see salaries, PAN, UAN or bank details by default.
   const canManagePayroll = membership?.canManagePayroll ?? false;
+  // The retention authority (migration 0098), distinct from payments:
+  // that one sends the agency's money out, this one states what the
+  // railway is holding back and what it may keep. The server refuses
+  // either way; hiding the forms only spares the useless attempt.
+  const canManageRetention = membership?.canManageRetention ?? false;
   // Without it the rail carries no door to Employees at all — a register
   // of salaries is not something to advertise a way into. The server
   // refuses the route regardless; this only spares the useless attempt.
@@ -1446,6 +1451,7 @@ export function OperationsWorkspace({
                 canCancel={canCancel}
                 canApprove={canApprove}
                 canManageStatutory={canManageStatutory}
+                canManageRetention={canManageRetention}
                 isOwner={isOwner}
                 onNewChallan={(workId, workCode) => {
                   navigate({ name: 'challan-new', workId, workCode });

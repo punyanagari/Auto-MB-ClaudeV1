@@ -211,6 +211,19 @@ const FEATURES = [
     authority: 'Payroll authority',
     change: 'Payroll authority',
   },
+  {
+    /* The retention authority (migration 0098): who may record a
+       contract's retention and liquidated-damages terms, record and
+       withdraw a retention release, and assess, levy or waive damages.
+       Separate from the payments authority because that one sends the
+       agency's money out and this one states what the railway is holding
+       back — the clerk who chases a security-deposit release at the end
+       of a maintenance period is not whoever approves a travel claim. */
+    key: 'canManageRetention',
+    heading: 'Can manage retention',
+    authority: 'Retention authority',
+    change: 'Retention authority',
+  },
 ] as const satisfies readonly {
   key: keyof Membership & `can${string}`;
   heading: string;

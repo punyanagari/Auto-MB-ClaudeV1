@@ -195,6 +195,14 @@ import type {
   BillSettlementResponse,
   ReceivablesRegisterResponse,
   RecordBillPaymentRequest,
+  AssessLdRequest,
+  DecideLdAssessmentRequest,
+  LdAssessment,
+  RecordRetentionReleaseRequest,
+  RetentionRelease,
+  SaveWorkRetentionTermsRequest,
+  WorkRetentionResponse,
+  WorkRetentionTerms,
   MeasurementBookListResponse,
   SetMbSourcesRequest,
   MergeMeasurementBooksRequest,
@@ -1192,6 +1200,51 @@ export interface ApiClient {
     billPaymentId: string,
     reason: string,
   ) => Promise<BillPayment>;
+  /** One Work's retention and liquidated-damages position, its recorded
+   * terms, its releases and its assessments — one read, because the
+   * screen shows them as one story and four round-trips would let the
+   * tiles disagree with the rows beneath them (0098). */
+  readonly getWorkRetention: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkRetentionResponse>;
+  /** Saves the contract's retention and liquidated-damages terms. A whole
+   * record, not a patch: the coherence rules are about the record, and a
+   * term omitted is a term the contract does not state. */
+  readonly saveWorkRetentionTerms: (
+    organisationId: string,
+    workId: string,
+    body: SaveWorkRetentionTermsRequest,
+  ) => Promise<WorkRetentionTerms>;
+  /** Records retention the railway gave back. Refused beyond what it
+   * actually withheld. */
+  readonly recordRetentionRelease: (
+    organisationId: string,
+    workId: string,
+    body: RecordRetentionReleaseRequest,
+  ) => Promise<RetentionRelease>;
+  /** Withdraws a release. The row and its reason stay; the money goes
+   * back to being held. */
+  readonly voidRetentionRelease: (
+    organisationId: string,
+    releaseId: string,
+    reason: string,
+  ) => Promise<RetentionRelease>;
+  /** Assesses liquidated damages over a delay window. The rate, period
+   * and cap come from the Work's recorded terms and are never sent — an
+   * assessment computed at a rate the contract never stated would look
+   * exactly like one that was. */
+  readonly assessLd: (
+    organisationId: string,
+    workId: string,
+    body: AssessLdRequest,
+  ) => Promise<LdAssessment>;
+  /** Levies, waives or cancels an assessment. */
+  readonly decideLdAssessment: (
+    organisationId: string,
+    assessmentId: string,
+    body: DecideLdAssessmentRequest,
+  ) => Promise<LdAssessment>;
   /** Records that the railway settled this measurement. Refused unless a
    * recorded bill's signatures pass the gate. */
   readonly closeMeasurementBook: (
@@ -3720,6 +3773,46 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       return request<BillPayment>(`/api/bill-payments/${billPaymentId}/void`, {
         method: 'POST',
         body: { reason },
+        organisationId,
+      });
+    },
+    async getWorkRetention(organisationId, workId) {
+      return request<WorkRetentionResponse>(`/api/works/${workId}/retention`, {
+        organisationId,
+      });
+    },
+    async saveWorkRetentionTerms(organisationId, workId, body) {
+      return request<WorkRetentionTerms>(`/api/works/${workId}/retention-terms`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async recordRetentionRelease(organisationId, workId, body) {
+      return request<RetentionRelease>(`/api/works/${workId}/retention-releases`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async voidRetentionRelease(organisationId, releaseId, reason) {
+      return request<RetentionRelease>(`/api/retention-releases/${releaseId}/void`, {
+        method: 'POST',
+        body: { reason },
+        organisationId,
+      });
+    },
+    async assessLd(organisationId, workId, body) {
+      return request<LdAssessment>(`/api/works/${workId}/ld-assessments`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async decideLdAssessment(organisationId, assessmentId, body) {
+      return request<LdAssessment>(`/api/ld-assessments/${assessmentId}/decision`, {
+        method: 'POST',
+        body,
         organisationId,
       });
     },

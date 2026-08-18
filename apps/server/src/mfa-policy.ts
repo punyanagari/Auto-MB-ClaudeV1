@@ -97,6 +97,12 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // finalising a run authorises the salaries — worth stealing on both
   // counts, so it joins the wall beside payments.
   payroll: true,
+  // Retention states what the railway is holding and records that it
+  // came back. A stolen session that can write a release can make the
+  // agency's own record of an unpaid security deposit read as settled,
+  // which is a theft nobody would notice until the maintenance period
+  // ended — so it joins the wall beside payments.
+  retention: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -109,6 +115,7 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  retention: 'can_manage_retention',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

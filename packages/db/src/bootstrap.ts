@@ -288,6 +288,19 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   inspection_call_counters: 'SELECT, INSERT, UPDATE',
   inspection_call_items: 'SELECT, INSERT, DELETE',
   inspection_call_documents: 'SELECT, INSERT, UPDATE',
+  // Retention, security deposit and liquidated damages (0098). The terms
+  // are configuration and delete; the release and the assessment are
+  // money records and do not. A release recorded in error is WITHDRAWN
+  // with a reason and an assessment made in error is CANCELLED with one,
+  // both of which are updates, so the mistake and the correction stay on
+  // the record together.
+  work_retention_terms: 'SELECT, INSERT, UPDATE, DELETE',
+  retention_releases: 'SELECT, INSERT, UPDATE',
+  ld_assessments: 'SELECT, INSERT, UPDATE',
+  // The derived retention position (0098): security_invoker, so the base
+  // tables' RLS is re-checked for the caller and this grant adds no
+  // visibility. Read-only — every write goes to the three tables above.
+  work_retention_positions: 'SELECT',
   // Better Auth owns these shapes (0004).
   auth_users: 'SELECT, INSERT, UPDATE, DELETE',
   auth_sessions: 'SELECT, INSERT, UPDATE, DELETE',

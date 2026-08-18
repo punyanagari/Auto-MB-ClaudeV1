@@ -50,6 +50,7 @@ import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
 import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
+import { WorkRetention } from '../../src/views/WorkRetention.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
 import { WorkPaymentSetup } from '../../src/views/WorkPaymentSetup.js';
@@ -918,6 +919,24 @@ export const STATE_CASES: readonly StateCase[] = [
     empty: { text: /nothing is outstanding with the railway yet/ },
   },
   {
+    view: 'WorkRetention.tsx',
+    name: 'retention and liquidated damages',
+    loads: ['getWorkRetention'],
+    render: (api) => (
+      <WorkRetention
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canManageRetention
+      />
+    ),
+    retry: /Retry retention and damages/,
+    // A Work that has never been billed has had nothing withheld, which
+    // is the ordinary state of most of a Work's life and reads as an
+    // empty terms panel rather than as a zero balance.
+    empty: { text: /No retention or liquidated-damages terms are recorded/ },
+  },
+  {
     view: 'WorkBillingReadiness.tsx',
     name: 'the billing prerequisites',
     loads: ['getPaymentMatrix'],
@@ -960,6 +979,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canCancel
         canApprove
         canManageStatutory
+        canManageRetention
         isOwner
         onNewChallan={noop}
         onOpenChallan={noop}
@@ -988,6 +1008,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canCancel
         canApprove
         canManageStatutory
+        canManageRetention
         isOwner
         onNewChallan={noop}
         onOpenChallan={noop}

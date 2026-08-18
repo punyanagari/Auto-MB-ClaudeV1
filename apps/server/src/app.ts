@@ -59,6 +59,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerIdentityRoutes } from './routes/identity.js';
 import { registerLoaRoutes } from './routes/loa.js';
 import { registerMasterRoutes } from './routes/masters.js';
+import { registerRetentionLedgerRoutes } from './routes/retention-ledger.js';
 import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
 import { registerSearchRoutes } from './routes/search.js';
@@ -952,6 +953,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerInstallationRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     registerBillPaymentRoutes(app, authInstance, database);
+    // Retention, security deposit and liquidated damages (0098).
+    // Registered next to the payment register it reads: what is
+    // still HELD is the SECURITY_DEPOSIT deductions of that register,
+    // so the two modules answer the two halves of one question.
+    registerRetentionLedgerRoutes(app, authInstance, database);
     registerCompanyDocumentRoutes(app, authInstance, database, storage, scanner);
     registerInspectionRoutes(app, authInstance, database, storage, scanner);
     registerPaymentsWorkspaceRoutes(app, authInstance, database);
