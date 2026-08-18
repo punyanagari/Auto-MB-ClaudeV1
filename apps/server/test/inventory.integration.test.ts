@@ -81,6 +81,7 @@ let outsiderOrganisationId: string;
 let workId: string;
 let ownerUserId: string;
 let vendorContactId: string;
+let secondVendorContactId: string;
 /** The bought-in part every stock test moves. */
 let smpsItemId: string;
 /** A second bought-in part, so the register has more than one row. */
@@ -371,6 +372,20 @@ beforeAll(async () => {
   if (!vendor) throw new Error('vendor seed failed');
   vendorContactId = vendor.id;
 
+  const [secondVendor] = await admin<{ id: string }[]>`
+    insert into contacts (
+      organisation_id, designation, address, gstin, pincode, state_code,
+      is_vendor, created_by_user_id
+    )
+    values (
+      ${organisationId}, 'Second Source Components', 'Trade Centre',
+      '27AAAGM0289C1ZL', '400002', '27', true, ${ownerUserId}
+    )
+    returning id
+  `;
+  if (!secondVendor) throw new Error('second vendor seed failed');
+  secondVendorContactId = secondVendor.id;
+
   const smps = await seedItem(organisationId, ownerUserId, `SMPS${runId.slice(0, 4)}`, {
     category: 'Power supplies',
   });
@@ -508,14 +523,23 @@ describe('posting a movement', () => {
     // The magnitude went up as a positive number and came back signed:
     // the direction belongs to the type, not to the request.
     expect(movement.quantity).toBe('-4.000');
-    expect(movement.balanceAfter).toBe('26.000');
-    expect(movement.source).toBe('work');
     expect(movement.sourceLabel).toBe(`INV-${runId.toUpperCase()}`);
     expect(movement.reference).toMatch(/^SM\/SMPS/);
+    // The running balance is NOT on the wire: it belongs to a per-item
+    // ledger read in sequence order, and this list interleaves parts.
+    expect(movement).not.toHaveProperty('balanceAfter');
+
+    // …but it is still computed and still stored, which is the whole
+    // point of the cache. Read straight from the column.
+    const [stored] = await admin<{ balance_after: string }[]>`
+      select balance_after::text as balance_after
+      from stock_movements where id = ${movement.id}
+    `;
+    expect(stored?.balance_after).toBe('26.000');
 
     const listed = await authed(owner, {
       method: 'GET',
-      url: `/api/stock/movements?itemId=${smpsItemId}`,
+      url: '/api/stock/movements',
       organisationId,
     });
     expect(listed.statusCode, listed.body).toBe(200);
@@ -898,12 +922,14 @@ describe('the walls', () => {
   it('shows a work-scoped member the movement but not the Work it served', async () => {
     const listed = await authed(scoped, {
       method: 'GET',
-      url: `/api/stock/movements?itemId=${smpsItemId}`,
+      url: '/api/stock/movements',
       organisationId,
     });
     expect(listed.statusCode, listed.body).toBe(200);
     const body = listed.json<StockMovementListResponse>();
-    const workMovement = body.movements.find((movement) => movement.source === 'work');
+    const workMovement = body.movements.find(
+      (movement) => movement.movementType === 'issue',
+    );
     expect(
       workMovement,
       'the shelf is organisation-level, so the row is visible',
@@ -954,5 +980,342 @@ describe('the walls', () => {
     const ids = theirs.json<StockRegisterResponse>().items.map((item) => item.id);
     expect(ids).not.toContain(smpsItemId);
     expect(ids).toContain(outsiderItemId);
+  });
+});
+
+describe('the netting the first review found missing', () => {
+  it('stops demanding material the job card has already been issued', async () => {
+    // A fresh part on the board's bill, so this test owns its arithmetic.
+    const part = (
+      await seedItem(organisationId, ownerUserId, `NET${runId.slice(0, 4)}`)
+    ).id;
+    await admin`
+      insert into production_bom_lines (
+        organisation_id, parent_item_id, component_item_id, quantity,
+        created_by_user_id
+      )
+      values (${organisationId}, ${boardItemId}, ${part}, 1, ${ownerUserId})
+    `;
+
+    const before = await itemRow(part);
+    const committedBefore = Number(before.committed);
+    expect(committedBefore, 'both open cards want one each per unit').toBeGreaterThan(
+      0,
+    );
+
+    await receiveInto(part, '50');
+    // Issue five to the Work-backed card. That material has LEFT the
+    // shelf — the ledger decremented it — so it must not still be counted
+    // as required, or the shortage screen buys it twice.
+    const issued = await postMovement({
+      productionItemId: part,
+      movementType: 'issue',
+      quantity: '5',
+      productionJobCardId: jobCardId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    const after = await itemRow(part);
+    expect(Number(after.committed)).toBe(committedBefore - 5);
+    expect(after.onHand).toBe('45.000');
+
+    // A return puts the requirement back: the same signed sum, read the
+    // other way.
+    const returned = await postMovement({
+      productionItemId: part,
+      movementType: 'return',
+      quantity: '2',
+      productionJobCardId: jobCardId,
+    });
+    expect(returned.statusCode, returned.body).toBe(201);
+    expect(Number((await itemRow(part)).committed)).toBe(committedBefore - 3);
+  });
+
+  it('stops asking for a part that is already on order', async () => {
+    const shortageOf = async (itemId: string) =>
+      (await shortages()).shortages.find((row) => row.itemId === itemId);
+
+    const part = (
+      await seedItem(organisationId, ownerUserId, `ORD${runId.slice(0, 4)}`)
+    ).id;
+    await admin`
+      insert into production_bom_lines (
+        organisation_id, parent_item_id, component_item_id, quantity,
+        created_by_user_id
+      )
+      values (${organisationId}, ${boardItemId}, ${part}, 1, ${ownerUserId})
+    `;
+    const short = await shortageOf(part);
+    if (!short) throw new Error('the part should be short');
+    expect(short.onOrder).toBe('0.000');
+    const wanted = short.shortage;
+
+    // Draft an order for the whole shortage through the real conversion.
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/stock/shortages/purchase-order',
+      organisationId,
+      payload: {
+        jobCardId,
+        vendorContactId: secondVendorContactId,
+        poDate: MOVEMENT_DATE,
+        productionItemIds: [part],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+
+    // The material is on order, so the screen stops asking for it — even
+    // though it is still a DRAFT, because a draft is a decision already
+    // taken and re-asking would raise a second order for the same parts.
+    expect(await shortageOf(part), 'covered by the order just raised').toBeUndefined();
+
+    const line = created.json<PurchaseOrderDetailResponse>().lines[0];
+    expect(line?.quantity).toBe(wanted);
+  });
+});
+
+describe('one line, one receipt channel', () => {
+  it('refuses a delivery challan item pointing at a stock-received line', async () => {
+    const [line] = await admin<{ id: string }[]>`
+      select pol.id from purchase_order_lines pol
+      join purchase_orders po on po.id = pol.purchase_order_id
+      where po.organisation_id = ${organisationId}
+        and pol.production_item_id is not null
+      limit 1
+    `;
+    if (!line) throw new Error('a stock-channel line should exist by now');
+
+    const challanId = randomUUID();
+    await admin`
+      insert into delivery_challans (
+        id, organisation_id, work_id, challan_date, prefix, status,
+        consignee_snapshot, created_by_user_id
+      )
+      values (
+        ${challanId}, ${organisationId}, ${workId}, ${MOVEMENT_DATE}, 'DC',
+        'draft', '{"name": "SSE/Signal"}'::jsonb, ${ownerUserId}
+      )
+    `;
+    const refused = await admin`
+      insert into delivery_challan_items (
+        organisation_id, delivery_challan_id, work_id, description_snapshot,
+        unit_snapshot, quantity, rate_snapshot, line_amount, position,
+        purchase_order_line_id
+      )
+      values (
+        ${organisationId}, ${challanId}, ${workId}, 'Cabinet', 'Nos', '1.000',
+        '0.000000', '0.00', 1, ${line.id}
+      )
+    `.then(
+      () => 'accepted',
+      (error: unknown) => (error as { code?: string }).code,
+    );
+    // Counted by neither channel would be WORSE than double-counted: the
+    // quantity would vanish from the balance that decides whether the
+    // order may close.
+    expect(refused).toBe('23F05');
+    await admin`delete from delivery_challans where id = ${challanId}`;
+  });
+});
+
+describe('scope reaches through every arm', () => {
+  it('hides the job card and the purchase order, not only the Work', async () => {
+    const listed = await authed(scoped, {
+      method: 'GET',
+      url: '/api/stock/movements',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const body = listed.json<StockMovementListResponse>();
+
+    // Every movement this suite posted names a Work, a job card, or a
+    // purchase order line — and all three reach the one Work this member
+    // is not assigned to. An adjustment names none and shows its reason.
+    for (const movement of body.movements) {
+      if (movement.movementType === 'adjustment_in') continue;
+      expect(
+        movement.sourceLabel,
+        `${movement.reference} leaked its source to an unassigned member`,
+      ).toBeNull();
+    }
+
+    // The pending-receipt queue is scoped the same way.
+    const pending = await authed(scoped, {
+      method: 'GET',
+      url: '/api/stock/production-receipts',
+      organisationId,
+    });
+    expect(pending.statusCode, pending.body).toBe(200);
+    expect(
+      pending.json<PendingProductionReceiptListResponse>().dispatches,
+      'a despatch on an unreachable Work is not a job this member is given',
+    ).toEqual([]);
+  });
+
+  it('refuses a receipt against a purchase order whose Work is completed', async () => {
+    // Its own order, issued through the real routes: the suite's earlier
+    // one has already been closed, and a closed order refuses a receipt
+    // for a different reason than the one under test here.
+    const part = (await seedItem(organisationId, ownerUserId, `R8${runId.slice(0, 4)}`))
+      .id;
+    await admin`
+      insert into production_bom_lines (
+        organisation_id, parent_item_id, component_item_id, quantity,
+        created_by_user_id
+      )
+      values (${organisationId}, ${boardItemId}, ${part}, 1, ${ownerUserId})
+    `;
+    await admin`
+      delete from purchase_order_lines pol using purchase_orders po
+      where po.id = pol.purchase_order_id
+        and po.organisation_id = ${organisationId} and po.status = 'draft'
+    `;
+    await admin`
+      delete from purchase_orders
+      where organisation_id = ${organisationId} and status = 'draft'
+    `;
+    const drafted = await authed(owner, {
+      method: 'POST',
+      url: '/api/stock/shortages/purchase-order',
+      organisationId,
+      payload: {
+        jobCardId,
+        vendorContactId,
+        poDate: MOVEMENT_DATE,
+        productionItemIds: [part],
+      },
+    });
+    expect(drafted.statusCode, drafted.body).toBe(201);
+    const orderId = drafted.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    const lineId = issued.json<PurchaseOrderDetailResponse>().lines[0]?.id ?? '';
+
+    // The full completed shape (0031), because the shape CHECK holds it
+    // whole: a status without its stamp is not a completed Work.
+    await admin`
+      update works set status = 'completed',
+        completed_at = now(), completed_by_user_id = ${ownerUserId},
+        completion_note = 'Completed for the R8 receipt check'
+      where id = ${workId}
+    `;
+    try {
+      const response = await postMovement({
+        productionItemId: part,
+        movementType: 'purchase_receipt',
+        quantity: '1',
+        purchaseOrderLineId: lineId,
+      });
+      // R8 reaches THROUGH the order. The direct `workId` arm already
+      // refuses a completed Work; the indirect one must not be the way
+      // around it.
+      expect(response.statusCode, response.body).toBe(409);
+    } finally {
+      await admin`
+        update works set status = 'active',
+          completed_at = null, completed_by_user_id = null,
+          completion_note = null,
+          reopened_at = now(), reopened_by_user_id = ${ownerUserId},
+          reopen_note = 'Reopened after the R8 receipt check'
+        where id = ${workId}
+      `;
+    }
+  });
+});
+
+describe('time only runs forward, per part', () => {
+  it("refuses a movement dated behind the part's last, and defaults to today", async () => {
+    const part = (
+      await seedItem(organisationId, ownerUserId, `TIME${runId.slice(0, 4)}`)
+    ).id;
+
+    // No date sent: the server uses the organisation's today.
+    const first = await postMovement({
+      productionItemId: part,
+      movementType: 'adjustment_in',
+      quantity: '3',
+      reason: 'Opening count',
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const [today] = await admin<{ today: string }[]>`
+      select app_private.organisation_today(${organisationId})::text as today
+    `;
+    expect(first.json<StockMovementResponse>().movement.movementDate).toBe(
+      today?.today,
+    );
+
+    const backdated = await postMovement({
+      productionItemId: part,
+      movementType: 'adjustment_in',
+      quantity: '1',
+      movementDate: '2026-08-01',
+      reason: 'Yesterday docket',
+    });
+    expect(backdated.statusCode, backdated.body).toBe(409);
+    expect(backdated.json<{ code: string }>().code).toBe('STOCK_BACKDATED');
+  });
+});
+
+describe('the shortage conversion, raced by two vendors', () => {
+  it('lets two vendors each take a draft, and refuses a second for one vendor', async () => {
+    const part = (
+      await seedItem(organisationId, ownerUserId, `TWOV${runId.slice(0, 4)}`)
+    ).id;
+    await admin`
+      insert into production_bom_lines (
+        organisation_id, parent_item_id, component_item_id, quantity,
+        created_by_user_id
+      )
+      values (${organisationId}, ${boardItemId}, ${part}, 1, ${ownerUserId})
+    `;
+    // Clear the drafts this suite already left, so the one-draft-per-
+    // vendor index is being tested rather than tripped over.
+    await admin`
+      delete from purchase_order_lines pol
+      using purchase_orders po
+      where po.id = pol.purchase_order_id
+        and po.organisation_id = ${organisationId} and po.status = 'draft'
+    `;
+    await admin`
+      delete from purchase_orders
+      where organisation_id = ${organisationId} and status = 'draft'
+    `;
+
+    const convert = (vendor: string) =>
+      authed(owner, {
+        method: 'POST',
+        url: '/api/stock/shortages/purchase-order',
+        organisationId,
+        payload: {
+          jobCardId,
+          vendorContactId: vendor,
+          poDate: MOVEMENT_DATE,
+          productionItemIds: [part],
+        },
+      });
+
+    // DIFFERENT vendors are independent: 0045's index is per Work AND
+    // vendor, so both must succeed. Only the first one's quantity is the
+    // shortage — the second sees it already on order and finds nothing
+    // left to buy, which is the on-order netting doing its job.
+    const [first, second] = await Promise.all([
+      convert(vendorContactId),
+      convert(secondVendorContactId),
+    ]);
+    const outcomes = [first.statusCode, second.statusCode].sort();
+    expect(
+      outcomes[0],
+      `one vendor drafts the shortage: ${first.body} / ${second.body}`,
+    ).toBe(201);
+    // The loser is refused for having nothing to order, never for a draft
+    // conflict — the two vendors do not contend on the index.
+    if (outcomes[1] !== 201) {
+      const loser = first.statusCode === 201 ? second : first;
+      expect(loser.json<{ code: string }>().code).toBe('STOCK_NOT_SHORT');
+    }
   });
 });

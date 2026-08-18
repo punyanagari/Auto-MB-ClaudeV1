@@ -35,6 +35,28 @@ import {
 
 const PREFIX = 'auto_mb_stock_test_';
 
+/** Waits until SOME backend of this database is blocked on a lock, and
+ * answers its pid.
+ *
+ * `quantity-ceilings.integration.test.ts` waits on a pid it already
+ * knows; here the waiter is a connection the pool chose, so the wait is
+ * for the CONDITION rather than for a particular backend. That is the
+ * claim being made anyway — "a second writer cannot proceed" — and it is
+ * a real observation of the lock rather than a sleep long enough to look
+ * like one. */
+async function waitUntilSomethingBlocks(pool: Sql): Promise<number> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const [row] = await pool<{ pid: number }[]>`
+      select pid from pg_stat_activity
+      where wait_event_type = 'Lock' and datname = current_database()
+      limit 1
+    `;
+    if (row) return row.pid;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('no backend ever blocked on a lock');
+}
+
 /** Enough parallel writers to lose a race reliably on this hardware, and
  * few enough to stay inside the pool. */
 const BURST = 8;
@@ -42,6 +64,11 @@ const BURST = 8;
 let admin: Sql;
 let database: TemporaryDatabase;
 let tenant: Tenant;
+/** The organisation's own today. Every movement is dated here, because
+ * the ledger refuses one dated ahead of it AND one dated behind the
+ * part's last movement — a fixed literal would start failing the day the
+ * clock passed it. */
+let today: string;
 /** A part nothing else in the suite touches, per test that needs one. */
 let itemCounter = 0;
 
@@ -87,7 +114,7 @@ async function post(
           production_item_id: itemId,
           movement_type: movementType,
           quantity,
-          movement_date: '2026-08-01',
+          movement_date: today,
           created_by_user_id: tenant.userId,
           ...extra,
         })}
@@ -159,6 +186,10 @@ beforeAll(async () => {
   database = await createTemporaryDatabase(admin, PREFIX);
   await migrateToHead(database);
   tenant = await seedTenant(database.pool);
+  const [row] = await database.pool<{ today: string }[]>`
+    select app_private.organisation_today(${tenant.organisationId})::text as today
+  `;
+  today = row?.today ?? '';
 }, SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
@@ -195,7 +226,7 @@ describe('the stock ledger', () => {
           )
           values (
             ${tenant.organisationId}, ${item}, 99, 'adjustment_in', 5, 4000,
-            '2026-08-01', 'Overstated on purpose', ${tenant.userId}
+            ${today}, 'Overstated on purpose', ${tenant.userId}
           )
         `;
       },
@@ -340,6 +371,157 @@ describe('the stock ledger', () => {
     expect(failure.code).toBe('23F03');
   });
 
+  /**
+   * TIME ONLY RUNS FORWARD, PER PART. The cache is a running total in
+   * posting order, so a row posted after another and dated before it
+   * would leave every earlier balance skipping a movement earlier than
+   * itself.
+   */
+  it("refuses a movement dated behind the part's last movement", async () => {
+    const item = await createItem();
+    await post(item, 'adjustment_in', '5', { reason: 'Opening count' });
+
+    const failure = await refused(
+      withTenant(
+        database.appPool,
+        { organisationId: tenant.organisationId, userId: tenant.userId },
+        (tx) => tx`
+          insert into stock_movements (
+            organisation_id, production_item_id, movement_type, quantity,
+            movement_date, reason, created_by_user_id
+          )
+          values (
+            ${tenant.organisationId}, ${item}, 'adjustment_in', 1,
+            (${today}::date - 1), 'Yesterday''s docket', ${tenant.userId}
+          )
+        `,
+      ),
+    );
+    expect(failure.code).toBe('23F04');
+    expect(failure.message).toMatch(/cannot be posted behind it/);
+
+    // Same date is fine: several movements land on one day routinely, and
+    // `sequence_number` is what orders them.
+    await post(item, 'adjustment_in', '2', { reason: 'Second count' });
+    expect(await onHand(item)).toBe('7.000');
+    await assertLedgerWhole(item);
+  });
+
+  /**
+   * The backdating rule, under concurrency.
+   *
+   * Two writers, one part: the first posts at today and the second at
+   * yesterday, and the second is only refused if it reads the first's
+   * date. Both take the same counter lock, so the loser sees the winner's
+   * row — which is the point. Moot in the sense that a serial run refuses
+   * it too; the test exists because the refusal has to survive the
+   * interleaving, not merely the happy path.
+   */
+  it('refuses a backdated movement even when it races a later one', async () => {
+    const item = await createItem();
+    await post(item, 'adjustment_in', '5', { reason: 'Opening count' });
+
+    const backdated = withTenant(
+      database.appPool,
+      { organisationId: tenant.organisationId, userId: tenant.userId },
+      (tx) => tx`
+        insert into stock_movements (
+          organisation_id, production_item_id, movement_type, quantity,
+          movement_date, reason, created_by_user_id
+        )
+        values (
+          ${tenant.organisationId}, ${item}, 'adjustment_in', 1,
+          (${today}::date - 1), 'Late docket', ${tenant.userId}
+        )
+      `,
+    ).then(
+      () => 'committed' as const,
+      () => 'refused' as const,
+    );
+    const current = post(item, 'adjustment_in', '3', {
+      reason: 'Count taken today',
+    }).then(
+      () => 'committed' as const,
+      () => 'refused' as const,
+    );
+
+    const [backdatedOutcome, currentOutcome] = await Promise.all([backdated, current]);
+    expect(backdatedOutcome).toBe('refused');
+    expect(currentOutcome).toBe('committed');
+    expect(await onHand(item)).toBe('8.000');
+    await assertLedgerWhole(item);
+  });
+
+  /**
+   * THE MUTEX, PROVED BY BLOCKING rather than by reading the file.
+   *
+   * The migration contract used to assert that the counter upsert appears
+   * before the balance read by comparing substring offsets — which would
+   * have passed if the balance read moved into a helper called from the
+   * first line, and failed on a harmless reorder. This holds the actual
+   * claim: a second writer against the SAME part cannot get as far as
+   * reading a balance while the first is still open, because it is
+   * waiting on a lock.
+   */
+  it('serialises two writers on one part before either reads a balance', async () => {
+    const item = await createItem();
+    await post(item, 'adjustment_in', '10', { reason: 'Opening count' });
+
+    // A transaction that posts a movement and then HOLDS, so the
+    // counter row stays locked while a second writer tries the same
+    // part.
+    let openTheGate = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      openTheGate = resolve;
+    });
+    let posted = (): void => undefined;
+    const firstPosted = new Promise<void>((resolve) => {
+      posted = resolve;
+    });
+
+    const holder = withTenant(
+      database.appPool,
+      { organisationId: tenant.organisationId, userId: tenant.userId },
+      async (tx) => {
+        await tx`
+            insert into stock_movements (
+              organisation_id, production_item_id, movement_type, quantity,
+              movement_date, reason, created_by_user_id
+            )
+            values (
+              ${tenant.organisationId}, ${item}, 'adjustment_in', 4,
+              ${today}, 'Holds the counter', ${tenant.userId}
+            )
+          `;
+        posted();
+        await gate;
+      },
+    );
+    await firstPosted;
+
+    let settled = false;
+    const contender = post(item, 'adjustment_in', '6', {
+      reason: 'Waits for the lock',
+    }).then(() => {
+      settled = true;
+    });
+
+    // REAL blocking, observed in the catalog — not a sleep that is
+    // probably long enough.
+    await waitUntilSomethingBlocks(database.pool);
+    expect(settled, 'the second writer is still waiting on the counter').toBe(false);
+
+    openTheGate();
+    await holder;
+    await contender;
+
+    // 10 + 4 + 6: the second writer's balance includes the first's,
+    // which is only true because it read it after the lock was
+    // released.
+    expect(await onHand(item)).toBe('20.000');
+    await assertLedgerWhole(item);
+  }, 30_000);
+
   it('lets a retired part empty its shelf but takes nothing more in', async () => {
     const item = await createItem();
     await post(item, 'adjustment_in', '6', { reason: 'Opening count' });
@@ -438,7 +620,7 @@ describe('production despatch to stock', () => {
         created_by_user_id
       )
       values (
-        ${tenant.organisationId}, ${card.id}, 1, '2026-08-01', ${tenant.userId}
+        ${tenant.organisationId}, ${card.id}, 1, ${today}, ${tenant.userId}
       )
       returning id
     `;

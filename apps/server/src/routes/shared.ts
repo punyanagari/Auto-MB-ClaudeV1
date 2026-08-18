@@ -90,3 +90,65 @@ export function requireTrimmed(value: string, refusal: string): string {
   if (trimmed.length === 0) throw httpError(400, 'FIELD_TOO_SHORT', refusal);
   return trimmed;
 }
+
+/**
+ * How much of a purchase order line has actually arrived, as one SQL
+ * expression over an alias `pol` bound to `purchase_order_lines`.
+ *
+ * ONE FRAGMENT, THREE READERS: `readLines` below, the `status=open`
+ * filter beside it, and `routes/challans.ts`'s over-receipt warning. They
+ * had three copies of this arithmetic between them, and three copies of a
+ * number that decides whether an order may be CLOSED is three chances to
+ * answer differently.
+ *
+ * ## The channel is per line, and it is declared when the line is written
+ *
+ * Material reaches an order two ways, and a line takes exactly one of
+ * them:
+ *
+ *   * a line carrying `production_item_id` is STOCK-received — it names a
+ *     part, so a receipt can add to a shelf;
+ *   * a line without one is CHALLAN-received — it names a contract item
+ *     or a typed description, and its material is passed on to site.
+ *
+ * That column IS the declaration the review asked for: it is set when the
+ * line is created and never afterwards, so a line cannot change channel
+ * under a balance that has already counted it. No second column is needed
+ * to say the same thing twice.
+ *
+ * Summing the two channels would double-count the moment one line was
+ * both, so this picks ONE by the declaration rather than adding them —
+ * and `app_private.guard_challan_line_receipt_channel` (0087) refuses a
+ * challan item that points at a stock line, so the branch this expression
+ * does not read can never contain a row.
+ */
+export function receivedQuantitySql(
+  options: {
+    /** A SQL expression naming a delivery challan to leave OUT of the
+     * challan channel — a placeholder like `$1`, never request text. The
+     * challan editor passes its own id so it can add its draft lines on
+     * top and project what the balance WILL be; every other caller wants
+     * the settled figure and omits this. */
+    readonly excludingChallan?: string;
+  } = {},
+): string {
+  const exclusion =
+    options.excludingChallan === undefined
+      ? ''
+      : ` and dci.delivery_challan_id <> ${options.excludingChallan}`;
+  return `
+  case when pol.production_item_id is null then
+    coalesce((
+      select sum(dci.quantity)
+      from delivery_challan_items dci
+      join delivery_challans dc on dc.id = dci.delivery_challan_id
+      where dci.purchase_order_line_id = pol.id and dc.status = 'issued'${exclusion}
+    ), 0)
+  else
+    coalesce((
+      select sum(sm.quantity)
+      from stock_movements sm
+      where sm.purchase_order_line_id = pol.id
+    ), 0)
+  end`;
+}

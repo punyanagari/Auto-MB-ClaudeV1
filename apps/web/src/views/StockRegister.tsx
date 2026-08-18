@@ -61,6 +61,15 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
  * in leaves the register quietly understating the shelf.
  */
 
+/* Both lists page. The register is bounded by the item master and grows
+   slowly; the LEDGER is the wave's forever-growing table — one row per
+   movement per part, for the life of the organisation — so a screen that
+   read it whole would get slower every week it was used. Load-more rather
+   than numbered pages: the question these lists answer is "what happened
+   recently", which is read from the top down. */
+const REGISTER_PAGE = 100;
+const LEDGER_PAGE = 50;
+
 interface StockRegisterProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -116,10 +125,14 @@ export function StockRegister({
   onOpenShortages,
 }: StockRegisterProps) {
   const [register, setRegister] = useState<StockRegisterResponse | null>(null);
+  const [items, setItems] = useState<readonly StockItem[]>([]);
+  const [itemCursor, setItemCursor] = useState<string | null>(null);
   const [movements, setMovements] = useState<readonly StockMovement[]>([]);
+  const [movementCursor, setMovementCursor] = useState<string | null>(null);
   const [pending, setPending] = useState<readonly PendingProductionReceipt[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
+  const [paging, setPaging] = useState(false);
   const [query, setQuery] = useState('');
   const [onlyActive, setOnlyActive] = useState(false);
   const [movementFor, setMovementFor] = useState<StockItem | null>(null);
@@ -131,14 +144,23 @@ export function StockRegister({
     setRegister(null);
     setLoadError(null);
     Promise.all([
-      api.listStockItems(organisationId),
-      api.listStockMovements(organisationId),
+      // The status filter is SENT, not applied in the browser: a filtered
+      // register that was really the first page of an unfiltered one
+      // would hide every retired part past the page boundary.
+      api.listStockItems(organisationId, {
+        limit: REGISTER_PAGE,
+        ...(onlyActive ? { status: 'active' as const } : {}),
+      }),
+      api.listStockMovements(organisationId, { limit: LEDGER_PAGE }),
       api.listPendingProductionReceipts(organisationId),
     ])
-      .then(([items, ledger, dispatches]) => {
+      .then(([page, ledger, dispatches]) => {
         if (cancelled) return;
-        setRegister(items);
+        setRegister(page);
+        setItems(page.items);
+        setItemCursor(page.nextCursor);
         setMovements(ledger.movements);
+        setMovementCursor(ledger.nextCursor);
         setPending(dispatches.dispatches);
       })
       .catch((cause: unknown) => {
@@ -152,11 +174,60 @@ export function StockRegister({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, loadVersion, onlyActive]);
 
   const reload = () => {
     setLoadVersion((current) => current + 1);
   };
+
+  function loadMoreItems(): void {
+    if (itemCursor === null) return;
+    setPaging(true);
+    api
+      .listStockItems(organisationId, {
+        limit: REGISTER_PAGE,
+        cursor: itemCursor,
+        ...(onlyActive ? { status: 'active' as const } : {}),
+      })
+      .then((page) => {
+        setItems((current) => [...current, ...page.items]);
+        setItemCursor(page.nextCursor);
+      })
+      .catch((cause: unknown) => {
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The next page could not be loaded.',
+        );
+      })
+      .finally(() => {
+        setPaging(false);
+      });
+  }
+
+  function loadMoreMovements(): void {
+    if (movementCursor === null) return;
+    setPaging(true);
+    api
+      .listStockMovements(organisationId, {
+        limit: LEDGER_PAGE,
+        cursor: movementCursor,
+      })
+      .then((page) => {
+        setMovements((current) => [...current, ...page.movements]);
+        setMovementCursor(page.nextCursor);
+      })
+      .catch((cause: unknown) => {
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The next page could not be loaded.',
+        );
+      })
+      .finally(() => {
+        setPaging(false);
+      });
+  }
 
   async function run(work: () => Promise<unknown>): Promise<void> {
     setBusy(true);
@@ -217,12 +288,15 @@ export function StockRegister({
     );
   }
 
-  const shown = register.items.filter(
-    (item) =>
-      (!onlyActive || item.active) &&
-      `${item.itemCode} ${item.name} ${item.category}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
+  /* The SEARCH stays client-side and the status filter does not, which
+     looks inconsistent and is not: the filter changes which rows the
+     server may return, so applying it here would silently hide rows past
+     the page boundary. Search narrows what is already on screen and says
+     so by counting against the loaded rows. */
+  const shown = items.filter((item) =>
+    `${item.itemCode} ${item.name} ${item.category}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
   );
 
   return (
@@ -318,7 +392,6 @@ export function StockRegister({
                         void run(() =>
                           api.recordProductionReceipt(organisationId, {
                             productionDispatchId: dispatch.productionDispatchId,
-                            movementDate: dispatch.dispatchedOn,
                           }),
                         )
                       }
@@ -337,7 +410,7 @@ export function StockRegister({
           <CardHeader>
             <h2 className="text-base font-semibold">Item master</h2>
             <span className="text-sm text-muted-foreground">
-              {shown.length} of {register.items.length} parts
+              {shown.length} of {items.length} loaded
             </span>
           </CardHeader>
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -373,7 +446,7 @@ export function StockRegister({
 
           {shown.length === 0 ? (
             <EmptyState>
-              {register.items.length === 0
+              {items.length === 0
                 ? 'No part is in the item master yet. Parts are created on Production, Item master; this register records what moves in and out of them.'
                 : 'No part here matches that search.'}
             </EmptyState>
@@ -445,12 +518,29 @@ export function StockRegister({
               </tbody>
             </DataTable>
           )}
+          {itemCursor !== null && (
+            <Button
+              className="mt-3"
+              variant="outline"
+              size="sm"
+              disabled={paging}
+              onClick={loadMoreItems}
+            >
+              {paging ? 'Loading…' : 'Load more parts'}
+            </Button>
+          )}
         </Card>
 
         <Card>
           <CardHeader>
             <h2 className="text-base font-semibold">Recent movements</h2>
           </CardHeader>
+          {/* NO BALANCE COLUMN, deliberately. `balance_after` is the
+              running total in one PART's posting order, and these rows
+              interleave parts — two adjacent rows are two different
+              shelves, so a balance down the side of them totals nothing.
+              It belongs to a per-item ledger, which no screen draws yet.
+              The contract records the same reasoning. */}
           {movements.length === 0 ? (
             <EmptyState>
               Nothing has moved yet. Take a despatch into stock, or post an opening
@@ -471,9 +561,6 @@ export function StockRegister({
                   <th scope="col" className="text-right!">
                     Quantity
                   </th>
-                  <th scope="col" className="text-right!">
-                    Balance
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -487,17 +574,25 @@ export function StockRegister({
                     </td>
                     <td className="font-mono text-xs">{movement.itemCode}</td>
                     <td>{MOVEMENT_LABELS[movement.movementType]}</td>
-                    <td className={wrapCell}>
-                      {movement.sourceLabel ?? movement.reason ?? '—'}
-                    </td>
+                    <td className={wrapCell}>{movement.sourceLabel ?? '—'}</td>
                     <td className={numericCell}>
                       {magnitude(movement.quantity)} {movement.unit}
                     </td>
-                    <td className={numericCell}>{movement.balanceAfter}</td>
                   </tr>
                 ))}
               </tbody>
             </DataTable>
+          )}
+          {movementCursor !== null && (
+            <Button
+              className="mt-3"
+              variant="outline"
+              size="sm"
+              disabled={paging}
+              onClick={loadMoreMovements}
+            >
+              {paging ? 'Loading…' : 'Load more movements'}
+            </Button>
           )}
         </Card>
       </div>
@@ -555,9 +650,13 @@ function MovementDialog({
 }) {
   const [movementType, setMovementType] = useState<AdjustmentType>('adjustment_in');
   const [quantity, setQuantity] = useState('');
-  const [movementDate, setMovementDate] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  /* Empty means "today, as the ORGANISATION reckons it" — resolved on
+     the server. A browser clock is the wrong authority for a legal date,
+     and the ledger refuses a movement dated behind the part's last one,
+     so a machine a day slow would produce a refusal an operator could do
+     nothing about. Typing a date stays available for the ordinary case of
+     recording yesterday's count. */
+  const [movementDate, setMovementDate] = useState('');
   const [reason, setReason] = useState('');
   const [reorderLevel, setReorderLevel] = useState(item.reorderLevel ?? '');
 
@@ -600,7 +699,7 @@ function MovementDialog({
             productionItemId: item.id,
             movementType,
             quantity,
-            movementDate,
+            ...(movementDate === '' ? {} : { movementDate }),
             reason,
           });
         }}
@@ -631,11 +730,10 @@ function MovementDialog({
           />
         </Field>
         <Field>
-          <label htmlFor="movement-date">Movement date</label>
+          <label htmlFor="movement-date">Movement date (blank means today)</label>
           <input
             id="movement-date"
             type="date"
-            required
             value={movementDate}
             onChange={(event) => {
               setMovementDate(event.currentTarget.value);

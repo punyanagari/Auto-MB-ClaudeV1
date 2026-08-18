@@ -328,14 +328,15 @@ The two screens are ported (`app/inventory/page.tsx`,
 `app/inventory/purchase-orders/page.tsx` at `fdfe5ef`) inside the mock's own
 grammar: its stat strip, its item table, its movement table, its checkbox
 rows, its supplier-order cards. What is listed here is data the mock DRAWS
-that its own code cannot mean — in three of the six cases its running fixture
-contradicts itself — so replicating the pixel would have made the product
-state a number that is not true.
+that its own code cannot mean — in three of the eight cases its running
+fixture contradicts itself — so replicating the pixel would have made the
+product state a number that is not true.
 
-The section number: § 11 is the production pack's and § 12 the
-correspondence pack's, both of this wave. The three are allocated by the
-coordinator rather than claimed on merge, and the number is re-checked at the
-final rebase.
+**The section number is not settled here.** Production and correspondence
+both claim § 11 in their own branches, and the coordinator renumbers these
+sections when the wave is assembled. This one is written as § 13 so it
+collides with neither: read it as a placeholder, not as a claim, and do not
+renumber the others to fit it.
 
 | #   | The mock draws                                                   | The application ships                                                                 | Why                                                                                                                                                                                                                                                                                 |
 | --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

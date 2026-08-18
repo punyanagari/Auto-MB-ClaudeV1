@@ -656,9 +656,11 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listPendingProductionReceipts']>()
       .mockResolvedValue({ dispatches: [] }),
     recordProductionReceipt: vi.fn<ApiClient['recordProductionReceipt']>(),
-    listStockShortages: vi
-      .fn<ApiClient['listStockShortages']>()
-      .mockResolvedValue({ shortages: [], purchaseOrders: [] }),
+    listStockShortages: vi.fn<ApiClient['listStockShortages']>().mockResolvedValue({
+      shortages: [],
+      purchaseOrders: [],
+      purchaseOrdersTruncated: false,
+    }),
     createShortagePurchaseOrder: vi.fn<ApiClient['createShortagePurchaseOrder']>(),
     ...overrides,
   };

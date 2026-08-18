@@ -54,11 +54,6 @@ export const StockItemSchema = Type.Object(
     name: Type.String(),
     category: Type.String(),
     unit: Type.String(),
-    /** Whether a job card may be raised for this part. Manufactured
-     * parts reach stock through a production despatch; bought-in parts
-     * reach it through a purchase order. */
-    manufactured: Type.Boolean(),
-    serialControlled: Type.Boolean(),
     active: Type.Boolean(),
     /** The available quantity at or below which the register badges this
      * part low. Null means no level is set — a different statement from
@@ -157,20 +152,11 @@ export const StockMovementTypeSchema = Type.Union(
 );
 export type StockMovementType = Static<typeof StockMovementTypeSchema>;
 
-/** What caused a movement. `none` is an adjustment, which carries a
- * typed reason instead of a document. */
-export const STOCK_MOVEMENT_SOURCES = [
-  'production_dispatch',
-  'purchase_order',
-  'job_card',
-  'work',
-  'none',
-] as const;
-
-export const StockMovementSourceSchema = Type.Union(
-  STOCK_MOVEMENT_SOURCES.map((source) => Type.Literal(source)),
-);
-export type StockMovementSource = Static<typeof StockMovementSourceSchema>;
+/* A `source` DISCRIMINATOR shipped in the first cut — five literals
+ * saying which of the four keys a row carried — and no screen ever
+ * branched on it: `sourceLabel` is the whole of what a register renders,
+ * and it is already null when there is nothing to show. A union nothing
+ * switches on is a vocabulary to keep in step for no reader. */
 
 export const StockMovementSchema = Type.Object(
   {
@@ -189,26 +175,37 @@ export const StockMovementSchema = Type.Object(
      * sign is on the wire so a client can never disagree with the
      * ledger about which way the material went. */
     quantity: DecimalStringSchema,
-    /** The balance after this movement, as the ledger computed it. */
-    balanceAfter: NonNegativeDecimalStringSchema,
     movementDate: DateOnlySchema,
-    source: StockMovementSourceSchema,
     /** The source document as an operator names it — a despatch
      * reference, a purchase order number, a job card number, a Work
-     * code. Null for an adjustment, and null for a document the caller's
-     * work-scope does not reach. */
+     * code — or the typed reason, where the movement is an adjustment
+     * and names no document.
+     *
+     * NULL means "not shown", for two reasons a reader does not need to
+     * tell apart: the movement names nothing, or it names something this
+     * caller's work-scope does not reach. EVERY arm is scope-checked,
+     * not only the Work one — a job card and a purchase order each
+     * belong to a Work too. */
     sourceLabel: Type.Union([Type.String(), Type.Null()]),
-    /** Present on an adjustment and absent on everything else: a
-     * movement that names a document has already said why it
-     * happened. */
-    reason: Type.Union([Type.String(), Type.Null()]),
-    counterparty: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
   },
   { additionalProperties: false },
 );
 export type StockMovement = Static<typeof StockMovementSchema>;
 
+/* `balanceAfter` is deliberately NOT on the row above.
+ *
+ * It is the running total in the PART's own posting order, and this list
+ * interleaves parts: two adjacent rows are two different shelves, so a
+ * balance column down the side of it totals nothing. Rendering it there
+ * was the defect the review found — a figure that reads like a column
+ * total and is not one.
+ *
+ * It belongs to a per-item ledger read in sequence order, which no screen
+ * draws yet. The value is still computed and still stored; when that
+ * screen arrives it reads `balance_after` in sequence order, rather than
+ * every cross-item row carrying a number that cannot be read down the
+ * page. */
 export const StockMovementListResponseSchema = Type.Object(
   {
     movements: Type.Array(StockMovementSchema),
@@ -218,11 +215,11 @@ export const StockMovementListResponseSchema = Type.Object(
 );
 export type StockMovementListResponse = Static<typeof StockMovementListResponseSchema>;
 
-export const StockMovementListQuerySchema = Type.Object(
-  { itemId: Type.Optional(UuidSchema) },
-  { additionalProperties: false },
-);
-export type StockMovementListQuery = Static<typeof StockMovementListQuerySchema>;
+/* The movements list takes no filter of its own: it is the whole
+ * ledger, newest first, and it pages. An `itemId` filter shipped in the
+ * first cut with nothing sending it — the per-item ledger that would send
+ * it is the same screen `balanceAfter` is waiting for, and a parameter
+ * with no caller is a promise no test holds. */
 
 /**
  * Posting a movement.
@@ -247,7 +244,11 @@ export const CreateStockMovementRequestSchema = Type.Object(
       Type.Literal('adjustment_out'),
     ]),
     quantity: PositiveDecimalStringSchema,
-    movementDate: DateOnlySchema,
+    /** Omitted means the ORGANISATION's today, resolved on the server. A
+     * client clock is the wrong authority for a legal date, and the
+     * ledger refuses a movement dated behind the part's last one — so a
+     * browser a day slow would produce refusals nobody could explain. */
+    movementDate: Type.Optional(DateOnlySchema),
     /** Required for a `purchase_receipt`, refused on everything else. */
     purchaseOrderLineId: Type.Optional(UuidSchema),
     /** An `issue` or a `return` names exactly one of these two. */
@@ -255,7 +256,6 @@ export const CreateStockMovementRequestSchema = Type.Object(
     workId: Type.Optional(UuidSchema),
     /** Required for an adjustment, refused on everything else. */
     reason: Type.Optional(nonBlankString({ minLength: 3, maxLength: 500 })),
-    counterparty: Type.Optional(nonBlankString({ minLength: 2, maxLength: 200 })),
   },
   { additionalProperties: false },
 );
@@ -269,8 +269,8 @@ export type CreateStockMovementRequest = Static<
 export const RecordProductionReceiptRequestSchema = Type.Object(
   {
     productionDispatchId: UuidSchema,
-    movementDate: DateOnlySchema,
-    counterparty: Type.Optional(nonBlankString({ minLength: 2, maxLength: 200 })),
+    /** Omitted means the organisation's today, as above. */
+    movementDate: Type.Optional(DateOnlySchema),
   },
   { additionalProperties: false },
 );
@@ -342,11 +342,17 @@ export const StockShortageSchema = Type.Object(
     itemCode: Type.String(),
     name: Type.String(),
     unit: Type.String(),
-    /** What every open job card still needs, summed. */
+    /** What every open job card still needs, summed — already net of
+     * the material each card has been issued and has not returned. */
     required: PositiveDecimalStringSchema,
     onHand: NonNegativeDecimalStringSchema,
-    /** `required - onHand`, always positive: a part that is not short
-     * does not appear. */
+    /** Still to arrive on a draft or issued purchase order: ordered less
+     * received, per line, floored at zero. Netting this is what stops the
+     * screen asking an operator to buy the same part every time they open
+     * it until the lorry turns up. */
+    onOrder: NonNegativeDecimalStringSchema,
+    /** `required - onHand - onOrder`, always positive: a part already
+     * covered does not appear. */
     shortage: PositiveDecimalStringSchema,
     /** The open job cards asking for it, and how much each wants. */
     jobCards: Type.Array(
@@ -389,6 +395,11 @@ export const ShortagePurchaseOrderSchema = Type.Object(
     lines: Type.Array(
       Type.Object(
         {
+          /** The purchase order LINE, which is what a receipt is posted
+           * against. Without it this screen can show what is outstanding
+           * and offer no way to record its arrival — which is what the
+           * first cut did, each screen assuming the other owned it. */
+          id: UuidSchema,
           productionItemId: UuidSchema,
           itemCode: Type.String(),
           name: Type.String(),
@@ -396,6 +407,10 @@ export const ShortagePurchaseOrderSchema = Type.Object(
           ordered: PositiveDecimalStringSchema,
           /** What has reached the shelf against this line so far. */
           received: NonNegativeDecimalStringSchema,
+          /** `ordered - received`, floored at zero: what a receipt from
+           * this screen defaults to. Zero means the line is settled, and
+           * the control is not offered. */
+          outstanding: NonNegativeDecimalStringSchema,
         },
         { additionalProperties: false },
       ),
@@ -409,6 +424,11 @@ export const StockShortageResponseSchema = Type.Object(
   {
     shortages: Type.Array(StockShortageSchema),
     purchaseOrders: Type.Array(ShortagePurchaseOrderSchema),
+    /** True when more shortage-raised orders exist than the column
+     * returned. The first cut capped it at fifty and said nothing, so an
+     * agency past that would read a complete-looking column that quietly
+     * ended. The screen says so instead. */
+    purchaseOrdersTruncated: Type.Boolean(),
   },
   { additionalProperties: false },
 );

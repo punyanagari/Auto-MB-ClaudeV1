@@ -1945,6 +1945,18 @@ last row's running total are the same number forever. A movement posted in
 error is REVERSED by an adjustment carrying its reason, which leaves both the
 mistake and the correction on the record.
 
+**Time only runs forward, per part.** A movement may not be dated before
+that part's last movement, and may not be dated in the future. This is what
+makes the running total readable: `balance_after` is the balance in POSTING
+order, so a row posted after another and dated before it would leave every
+earlier total skipping a movement earlier than itself. The consequence is
+deliberate — late paperwork is posted at today's date, with the docket's own
+date in the reason — and the alternative is a balance column nobody can read.
+The rule is per part, because two parts have unrelated histories and one
+shelf's late paperwork must not block another's. A movement sent without a
+date is dated the organisation's today, resolved on the server: a browser
+clock is the wrong authority for a legal date.
+
 **Stock never goes negative.** An issue that would take a part below zero is
 refused, and the refusal is a constraint on the column rather than a check
 somebody has to remember. Every inbound movement names a document that
@@ -1960,11 +1972,28 @@ issue and a return name exactly one of a job card or a Work. An adjustment in
 or out names neither and carries a reason instead. The shape is a database
 constraint, so a movement that explains nothing cannot be written.
 
-**Committed is derived, and it is what "available" subtracts.** Every open
-job card's outstanding bill of material — the recursive explosion times the
-units not yet serialised — is what the organisation has already spoken for.
-Available is on hand minus committed and may go negative, and a negative
-available IS the shortage.
+**Committed is derived, and three things come off it.** Every open job
+card's outstanding bill of material — the recursive explosion times the units
+not yet serialised — is what the organisation has already spoken for. From
+that gross requirement:
+
+1. **units already built** come off, because their material is inside them;
+2. **material already issued to that card** comes off, because it has LEFT
+   the shelf — the ledger decremented it — so counting it as still required
+   would demand it a second time and buy a second set of parts already
+   sitting on the bench. Issues net, returns un-net, and it floors at zero
+   per part: over-issuing to a card means that part is no longer wanted, not
+   that the card is owed material back;
+3. **material already on order** comes off at the shortage, not per card —
+   draft and issued purchase-order lines, ordered less received. Without it
+   the screen asks an operator to buy the same part every time they open it
+   until the lorry arrives.
+
+The first two are facts about the CARD and are netted inside the shared
+requirement function; the third is a fact about the PART and is netted once
+against the summed requirement, because netting it per card would let two
+cards each subtract the same lorry. Available is on hand minus committed and
+may go negative; a negative available is the shortage.
 
 **A shortage is a fact about a part, not about a job card.** The requirement
 is summed across every open job card and netted once against one balance, and
@@ -1979,13 +2008,21 @@ it costs. Rates, terms and issue stay in the procurement module, and its
 nullable columns on a purchase order line carry the part it buys and the job
 card whose shortage asked for it.
 
-**A purchase order line now receives onto a shelf as well as onto a
-challan.** A line's received quantity is the sum of issued delivery-challan
-items pointing at it AND stock receipts pointing at it. Before this, a
-shortage order could never be closed at all: its material is consumed in the
-factory and never appears on a challan. Only a line naming a part can be
-stock-received, and the ledger refuses a receipt whose part is not that one,
-so the two sums are always in one unit.
+**A purchase order line is received on exactly one channel, declared when
+the line is written.** A line that names a part is STOCK-received; a line
+that does not is CHALLAN-received. The received quantity reads one channel,
+never the sum of both, and a delivery challan item that points at a
+stock-received line is refused at the database — otherwise its quantity would
+be counted by neither channel and silently vanish from the balance that
+decides whether the order may close. `production_item_id` is that
+declaration: it is set when the line is created and never afterwards, so a
+line cannot change channel under a balance that has already counted it.
+
+Before this, a shortage order could never be closed at all: its material is
+consumed in the factory and never appears on a challan. One shared SQL
+expression computes the figure for the procurement register, the open-order
+filter and the challan editor's over-receipt warning, so three readers cannot
+disagree about what has arrived.
 
 **A job card serving a private purchase order cannot raise one.** A purchase
 order belongs to a Work — its number is per Work, its authorization is per
@@ -1994,10 +2031,19 @@ numbering-and-authorization change to an issued-document surface and belongs
 in its own change.
 
 **Stock is organisation-level, and a Work is not.** One shelf serves every
-contract, so the register and the ledger are visible to every member. Which
-Work a movement served is work-scoped and is withheld from a member who
-cannot reach that Work; purchase orders raised from shortages are filtered by
-work-scope outright, because a purchase order is a Work's document.
+contract, so the register and the ledger are visible to every member. Every
+reference OUT of them to a Work is work-scoped, and that means all three
+routes to one — the movement's own Work, the Work behind its job card, and
+the Work behind its purchase order. A member who cannot reach a Work may see
+that material left the shelf; they may not learn which Work it left for by
+any of the three. The pending-despatch queue and the shortage screen's
+purchase orders are filtered outright, because a despatch and an order each
+belong to a Work.
+
+**A completed Work accepts no movement, by any route.** R8 reaches through
+the job card and through the purchase order as well as through a directly
+named Work, at the route and again at the database — or the indirect arms
+would be the way around the direct one.
 
 ## 9. Current non-goals and release boundaries
 

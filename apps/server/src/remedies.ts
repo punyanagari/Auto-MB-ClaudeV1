@@ -125,6 +125,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // The stock ledger (migration 0087). Every remedy names the movement
   // that fixes the situation, because in a ledger the answer to a wrong
   // number is always another row rather than an edit.
+  STOCK_BACKDATED:
+    'Post the movement at today’s date and put the docket’s own date in the reason; a ledger records changes in the order they happen, so a running balance cannot be inserted behind one already written.',
   STOCK_ITEM_NOT_FOUND:
     'Pick the part again from the stock register; one retired on Production, Item master is no longer selectable by its old id.',
   STOCK_INSUFFICIENT:

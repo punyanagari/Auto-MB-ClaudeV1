@@ -1831,10 +1831,33 @@ export function registerProductionRoutes(
         await lockJobCard(tx, user.id, dispatch.job_card_id, {
           operableFor: 'withdrawing a release on it',
         });
-        // Lines first: nothing cascades, deliberately. When Inventory's
-        // stock ledger references the header (migration 0084 § 7), that
-        // foreign key is what refuses this delete, and a cascade would
-        // have quietly taken the ledger's anchor with it.
+
+        // Inventory's ledger has taken these units onto a shelf, so the
+        // release is no longer production's alone to withdraw (0087).
+        //
+        // The foreign key below refuses this delete anyway — that is what
+        // § 7 promised, and it still holds against every writer. What it
+        // cannot do is SAY anything: a 23503 reaches the operator as a
+        // bare conflict with no remedy, on the one screen where the
+        // remedy is the whole answer. Naming it here is what makes
+        // STOCK_DISPATCH_RECEIVED's advice reachable from the path that
+        // earns it.
+        const [received] = await tx<{ id: string }[]>`
+          select id from stock_movements where production_dispatch_id = ${id}
+        `;
+        if (received) {
+          throw httpError(
+            409,
+            'STOCK_DISPATCH_RECEIVED',
+            'These units are already on a stock shelf, so this release cannot be withdrawn. Correct the quantity with a stock adjustment instead.',
+          );
+        }
+
+        // Lines first: nothing cascades, deliberately. Inventory's stock
+        // ledger references the header (migration 0084 § 7), and that
+        // foreign key is what refuses this delete when the check above
+        // loses a race; a cascade would have quietly taken the ledger's
+        // anchor with it.
         await tx`
           delete from production_dispatch_serials where production_dispatch_id = ${id}
         `.catch(rethrowWriteRefusal);

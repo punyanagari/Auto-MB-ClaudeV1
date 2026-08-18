@@ -6,19 +6,18 @@ import {
   RecordProductionReceiptRequestSchema,
   SetReorderLevelRequestSchema,
   StockItemResponseSchema,
-  StockMovementListQuerySchema,
   StockMovementListResponseSchema,
   StockMovementResponseSchema,
   StockRegisterQuerySchema,
   StockRegisterResponseSchema,
   StockShortageResponseSchema,
   withKeysetQuery,
+  KeysetQuerySchema,
   type ErrorCode,
   type PendingProductionReceipt,
   type ShortagePurchaseOrder,
   type StockItem,
   type StockMovement,
-  type StockMovementSource,
   type StockMovementType,
   type StockShortage,
 } from '@auto-mb/contracts';
@@ -33,60 +32,70 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
 import { assertWorkOperable } from '../work-status.js';
 import {
   assertPurchaseOrderDate,
+  createPurchaseOrderDraft,
   readDetail as readPurchaseOrderDetail,
   requireVendor,
 } from './purchase-orders.js';
-import { audit, errorResponses, IdParamsSchema, optionalTrimmed } from './shared.js';
+import {
+  audit,
+  errorResponses,
+  IdParamsSchema,
+  optionalTrimmed,
+  receivedQuantitySql,
+} from './shared.js';
 
 /**
  * The stock ledger (migration 0087).
  *
- * Three screens' worth of reading and five ways to write, all resting on
+ * Three screens' worth of reading and four ways to write, all resting on
  * one append-only table. The mock draws the register at
  * `app/inventory/page.tsx` and the shortage screen at
  * `app/inventory/purchase-orders/page.tsx` (fdfe5ef).
  *
  * ## What is authoritative, and what is derived
  *
- * The ledger is the only stored fact. A balance is the last row's
- * `balance_after`, the committed quantity is the open job cards'
- * outstanding bill-of-material explosion, and a shortage is the second
- * minus the first. None of the three is a column anybody can type into,
- * which is the whole point: the mock keeps a mutable `onHand` on the item
- * AND a `balanceAfter` on every movement, and has no writer at all for
- * the `reserved` it subtracts.
+ * The ledger is the only stored fact. A balance is the last movement's
+ * running total; what the open job cards still need is
+ * `app_private.stock_outstanding_requirement`; and a shortage is that
+ * requirement less the shelf and less what is already on order. None of
+ * the three is a column anybody can type into.
  *
  * ## Where the rules live
  *
  * Every refusal below is made twice. The route makes it first, under no
  * lock, so an operator gets a named 409 with a remedy pointing at the
  * movement that fixes it. `app_private.guard_stock_movement()` makes it
- * again inside the insert, under the per-item counter lock — which is the
- * arm that holds when two operators issue the last unit at the same
- * moment, and the arm that holds when a writer reaches the table by
- * another path. The route can name the problem; only the trigger can be
- * right about it.
+ * again inside the insert, under the per-item counter lock — the arm that
+ * holds when a writer reaches the table by another path, and the arm that
+ * holds under concurrency, which the route cannot. The route can name the
+ * problem; only the trigger can be right about it.
+ *
+ * ## Dates are the organisation's, never the caller's
+ *
+ * A movement date may be omitted and is then the organisation's today. A
+ * browser clock is the wrong authority for a legal date at the best of
+ * times, and the ledger refuses a movement dated behind the part's last
+ * one — so a client a day slow would produce a refusal an operator could
+ * not act on.
  *
  * ## Permissions, and why no new authority
  *
  * A stock movement is site and store work — the same class of act as
  * recording a delivery or an installation — so it is `role: 'writer'`
  * throughout. Nothing here issues a numbered document: the one act that
- * creates one, raising a purchase order from a shortage, creates a DRAFT
- * and stops, and the `issue` authority still guards the moment that draft
- * becomes an order (`routes/purchase-orders.ts`).
+ * creates one drafts it and stops, and the `issue` authority still guards
+ * the moment that draft becomes an order.
  *
  * ## Work-scope
  *
- * Stock belongs to the ORGANISATION, not to a Work: one shelf serves every
- * contract, and a part bought for one Work is routinely consumed by
- * another. So the register and the ledger are not work-scoped, and an
- * 'assigned'-scope member sees every part and every movement. What that
- * member does NOT see is which Work a movement served: `sourceLabel`
- * answers null where the Work is out of scope, exactly as it would if the
- * Work had been deleted. The shortage screen's purchase orders ARE
- * work-scoped, because a purchase order is a Work's document and the
- * procurement module already treats it as one.
+ * Stock belongs to the ORGANISATION, not to a Work: one shelf serves
+ * every contract, and a part bought for one Work is routinely consumed by
+ * another. So the register and the ledger are not work-scoped. What is
+ * scoped is every reference OUT of them to a Work — and that means all
+ * three arms, not just the obvious one: a movement's Work, the Work
+ * behind its job card, and the Work behind its purchase order.
+ * `sourceLabel` answers null wherever the caller cannot reach the thing
+ * it would have named, which is exactly the contract's promise.
  */
 
 /**
@@ -110,6 +119,14 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'STOCK_MOVEMENT_INVALID',
     'The stock ledger refused this movement; check the part and the date and try again.',
   ],
+  '23F04': [
+    'STOCK_BACKDATED',
+    'Another movement against this part was posted while this one was being recorded, and it is dated later.',
+  ],
+  '23F05': [
+    'STOCK_SOURCE_INVALID',
+    'This purchase order line is received into stock, not onto a delivery challan.',
+  ],
   // A second receipt against one despatch loses the race to the unique
   // index rather than to a guard, so it arrives as 23505.
   '23505': [
@@ -117,6 +134,17 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'This despatch was taken into stock while this receipt was being posted.',
   ],
 };
+
+/** The shared receipt arithmetic, bound once. Every place this module
+ * asks "how much of that line has arrived" reads the SAME expression the
+ * procurement register and the challan warning read, so a shortage can
+ * never be computed against a different idea of received than the order
+ * it is about to be added to. */
+const RECEIVED_ON_LINE = receivedQuantitySql();
+
+/** How many shortage-raised orders the column returns. Over-fetched by
+ * one so the screen can say the list is not the whole of it. */
+const SHORTAGE_ORDER_PAGE = 50;
 
 function rethrowWriteRefusal(error: unknown): never {
   const code =
@@ -128,40 +156,36 @@ function rethrowWriteRefusal(error: unknown): never {
   throw error;
 }
 
-/** `PP-26-081` — the job card as production names it.
- *
- * Built from the financial year and the sequence, because both halves are
- * columns and 0084 deliberately stores no third copy of the assembled
- * string (`JobCardSummary.number` in `@auto-mb/contracts` says so). The
- * production module will build the same string from the same two columns
- * when its own routes land; the format is the contract's, not this
- * module's, and this is the second reader of it rather than a second
- * definition. */
-function jobCardNumber(fyLabel: string, sequenceNumber: number): string {
-  return `PP-${fyLabel.slice(2, 4)}-${String(sequenceNumber).padStart(3, '0')}`;
-}
-
-/** `SM/EL-SMPS-2410/17` — a movement's identity on screen. The mock
- * renders a `referenceNumber` per movement; here it is the item's code and
- * the movement's ledger position, which together already name the row
+/** `SM/EL-SMPS-2410/17` — a movement's identity on screen: the part's code
+ * and the movement's ledger position, which together already name the row
  * uniquely, so nothing is stored a third time. */
 function movementReference(itemCode: string, sequenceNumber: number): string {
   return `SM/${itemCode}/${String(sequenceNumber)}`;
 }
 
-/** Which of the four source shapes a stored row is in. Derived from which
- * key is present, so the wire value and the row cannot disagree. */
-function sourceOf(row: {
-  readonly production_dispatch_id: string | null;
-  readonly purchase_order_line_id: string | null;
-  readonly production_job_card_id: string | null;
-  readonly work_id: string | null;
-}): StockMovementSource {
-  if (row.production_dispatch_id !== null) return 'production_dispatch';
-  if (row.purchase_order_line_id !== null) return 'purchase_order';
-  if (row.production_job_card_id !== null) return 'job_card';
-  if (row.work_id !== null) return 'work';
-  return 'none';
+/** `PP-26-081` — the job card as production names it.
+ *
+ * Built from the financial year and the sequence, because both halves are
+ * columns and 0084 deliberately stores no third copy of the assembled
+ * string. This is a second READER of the contract's format, not a second
+ * definition of it. */
+function jobCardNumber(fyLabel: string, sequenceNumber: number): string {
+  return `PP-${fyLabel.slice(2, 4)}-${String(sequenceNumber).padStart(3, '0')}`;
+}
+
+/**
+ * The work-scope predicate, as SQL over a column holding a `work_id`.
+ *
+ * Written once because it is needed in four places on this module's reads
+ * and getting it wrong in one of them is an oracle: a label that resolves
+ * for a Work the caller may not list tells them the Work exists.
+ * `userId` and `full` are always bound parameters.
+ */
+function workVisibleSql(full: string, userId: string, workColumn: string): string {
+  return `(${full} or exists (
+    select 1 from work_assignments wa
+    where wa.work_id = ${workColumn} and wa.user_id = ${userId}
+  ))`;
 }
 
 // --- Row shapes -------------------------------------------------------------
@@ -172,8 +196,6 @@ interface StockItemRow {
   name: string;
   category: string;
   unit: string;
-  manufactured: boolean;
-  serial_controlled: boolean;
   active: boolean;
   reorder_level: string | null;
   on_hand: string;
@@ -189,8 +211,6 @@ function toStockItem(row: StockItemRow): StockItem {
     name: row.name,
     category: row.category,
     unit: row.unit,
-    manufactured: row.manufactured,
-    serialControlled: row.serial_controlled,
     active: row.active,
     reorderLevel: row.reorder_level,
     onHand: row.on_hand,
@@ -209,15 +229,8 @@ interface MovementRow {
   unit: string;
   movement_type: StockMovementType;
   quantity: string;
-  balance_after: string;
   movement_date: string;
-  production_dispatch_id: string | null;
-  purchase_order_line_id: string | null;
-  production_job_card_id: string | null;
-  work_id: string | null;
   source_label: string | null;
-  reason: string | null;
-  counterparty: string | null;
   created_at: Date;
 }
 
@@ -231,56 +244,93 @@ function toMovement(row: MovementRow): StockMovement {
     unit: row.unit,
     movementType: row.movement_type,
     quantity: row.quantity,
-    balanceAfter: row.balance_after,
     movementDate: row.movement_date,
-    source: sourceOf(row),
     sourceLabel: row.source_label,
-    reason: row.reason,
-    counterparty: row.counterparty,
     createdAt: row.created_at.toISOString(),
   };
 }
 
 /**
- * The register's rows, and the summary over the same set.
+ * The register: every part with its three derived quantities, and the
+ * summary over the same set — in ONE statement.
  *
- * `committed` is aggregated from `app_private.stock_outstanding_requirement`
- * — ONE call per statement, grouped, rather than a correlated call per
- * item, because the function explodes every open job card's bill of
- * material and doing that once per row would explode it once per row.
+ * `app_private.stock_outstanding_requirement` explodes every open job
+ * card's bill of material, so it is called ONCE per statement and grouped,
+ * never once per row. The page and the stat strip then read the same CTE
+ * through window aggregates rather than running that explosion twice: the
+ * first cut issued two statements and paid for the explosion in both, and
+ * a stat strip computed a moment apart from the rows it sits above can
+ * disagree with them.
+ *
+ * `$1` organisation, `$2` active-only, `$3` cursor, `$4` limit.
  */
-const STOCK_ITEM_SELECT = `
-  select i.id, i.item_code, i.name, i.category, i.unit, i.manufactured,
-         i.serial_controlled, i.active,
-         i.reorder_level::text as reorder_level,
-         balance.on_hand::text as on_hand,
-         coalesce(committed.required, 0)::text as committed,
-         (balance.on_hand - coalesce(committed.required, 0))::text as available,
-         (
-           i.reorder_level is not null
-           and balance.on_hand - coalesce(committed.required, 0) <= i.reorder_level
-         ) as below_reorder_level
-  from production_items i
-  cross join lateral (
-    select app_private.stock_on_hand(i.organisation_id, i.id) as on_hand
-  ) balance
-  left join (
+const REGISTER_SQL = `
+  with committed as (
     select r.component_item_id, sum(r.required) as required
     from app_private.stock_outstanding_requirement($1::uuid) r
     group by r.component_item_id
-  ) committed on committed.component_item_id = i.id
-  where i.organisation_id = $1::uuid
-`;
+  ),
+  register as (
+    select i.id, i.item_code, i.name, i.category, i.unit, i.active,
+           i.reorder_level::text as reorder_level,
+           balance.on_hand,
+           coalesce(committed.required, 0) as committed,
+           balance.on_hand - coalesce(committed.required, 0) as available,
+           (
+             i.reorder_level is not null
+             and balance.on_hand - coalesce(committed.required, 0) <= i.reorder_level
+           ) as below_reorder_level
+    from production_items i
+    cross join lateral (
+      select app_private.stock_on_hand(i.organisation_id, i.id) as on_hand
+    ) balance
+    left join committed on committed.component_item_id = i.id
+    where i.organisation_id = $1::uuid
+  ),
+  counted as (
+    select register.*,
+           count(*) filter (where register.active) over () as parts_tracked,
+           count(*) filter (
+             where register.active and register.below_reorder_level
+           ) over () as parts_below_reorder_level,
+           count(*) filter (where register.available < 0) over () as parts_short
+    from register
+  )
+  select counted.id, counted.item_code, counted.name, counted.category,
+         counted.unit, counted.active, counted.reorder_level,
+         counted.on_hand::text as on_hand,
+         counted.committed::text as committed,
+         counted.available::text as available,
+         counted.below_reorder_level,
+         counted.parts_tracked, counted.parts_below_reorder_level,
+         counted.parts_short
+  from counted
+  where ($2::boolean = false or counted.active)
+    and (
+      $3::uuid is null
+      or (lower(counted.category), lower(counted.name), counted.id) > (
+        select lower(c.category), lower(c.name), c.id
+        from production_items c where c.id = $3::uuid
+      )
+    )
+  order by lower(counted.category), lower(counted.name), counted.id
+  limit $4::int`;
+
+interface RegisterRow extends StockItemRow {
+  parts_tracked: string;
+  parts_below_reorder_level: string;
+  parts_short: string;
+}
 
 async function readStockItem(
   tx: TransactionSql,
   organisationId: string,
   itemId: string,
 ): Promise<StockItem> {
-  const rows = (await tx.unsafe(`${STOCK_ITEM_SELECT} and i.id = $2::uuid`, [
-    organisationId,
-    itemId,
-  ])) as unknown as StockItemRow[];
+  const rows = (await tx.unsafe(
+    `select * from (${REGISTER_SQL}) page where page.id = $5::uuid`,
+    [organisationId, false, null, null, itemId],
+  )) as unknown as RegisterRow[];
   const row = rows[0];
   if (!row) throw httpError(404, 'STOCK_ITEM_NOT_FOUND', 'No such part.');
   return toStockItem(row);
@@ -302,92 +352,150 @@ async function requireItem(
   return row;
 }
 
+/** The organisation's today, which is the default for every date this
+ * module writes and the ceiling the ledger holds them to. */
+async function organisationToday(
+  tx: TransactionSql,
+  organisationId: string,
+): Promise<string> {
+  const [row] = await tx<{ today: string }[]>`
+    select app_private.organisation_today(${organisationId})::text as today
+  `;
+  if (!row) throw new Error('organisation today returned no row');
+  return row.today;
+}
+
 /**
- * Reads back the movements a write just made, or a page of the register.
+ * The date a movement is written at: the caller's, or the organisation's
+ * today when they sent none.
  *
- * `sourceLabel` is built in SQL from whichever document the row names.
- * The Work code is the one label gated by work-scope: a member assigned to
- * two Works may see that material left the shelf, and may not learn which
- * third Work it left for.
+ * A STATED date is bounded here as well as by the guard, because the two
+ * refusals are different kinds of thing. A date in the future is a
+ * mistyped form field — a 400 naming it, before anything is locked. A
+ * date behind the part's last movement is a state conflict that only the
+ * guard can settle under concurrency, and it arrives as a 409. Both are
+ * refused twice; only the first is worth spending a round trip to name.
  */
+async function resolveMovementDate(
+  tx: TransactionSql,
+  organisationId: string,
+  stated: string | undefined,
+): Promise<string> {
+  const today = await organisationToday(tx, organisationId);
+  if (stated === undefined) return today;
+  if (stated > today) {
+    throw httpError(
+      400,
+      'STOCK_MOVEMENT_INVALID',
+      `A stock movement cannot be dated in the future (today is ${today}).`,
+    );
+  }
+  return stated;
+}
+
+/**
+ * The ledger page, newest first.
+ *
+ * ORDERED BY (movement_date, sequence_number, id), which is the index in
+ * § 3 and is deliberately not `created_at`: that column defaults to
+ * `now()`, the TRANSACTION START time, so two overlapping writers commit
+ * in one order and carry timestamps in the other. `sequence_number` is
+ * claimed under the per-item counter lock, so within a part it IS the
+ * posting order.
+ *
+ * `sourceLabel` is built in SQL from whichever document the row names,
+ * and EVERY arm that reaches a Work is scope-checked — the movement's own
+ * Work, the Work behind its job card, and the Work behind its purchase
+ * order. A member who cannot list a Work may still see that material left
+ * the shelf; they may not learn which Work it left for, by any of the
+ * three routes.
+ */
+const MOVEMENTS_SQL = `
+  select m.id, m.sequence_number, m.production_item_id,
+         i.item_code, i.name as item_name, i.unit,
+         m.movement_type, m.quantity::text as quantity,
+         m.movement_date::text as movement_date,
+         case
+           when m.production_dispatch_id is not null then
+             case when dispatch_card.work_id is null
+                    or ${workVisibleSql('$2', '$1', 'dispatch_card.work_id')}
+               then 'PP-' || substr(dispatch_card.fy_label, 3, 2) || '-'
+                 || lpad(dispatch_card.sequence_number::text, 3, '0')
+                 || '/D' || dispatch.sequence_number::text
+               else null
+             end
+           when m.purchase_order_line_id is not null then
+             case when ${workVisibleSql('$2', '$1', 'purchase_order.work_id')}
+               then coalesce(purchase_order.po_number, 'Draft purchase order')
+               else null
+             end
+           when m.production_job_card_id is not null then
+             case when card.work_id is null
+                    or ${workVisibleSql('$2', '$1', 'card.work_id')}
+               then 'PP-' || substr(card.fy_label, 3, 2) || '-'
+                 || lpad(card.sequence_number::text, 3, '0')
+               else null
+             end
+           when m.work_id is not null then
+             case when ${workVisibleSql('$2', '$1', 'm.work_id')}
+               then work.work_code
+               else null
+             end
+           else m.reason
+         end as source_label,
+         m.created_at
+  from stock_movements m
+  join production_items i on i.id = m.production_item_id
+  left join production_dispatches dispatch on dispatch.id = m.production_dispatch_id
+  left join production_job_cards dispatch_card
+    on dispatch_card.id = dispatch.job_card_id
+  left join purchase_order_lines line on line.id = m.purchase_order_line_id
+  left join purchase_orders purchase_order
+    on purchase_order.id = line.purchase_order_id
+  left join production_job_cards card on card.id = m.production_job_card_id
+  left join works work on work.id = m.work_id
+  where ($3::uuid is null or m.id = $3::uuid)
+    and (
+      $4::uuid is null
+      or (m.movement_date, m.sequence_number, m.id) < (
+        select cursor_row.movement_date, cursor_row.sequence_number, cursor_row.id
+        from stock_movements cursor_row
+        where cursor_row.id = $4::uuid
+      )
+    )
+  order by m.movement_date desc, m.sequence_number desc, m.id desc
+  limit $5::int`;
+
 async function readMovements(
   tx: TransactionSql,
   parameters: {
     readonly userId: string;
     readonly fullScope: boolean;
-    readonly itemId: string | null;
     readonly movementId: string | null;
     readonly cursorId: string | null;
     readonly limit: number | null;
   },
 ): Promise<MovementRow[]> {
-  return tx<MovementRow[]>`
-    select m.id, m.sequence_number, m.production_item_id,
-           i.item_code, i.name as item_name, i.unit,
-           m.movement_type, m.quantity::text as quantity,
-           m.balance_after::text as balance_after,
-           m.movement_date::text as movement_date,
-           m.production_dispatch_id, m.purchase_order_line_id,
-           m.production_job_card_id, m.work_id,
-           case
-             when m.production_dispatch_id is not null then
-               'PP-' || substr(dispatch_card.fy_label, 3, 2) || '-'
-                 || lpad(dispatch_card.sequence_number::text, 3, '0')
-                 || '/D' || dispatch.sequence_number::text
-             when m.purchase_order_line_id is not null then
-               coalesce(purchase_order.po_number, 'Draft purchase order')
-             when m.production_job_card_id is not null then
-               'PP-' || substr(card.fy_label, 3, 2) || '-'
-                 || lpad(card.sequence_number::text, 3, '0')
-             when m.work_id is not null then
-               case
-                 when ${parameters.fullScope} or exists (
-                   select 1 from work_assignments wa
-                   where wa.work_id = m.work_id and wa.user_id = ${parameters.userId}
-                 ) then work.work_code
-                 else null
-               end
-             else null
-           end as source_label,
-           m.reason, m.counterparty, m.created_at
-    from stock_movements m
-    join production_items i on i.id = m.production_item_id
-    left join production_dispatches dispatch on dispatch.id = m.production_dispatch_id
-    left join production_job_cards dispatch_card
-      on dispatch_card.id = dispatch.job_card_id
-    left join purchase_order_lines line on line.id = m.purchase_order_line_id
-    left join purchase_orders purchase_order
-      on purchase_order.id = line.purchase_order_id
-    left join production_job_cards card on card.id = m.production_job_card_id
-    left join works work on work.id = m.work_id
-    where (${parameters.itemId}::uuid is null or m.production_item_id = ${parameters.itemId})
-      and (${parameters.movementId}::uuid is null or m.id = ${parameters.movementId})
-      and (
-        ${parameters.cursorId}::uuid is null
-        or (m.movement_date, m.created_at, m.id) < (
-          select cursor_row.movement_date, cursor_row.created_at, cursor_row.id
-          from stock_movements cursor_row
-          where cursor_row.id = ${parameters.cursorId}
-        )
-      )
-    order by m.movement_date desc, m.created_at desc, m.id desc
-    limit ${parameters.limit}
-  `;
+  return (await tx.unsafe(MOVEMENTS_SQL, [
+    parameters.userId,
+    parameters.fullScope,
+    parameters.movementId,
+    parameters.cursorId,
+    parameters.limit,
+  ])) as unknown as MovementRow[];
 }
 
 /** The one movement a write just created, read back through the same
- * projection every list uses so a posted row and a listed row can never
+ * projection every list uses, so a posted row and a listed row can never
  * render differently. */
 async function readMovement(
   tx: TransactionSql,
   userId: string,
-  fullScope: boolean,
   movementId: string,
 ): Promise<StockMovement> {
   const rows = await readMovements(tx, {
     userId,
-    fullScope,
-    itemId: null,
+    fullScope: await hasFullWorkScope(tx, userId),
     movementId,
     cursorId: null,
     limit: 1,
@@ -408,7 +516,7 @@ function signedQuantity(type: StockMovementType, magnitude: string): string {
 /**
  * The source shape, checked before the row is built.
  *
- * `stock_movements_source_shape_check` refuses the same combinations, and
+ * `stock_movements_source_shape_check` refuses the same combinations and
  * would arrive as a bare 23514 — a 500 with no field named. This is the
  * same rule said in a sentence, at the boundary, where the operator can
  * act on it.
@@ -456,53 +564,41 @@ function assertSourceShape(body: {
   }
 }
 
-/** The organisation's own today, which is what the ledger bounds a
- * movement date against — a movement posted at 00:30 IST is not in the
- * future because a server in UTC thinks it is still yesterday. */
-async function assertNotFutureDated(
-  tx: TransactionSql,
-  organisationId: string,
-  movementDate: string,
-): Promise<void> {
-  const [row] = await tx<{ today: string }[]>`
-    select app_private.organisation_today(${organisationId})::text as today
-  `;
-  const today = row?.today;
-  if (today !== undefined && movementDate > today) {
-    throw httpError(
-      400,
-      'STOCK_MOVEMENT_INVALID',
-      `A stock movement cannot be dated in the future (today is ${today}).`,
-    );
-  }
-}
-
-/** A movement naming a job card or a Work reaches a Work, and a Work is
- * work-scoped even though the shelf is not. Returns the Work the movement
- * touches, so the caller can check it is still operable. */
-async function assertDestinationReachable(
+/** A Work reached by any route — named directly, or through a job card,
+ * or through a purchase order — is a Work this caller must be able to
+ * reach AND one that still accepts operational acts (R8, migration 0031).
+ * Both halves, or the indirect arms become the way round the direct
+ * one. */
+async function assertWorkUsable(
   tx: TransactionSql,
   userId: string,
-  body: { readonly productionJobCardId?: string; readonly workId?: string },
+  workId: string,
+  act: string,
 ): Promise<void> {
-  if (body.workId !== undefined) {
-    await assertWorkAccess(tx, userId, body.workId);
-    const [work] = await tx<{ status: string }[]>`
-      select status from works where id = ${body.workId} and deleted_at is null
-    `;
-    if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-    assertWorkOperable(work.status, 'posting a stock movement');
-    return;
-  }
-  if (body.productionJobCardId === undefined) return;
+  await assertWorkAccess(tx, userId, workId);
+  const [work] = await tx<{ status: string }[]>`
+    select status from works where id = ${workId} and deleted_at is null
+  `;
+  if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  assertWorkOperable(work.status, act);
+}
+
+/** The job card a movement names, with the Work behind it checked the
+ * same way a directly-named Work is. */
+async function assertJobCardUsable(
+  tx: TransactionSql,
+  userId: string,
+  jobCardId: string,
+): Promise<void> {
   const [card] = await tx<{ status: string; work_id: string | null }[]>`
-    select status, work_id from production_job_cards
-    where id = ${body.productionJobCardId}
+    select status, work_id from production_job_cards where id = ${jobCardId}
   `;
   if (!card) {
     throw httpError(404, 'PRODUCTION_JOB_CARD_NOT_FOUND', 'No such job card.');
   }
-  if (card.work_id !== null) await assertWorkAccess(tx, userId, card.work_id);
+  if (card.work_id !== null) {
+    await assertWorkUsable(tx, userId, card.work_id, 'posting a stock movement');
+  }
   if (card.status !== 'planned' && card.status !== 'in_production') {
     throw httpError(
       409,
@@ -535,53 +631,25 @@ export function registerInventoryRoutes(
       const activeOnly = status === 'active';
       return tenant(async (tx) => {
         const cursorId = await cursorRowId(tx, 'production_items', cursor);
-        // Ordered by the register's own sort — category then name, the
-        // mock's `production_items_catalogue_idx` order — with the id
-        // breaking ties so the keyset has a total order to seek on.
-        const rows = (await tx.unsafe(
-          `${STOCK_ITEM_SELECT}
-             and ($2::boolean = false or i.active)
-             and (
-               $3::uuid is null
-               or (lower(i.category), lower(i.name), i.id) > (
-                 select lower(c.category), lower(c.name), c.id
-                 from production_items c where c.id = $3::uuid
-               )
-             )
-           order by lower(i.category), lower(i.name), i.id
-           limit $4::int`,
-          [organisationId, activeOnly, cursorId, sqlLimit(limit)],
-        )) as unknown as StockItemRow[];
-
-        // Register-WIDE, so the stat tiles do not describe one page of a
-        // keyset. Counts of parts rather than the mock's sums of
-        // quantities: see the contract for why adding Nos to Kg is not a
-        // number.
-        const [summary] = (await tx.unsafe(
-          `select
-             count(*) filter (where source.active) as parts_tracked,
-             count(*) filter (
-               where source.active and source.below_reorder_level
-             ) as parts_below_reorder_level,
-             count(*) filter (
-               where source.available::numeric < 0
-             ) as parts_short
-           from (${STOCK_ITEM_SELECT}) source`,
-          [organisationId],
-        )) as unknown as {
-          parts_tracked: string;
-          parts_below_reorder_level: string;
-          parts_short: string;
-        }[];
+        const rows = (await tx.unsafe(REGISTER_SQL, [
+          organisationId,
+          activeOnly,
+          cursorId,
+          sqlLimit(limit),
+        ])) as unknown as RegisterRow[];
 
         const page = keysetPage(rows, limit, (row) => row.id);
+        // The window aggregates ride on every row and describe the whole
+        // register, not the page — so an empty page still has to answer,
+        // and an empty REGISTER answers zero.
+        const totals = rows[0];
         return {
           items: page.rows.map(toStockItem),
           nextCursor: page.nextCursor,
           summary: {
-            partsTracked: Number(summary?.parts_tracked ?? 0),
-            partsBelowReorderLevel: Number(summary?.parts_below_reorder_level ?? 0),
-            partsShort: Number(summary?.parts_short ?? 0),
+            partsTracked: Number(totals?.parts_tracked ?? 0),
+            partsBelowReorderLevel: Number(totals?.parts_below_reorder_level ?? 0),
+            partsShort: Number(totals?.parts_short ?? 0),
           },
         };
       });
@@ -634,18 +702,17 @@ export function registerInventoryRoutes(
       method: 'GET',
       url: '/api/stock/movements',
       schema: {
-        querystring: withKeysetQuery(StockMovementListQuerySchema),
+        querystring: KeysetQuerySchema,
         response: { 200: StockMovementListResponseSchema, ...errorResponses },
       },
     },
     async ({ request, user, tenant }) => {
-      const { limit, cursor, itemId } = request.query;
+      const { limit, cursor } = request.query;
       return tenant(async (tx) => {
         const cursorId = await cursorRowId(tx, 'stock_movements', cursor);
         const rows = await readMovements(tx, {
           userId: user.id,
           fullScope: await hasFullWorkScope(tx, user.id),
-          itemId: itemId ?? null,
           movementId: null,
           cursorId,
           limit: sqlLimit(limit),
@@ -672,22 +739,28 @@ export function registerInventoryRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
       const reason = optionalTrimmed(body.reason) ?? null;
-      const counterparty = optionalTrimmed(body.counterparty) ?? null;
 
       const movement = await tenant(async (tx) => {
         // INSIDE the bound transaction, so the membership wall answers
-        // first. Checked out here it ran before `tenant()` had proved
-        // anything, and a non-member posting a malformed body learned
-        // that the field was malformed — a 400 where every other route
-        // in the product answers 403. Shape refusals are for callers who
-        // are allowed to be here.
+        // first. Checked outside it, a non-member posting a malformed
+        // body learned the body was malformed — a 400 where every other
+        // route answers 403. Shape refusals are for callers allowed to be
+        // here.
         assertSourceShape(body);
         const item = await requireItem(tx, body.productionItemId);
-        await assertNotFutureDated(tx, organisationId, body.movementDate);
-        await assertDestinationReachable(tx, user.id, body);
+        const movementDate = await resolveMovementDate(
+          tx,
+          organisationId,
+          body.movementDate,
+        );
 
-        // A retired part takes nothing more in. Said here so the refusal
-        // names the part; the guard says it again for every other writer.
+        if (body.workId !== undefined) {
+          await assertWorkUsable(tx, user.id, body.workId, 'posting a stock movement');
+        }
+        if (body.productionJobCardId !== undefined) {
+          await assertJobCardUsable(tx, user.id, body.productionJobCardId);
+        }
+
         const inbound =
           body.movementType !== 'issue' && body.movementType !== 'adjustment_out';
         if (!item.active && inbound) {
@@ -714,8 +787,15 @@ export function registerInventoryRoutes(
               'No such purchase order line.',
             );
           }
-          // The order is a Work's document even though the shelf is not.
-          await assertWorkAccess(tx, user.id, line.work_id);
+          // The order is a Work's document even though the shelf is not,
+          // so R8 reaches through it exactly as it reaches through a job
+          // card.
+          await assertWorkUsable(
+            tx,
+            user.id,
+            line.work_id,
+            'receiving against a purchase order',
+          );
           if (line.production_item_id !== body.productionItemId) {
             throw httpError(
               409,
@@ -732,9 +812,9 @@ export function registerInventoryRoutes(
           }
         }
 
-        // The on-hand read is advisory ONLY: it makes the refusal say how
-        // much is actually there. The binding check is the guard's, under
-        // the counter lock, and the column CHECK behind that.
+        // Advisory ONLY: it makes the refusal say how much is actually
+        // there. The binding checks are the guard's, under the counter
+        // lock, and the column CHECK behind that.
         if (!inbound) {
           const [balance] = await tx<{ on_hand: string }[]>`
             select app_private.stock_on_hand(${organisationId}, ${body.productionItemId})::text as on_hand
@@ -749,19 +829,31 @@ export function registerInventoryRoutes(
           }
         }
 
+        const [latest] = await tx<{ movement_date: string | null }[]>`
+          select max(movement_date)::text as movement_date
+          from stock_movements where production_item_id = ${body.productionItemId}
+        `;
+        const lastDate = latest?.movement_date ?? null;
+        if (lastDate !== null && movementDate < lastDate) {
+          throw httpError(
+            409,
+            'STOCK_BACKDATED',
+            `${item.item_code} last moved on ${lastDate}, and the ledger records movements in the order they happen — a movement cannot be dated behind the one before it.`,
+          );
+        }
+
         const [created] = await tx<{ id: string }[]>`
           insert into stock_movements (
             organisation_id, production_item_id, movement_type,
             quantity, movement_date, purchase_order_line_id,
-            production_job_card_id, work_id, reason, counterparty,
-            created_by_user_id
+            production_job_card_id, work_id, reason, created_by_user_id
           )
           values (
             ${organisationId}, ${body.productionItemId}, ${body.movementType},
             ${signedQuantity(body.movementType, body.quantity)},
-            ${body.movementDate}, ${body.purchaseOrderLineId ?? null},
+            ${movementDate}, ${body.purchaseOrderLineId ?? null},
             ${body.productionJobCardId ?? null}, ${body.workId ?? null},
-            ${reason}, ${counterparty}, ${user.id}
+            ${reason}, ${user.id}
           )
           returning id
         `.catch(rethrowWriteRefusal);
@@ -778,19 +870,14 @@ export function registerInventoryRoutes(
             itemCode: item.item_code,
             movementType: body.movementType,
             quantity: signedQuantity(body.movementType, body.quantity),
-            movementDate: body.movementDate,
+            movementDate,
             purchaseOrderLineId: body.purchaseOrderLineId ?? null,
             productionJobCardId: body.productionJobCardId ?? null,
             workId: body.workId ?? null,
             reason,
           },
         );
-        return readMovement(
-          tx,
-          user.id,
-          await hasFullWorkScope(tx, user.id),
-          created.id,
-        );
+        return readMovement(tx, user.id, created.id);
       });
       return reply.status(201).send({ movement });
     },
@@ -807,42 +894,50 @@ export function registerInventoryRoutes(
         },
       },
     },
-    async ({ tenant }) => {
+    async ({ user, tenant }) => {
       const dispatches = await tenant(async (tx) => {
+        const fullScope = await hasFullWorkScope(tx, user.id);
         // A despatch with no stock receipt behind it. Listed because the
         // alternative is a shelf that is quietly understated: production
         // has said the units left the factory, and until somebody takes
-        // them in, the register says they do not exist.
-        return tx<
-          {
-            id: string;
-            fy_label: string;
-            card_sequence: number;
-            dispatch_sequence: number;
-            dispatched_on: string;
-            item_id: string;
-            item_code: string;
-            item_name: string;
-            unit: string;
-            quantity: string;
-          }[]
-        >`
-          select d.id, card.fy_label, card.sequence_number as card_sequence,
-                 d.sequence_number as dispatch_sequence,
-                 d.dispatched_on::text as dispatched_on,
-                 card.item_id, i.item_code, i.name as item_name, i.unit,
-                 count(ds.production_serial_id)::text as quantity
-          from production_dispatches d
-          join production_job_cards card on card.id = d.job_card_id
-          join production_items i on i.id = card.item_id
-          join production_dispatch_serials ds on ds.production_dispatch_id = d.id
-          where not exists (
-            select 1 from stock_movements m where m.production_dispatch_id = d.id
-          )
-          group by d.id, card.fy_label, card.sequence_number, d.sequence_number,
-                   d.dispatched_on, card.item_id, i.item_code, i.name, i.unit
-          order by d.dispatched_on desc, d.id
-        `;
+        // them in the register says they do not exist.
+        //
+        // WORK-SCOPED like every sibling register. A despatch belongs to
+        // a job card, which may belong to a Work; a member who cannot
+        // reach that Work does not get a queue item naming its number. A
+        // card serving a private order has no Work and is visible to
+        // every member, which is the same rule read the other way.
+        return (await tx.unsafe(
+          `select d.id, card.fy_label, card.sequence_number as card_sequence,
+                  d.sequence_number as dispatch_sequence,
+                  d.dispatched_on::text as dispatched_on,
+                  card.item_id, i.item_code, i.name as item_name, i.unit,
+                  count(ds.production_serial_id)::text as quantity
+           from production_dispatches d
+           join production_job_cards card on card.id = d.job_card_id
+           join production_items i on i.id = card.item_id
+           join production_dispatch_serials ds on ds.production_dispatch_id = d.id
+           where not exists (
+             select 1 from stock_movements m where m.production_dispatch_id = d.id
+           )
+             and (card.work_id is null
+                  or ${workVisibleSql('$2', '$1', 'card.work_id')})
+           group by d.id, card.fy_label, card.sequence_number, d.sequence_number,
+                    d.dispatched_on, card.item_id, i.item_code, i.name, i.unit
+           order by d.dispatched_on desc, d.id`,
+          [user.id, fullScope],
+        )) as unknown as {
+          id: string;
+          fy_label: string;
+          card_sequence: number;
+          dispatch_sequence: number;
+          dispatched_on: string;
+          item_id: string;
+          item_code: string;
+          item_name: string;
+          unit: string;
+          quantity: string;
+        }[];
       });
       return {
         dispatches: dispatches.map((row): PendingProductionReceipt => ({
@@ -871,22 +966,27 @@ export function registerInventoryRoutes(
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const body = request.body;
-      const counterparty = optionalTrimmed(body.counterparty) ?? null;
       const movement = await tenant(async (tx) => {
         // PRODUCTION STATES THE QUANTITY. The units are counted from the
         // despatch's own lines rather than typed, exactly as migration
         // 0084 § 7 asks, and the guard counts them again inside the
         // insert so the two cannot drift apart.
         const [dispatch] = await tx<
-          { item_id: string; item_code: string; units: string }[]
+          {
+            item_id: string;
+            item_code: string;
+            units: string;
+            work_id: string | null;
+          }[]
         >`
-          select card.item_id, i.item_code, count(ds.production_serial_id)::text as units
+          select card.item_id, i.item_code, card.work_id,
+                 count(ds.production_serial_id)::text as units
           from production_dispatches d
           join production_job_cards card on card.id = d.job_card_id
           join production_items i on i.id = card.item_id
           join production_dispatch_serials ds on ds.production_dispatch_id = d.id
           where d.id = ${body.productionDispatchId}
-          group by card.item_id, i.item_code
+          group by card.item_id, i.item_code, card.work_id
         `;
         if (!dispatch) {
           throw httpError(
@@ -895,7 +995,22 @@ export function registerInventoryRoutes(
             'No such despatch, or it released no units.',
           );
         }
-        await assertNotFutureDated(tx, organisationId, body.movementDate);
+        // The read above is work-scoped on the list; the write is scoped
+        // here, so a despatch a member cannot see is also one they cannot
+        // receive by guessing its id.
+        if (dispatch.work_id !== null) {
+          await assertWorkUsable(
+            tx,
+            user.id,
+            dispatch.work_id,
+            'taking a despatch into stock',
+          );
+        }
+        const movementDate = await resolveMovementDate(
+          tx,
+          organisationId,
+          body.movementDate,
+        );
 
         const [existing] = await tx<{ id: string }[]>`
           select id from stock_movements
@@ -912,13 +1027,12 @@ export function registerInventoryRoutes(
         const [created] = await tx<{ id: string }[]>`
           insert into stock_movements (
             organisation_id, production_item_id, movement_type,
-            quantity, movement_date, production_dispatch_id,
-            counterparty, created_by_user_id
+            quantity, movement_date, production_dispatch_id, created_by_user_id
           )
           values (
             ${organisationId}, ${dispatch.item_id}, 'production_receipt',
-            ${dispatch.units}, ${body.movementDate},
-            ${body.productionDispatchId}, ${counterparty}, ${user.id}
+            ${dispatch.units}, ${movementDate},
+            ${body.productionDispatchId}, ${user.id}
           )
           returning id
         `.catch(rethrowWriteRefusal);
@@ -935,15 +1049,10 @@ export function registerInventoryRoutes(
             itemCode: dispatch.item_code,
             productionDispatchId: body.productionDispatchId,
             quantity: dispatch.units,
-            movementDate: body.movementDate,
+            movementDate,
           },
         );
-        return readMovement(
-          tx,
-          user.id,
-          await hasFullWorkScope(tx, user.id),
-          created.id,
-        );
+        return readMovement(tx, user.id, created.id);
       });
       return reply.status(201).send({ movement });
     },
@@ -963,158 +1072,153 @@ export function registerInventoryRoutes(
         // One row per PART, with its contributing job cards nested — see
         // the contract for why the mock's row-per-(plan, part) with a
         // checkbox on each is an order placed twice.
-        const rows = await tx<
-          {
-            item_id: string;
-            item_code: string;
-            name: string;
-            unit: string;
-            required: string;
-            on_hand: string;
-            shortage: string;
-            job_cards: {
-              id: string;
-              number: string;
-              workId: string | null;
-              workCode: string | null;
-              required: string;
-            }[];
-          }[]
-        >`
-          with requirement as (
-            select r.job_card_id, r.component_item_id, r.required
-            from app_private.stock_outstanding_requirement(${organisationId}) r
-          ),
-          per_item as (
-            select requirement.component_item_id,
-                   sum(requirement.required) as required,
-                   app_private.stock_on_hand(
-                     ${organisationId}, requirement.component_item_id
-                   ) as on_hand
-            from requirement
-            group by requirement.component_item_id
-          )
-          select per_item.component_item_id as item_id, i.item_code, i.name, i.unit,
-                 per_item.required::text as required,
-                 per_item.on_hand::text as on_hand,
-                 (per_item.required - per_item.on_hand)::text as shortage,
-                 (
-                   select coalesce(
-                     json_agg(
-                       json_build_object(
-                         'id', card.id,
-                         'number', 'PP-' || substr(card.fy_label, 3, 2) || '-'
-                           || lpad(card.sequence_number::text, 3, '0'),
-                         'workId', case
-                           when card.work_id is null then null
-                           when ${fullScope} or exists (
-                             select 1 from work_assignments wa
-                             where wa.work_id = card.work_id and wa.user_id = ${user.id}
-                           ) then card.work_id::text
-                           else null
-                         end,
-                         'workCode', case
-                           when card.work_id is null then null
-                           when ${fullScope} or exists (
-                             select 1 from work_assignments wa
-                             where wa.work_id = card.work_id and wa.user_id = ${user.id}
-                           ) then w.work_code
-                           else null
-                         end,
-                         'required', contribution.required::text
-                       )
-                       order by card.due_date, card.id
-                     ),
-                     '[]'::json
-                   )
-                   from requirement contribution
-                   join production_job_cards card on card.id = contribution.job_card_id
-                   left join works w on w.id = card.work_id
-                   where contribution.component_item_id = per_item.component_item_id
-                 ) as job_cards
-          from per_item
-          join production_items i on i.id = per_item.component_item_id
-          where per_item.required > per_item.on_hand
-          order by i.item_code
-        `;
+        //
+        // THREE THINGS COME OFF, and the last two are netted here rather
+        // than inside the requirement function because they are facts
+        // about the PART: what is on the shelf, and what is already on
+        // order. Netted per card instead, two cards would each subtract
+        // the same shelf and the same lorry.
+        const rows = (await tx.unsafe(
+          `with requirement as (
+             select r.job_card_id, r.component_item_id, r.required
+             from app_private.stock_outstanding_requirement($3::uuid) r
+             where r.required > 0
+           ),
+           per_item as (
+             select requirement.component_item_id,
+                    sum(requirement.required) as required,
+                    app_private.stock_on_hand(
+                      $3::uuid, requirement.component_item_id
+                    ) as on_hand,
+                    coalesce((
+                      select sum(greatest(pol.quantity - ${RECEIVED_ON_LINE}, 0))
+                      from purchase_order_lines pol
+                      join purchase_orders po on po.id = pol.purchase_order_id
+                      where pol.production_item_id = requirement.component_item_id
+                        and po.status in ('draft', 'issued')
+                    ), 0)::quantity_amount as on_order
+             from requirement
+             group by requirement.component_item_id
+           )
+           select per_item.component_item_id as item_id, i.item_code, i.name, i.unit,
+                  per_item.required::text as required,
+                  per_item.on_hand::text as on_hand,
+                  per_item.on_order::text as on_order,
+                  (per_item.required - per_item.on_hand - per_item.on_order)::text
+                    as shortage,
+                  (
+                    select coalesce(
+                      json_agg(
+                        json_build_object(
+                          'id', card.id,
+                          'number', 'PP-' || substr(card.fy_label, 3, 2) || '-'
+                            || lpad(card.sequence_number::text, 3, '0'),
+                          'workId', case
+                            when card.work_id is null then null
+                            when ${workVisibleSql('$2', '$1', 'card.work_id')}
+                              then card.work_id::text
+                            else null
+                          end,
+                          'workCode', case
+                            when card.work_id is null then null
+                            when ${workVisibleSql('$2', '$1', 'card.work_id')}
+                              then w.work_code
+                            else null
+                          end,
+                          'required', contribution.required::text
+                        )
+                        order by card.due_date, card.id
+                      ),
+                      '[]'::json
+                    )
+                    from requirement contribution
+                    join production_job_cards card on card.id = contribution.job_card_id
+                    left join works w on w.id = card.work_id
+                    where contribution.component_item_id = per_item.component_item_id
+                  ) as job_cards
+           from per_item
+           join production_items i on i.id = per_item.component_item_id
+           where per_item.required > per_item.on_hand + per_item.on_order
+           order by i.item_code`,
+          [user.id, fullScope, organisationId],
+        )) as unknown as {
+          item_id: string;
+          item_code: string;
+          name: string;
+          unit: string;
+          required: string;
+          on_hand: string;
+          on_order: string;
+          shortage: string;
+          job_cards: StockShortage['jobCards'];
+        }[];
 
-        // The screen's right-hand column. Work-scoped, because a purchase
-        // order is a Work's document even though the shortage that caused
-        // it is the organisation's.
-        const orders = await tx<
-          {
-            id: string;
-            work_id: string;
-            po_number: string | null;
-            status: string;
-            vendor_designation: string;
-            po_date: string;
-            expected_on: string | null;
-            job_card_numbers: string[];
-            lines: {
-              productionItemId: string;
-              itemCode: string;
-              name: string;
-              unit: string;
-              ordered: string;
-              received: string;
-            }[];
-          }[]
-        >`
-          select po.id, po.work_id, po.po_number, po.status,
-                 coalesce(po.vendor_snapshot->>'designation', c.designation)
-                   as vendor_designation,
-                 po.po_date::text as po_date,
-                 po.expected_on::text as expected_on,
-                 (
-                   select coalesce(array_agg(distinct
-                     'PP-' || substr(card.fy_label, 3, 2) || '-'
-                       || lpad(card.sequence_number::text, 3, '0')
-                   ), '{}')
-                   from purchase_order_lines pol
-                   join production_job_cards card
-                     on card.id = pol.production_job_card_id
-                   where pol.purchase_order_id = po.id
-                 ) as job_card_numbers,
-                 (
-                   select coalesce(
-                     json_agg(
-                       json_build_object(
-                         'productionItemId', pol.production_item_id,
-                         'itemCode', i.item_code,
-                         'name', i.name,
-                         'unit', i.unit,
-                         'ordered', pol.quantity::text,
-                         'received', coalesce((
-                           select sum(m.quantity)
-                           from stock_movements m
-                           where m.purchase_order_line_id = pol.id
-                         ), 0)::text
-                       )
-                       order by pol.line_number
-                     ),
-                     '[]'::json
-                   )
-                   from purchase_order_lines pol
-                   join production_items i on i.id = pol.production_item_id
-                   where pol.purchase_order_id = po.id
-                     and pol.production_item_id is not null
-                 ) as lines
-          from purchase_orders po
-          join contacts c on c.id = po.vendor_contact_id
-          where po.status in ('draft', 'issued')
-            and exists (
-              select 1 from purchase_order_lines pol
-              where pol.purchase_order_id = po.id
-                and pol.production_job_card_id is not null
-            )
-            and (${fullScope} or exists (
-              select 1 from work_assignments wa
-              where wa.work_id = po.work_id and wa.user_id = ${user.id}
-            ))
-          order by po.po_date desc, po.id
-          limit 50
-        `;
+        // The screen's right-hand column, work-scoped: a purchase order is
+        // a Work's document even though the shortage that caused it is the
+        // organisation's. Over-fetched by one so the screen can say the
+        // column is not the whole of it rather than quietly ending.
+        const orders = (await tx.unsafe(
+          `select po.id, po.work_id, po.po_number, po.status,
+                  coalesce(po.vendor_snapshot->>'designation', c.designation)
+                    as vendor_designation,
+                  po.po_date::text as po_date,
+                  po.expected_on::text as expected_on,
+                  (
+                    select coalesce(array_agg(distinct
+                      'PP-' || substr(card.fy_label, 3, 2) || '-'
+                        || lpad(card.sequence_number::text, 3, '0')
+                    ), '{}')
+                    from purchase_order_lines pol
+                    join production_job_cards card
+                      on card.id = pol.production_job_card_id
+                    where pol.purchase_order_id = po.id
+                  ) as job_card_numbers,
+                  (
+                    select coalesce(
+                      json_agg(
+                        json_build_object(
+                          'id', pol.id,
+                          'productionItemId', pol.production_item_id,
+                          'itemCode', i.item_code,
+                          'name', i.name,
+                          'unit', i.unit,
+                          'ordered', pol.quantity::text,
+                          'received', ${RECEIVED_ON_LINE}::text,
+                          'outstanding',
+                            greatest(pol.quantity - ${RECEIVED_ON_LINE}, 0)::text
+                        )
+                        order by pol.line_number
+                      ),
+                      '[]'::json
+                    )
+                    from purchase_order_lines pol
+                    join production_items i on i.id = pol.production_item_id
+                    where pol.purchase_order_id = po.id
+                      and pol.production_item_id is not null
+                  ) as lines
+           from purchase_orders po
+           join contacts c on c.id = po.vendor_contact_id
+           where po.status in ('draft', 'issued')
+             and exists (
+               select 1 from purchase_order_lines pol
+               where pol.purchase_order_id = po.id
+                 and pol.production_job_card_id is not null
+             )
+             and ${workVisibleSql('$2', '$1', 'po.work_id')}
+           order by po.po_date desc, po.id
+           limit $3::int`,
+          [user.id, fullScope, SHORTAGE_ORDER_PAGE + 1],
+        )) as unknown as {
+          id: string;
+          work_id: string;
+          po_number: string | null;
+          status: string;
+          vendor_designation: string;
+          po_date: string;
+          expected_on: string | null;
+          job_card_numbers: string[];
+          lines: ShortagePurchaseOrder['lines'];
+        }[];
 
         return {
           shortages: rows.map((row): StockShortage => ({
@@ -1124,20 +1228,24 @@ export function registerInventoryRoutes(
             unit: row.unit,
             required: row.required,
             onHand: row.on_hand,
+            onOrder: row.on_order,
             shortage: row.shortage,
             jobCards: row.job_cards,
           })),
-          purchaseOrders: orders.map((row): ShortagePurchaseOrder => ({
-            id: row.id,
-            workId: row.work_id,
-            poNumber: row.po_number,
-            status: row.status,
-            vendorDesignation: row.vendor_designation,
-            poDate: row.po_date,
-            expectedOn: row.expected_on,
-            jobCardNumbers: row.job_card_numbers,
-            lines: row.lines,
-          })),
+          purchaseOrders: orders
+            .slice(0, SHORTAGE_ORDER_PAGE)
+            .map((row): ShortagePurchaseOrder => ({
+              id: row.id,
+              workId: row.work_id,
+              poNumber: row.po_number,
+              status: row.status,
+              vendorDesignation: row.vendor_designation,
+              poDate: row.po_date,
+              expectedOn: row.expected_on,
+              jobCardNumbers: row.job_card_numbers,
+              lines: row.lines,
+            })),
+          purchaseOrdersTruncated: orders.length > SHORTAGE_ORDER_PAGE,
         };
       });
     },
@@ -1172,7 +1280,7 @@ export function registerInventoryRoutes(
           throw httpError(404, 'PRODUCTION_JOB_CARD_NOT_FOUND', 'No such job card.');
         }
         // A purchase order belongs to a Work, and 0033 says so with a NOT
-        // NULL column, a per-Work counter and a per-Work authorization
+        // NULL column, a per-Work counter and a per-Work authorisation
         // check. A job card serving a private purchase order has no Work
         // to raise one against; migration 0087's header records why
         // relaxing that is its own pack.
@@ -1219,35 +1327,48 @@ export function registerInventoryRoutes(
           );
         }
 
-        // THE QUANTITY IS THE SERVER'S. The request names parts, never
-        // amounts: the shortage is recomputed here, inside the same
-        // transaction that writes the lines, so what is ordered is what
-        // was short at the moment of ordering rather than what a screen
-        // was showing some seconds ago.
-        const shortages = await tx<
-          {
-            item_id: string;
-            item_code: string;
-            unit: string;
-            name: string;
-            shortage: string;
-          }[]
-        >`
-          with requirement as (
-            select r.component_item_id, sum(r.required) as required
-            from app_private.stock_outstanding_requirement(${organisationId}) r
-            group by r.component_item_id
-          )
-          select i.id as item_id, i.item_code, i.unit, i.name,
-                 (requirement.required
-                   - app_private.stock_on_hand(${organisationId}, i.id))::text as shortage
-          from requirement
-          join production_items i on i.id = requirement.component_item_id
-          where i.id = any(${body.productionItemIds}::uuid[])
-            and requirement.required
-                > app_private.stock_on_hand(${organisationId}, i.id)
-          order by i.item_code
-        `;
+        // THE QUANTITY IS THE SERVER'S, and it is the same arithmetic the
+        // screen displayed: requirement less shelf less what is already on
+        // order, recomputed inside the transaction that writes the lines.
+        // A client-supplied amount would be a second authority on a number
+        // the screen only ever showed.
+        const shortages = (await tx.unsafe(
+          `with requirement as (
+             select r.component_item_id, sum(r.required) as required
+             from app_private.stock_outstanding_requirement($1::uuid) r
+             group by r.component_item_id
+           )
+           select i.id as item_id, i.item_code, i.unit, i.name,
+                  (requirement.required
+                    - app_private.stock_on_hand($1::uuid, i.id)
+                    - coalesce((
+                        select sum(greatest(pol.quantity - ${RECEIVED_ON_LINE}, 0))
+                        from purchase_order_lines pol
+                        join purchase_orders po on po.id = pol.purchase_order_id
+                        where pol.production_item_id = i.id
+                          and po.status in ('draft', 'issued')
+                      ), 0))::text as shortage
+           from requirement
+           join production_items i on i.id = requirement.component_item_id
+           where i.id = any($2::uuid[])
+             and requirement.required
+                 > app_private.stock_on_hand($1::uuid, i.id)
+                   + coalesce((
+                       select sum(greatest(pol.quantity - ${RECEIVED_ON_LINE}, 0))
+                       from purchase_order_lines pol
+                       join purchase_orders po on po.id = pol.purchase_order_id
+                       where pol.production_item_id = i.id
+                         and po.status in ('draft', 'issued')
+                     ), 0)
+           order by i.item_code`,
+          [organisationId, body.productionItemIds],
+        )) as unknown as {
+          item_id: string;
+          item_code: string;
+          unit: string;
+          name: string;
+          shortage: string;
+        }[];
         const found = new Set(shortages.map((row) => row.item_id));
         const missing = body.productionItemIds.filter((id) => !found.has(id));
         if (missing.length > 0) {
@@ -1258,32 +1379,39 @@ export function registerInventoryRoutes(
           );
         }
 
-        const [order] = await tx<{ id: string }[]>`
-          insert into purchase_orders (
-            organisation_id, work_id, vendor_contact_id, po_date, expected_on,
-            created_by_user_id
-          )
-          values (
-            ${organisationId}, ${workId}, ${body.vendorContactId}, ${body.poDate},
-            ${body.expectedOn ?? null}, ${user.id}
-          )
-          returning id
-        `;
-        if (!order) throw new Error('purchase order insert returned no row');
+        const orderId = await createPurchaseOrderDraft(
+          tx,
+          {
+            organisationId,
+            userId: user.id,
+            workId,
+            vendorContactId: body.vendorContactId,
+            poDate: body.poDate,
+            expectedOn: body.expectedOn ?? null,
+          },
+          {
+            raisedFromShortage: true,
+            jobCardId: body.jobCardId,
+            lines: shortages.map((row) => ({
+              productionItemId: row.item_id,
+              itemCode: row.item_code,
+              quantity: row.shortage,
+            })),
+          },
+        );
 
         // NIL RATES, deliberately. The shortage screen knows what to buy
         // and not what it costs — the mock's screen has no price field
         // either — so the draft carries the quantities and the existing
         // purchase-order editor is where rates, terms and the vendor are
-        // settled before it is issued. `line_amount` is the product of
-        // the two, computed in SQL like every other line amount.
+        // settled before it is issued.
         await tx`
           insert into purchase_order_lines (
             organisation_id, purchase_order_id, production_item_id,
             production_job_card_id, line_number, description, unit_code,
             quantity, rate, line_amount
           )
-          select ${organisationId}, ${order.id}, l.item_id, ${body.jobCardId},
+          select ${organisationId}, ${orderId}, l.item_id, ${body.jobCardId},
                  l.line_number, l.description, l.unit_code, l.quantity, 0,
                  0::numeric(18,2)
           from unnest(
@@ -1295,27 +1423,7 @@ export function registerInventoryRoutes(
           ) as l(item_id, line_number, description, unit_code, quantity)
         `;
 
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'purchase_order.created',
-          'purchase_orders',
-          order.id,
-          {
-            workId,
-            vendorContactId: body.vendorContactId,
-            poDate: body.poDate,
-            raisedFromShortage: true,
-            jobCardId: body.jobCardId,
-            lines: shortages.map((row) => ({
-              productionItemId: row.item_id,
-              itemCode: row.item_code,
-              quantity: row.shortage,
-            })),
-          },
-        );
-        return readPurchaseOrderDetail(tx, order.id);
+        return readPurchaseOrderDetail(tx, orderId);
       });
       return reply.status(201).send(detail);
     },

@@ -1866,7 +1866,14 @@ export interface ApiClient {
    * one shelf serves every contract. The register's balances and the
    * shortage list are derived server-side on every read — there is no
    * stored balance to go stale, and nothing here posts one. */
-  readonly listStockItems: (organisationId: string) => Promise<StockRegisterResponse>;
+  readonly listStockItems: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly status?: 'all' | 'active';
+    },
+  ) => Promise<StockRegisterResponse>;
   readonly setStockReorderLevel: (
     organisationId: string,
     itemId: string,
@@ -1874,7 +1881,7 @@ export interface ApiClient {
   ) => Promise<StockItemResponse>;
   readonly listStockMovements: (
     organisationId: string,
-    itemId?: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
   ) => Promise<StockMovementListResponse>;
   readonly postStockMovement: (
     organisationId: string,
@@ -4401,8 +4408,15 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         { method: 'PATCH', body, organisationId },
       );
     },
-    async listStockItems(organisationId) {
-      return request<StockRegisterResponse>('/api/stock/items', { organisationId });
+    async listStockItems(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<StockRegisterResponse>(`/api/stock/items${suffix}`, {
+        organisationId,
+      });
     },
     async setStockReorderLevel(organisationId, itemId, body) {
       return request<StockItemResponse>(`/api/stock/items/${itemId}/reorder-level`, {
@@ -4411,9 +4425,12 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
-    async listStockMovements(organisationId, itemId) {
-      const query = itemId === undefined ? '' : `?itemId=${itemId}`;
-      return request<StockMovementListResponse>(`/api/stock/movements${query}`, {
+    async listStockMovements(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<StockMovementListResponse>(`/api/stock/movements${suffix}`, {
         organisationId,
       });
     },

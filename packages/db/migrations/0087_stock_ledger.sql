@@ -72,6 +72,30 @@ SET LOCAL statement_timeout = '5min';
 -- index seek rather than a sum over the item's whole history.
 --
 -- ---------------------------------------------------------------------
+-- TIME ONLY RUNS FORWARD, PER PART. This is what makes the cache above
+-- true rather than merely tidy.
+--
+-- `balance_after` is the running total in POSTING order. A movement
+-- backdated behind the part's last movement would be posted after it and
+-- dated before it, and every row already written would then be a running
+-- total that skipped a movement dated earlier than itself. Nothing is
+-- corrupt in the sum — it still adds up — but the column stops meaning
+-- "the balance on this date", which is the only thing a reader of a
+-- ledger wants it for. Worse, a report that ordered by date would show
+-- the balance going backwards for no visible reason.
+--
+-- So a movement may not be dated before the last movement of the SAME
+-- part (23F04). Per part, not per organisation: two parts have unrelated
+-- histories and one shelf's late paperwork must not stop another's.
+--
+-- The consequence is deliberate and worth stating plainly: late paperwork
+-- is posted at TODAY'S date, not at the date on the docket. That is what
+-- an append-only ledger is — the day the shelf changed is the day the
+-- change was recorded, and the docket's own date belongs in the reason
+-- text. The alternative is a `balance_after` nobody can read, and the
+-- whole design rests on that column being readable.
+--
+-- ---------------------------------------------------------------------
 -- NEGATIVE STOCK IS REFUSED. Decided, not left open.
 --
 -- An issue that would take a balance below zero is refused, and the
@@ -190,6 +214,8 @@ SET LOCAL statement_timeout = '5min';
 --   23F01  the movement would take the balance below zero
 --   23F02  the movement's source document does not admit it
 --   23F03  the ledger row cannot be written this way
+--   23F04  the movement is dated before the part's last movement
+--   23F05  the purchase order line is received on the other channel
 --
 -- ---------------------------------------------------------------------
 -- LOCK ORDER. `routes/inspections.ts` declares the product's ordering as
@@ -345,12 +371,13 @@ CREATE TABLE stock_movements (
     reason IS NULL
     OR (btrim(reason) = reason AND length(reason) BETWEEN 3 AND 500)
   ),
-  -- The supplier or receiver as the paperwork names them. The mock's
-  -- "Supplier / receiver" field, optional on every type.
-  counterparty text CHECK (
-    counterparty IS NULL
-    OR (btrim(counterparty) = counterparty AND length(counterparty) BETWEEN 2 AND 200)
-  ),
+  -- NO `counterparty`. The mock collects a "Supplier / receiver" on its
+  -- movement dialog, and this migration carried the column for one round
+  -- before the review pointed out that nothing writes it: a receipt names
+  -- the purchase order line, which names the vendor, and an issue names
+  -- the job card or the Work. A free-text party beside a document that
+  -- already identifies one is a second answer to the same question, and
+  -- the one an operator retypes is the one that goes stale.
 
   created_by_user_id text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -430,17 +457,23 @@ CREATE UNIQUE INDEX stock_movements_item_position
 
 -- The register's "Recent movements" list, newest first across every item.
 --
--- THREE COLUMNS, and the middle one is load-bearing. A movement is dated
--- by the operator and several land on one date routinely — an opening
--- count and the first issue against it, most obviously — so
--- (movement_date, id) leaves same-day rows tie-broken by a RANDOM uuid.
--- That is not merely arbitrary: it puts the issue above the receipt that
--- funded it about half the time, on a ledger whose whole job is to show
--- what happened in what order. `created_at` is the order the ledger
--- actually recorded them in, and the id still closes the key so the
--- keyset has a total order to seek on.
+-- THE MIDDLE COLUMN IS THE POSTING ORDER, and it is `sequence_number`
+-- rather than `created_at`. Several movements land on one date routinely
+-- — an opening count and the first issue against it — so (movement_date,
+-- id) would tie-break them on a RANDOM uuid and put the issue above the
+-- receipt that funded it about half the time.
+--
+-- `created_at` looks like the fix and is not: it defaults to `now()`,
+-- which in PostgreSQL is the TRANSACTION START time. Two overlapping
+-- transactions commit in one order and carry timestamps in the other, so
+-- it is not monotonic with respect to the order the ledger actually
+-- accepted the rows. `sequence_number` is: it is claimed from the
+-- per-item counter under that counter's lock, so within one part it IS
+-- the posting order, by construction. Across parts it is only a
+-- deterministic tie-break, which is all a mixed list needs; the id closes
+-- the key so the keyset has a total order to seek on.
 CREATE INDEX stock_movements_register_idx
-  ON stock_movements (organisation_id, movement_date, created_at, id);
+  ON stock_movements (organisation_id, movement_date, sequence_number, id);
 
 -- A despatch is received into stock exactly once. NULLs are distinct in
 -- PostgreSQL, so this is also the non-partial leading index the foreign
@@ -521,10 +554,13 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   item_active boolean;
+  latest_date date;
   released integer;
   line_item uuid;
   order_status text;
+  order_work uuid;
   card_status text;
+  card_work uuid;
   work_status text;
   previous quantity_amount;
 BEGIN
@@ -567,6 +603,22 @@ BEGIN
       USING ERRCODE = '23F03';
   END IF;
 
+  -- TIME ONLY RUNS FORWARD, PER PART (see the header). Read under the
+  -- counter lock taken above, so two writers cannot both pass this and
+  -- then post out of order — which is exactly the race that would leave a
+  -- running total dated behind the row before it.
+  SELECT max(m.movement_date) INTO latest_date
+  FROM stock_movements m
+  WHERE m.organisation_id = NEW.organisation_id
+    AND m.production_item_id = NEW.production_item_id;
+
+  IF latest_date IS NOT NULL AND NEW.movement_date < latest_date THEN
+    RAISE EXCEPTION
+      'item % last moved on %, so a movement dated % cannot be posted behind it',
+      NEW.production_item_id, latest_date, NEW.movement_date
+      USING ERRCODE = '23F04';
+  END IF;
+
   IF NEW.movement_type = 'production_receipt' THEN
     -- PRODUCTION STATES THE QUANTITY, NOT THE OPERATOR. 0084 § 7: "The
     -- quantity received equals the number of production_dispatch_serials
@@ -597,13 +649,21 @@ BEGIN
     END IF;
 
   ELSIF NEW.movement_type = 'purchase_receipt' THEN
-    SELECT pol.production_item_id, po.status INTO line_item, order_status
+    -- FOR SHARE OF po: the status decides whether this receipt is allowed
+    -- at all, so it must not change under the transaction that read it. A
+    -- share lock is the right strength — this path never writes the
+    -- order, it only depends on it staying issued — and it blocks the
+    -- cancel and close paths, which take the row FOR UPDATE, until this
+    -- movement commits.
+    SELECT pol.production_item_id, po.status, po.work_id
+      INTO line_item, order_status, order_work
     FROM purchase_order_lines pol
     JOIN purchase_orders po
       ON po.organisation_id = pol.organisation_id
      AND po.id = pol.purchase_order_id
     WHERE pol.organisation_id = NEW.organisation_id
-      AND pol.id = NEW.purchase_order_line_id;
+      AND pol.id = NEW.purchase_order_line_id
+    FOR SHARE OF po;
 
     -- A line that names no part cannot be received into stock: its
     -- quantity is in whatever unit somebody typed, against a contract
@@ -627,8 +687,24 @@ BEGIN
         USING ERRCODE = '23F02';
     END IF;
 
+    -- R8 reaches through the order. A receipt against a completed Work's
+    -- purchase order is an operational act on that Work, and the direct
+    -- `work_id` arm below already refuses one; the indirect route must
+    -- not be the way around it.
+    SELECT w.status INTO work_status
+    FROM works w
+    WHERE w.organisation_id = NEW.organisation_id
+      AND w.id = order_work AND w.deleted_at IS NULL;
+
+    IF work_status IS DISTINCT FROM 'active' THEN
+      RAISE EXCEPTION
+        'purchase order line % belongs to work %, which is %',
+        NEW.purchase_order_line_id, order_work, coalesce(work_status, 'missing')
+        USING ERRCODE = '23F02';
+    END IF;
+
   ELSIF NEW.production_job_card_id IS NOT NULL THEN
-    SELECT status INTO card_status
+    SELECT status, work_id INTO card_status, card_work
     FROM production_job_cards
     WHERE organisation_id = NEW.organisation_id
       AND id = NEW.production_job_card_id;
@@ -642,6 +718,23 @@ BEGIN
         'job card % is % and takes no stock movement',
         NEW.production_job_card_id, coalesce(card_status, 'missing')
         USING ERRCODE = '23F02';
+    END IF;
+
+    -- R8 through the job card. A card serving a private purchase order
+    -- has no Work and nothing to check; one serving a Work is bound by
+    -- that Work's state exactly as the direct arm below is.
+    IF card_work IS NOT NULL THEN
+      SELECT w.status INTO work_status
+      FROM works w
+      WHERE w.organisation_id = NEW.organisation_id
+        AND w.id = card_work AND w.deleted_at IS NULL;
+
+      IF work_status IS DISTINCT FROM 'active' THEN
+        RAISE EXCEPTION
+          'job card % serves work %, which is %',
+          NEW.production_job_card_id, card_work, coalesce(work_status, 'missing')
+          USING ERRCODE = '23F02';
+      END IF;
     END IF;
 
   ELSIF NEW.work_id IS NOT NULL THEN
@@ -684,7 +777,7 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_stock_movement() IS
-  'Allocates the ledger position, which is also the per-item mutex; binds a receipt to the despatch or purchase order line that admits it and a movement to a live job card or Work; computes balance_after from the previous row under that mutex; and refuses a movement that would take the balance below zero.';
+  'Allocates the ledger position, which is also the per-item mutex; refuses a movement dated ahead of the organisation''s today or behind the part''s own last movement; binds a receipt to the despatch or purchase order line that admits it and a movement to a live job card or Work, reaching through both to the Work behind them; computes balance_after from the previous row under that mutex; and refuses a movement that would take the balance below zero.';
 
 CREATE TRIGGER stock_movements_guard_write
 BEFORE INSERT ON stock_movements
@@ -726,41 +819,124 @@ CREATE INDEX purchase_order_lines_production_job_card_idx
   ON purchase_order_lines (organisation_id, production_job_card_id);
 
 -- ---------------------------------------------------------------------
--- 7. The bill-of-material explosion, and the shortage it feeds.
+-- 6b. ONE LINE, ONE RECEIPT CHANNEL.
 --
--- The subtraction 0084 could not finish. One function, so the number on
--- the stock register's "Committed" column, the number the shortage
--- screen orders against, and the number a job card's material list shows
--- are one arithmetic rather than three.
+-- Material now reaches a purchase order two ways — a delivery challan
+-- passing it on to site, and a stock receipt putting it on a shelf — and
+-- a line's received quantity is read from exactly ONE of them
+-- (`receivedQuantitySql`, apps/server/src/routes/shared.ts). Which one is
+-- decided by `production_item_id`: a line that names a part is
+-- stock-received, a line that does not is challan-received.
 --
--- WHAT IS OUTSTANDING. A job card that has planned twelve units and
--- serialised six still needs material for six. The requirement is
--- therefore the per-unit explosion times the units NOT YET BUILT, not
--- times the planned quantity — the material for the six that exist has
--- already been consumed, and counting it again would order it twice.
+-- That is a declaration made when the line is written, which is what
+-- makes it safe to read one channel and ignore the other. What it is not,
+-- on its own, is enforced: nothing yet stopped a delivery challan item
+-- from pointing at a line that names a part, and the quantity on that
+-- challan would then be counted by nobody. Not double-counted — WORSE.
+-- Silently dropped, on the arithmetic that decides whether an order may
+-- be closed.
 --
--- WHY THE EXPLOSION IS GROSS. Every level's requirement is the parent's
--- requirement times the edge quantity, all the way down, with no netting
--- of a sub-assembly's own stock against its children. That is the mock's
--- own `explodeBom`, and it over-orders: ninety-six finished LED boards
--- on the shelf do not reduce the driver ICs this asks for.
+-- So the link is refused at the layer no writer goes around. The reverse
+-- direction needs no guard: a stock receipt already has to name the
+-- line's own part, and a challan-channel line has no part to name.
+-- ---------------------------------------------------------------------
+CREATE FUNCTION app_private.guard_challan_line_receipt_channel()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  line_item uuid;
+BEGIN
+  IF NEW.purchase_order_line_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT pol.production_item_id INTO line_item
+  FROM purchase_order_lines pol
+  WHERE pol.organisation_id = NEW.organisation_id
+    AND pol.id = NEW.purchase_order_line_id;
+
+  IF line_item IS NOT NULL THEN
+    RAISE EXCEPTION
+      'purchase order line % buys a part and is received into stock, so a delivery challan cannot receive it',
+      NEW.purchase_order_line_id
+      USING ERRCODE = '23F05';
+  END IF;
+
+  RETURN NEW;
+END
+$$;
+
+COMMENT ON FUNCTION app_private.guard_challan_line_receipt_channel() IS
+  'Holds one receipt channel per purchase order line: a line naming a part is received into stock, so a delivery challan item may not also claim it. Without this the challan''s quantity would be counted by neither channel and an order could never close.';
+
+CREATE TRIGGER delivery_challan_items_receipt_channel
+BEFORE INSERT OR UPDATE OF purchase_order_line_id ON delivery_challan_items
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_challan_line_receipt_channel();
+
+-- ---------------------------------------------------------------------
+-- 7. What the open job cards still need.
+--
+-- The subtraction 0084 could not finish. ONE function, so the stock
+-- register's "Committed" column, the shortage screen's requirement, and
+-- the quantity a purchase order is drafted for are one arithmetic rather
+-- than three that can disagree.
+--
+-- THREE THINGS COME OFF THE GROSS BILL OF MATERIAL, in this order.
+--
+--   1. UNITS ALREADY BUILT. A card that planned twelve and serialised six
+--      needs material for six. The material for the other six is inside
+--      them.
+--
+--   2. MATERIAL ALREADY ISSUED TO THIS CARD. This is the netting the
+--      first review found missing, and it is the one that actually costs
+--      money: material issued to the shop floor has LEFT the shelf — the
+--      ledger already decremented it — so counting it as still required
+--      demands it a second time, and the shortage screen orders a second
+--      set of parts that are sitting on the bench. Issues net, returns
+--      un-net, which is the same signed sum the ledger stores.
+--
+--      It floors at zero per part. Over-issuing to a card is a real thing
+--      an operator does — a reel of cable goes out whole — and it means
+--      that part is no longer wanted, not that the card is owed material
+--      back.
+--
+--   3. (At the caller, not here.) On-hand stock and material already on
+--      order. Those are facts about the PART rather than about one card,
+--      so they are netted once against the summed requirement instead of
+--      once per card, which is what stops two cards each subtracting the
+--      same shelf.
+--
+-- WHY THE EXPLOSION IS GROSS. `app_private.production_bom_requirements`
+-- (0084) multiplies each edge down every level with no netting of a
+-- sub-assembly's own stock against its children. It over-orders: ninety-
+-- six finished LED boards on the shelf do not reduce the driver ICs this
+-- asks for.
 --
 -- ponytail: gross explosion, and the ceiling is real — a stocked
--- sub-assembly is bought twice, once assembled and once as its parts.
--- The upgrade is level-by-level netting with low-level coding, which
--- needs each item's lowest level across the whole bill and an allocation
--- pass that a single recursive query cannot express. It belongs with a
--- planning screen that shows the netting, not hidden inside a shortage
--- list.
+-- sub-assembly is bought twice, once assembled and once as its parts. The
+-- upgrade is level-by-level netting with low-level coding, which needs
+-- each item's lowest level across the whole bill and an allocation pass
+-- this shape cannot express. It belongs with a planning screen that shows
+-- the netting, not hidden inside a shortage list.
 --
--- WHY THE SHORTAGE IS PER PART AND NOT PER JOB CARD. The mock's
--- shortage screen lists one row per (plan, part) and offers a checkbox
--- on each. Tick the two rows for the same part from two plans and it
--- orders it twice, because neither row knows about the other — and
--- there is no honest per-card answer to "how much of the shelf is
--- mine". This function returns the contribution PER CARD so a screen can
--- say who wants it, and the shortage is computed once per part from
--- their sum against one balance. `docs/UX.md` records the divergence.
+-- WHY IT LATERALS 0084'S HELPER RATHER THAN WALKING THE EDGES ITSELF.
+-- The first cut of this function carried its own recursive CTE with a
+-- CYCLE clause, which enumerates a path array per row and re-walks the
+-- same sub-assembly once per job card that reaches it. Production's
+-- helper is iterative and level-at-a-time, and it is the same explosion
+-- the job-card screen already shows — so one arithmetic, one measured
+-- plan, and the module that owns the bill of material owns how it is
+-- walked.
+--
+-- WHY THE SHORTAGE IS PER PART AND NOT PER JOB CARD. The mock's shortage
+-- screen lists one row per (plan, part) with a checkbox on each. Tick the
+-- two rows for one part from two plans and it orders it twice, because
+-- neither row knows about the other — and there is no honest per-card
+-- answer to "how much of the shelf is mine". This function returns the
+-- contribution PER CARD so a screen can say who wants it; the netting
+-- against one shelf happens once, above. `docs/UX.md` records it.
 -- ---------------------------------------------------------------------
 CREATE FUNCTION app_private.stock_outstanding_requirement(org uuid)
 RETURNS TABLE (
@@ -772,7 +948,7 @@ LANGUAGE sql
 STABLE
 SET search_path = pg_catalog, public
 AS $$
-  WITH RECURSIVE open_cards AS (
+  WITH open_cards AS (
     SELECT j.id,
            j.item_id,
            j.quantity - (
@@ -783,31 +959,29 @@ AS $$
     FROM production_job_cards j
     WHERE j.organisation_id = org
       AND j.status IN ('planned', 'in_production')
-  ),
-  tree(job_card_id, component_item_id, quantity, depth) AS (
-    SELECT c.id, line.component_item_id, line.quantity * c.outstanding, 1
-    FROM open_cards c
-    JOIN production_bom_lines line
-      ON line.organisation_id = org AND line.parent_item_id = c.item_id
-    WHERE c.outstanding > 0
-    UNION ALL
-    SELECT tree.job_card_id, line.component_item_id,
-           tree.quantity * line.quantity, tree.depth + 1
-    FROM tree
-    JOIN production_bom_lines line
-      ON line.organisation_id = org AND line.parent_item_id = tree.component_item_id
-    WHERE tree.depth < app_private.production_bom_max_depth()
-  ) CYCLE component_item_id SET is_cycle USING path
-  -- 0084 refuses a cycle at write time, so `is_cycle` is never true
-  -- against stored data. It is filtered anyway because the CYCLE clause
-  -- EMITS the offending row before it stops expanding it, and summing
-  -- that row would add a phantom requirement to a shortage list — the
-  -- one place a defensive filter is cheaper than the bug it prevents.
-  SELECT t.job_card_id, t.component_item_id, sum(t.quantity)::quantity_amount
-  FROM tree t
-  WHERE NOT t.is_cycle
-  GROUP BY t.job_card_id, t.component_item_id
+  )
+  SELECT c.id,
+         requirement.item_id,
+         greatest(
+           requirement.quantity_per_unit * c.outstanding
+             - coalesce(issued.net_out, 0),
+           0
+         )::quantity_amount
+  FROM open_cards c
+  CROSS JOIN LATERAL app_private.production_bom_requirements(org, c.item_id)
+    AS requirement(item_id, quantity_per_unit)
+  LEFT JOIN LATERAL (
+    -- What this card has already taken off the shelf, net of anything it
+    -- sent back. The ledger stores issues negative and returns positive,
+    -- so the negated sum is "how much is out on this card right now".
+    SELECT -sum(m.quantity) AS net_out
+    FROM stock_movements m
+    WHERE m.organisation_id = org
+      AND m.production_job_card_id = c.id
+      AND m.production_item_id = requirement.item_id
+  ) AS issued ON true
+  WHERE c.outstanding > 0
 $$;
 
 COMMENT ON FUNCTION app_private.stock_outstanding_requirement(uuid) IS
-  'What every open job card still needs, part by part: the recursive bill-of-material explosion times the units not yet serialised. The stock register''s committed quantity, the shortage screen''s requirement, and a job card''s material list are all this one arithmetic. A gross explosion — a stocked sub-assembly does not reduce its children (migration 0087 § 7).';
+  'What every open job card still needs, part by part: 0084''s bill-of-material explosion times the units not yet serialised, less the material already issued to that card and not returned. The stock register''s committed quantity, the shortage screen''s requirement and the quantity a shortage purchase order is drafted for are all this one arithmetic. On-hand and on-order are netted by the caller, once per part, because they are facts about the part rather than about one card (migration 0087 § 7).';

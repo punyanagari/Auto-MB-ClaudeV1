@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, PackagePlus, Plus } from 'lucide-react';
 import type { Contact, StockShortage, StockShortageResponse } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
@@ -30,9 +30,15 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
  *     the row instead.
  *   * **The order is 0033's purchase order, not a second `SupplierPO`.**
  *     So the card shows that module's four statuses and its number, and
- *     the receipt is posted from the register against the line — a
- *     purchase order's own lifecycle stays where the procurement module
- *     keeps it.
+ *     its own lifecycle — issue, cancel, close — stays where the
+ *     procurement module keeps it.
+ *
+ * The mock's per-order **"Record receipt"** IS here, on each line. The
+ * first cut left it off both screens, each assuming the other owned it,
+ * so an operator could raise an order from a shortage and then have
+ * nowhere to say the material had arrived — which is the one thing that
+ * clears the shortage. It posts a `purchase_receipt` for what the line is
+ * still owed; the ledger refuses anything the order does not admit.
  *
  * The order is raised FOR a job card, which is what decides the Work it
  * belongs to. A job card serving a private purchase order has no Work and
@@ -83,6 +89,7 @@ export function StockShortages({
   const [expectedOn, setExpectedOn] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [receiving, setReceiving] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +167,38 @@ export function StockShortages({
   }
 
   const cards = orderableCards(data.shortages);
+
+  function receive(line: {
+    readonly id: string;
+    readonly productionItemId: string;
+    readonly outstanding: string;
+  }): void {
+    setReceiving(line.id);
+    setActionError(null);
+    api
+      .postStockMovement(organisationId, {
+        productionItemId: line.productionItemId,
+        movementType: 'purchase_receipt',
+        quantity: line.outstanding,
+        purchaseOrderLineId: line.id,
+      })
+      .then(() => {
+        // The shortage this order was raised for is now covered, so the
+        // whole screen is re-read rather than patched: the left column
+        // changes too.
+        setLoadVersion((current) => current + 1);
+      })
+      .catch((cause: unknown) => {
+        setActionError(
+          cause instanceof RequestFailedError
+            ? cause.message
+            : 'The receipt could not be recorded.',
+        );
+      })
+      .finally(() => {
+        setReceiving(null);
+      });
+  }
 
   function submit(): void {
     setBusy(true);
@@ -337,42 +376,72 @@ export function StockShortages({
               </EmptyState>
             </Card>
           ) : (
-            data.purchaseOrders.map((order) => (
-              <Card key={order.id}>
-                <CardHeader>
-                  <div className="min-w-0">
-                    <p className="m-0 font-mono text-sm font-semibold">
-                      {order.poNumber ?? 'Draft'}
-                    </p>
-                    <h3 className="mt-1 text-base font-medium">
-                      {order.vendorDesignation}
-                    </h3>
-                  </div>
-                  <StatusChip status={order.status}>{order.status}</StatusChip>
-                </CardHeader>
-                <p className="m-0 mb-3 text-xs text-muted-foreground">
-                  {order.expectedOn === null
-                    ? 'No expected date'
-                    : `Expected ${formatDate(order.expectedOn)}`}
-                  {order.jobCardNumbers.length === 0
-                    ? ''
-                    : ` · ${order.jobCardNumbers.join(', ')}`}
-                </p>
-                <ul className="m-0 flex list-none flex-col p-0">
-                  {order.lines.map((line) => (
-                    <li
-                      key={line.productionItemId}
-                      className="flex justify-between gap-3 border-t border-border py-2 text-sm"
-                    >
-                      <span className="min-w-0">{line.name}</span>
-                      <span className="shrink-0 font-mono tabular-nums">
-                        {line.received} / {line.ordered} {line.unit}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-            ))
+            <>
+              {data.purchaseOrdersTruncated && (
+                <Card>
+                  <p className="m-0 text-sm text-muted-foreground">
+                    Showing the {data.purchaseOrders.length} most recent orders raised
+                    from a shortage. Older ones are on the Work&rsquo;s procurement
+                    section.
+                  </p>
+                </Card>
+              )}
+              {data.purchaseOrders.map((order) => (
+                <Card key={order.id}>
+                  <CardHeader>
+                    <div className="min-w-0">
+                      <p className="m-0 font-mono text-sm font-semibold">
+                        {order.poNumber ?? 'Draft'}
+                      </p>
+                      <h3 className="mt-1 text-base font-medium">
+                        {order.vendorDesignation}
+                      </h3>
+                    </div>
+                    <StatusChip status={order.status}>{order.status}</StatusChip>
+                  </CardHeader>
+                  <p className="m-0 mb-3 text-xs text-muted-foreground">
+                    {order.expectedOn === null
+                      ? 'No expected date'
+                      : `Expected ${formatDate(order.expectedOn)}`}
+                    {order.jobCardNumbers.length === 0
+                      ? ''
+                      : ` · ${order.jobCardNumbers.join(', ')}`}
+                  </p>
+                  <ul className="m-0 flex list-none flex-col p-0">
+                    {order.lines.map((line) => (
+                      <li
+                        key={line.id}
+                        className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-2 text-sm"
+                      >
+                        <span className="min-w-0">{line.name}</span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <span className="font-mono tabular-nums">
+                            {line.received} / {line.ordered} {line.unit}
+                          </span>
+                          {canModify && Number(line.outstanding) > 0 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={receiving !== null}
+                              aria-label={`Record receipt of ${line.outstanding} ${line.unit} ${line.name}`}
+                              onClick={() => {
+                                receive(line);
+                              }}
+                            >
+                              <PackagePlus
+                                data-icon="inline-start"
+                                aria-hidden="true"
+                              />
+                              {receiving === line.id ? 'Recording…' : 'Receive'}
+                            </Button>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              ))}
+            </>
           )}
         </div>
       </div>

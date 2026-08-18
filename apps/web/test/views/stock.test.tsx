@@ -28,6 +28,7 @@ const CABINET_ID = '33333333-3333-4333-8333-333333333333';
 const JOB_CARD_ID = '44444444-4444-4444-8444-444444444444';
 const VENDOR_ID = '55555555-5555-4555-8555-555555555555';
 const DISPATCH_ID = '66666666-6666-4666-8666-666666666666';
+const PO_LINE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 function item(overrides: Partial<StockItem> = {}): StockItem {
   return {
@@ -36,8 +37,6 @@ function item(overrides: Partial<StockItem> = {}): StockItem {
     name: '24 V 10 A SMPS',
     category: 'Power supplies',
     unit: 'Nos',
-    manufactured: false,
-    serialControlled: true,
     active: true,
     reorderLevel: null,
     onHand: '30.000',
@@ -58,12 +57,8 @@ function movement(overrides: Partial<StockMovement> = {}): StockMovement {
     unit: 'Nos',
     movementType: 'issue',
     quantity: '-4.000',
-    balanceAfter: '26.000',
     movementDate: '2026-08-01',
-    source: 'work',
     sourceLabel: 'PL-281',
-    reason: null,
-    counterparty: null,
     createdAt: '2026-08-01T09:00:00.000Z',
     ...overrides,
   };
@@ -77,6 +72,7 @@ function shortage(overrides: Partial<StockShortage> = {}): StockShortage {
     unit: 'Nos',
     required: '11.000',
     onHand: '0.000',
+    onOrder: '0.000',
     shortage: '11.000',
     jobCards: [
       {
@@ -112,6 +108,7 @@ function registerApi(overrides: Partial<Parameters<typeof stubApi>[0]> = {}) {
       nextCursor: null,
       summary: { partsTracked: 3, partsBelowReorderLevel: 1, partsShort: 2 },
     }),
+    postStockMovement: vi.fn().mockResolvedValue({ movement: movement() }),
     listStockMovements: vi
       .fn()
       .mockResolvedValue({ movements: [movement()], nextCursor: null }),
@@ -195,8 +192,13 @@ describe('the stock register', () => {
     expect(within(row).getByText('Issue')).toBeTruthy();
     // The minus sign belongs to the word, not to the figure.
     expect(within(row).getByText('4.000 Nos')).toBeTruthy();
-    expect(within(row).getByText('26.000')).toBeTruthy();
     expect(within(row).getByText('PL-281')).toBeTruthy();
+    // NO balance column: the list interleaves parts, so a running total
+    // down the side of it would total nothing.
+    expect(
+      within(row).queryByText('26.000'),
+      'the cross-item ledger carries no balance column',
+    ).toBeNull();
   });
 
   it('offers an unreceived despatch with the quantity production stated', async () => {
@@ -230,9 +232,10 @@ describe('the stock register', () => {
     // There is no quantity field: the number is the despatch's own.
     fireEvent.click(screen.getByRole('button', { name: 'Take into stock' }));
     await waitFor(() => {
+      // No date either: the server resolves the organisation's today, so
+      // a browser clock cannot date a legal record.
       expect(receive).toHaveBeenCalledWith(ORG_ID, {
         productionDispatchId: DISPATCH_ID,
-        movementDate: '2026-08-01',
       });
     });
   });
@@ -254,9 +257,11 @@ describe('the stock register', () => {
 describe('shortage procurement', () => {
   function shortageApi(overrides: Partial<Parameters<typeof stubApi>[0]> = {}) {
     return stubApi({
-      listStockShortages: vi
-        .fn()
-        .mockResolvedValue({ shortages: [shortage()], purchaseOrders: [] }),
+      listStockShortages: vi.fn().mockResolvedValue({
+        shortages: [shortage()],
+        purchaseOrders: [],
+        purchaseOrdersTruncated: false,
+      }),
       listContacts: vi.fn().mockResolvedValue([VENDOR]),
       ...overrides,
     });
@@ -344,6 +349,7 @@ describe('shortage procurement', () => {
               }),
             ],
             purchaseOrders: [],
+            purchaseOrdersTruncated: false,
           }),
         })}
         organisationId={ORG_ID}
@@ -375,16 +381,19 @@ describe('shortage procurement', () => {
                 jobCardNumbers: ['PP-26-081'],
                 lines: [
                   {
+                    id: PO_LINE_ID,
                     productionItemId: CABINET_ID,
                     itemCode: 'RM-CAB-IPDB6',
                     name: 'Powder-coated cabinet',
                     unit: 'Nos',
                     ordered: '11.000',
                     received: '4.000',
+                    outstanding: '7.000',
                   },
                 ],
               },
             ],
+            purchaseOrdersTruncated: false,
           }),
         })}
         organisationId={ORG_ID}
@@ -395,5 +404,87 @@ describe('shortage procurement', () => {
     expect(await screen.findByText('PL-281-PO-03')).toBeTruthy();
     expect(screen.getByText('4.000 / 11.000 Nos')).toBeTruthy();
     expect(screen.getByText(/PP-26-081/)).toBeTruthy();
+  });
+
+  it('records a receipt for what the line is still owed', async () => {
+    const post = vi.fn().mockResolvedValue({});
+    render(
+      <StockShortages
+        api={shortageApi({
+          postStockMovement: post,
+          listStockShortages: vi.fn().mockResolvedValue({
+            shortages: [],
+            purchaseOrders: [
+              {
+                id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                workId: '88888888-8888-4888-8888-888888888888',
+                poNumber: 'PL-281-PO-03',
+                status: 'issued',
+                vendorDesignation: 'Bright LED Components',
+                poDate: '2026-08-01',
+                expectedOn: null,
+                jobCardNumbers: ['PP-26-081'],
+                lines: [
+                  {
+                    id: PO_LINE_ID,
+                    productionItemId: CABINET_ID,
+                    itemCode: 'RM-CAB-IPDB6',
+                    name: 'Powder-coated cabinet',
+                    unit: 'Nos',
+                    ordered: '11.000',
+                    received: '4.000',
+                    outstanding: '7.000',
+                  },
+                ],
+              },
+            ],
+            purchaseOrdersTruncated: false,
+          }),
+        })}
+        organisationId={ORG_ID}
+        canModify
+        onOpenRegister={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Record receipt of/ }));
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(ORG_ID, {
+        productionItemId: CABINET_ID,
+        movementType: 'purchase_receipt',
+        quantity: '7.000',
+        purchaseOrderLineId: PO_LINE_ID,
+      });
+    });
+  });
+
+  it('says so when the order column is not the whole of it', async () => {
+    render(
+      <StockShortages
+        api={shortageApi({
+          listStockShortages: vi.fn().mockResolvedValue({
+            shortages: [],
+            purchaseOrders: [
+              {
+                id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                workId: '88888888-8888-4888-8888-888888888888',
+                poNumber: 'PL-281-PO-03',
+                status: 'issued',
+                vendorDesignation: 'Bright LED Components',
+                poDate: '2026-08-01',
+                expectedOn: null,
+                jobCardNumbers: [],
+                lines: [],
+              },
+            ],
+            purchaseOrdersTruncated: true,
+          }),
+        })}
+        organisationId={ORG_ID}
+        canModify
+        onOpenRegister={vi.fn()}
+      />,
+    );
+    expect(await screen.findByText(/most recent orders/)).toBeTruthy();
   });
 });
