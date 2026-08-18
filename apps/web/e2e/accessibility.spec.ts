@@ -1240,8 +1240,6 @@ test('production register, job card and item master pass the axe scan', async ({
   // "Loading the bill of material…" line also matches the bare text and
   // strict mode refuses the ambiguity — which only reproduces on a
   // runner slow enough for the loading state to still be on screen.
-  await expect(
-    page.getByRole('heading', { name: 'Bill of material' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Bill of material' })).toBeVisible();
   await expectNoAxeViolations(page, 'production item master');
 });
