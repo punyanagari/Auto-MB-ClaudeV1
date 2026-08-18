@@ -1236,6 +1236,12 @@ test('production register, job card and item master pass the axe scan', async ({
 
   await page.goto('/#/production/items');
   await expect(page.getByRole('heading', { name: 'Manufactured items' })).toBeVisible();
-  await expect(page.getByText('Bill of material')).toBeVisible();
+  // By role, not text: while the BOM is still loading, the sr-only
+  // "Loading the bill of material…" line also matches the bare text and
+  // strict mode refuses the ambiguity — which only reproduces on a
+  // runner slow enough for the loading state to still be on screen.
+  await expect(
+    page.getByRole('heading', { name: 'Bill of material' }),
+  ).toBeVisible();
   await expectNoAxeViolations(page, 'production item master');
 });
