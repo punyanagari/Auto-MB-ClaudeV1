@@ -135,6 +135,78 @@ function statuses(responses: readonly { statusCode: number }[]): number[] {
   return responses.map((response) => response.statusCode).sort((a, b) => a - b);
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Blocks until some OTHER backend is waiting on a lock.
+ *
+ * The `waitUntilBlockedOnLock` pattern from
+ * `packages/db/test/quantity-ceilings.integration.test.ts`, widened by
+ * one degree: that suite owns the connection it is waiting on and can
+ * name its pid, while a request served through `app.inject` is handed
+ * whichever pooled connection is free. The question asked is the same —
+ * has a second backend actually BLOCKED — and answering it is what makes
+ * the proof below a proof rather than a lucky interleaving.
+ */
+async function waitUntilAnotherBackendBlocks(): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    /* Narrowed to a backend blocked on THIS module's row lock. The
+       server suite runs its files against one database, so a bare
+       "somebody is blocked" would let an unrelated suite's contention
+       stand in for the proof. */
+    const [row] = await admin<{ waiting: number }[]>`
+      select count(*)::int as waiting
+      from pg_stat_activity
+      where datname = current_database()
+        and wait_event_type = 'Lock'
+        and pid <> pg_backend_pid()
+        and query ilike '%production_job_cards%'
+    `;
+    if ((row?.waiting ?? 0) > 0) return;
+    await delay(50);
+  }
+  throw new Error('no second backend ever blocked on a lock');
+}
+
+/**
+ * Holds a job card's row lock in a transaction of its own, runs `body`
+ * inside it, and hands back a release.
+ *
+ * This is how an in-flight component scan is simulated exactly: the scan
+ * route takes this same lock and then inserts, so a transaction holding
+ * the lock with an uncommitted component row IS a scan mid-flight.
+ */
+async function holdJobCardLock(
+  jobCardId: string,
+  body: (tx: Sql) => Promise<void>,
+): Promise<() => Promise<void>> {
+  let allowFinish!: () => void;
+  const mayFinish = new Promise<void>((resolve) => {
+    allowFinish = resolve;
+  });
+  let held!: () => void;
+  const isHeld = new Promise<void>((resolve) => {
+    held = resolve;
+  });
+  const finished = admin
+    .begin(async (tx) => {
+      await tx`
+        select id from production_job_cards where id = ${jobCardId} for update
+      `;
+      await body(tx as unknown as Sql);
+      held();
+      await mayFinish;
+    })
+    .then(() => undefined);
+  await isHeld;
+  return async () => {
+    allowFinish();
+    await finished;
+  };
+}
+
 let itemCounter = 0;
 async function createItem(
   overrides: Record<string, unknown> = {},
@@ -1238,14 +1310,40 @@ describe('under concurrency', () => {
     expect(count?.n).toBe('1');
   });
 
-  it('does not release a unit while its last component is being scanned', async () => {
-    // The interleaving the component guard's job-card lock exists for: a
-    // release and a component scan reaching the same unit together. The
-    // release must not see a half-captured unit as complete, and the
-    // scan must not land inside a unit that has already left — the
-    // component record closes at despatch.
-    const product = await createProduct({ name: 'Race scan board' });
-    const part = await createItem({ name: 'Race scan part', serialControlled: true });
+  it('waits for an in-flight component scan instead of reading past it', async () => {
+    /*
+     * WHAT THIS PROVES, and what the first version of it got wrong.
+     *
+     * The first version fired a scan and a release with `Promise.all`
+     * and asserted that exactly one of them was refused. That assertion
+     * is false: this is an ORDERING race, not a mutual-exclusion one,
+     * and two outcomes are both correct.
+     *
+     *   * The release reaches the job-card lock first — it sees a unit
+     *     one component short and refuses it. The scan then succeeds.
+     *   * The scan reaches the lock first — it completes the unit and
+     *     commits. The release then sees a complete unit and succeeds.
+     *
+     * Both are right. The old test demanded a refusal in the second
+     * case, passed locally because the release's shorter preamble won
+     * the lock every time, and failed on CI the first time the scan won.
+     * A race test that passes by winning the race proves nothing.
+     *
+     * The invariant that actually matters is narrower and is what is
+     * asserted here: a release can never read a unit's completeness
+     * WHILE a scan is in flight. Both paths take the job card's row lock
+     * before any read their decision depends on, so the release blocks
+     * rather than counting a half-captured unit — which is exactly the
+     * window the guard's lock comment claims to close.
+     *
+     * It is forced rather than raced: the lock is held open, the release
+     * is proven to BLOCK on it, and only then is it let go.
+     */
+    const product = await createProduct({ name: 'Blocking scan board' });
+    const part = await createItem({
+      name: 'Blocking scan part',
+      serialControlled: true,
+    });
     expect((await addBomLine(product.id, part.id, '2.000')).statusCode).toBe(201);
     const card = (
       await createJobCard(product.id, { quantity: 1 })
@@ -1253,56 +1351,117 @@ describe('under concurrency', () => {
     const unitId =
       (await mintSerial(card.id)).json<JobCardDetail>().serials[0]?.id ?? '';
 
-    // One of the two required components is already in; the race is over
-    // the second.
+    // One of the two required components is in. The unit is short.
     expect(
       (
         await authed(site, {
           method: 'POST',
           url: `/api/production/serials/${unitId}/components`,
           organisationId,
-          payload: { componentItemId: part.id, serialNumber: `RACE-${suffix}-1` },
+          payload: { componentItemId: part.id, serialNumber: `BLOCK-${suffix}-1` },
         })
       ).statusCode,
     ).toBe(201);
 
-    const [scan, release] = await Promise.all([
-      authed(site, {
-        method: 'POST',
-        url: `/api/production/serials/${unitId}/components`,
-        organisationId,
-        payload: { componentItemId: part.id, serialNumber: `RACE-${suffix}-2` },
-      }),
-      authed(site, {
-        method: 'POST',
-        url: `/api/production/job-cards/${card.id}/dispatches`,
-        organisationId,
-        payload: { serialIds: [unitId], dispatchedOn: '2026-08-18' },
-      }),
-    ]);
+    // A scan of the SECOND component, held mid-flight: the job card's
+    // lock taken and the row written, but not yet committed.
+    const releaseLock = await holdJobCardLock(card.id, async (tx) => {
+      await tx`
+        insert into production_component_serials (
+          organisation_id, finished_serial_id, component_item_id, serial_number,
+          created_by_user_id
+        )
+        values (
+          ${organisationId}, ${unitId}, ${part.id}, ${`BLOCK-${suffix}-2`},
+          'in-flight-scan'
+        )
+      `;
+    });
 
-    // Whichever order they serialise in, the outcome is consistent: a
-    // release that won saw an incomplete unit and was refused, and a
-    // scan that lost landed after despatch and was refused. What must
-    // never happen is both succeeding, which would close the component
-    // record and then add to it.
-    const [componentRows] = await admin<{ n: string }[]>`
-      select count(*)::text as n from production_component_serials
-      where finished_serial_id = ${unitId}
-    `;
-    const [dispatchRows] = await admin<{ n: string }[]>`
+    const dispatching = authed(site, {
+      method: 'POST',
+      url: `/api/production/job-cards/${card.id}/dispatches`,
+      organisationId,
+      payload: { serialIds: [unitId], dispatchedOn: '2026-08-18' },
+    });
+
+    // THE PROOF. The release is waiting on a lock — it has not counted
+    // components and decided anything. Without the lock ordering it
+    // would have read one component, called the unit short, and refused
+    // a unit that was in the act of being completed.
+    await waitUntilAnotherBackendBlocks();
+
+    await releaseLock();
+    const released = await dispatching;
+
+    // Having waited, it sees the committed truth: a complete unit, so
+    // the release stands.
+    expect(released.statusCode, released.body).toBe(201);
+    const detail = released.json<JobCardDetail>();
+    expect(detail.dispatched).toBe(1);
+    expect(detail.serials[0]?.components).toHaveLength(2);
+
+    // …and the record is closed behind it: nothing may be added to a
+    // unit that has left the factory.
+    const late = await authed(site, {
+      method: 'POST',
+      url: `/api/production/serials/${unitId}/components`,
+      organisationId,
+      payload: { componentItemId: part.id, serialNumber: `BLOCK-${suffix}-3` },
+    });
+    expect(late.statusCode, late.body).toBe(409);
+    expect(late.json<{ code: string }>().code).toBe(
+      'PRODUCTION_COMPONENT_SERIAL_INVALID',
+    );
+  });
+
+  it('refuses to release a unit a scan has NOT completed, whoever gets there first', async () => {
+    // The other half of the ordering, forced the other way: the lock is
+    // held with NO component written, so the release waits and then sees
+    // a unit that is genuinely short. The outcome is a refusal, and it
+    // does not depend on who won anything.
+    const product = await createProduct({ name: 'Blocking short board' });
+    const part = await createItem({
+      name: 'Blocking short part',
+      serialControlled: true,
+    });
+    expect((await addBomLine(product.id, part.id, '2.000')).statusCode).toBe(201);
+    const card = (
+      await createJobCard(product.id, { quantity: 1 })
+    ).json<JobCardDetail>();
+    const unitId =
+      (await mintSerial(card.id)).json<JobCardDetail>().serials[0]?.id ?? '';
+    expect(
+      (
+        await authed(site, {
+          method: 'POST',
+          url: `/api/production/serials/${unitId}/components`,
+          organisationId,
+          payload: { componentItemId: part.id, serialNumber: `SHORT-${suffix}-1` },
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const releaseLock = await holdJobCardLock(card.id, async () => {
+      // Nothing written: the unit stays one component short.
+    });
+    const dispatching = authed(site, {
+      method: 'POST',
+      url: `/api/production/job-cards/${card.id}/dispatches`,
+      organisationId,
+      payload: { serialIds: [unitId], dispatchedOn: '2026-08-18' },
+    });
+    await waitUntilAnotherBackendBlocks();
+    await releaseLock();
+
+    const refused = await dispatching;
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe('PRODUCTION_DISPATCH_INVALID');
+    const [dispatched] = await admin<{ n: string }[]>`
       select count(*)::text as n from production_dispatch_serials
       where production_serial_id = ${unitId}
     `;
-    if (dispatchRows?.n === '1') {
-      expect(release.statusCode, release.body).toBe(201);
-      expect(scan.statusCode).toBe(409);
-      expect(componentRows?.n).toBe('2');
-    } else {
-      expect(scan.statusCode, scan.body).toBe(201);
-      expect(release.statusCode).toBe(409);
-      expect(componentRows?.n).toBe('2');
-    }
+    expect(dispatched?.n).toBe('0');
   });
 
   it('numbers two job cards raised together without collision', async () => {
