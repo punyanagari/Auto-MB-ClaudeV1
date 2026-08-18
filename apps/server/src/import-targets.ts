@@ -583,7 +583,7 @@ const CONTACTS_TARGET: ImportTarget = {
         isConsignee,
         isVendor,
         isClient,
-        isEmployee: values.isEmployee as boolean,
+        isEmployee: values.isEmployee,
         pan: orNull(values.pan)?.toUpperCase() ?? null,
         bank: normaliseContactBankDetails({
           ...(orNull(values.bankAccountHolder) !== null
@@ -757,10 +757,10 @@ const CANONICAL_ITEMS_TARGET: ImportTarget = {
       naturalKey,
       row: {
         name,
-        groupName: values.groupName as string,
+        groupName: values.groupName,
         make: orNull(values.make),
         model: orNull(values.model),
-        defaultUnit: values.defaultUnit as string,
+        defaultUnit: values.defaultUnit,
         aliases,
       },
     };

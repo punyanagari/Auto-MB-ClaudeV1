@@ -469,7 +469,7 @@ export function registerImportRoutes(
       // register and 403 for a known one has been told which is which.
       // `test/route-inventory.integration.test.ts` sweeps every tenant
       // route for exactly this and caught the original ordering.
-      await tenant(async () => undefined);
+      await tenant(() => Promise.resolve());
       const target = requireTarget(request.params.target);
       const bytes = writeXlsxWorkbook(target.sheetName, [
         target.columns.map((column) => column.header),
@@ -525,7 +525,7 @@ export function registerImportRoutes(
       // which is a denial-of-service surface and a scanner bill.
       // `test/route-inventory.integration.test.ts` sweeps every tenant
       // route for a non-member 403 and caught it.
-      await tenant(async () => undefined);
+      await tenant(() => Promise.resolve());
       await assertNotMalware(malwareScanner, bytes);
 
       let sheet: string[][];

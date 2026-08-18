@@ -1517,6 +1517,54 @@ test('the signing queue passes the axe scan', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open signed PDF' })).toBeVisible();
 });
 
+test('the imports register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/imports');
+
+  /* Spreadsheet imports (0094). Its own top-level test rather than a leg
+     of an existing journey, for the reason the signing queue took one:
+     the big picker journey is already budgeted with test.slow().
+
+     Scanned with all three batch statuses on screen at once, because the
+     chip is the only colour this screen puts on a word. The row errors
+     are the other pairing worth measuring — 11px prose in the muted ink,
+     inside a wrapping cell, which is the combination most likely to miss
+     AA in one theme and pass in the other. */
+  await expect(
+    page.getByRole('heading', { name: 'Imports', exact: true }),
+  ).toBeVisible();
+  for (const label of ['validated', 'completed', 'cancelled']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'imports register');
+
+  // The open batch: the row-level error table, its `error` and `valid`
+  // chips, and the button that says how many rows it will write. None of
+  // those states is reachable from the register scan above.
+  await page.getByRole('button', { name: 'Open' }).first().click();
+  await expect(page.getByRole('button', { name: /Import 2 rows/ })).toBeVisible();
+  await expect(page.getByText('rule R16', { exact: false })).toBeVisible();
+  for (const label of ['error', 'valid']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'imports batch detail');
+
+  // The column guide, which is a disclosure the register scan leaves
+  // closed — and the only place a `required` marker is drawn.
+  await page.getByRole('combobox', { name: 'Register' }).selectOption('contacts');
+  await page.getByText(/Columns this register reads/).click();
+  await expect(page.getByText('required').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'imports column guide');
+
+  // The withdrawal dialog: a destructive confirm whose primary action is
+  // disabled until a reason is typed.
+  await page.getByRole('button', { name: 'Withdraw' }).first().click();
+  await expect(
+    page.getByRole('heading', { name: 'Withdraw this import' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'imports withdrawal dialog');
+});
+
 test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/settings');

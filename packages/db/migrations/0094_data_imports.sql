@@ -271,16 +271,16 @@ CREATE TABLE spreadsheet_import_batches (
   -- error, never both and never neither, once the batch has been judged.
   -- Written as an implication rather than an equality so a `pending`
   -- batch — whose rows have no verdict yet — is not refused.
-  CONSTRAINT import_batches_verdict_census CHECK (
+  CONSTRAINT spreadsheet_import_batches_verdict_census CHECK (
     status = 'pending'
     OR (valid_row_count + error_row_count = row_count
         AND imported_row_count <= valid_row_count)
   ),
-  CONSTRAINT import_batches_completion_shape CHECK (
+  CONSTRAINT spreadsheet_import_batches_completion_shape CHECK (
     (completed_at IS NULL) = (completed_by_user_id IS NULL)
     AND (status = 'completed') = (completed_at IS NOT NULL)
   ),
-  CONSTRAINT import_batches_cancellation_shape CHECK (
+  CONSTRAINT spreadsheet_import_batches_cancellation_shape CHECK (
     (cancelled_at IS NULL) = (cancelled_by_user_id IS NULL)
     AND (cancelled_at IS NULL) = (cancelled_reason IS NULL)
     AND (status = 'cancelled') = (cancelled_at IS NOT NULL)
@@ -301,7 +301,7 @@ ALTER TABLE spreadsheet_import_batches FORCE ROW LEVEL SECURITY;
 
 -- ADR-0010: the helper call is wrapped in a scalar subquery so the planner
 -- treats it as an InitPlan and evaluates it once per statement.
-CREATE POLICY import_batches_tenant_policy ON spreadsheet_import_batches
+CREATE POLICY spreadsheet_import_batches_tenant_policy ON spreadsheet_import_batches
   USING (organisation_id = (SELECT app_private.current_organisation_id()))
   WITH CHECK (organisation_id = (SELECT app_private.current_organisation_id()));
 
@@ -317,7 +317,7 @@ GRANT SELECT, INSERT, UPDATE ON spreadsheet_import_batches TO auto_mb_app;
 
 -- The register lists newest first, per organisation, and filters by
 -- target on the batch screen.
-CREATE INDEX import_batches_org_created_idx
+CREATE INDEX spreadsheet_import_batches_org_created_idx
   ON spreadsheet_import_batches (organisation_id, created_at DESC, id DESC);
 
 -- ---------------------------------------------------------------------
@@ -365,11 +365,11 @@ CREATE TABLE spreadsheet_import_rows (
 
   -- A verdict and its evidence agree, in both directions: a row in error
   -- says why, and a row that is not in error carries no complaint.
-  CONSTRAINT import_rows_verdict_shape CHECK (
+  CONSTRAINT spreadsheet_import_rows_verdict_shape CHECK (
     (status = 'error') = (jsonb_array_length(errors) > 0)
   ),
   -- Only a row that passed can have reached the register.
-  CONSTRAINT import_rows_imported_shape CHECK (
+  CONSTRAINT spreadsheet_import_rows_imported_shape CHECK (
     imported_record_id IS NULL OR status = 'valid'
   )
 );
@@ -386,7 +386,7 @@ COMMENT ON COLUMN spreadsheet_import_rows.errors IS
 ALTER TABLE spreadsheet_import_rows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE spreadsheet_import_rows FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY import_rows_tenant_policy ON spreadsheet_import_rows
+CREATE POLICY spreadsheet_import_rows_tenant_policy ON spreadsheet_import_rows
   USING (organisation_id = (SELECT app_private.current_organisation_id()))
   WITH CHECK (organisation_id = (SELECT app_private.current_organisation_id()));
 
@@ -394,7 +394,7 @@ GRANT SELECT, INSERT, UPDATE ON spreadsheet_import_rows TO auto_mb_app;
 
 -- The detail screen reads one batch in sheet order; the errors-first
 -- filter reads the same index and sorts in memory over one page.
-CREATE INDEX import_rows_batch_idx
+CREATE INDEX spreadsheet_import_rows_batch_idx
   ON spreadsheet_import_rows (organisation_id, batch_id, row_number);
 
 -- ---------------------------------------------------------------------
@@ -484,7 +484,7 @@ $$;
 COMMENT ON FUNCTION app_private.guard_spreadsheet_import_batch() IS
   'Everything an import batch is allowed to be: its file and target written once, its states walked forwards along the edges that exist, terminal rows immutable, and its census never claiming more imported rows than it judged valid. The route makes each refusal first so an operator gets a remedy; this is the arm that holds under concurrency.';
 
-CREATE TRIGGER import_batches_guard
+CREATE TRIGGER spreadsheet_import_batches_guard
 BEFORE INSERT OR UPDATE ON spreadsheet_import_batches
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_spreadsheet_import_batch();
 
@@ -543,6 +543,6 @@ $$;
 COMMENT ON FUNCTION app_private.guard_spreadsheet_import_row() IS
   'A staged row is evidence: its cells are written once, its batch must still be open, and it reaches a register at most once. Verdicts and the imported record id are the only things that may be written over it.';
 
-CREATE TRIGGER import_rows_guard
+CREATE TRIGGER spreadsheet_import_rows_guard
 BEFORE INSERT OR UPDATE ON spreadsheet_import_rows
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_spreadsheet_import_row();

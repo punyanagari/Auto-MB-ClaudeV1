@@ -36,6 +36,11 @@ export const ME = {
       // the rail carries no Employees door and both payroll screens
       // refuse. The owner of a new organisation holds it implicitly.
       canManagePayroll: true,
+      // The import authority (0094). Granted so the Imports screen draws
+      // its upload panel and its write button under the scan — without
+      // it the screen is a read-only history and the controls whose
+      // contrast matters are never rendered.
+      canImportData: true,
       status: 'active',
     },
   ],
@@ -746,6 +751,136 @@ const PRODUCTION_BOM = {
    the only colour this screen puts on a word, and a scan of an empty
    register proves nothing about chips it never drew. */
 const SIGNING_THUMBPRINT = 'CFD1D2EF23018CEC652D1F380FC57FDCF5C0C4E4';
+/* Spreadsheet imports (0094). Both batch chips and both row chips are on
+   screen at once, because the chip is the only colour this screen puts on
+   a word — and the row errors below them are 11px prose in the muted ink,
+   which is the pairing most likely to miss AA. */
+const IMPORT_COLUMNS = [
+  {
+    key: 'designation',
+    header: 'Designation',
+    required: true,
+    note: 'Required. The office or firm as it is written on the paperwork.',
+  },
+  { key: 'address', header: 'Address', required: false, note: 'Optional.' },
+  { key: 'gstin', header: 'GSTIN', required: false, note: 'Optional. 15 characters.' },
+];
+
+const IMPORT_BATCHES = {
+  batches: [
+    {
+      id: '00000000-0000-4000-8000-000000000941',
+      target: 'contacts',
+      status: 'validated',
+      originalFilename: 'vendors-2026.xlsx',
+      sourceSha256: 'b'.repeat(64),
+      rowCount: 3,
+      validRowCount: 2,
+      errorRowCount: 1,
+      importedRowCount: 0,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-18T09:15:00.000Z',
+      completedAt: null,
+      cancelledAt: null,
+      cancelledReason: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000942',
+      target: 'canonical_items',
+      status: 'completed',
+      originalFilename: 'catalogue.xlsx',
+      sourceSha256: 'c'.repeat(64),
+      rowCount: 12,
+      validRowCount: 12,
+      errorRowCount: 0,
+      importedRowCount: 12,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-17T11:00:00.000Z',
+      completedAt: '2026-08-17T11:02:00.000Z',
+      cancelledAt: null,
+      cancelledReason: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000943',
+      target: 'contacts',
+      status: 'cancelled',
+      originalFilename: 'wrong-sheet.xlsx',
+      sourceSha256: 'd'.repeat(64),
+      rowCount: 4,
+      validRowCount: 4,
+      errorRowCount: 0,
+      importedRowCount: 0,
+      createdByUserId: 'user-1',
+      createdAt: '2026-08-16T08:00:00.000Z',
+      completedAt: null,
+      cancelledAt: '2026-08-16T08:05:00.000Z',
+      cancelledReason: 'Uploaded the wrong sheet',
+    },
+  ],
+  nextCursor: null,
+  targets: [
+    { key: 'contacts', label: 'Contacts', columns: IMPORT_COLUMNS },
+    {
+      key: 'canonical_items',
+      label: 'Catalogue items',
+      columns: [
+        {
+          key: 'name',
+          header: 'Item name',
+          required: true,
+          note: 'Required. Unique in the catalogue.',
+        },
+      ],
+    },
+  ],
+};
+
+const IMPORT_BATCH_DETAIL = {
+  batch: IMPORT_BATCHES.batches[0],
+  columns: IMPORT_COLUMNS,
+  rows: [
+    {
+      id: '00000000-0000-4000-8000-000000000951',
+      rowNumber: 2,
+      status: 'error',
+      cells: { designation: 'Sr.DFM Bhusawal', address: 'DRM Office', gstin: '27BAD' },
+      errors: [
+        {
+          column: 'designation',
+          message:
+            'Bill-paying authorities (Sr.DFM/DFM/ADFM) and awarding authorities (Sr.DSTE) are never consignees (rule R16); record the consignee named on the document instead.',
+        },
+        {
+          column: 'gstin',
+          message:
+            'The GSTIN must be 15 characters: 2-digit state code + PAN + entity code + Z + check character, or a TDS-deductor GSTIN ending in D (railway units).',
+        },
+      ],
+      importedRecordId: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000952',
+      rowNumber: 3,
+      status: 'valid',
+      cells: {
+        designation: 'Nagpur Signalling Works',
+        address: 'Nagpur',
+        gstin: '27AAAPZ1234C1ZV',
+      },
+      errors: [],
+      importedRecordId: null,
+    },
+    {
+      id: '00000000-0000-4000-8000-000000000953',
+      rowNumber: 4,
+      status: 'valid',
+      cells: { designation: 'Akola Traction Supplies', address: 'Akola', gstin: '' },
+      errors: [],
+      importedRecordId: null,
+    },
+  ],
+};
+
 const SIGNING_QUEUE = {
   requests: [
     ['pending', null, null],
@@ -1566,6 +1701,14 @@ export async function mockWorkspace(
      scan has to check the contrast of. */
   await page.route('**/api/signing-requests*', (route) =>
     route.fulfill(json(SIGNING_QUEUE)),
+  );
+  /* Spreadsheet imports (0094). The LIST is registered first and the
+     per-batch read second, because Playwright matches the LAST handler
+     that matches — the same ordering trap the correspondence routes
+     above carry a note about. */
+  await page.route('**/api/imports*', (route) => route.fulfill(json(IMPORT_BATCHES)));
+  await page.route('**/api/imports/00000000-0000-4000-8000-*', (route) =>
+    route.fulfill(json(IMPORT_BATCH_DETAIL)),
   );
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),

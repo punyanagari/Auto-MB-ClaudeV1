@@ -114,8 +114,7 @@ export function consumeUpload(
     }
     return {
       bytes: body,
-      mediaType:
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
   }
 

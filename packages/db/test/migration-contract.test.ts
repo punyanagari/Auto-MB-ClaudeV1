@@ -2191,7 +2191,7 @@ describe('tenant migration contract', () => {
     // left to whoever edits this next.
     expect(sql).toContain('CREATE TABLE spreadsheet_import_batches (');
     expect(sql).toContain('CREATE TABLE spreadsheet_import_rows (');
-    expect(sql).not.toMatch(/CREATE TABLE import_(batches|records|rows)/);
+    expect(sql).not.toMatch(/CREATE TABLE import_(batches|records|rows)\b/);
 
     // NOTHING REACHES A LIVE REGISTER UNTIL A PERSON SAYS SO, and the
     // schema's half of that is negative: the staging rows carry no
@@ -2201,7 +2201,7 @@ describe('tenant migration contract', () => {
       sql.indexOf('CREATE TABLE spreadsheet_import_rows ('),
       sql.indexOf('COMMENT ON TABLE spreadsheet_import_rows'),
     );
-    expect(rowsTable).not.toMatch(/REFERENCES (contacts|canonical_items)/);
+    expect(rowsTable).not.toMatch(/REFERENCES (contacts|canonical_items)\b/);
     // The one reference it does carry is the composite tenant key 0087
     // and 0091 both use, so a row cannot be attached to another tenant's
     // batch even by a writer that arrives another way.
@@ -2226,9 +2226,7 @@ describe('tenant migration contract', () => {
     // — so a 'completed' row with no completion is refused by the table
     // rather than by whoever reads it later.
     expect(sql).toContain('imported_row_count <= valid_row_count');
-    expect(sql).toContain(
-      "(status = 'completed') = (completed_at IS NOT NULL)",
-    );
+    expect(sql).toContain("(status = 'completed') = (completed_at IS NOT NULL)");
     expect(sql).toContain("(status = 'cancelled') = (cancelled_at IS NOT NULL)");
 
     // RLS, FORCE and the ADR-0010 InitPlan shape on both tables, and no
@@ -2263,9 +2261,7 @@ describe('tenant migration contract', () => {
     expect(sql).toContain(
       'CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(',
     );
-    expect(sql).toContain(
-      'can_manage_payroll, can_import_data, status',
-    );
+    expect(sql).toContain('can_manage_payroll, can_import_data, status');
     expect(sql).toContain(
       "VALUES (p_id, v_user_id, 'owner', 'all', true, true, true, true, true, 'active');",
     );

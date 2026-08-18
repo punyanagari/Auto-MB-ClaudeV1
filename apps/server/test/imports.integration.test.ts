@@ -589,7 +589,7 @@ describe('the database’s own arm', () => {
     await expect(
       admin`
         update spreadsheet_import_rows
-        set cells = ${admin.json({ designation: 'Something Else' } as never)}
+        set cells = ${admin.json({ designation: 'Something Else' })}
         where id = ${rowId}
       `,
     ).rejects.toMatchObject({ code: '23L03' });
@@ -617,7 +617,7 @@ describe('the database’s own arm', () => {
         )
         values (
           ${organisationId}, ${batchId}, 99,
-          ${admin.json({ designation: 'Late Arrival' } as never)}
+          ${admin.json({ designation: 'Late Arrival' })}
         )
       `,
     ).rejects.toMatchObject({ code: '23L04' });

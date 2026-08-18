@@ -695,6 +695,87 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
+### 18. Import screens — a screen the mock does not draw at all
+
+**Status: application-first, owner ruling not yet taken.** Numbered 18 by
+coordinator allocation; 17 belongs to the notifications pack of this wave.
+
+**There is no mock citation for this screen, and this entry exists so that
+absence is a recorded decision rather than an omission a reviewer has to
+guess at.** `AGENTS.md` § Design contract says a pull request touching a
+visible surface must cite the mock screen it replicates. So: there is
+nothing at `punyanagari/Auto-MB-Vercel-du@fdfd610` to cite. The mock has no
+importer, no upload panel and no staging concept — it draws the registers
+an import fills, and nothing about filling them from a file.
+
+That puts the screen under § Design contract 4 and § Approved divergences
+4, "screens the mock does not cover", whose list this extends. Every
+element on it is one the mock already ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Upload panel            | `Card` + `CardHeader`, the mock's `data-surface` panel                              |
+| Register picker         | The `field`/`select` pair every form on the product uses                            |
+| Both tables             | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Withdrawal              | `ConfirmDialog`, destructive tone, the same anatomy every cancel flow uses          |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+**Two chip words join the shared vocabulary** rather than being styled
+locally. `validated` takes the warning family beside `claimed` and
+`awaiting-approval`: a batch whose rows have all been judged is waiting on
+a person, which is exactly what that family means. `error` takes the
+destructive family beside `cancelled` and `rejected` — and the distinction
+from `low-stock`, which is deliberately warning, is the one worth stating:
+a part that needs reordering is a thing to do, and a row that cannot be
+written is a thing that failed. `pending`, `completed` and `cancelled` were
+already mapped and keep their readings.
+
+**One icon is new to the rail: `Upload`**, for the Imports entry, checked
+against every icon already on it. The screen sits directly beneath Masters
+in Administration, because the two registers it fills are the two Masters
+owns and an operator who has just found the Contacts screen should be one
+row from the way to fill it eight hundred at a time.
+
+**The screen is a conversation rather than a button, and the layout says
+so.** An import is never "did it work"; it is "which eleven rows are wrong
+and why". The batch list is the history, the open batch beneath it is the
+argument, and the register is untouched until one button is pressed — which
+is why that button counts the rows it will write ("Import 2 rows") and the
+paragraph above it says, in words, that nothing has been written yet.
+Errors sort to the top of the row table whatever their line number, because
+burying eleven refusals under four hundred passes is how an operator
+concludes an import simply failed.
+
+**Three things the Imports screen does not do**, each because the
+alternative would be a second place to do something, or a worse answer:
+
+- **Edit a cell.** A staged row is what the sheet contained, and migration
+  0094 refuses to rewrite it. An operator who could patch row 412 here
+  would produce a register nobody can reconcile against the file it came
+  from — and the file is what their colleague sends again next quarter.
+  They fix the workbook, which is the only fix that survives.
+- **Poll for progress.** Parsing is synchronous, so a batch is judged by
+  the time the upload answers. There is nothing to wait for, and inventing
+  a spinner for it would be inventing the wait as well.
+- **Undo a committed import.** The rows are ordinary register records once
+  they are written, and they are retired the way every other record of that
+  register is. A bulk undo would be a second, weaker delete path around
+  rules the registers already have.
+
+**One divergence from the product's own habit, stated so it is not
+mistaken for an oversight:** the row table renders the sheet's raw cells
+beside the errors, unformatted and untruncated. Every other register in
+this product formats what it shows. These are not the product's values —
+they are what somebody typed into Excel, shown so it can be compared with
+the workbook still open on the other monitor, and formatting them would
+hide the trailing space that is the actual defect.
+
+**When the mock grows an import screen, the mock wins.** This entry retires
+the moment there is something to cite, on the § 4 iteration pipeline:
+change it in v0, merge it, diff, port the delta.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
@@ -1135,7 +1216,7 @@ matrix dialog · PAC certificate issuance · Completion extensions · Measuremen
 Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invoice
 IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
 recovery · Password recovery · Account security · Organisation access settings ·
-Appearance settings · Monthly payroll
+Appearance settings · Monthly payroll · Spreadsheet imports
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.
