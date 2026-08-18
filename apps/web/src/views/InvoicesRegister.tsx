@@ -25,6 +25,7 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
 import { FormError, FormNotice } from '../ui/form.js';
+import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -360,6 +361,15 @@ export function InvoicesRegister({
             customer. A Work&rsquo;s invoice is drafted on the Work; a direct one is
             drafted here.
           </>
+        }
+        action={
+          <DownloadButton
+            label="Export .xlsx"
+            filename="tax-invoices.xlsx"
+            fetchBlob={() =>
+              api.downloadRegisterWorkbook(organisationId, 'tax-invoices')
+            }
+          />
         }
       />
 

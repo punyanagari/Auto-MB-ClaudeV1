@@ -8,6 +8,7 @@ import { errorMessage } from '../lib/load-failure.js';
 import { navigateOnClick, workHash, workspaceHashOf } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
+import { DownloadButton } from '../ui/download-button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 
 interface WorksProps {
@@ -160,14 +161,23 @@ export function Works({
             Every awarded contract, from LOA to delivery evidence.
           </p>
         </div>
-        {canModify && (
-          <div className="flex shrink-0 items-center gap-2">
+        {/* The export is open to every member who can read the register:
+            it hands back exactly the rows the screen is showing, narrowed
+            to the caller's assigned Works by the server. Uploading an LOA
+            is a write and stays behind the writer role. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <DownloadButton
+            label="Export .xlsx"
+            filename="works.xlsx"
+            fetchBlob={() => api.downloadRegisterWorkbook(organisationId, 'works')}
+          />
+          {canModify && (
             <Button onClick={onUpload}>
               <Plus className="size-4" aria-hidden="true" />
               Upload LOA
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       <section aria-labelledby="works-title" className="flex flex-col gap-4">

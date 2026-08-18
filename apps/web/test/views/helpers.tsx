@@ -693,6 +693,24 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn<ApiClient['setPayrollLineLossOfPay']>(),
     finalizePayrollRun: vi.fn<ApiClient['finalizePayrollRun']>(),
     cancelPayrollRun: vi.fn<ApiClient['cancelPayrollRun']>(),
+    auditRegister: vi.fn<ApiClient['auditRegister']>().mockResolvedValue({
+      events: [],
+      nextCursor: null,
+      windowFrom: '2018-08-19',
+      retentionMonths: 96,
+    }),
+    auditFacets: vi
+      .fn<ApiClient['auditFacets']>()
+      .mockResolvedValue({ actions: [], entityTypes: [], actors: [] }),
+    misSummary: vi.fn<ApiClient['misSummary']>().mockResolvedValue({
+      outputTax: [],
+      receivablesAgeing: [],
+      indeterminateBills: 0,
+      payrollCost: null,
+    }),
+    downloadRegisterWorkbook: vi.fn<ApiClient['downloadRegisterWorkbook']>(),
+    downloadAuditWorkbook: vi.fn<ApiClient['downloadAuditWorkbook']>(),
+    downloadTallyExport: vi.fn<ApiClient['downloadTallyExport']>(),
     // Maintenance (0088). The register answers empty by default, for the
     // reason the stock reads above do: a view that opens it renders its
     // own empty state rather than hanging on an unresolved mock.

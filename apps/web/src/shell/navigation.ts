@@ -1,5 +1,6 @@
 import {
   Boxes,
+  ChartColumn,
   CircleCheckBig,
   Database,
   ClipboardCheck,
@@ -9,6 +10,7 @@ import {
   Gavel,
   Hammer,
   HandCoins,
+  History,
   Landmark,
   LayoutDashboard,
   Mails,
@@ -47,6 +49,8 @@ export type ModuleKey =
   | 'maintenance'
   | 'masters'
   | 'members'
+  | 'audit'
+  | 'mis'
   | 'settings';
 
 type NavIcon = typeof LayoutDashboard;
@@ -161,6 +165,13 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'approvals', label: 'Approvals', icon: CircleCheckBig },
       { key: 'masters', label: 'Masters', icon: Database },
       { key: 'members', label: 'Members', icon: Users },
+      // The two screens migration 0095 adds. Both sit under
+      // Administration and neither is drawn by the mock at fdfd610 —
+      // recorded as docs/UX.md § 19, on the same footing as § 16's
+      // signing queue. `History` and `ChartColumn` are new lamps on this
+      // rail and collide with nothing already on it.
+      { key: 'audit', label: 'Audit trail', icon: History },
+      { key: 'mis', label: 'Reports', icon: ChartColumn },
       { key: 'settings', label: 'Settings', icon: SettingsIcon },
     ],
   },
@@ -216,6 +227,10 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'masters' };
     case 'members':
       return { name: 'members' };
+    case 'audit':
+      return { name: 'audit' };
+    case 'mis':
+      return { name: 'mis' };
     case 'settings':
       return { name: 'settings' };
   }
@@ -285,6 +300,8 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'production':
     case 'masters':
     case 'members':
+    case 'audit':
+    case 'mis':
     case 'settings':
       return view.name;
     case 'signing':
@@ -401,6 +418,10 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Masters';
     case 'members':
       return 'Members';
+    case 'audit':
+      return 'Audit trail';
+    case 'mis':
+      return 'Reports';
     case 'settings':
       return 'Settings';
   }

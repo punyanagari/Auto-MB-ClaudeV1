@@ -113,6 +113,10 @@ const Masters = lazy(() =>
 const Members = lazy(() =>
   import('./Members.js').then((module) => ({ default: module.Members })),
 );
+const AuditTrail = lazy(() =>
+  import('./AuditTrail.js').then((module) => ({ default: module.AuditTrail })),
+);
+const Mis = lazy(() => import('./Mis.js').then((module) => ({ default: module.Mis })));
 const OperationsDashboard = lazy(() =>
   import('./OperationsDashboard.js').then((module) => ({
     default: module.OperationsDashboard,
@@ -1663,6 +1667,22 @@ export function OperationsWorkspace({
                 organisationId={organisation.id}
                 currentUserId={me.user.id}
               />
+            )}
+
+            {/* Both screens keep their rail door and refuse at the screen,
+                which is the majority precedent here — Employees is the one
+                module whose door is hidden, because a register of salaries
+                is not something to advertise a way into. That an audit
+                trail EXISTS is not a secret; every operator should know
+                their actions are recorded. So the door stays and the
+                server's own refusal is what the screen renders, naming
+                which of its two walls stopped the read. */}
+            {view.name === 'audit' && (
+              <AuditTrail api={api} organisationId={organisation.id} />
+            )}
+
+            {view.name === 'mis' && (
+              <Mis api={api} organisationId={organisation.id} isOwner={isOwner} />
             )}
           </Suspense>
         </main>

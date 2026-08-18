@@ -1,4 +1,9 @@
 import type {
+  AuditFacetsResponse,
+  AuditRegisterQuery,
+  AuditRegisterResponse,
+  ExportableRegister,
+  MisSummaryResponse,
   ApproveMaintenanceRequest,
   CancelMaintenanceLine,
   CreateMaintenanceRequest,
@@ -671,6 +676,42 @@ export interface ApiClient {
     entityId: string,
     options?: { readonly cursor?: string; readonly limit?: number },
   ) => Promise<TimelineResponse>;
+  /** The organisation-wide audit register (0095). Gated on the audit
+   * authority AND full work scope; a member without either gets a 403
+   * that names which wall, and the register view renders the sentence
+   * rather than a retry. */
+  readonly auditRegister: (
+    organisationId: string,
+    options?: AuditRegisterQuery,
+  ) => Promise<AuditRegisterResponse>;
+  /** The filter vocabularies, read from the trail itself rather than
+   * hand-maintained on the client — the action list grows every wave. */
+  readonly auditFacets: (organisationId: string) => Promise<AuditFacetsResponse>;
+  /** The management summary: three aggregates the landing dashboard does
+   * not carry. `payrollCost` is null for a caller without the payroll
+   * authority; the rest is still served. */
+  readonly misSummary: (
+    organisationId: string,
+    options?: { readonly months?: number },
+  ) => Promise<MisSummaryResponse>;
+  /** Any major register as an .xlsx workbook. Work-scoped registers
+   * narrow to the caller's assignments; organisation-wide ones refuse a
+   * caller who cannot see every Work. */
+  readonly downloadRegisterWorkbook: (
+    organisationId: string,
+    register: ExportableRegister,
+  ) => Promise<Blob>;
+  /** The audit register as a workbook, under the same filters the screen
+   * is showing. */
+  readonly downloadAuditWorkbook: (
+    organisationId: string,
+    options?: AuditRegisterQuery,
+  ) => Promise<Blob>;
+  /** The accountant's Tally import file for one window. Owner-only. */
+  readonly downloadTallyExport: (
+    organisationId: string,
+    window: { readonly from: string; readonly to: string },
+  ) => Promise<Blob>;
   /** Master data (pickers only): `save` with a null id creates, with an id
    * updates; `setActive` retires (false) or reactivates (true). */
   readonly listContacts: (
@@ -2368,6 +2409,18 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
     return response.blob();
   }
 
+  /** The audit register's filters, as a query string. ONE builder, two
+   * callers: the paged read and the workbook. A workbook produced under
+   * different filters from the screen that offered it would be a file the
+   * operator has to re-check by hand. */
+  function auditQuery(options: AuditRegisterQuery): string {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== '') query.set(key, String(value));
+    }
+    return query.size > 0 ? `?${query.toString()}` : '';
+  }
+
   /** Both company-document uploads post the same thing and answer the same
    * refreshed credential. */
   function uploadCompanyDocumentPdf(
@@ -2985,6 +3038,37 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
         `/api/audit/entity/${entityType}/${entityId}${suffix}`,
         { organisationId },
       );
+    },
+    async auditRegister(organisationId, options = {}) {
+      return request<AuditRegisterResponse>(`/api/audit-events${auditQuery(options)}`, {
+        organisationId,
+      });
+    },
+    async auditFacets(organisationId) {
+      return request<AuditFacetsResponse>('/api/audit-events/facets', {
+        organisationId,
+      });
+    },
+    async misSummary(organisationId, options = {}) {
+      const query = new URLSearchParams();
+      if (options.months !== undefined) query.set('months', String(options.months));
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      return request<MisSummaryResponse>(`/api/mis/summary${suffix}`, {
+        organisationId,
+      });
+    },
+    async downloadRegisterWorkbook(organisationId, register) {
+      return downloadBlob(`/api/registers/${register}.xlsx`, organisationId);
+    },
+    async downloadAuditWorkbook(organisationId, options = {}) {
+      return downloadBlob(
+        `/api/audit-events.xlsx${auditQuery(options)}`,
+        organisationId,
+      );
+    },
+    async downloadTallyExport(organisationId, window) {
+      const query = new URLSearchParams({ from: window.from, to: window.to });
+      return downloadBlob(`/api/exports/tally.xml?${query.toString()}`, organisationId);
     },
     async listContacts(organisationId, options = {}) {
       const query = new URLSearchParams();

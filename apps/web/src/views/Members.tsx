@@ -211,6 +211,21 @@ const FEATURES = [
     authority: 'Payroll authority',
     change: 'Payroll authority',
   },
+  {
+    /* The audit authority (migration 0095): who may open the
+       organisation-wide audit register and export it. Not covered by any
+       role, because the register answers "what did this person do" across
+       every Work and every module and prints the before/after of each
+       change — a surveillance surface over colleagues, on the same
+       footing as the payroll register's salaries. A Work's own timeline
+       stays open to everyone assigned to it. Full work scope is required
+       on top: the register cannot narrow honestly, so an assigned-scope
+       member is refused rather than shown a silent slice. */
+    key: 'canViewAuditTrail',
+    heading: 'Can read audit',
+    authority: 'Audit authority',
+    change: 'Audit authority',
+  },
 ] as const satisfies readonly {
   key: keyof Membership & `can${string}`;
   heading: string;

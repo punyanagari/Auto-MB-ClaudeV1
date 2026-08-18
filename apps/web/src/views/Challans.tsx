@@ -9,6 +9,7 @@ import {
 } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
+import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { DeliveryChallans } from './DeliveryChallans.js';
@@ -100,39 +101,52 @@ export function Challans({
         titleId="challans-title"
         description="Create and control outward delivery and issue challans from one register. An issued challan is locked, and the number it holds is never reused."
         action={
-          !creating ? undefined : tab === 'delivery' ? (
-            /* The mock holds this button and explains it in a tooltip
+          <div className="flex flex-wrap items-center gap-2">
+            {/* The delivery register's workbook. The issue-challan tab has
+                no export of its own yet: `EXPORTABLE_REGISTERS` names the
+                registers the server can produce, and adding one is an
+                entry there plus a descriptor, not a new screen. */}
+            <DownloadButton
+              label="Export .xlsx"
+              filename="delivery-challans.xlsx"
+              fetchBlob={() =>
+                api.downloadRegisterWorkbook(organisationId, 'delivery-challans')
+              }
+            />
+            {!creating ? null : tab === 'delivery' ? (
+              /* The mock holds this button and explains it in a tooltip
                (`components/document-register`). The bubble is
                `aria-hidden` by that primitive's naming rule, and it can
                be: the register's own open-draft panel below carries the
                same sentence as a live region, so the explanation is
                announced whether or not the pointer ever finds the
                button. */
-            <Tooltip
-              content={
-                draftHeld
-                  ? 'Finish or discard the open draft for this Work first.'
-                  : 'Draft a delivery challan against this Work.'
-              }
-            >
+              <Tooltip
+                content={
+                  draftHeld
+                    ? 'Finish or discard the open draft for this Work first.'
+                    : 'Draft a delivery challan against this Work.'
+                }
+              >
+                <Button
+                  disabled={draftHeld}
+                  onClick={() => {
+                    onNewWorkChallan(workId, workCode);
+                  }}
+                >
+                  New delivery challan
+                </Button>
+              </Tooltip>
+            ) : (
               <Button
-                disabled={draftHeld}
                 onClick={() => {
-                  onNewWorkChallan(workId, workCode);
+                  onNewIssueChallan(workId);
                 }}
               >
-                New delivery challan
+                New issue challan
               </Button>
-            </Tooltip>
-          ) : (
-            <Button
-              onClick={() => {
-                onNewIssueChallan(workId);
-              }}
-            >
-              New issue challan
-            </Button>
-          )
+            )}
+          </div>
         }
       />
 

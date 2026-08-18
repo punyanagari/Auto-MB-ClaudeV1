@@ -7,6 +7,8 @@ import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { AccountSecurity } from '../../src/views/AccountSecurity.js';
 import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
 import { Approvals } from '../../src/views/Approvals.js';
+import { AuditTrail } from '../../src/views/AuditTrail.js';
+import { Mis } from '../../src/views/Mis.js';
 import { CompanyDocuments } from '../../src/views/CompanyDocuments.js';
 import { Inspection } from '../../src/views/Inspection.js';
 import { WorkInspectionClause } from '../../src/views/WorkInspectionClause.js';
@@ -616,6 +618,29 @@ export const STATE_CASES: readonly StateCase[] = [
     render: (api) => <SigningQueue api={api} organisationId={ORG_ID} canModify />,
     retry: /Retry the signing queue/,
     empty: { text: /No document has been sent for signature yet/ },
+  },
+  {
+    view: 'AuditTrail.tsx',
+    name: 'the audit register',
+    // Two mount reads. Only the register's own is listed: the facet read
+    // beside it degrades to empty pickers on purpose, because a register
+    // that still lists its events is more useful than one that refuses to
+    // render because its filters could not be built.
+    loads: ['auditRegister'],
+    render: (api) => <AuditTrail api={api} organisationId={ORG_ID} />,
+    retry: /Retry the audit register/,
+    empty: { text: /Nothing has been recorded yet/ },
+  },
+  {
+    view: 'Mis.tsx',
+    name: 'the management summary',
+    loads: ['misSummary'],
+    render: (api) => <Mis api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the summary/,
+    empty: {
+      notApplicable:
+        'the summary always renders: the ageing table carries all five buckets whatever the data, so there is no whole-page empty state. Its output-tax and payroll sections carry their own EmptyStates.',
+    },
   },
   {
     view: 'Employees.tsx',

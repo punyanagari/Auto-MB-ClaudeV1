@@ -145,6 +145,16 @@ export type WorkspaceView =
   | { name: 'employees' }
   | { name: 'payroll' }
   | { name: 'members' }
+  /** The organisation-wide audit register (0095). Not the per-Work
+   * timeline, which stays a Work workspace section: this one is filtered
+   * by actor and action across every module, and is gated on the audit
+   * authority AND full work scope. */
+  | { name: 'audit' }
+  /** The management summary (0095): output tax by month, receivables
+   * ageing, payroll cost. Separate from the landing dashboard on purpose
+   * — see `packages/contracts/src/mis.ts` — because these are month-end
+   * roll-ups nobody needs on every sign-in. */
+  | { name: 'mis' }
   | { name: 'settings' };
 
 /** A parsed location: the view plus the tab state some views carry
@@ -326,6 +336,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/correspondence/new/inward';
     case 'members':
       return '#/members';
+    case 'audit':
+      return '#/audit';
+    case 'mis':
+      return '#/reports';
     case 'settings':
       return '#/settings';
   }
@@ -410,6 +424,7 @@ export const EMPLOYEE_REGISTER_HASH = workspaceHashOf({ view: { name: 'employees
 export const PAYROLL_HASH = workspaceHashOf({ view: { name: 'payroll' } });
 
 export const SETTINGS_HASH = '#/settings';
+export const AUDIT_REGISTER_HASH = workspaceHashOf({ view: { name: 'audit' } });
 export const QUOTATIONS_HASH = '#/quotations';
 
 /** `#/installations`, or the register narrowed to one Work. */
@@ -621,8 +636,14 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'receivables':
     case 'signing':
     case 'members':
+    case 'audit':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;
+    // The management summary answers to `#/reports`, which is what an
+    // operator would type and what the rail calls it. `mis` is the
+    // internal name and never appears in an address.
+    case 'reports':
+      return rest.length === 0 ? { view: { name: 'mis' } } : null;
     default:
       return null;
   }
