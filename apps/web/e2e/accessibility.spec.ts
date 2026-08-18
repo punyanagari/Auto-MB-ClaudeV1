@@ -179,8 +179,13 @@ test('organisation picker and members workspace pass the axe scan', async ({
   await page.getByRole('link', { name: 'Employees' }).click();
   await expect(page.getByRole('heading', { name: 'Employees' })).toBeVisible();
   await expect(page.getByText('Anita Deshmukh')).toBeVisible();
-  await expect(page.getByText('Employed').first()).toBeVisible();
-  await expect(page.getByText('Left')).toBeVisible();
+  // Exact, because the register's own copy contains both words: the
+  // "Include people who have left" checkbox and the "Employed today"
+  // stat hint each match a substring search, and a loose locator would
+  // pass on the wrong element while the chip it is meant to prove was
+  // missing.
+  await expect(page.getByText('Employed', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Left', { exact: true })).toBeVisible();
   await expect(page.getByText('Provident fund · ESI').first()).toBeVisible();
   await expectNoAxeViolations(page, 'employee register');
 

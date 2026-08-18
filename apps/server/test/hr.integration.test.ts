@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -18,6 +19,7 @@ import type {
   PayrollRunResponse,
 } from '@auto-mb/contracts';
 import { buildApp } from '../src/app.js';
+import { HR_DATABASE_REFUSAL_CODES } from '../src/routes/hr.js';
 
 /**
  * The HR module end to end (migrations 0089, 0090).
@@ -434,6 +436,28 @@ describe('a payroll run, opened to finalised', () => {
     expect(recalculated.json<{ remedy?: string }>().remedy).toContain(
       'Cancel this run',
     );
+  });
+});
+
+describe('the 23H census', () => {
+  it('maps every SQLSTATE the two migrations raise', async () => {
+    // A guard added to 0089 or 0090 without a mapping in `routes/hr.ts`
+    // reaches an operator as an unexplained 500 — "the server broke"
+    // where the truth is "somebody else finalised this run". The census
+    // makes that a build failure instead. Copied from the production
+    // pack's own, which is where the shape comes from.
+    const raised = new Set<string>();
+    for (const file of ['0089_employees.sql', '0090_payroll.sql']) {
+      const sql = await readFile(path.resolve(migrationsDirectory, file), 'utf8');
+      for (const match of sql.matchAll(/USING ERRCODE = '(23H\d\d)'/g)) {
+        if (match[1] !== undefined) raised.add(match[1]);
+      }
+    }
+    expect(raised.size).toBeGreaterThanOrEqual(5);
+    const mapped = HR_DATABASE_REFUSAL_CODES.filter((code) =>
+      code.startsWith('23H'),
+    ).sort();
+    expect(mapped).toEqual([...raised].sort());
   });
 });
 
