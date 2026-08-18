@@ -363,6 +363,7 @@ const FUNCTION_GRANTS = [
   // no privilege on `worker_jobs`, so this definer read is the only way
   // an organisation can be told what its own scheduled checks found.
   'app_private.organisation_job_history(integer)',
+  'app_private.fail_stalled_organisation_exports(interval, integer)',
 ];
 
 export async function applyGrants(admin: Sql): Promise<void> {

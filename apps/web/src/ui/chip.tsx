@@ -107,6 +107,18 @@ const CHIP_TONES = {
   // "fixes" later.
   draft: 'neutral',
 
+  // A recurring statutory check that is switched off (0096). Neutral by
+  // DECISION, exactly as `draft` is: a check somebody has deliberately
+  // stopped is inert, not a caution, and an amber lamp on it would be
+  // a lamp that is always lit for every organisation that only wants one
+  // of the checks. The remedy when the SCHEDULER paused it — a member who
+  // left — is a sentence on the row, not a colour.
+  //
+  // This is the one word this pack adds to the vocabulary, and it is
+  // added deliberately rather than left to render neutral by accident,
+  // which is the trap the note under `draft` exists to name.
+  paused: 'neutral',
+
   // A finalised payroll run (0090) is an issued document — numbered,
   // immutable, the record of what was paid. `docs/DESIGN.md` § Status
   // badge semantics gives a completed, correct, proceed-state record the

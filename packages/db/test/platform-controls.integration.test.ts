@@ -5,6 +5,7 @@ import { withTenant } from '../src/tenant.js';
 import {
   enqueueDueStatutoryJobs,
   expireLapsedOrganisationExports,
+  failStalledOrganisationExports,
 } from '../src/queue.js';
 import {
   adminUrl,
@@ -150,6 +151,80 @@ describe('the recurring statutory scheduler', () => {
     await admin`delete from statutory_job_schedules where id = ${scheduleId}`;
   });
 
+  it('takes disjoint schedules when two workers tick at the same instant', async () => {
+    // The exactly-once property is `FOR UPDATE SKIP LOCKED`, and a test
+    // that calls the function twice in sequence proves the ADVANCE, not
+    // the lock. This drives two OVERLAPPING transactions: the first holds
+    // its schedule locked while the second sweeps, and the second must
+    // step over it rather than block on it or take it too.
+    const mine = await seedSchedule(tenant, 5);
+    const theirs = await seedSchedule(other, 5);
+
+    let firstCount = 0;
+    let secondCount = 0;
+    await admin.begin(async (first) => {
+      // Locks exactly one schedule and does NOT commit yet.
+      const [locked] = await first<{ id: string }[]>`
+        select id from statutory_job_schedules
+        where id = ${mine} for update
+      `;
+      expect(locked?.id).toBe(mine);
+
+      // A second connection sweeps while that lock is held.
+      secondCount = await enqueueDueStatutoryJobs(app, 50);
+    });
+    firstCount = await enqueueDueStatutoryJobs(app, 50);
+
+    // The sweep that ran under the lock skipped the locked row and took
+    // the other organisation's; the later one picked up what was skipped.
+    // Two enqueues in total, never three and never one.
+    expect(secondCount).toBe(1);
+    expect(firstCount).toBe(1);
+
+    const [jobs] = await admin<{ count: number }[]>`
+      select count(*)::int as count from worker_jobs
+      where payload_ref->>'scheduleId' in (${mine}, ${theirs})
+    `;
+    expect(jobs?.count).toBe(2);
+
+    await admin`
+      delete from worker_jobs
+      where payload_ref->>'scheduleId' in (${mine}, ${theirs})
+    `;
+    await admin`delete from statutory_job_schedules where id in (${mine}, ${theirs})`;
+  });
+
+  it('pauses a schedule whose member has left instead of refusing for ever', async () => {
+    const scheduleId = await seedSchedule(tenant, 5);
+    expect(await enqueueDueStatutoryJobs(app, 50)).toBe(1);
+
+    // The queue's own verdict when bind_tenant refuses the recorded
+    // membership. Driving the state directly rather than deleting a
+    // membership keeps this a test of the SCHEDULER's reaction.
+    await admin`
+      update worker_jobs set state = 'refused_bind', finished_at = now()
+      where payload_ref->>'scheduleId' = ${scheduleId}
+    `;
+    await admin`
+      update statutory_job_schedules set next_run_at = now() - interval '1 minute'
+      where id = ${scheduleId}
+    `;
+
+    // The next tick must PAUSE rather than enqueue: without this the
+    // schedule re-refuses every cadence for ever and the queue's
+    // refused_bind count stops meaning anything.
+    expect(await enqueueDueStatutoryJobs(app, 50)).toBe(0);
+    const [row] = await admin<{ enabled: boolean; disabled_reason: string | null }[]>`
+      select enabled, disabled_reason from statutory_job_schedules
+      where id = ${scheduleId}
+    `;
+    expect(row?.enabled).toBe(false);
+    expect(row?.disabled_reason).toContain('no longer in the organisation');
+
+    await admin`delete from worker_jobs where payload_ref->>'scheduleId' = ${scheduleId}`;
+    await admin`delete from statutory_job_schedules where id = ${scheduleId}`;
+  });
+
   it('refuses to repoint a schedule at a different check', async () => {
     const scheduleId = await seedSchedule(tenant, 5);
     const failure = await refused(
@@ -170,10 +245,27 @@ describe('the recurring statutory scheduler', () => {
 });
 
 describe('the organisation export artefact', () => {
+  /** Retires whatever build is in flight for this tenant.
+   *
+   * The partial unique index admits ONE queued-or-running row per
+   * organisation, so a test that leaves one blocks every later insert.
+   * Failing it is the same transition the stall sweep makes, so this
+   * cleans up through the state machine rather than around it. */
+  async function clearLiveExports(target: Tenant): Promise<void> {
+    await admin`
+      update organisation_export_requests
+         set state = 'failed', completed_at = now(),
+             failure_reason = 'retired by the test fixture'
+       where organisation_id = ${target.organisationId}
+         and state in ('queued', 'running')
+    `;
+  }
+
   async function seedReadyExport(
     target: Tenant,
     expiresIn: string,
   ): Promise<{ id: string; key: string }> {
+    await clearLiveExports(target);
     const [row] = await admin<{ id: string }[]>`
       insert into organisation_export_requests (
         organisation_id, requested_by_user_id
@@ -249,6 +341,7 @@ describe('the organisation export artefact', () => {
   });
 
   it('refuses a ready row with nothing to fetch', async () => {
+    await clearLiveExports(tenant);
     const [row] = await admin<{ id: string }[]>`
       insert into organisation_export_requests (
         organisation_id, requested_by_user_id
@@ -269,6 +362,7 @@ describe('the organisation export artefact', () => {
       `,
     );
     expect(failure.code).toBe('23514');
+    await clearLiveExports(tenant);
   });
 
   it('refuses a state that rewinds', async () => {
@@ -306,6 +400,100 @@ describe('the organisation export artefact', () => {
     expect(failure.code).toBe('23N02');
   });
 
+  it('fails a build nothing will finish, so the organisation is not locked out', async () => {
+    // The export builds in the API process, so a restart leaves the row
+    // in `running` with nothing behind it — and the partial unique index
+    // below makes that ONE row disable self-service export for the
+    // organisation for ever. This sweep is the reconciliation, and it is
+    // the reason the index is safe to have.
+    await clearLiveExports(tenant);
+    const [row] = await admin<{ id: string }[]>`
+      insert into organisation_export_requests (
+        organisation_id, requested_by_user_id, requested_at
+      )
+      values (${tenant.organisationId}, ${tenant.userId}, now() - interval '3 hours')
+      returning id
+    `;
+    const id = row?.id ?? '';
+    await admin`
+      update organisation_export_requests
+         set state = 'running', started_at = now() - interval '3 hours'
+       where id = ${id}
+    `;
+
+    expect(
+      await failStalledOrganisationExports(app, '1 hour', 50),
+    ).toBeGreaterThanOrEqual(1);
+
+    const [failed] = await admin<{ state: string; failure_reason: string | null }[]>`
+      select state, failure_reason from organisation_export_requests where id = ${id}
+    `;
+    expect(failed?.state).toBe('failed');
+    expect(failed?.failure_reason).toContain('did not finish');
+  });
+
+  it('leaves a build that is still plausibly running alone', async () => {
+    await clearLiveExports(tenant);
+    const [row] = await admin<{ id: string }[]>`
+      insert into organisation_export_requests (
+        organisation_id, requested_by_user_id
+      )
+      values (${tenant.organisationId}, ${tenant.userId})
+      returning id
+    `;
+    const id = row?.id ?? '';
+    expect(await failStalledOrganisationExports(app, '1 hour', 50)).toBe(0);
+    const [alive] = await admin<{ state: string }[]>`
+      select state from organisation_export_requests where id = ${id}
+    `;
+    expect(alive?.state).toBe('queued');
+    await admin`
+      update organisation_export_requests
+         set state = 'failed', completed_at = now(), failure_reason = 'test cleanup'
+       where id = ${id}
+    `;
+  });
+
+  it('refuses a sweep window short enough to kill a live build', async () => {
+    const failure = await refused(
+      app`select app_private.fail_stalled_organisation_exports(interval '1 minute', 10)`,
+    );
+    // A sweep that could take a build still in flight would fail a healthy
+    // export AND free the slot for a second one racing the first.
+    expect(failure.code).toBe('23514');
+  });
+
+  it('admits one build at a time in the DATABASE, not only in the route', async () => {
+    await clearLiveExports(tenant);
+    const [first] = await admin<{ id: string }[]>`
+      insert into organisation_export_requests (
+        organisation_id, requested_by_user_id
+      )
+      values (${tenant.organisationId}, ${tenant.userId})
+      returning id
+    `;
+    // The route pre-checks the same rule, but two requests can both pass
+    // that check before either inserts. This is the arm that holds.
+    const failure = await refused(
+      withTenant(
+        app,
+        { organisationId: tenant.organisationId, userId: tenant.userId },
+        (tx) => tx`
+          insert into organisation_export_requests (
+            organisation_id, requested_by_user_id
+          )
+          values (${tenant.organisationId}, ${tenant.userId})
+        `,
+      ),
+    );
+    expect(failure.code).toBe('23505');
+    await admin`
+      update organisation_export_requests
+         set state = 'failed', completed_at = now(), failure_reason = 'test cleanup'
+       where id = ${first?.id ?? ''}
+    `;
+  });
+
   it('lets the download counters move on a built artefact', async () => {
     const artefact = await seedReadyExport(tenant, '7 days');
     await withTenant(
@@ -333,6 +521,19 @@ describe('the run history read', () => {
     // The same SQLSTATE `bind_tenant` and `enqueue_job` raise: "you hold no
     // membership here" is one answer however it is discovered.
     expect(failure.code).toBe('28A01');
+  });
+
+  it('refuses a page size outside one to two hundred', async () => {
+    for (const limit of [0, 201]) {
+      const failure = await refused(
+        withTenant(
+          app,
+          { organisationId: tenant.organisationId, userId: tenant.userId },
+          (tx) => tx`select * from app_private.organisation_job_history(${limit})`,
+        ),
+      );
+      expect(failure.code, `limit ${String(limit)}`).toBe('23514');
+    }
   });
 
   it('answers only the bound organisation, and never the claim token', async () => {

@@ -642,17 +642,14 @@ ORDER BY requested_at DESC;
   download route refuses it — and the next tick will mark it `expired` and
   delete the bytes. A row that stays `ready` past its expiry means the
   worker is down.
-- A `running` row older than an hour is a build whose SERVER process died
-  (the build runs in the API process, not the worker; `routes/platform.ts`
-  argues why). It is safe to move on by hand, and the operator remedy is
-  simply to request another export:
-
-  ```sql
-  UPDATE organisation_export_requests
-     SET state = 'failed', completed_at = now(),
-         failure_reason = 'the server restarted while this export was being built'
-   WHERE id = '…' AND state = 'running';
-  ```
+- A `queued` or `running` row whose build died — the build runs in the API
+  process, not the worker, and `routes/platform.ts` argues why — **is
+  reconciled automatically**. The tick fails anything older than an hour
+  with a stated reason, and there is deliberately no manual step: the
+  partial unique index admits one live build per organisation, so a single
+  stranded row would otherwise disable self-service export for that tenant
+  for ever. If you see one older than an hour still sitting there, the
+  worker is down.
 
 - The worker logs `an expired export artefact could not be deleted; it is
 orphaned` when the row was marked but the file survived. That file is

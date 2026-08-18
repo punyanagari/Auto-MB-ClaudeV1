@@ -37,15 +37,38 @@ interface OrganisationExportSettingsProps {
   /** The `can_export_org` authority. The server refuses regardless; this
    * is the door, not the lock. */
   readonly canExportOrg: boolean;
+  /** So the register can say "you" where every other one does. */
+  readonly currentUserId: string;
 }
 
+/** Every word here is already in the shared vocabulary and mapped
+ * deliberately (`ui/chip.tsx`); none reads neutral by falling off the end
+ * of the map, which is the trap that file's own note names. */
 const STATE_CHIP: Record<OrganisationExport['state'], string> = {
   queued: 'pending',
-  running: 'recording',
+  running: 'processing',
   ready: 'active',
-  failed: 'rejected',
+  failed: 'failed',
   expired: 'expired',
 };
+
+/** Bytes an operator can read at a glance. A whole-organisation package
+ * is tens of megabytes; printing it in kilobytes made the one number on
+ * the row unreadable. */
+function humanBytes(value: string | null): string {
+  if (value === null) return '—';
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes)) return '—';
+  if (bytes < 1024) return `${String(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/** The reader's own id reads as "you", matching `views/Approvals.tsx`. */
+function actorLabel(userId: string, currentUserId: string): string {
+  return userId === currentUserId ? 'you' : userId;
+}
 
 function describeState(record: OrganisationExport): string {
   switch (record.state) {
@@ -68,6 +91,7 @@ export function OrganisationExportSettings({
   api,
   organisationId,
   canExportOrg,
+  currentUserId,
 }: OrganisationExportSettingsProps) {
   const [records, setRecords] = useState<readonly OrganisationExport[] | null>(null);
   const [retentionHours, setRetentionHours] = useState(0);
@@ -119,7 +143,13 @@ export function OrganisationExportSettings({
         anchor.href = url;
         anchor.download = `auto-mb-export-${record.id}.json`;
         anchor.click();
-        URL.revokeObjectURL(url);
+        // Revoked on a later tick, the `views/Approvals.tsx` idiom.
+        // Revoking synchronously races the browser's own read of a
+        // detached anchor's href, and the failure it produces is a
+        // download that silently does nothing.
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 60_000);
         reload();
       }, 'The export was downloaded.'),
     [act, api, organisationId, reload],
@@ -186,18 +216,14 @@ export function OrganisationExportSettings({
               <tbody>
                 {records.map((record) => (
                   <tr key={record.id}>
-                    <td className={numericCell}>
+                    <td className="tabular-nums">
                       {formatTimestamp(record.requestedAt)}
                     </td>
-                    <td>{record.requestedBy}</td>
+                    <td>{actorLabel(record.requestedBy, currentUserId)}</td>
                     <td>
                       <StatusChip status={STATE_CHIP[record.state]} />
                     </td>
-                    <td className={numericCell}>
-                      {record.byteSize === null
-                        ? '—'
-                        : `${Math.round(Number(record.byteSize) / 1024)} KB`}
-                    </td>
+                    <td className={numericCell}>{humanBytes(record.byteSize)}</td>
                     <td className="font-mono text-[11px] break-all">
                       {record.sha256 ?? '—'}
                     </td>
@@ -232,7 +258,8 @@ export function OrganisationExportSettings({
             </Button>
             {building && (
               <span className="text-xs text-muted-foreground">
-                One export is already being built.
+                One export is already being built. Refresh to see it finish — a build
+                that never does is failed automatically within the hour.
               </span>
             )}
             <Button variant="outline" size="sm" onClick={reload}>

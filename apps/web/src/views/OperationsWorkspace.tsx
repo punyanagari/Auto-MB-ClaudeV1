@@ -1047,11 +1047,13 @@ export function OperationsWorkspace({
                   organisationId={organisation.id}
                   isOwner={membership?.role === 'owner'}
                   canManageEntitlements={canManageEntitlements}
+                  currentUserId={me.user.id}
                 />
                 <OrganisationExportSettings
                   api={api}
                   organisationId={organisation.id}
                   canExportOrg={canExportOrg}
+                  currentUserId={me.user.id}
                 />
                 <AppearanceSettings />
                 <AccountSecurity api={api} />

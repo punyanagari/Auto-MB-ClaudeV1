@@ -3,6 +3,7 @@ import type {
   Entitlement,
   JobRun,
   JobSchedule,
+  ScheduleCadence,
   ScheduledJobKind,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
@@ -35,17 +36,17 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
  *
  * An ENTITLEMENT answers "may this organisation use this module at all",
  * and its honest default is whatever the product ships — so the row shows
- * the effective value beside the shipped one, and says plainly when
- * nobody has ever chosen.
+ * the effective value beside the shipped one, says plainly when nobody
+ * has ever chosen, and carries the note that says WHY, which is the fact
+ * that outlives everybody who remembers the decision.
  *
  * A SCHEDULE answers "should this check run, and how often", and it
  * carries one fact nothing else in the product does: the member whose
  * authority its jobs borrow. ADR-0011 gives the queue no service
- * identity, so a schedule enabled by somebody who has since left parks
- * its next run rather than running on their authority — and the remedy is
- * for a current member to save the schedule again. The run history is
- * where that is visible, so it is on the same panel rather than behind a
- * link.
+ * identity, so when that member leaves the scheduler pauses the check
+ * rather than running on a departed person's authority — and the remedy
+ * is a control on the row, not a paragraph telling the operator to go and
+ * find one.
  */
 
 interface PlatformSettingsProps {
@@ -55,25 +56,43 @@ interface PlatformSettingsProps {
   /** The entitlements authority. Owner-only in effect — every route needs
    * both — so the panel needs both to render. */
   readonly canManageEntitlements: boolean;
+  /** So the screen can say "you" where every other register does, rather
+   * than printing the reader their own opaque account id. */
+  readonly currentUserId: string;
 }
 
-/** The queue's states, in the product's own chip vocabulary. `done` is
- * neutral rather than success: a check that ran is not a step that
- * closed, and painting every completed sweep green would make the one
- * that found something invisible. */
+/** The queue's states, in the product's own chip vocabulary.
+ *
+ * `refused_bind` is WARNING and not destructive, deliberately: it is not
+ * a run that broke, it is a run the database declined to start because
+ * the member behind it has gone, and it has a one-click remedy on the row
+ * above. `docs/DESIGN.md` § Status badge semantics gives the destructive
+ * family to cancelled/rejected/declined; a to-do with a remedy is the
+ * warning family's own meaning. */
 const RUN_CHIP: Record<JobRun['state'], string> = {
   queued: 'pending',
-  claimed: 'recording',
+  claimed: 'claimed',
   done: 'completed',
-  failed: 'rejected',
-  refused_bind: 'rejected',
+  failed: 'failed',
+  refused_bind: 'review',
 };
+
+const CADENCES: readonly ScheduleCadence[] = ['daily', 'weekly', 'monthly'];
+
+/** The reader's own id reads as "you" — `views/Approvals.tsx` sets the
+ * precedent, and no screen in this product resolves an account id to a
+ * name because nothing puts a name on the wire. */
+function actorLabel(userId: string | null, currentUserId: string): string {
+  if (userId === null) return '—';
+  return userId === currentUserId ? 'you' : userId;
+}
 
 export function PlatformSettings({
   api,
   organisationId,
   isOwner,
   canManageEntitlements,
+  currentUserId,
 }: PlatformSettingsProps) {
   const visible = isOwner && canManageEntitlements;
   const [entitlements, setEntitlements] = useState<readonly Entitlement[] | null>(null);
@@ -81,7 +100,7 @@ export function PlatformSettings({
   const [runs, setRuns] = useState<readonly JobRun[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, reload] = useReload();
-  const { pending, actionError, act } = useAction();
+  const { pending, notice, actionError, act } = useAction();
 
   useEffect(() => {
     if (!visible) return;
@@ -112,6 +131,10 @@ export function PlatformSettings({
     (flag: Entitlement) =>
       act(
         async () => {
+          // The note is NOT sent, and that is what keeps it: the contract
+          // treats an absent note as "leave what is there". Sending
+          // `note: null` here would erase "waiting on NIC re-certification"
+          // the first time anybody flipped the switch.
           await api.setEntitlement(organisationId, flag.key, {
             enabled: !flag.enabled,
           });
@@ -123,14 +146,15 @@ export function PlatformSettings({
   );
 
   const saveSchedule = useCallback(
-    (kind: ScheduledJobKind, enabled: boolean, label: string) =>
-      act(
-        async () => {
-          await api.setJobSchedule(organisationId, kind, { enabled });
-          reload();
-        },
-        `${label} is now ${enabled ? 'running' : 'switched off'}.`,
-      ),
+    (
+      kind: ScheduledJobKind,
+      body: { enabled?: boolean; cadence?: ScheduleCadence; horizonDays?: number },
+      done: string,
+    ) =>
+      act(async () => {
+        await api.setJobSchedule(organisationId, kind, body);
+        reload();
+      }, done),
     [act, api, organisationId, reload],
   );
 
@@ -180,14 +204,17 @@ export function PlatformSettings({
             <div className="flex max-w-[36rem] flex-col gap-1">
               <span className="text-sm font-medium">{flag.label}</span>
               <span className="text-xs text-muted-foreground">{flag.description}</span>
+              {flag.note !== null && (
+                <span className="text-xs text-foreground">Note: {flag.note}</span>
+              )}
               <span className="text-xs text-muted-foreground tabular-nums">
                 {flag.configured && flag.updatedAt !== null
-                  ? `set by ${flag.setBy ?? 'an owner'} on ${formatTimestamp(flag.updatedAt)}`
+                  ? `set by ${actorLabel(flag.setBy, currentUserId)} on ${formatTimestamp(flag.updatedAt)}`
                   : `never configured — using the shipped default (${flag.defaultEnabled ? 'on' : 'off'})`}
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <StatusChip status={flag.enabled ? 'active' : 'cancelled'} />
+              <StatusChip status={flag.enabled ? 'active' : 'paused'} />
               <Button
                 variant="outline"
                 size="sm"
@@ -205,9 +232,10 @@ export function PlatformSettings({
 
       <h3 className="mt-6 text-sm font-medium">Recurring checks</h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        Each check runs under the authority of the member who last saved it. If that
-        member leaves the organisation the run is refused rather than carried out on
-        their behalf — save the check again to put your own membership behind it.
+        Each check runs under the authority of the member who last adopted it. If that
+        member leaves the organisation the check pauses itself rather than running on
+        their behalf; use Run as me to put your own membership behind it. A check
+        switched back on runs once straight away, then on its cadence.
       </p>
       {schedules.length === 0 ? (
         <div className="mt-3">
@@ -217,8 +245,8 @@ export function PlatformSettings({
               onClick: () => {
                 void saveSchedule(
                   'instrument_expiry_review',
-                  true,
-                  'The guarantee and certificate expiry check',
+                  { enabled: true },
+                  'The guarantee and certificate expiry check is now running.',
                 );
               },
             }}
@@ -228,40 +256,108 @@ export function PlatformSettings({
           </EmptyState>
         </div>
       ) : (
-        <ul className="m-0 mt-3 flex list-none flex-col gap-3 p-0">
+        <ul className="m-0 mt-3 flex list-none flex-col gap-4 p-0">
           {schedules.map((schedule) => (
             <li
               key={schedule.id}
-              className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0"
+              className="flex flex-col gap-2 border-b border-border pb-4 last:border-0 last:pb-0"
             >
-              <div className="flex max-w-[36rem] flex-col gap-1">
-                <span className="text-sm font-medium">{schedule.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {schedule.description}
-                </span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {schedule.cadence}, {schedule.horizonDays} days ahead · next run{' '}
-                  {formatTimestamp(schedule.nextRunAt)} ·{' '}
-                  {schedule.lastRunAt === null
-                    ? 'never run'
-                    : `last run ${formatTimestamp(schedule.lastRunAt)}`}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  runs as {schedule.authorityUserId}
-                </span>
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <div className="flex max-w-[36rem] flex-col gap-1">
+                  <span className="text-sm font-medium">{schedule.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {schedule.description}
+                  </span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    next run {formatTimestamp(schedule.nextRunAt)} ·{' '}
+                    {schedule.lastEnqueuedAt === null
+                      ? 'never run'
+                      : `last enqueued ${formatTimestamp(schedule.lastEnqueuedAt)}`}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    runs as {actorLabel(schedule.authorityUserId, currentUserId)}
+                  </span>
+                  {schedule.disabledReason !== null && (
+                    <span className="text-xs text-foreground">
+                      Paused automatically: {schedule.disabledReason}. Use Run as me to
+                      resume it under your own membership.
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusChip status={schedule.enabled ? 'active' : 'paused'} />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => {
+                      void saveSchedule(
+                        schedule.kind,
+                        { enabled: true },
+                        `${schedule.label} now runs under your membership.`,
+                      );
+                    }}
+                  >
+                    Run as me
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => {
+                      void saveSchedule(
+                        schedule.kind,
+                        { enabled: !schedule.enabled },
+                        `${schedule.label} is now ${schedule.enabled ? 'switched off' : 'running'}.`,
+                      );
+                    }}
+                  >
+                    {schedule.enabled ? 'Switch off' : 'Switch on'}
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <StatusChip status={schedule.enabled ? 'active' : 'on-hold'} />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => {
-                    void saveSchedule(schedule.kind, !schedule.enabled, schedule.label);
-                  }}
-                >
-                  {schedule.enabled ? 'Switch off' : 'Switch on'}
-                </Button>
+              <div className="flex flex-wrap items-end gap-4">
+                <label className="field">
+                  <span>How often</span>
+                  <select
+                    value={schedule.cadence}
+                    disabled={pending}
+                    onChange={(event) => {
+                      void saveSchedule(
+                        schedule.kind,
+                        { cadence: event.target.value as ScheduleCadence },
+                        `${schedule.label} now runs ${event.target.value}.`,
+                      );
+                    }}
+                  >
+                    {CADENCES.map((cadence) => (
+                      <option key={cadence} value={cadence}>
+                        {cadence}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Days ahead</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    defaultValue={schedule.horizonDays}
+                    disabled={pending}
+                    className="tabular-nums"
+                    onBlur={(event) => {
+                      const days = Number(event.target.value);
+                      if (!Number.isInteger(days) || days < 1 || days > 365) return;
+                      if (days === schedule.horizonDays) return;
+                      void saveSchedule(
+                        schedule.kind,
+                        { horizonDays: days },
+                        `${schedule.label} now looks ${String(days)} days ahead.`,
+                      );
+                    }}
+                  />
+                </label>
               </div>
             </li>
           ))}
@@ -299,7 +395,7 @@ export function PlatformSettings({
                   <td>
                     {run.kind === 'instrument_expiry_review' ? 'Expiry' : run.kind}
                   </td>
-                  <td className={numericCell}>{formatTimestamp(run.createdAt)}</td>
+                  <td className="tabular-nums">{formatTimestamp(run.createdAt)}</td>
                   <td>
                     <StatusChip status={RUN_CHIP[run.state]} />
                   </td>
@@ -310,7 +406,7 @@ export function PlatformSettings({
                   </td>
                   <td className={wrapCell}>
                     {run.state === 'refused_bind'
-                      ? 'The member this check runs as is no longer in the organisation. Save the check again to run it as yourself.'
+                      ? 'The member this check ran as is no longer in the organisation. Use Run as me above to run it as yourself.'
                       : (run.lastError ?? '')}
                   </td>
                 </tr>
@@ -320,6 +416,11 @@ export function PlatformSettings({
         </div>
       )}
 
+      {notice !== null && (
+        <p className="alert success" role="status">
+          {notice}
+        </p>
+      )}
       {actionError !== null && (
         <p className="alert error" role="alert">
           {actionError}

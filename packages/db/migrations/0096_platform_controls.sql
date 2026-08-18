@@ -185,8 +185,22 @@ CREATE TABLE statutory_job_schedules (
 
   -- Not before this instant. Advanced by the sweep in the same statement
   -- that enqueues, so a schedule cannot be run twice by two workers.
+  --
+  -- CADENCE SEMANTICS, stated because they are a choice and not an
+  -- accident: the advance is `now() + one cadence`, so a run drifts by
+  -- however long the tick took to notice, and a MONTHLY schedule saved on
+  -- the 31st lands on the 28th in February and stays there — PostgreSQL's
+  -- `interval '1 month'` clamps to the end of the shorter month and never
+  -- climbs back. Neither matters for a check whose useful resolution is
+  -- "some time that day": what a guarantee-expiry review answers is "what
+  -- lapses in the next N days", and N is the horizon, not the cadence.
+  -- Anchoring to a calendar day would need a day-of-month column and a
+  -- catch-up rule, which is a schedule engine — see docs/UX.md § 20.
   next_run_at timestamptz NOT NULL DEFAULT now(),
 
+  -- When the last run was ENQUEUED, not when it finished. The screen
+  -- labels it "last enqueued" for that reason: a schedule whose every run
+  -- refuses its binding would otherwise read as freshly successful.
   last_run_at timestamptz,
   -- The queue row the last run produced. Not a foreign key: `worker_jobs`
   -- is purged on a retention window (0072 § 5b) and a schedule must not
@@ -206,6 +220,14 @@ CREATE TABLE statutory_job_schedules (
   -- than one whose bank takes a week.
   horizon_days integer NOT NULL DEFAULT 45
     CHECK (horizon_days BETWEEN 1 AND 365),
+
+  -- Why the scheduler switched this check off by itself. NULL whenever an
+  -- operator is the one who switched it off, so the screen can tell the
+  -- two apart: a check somebody paused needs no remedy, and one the
+  -- scheduler paused does.
+  disabled_reason text CHECK (
+    disabled_reason IS NULL OR length(disabled_reason) BETWEEN 1 AND 500
+  ),
 
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -387,6 +409,24 @@ $$;
 CREATE TRIGGER organisation_export_requests_touch_updated_at
 BEFORE UPDATE ON organisation_export_requests
 FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
+
+-- ONE BUILD AT A TIME, in the database rather than only in the route.
+--
+-- Every other rule in this migration has two arms — the route's, for the
+-- named refusal an operator can act on, and the schema's, for the race the
+-- route cannot see. This one had only the route's, which made it the one
+-- rule a double-click could break: two requests that both read "no build
+-- in flight" before either inserted would produce two snapshots over sixty
+-- tables and two files, and the second would be indistinguishable from the
+-- first.
+--
+-- A partial unique index rather than a CHECK, because the constraint is
+-- across rows. `routes/platform.ts` maps the 23505 to the same
+-- EXPORT_IN_PROGRESS the route's own pre-check raises, so the loser of the
+-- race reads the same sentence as the operator who was simply too early.
+CREATE UNIQUE INDEX organisation_export_requests_one_build_idx
+  ON organisation_export_requests (organisation_id)
+  WHERE state IN ('queued', 'running');
 
 -- What the download route and the sweep both ask: which of this
 -- organisation's artefacts are live, newest first.
@@ -588,7 +628,7 @@ BEGIN
 
   FOR v_due IN
     SELECT s.id, s.organisation_id, s.kind, s.cadence,
-           s.authority_user_id, s.horizon_days
+           s.authority_user_id, s.horizon_days, s.last_job_id
       FROM statutory_job_schedules AS s
      WHERE s.enabled
        AND s.next_run_at <= now()
@@ -596,6 +636,32 @@ BEGIN
        FOR UPDATE SKIP LOCKED
      LIMIT p_limit
   LOOP
+    -- A SCHEDULE WHOSE MEMBER HAS LEFT PAUSES ITSELF, on the first
+    -- refusal rather than after a counter.
+    --
+    -- Without this the schedule re-enqueues for ever: `bind_tenant`
+    -- refuses the departed membership, the job parks in `refused_bind`,
+    -- and the next tick does it again — a monthly check quietly turns
+    -- into an unbounded stream of terminal rows nobody reads, and the
+    -- queue's own `refused_bind` count stops meaning anything.
+    --
+    -- Pausing is not losing the check: the row keeps its cadence and its
+    -- horizon, and the screen's re-adopt control switches it back on
+    -- under the current member's authority. `disabled_reason` is what
+    -- lets that screen tell "the scheduler stopped this" from "somebody
+    -- stopped this".
+    IF v_due.last_job_id IS NOT NULL AND EXISTS (
+      SELECT 1 FROM worker_jobs AS j
+       WHERE j.id = v_due.last_job_id AND j.state = 'refused_bind'
+    ) THEN
+      UPDATE statutory_job_schedules AS s
+         SET enabled = false,
+             disabled_reason =
+               'the member this check ran as is no longer in the organisation'
+       WHERE s.id = v_due.id;
+      CONTINUE;
+    END IF;
+
     INSERT INTO worker_jobs (organisation_id, user_id, kind, payload_ref)
     VALUES (
       v_due.organisation_id,
@@ -682,6 +748,71 @@ $$;
 ALTER FUNCTION app_private.expire_lapsed_organisation_exports(integer)
   OWNER TO auto_mb_definer;
 REVOKE ALL ON FUNCTION app_private.expire_lapsed_organisation_exports(integer)
+  FROM PUBLIC;
+
+-- The reconciliation sweep, which is the one this pack's own comments
+-- promised and the review found missing.
+--
+-- The export bundle is built in the API process (routes/platform.ts argues
+-- why), so a restart, a crash or a deploy mid-build leaves a row in
+-- `queued` or `running` with nothing left that will ever finish it. That
+-- is not a cosmetic stall: the partial unique index above makes ONE such
+-- row disable self-service export for that organisation for ever, the
+-- screen says "being built" indefinitely, and the only exit is an operator
+-- with psql. It is exactly the hole `reconcile_terminal_job` was written
+-- for in 0072 — a dead worker must not strand a live row — and the same
+-- reasoning puts it in SQL rather than in the process that died.
+--
+-- The threshold is a parameter rather than a constant because the right
+-- one is an operator's judgement about the slowest tenant. It has a floor:
+-- a sweep that could take a build still in flight would fail a perfectly
+-- healthy export and, worse, free the slot for a second one racing the
+-- first.
+CREATE FUNCTION app_private.fail_stalled_organisation_exports(
+  p_older_than interval DEFAULT interval '1 hour',
+  p_limit integer DEFAULT 50
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, app_private, pg_temp
+AS $$
+DECLARE
+  v_failed integer;
+BEGIN
+  IF p_older_than IS NULL OR p_older_than < interval '10 minutes' THEN
+    RAISE EXCEPTION 'refusing to fail an export younger than ten minutes'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF p_limit IS NULL OR p_limit < 1 THEN
+    RAISE EXCEPTION 'a stall sweep must take at least one export'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  WITH stalled AS (
+    SELECT e.id FROM organisation_export_requests AS e
+     WHERE e.state IN ('queued', 'running')
+       AND e.requested_at < now() - p_older_than
+     ORDER BY e.requested_at
+       FOR UPDATE SKIP LOCKED
+     LIMIT p_limit
+  )
+  UPDATE organisation_export_requests AS e
+     SET state = 'failed',
+         completed_at = now(),
+         failure_reason =
+           'the build did not finish; the server process handling it stopped'
+    FROM stalled
+   WHERE e.id = stalled.id;
+
+  GET DIAGNOSTICS v_failed = ROW_COUNT;
+  RETURN v_failed;
+END
+$$;
+
+ALTER FUNCTION app_private.fail_stalled_organisation_exports(interval, integer)
+  OWNER TO auto_mb_definer;
+REVOKE ALL ON FUNCTION app_private.fail_stalled_organisation_exports(interval, integer)
   FROM PUBLIC;
 
 -- The run history, and the one definer read in this migration that needs
@@ -789,6 +920,9 @@ BEGIN
       TO auto_mb_app;
     GRANT EXECUTE ON FUNCTION app_private.organisation_job_history(integer)
       TO auto_mb_app;
+    GRANT EXECUTE ON FUNCTION
+      app_private.fail_stalled_organisation_exports(interval, integer)
+      TO auto_mb_app;
   END IF;
 END
 $$;
@@ -833,12 +967,37 @@ COMMENT ON COLUMN organisation_memberships.can_export_org IS
 
 -- CREATE OR REPLACE STATES THE WHOLE BODY, NEVER AMENDS IT, so this
 -- replacement must restate every grant the founder already had or silently
--- revoke it. Four are inherited — 0004's issue and cancel, 0089's payroll,
--- 0091's signing — and two are this migration's. A founder who could not
--- export the organisation they had just created would at least be visible;
--- one who quietly lost the ability to sign, because this file forgot a
--- column 0091 added, is the failure that costs the most to diagnose, and
--- the 0089/0091 collision is the burned precedent it is written against.
+-- revoke it. The 0089/0091 collision is the burned precedent: 0091
+-- replaced this function to add signing and had to restate 0089's payroll
+-- grant, and a version that forgot would have left every new founder
+-- unable to run payroll with nothing anywhere reporting why.
+--
+-- THIS MIGRATION IS THE LAST WRITER OF THE WHOLE WAVE, which makes the
+-- problem four times larger. The merge train is v25 -> v26 -> v27 -> v28,
+-- so by the time 0096 runs, three sibling migrations have each added an
+-- authority of their own and each has replaced this function:
+--
+--   0092  can_manage_notifications   (D-notify)
+--   0094  can_import_data            (D-importers)
+--   0095  can_view_audit_trail       (D-audit-mis)
+--
+-- All three are granted below, and the LOOP is why rather than three more
+-- literals in the INSERT. This migration must apply on two different
+-- schemas: this branch, where those columns do not exist yet, and main
+-- after the train, where they do. A literal column list would make the
+-- file syntactically valid only on one of them, so the branch could not
+-- run its own gates. Naming each column explicitly in an array keeps the
+-- three greppable and pinnable by the migration-contract test, while the
+-- catalog check keeps the file runnable either way.
+--
+-- The identifier is quoted with `format('%I')` and comes from this array
+-- rather than from anything a caller supplies, so the dynamic statement is
+-- not a widening of what this definer function can do. It composes the
+-- INSERT rather than following it with an UPDATE for the same reason:
+-- `auto_mb_definer` holds SELECT and INSERT on `organisation_memberships`
+-- and nothing more (0004), and granting it UPDATE to set a boolean would
+-- be a real privilege change to the membership table on behalf of a
+-- convenience.
 --
 -- Deliberately still absent: `can_approve_amendments`,
 -- `can_manage_statutory_reporting`, `can_manage_payments`. 0089 gives the
@@ -857,6 +1016,9 @@ SET search_path = public, app_private, pg_temp
 AS $$
 DECLARE
   v_user_id text;
+  v_column text;
+  v_extra_columns text := '';
+  v_extra_values text := '';
 BEGIN
   v_user_id := nullif(current_setting('app.user_id', true), '');
   IF v_user_id IS NULL THEN
@@ -866,14 +1028,33 @@ BEGIN
 
   INSERT INTO organisations (id, name, slug) VALUES (p_id, p_name, p_slug);
 
-  INSERT INTO organisation_memberships (
-    organisation_id, user_id, role, work_scope,
-    can_issue_documents, can_cancel_documents, can_sign_documents,
-    can_manage_payroll, can_manage_entitlements, can_export_org, status
-  )
-  VALUES (
-    p_id, v_user_id, 'owner', 'all', true, true, true, true, true, true, 'active'
-  );
+  -- The three sibling authorities of this wave, each added only where its
+  -- column exists, so this file runs both before and after the train.
+  FOREACH v_column IN ARRAY ARRAY[
+    'can_manage_notifications',
+    'can_import_data',
+    'can_view_audit_trail'
+  ]
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'organisation_memberships'
+         AND column_name = v_column
+    ) THEN
+      v_extra_columns := v_extra_columns || format(', %I', v_column);
+      v_extra_values := v_extra_values || ', true';
+    END IF;
+  END LOOP;
+
+  EXECUTE format(
+    'INSERT INTO organisation_memberships ('
+      'organisation_id, user_id, role, work_scope, '
+      'can_issue_documents, can_cancel_documents, can_sign_documents, '
+      'can_manage_payroll, can_manage_entitlements, can_export_org%s, status'
+    ') VALUES ($1, $2, ''owner'', ''all'', true, true, true, true, true, true%s, ''active'')',
+    v_extra_columns, v_extra_values
+  ) USING p_id, v_user_id;
 
   INSERT INTO audit_events (
     organisation_id, actor_user_id, action, entity_type, entity_id

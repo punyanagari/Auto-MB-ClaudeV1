@@ -59,6 +59,11 @@ export const EntitlementListResponseSchema = Type.Object(
 );
 export type EntitlementListResponse = Static<typeof EntitlementListResponseSchema>;
 
+/** `note` ABSENT keeps whatever the row already says; `note: null` clears
+ * it. That asymmetry is deliberate: the screen sends only `{ enabled }`
+ * when somebody flips a switch, and an absent-means-clear rule would erase
+ * "waiting on NIC re-certification" on the first toggle — which is the one
+ * fact the column exists to carry. */
 export const SetEntitlementRequestSchema = Type.Object(
   {
     enabled: Type.Boolean(),
@@ -107,11 +112,19 @@ export const JobScheduleSchema = Type.Object(
     cadence: CadenceSchema,
     horizonDays: Type.Integer({ minimum: 1, maximum: 365 }),
     nextRunAt: Type.String({ format: 'date-time' }),
-    lastRunAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    /** When the last run was ENQUEUED, not when it finished — the queue
+     * owns the outcome and the run history reports it. Named for what it
+     * is: a schedule whose every run refuses its binding would otherwise
+     * read as freshly successful. */
+    lastEnqueuedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     /** The member whose authority the enqueued job runs under. ADR-0011:
      * there is no service identity, so a schedule borrows a real
      * membership and stops working when that membership does. */
     authorityUserId: Type.String({ minLength: 1 }),
+    /** Why the SCHEDULER switched this check off by itself, if it did.
+     * Null whenever an operator is the one who switched it off, so the
+     * screen can offer a remedy for the first and not the second. */
+    disabledReason: Type.Union([Type.String(), Type.Null()]),
   },
   { additionalProperties: false },
 );

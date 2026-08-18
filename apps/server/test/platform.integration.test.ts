@@ -245,6 +245,77 @@ describe('entitlements', () => {
     expect(on.statusCode, on.body).toBe(200);
   });
 
+  it('gates the route that actually speaks to NIC, not only the create routes', async () => {
+    // The flag's whole stated purpose is that an organisation whose NIC
+    // re-certification has not landed cannot speak to the portal in its
+    // name. Gating only the two create routes would have left the door it
+    // exists to close standing open: /generate is the call that registers.
+    // The route declares `authority: ['issue', 'statutory']`, and the
+    // registrar checks a declared authority before the handler body runs.
+    // The founder holds issue but not statutory — 0089's restraint — so
+    // without this the test would prove the AUTHORITY wall rather than the
+    // entitlement one.
+    await admin`
+      update organisation_memberships set can_manage_statutory_reporting = true
+      where organisation_id = ${organisationId} and role = 'owner'
+    `;
+    await app.inject({
+      method: 'PUT',
+      url: '/api/platform/entitlements/eway_bill',
+      headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+      payload: { enabled: false },
+    });
+    const refused = await app.inject({
+      method: 'POST',
+      url: `/api/eway-bills/${'0'.repeat(8)}-0000-4000-8000-${'0'.repeat(12)}/generate`,
+      headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json<{ code: string }>().code).toBe('ENTITLEMENT_DISABLED');
+    await app.inject({
+      method: 'PUT',
+      url: '/api/platform/entitlements/eway_bill',
+      headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+      payload: { enabled: true },
+    });
+  });
+
+  it('keeps a note through a plain toggle', async () => {
+    // The screen sends only `{ enabled }` when somebody flips a switch,
+    // so an absent-means-clear rule would erase "waiting on NIC
+    // re-certification" on the first toggle — which is the one fact the
+    // column exists to carry.
+    await app.inject({
+      method: 'PUT',
+      url: '/api/platform/entitlements/outbound_signing',
+      headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+      payload: { enabled: false, note: 'waiting on the ESP procurement' },
+    });
+    const toggled = await app.inject({
+      method: 'PUT',
+      url: '/api/platform/entitlements/outbound_signing',
+      headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+      payload: { enabled: true },
+    });
+    expect(toggled.statusCode, toggled.body).toBe(200);
+    const entitlement = toggled.json<{
+      entitlement: { enabled: boolean; note: string | null };
+    }>().entitlement;
+    expect(entitlement.enabled).toBe(true);
+    expect(entitlement.note).toBe('waiting on the ESP procurement');
+
+    // …and an explicit null still clears it.
+    const cleared = await app.inject({
+      method: 'PUT',
+      url: '/api/platform/entitlements/outbound_signing',
+      headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+      payload: { enabled: true, note: null },
+    });
+    expect(
+      cleared.json<{ entitlement: { note: string | null } }>().entitlement.note,
+    ).toBe(null);
+  });
+
   it('refuses a flag key the database does not admit', async () => {
     const response = await app.inject({
       method: 'PUT',
@@ -322,6 +393,25 @@ describe('recurring statutory checks', () => {
     // `worker_jobs`, which the application role cannot touch directly.
     // Reaching this line at all proves the grant is in place.
     expect(Array.isArray(body.runs)).toBe(true);
+  });
+
+  it('refuses to adopt a check for a member who cannot see every Work', async () => {
+    // The check reads every Work's instruments and puts what it found on
+    // a screen, so adopting one is the same question the export asks —
+    // and it answers with the same refusal.
+    const cookie = await member('assigned-schedule', {
+      role: 'owner',
+      canManageEntitlements: true,
+      workScope: 'assigned',
+    });
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/platform/job-schedules/instrument_expiry_review',
+      headers: { cookie, 'x-organisation-id': organisationId },
+      payload: { enabled: true },
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.json<{ code: string }>().code).toBe('EXPORT_SCOPE_REQUIRED');
   });
 
   it('refuses a non-owner even when they hold the authority', async () => {
@@ -435,13 +525,6 @@ describe('the organisation export', () => {
     const bundle = download.json<{ formatVersion: string; members: unknown[] }>();
     expect(bundle.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
     expect(Array.isArray(bundle.members)).toBe(true);
-
-    // A second request while one is in flight is refused rather than
-    // starting a second snapshot over sixty tables.
-    await admin`
-      update organisation_export_requests set state = 'running'
-      where id = ${exportId} and state = 'ready'
-    `.catch(() => undefined);
   });
 
   it('refuses the DOWNLOAD to an assigned-scope member too, not only the request', async () => {
@@ -467,6 +550,52 @@ describe('the organisation export', () => {
     });
     expect(response.statusCode, response.body).toBe(403);
     expect(response.json<{ code: string }>().code).toBe('EXPORT_SCOPE_REQUIRED');
+  });
+
+  it('refuses the LIST to an assigned-scope member as well', async () => {
+    // The list is metadata rather than the package, but it names who took
+    // a copy of the whole organisation and when, and SECURITY.md states
+    // the export surface as a whole is behind full Work scope.
+    const cookie = await member('assigned-list', {
+      canExportOrg: true,
+      workScope: 'assigned',
+    });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/platform/exports',
+      headers: { cookie, 'x-organisation-id': organisationId },
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.json<{ code: string }>().code).toBe('EXPORT_SCOPE_REQUIRED');
+  });
+
+  it('admits one build even when two requests race', async () => {
+    // The route's own pre-check is the friendly arm; two requests can both
+    // pass it before either inserts. Fired together, exactly one must be
+    // accepted and the other must read the same sentence.
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/api/platform/exports',
+        headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/api/platform/exports',
+        headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+      }),
+    ]);
+    const codes = [first.statusCode, second.statusCode].sort((a, b) => a - b);
+    expect(codes, `${first.body} | ${second.body}`).toEqual([202, 409]);
+    const loser = first.statusCode === 409 ? first : second;
+    expect(loser.json<{ code: string }>().code).toBe('EXPORT_IN_PROGRESS');
+
+    const accepted = first.statusCode === 202 ? first : second;
+    const settled = await settledExport(
+      ownerCookie,
+      accepted.json<{ export: { id: string } }>().export.id,
+    );
+    expect(settled.state, settled.failureReason ?? '').toBe('ready');
   });
 
   it('answers 404 for another organisation artefact, not 403', async () => {

@@ -574,6 +574,7 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'last_run_at',
     'last_job_id',
     'authority_user_id',
+    'disabled_reason',
     'updated_at',
   ],
 

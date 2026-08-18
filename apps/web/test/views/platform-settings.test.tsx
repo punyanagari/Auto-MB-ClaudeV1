@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Entitlement, JobRun, JobSchedule } from '@auto-mb/contracts';
 import { OrganisationExportSettings } from '../../src/views/OrganisationExportSettings.js';
@@ -47,8 +47,9 @@ function schedule(overrides: Partial<JobSchedule> = {}): JobSchedule {
     cadence: 'weekly',
     horizonDays: 45,
     nextRunAt: '2026-08-25T04:00:00.000Z',
-    lastRunAt: '2026-08-18T04:00:00.000Z',
+    lastEnqueuedAt: '2026-08-18T04:00:00.000Z',
     authorityUserId: 'user-owner',
+    disabledReason: null,
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ describe('the platform settings panel', () => {
         organisationId={ORG_ID}
         isOwner
         canManageEntitlements={false}
+        currentUserId="user-a"
       />,
     );
     expect(container.innerHTML).toBe('');
@@ -113,6 +115,7 @@ describe('the platform settings panel', () => {
         organisationId={ORG_ID}
         isOwner={false}
         canManageEntitlements
+        currentUserId="user-a"
       />,
     );
     expect(container.innerHTML).toBe('');
@@ -125,6 +128,7 @@ describe('the platform settings panel', () => {
         organisationId={ORG_ID}
         isOwner
         canManageEntitlements
+        currentUserId="user-a"
       />,
     );
     expect(
@@ -149,6 +153,7 @@ describe('the platform settings panel', () => {
         organisationId={ORG_ID}
         isOwner
         canManageEntitlements
+        currentUserId="user-a"
       />,
     );
     expect(await screen.findByText(/set by user-owner on/)).toBeTruthy();
@@ -165,11 +170,142 @@ describe('the platform settings panel', () => {
         organisationId={ORG_ID}
         isOwner
         canManageEntitlements
+        currentUserId="user-a"
       />,
     );
     expect(
-      await screen.findByText(/no longer in the organisation. Save the check again/),
+      await screen.findByText(/no longer in the organisation. Use Run as me/),
     ).toBeTruthy();
+  });
+
+  it('renders the note that says why a module is off', async () => {
+    // The contract's own argument for the column: "off" without "waiting
+    // on NIC re-certification" is a fact nobody can act on six months
+    // later. A panel that stored the note and never showed it would make
+    // the column decorative.
+    render(
+      <PlatformSettings
+        api={platformApi({
+          entitlements: [
+            flag({
+              enabled: false,
+              configured: true,
+              setBy: 'user-owner',
+              updatedAt: '2026-08-18T10:00:00.000Z',
+              note: 'waiting on NIC re-certification',
+            }),
+          ],
+        })}
+        organisationId={ORG_ID}
+        isOwner
+        canManageEntitlements
+        currentUserId="user-a"
+      />,
+    );
+    expect(await screen.findByText(/waiting on NIC re-certification/)).toBeTruthy();
+  });
+
+  it('toggles a module without sending — and so without erasing — its note', async () => {
+    const api = platformApi({
+      entitlements: [
+        flag({ enabled: true, configured: true, note: 'switched on for the pilot' }),
+      ],
+    });
+    render(
+      <PlatformSettings
+        api={api}
+        organisationId={ORG_ID}
+        isOwner
+        canManageEntitlements
+        currentUserId="user-a"
+      />,
+    );
+    // Scoped to the module row: the schedule below it carries a button
+    // with the same label, and an ambiguous query is a test that fails for
+    // a reason unrelated to what it is checking.
+    const module = (await screen.findByText('E-way bill')).closest('li');
+    expect(module).not.toBeNull();
+    fireEvent.click(
+      within(module as HTMLElement).getByRole('button', { name: 'Switch off' }),
+    );
+    await waitFor(() => {
+      expect(api.setEntitlement).toHaveBeenCalledWith(ORG_ID, 'eway_bill', {
+        enabled: false,
+      });
+    });
+  });
+
+  it('offers the re-adopt control on a paused check, not only a switch', async () => {
+    // The refused_bind remedy has to be a CONTROL. Telling an operator to
+    // "save the check again" while the only button switches it off would
+    // make them disable a statutory check to fix its custody.
+    const api = platformApi({
+      schedules: [
+        schedule({
+          enabled: false,
+          disabledReason:
+            'the member this check ran as is no longer in the organisation',
+        }),
+      ],
+    });
+    render(
+      <PlatformSettings
+        api={api}
+        organisationId={ORG_ID}
+        isOwner
+        canManageEntitlements
+        currentUserId="user-a"
+      />,
+    );
+    expect(await screen.findByText(/Paused automatically/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Run as me' }));
+    await waitFor(() => {
+      expect(api.setJobSchedule).toHaveBeenCalledWith(
+        ORG_ID,
+        'instrument_expiry_review',
+        { enabled: true },
+      );
+    });
+  });
+
+  it('lets the cadence be changed from the screen it is displayed on', async () => {
+    const api = platformApi({});
+    render(
+      <PlatformSettings
+        api={api}
+        organisationId={ORG_ID}
+        isOwner
+        canManageEntitlements
+        currentUserId="user-a"
+      />,
+    );
+    const cadence = await screen.findByLabelText('How often');
+    fireEvent.change(cadence, { target: { value: 'monthly' } });
+    await waitFor(() => {
+      expect(api.setJobSchedule).toHaveBeenCalledWith(
+        ORG_ID,
+        'instrument_expiry_review',
+        { cadence: 'monthly' },
+      );
+    });
+  });
+
+  it('confirms a change rather than leaving the operator guessing', async () => {
+    render(
+      <PlatformSettings
+        api={platformApi({})}
+        organisationId={ORG_ID}
+        isOwner
+        canManageEntitlements
+        currentUserId="user-a"
+      />,
+    );
+    const module = (await screen.findByText('E-way bill')).closest('li');
+    expect(module).not.toBeNull();
+    fireEvent.click(
+      within(module as HTMLElement).getByRole('button', { name: 'Switch off' }),
+    );
+    expect(await screen.findByRole('status')).toBeTruthy();
   });
 
   it('offers to start the check when none is configured', async () => {
@@ -179,6 +315,7 @@ describe('the platform settings panel', () => {
         organisationId={ORG_ID}
         isOwner
         canManageEntitlements
+        currentUserId="user-a"
       />,
     );
     expect(
@@ -204,6 +341,7 @@ describe('the organisation export panel', () => {
         api={api}
         organisationId={ORG_ID}
         canExportOrg={false}
+        currentUserId="user-a"
       />,
     );
     expect(container.innerHTML).toBe('');
@@ -230,6 +368,7 @@ describe('the organisation export panel', () => {
         ])}
         organisationId={ORG_ID}
         canExportOrg
+        currentUserId="user-a"
       />,
     );
     expect(await screen.findByText(DIGEST)).toBeTruthy();
@@ -255,6 +394,7 @@ describe('the organisation export panel', () => {
         ])}
         organisationId={ORG_ID}
         canExportOrg
+        currentUserId="user-a"
       />,
     );
     await waitFor(() => {
@@ -284,6 +424,7 @@ describe('the organisation export panel', () => {
         ])}
         organisationId={ORG_ID}
         canExportOrg
+        currentUserId="user-a"
       />,
     );
     expect(

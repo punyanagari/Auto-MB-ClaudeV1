@@ -2221,6 +2221,32 @@ describe('tenant migration contract', () => {
     // turns a failed build into a download button that 500s.
     expect(sql).toContain('organisation_export_requests_ready_shape');
 
+    // ONE BUILD AT A TIME HAS A DATABASE ARM. It was the one rule in this
+    // file enforced only by a route read, which two requests can both
+    // pass before either inserts.
+    expect(sql).toContain(
+      'CREATE UNIQUE INDEX organisation_export_requests_one_build_idx',
+    );
+    expect(sql).toContain("WHERE state IN ('queued', 'running');");
+    // …and the index is only safe because something reconciles a build
+    // that nothing will finish. Without the sweep, one dead build
+    // disables self-service export for that organisation for ever.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.fail_stalled_organisation_exports(',
+    );
+    expect(sql).toContain(
+      "'the build did not finish; the server process handling it stopped'",
+    );
+
+    // A SCHEDULE WHOSE MEMBER HAS LEFT PAUSES ITSELF rather than
+    // re-refusing every cadence for ever, and says which kind of "off"
+    // it is in so the screen can offer a remedy for one and not the
+    // other.
+    expect(sql).toContain('disabled_reason text CHECK (');
+    expect(sql).toContain(
+      "'the member this check ran as is no longer in the organisation'",
+    );
+
     // THE SCHEDULE CARRIES A REAL MEMBERSHIP, not a service identity.
     // ADR-0011 gives the queue no service user, so the recurring facility
     // borrows the membership of whoever enabled the schedule and
@@ -2245,7 +2271,7 @@ describe('tenant migration contract', () => {
     // THREE SECURITY DEFINERS, each argued, and every function in the file
     // pins its search_path.
     const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
-    expect(functions).toHaveLength(5);
+    expect(functions).toHaveLength(6);
     expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(
       functions.length,
     );
@@ -2256,12 +2282,14 @@ describe('tenant migration contract', () => {
     expect(definers).toEqual([
       'CREATE FUNCTION app_private.enqueue_due_statutory_jobs',
       'CREATE FUNCTION app_private.expire_lapsed_organisation_exports',
+      'CREATE FUNCTION app_private.fail_stalled_organisation_exports',
       'CREATE FUNCTION app_private.organisation_job_history',
     ]);
     for (const signature of [
       'app_private.organisation_job_history(integer)',
       'app_private.enqueue_due_statutory_jobs(integer)',
       'app_private.expire_lapsed_organisation_exports(integer)',
+      'app_private.fail_stalled_organisation_exports(interval, integer)',
     ]) {
       expect(sql, signature).toContain(`REVOKE ALL ON FUNCTION ${signature}`);
       expect(sql, signature).toContain(`ALTER FUNCTION ${signature}`);
@@ -2298,11 +2326,25 @@ describe('tenant migration contract', () => {
       'CREATE OR REPLACE FUNCTION app_private.create_organisation_with_owner(',
     );
     expect(sql).toContain(
-      'can_manage_payroll, can_manage_entitlements, can_export_org, status',
+      "'can_manage_payroll, can_manage_entitlements, can_export_org%s, status'",
     );
     expect(sql).toContain(
-      "p_id, v_user_id, 'owner', 'all', true, true, true, true, true, true, 'active'",
+      "') VALUES ($1, $2, ''owner'', ''all'', true, true, true, true, true, true%s, ''active'')'",
     );
+    // AND ALL THREE SIBLING AUTHORITIES OF THE WAVE. 0096 is the last
+    // writer of the train (v25 -> v26 -> v27 -> v28), so a replacement
+    // that named only its own two would silently revoke notifications,
+    // import and audit-trail from every founder created afterwards. Each
+    // is set only where its column exists, so this file also runs on a
+    // branch that has none of them.
+    for (const column of [
+      'can_manage_notifications',
+      'can_import_data',
+      'can_view_audit_trail',
+    ]) {
+      expect(sql, column).toContain(`'${column}'`);
+    }
+    expect(sql).toContain('FOREACH v_column IN ARRAY ARRAY[');
 
     // Every RAISE in the migration's OWN guards carries a named SQLSTATE
     // from the 23N block, so `routes/platform.ts` maps it to a code

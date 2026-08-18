@@ -161,6 +161,33 @@ export function createFileSystemStorage(rootDir: string) {
       return readFile(resolveKey(key));
     },
     /**
+     * The read half of `putStream`, for the one object nobody wants
+     * resident: the whole-organisation export.
+     *
+     * `get` returns a Buffer, which is right for every document this
+     * product serves — a PDF is megabytes and the response holds it once.
+     * An export package is built by streaming sixty tables through a
+     * cursor precisely so it is never fully in memory, and reading it back
+     * with `get` would put the entire organisation on the server's heap at
+     * the last step, once per concurrent download.
+     *
+     * It OPENS the file rather than returning a lazy stream, so a missing
+     * or unreadable object fails here — before the caller has committed
+     * anything or written a response header — instead of destroying a
+     * response that has already claimed success.
+     */
+    async getStream(key: string): Promise<{ stream: Readable; size: number }> {
+      const file = resolveKey(key);
+      const handle = await open(file, 'r');
+      try {
+        const { size } = await handle.stat();
+        return { stream: handle.createReadStream({ autoClose: true }), size };
+      } catch (error) {
+        await handle.close();
+        throw error;
+      }
+    },
+    /**
      * Removes a stored object, and says nothing if it was already gone.
      *
      * The only caller is the export expiry sweep (migration 0096), and the

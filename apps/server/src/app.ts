@@ -646,9 +646,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
         undefined;
     const isKioskSigning =
       routePattern !== undefined && isOriginExemptRoute(request.method, routePattern);
+    // The whole-organisation export (0096), on the upload budget. It is
+    // NOT derived like the uploads above, because the signal that makes
+    // uploads derivable — a declared `bodyLimit` — is about a request
+    // body, and the cost here is on the way OUT: one call starts a
+    // snapshot over sixty tables, and the other streams the file that
+    // produced. Two patterns are the honest cost of that; the moment
+    // there is a third, the pair belongs in the registrar as a declared
+    // "expensive" flag rather than here.
+    const isOrganisationExport =
+      (request.method === 'POST' && routePattern === '/api/platform/exports') ||
+      (request.method === 'GET' &&
+        routePattern === '/api/platform/exports/:id/download');
     const limiter = isAuthAttempt
       ? authLimiter
-      : isUpload
+      : isUpload || isOrganisationExport
         ? uploadLimiter
         : isKioskSigning
           ? signingLimiter

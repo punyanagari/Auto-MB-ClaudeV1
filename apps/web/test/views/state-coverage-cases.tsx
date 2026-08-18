@@ -625,6 +625,7 @@ export const STATE_CASES: readonly StateCase[] = [
         organisationId={ORG_ID}
         isOwner
         canManageEntitlements
+        currentUserId="user-a"
       />
     ),
     retry: /Retry the platform settings/,
@@ -638,7 +639,12 @@ export const STATE_CASES: readonly StateCase[] = [
     name: 'the organisation export panel',
     loads: ['listOrganisationExports'],
     render: (api) => (
-      <OrganisationExportSettings api={api} organisationId={ORG_ID} canExportOrg />
+      <OrganisationExportSettings
+        api={api}
+        organisationId={ORG_ID}
+        canExportOrg
+        currentUserId="user-a"
+      />
     ),
     retry: /Retry the export history/,
     empty: { text: /No export has been taken of this organisation/ },

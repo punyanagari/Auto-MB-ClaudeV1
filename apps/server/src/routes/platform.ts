@@ -16,6 +16,7 @@ import {
   type OrganisationExport,
 } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
+import type { FastifyBaseLogger } from 'fastify';
 import type { ObjectStorage } from '@auto-mb/documents';
 import { Type } from '@sinclair/typebox';
 import type { AppInstance } from '../app-instance.js';
@@ -92,6 +93,14 @@ import { audit, errorResponses, IdParamsSchema } from './shared.js';
  * unexplained 500.
  */
 const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
+  // The partial unique index on (organisation_id) WHERE state IN
+  // ('queued','running'). The route pre-checks the same rule for the
+  // friendlier message; this is the arm that holds when two requests both
+  // read "nothing in flight" before either inserted.
+  '23505': [
+    'EXPORT_IN_PROGRESS',
+    'An export of this organisation is already being built; wait for it to finish before asking for another.',
+  ],
   '23N01': [
     'EXPORT_STATE',
     'The export moved on while this was being recorded; reload the list and try again.',
@@ -159,6 +168,7 @@ interface ScheduleRow {
   readonly next_run_at: Date;
   readonly last_run_at: Date | null;
   readonly authority_user_id: string;
+  readonly disabled_reason: string | null;
 }
 
 interface ExportRow {
@@ -243,6 +253,12 @@ export function registerPlatformRoutes(
       return tenant(async (tx) => {
         // Upsert on (organisation_id, flag_key): a flag has one answer per
         // organisation and the screen offers a switch, not a history.
+        // AN ABSENT `note` KEEPS THE EXISTING ONE; an explicit `null`
+        // clears it. The contract says so, and the reason is this table's
+        // own argument for having the column: "off" without "waiting on
+        // NIC re-certification" is a fact nobody can act on six months
+        // later, and a screen that only sends `{ enabled }` when somebody
+        // flips a switch would erase exactly that on the first toggle.
         await tx`
           insert into organisation_entitlements (
             organisation_id, flag_key, enabled, note, set_by_user_id
@@ -253,7 +269,10 @@ export function registerPlatformRoutes(
           )
           on conflict (organisation_id, flag_key) do update
             set enabled = excluded.enabled,
-                note = excluded.note,
+                note = case
+                  when ${body.note === undefined} then organisation_entitlements.note
+                  else excluded.note
+                end,
                 set_by_user_id = excluded.set_by_user_id
         `;
         await audit(
@@ -327,10 +346,20 @@ export function registerPlatformRoutes(
       /* c8 ignore next -- the params schema admits only declared kinds */
       if (definition === undefined) throw scheduleNotFound();
       return tenant(async (tx) => {
+        // FULL WORK SCOPE, for the reason the export carries the same
+        // test: the check reads every Work's instruments and puts what it
+        // found on a screen. A member who sees only their assigned Works
+        // must not be able to adopt a schedule whose outcome then reports
+        // on all of them. The export precedent is the same shape and the
+        // same refusal code.
+        await requireFullWorkScope(tx, user.id, SCHEDULE_SCOPE_REFUSAL);
+
         // The authority is RE-STAMPED on every write, and that is the whole
         // remedy for a schedule whose member has left: the queue parks its
-        // run in `refused_bind`, the screen says so, and a current member
-        // saving the schedule again puts their own membership behind it.
+        // run in `refused_bind`, the scheduler pauses the schedule with a
+        // stated reason, and a current member re-adopting it puts their own
+        // membership behind it. `disabled_reason` clears here for the same
+        // reason — it describes a state this write has just ended.
         await tx`
           insert into statutory_job_schedules (
             organisation_id, kind, enabled, cadence, horizon_days,
@@ -348,7 +377,18 @@ export function registerPlatformRoutes(
                 horizon_days = coalesce(
                   ${body.horizonDays ?? null}, statutory_job_schedules.horizon_days
                 ),
-                authority_user_id = excluded.authority_user_id
+                authority_user_id = excluded.authority_user_id,
+                disabled_reason = null,
+                -- A schedule coming back from a pause starts its cadence
+                -- again rather than firing on the next tick because its
+                -- next run instant is months in the past. Only on
+                -- re-enable: an operator changing the horizon of a
+                -- running check must not silently postpone it.
+                next_run_at = case
+                  when ${body.enabled ?? true} and not statutory_job_schedules.enabled
+                    then now()
+                  else statutory_job_schedules.next_run_at
+                end
         `.catch(rethrowWriteRefusal);
         await audit(
           tx,
@@ -379,8 +419,15 @@ export function registerPlatformRoutes(
       },
       authority: 'export',
     },
-    async ({ tenant }) =>
+    async ({ user, tenant }) =>
       tenant(async (tx) => {
+        // The same wall the request and the download carry. The list is
+        // metadata rather than the package, but it names who took a copy
+        // of the whole organisation and when — and SECURITY.md states the
+        // export surface as a whole is behind full Work scope, so the one
+        // route without it would be the one that made that untrue.
+        await requireFullWorkScope(tx, user.id);
+
         const rows = await tx<ExportRow[]>`
           select ${tx.unsafe(EXPORT_COLUMNS)} from organisation_export_requests
           order by requested_at desc, id desc
@@ -402,13 +449,19 @@ export function registerPlatformRoutes(
       },
       authority: 'export',
     },
-    async ({ reply, organisationId, user, tenant }) => {
+    async ({ request, reply, organisationId, user, tenant }) => {
       const accepted = await tenant(async (tx) => {
         await requireFullWorkScope(tx, user.id);
 
         // One build at a time. Two concurrent snapshots over sixty tables
         // is a real cost for an operator who clicked twice, and the second
         // package would be indistinguishable from the first.
+        //
+        // This read is the FRIENDLY arm, not the enforcing one: two
+        // requests can both pass it before either inserts. The partial
+        // unique index in 0096 is what actually holds, and its 23505 maps
+        // to the same refusal above — so the loser of a real race reads
+        // the same sentence as the operator who was simply too early.
         const [inFlight] = await tx<{ id: string }[]>`
           select id from organisation_export_requests
           where state in ('queued', 'running')
@@ -436,7 +489,14 @@ export function registerPlatformRoutes(
 
       // Started AFTER the request transaction committed, so the build's own
       // snapshot can see the row it is building for.
-      void buildExport(database, storage, organisationId, user.id, accepted.id);
+      void buildExport(
+        database,
+        storage,
+        request.log,
+        organisationId,
+        user.id,
+        accepted.id,
+      );
 
       reply.code(202);
       return { export: accepted };
@@ -454,6 +514,18 @@ export function registerPlatformRoutes(
       authority: 'export',
     },
     async ({ request, reply, organisationId, user, tenant }) => {
+      // The ORDER of the three phases below is the point, and it is not
+      // the obvious one.
+      //
+      //   1. read the row and refuse everything refusable, WITHOUT writing;
+      //   2. OPEN the bytes;
+      //   3. only then record the download and its audit event.
+      //
+      // The obvious order — count, audit, then fetch — records a
+      // disclosure that never happened whenever the artefact is reclaimed
+      // in the window between the two, and answers the operator with an
+      // ENOENT 500 instead of a refusal they can act on. Opening first
+      // makes a reclaimed artefact an ordinary EXPORT_EXPIRED.
       const artefact = await tenant(async (tx) => {
         // The SAME work-scope test the request carries, and it has to be
         // here too rather than only there: the artefact is one file for
@@ -499,11 +571,34 @@ export function registerPlatformRoutes(
             'This export has expired. Request a new one.',
           );
         }
+        return row;
+      });
+
+      /* c8 ignore next -- narrowed by the ready check above */
+      if (artefact.object_key === null) throw exportNotFound();
+      // STREAMED, not buffered. The package is built by streaming sixty
+      // tables through a cursor so no table is ever fully resident;
+      // reading it back into a Buffer would undo that at the last step,
+      // once per concurrent download.
+      const key = artefact.object_key;
+      const artefactStream = await storage.getStream(key).catch(() => undefined);
+      if (artefactStream === undefined) {
+        // Reclaimed between the read above and this open. The row still
+        // says `ready`, so the honest answer is the one the sweep would
+        // have given a moment later rather than a 500 about a file.
+        throw httpError(
+          409,
+          'EXPORT_EXPIRED',
+          'This export is no longer available. Request a new one.',
+        );
+      }
+
+      await tenant(async (tx) => {
         await tx`
           update organisation_export_requests
              set download_count = download_count + 1,
                  last_downloaded_at = now()
-           where id = ${row.id}
+           where id = ${artefact.id}
         `.catch(rethrowWriteRefusal);
         await audit(
           tx,
@@ -511,21 +606,18 @@ export function registerPlatformRoutes(
           user.id,
           'organisation.export_downloaded',
           'organisation_export_requests',
-          row.id,
-          { sha256: row.sha256 },
+          artefact.id,
+          { sha256: artefact.sha256 },
         );
-        return row;
       });
 
-      /* c8 ignore next -- narrowed by the ready check above */
-      if (artefact.object_key === null) throw exportNotFound();
-      const bytes = await storage.get(artefact.object_key);
       void reply.type('application/json; charset=utf-8');
+      void reply.header('content-length', String(artefactStream.size));
       void reply.header(
         'content-disposition',
         `attachment; filename="auto-mb-export-${artefact.id}.json"`,
       );
-      return reply.send(bytes);
+      return reply.send(artefactStream.stream);
     },
   );
 }
@@ -560,7 +652,7 @@ async function readEntitlements(tx: TransactionSql): Promise<Entitlement[]> {
 async function readSchedules(tx: TransactionSql): Promise<JobSchedule[]> {
   const rows = await tx<ScheduleRow[]>`
     select id, kind, enabled, cadence, horizon_days, next_run_at,
-           last_run_at, authority_user_id
+           last_run_at, authority_user_id, disabled_reason
     from statutory_job_schedules
   `;
   const configured = new Map(rows.map((row) => [row.kind, row]));
@@ -580,8 +672,9 @@ async function readSchedules(tx: TransactionSql): Promise<JobSchedule[]> {
         cadence: row.cadence as JobSchedule['cadence'],
         horizonDays: row.horizon_days,
         nextRunAt: row.next_run_at.toISOString(),
-        lastRunAt: row.last_run_at?.toISOString() ?? null,
+        lastEnqueuedAt: row.last_run_at?.toISOString() ?? null,
         authorityUserId: row.authority_user_id,
+        disabledReason: row.disabled_reason,
       },
     ];
   });
@@ -631,13 +724,16 @@ async function readRuns(tx: TransactionSql): Promise<JobRun[]> {
  * whole organisation, so a check only at request time would leave the
  * download as the way round it.
  */
-async function requireFullWorkScope(tx: TransactionSql, userId: string): Promise<void> {
+const SCHEDULE_SCOPE_REFUSAL =
+  'A recurring check reports on every Work, so only a member who sees every Work may adopt one. Ask an owner for full Work access.';
+
+async function requireFullWorkScope(
+  tx: TransactionSql,
+  userId: string,
+  message = 'A whole-organisation export is only for a member who sees every Work. Ask an owner for full Work access, or for the export itself.',
+): Promise<void> {
   if (await hasFullWorkScope(tx, userId)) return;
-  throw httpError(
-    403,
-    'EXPORT_SCOPE_REQUIRED',
-    'A whole-organisation export is only for a member who sees every Work. Ask an owner for full Work access, or for the export itself.',
-  );
+  throw httpError(403, 'EXPORT_SCOPE_REQUIRED', message);
 }
 
 function exportNotFound(): Error {
@@ -674,6 +770,7 @@ function scheduleNotFound(): Error {
 async function buildExport(
   database: Sql,
   storage: ObjectStorage,
+  log: FastifyBaseLogger,
   organisationId: string,
   userId: string,
   exportId: string,
@@ -735,7 +832,16 @@ async function buildExport(
       `;
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    // OPERATOR-FACING SENTENCE FIRST, internal detail after, and never
+    // empty. The column's CHECK demands at least one character, so an
+    // `Error('')` — which a broken stream or an aborted socket really does
+    // produce — would make this very UPDATE throw, the catch below would
+    // swallow it, and the row would sit in `running` for ever. The fixed
+    // prefix also means the screen shows a sentence rather than raw
+    // internals; the detail is kept because an operator reporting a
+    // failure has nothing else to quote.
+    const detail = error instanceof Error ? error.message.trim() : String(error).trim();
+    const reason = `The build did not finish.${detail === '' ? '' : ` ${detail}`}`;
     await withBoundTenantSnapshot(database, organisationId, userId, async (tx) => {
       await tx`
         update organisation_export_requests
@@ -744,7 +850,16 @@ async function buildExport(
                failure_reason = ${reason.slice(0, 500)}
          where id = ${exportId} and state in ('queued', 'running')
       `;
-    }).catch(() => undefined);
+    }).catch((cause: unknown) => {
+      // NOT swallowed. If the row could not be marked failed, the stall
+      // sweep will reconcile it within the hour — but a build that failed
+      // AND could not say so is the pair of faults an operator has to see
+      // together, and this is the only place both are known.
+      log.error(
+        { exportId, organisationId, err: cause },
+        'the export failed and its row could not be marked failed; the stall sweep will reconcile it',
+      );
+    });
     // Best effort, and deliberately unguarded by a state check: the bytes
     // belong to a row that will never point at them.
     await storage.remove(objectKey).catch(() => undefined);

@@ -281,6 +281,30 @@ export async function enqueueDueStatutoryJobs(
 }
 
 /**
+ * Fails export builds that nothing is going to finish, and reports how
+ * many (migration 0096).
+ *
+ * The bundle is built inside the API process, so a restart, a crash or a
+ * deploy mid-build leaves a row in `queued` or `running` with no process
+ * behind it. The partial unique index makes one such row disable
+ * self-service export for that organisation for ever, so this is the
+ * reconciliation ADR-0011's `reconcile_terminal_job` is to the job queue:
+ * a dead process must not strand a live row.
+ */
+export async function failStalledOrganisationExports(
+  sql: Sql,
+  olderThan: string,
+  limit: number,
+): Promise<number> {
+  const [row] = await sql<{ fail_stalled_organisation_exports: number }[]>`
+    select app_private.fail_stalled_organisation_exports(
+      ${olderThan}::interval, ${limit}
+    )
+  `;
+  return row?.fail_stalled_organisation_exports ?? 0;
+}
+
+/**
  * Marks lapsed export artefacts expired and hands back the object keys
  * whose bytes the caller must now delete (migration 0096).
  *

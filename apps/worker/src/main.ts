@@ -2,6 +2,7 @@ import {
   createDatabasePool,
   enqueueDueStatutoryJobs,
   expireLapsedOrganisationExports,
+  failStalledOrganisationExports,
 } from '@auto-mb/db';
 import {
   EMPTY_TRUST_ANCHOR_STORE,
@@ -112,6 +113,16 @@ const handlers: JobHandlers = {
 async function tick(): Promise<void> {
   const enqueued = await enqueueDueStatutoryJobs(sql, 50);
   if (enqueued > 0) log.info({ message: 'scheduled checks enqueued', enqueued });
+
+  // Before the expiry sweep, because a build nothing will finish holds the
+  // organisation's one build slot (0096's partial unique index) and the
+  // screen says "being built" until this reconciles it. An hour is far
+  // longer than the slowest plausible build and short enough that an
+  // operator who asked again after lunch is not still blocked.
+  const stalled = await failStalledOrganisationExports(sql, '1 hour', 50);
+  if (stalled > 0) {
+    log.error({ message: 'export builds reconciled as failed', stalled });
+  }
 
   const lapsed = await expireLapsedOrganisationExports(sql, 50);
   for (const key of lapsed) {

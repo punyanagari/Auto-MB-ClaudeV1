@@ -1554,9 +1554,20 @@ test('the platform settings pass the axe scan', async ({ page }) => {
   await expect(page.getByText('E-way bill', { exact: true })).toBeVisible();
   await expect(page.getByText(/never configured/)).toBeVisible();
   await expect(page.getByText('Guarantee and certificate expiry')).toBeVisible();
+  // The note that says WHY a module is off — the fact the column exists
+  // to carry, and one a panel could store and never show.
+  await expect(page.getByText(/waiting on NIC re-certification/)).toBeVisible();
   // The refused-bind run's remedy, which is the one sentence on this
-  // screen an operator has to act on.
+  // screen an operator has to act on, and the CONTROL it names. A remedy
+  // whose only button switches the check off would make the operator
+  // disable a statutory check to fix its custody.
   await expect(page.getByText(/no longer in the organisation/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Run as me' })).toBeVisible();
+  // The two settings the screen displays and used to have no way to
+  // change: a select and a bounded number input, both of which are
+  // label-association and focus-order surfaces a table never reaches.
+  await expect(page.getByLabel('How often')).toBeVisible();
+  await expect(page.getByLabel('Days ahead')).toBeVisible();
   await expectNoAxeViolations(page, 'platform settings');
 
   await expect(

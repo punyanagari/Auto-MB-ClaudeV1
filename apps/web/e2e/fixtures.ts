@@ -798,8 +798,9 @@ const PLATFORM_SCHEDULES = {
       cadence: 'weekly',
       horizonDays: 45,
       nextRunAt: '2026-08-25T04:00:00.000Z',
-      lastRunAt: '2026-08-18T04:00:00.000Z',
+      lastEnqueuedAt: '2026-08-18T04:00:00.000Z',
       authorityUserId: 'user-a',
+      disabledReason: null,
     },
   ],
   runs: [
