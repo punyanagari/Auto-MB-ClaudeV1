@@ -55,9 +55,9 @@ import {
  * inline call occupied. Routes whose checks differ per transaction or are
  * branched (e.g. quotation outcomes) keep their inline calls and declare
  * nothing. */
-export type TenantRouteRole = 'writer' | 'owner' | 'evidence';
+type TenantRouteRole = 'writer' | 'owner' | 'evidence';
 
-export interface TenantRouteOptions<Schema extends FastifySchema> {
+interface TenantRouteOptions<Schema extends FastifySchema> {
   readonly method: HTTPMethods;
   readonly url: string;
   readonly schema: Schema;
@@ -76,7 +76,7 @@ export interface TenantRouteOptions<Schema extends FastifySchema> {
 }
 
 /** The request as the TypeBox provider types it from the route's schema. */
-export type TenantRouteRequest<Schema extends FastifySchema> = FastifyRequest<
+type TenantRouteRequest<Schema extends FastifySchema> = FastifyRequest<
   RouteGenericInterface,
   RawServerDefault,
   RawRequestDefaultExpression<RawServerDefault>,
@@ -84,7 +84,7 @@ export type TenantRouteRequest<Schema extends FastifySchema> = FastifyRequest<
   TypeBoxTypeProvider
 >;
 
-export interface TenantRouteContext<Schema extends FastifySchema> {
+interface TenantRouteContext<Schema extends FastifySchema> {
   readonly request: TenantRouteRequest<Schema>;
   readonly reply: FastifyReply;
   /** The authenticated session user — requireUser already ran. */
@@ -99,7 +99,7 @@ export interface TenantRouteContext<Schema extends FastifySchema> {
   readonly tenantSnapshot: <T>(work: (tx: TransactionSql) => Promise<T>) => Promise<T>;
 }
 
-export type TenantRouteHandler<Schema extends FastifySchema> = (
+type TenantRouteHandler<Schema extends FastifySchema> = (
   context: TenantRouteContext<Schema>,
 ) => unknown;
 

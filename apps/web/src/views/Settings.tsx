@@ -9,6 +9,8 @@ import type {
 import type { ApiClient } from '../api.js';
 import { formValue, RequestFailedError } from '../api.js';
 import { formatDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -75,11 +77,7 @@ function CompanyBankAccounts({ api, organisationId, isOwner }: SettingsProps) {
         setAccounts(rows);
       })
       .catch((cause: unknown) => {
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The bank accounts could not be loaded.',
-        );
+        setError(errorMessage(cause, 'The bank accounts could not be loaded.'));
       });
   };
   useEffect(reload, [api, organisationId]);
@@ -104,11 +102,7 @@ function CompanyBankAccounts({ api, organisationId, isOwner }: SettingsProps) {
       form.reset();
       reload();
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The bank account could not be added.',
-      );
+      setError(errorMessage(cause, 'The bank account could not be added.'));
     } finally {
       setBusy(false);
     }
@@ -123,11 +117,7 @@ function CompanyBankAccounts({ api, organisationId, isOwner }: SettingsProps) {
       setNotice(`${account.bankName} account retired.`);
       reload();
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The change could not be saved.',
-      );
+      setError(errorMessage(cause, 'The change could not be saved.'));
     } finally {
       setBusy(false);
     }
@@ -282,8 +272,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
    * server reports as four rows carrying the product defaults. */
   const [series, setSeries] = useState<readonly NumberSeries[] | null>(null);
   const [seriesError, setSeriesError] = useState(false);
-  /** Bumped by the failure states' retry, to re-run the loads below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
   const [seriesType, setSeriesType] = useState<NumberedDocumentType>('tax_invoice');
   /** Drives which declaration fields the e-invoicing form shows; the
    * applicable-from date and the window exist only while applicable. */
@@ -306,11 +295,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
         `${SERIES_LABELS[documentType]} numbers will now look like ${template}.`,
       );
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The format was not saved.',
-      );
+      setError(errorMessage(cause, 'The format was not saved.'));
     } finally {
       setBusy(false);
     }
@@ -331,11 +316,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
         `${SERIES_LABELS[documentType]} numbers follow the default again. Nothing already issued is renumbered.`,
       );
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The default was not restored.',
-      );
+      setError(errorMessage(cause, 'The default was not restored.'));
     } finally {
       setBusy(false);
     }
@@ -387,10 +368,6 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
     };
   }, [api, organisationId, loadVersion]);
 
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
-
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -429,11 +406,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
         // the state-code field itself so the operator corrects in place.
         setStateCodeError(cause.message);
       } else {
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'Saving the company details failed.',
-        );
+        setError(errorMessage(cause, 'Saving the company details failed.'));
       }
     } finally {
       setBusy(false);
@@ -477,11 +450,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
             : 'E-invoicing declaration cleared. The IRP transport stays refused until it is declared.',
       );
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The e-invoicing declaration was not saved.',
-      );
+      setError(errorMessage(cause, 'The e-invoicing declaration was not saved.'));
     } finally {
       setBusy(false);
     }
@@ -506,9 +475,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       });
       setNotice('Logo updated. It will appear on newly rendered documents.');
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError ? cause.message : 'Logo upload failed.',
-      );
+      setError(errorMessage(cause, 'Logo upload failed.'));
     } finally {
       setBusy(false);
     }
@@ -529,11 +496,7 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
       });
       setNotice('Logo removed.');
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'Removing the logo failed.',
-      );
+      setError(errorMessage(cause, 'Removing the logo failed.'));
     } finally {
       setBusy(false);
     }

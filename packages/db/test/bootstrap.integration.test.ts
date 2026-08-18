@@ -3,12 +3,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Sql } from '../src/index.js';
-import { createDatabasePool, runMigrations } from '../src/index.js';
+import {
+  createDatabasePool,
+  ensureApplicationRole,
+  runMigrations,
+} from '../src/index.js';
 import {
   TABLE_PRIVILEGES,
   UNGRANTED_BY_DESIGN,
   applyGrants,
-  ensureApplicationRole,
   verifyApplicationConnection,
 } from '../src/bootstrap.js';
 

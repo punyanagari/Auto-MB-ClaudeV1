@@ -129,7 +129,7 @@ export async function readBook(
 
 /** The claimed sources with human labels: challan number, installation
  * summary, or PAC reference. */
-export async function readSources(
+async function readSources(
   tx: TransactionSql,
   bookId: string,
 ): Promise<MeasurementBookSource[]> {
@@ -171,7 +171,7 @@ export async function readSources(
 
 // --- Live-state computation inputs ------------------------------------------
 
-export interface ItemInputRow {
+interface ItemInputRow {
   work_item_id: string;
   item_number: string;
   description: string;
@@ -450,7 +450,7 @@ export function toLine(line: MbComputedLine): MeasurementBookLine {
   };
 }
 
-export interface StoredLineRow {
+interface StoredLineRow {
   work_item_id: string;
   item_number: string;
   description: string;
@@ -659,7 +659,7 @@ export async function assertSourceNotBilled(
   }
 }
 
-export interface SourceStateRow {
+interface SourceStateRow {
   id: string;
   status: string;
   label: string | null;
@@ -668,7 +668,7 @@ export interface SourceStateRow {
 /** Loads (and optionally row-locks) the named sources of one type,
  * scoped to the Work. A source of another Work answers exactly like an
  * unknown id. */
-export async function loadSourcesOfType(
+async function loadSourcesOfType(
   tx: TransactionSql,
   workId: string,
   sourceType: MbSourceType,
@@ -729,15 +729,13 @@ export async function loadSourcesOfType(
   return new Map(rows.map((row) => [row.id, row]));
 }
 
-export const BILLABLE_STATE: Record<MbSourceType, string> = {
+const BILLABLE_STATE: Record<MbSourceType, string> = {
   delivery_challan: 'issued',
   installation: 'recorded',
   pac_certificate: 'recorded',
 };
 
-export function groupByType(
-  sources: readonly MbSourceRef[],
-): Record<MbSourceType, string[]> {
+function groupByType(sources: readonly MbSourceRef[]): Record<MbSourceType, string[]> {
   const grouped: Record<MbSourceType, string[]> = {
     delivery_challan: [],
     installation: [],
@@ -879,7 +877,7 @@ export async function nameSourceConflict(
 
 // --- The MB document (phase 3) ----------------------------------------------
 
-export interface BrandingRow {
+interface BrandingRow {
   name: string;
   address: string | null;
   gstin: string | null;
@@ -901,7 +899,7 @@ export async function readBranding(
   return organisation;
 }
 
-export interface WorkIdentityRow {
+interface WorkIdentityRow {
   work_code: string;
   title: string;
   letter_number: string;

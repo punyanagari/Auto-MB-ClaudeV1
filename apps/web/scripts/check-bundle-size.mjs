@@ -60,38 +60,30 @@ const INITIAL_JS_GZIP_RATCHET_BYTES = 115_000;
  * payload. Rolldown names a chunk after the module that heads it, so
  * `ChallanDetail.tsx` becomes `assets/ChallanDetail-<hash>.js`.
  *
- * Keep this list in step with the `lazy(...)` block in that file: a view
- * added there and not here is simply unguarded, and a view removed from
- * there fails here by name.
+ * READ OFF THAT FILE rather than restated here. A hand-kept copy of this
+ * list only ever guards the views someone remembered to add to it, and
+ * the last one drifted twenty-two views behind the source before anybody
+ * noticed — which is the failure mode of a list whose whole job is to be
+ * complete. Two `lazy` calls may name the same module (the two
+ * correspondence composers do), so the specifiers are deduplicated.
  */
+const workspaceSource = readFileSync(
+  join(webRoot, 'src', 'views', 'OperationsWorkspace.tsx'),
+  'utf8',
+);
 const LAZY_VIEWS = [
-  'AccountSecurity',
-  'AppearanceSettings',
-  'Approvals',
-  'ChallanDetail',
-  'ChallanEditor',
-  // The Challans module. Its two registers — DeliveryChallans and
-  // IssueChallans — are static imports of this one view rather than
-  // lazy views of their own: they are the two tabs of a single screen,
-  // and splitting a tab rail across two network round trips would make
-  // switching tabs slower than the register it switches to.
-  'Challans',
-  'InstallationsRegister',
-  'InvoicesRegister',
-  'IssueChallanDetail',
-  'IssueChallanEditor',
-  'Masters',
-  'Members',
-  'OperationsDashboard',
-  'OrganisationAccessSettings',
-  'Quotations',
-  'ReviewLoa',
-  'Search',
-  'Settings',
-  'UploadLoa',
-  'WorkDetail',
-  'Works',
-];
+  ...new Set(
+    [...workspaceSource.matchAll(/\bimport\('\.\/([A-Za-z0-9_]+)\.js'\)/g)].map(
+      (match) => match[1],
+    ),
+  ),
+].sort();
+if (LAZY_VIEWS.length === 0) {
+  fail(
+    'no lazy(...) imports found in views/OperationsWorkspace.tsx — the view ' +
+      'guard below would pass vacuously.',
+  );
+}
 
 function fail(message) {
   process.stderr.write(`bundle budget: ${message}\n`);

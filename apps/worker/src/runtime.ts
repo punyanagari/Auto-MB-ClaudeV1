@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import type { ClaimedJob, JobKind, Sql, TransactionSql } from '@auto-mb/db';
 import {
   TenantBindRefusedError,
@@ -274,20 +275,10 @@ export async function runWorkerLoop(
   }
 }
 
+/** Abort resolves rather than rejects: a shutdown mid-wait is the loop
+ * ending, not an error for it to report. */
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(finish, ms);
-    signal.addEventListener('abort', finish, { once: true });
-    function finish(): void {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', finish);
-      resolve();
-    }
-  });
+  return delay(ms, undefined, { signal }).catch(() => undefined);
 }
 
 /**

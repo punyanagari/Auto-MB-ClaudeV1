@@ -6,8 +6,10 @@ import type {
   RecordPacCertificateRequest,
   WorkItem,
 } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
+import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell } from '../ui/table.js';
@@ -55,11 +57,8 @@ export function PacCertificates({
   const [consignees, setConsignees] = useState<readonly Contact[]>([]);
   const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const { pending, notice, actionError, act, setActionError } = useAction();
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -80,38 +79,12 @@ export function PacCertificates({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The PAC certificates could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The PAC certificates could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
-
-  const act = useCallback(async (work: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await work();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
 
   const refresh = useCallback(async () => {
     setData(await api.listWorkPacCertificates(organisationId, workId));

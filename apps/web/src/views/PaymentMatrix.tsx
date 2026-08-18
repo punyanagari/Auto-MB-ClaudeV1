@@ -8,7 +8,8 @@ import type {
 } from '@auto-mb/contracts';
 import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
 import { AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import {
   CATEGORY_LABELS,
   ITEM_CATEGORY_OPTIONS,
@@ -22,6 +23,7 @@ import {
   type RowDraft,
   type StageField,
 } from '../lib/payment-matrix.js';
+import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
@@ -121,11 +123,8 @@ export function PaymentMatrix({
   );
   const [tenderContextError, setTenderContextError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the loads below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const { pending, notice, actionError, act } = useAction();
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -146,20 +145,12 @@ export function PaymentMatrix({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The payment matrix could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The payment matrix could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -173,9 +164,7 @@ export function PaymentMatrix({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setTenderContextError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'Tender evidence could not be loaded.',
+          errorMessage(cause, 'Tender evidence could not be loaded.'),
         );
       });
     return () => {
@@ -187,24 +176,6 @@ export function PaymentMatrix({
     () => (tenderContext === null ? [] : matrixEvidenceWarnings(tenderContext, drafts)),
     [tenderContext, drafts],
   );
-
-  async function act(work: () => Promise<void>, done: string) {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await work();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }
 
   function updateDraft(
     category: PaymentMatrixCategory,

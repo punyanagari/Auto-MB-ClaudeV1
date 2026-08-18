@@ -10,11 +10,10 @@ import { UuidSchema } from './primitives.js';
 // The issued snapshot is never edited.
 
 /** Which correction path the challan's live evidence state permits. */
-export const CorrectionPathSchema = Type.Union([
+const CorrectionPathSchema = Type.Union([
   Type.Literal('cancel_replace'),
   Type.Literal('correction_notice'),
 ]);
-export type CorrectionPath = Static<typeof CorrectionPathSchema>;
 
 export const CorrectionEligibilityResponseSchema = Type.Object(
   {
@@ -70,7 +69,7 @@ export type ProposeIssueChallanCancelReplaceRequest = Static<
 >;
 
 /** One structured field correction on a notice. */
-export const CorrectionNoticeEntrySchema = Type.Object(
+const CorrectionNoticeEntrySchema = Type.Object(
   {
     field: Type.String({ minLength: 1, maxLength: 100 }),
     corrected: Type.String({ minLength: 1, maxLength: 1000 }),
@@ -97,13 +96,12 @@ export type ProposeCorrectionNoticeRequest = Static<
   typeof ProposeCorrectionNoticeRequestSchema
 >;
 
-export const CorrectionNoticeStatusSchema = Type.Union([
+const CorrectionNoticeStatusSchema = Type.Union([
   Type.Literal('issued'),
   Type.Literal('cancelled'),
 ]);
-export type CorrectionNoticeStatus = Static<typeof CorrectionNoticeStatusSchema>;
 
-export const CorrectionNoticeSchema = Type.Object(
+const CorrectionNoticeSchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,
@@ -146,6 +144,3 @@ export const CancelCorrectionNoticeRequestSchema = Type.Object(
   { note: Type.String({ minLength: 3, maxLength: 1000 }) },
   { additionalProperties: false },
 );
-export type CancelCorrectionNoticeRequest = Static<
-  typeof CancelCorrectionNoticeRequestSchema
->;

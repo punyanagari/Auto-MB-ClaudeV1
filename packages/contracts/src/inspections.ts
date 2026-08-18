@@ -26,7 +26,7 @@ import {
  * after arrival, so there is no call to place and no certificate to wait
  * for. */
 export const INSPECTION_AGENCIES = ['RDSO', 'RITES'] as const;
-export const InspectionAgencySchema = Type.Union(
+const InspectionAgencySchema = Type.Union(
   INSPECTION_AGENCIES.map((agency) => Type.Literal(agency)),
 );
 export type InspectionAgency = Static<typeof InspectionAgencySchema>;
@@ -36,7 +36,7 @@ export type InspectionAgency = Static<typeof InspectionAgencySchema>;
  * reason the two types exist separately: a consignee-inspected item is
  * configured here and never appears in the inspection workspace. */
 export const INSPECTION_CLAUSE_AGENCIES = ['RDSO', 'RITES', 'consignee'] as const;
-export const InspectionClauseAgencySchema = Type.Union(
+const InspectionClauseAgencySchema = Type.Union(
   INSPECTION_CLAUSE_AGENCIES.map((agency) => Type.Literal(agency)),
 );
 export type InspectionClauseAgency = Static<typeof InspectionClauseAgencySchema>;
@@ -48,13 +48,13 @@ export type InspectionClauseAgency = Static<typeof InspectionClauseAgencySchema>
  * closed-shape CHECK is what makes it mean inspected, passed and certified
  * rather than merely marked done.
  */
-export const INSPECTION_CALL_STATUSES = [
+const INSPECTION_CALL_STATUSES = [
   'requested',
   'scheduled',
   'closed',
   'cancelled',
 ] as const;
-export const InspectionCallStatusSchema = Type.Union(
+const InspectionCallStatusSchema = Type.Union(
   INSPECTION_CALL_STATUSES.map((status) => Type.Literal(status)),
 );
 export type InspectionCallStatus = Static<typeof InspectionCallStatusSchema>;
@@ -62,12 +62,8 @@ export type InspectionCallStatus = Static<typeof InspectionCallStatusSchema>;
 /** `call_letter` is the agency's inward letter and `certificate` is the
  * paper the dispatch gate exists for; both are singular per call. Every
  * other demanded paper is `evidence`. */
-export const INSPECTION_DOCUMENT_KINDS = [
-  'call_letter',
-  'certificate',
-  'evidence',
-] as const;
-export const InspectionDocumentKindSchema = Type.Union(
+const INSPECTION_DOCUMENT_KINDS = ['call_letter', 'certificate', 'evidence'] as const;
+const InspectionDocumentKindSchema = Type.Union(
   INSPECTION_DOCUMENT_KINDS.map((kind) => Type.Literal(kind)),
 );
 export type InspectionDocumentKind = Static<typeof InspectionDocumentKindSchema>;
@@ -78,7 +74,7 @@ export type InspectionDocumentKind = Static<typeof InspectionDocumentKindSchema>
  * has it, plus the inspection configuration if any has been made. Items
  * with no clause are still listed — the screen is a table of ITEMS, and an
  * unmapped one is the row an operator has come to fill in. */
-export const InspectionClauseRowSchema = Type.Object(
+const InspectionClauseRowSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -100,7 +96,7 @@ export const InspectionClauseRowSchema = Type.Object(
 );
 export type InspectionClauseRow = Static<typeof InspectionClauseRowSchema>;
 
-export const InspectionChecklistFieldSchema = Type.Object(
+const InspectionChecklistFieldSchema = Type.Object(
   {
     label: Type.String({ minLength: 1, maxLength: 200 }),
     mandatory: Type.Boolean(),
@@ -117,14 +113,13 @@ export type InspectionChecklistField = Static<typeof InspectionChecklistFieldSch
  * held to the organisation's default. It matters on screen: editing an
  * inherited list creates a Work-specific override, and an operator is
  * entitled to know which of those two they are about to do. */
-export const InspectionChecklistSchema = Type.Object(
+const InspectionChecklistSchema = Type.Object(
   {
     inherited: Type.Boolean(),
     fields: Type.Array(InspectionChecklistFieldSchema),
   },
   { additionalProperties: false },
 );
-export type InspectionChecklist = Static<typeof InspectionChecklistSchema>;
 
 export const WorkInspectionConfigSchema = Type.Object(
   {
@@ -141,7 +136,7 @@ export type WorkInspectionConfig = Static<typeof WorkInspectionConfigSchema>;
 /** One item's configuration as the mapping screen submits it. A null
  * `agency` clears the clause outright: the row goes away and the item is
  * simply not inspected. */
-export const InspectionClauseInputSchema = Type.Object(
+const InspectionClauseInputSchema = Type.Object(
   {
     workItemId: UuidSchema,
     agency: Type.Union([InspectionClauseAgencySchema, Type.Null()]),
@@ -151,7 +146,6 @@ export const InspectionClauseInputSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type InspectionClauseInput = Static<typeof InspectionClauseInputSchema>;
 
 /** The whole mapping in one request, because that is how the screen edits
  * it: a table of rows saved together. Partial submission would leave the
@@ -182,7 +176,7 @@ export type SaveInspectionChecklistRequest = Static<
 
 // --- The call ---------------------------------------------------------------
 
-export const InspectionCallDocumentSchema = Type.Object(
+const InspectionCallDocumentSchema = Type.Object(
   {
     id: UuidSchema,
     kind: InspectionDocumentKindSchema,
@@ -199,7 +193,7 @@ export const InspectionCallDocumentSchema = Type.Object(
 );
 export type InspectionCallDocument = Static<typeof InspectionCallDocumentSchema>;
 
-export const InspectionCallItemSchema = Type.Object(
+const InspectionCallItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -309,7 +303,6 @@ export const ReceiveCallLetterQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type ReceiveCallLetterQuery = Static<typeof ReceiveCallLetterQuerySchema>;
 
 export const UploadInspectionCertificateQuerySchema = Type.Object(
   {
@@ -322,17 +315,11 @@ export const UploadInspectionCertificateQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type UploadInspectionCertificateQuery = Static<
-  typeof UploadInspectionCertificateQuerySchema
->;
 
 export const UploadInspectionEvidenceQuerySchema = Type.Object(
   { filename: Type.String({ minLength: 1, maxLength: 255 }) },
   { additionalProperties: false },
 );
-export type UploadInspectionEvidenceQuery = Static<
-  typeof UploadInspectionEvidenceQuerySchema
->;
 
 export const CancelInspectionCallRequestSchema = Type.Object(
   { reason: Type.String({ minLength: 1, maxLength: 500 }) },

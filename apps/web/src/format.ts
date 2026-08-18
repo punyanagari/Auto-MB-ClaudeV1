@@ -111,23 +111,6 @@ const viewerInstantFormat = new Intl.DateTimeFormat('en-GB', {
 const isoDayFormat = new Intl.DateTimeFormat('en-CA');
 
 /** "2026-08-08" → "08 Aug 2026"; anything unparseable passes through. */
-/**
- * Today, as the `YYYY-MM-DD` an `<input type="date">` wants.
- *
- * Built from the LOCAL calendar parts, not from `toISOString()`. An
- * operator in India filling a form at 9pm is on tomorrow's date in UTC,
- * so a UTC default silently pre-fills the wrong day — and for a payment
- * date that is the difference between two financial years at the end of
- * March. The server re-derives its own "today" from the organisation's
- * timezone; this only has to stop the FORM from starting out wrong.
- */
-export function todayISO(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${String(now.getFullYear())}-${month}-${day}`;
-}
-
 export function formatDate(isoDate: string): string {
   const parsed = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return isoDate;
@@ -188,11 +171,20 @@ export function formatRate(decimal: string): string {
   return rupeeRates.format(value);
 }
 
-/** The viewer's local calendar date as a date-input value (YYYY-MM-DD).
+/**
+ * Today, as the `YYYY-MM-DD` an `<input type="date">` wants.
+ *
+ * The viewer's LOCAL calendar date, not `toISOString()`'s. An operator in
+ * India filling a form at 9pm is already on tomorrow's date in UTC, so a
+ * UTC default silently pre-fills the wrong day — and for a payment date
+ * that is the difference between two financial years at the end of March.
+ * en-CA formats as YYYY-MM-DD without any UTC round-trip of the local day.
+ *
  * A form-prefill convenience only — document editors that have a server
- * read available prefer its organisation-timezone `today`, and the
- * server revalidates every legal date it is sent. en-CA formats as
- * YYYY-MM-DD without any UTC round-trip of the local day. */
+ * read available prefer its organisation-timezone `today`, and the server
+ * revalidates every legal date it is sent. This only has to stop the FORM
+ * from starting out wrong.
+ */
 export function todayIso(): string {
   return isoDayFormat.format(new Date());
 }

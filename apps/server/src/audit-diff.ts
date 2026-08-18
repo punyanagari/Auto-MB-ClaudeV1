@@ -1,22 +1,6 @@
-/** Canonical JSON for structural comparison: objects serialise with
- * sorted keys so a value that round-tripped through jsonb (which reorders
- * keys) still compares equal to the freshly-built request value. */
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`;
-  }
-  if (value !== null && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const body = Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-      .join(',');
-    return `{${body}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
+import { isDeepStrictEqual } from 'node:util';
 
-export interface AuditDiff {
+interface AuditDiff {
   readonly before: Record<string, unknown>;
   readonly after: Record<string, unknown>;
 }
@@ -28,6 +12,12 @@ export interface AuditDiff {
  * after the update); unchanged fields are dropped so the trail records the
  * delta, not a row dump. Callers pass business fields only — never
  * secrets, password hashes, or tokens.
+ *
+ * Comparison is `isDeepStrictEqual`, which is key-order-insensitive: a
+ * value that round-tripped through jsonb (which reorders keys) still
+ * compares equal to the freshly-built request value. It also compares
+ * Dates and Buffers by value rather than by whatever JSON happens to make
+ * of them, so a serialisation quirk can never read as a field change.
  */
 export function auditDiff(
   before: Record<string, unknown>,
@@ -38,7 +28,7 @@ export function auditDiff(
   for (const key of Object.keys(after)) {
     const previous = before[key] ?? null;
     const next = after[key] ?? null;
-    if (stableStringify(previous) !== stableStringify(next)) {
+    if (!isDeepStrictEqual(previous, next)) {
       changedBefore[key] = previous;
       changedAfter[key] = next;
     }

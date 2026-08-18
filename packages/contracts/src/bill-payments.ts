@@ -38,13 +38,13 @@ import {
  * so the many existing importers of `BILL_DEDUCTION_CATEGORIES` do not
  * all have to move at once.
  */
-export const BILL_DEDUCTION_CATEGORIES = BILL_DEDUCTION_HEADS;
-export const BillDeductionCategorySchema = Type.Union(
+const BILL_DEDUCTION_CATEGORIES = BILL_DEDUCTION_HEADS;
+const BillDeductionCategorySchema = Type.Union(
   BILL_DEDUCTION_CATEGORIES.map((category) => Type.Literal(category)),
 );
 export type BillDeductionCategory = Static<typeof BillDeductionCategorySchema>;
 
-export const BillPaymentDeductionSchema = Type.Object(
+const BillPaymentDeductionSchema = Type.Object(
   {
     id: UuidSchema,
     category: BillDeductionCategorySchema,
@@ -118,7 +118,6 @@ export const VoidBillPaymentRequestSchema = Type.Object(
   { reason: nonBlankString({ minLength: 3, maxLength: 500 }) },
   { additionalProperties: false },
 );
-export type VoidBillPaymentRequest = Static<typeof VoidBillPaymentRequestSchema>;
 
 /**
  * Outstanding with the railway, for one prepared bill.
@@ -135,7 +134,7 @@ export type VoidBillPaymentRequest = Static<typeof VoidBillPaymentRequestSchema>
  * figure to be outstanding against, and reporting the prepared amount as
  * outstanding would state a debt the railway has not acknowledged.
  */
-export const BillSettlementPositionSchema = Type.Object(
+const BillSettlementPositionSchema = Type.Object(
   {
     billId: UuidSchema,
     workId: UuidSchema,
@@ -180,7 +179,7 @@ export type BillSettlementResponse = Static<typeof BillSettlementResponseSchema>
  * forbids, and it would be wrong the first time a bill is settled by two
  * receipts that both withheld security deposit.
  */
-export const BillDeductionHeadTotalSchema = Type.Object(
+const BillDeductionHeadTotalSchema = Type.Object(
   {
     category: BillDeductionCategorySchema,
     amount: NonNegativeMoneyStringSchema,
@@ -200,7 +199,7 @@ export type BillDeductionHeadTotal = Static<typeof BillDeductionHeadTotalSchema>
  * `BillSettlementPositionSchema` rather than restated beside it, so the
  * two surfaces cannot drift into reporting one bill differently.
  */
-export const ReceivablesRegisterEntrySchema = Type.Composite(
+const ReceivablesRegisterEntrySchema = Type.Composite(
   [
     BillSettlementPositionSchema,
     Type.Object({
@@ -242,7 +241,7 @@ export type ReceivablesRegisterEntry = Static<typeof ReceivablesRegisterEntrySch
  * screen have to be the organisation's totals, or the tiles quietly answer
  * a different question than the table below them.
  */
-export const ReceivablesRegisterSummarySchema = Type.Object(
+const ReceivablesRegisterSummarySchema = Type.Object(
   {
     /** What the agency prepared, summed over `preparedAmount`. */
     claimedTotal: DecimalStringSchema,

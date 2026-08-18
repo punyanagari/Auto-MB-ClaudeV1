@@ -18,14 +18,19 @@
  */
 
 import { amountInWords } from './amount-in-words.js';
-import { escapeHtml, type ChallanBranding } from './challan-html.js';
+import {
+  BASE_PDF_CSS,
+  escapeHtml,
+  WATERMARK_CSS,
+  type ChallanBranding,
+} from './challan-html.js';
 import { renderQuantity } from './mb-remark.js';
 
 export const MB_TEMPLATE_VERSION = 'mb-v1';
 
 export type MeasurementBookBranding = ChallanBranding;
 
-export interface MeasurementBookSnapshotLine {
+interface MeasurementBookSnapshotLine {
   /** Schedule/serial identity of the item ('A/1', 'S/2'). */
   readonly itemNumber: string;
   readonly description: string;
@@ -124,13 +129,9 @@ export function renderMeasurementBookHtml(
   .in-words { margin-top: 0.75rem; }
   .sign { margin-top: 3rem; display: flex; justify-content: space-between; }
   .sign div { border-top: 1px solid #17221d; padding-top: 4px; width: 30%; text-align: center; }
-  .brand { display: flex; align-items: flex-start; gap: 16px; border-bottom: 2px solid #17221d; padding-bottom: 10px; }
-  .brand img { max-height: 56px; max-width: 180px; }
-  .brand .org { font-size: 15px; font-weight: bold; }
-  .brand .org-details { font-size: 10px; color: #55635c; margin-top: 2px; }
-  .doc-title { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+${BASE_PDF_CSS}
   .final-banner { border: 2px solid #17221d; display: inline-block; padding: 4px 12px; font-weight: bold; letter-spacing: 0.15em; margin: 0.75rem 0 0; }
-  .watermark { position: fixed; top: 45%; left: 8%; right: 8%; text-align: center; transform: rotate(-30deg); font-size: 96px; font-weight: bold; color: rgba(23, 34, 29, 0.12); letter-spacing: 0.2em; pointer-events: none; z-index: 10; }
+${WATERMARK_CSS}
 </style>
 </head>
 <body>

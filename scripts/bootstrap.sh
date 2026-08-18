@@ -22,8 +22,10 @@ set -a
 . ./.env
 set +a
 
+# package.json's `packageManager` field pins the exact pnpm version and is
+# what corepack reads, so naming it again here would only be a second place
+# for it to go stale.
 corepack enable
-corepack prepare pnpm@11.17.0 --activate
 pnpm install --frozen-lockfile
 
 # The two heavy third-party design skills are git-ignored and fetched at

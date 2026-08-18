@@ -5,13 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { InjectOptions } from 'fastify';
 import {
-  assertNoForeignKeyOrphans,
   createDatabasePool,
   ensureClusterRoles,
-  removeOrganisationResidue,
   runMigrations,
   type Sql,
 } from '@auto-mb/db';
+import {
+  assertNoForeignKeyOrphans,
+  removeOrganisationResidue,
+} from '@auto-mb/db/testing';
 import type {
   EmployeeListResponse,
   EmployeeResponse,

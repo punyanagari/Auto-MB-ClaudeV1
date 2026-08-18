@@ -7,13 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { TimelineResponse } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -157,7 +152,7 @@ async function seedWork(code: string): Promise<{ workId: string; itemIds: string
     )
     values (
       ${organisationId}, ${ownerUserId}, 'work.created', 'works', ${workId},
-      ${jsonb(admin, { workCode: code, scheduleCount: 1, itemCount: 2 })}
+      ${admin.json({ workCode: code, scheduleCount: 1, itemCount: 2 })}
     )
   `;
   return { workId, itemIds };
@@ -595,7 +590,7 @@ describe('per-Work timeline read API', () => {
       )
       values (
         ${organisationId}, ${ownerUserId}, 'challan.rendered',
-        'delivery_challans', ${challanId}, ${jsonb(admin, { sha256: 'x'.repeat(64) })}
+        'delivery_challans', ${challanId}, ${admin.json({ sha256: 'x'.repeat(64) })}
       )
     `;
 
@@ -737,7 +732,7 @@ describe('single-entity history API', () => {
       )
       values (
         ${foreignChallanId}, ${organisationId}, ${workBId}, '2026-08-01',
-        'TLB', ${jsonb(admin, { name: 'Store B', address: 'Yard B' })},
+        'TLB', ${admin.json({ name: 'Store B', address: 'Yard B' })},
         ${ownerUserId}
       )
     `;

@@ -56,13 +56,3 @@ export function hyphenJoin(fragments: readonly string[]): string {
     return acc.endsWith('-') ? acc + fragment : `${acc} ${fragment}`;
   }, '');
 }
-
-/** Splits `text` into trimmed, non-blank lines (blank lines dropped
- * entirely) — used where callers need line-level structure rather than
- * paragraph- or fully-flattened text. */
-export function nonBlankLines(text: string): string[] {
-  return text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-}

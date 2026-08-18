@@ -32,7 +32,6 @@ import {
   WorkSupersessionResponseSchema,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
@@ -179,7 +178,7 @@ export function registerWorkSupersedeRoutes(
           )
           values (
             ${organisationId}, 'work_supersede', ${workId}, ${workId},
-            ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${reason}, ${user.id}
+            ${tx.json(proposed as never)}, ${tx.json(diff as never)}, ${reason}, ${user.id}
           )
           returning id, entity_id, work_id
         `.catch((error: unknown) => {

@@ -7,13 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { DashboardResponse, Work } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -412,7 +407,7 @@ describe('LOA document scope', () => {
           ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
           ${filename}, ${'c'.repeat(32) + id.replaceAll('-', '')},
           'application/pdf', 1000, ${status},
-          ${jsonb(admin, { sourceText: 'SECRET LETTER TEXT' })},
+          ${admin.json({ sourceText: 'SECRET LETTER TEXT' })},
           ${workId}, ${ownerUserId}
         )
       `;
@@ -543,7 +538,7 @@ describe('assigned-scope LOA confirmation self-assignment', () => {
         ${id}, ${organisationId}, ${`${organisationId}/loa/${id}.pdf`},
         'confirm-scope.pdf', ${'d'.repeat(32) + id.replaceAll('-', '')},
         'application/pdf', 1000, 'review',
-        ${jsonb(admin, { sourceText: 'CONFIRM SCOPE LETTER TEXT' })},
+        ${admin.json({ sourceText: 'CONFIRM SCOPE LETTER TEXT' })},
         ${ownerUserId}
       )
     `;

@@ -56,7 +56,7 @@ export const BankBranchSchema = Type.String({ minLength: 2, maxLength: 100 });
  * way the GSTIN is handled: a PAN is read off a card and typed, and the
  * database CHECK only accepts upper case, so rejecting lower case at the
  * edge would refuse a correct value for its capitalisation. */
-export const PanSchema = Type.String({
+const PanSchema = Type.String({
   pattern: '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$',
   minLength: 10,
   maxLength: 10,
@@ -180,7 +180,6 @@ export const ContactListResponseSchema = Type.Object(
   { contacts: Type.Array(ContactSchema) },
   { additionalProperties: false },
 );
-export type ContactListResponse = Static<typeof ContactListResponseSchema>;
 
 // --- Work <-> consignee association (legacy R16) ----------------------------
 //
@@ -195,13 +194,11 @@ export const WorkConsigneeListResponseSchema = Type.Object(
   { consignees: Type.Array(ContactSchema) },
   { additionalProperties: false },
 );
-export type WorkConsigneeListResponse = Static<typeof WorkConsigneeListResponseSchema>;
 
 export const LinkWorkConsigneeRequestSchema = Type.Object(
   { contactId: UuidSchema },
   { additionalProperties: false },
 );
-export type LinkWorkConsigneeRequest = Static<typeof LinkWorkConsigneeRequestSchema>;
 
 // --- Location masters -------------------------------------------------------
 
@@ -238,9 +235,6 @@ export const LocationMasterListResponseSchema = Type.Object(
   { locations: Type.Array(LocationMasterSchema) },
   { additionalProperties: false },
 );
-export type LocationMasterListResponse = Static<
-  typeof LocationMasterListResponseSchema
->;
 
 // --- Unit masters -----------------------------------------------------------
 
@@ -265,7 +259,6 @@ export const UnitMasterListResponseSchema = Type.Object(
   { units: Type.Array(UnitMasterSchema) },
   { additionalProperties: false },
 );
-export type UnitMasterListResponse = Static<typeof UnitMasterListResponseSchema>;
 
 // --- GST rate master (migration 0048, audit finding 19) ---------------------
 //
@@ -315,7 +308,6 @@ export const GstRateListResponseSchema = Type.Object(
   { gstRates: Type.Array(GstRateMasterSchema) },
   { additionalProperties: false },
 );
-export type GstRateListResponse = Static<typeof GstRateListResponseSchema>;
 
 // --- Organisation signatories -----------------------------------------------
 
@@ -344,7 +336,6 @@ export const SignatoryListResponseSchema = Type.Object(
   { signatories: Type.Array(SignatorySchema) },
   { additionalProperties: false },
 );
-export type SignatoryListResponse = Static<typeof SignatoryListResponseSchema>;
 
 // --- Canonical items (migration 0078) ---------------------------------------
 //

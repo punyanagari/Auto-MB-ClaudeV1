@@ -47,7 +47,7 @@ import {
  * screen orders against. It is a signed decimal for that reason, while
  * `onHand` cannot be negative because the ledger refuses it.
  */
-export const StockItemSchema = Type.Object(
+const StockItemSchema = Type.Object(
   {
     id: UuidSchema,
     itemCode: Type.String(),
@@ -87,7 +87,7 @@ export type StockItem = Static<typeof StockItemSchema>;
  * same question asked in a unit that exists. `docs/UX.md` records the
  * divergence.
  */
-export const StockSummarySchema = Type.Object(
+const StockSummarySchema = Type.Object(
   {
     /** Active parts in the register. */
     partsTracked: Type.Integer({ minimum: 0 }),
@@ -100,7 +100,6 @@ export const StockSummarySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type StockSummary = Static<typeof StockSummarySchema>;
 
 export const StockRegisterResponseSchema = Type.Object(
   {
@@ -127,7 +126,6 @@ export const StockRegisterQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type StockRegisterQuery = Static<typeof StockRegisterQuerySchema>;
 
 /* --- The ledger ---------------------------------------------------------- */
 
@@ -138,7 +136,7 @@ export type StockRegisterQuery = Static<typeof StockRegisterQuerySchema>;
  * all (material coming back from a job card is not an adjustment with an
  * excuse).
  */
-export const STOCK_MOVEMENT_TYPES = [
+const STOCK_MOVEMENT_TYPES = [
   'production_receipt',
   'purchase_receipt',
   'issue',
@@ -147,7 +145,7 @@ export const STOCK_MOVEMENT_TYPES = [
   'adjustment_out',
 ] as const;
 
-export const StockMovementTypeSchema = Type.Union(
+const StockMovementTypeSchema = Type.Union(
   STOCK_MOVEMENT_TYPES.map((type) => Type.Literal(type)),
 );
 export type StockMovementType = Static<typeof StockMovementTypeSchema>;
@@ -158,7 +156,7 @@ export type StockMovementType = Static<typeof StockMovementTypeSchema>;
  * and it is already null when there is nothing to show. A union nothing
  * switches on is a vocabulary to keep in step for no reader. */
 
-export const StockMovementSchema = Type.Object(
+const StockMovementSchema = Type.Object(
   {
     id: UuidSchema,
     /** `SM/<item code>/<position>`. Built from the item's code and this
@@ -287,7 +285,7 @@ export type StockMovementResponse = Static<typeof StockMovementResponseSchema>;
 /** A production despatch that has not been taken into stock yet. The
  * register lists these so a release cannot sit unreceived and silently
  * leave the shelf understated. */
-export const PendingProductionReceiptSchema = Type.Object(
+const PendingProductionReceiptSchema = Type.Object(
   {
     productionDispatchId: UuidSchema,
     /** `PP-26-081/D1`, as production names it. */
@@ -336,7 +334,7 @@ export type SetReorderLevelRequest = Static<typeof SetReorderLevelRequestSchema>
  * answers the same question — who wants this — without offering the
  * double order. `docs/UX.md` records the divergence.
  */
-export const StockShortageSchema = Type.Object(
+const StockShortageSchema = Type.Object(
   {
     itemId: UuidSchema,
     itemCode: Type.String(),
@@ -378,7 +376,7 @@ export type StockShortage = Static<typeof StockShortageSchema>;
 /** A purchase order raised from a shortage, as the screen's right-hand
  * column lists it. A thin read: the order itself, its status and its
  * lifecycle live in the procurement module, which owns them. */
-export const ShortagePurchaseOrderSchema = Type.Object(
+const ShortagePurchaseOrderSchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,

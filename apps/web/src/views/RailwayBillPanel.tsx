@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MeasurementBook, ReceivedRailwayBill } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Field, Hint } from '../ui/form.js';
 import { SignaturePanel } from '../ui/signature-panel.js';
@@ -44,7 +45,7 @@ export function RailwayBillPanel({
 }: RailwayBillPanelProps) {
   const [bills, setBills] = useState<readonly ReceivedRailwayBill[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, refresh] = useReload();
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -70,10 +71,6 @@ export function RailwayBillPanel({
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
-
-  const refresh = useCallback(() => {
-    setLoadVersion((version) => version + 1);
-  }, []);
 
   async function act(work: () => Promise<void>, success: string) {
     setPending(true);

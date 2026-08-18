@@ -8,9 +8,14 @@ import type {
   TaxInvoiceLineShape,
   TaxInvoiceRegisterEntry,
 } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
-import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
+import {
+  errorMessage,
+  describeLoadFailure,
+  type LoadFailure,
+} from '../lib/load-failure.js';
+import { useAction } from '../lib/view-state.js';
 import {
   mastersHash,
   navigateOnClick,
@@ -101,9 +106,7 @@ export function InvoicesRegister({
   );
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { pending, notice, actionError, act, setPending } = useAction();
   /** The window the operator has actually asked for, as opposed to what
    * they are still typing: the inputs are uncontrolled and only applied
    * on submit, so a half-typed year never fires a request. */
@@ -164,11 +167,7 @@ export function InvoicesRegister({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The tax invoices could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The tax invoices could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -275,34 +274,12 @@ export function InvoicesRegister({
     setOpenWorkActive(true);
     loadDetail(openInvoiceId, () => !cancelled).catch((cause: unknown) => {
       if (cancelled) return;
-      setDetailError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'That tax invoice could not be loaded.',
-      );
+      setDetailError(errorMessage(cause, 'That tax invoice could not be loaded.'));
     });
     return () => {
       cancelled = true;
     };
   }, [openInvoiceId, loadDetail, detailVersion]);
-
-  const act = useCallback(async (run: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await run();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The action failed; nothing was changed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
 
   function retryList(): void {
     setListVersion((current) => current + 1);
@@ -336,9 +313,7 @@ export function InvoicesRegister({
       setNextCursor(page.nextCursor);
     } catch (cause) {
       setLoadError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The next page of tax invoices could not be loaded.',
+        errorMessage(cause, 'The next page of tax invoices could not be loaded.'),
       );
     } finally {
       setPending(false);

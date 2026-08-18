@@ -9,9 +9,12 @@ import {
   Truck,
 } from 'lucide-react';
 import type { FinishedSerial, JobCardDetail } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatDate, todayISO } from '../format.js';
+import { type ApiClient } from '../api.js';
+import { formatDate, todayIso } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { statusKeyOf, statusLabelOf } from '../lib/production-status.js';
+import { useReload } from '../lib/view-state.js';
 import { productionHash } from '../lib/workspace-routes.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
@@ -78,7 +81,7 @@ export function ProductionJobCard({
   const [actionError, setActionError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
   const [pending, setPending] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -92,11 +95,7 @@ export function ProductionJobCard({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The job card could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The job card could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -114,7 +113,7 @@ export function ProductionJobCard({
         setCard(updated);
       })
       .catch((cause: unknown) => {
-        setActionError(cause instanceof RequestFailedError ? cause.message : failure);
+        setActionError(errorMessage(cause, failure));
       })
       .finally(() => {
         setPending(false);
@@ -123,12 +122,7 @@ export function ProductionJobCard({
 
   if (loadError !== null) {
     return (
-      <ErrorState
-        onRetry={() => {
-          setLoadVersion((current) => current + 1);
-        }}
-        retryLabel="Retry the job card"
-      >
+      <ErrorState onRetry={retry} retryLabel="Retry the job card">
         {loadError}
       </ErrorState>
     );
@@ -720,7 +714,7 @@ function DispatchTab({
   readonly run: Run;
 }) {
   const [chosen, setChosen] = useState<readonly string[]>([]);
-  const [dispatchedOn, setDispatchedOn] = useState(todayISO());
+  const [dispatchedOn, setDispatchedOn] = useState(todayIso());
   const available = card.serials.filter((unit) => unit.dispatchedOn === null);
 
   return (
@@ -782,7 +776,7 @@ function DispatchTab({
                     id="dispatch-date"
                     type="date"
                     value={dispatchedOn}
-                    max={todayISO()}
+                    max={todayIso()}
                     onChange={(event) => {
                       setDispatchedOn(event.currentTarget.value);
                     }}
@@ -870,21 +864,4 @@ function DispatchTab({
       </p>
     </div>
   );
-}
-
-function statusKeyOf(card: JobCardDetail): string {
-  return card.status === 'in_production' ? 'in-production' : card.status;
-}
-
-function statusLabelOf(card: JobCardDetail): string {
-  switch (card.status) {
-    case 'in_production':
-      return 'In production';
-    case 'planned':
-      return 'Planned';
-    case 'completed':
-      return 'Completed';
-    case 'cancelled':
-      return 'Cancelled';
-  }
 }

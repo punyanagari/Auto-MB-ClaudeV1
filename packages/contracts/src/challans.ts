@@ -13,7 +13,6 @@ export const ChallanStatusSchema = Type.Union([
   Type.Literal('issued'),
   Type.Literal('cancelled'),
 ]);
-export type ChallanStatus = Static<typeof ChallanStatusSchema>;
 
 /** Consignee details are snapshotted per challan — railway consignees vary
  * per delivery, so they are challan data, not Work data. */
@@ -36,13 +35,8 @@ const HsnSacCodeSchema = Type.String({
 });
 
 /** Why the goods move, in NIC's e-way bill vocabulary. */
-export const MOVEMENT_REASONS = [
-  'supply',
-  'job_work',
-  'for_own_use',
-  'others',
-] as const;
-export const MovementReasonSchema = Type.Union(
+const MOVEMENT_REASONS = ['supply', 'job_work', 'for_own_use', 'others'] as const;
+const MovementReasonSchema = Type.Union(
   MOVEMENT_REASONS.map((reason) => Type.Literal(reason)),
 );
 export type MovementReason = Static<typeof MovementReasonSchema>;
@@ -64,7 +58,7 @@ export type MovementReason = Static<typeof MovementReasonSchema>;
  * PO_LINE_REQUIRES_WORK_ITEM_LINE, LINE_SHAPE_INVALID) instead of a
  * schema message that says only "does not match any of the allowed
  * shapes". Existing bodies that carry workItemId alone stay valid. */
-export const ChallanItemInputSchema = Type.Object(
+const ChallanItemInputSchema = Type.Object(
   {
     /** The LOA schedule item this line delivers. Absent on a manual line. */
     workItemId: Type.Optional(UuidSchema),
@@ -175,7 +169,7 @@ export const CancelChallanRequestSchema = Type.Object(
 );
 export type CancelChallanRequest = Static<typeof CancelChallanRequestSchema>;
 
-export const ChallanItemSchema = Type.Object(
+const ChallanItemSchema = Type.Object(
   {
     id: UuidSchema,
     /** The LOA schedule item, or null on a manual (non-LOA) line. Only
@@ -209,7 +203,7 @@ export type ChallanItem = Static<typeof ChallanItemSchema>;
  * by how much. `receivedQuantity` counts issued receipts elsewhere PLUS
  * this challan's own lines (projected while the challan is a draft,
  * actual once issued); one warning per purchase-order line. */
-export const ChallanOverReceiptWarningSchema = Type.Object(
+const ChallanOverReceiptWarningSchema = Type.Object(
   {
     purchaseOrderLineId: UuidSchema,
     poNumber: Type.String(),
@@ -225,13 +219,13 @@ export type ChallanOverReceiptWarning = Static<typeof ChallanOverReceiptWarningS
 /** What the challan is a movement of. `work` covers both LOA supply and
  * the non-LOA installation material that travels with it; `standalone`
  * is the factory-to-customer movement with no Work at all. */
-export const ChallanKindSchema = Type.Union([
+const ChallanKindSchema = Type.Union([
   Type.Literal('work'),
   Type.Literal('standalone'),
 ]);
 export type ChallanKind = Static<typeof ChallanKindSchema>;
 
-export const ChallanSchema = Type.Object(
+const ChallanSchema = Type.Object(
   {
     id: UuidSchema,
     /** Null on a standalone challan. */
@@ -297,7 +291,6 @@ export const ChallanListResponseSchema = Type.Object(
   { challans: Type.Array(ChallanSchema), nextCursor: NextCursorSchema },
   { additionalProperties: false },
 );
-export type ChallanListResponse = Static<typeof ChallanListResponseSchema>;
 
 /** How the register presents a challan. Three cases, decided from the
  * record rather than guessed on screen:
@@ -309,14 +302,14 @@ export type ChallanListResponse = Static<typeof ChallanListResponseSchema>;
  *
  * Only `loa_supply` and the schedule-item half of `work_material` reach
  * the quantity ledger. */
-export const DeliveryChallanMovementSchema = Type.Union([
+const DeliveryChallanMovementSchema = Type.Union([
   Type.Literal('loa_supply'),
   Type.Literal('work_material'),
   Type.Literal('standalone'),
 ]);
 export type DeliveryChallanMovement = Static<typeof DeliveryChallanMovementSchema>;
 
-export const DeliveryChallanRegisterEntrySchema = Type.Object(
+const DeliveryChallanRegisterEntrySchema = Type.Object(
   {
     id: UuidSchema,
     kind: ChallanKindSchema,
@@ -370,9 +363,6 @@ export const DeliveryChallanRegisterQuerySchema = withKeysetQuery(
     { additionalProperties: false },
   ),
 );
-export type DeliveryChallanRegisterQuery = Static<
-  typeof DeliveryChallanRegisterQuerySchema
->;
 
 /** The organisation-wide movement register, newest challan date first.
  *
@@ -387,9 +377,6 @@ export const DeliveryChallanRegisterResponseSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type DeliveryChallanRegisterResponse = Static<
-  typeof DeliveryChallanRegisterResponseSchema
->;
 
 export const ChallanDetailResponseSchema = Type.Object(
   {
@@ -409,7 +396,7 @@ export const ChallanDetailResponseSchema = Type.Object(
 );
 export type ChallanDetailResponse = Static<typeof ChallanDetailResponseSchema>;
 
-export const WorkBalanceItemSchema = Type.Object(
+const WorkBalanceItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -446,7 +433,7 @@ export type WorkBalanceItem = Static<typeof WorkBalanceItemSchema>;
  *
  * Every value is an editable default. The consignee remains a per-challan
  * snapshot: it is copied, never referenced. */
-export const ChallanCarryForwardSchema = Type.Object(
+const ChallanCarryForwardSchema = Type.Object(
   {
     prefix: Type.String(),
     consigneeName: Type.String(),
@@ -466,7 +453,7 @@ export type ChallanCarryForward = Static<typeof ChallanCarryForwardSchema>;
  * what the document DOES — a 'return' inverts the stock direction — so
  * carrying it would make one return silently turn every later Issue
  * Challan into a return. The Movement select always opens on 'issue'. */
-export const IssueChallanCarryForwardSchema = Type.Object(
+const IssueChallanCarryForwardSchema = Type.Object(
   {
     issuedToName: Type.String(),
     issuedToRole: Type.Union([Type.String(), Type.Null()]),

@@ -12,13 +12,8 @@ import type {
   WorkBalanceResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -1380,7 +1375,7 @@ describe('what a new Issue Challan draft carries forward, decided on the server'
         ${id}, ${organisationId}, ${carryWorkId}, 'return', ${row.status},
         '2025-07-01', ${number}, ${nextSequence}, ${`ICC-${runId.toUpperCase()}`},
         ${row.issuedToName}, ${row.issuedToRole ?? null}, ${row.location ?? null},
-        null, ${issued ? jsonb(admin, {}) : null},
+        null, ${issued ? admin.json({}) : null},
         ${ownerUserId}, ${issued ? ownerUserId : null},
         ${issued ? '2025-07-01T10:00:00.000Z' : null},
         ${row.status === 'cancelled' ? ownerUserId : null},

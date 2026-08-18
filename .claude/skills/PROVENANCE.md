@@ -1,18 +1,16 @@
 # Third-party agent skills — provenance
 
-Three design skills back UI work in `apps/web`: two fetched on setup into
-git-ignored paths in this directory, one consumed from npm. A fourth,
+Two design skills back UI work in `apps/web`, both fetched on setup into
+git-ignored paths in this directory. A third,
 Anthropic's `frontend-design`, is
-used but deliberately not committed — see below. A fifth skill, `caveman`, is
+used but deliberately not committed — see below. A fourth skill, `caveman`, is
 unrelated to design and governs agent prose style rather than the product.
-Nothing here is authored by this project
-except `ux-ui-agent-skills/SKILL.md`, which is a thin wrapper, and this file.
+Nothing here is authored by this project except this file.
 
 | Skill | Source | Pinned at | Licence | How it arrives |
 | --- | --- | --- | --- | --- |
 | `impeccable` | `pbakaus/impeccable`, `.claude/skills/impeccable` | `1cbee026c319` | Apache-2.0 | fetched on setup |
 | `ux-designer` | `szilu/ux-designer-skill` | `28b24d5a9511` | MIT | fetched on setup |
-| `ux-ui-agent-skills` | `plugin87/ux-ui-agent-skills` | npm `^2.4.0` | MIT | devDependency |
 | `caveman` | `JuliusBrussee/caveman`, `skills/caveman` | `309834233183` | MIT | vendored |
 
 ## Fetched on setup, not vendored
@@ -34,6 +32,16 @@ the script together; change them in the same commit or not at all. The
 small `caveman` skill stays vendored (it is wired into a SessionStart
 hook and must exist before any network is available).
 
+A third skill, `ux-ui-agent-skills`, was consumed from npm and driven by
+five `design:*` package scripts. It is gone: those scripts measured a
+single rendered HTML file that had to be built and named by hand, which
+made them a tool nobody reached for rather than a gate, and every claim
+they could settle is already settled on real renders by the standing
+Playwright axe suite (`pnpm --filter @auto-mb/web test:e2e`). Two of them
+were also known to misread `oklab()` alpha tints on this palette. The
+dependency, its `axe-core` and `playwright` companions, the runner and the
+knip exemptions that existed only to justify them went with it.
+
 ## `frontend-design` is deliberately not vendored
 
 Anthropic's `frontend-design` skill governed the aesthetic direction of this
@@ -44,7 +52,7 @@ but redistributing a copy inside a commercial product repository is a different
 act, and not one to perform by default.
 
 Load it from the plugin marketplace when doing visual-direction work:
-`anthropics/claude-code`, `plugins/frontend-design`. The three skills below carry
+`anthropics/claude-code`, `plugins/frontend-design`. The skills below carry
 permissive licences and are safe to vendor.
 
 ## What each is for
@@ -58,8 +66,6 @@ permissive licences and are safe to vendor.
   table is tuned for consumer and marketing surfaces; on this product its
   300–500ms animation and 16px-minimum-body figures are **wrong** and the
   project's own values win.
-- **`ux-ui-agent-skills`** — runnable gates that measure the rendered page. The
-  only one of the four that can settle a contrast or keyboard-access dispute.
 - **`caveman`** — prose-style skill, not a design skill: it compresses the
   agent's conversational output to terse fragments and drops filler, hedging and
   pleasantries. It changes nothing about the product and nothing about
@@ -74,9 +80,8 @@ Upstream ships an installer that writes hooks into `~/.claude/` and per-agent
 rule files (`.cursor/rules/`, a root `CLAUDE.md`, and friends). None of that was
 run here. Claude Code on the web rebuilds the container and reclones the
 repository every session, so anything written to `~/.claude/` is discarded, and
-a root `CLAUDE.md` is the exact collision this file already rejects for
-`ux-ui-agent-skills` — `AGENTS.md` is the instruction authority in this
-repository.
+a root `CLAUDE.md` would collide with `AGENTS.md`, which is the instruction
+authority in this repository.
 
 What is committed instead is `.claude/hooks/caveman-activate.sh`, wired as a
 second `SessionStart` hook in `.claude/settings.json` alongside the existing
@@ -91,15 +96,6 @@ untracked `.claude/hooks/.caveman-off` file. Either silences the hook and
 returns prose to normal. Within a running session, "stop caveman" or "normal
 mode" still works; the hook only sets the default each session starts in.
 
-## Why `ux-ui-agent-skills` is not vendored
-
-Its `init` installer writes a root `CLAUDE.md` and a root `scripts/` directory,
-both of which collide with this repository (`AGENTS.md` is the authority here,
-and `scripts/` already holds bootstrap, backup, restore, and import tooling).
-Consuming it from `node_modules` avoids the collision and keeps 3.4 MB out of
-the tree. Its reference library is read on demand from
-`node_modules/ux-ui-agent-skills/`.
-
 ## Skills that were evaluated and rejected
 
 - **`nextlevelbuilder/ui-ux-pro-max-skill`** — 18 MB, ~25k lines. A searchable
@@ -112,8 +108,8 @@ the tree. Its reference library is read on demand from
 
 ## Maintenance
 
-Everything is pinned — the fetched skills to upstream commits, the npm
-skill to a version range, `caveman` as a vendored copy; nothing updates
-itself. Bump a pin deliberately (in this file and `scripts/fetch-skills.mjs`
-together for the fetched pair), and re-read the craft floor and detector
-rules after doing so, since a bump can change what the gates enforce.
+Everything is pinned — the fetched skills to upstream commits, `caveman`
+as a vendored copy; nothing updates itself. Bump a pin deliberately (in
+this file and `scripts/fetch-skills.mjs` together for the fetched pair),
+and re-read the craft floor and detector rules after doing so, since a
+bump can change what the gates enforce.

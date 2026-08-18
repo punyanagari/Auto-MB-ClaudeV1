@@ -16,12 +16,12 @@ import {
 import { buildApp } from '../src/app.js';
 
 describe('metrics registry', () => {
-  it('renders Prometheus text format with bounded labels', () => {
+  it('renders Prometheus text format with bounded labels', async () => {
     const registry = createMetricsRegistry();
     registry.observe('GET', '/healthz', 200, 0.02);
     registry.observe('GET', '/healthz', 200, 0.2);
     registry.observe('POST', '/api/loa-documents', 400, 1.5);
-    const output = registry.render();
+    const output = await registry.renderAll();
     expect(output).toContain(
       'http_requests_total{method="GET",route="/healthz",status="200"} 2',
     );
@@ -38,8 +38,8 @@ describe('operational counters (finding 37)', () => {
     resetOpsCountersForTests();
   });
 
-  it('declares every contracted signal, with HELP and TYPE, even at zero', () => {
-    const output = createMetricsRegistry().render();
+  it('declares every contracted signal, with HELP and TYPE, even at zero', async () => {
+    const output = await createMetricsRegistry().renderAll();
     for (const name of [
       'auth_failures_total',
       'account_lockouts_total',
@@ -53,23 +53,23 @@ describe('operational counters (finding 37)', () => {
     }
   });
 
-  it('counts authentication failures by surface', () => {
+  it('counts authentication failures by surface', async () => {
     recordAuthFailure('sign_in');
     recordAuthFailure('sign_in');
     recordAuthFailure('two_factor');
-    const output = createMetricsRegistry().render();
+    const output = await createMetricsRegistry().renderAll();
     expect(output).toContain('auth_failures_total{surface="sign_in"} 2');
     expect(output).toContain('auth_failures_total{surface="two_factor"} 1');
   });
 
-  it('counts lockouts, tenant denials, rate-limit rejections and scan failures', () => {
+  it('counts lockouts, tenant denials, rate-limit rejections and scan failures', async () => {
     recordAccountLockout();
     recordTenantDenial('not_a_member');
     recordRateLimitRejection('auth');
     recordRateLimitRejection('account_lockout');
     recordUploadScanFailure('malware_detected');
     recordUploadScanFailure('scanner_unavailable');
-    const output = createMetricsRegistry().render();
+    const output = await createMetricsRegistry().renderAll();
     expect(output).toContain('account_lockouts_total 1');
     expect(output).toContain('tenant_denials_total{reason="not_a_member"} 1');
     expect(output).toContain('rate_limit_rejections_total{scope="auth"} 1');
@@ -80,11 +80,11 @@ describe('operational counters (finding 37)', () => {
     );
   });
 
-  it('counts statutory provider outcomes by operation and status', () => {
+  it('counts statutory provider outcomes by operation and status', async () => {
     recordStatutoryProviderOutcome('register_irp', 'succeeded');
     recordStatutoryProviderOutcome('register_irp', 'failed');
     recordStatutoryProviderOutcome('cancel_crn', 'unknown');
-    const output = createMetricsRegistry().render();
+    const output = await createMetricsRegistry().renderAll();
     expect(output).toContain(
       'statutory_provider_operations_total{operation="register_irp",status="succeeded"} 1',
     );
@@ -96,9 +96,9 @@ describe('operational counters (finding 37)', () => {
     );
   });
 
-  it('collapses an unknown operation to a bounded label instead of minting one', () => {
+  it('collapses an unknown operation to a bounded label instead of minting one', async () => {
     recordStatutoryProviderOutcome('something_new', 'failed');
-    const output = createMetricsRegistry().render();
+    const output = await createMetricsRegistry().renderAll();
     expect(output).toContain(
       'statutory_provider_operations_total{operation="other",status="failed"} 1',
     );
@@ -160,7 +160,7 @@ describe('backup last-success gauge', () => {
     const markerPath = path.join(markerDir, 'last-success');
     await writeFile(markerPath, '1723100000\n');
     const registry = createMetricsRegistry({ backupMarkerPath: markerPath });
-    const output = registry.render();
+    const output = await registry.renderAll();
     expect(output).toContain(
       '# HELP backup_last_success_timestamp_seconds Unix time of the last backup',
     );
@@ -172,25 +172,29 @@ describe('backup last-success gauge', () => {
     const markerPath = path.join(markerDir, 'refreshed');
     await writeFile(markerPath, '1723100000\n');
     const registry = createMetricsRegistry({ backupMarkerPath: markerPath });
-    expect(registry.render()).toContain(
+    expect(await registry.renderAll()).toContain(
       'backup_last_success_timestamp_seconds 1723100000',
     );
     await writeFile(markerPath, '1723186400\n');
-    expect(registry.render()).toContain(
+    expect(await registry.renderAll()).toContain(
       'backup_last_success_timestamp_seconds 1723186400',
     );
   });
 
-  it('omits the series entirely when no marker path is configured', () => {
+  it('omits the series entirely when no marker path is configured', async () => {
     const registry = createMetricsRegistry();
-    expect(registry.render()).not.toContain('backup_last_success_timestamp_seconds');
+    expect(await registry.renderAll()).not.toContain(
+      'backup_last_success_timestamp_seconds',
+    );
   });
 
-  it('omits the series when the marker file does not exist', () => {
+  it('omits the series when the marker file does not exist', async () => {
     const registry = createMetricsRegistry({
       backupMarkerPath: path.join(markerDir, 'missing'),
     });
-    expect(registry.render()).not.toContain('backup_last_success_timestamp_seconds');
+    expect(await registry.renderAll()).not.toContain(
+      'backup_last_success_timestamp_seconds',
+    );
   });
 
   it('omits the series (never 0) when the marker content is not a positive epoch', async () => {
@@ -203,7 +207,7 @@ describe('backup last-success gauge', () => {
       const markerPath = path.join(markerDir, name);
       await writeFile(markerPath, content);
       const registry = createMetricsRegistry({ backupMarkerPath: markerPath });
-      const output = registry.render();
+      const output = await registry.renderAll();
       expect(output, `${name} marker must omit the series`).not.toContain(
         'backup_last_success_timestamp_seconds',
       );

@@ -13,13 +13,8 @@ import type {
   WorkSupersession,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 import {
   DOWNSTREAM_REGISTERS,
@@ -141,7 +136,7 @@ async function seedReviewDocument(label: string): Promise<string> {
       ${`${organisationId}/loa/${documentId}.pdf`}, ${`${label}.pdf`},
       ${createHash('sha256').update(documentId).digest('hex')},
       'application/pdf', 4096, 'review',
-      ${jsonb(admin, { error: 'seeded without a parse for the lifecycle tests' })},
+      ${admin.json({ error: 'seeded without a parse for the lifecycle tests' })},
       ${ownerUserId}
     )
   `;
@@ -755,7 +750,7 @@ describe('the successor identity', () => {
         ${createHash('sha256').update(supporting).digest('hex')},
         'application/pdf', 2048, 'confirmed', ${ownerUserId}, 'tender_specification',
         ${documentId}, ${work.id}, 'matched',
-        ${jsonb(admin, { letterNumber: 'matched by the seed' })}
+        ${admin.json({ letterNumber: 'matched by the seed' })}
       )
     `;
 

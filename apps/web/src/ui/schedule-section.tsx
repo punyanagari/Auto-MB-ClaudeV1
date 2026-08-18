@@ -108,14 +108,6 @@ export function ScheduleAccordionControls({
   );
 }
 
-/** Retained for the two screens that still pass it. The stacking it used
- * to express — a ledger heading sitting under the schedule summary rather
- * than behind it — is now carried by `--sticky-inset` on the section's own
- * panel, which every DataTable inside the section reads, so this only
- * restates the table primitive's own offset. It can go the next time
- * `ReviewLoa` and `WorkSchedules` are edited. */
-export const underScheduleHeader = '[&_thead_th]:top-0';
-
 /** One schedule: a summary row that stays on screen, and its items. */
 export function ScheduleSection({
   code,

@@ -247,7 +247,7 @@ function toVendorInvoice(
 
 /** The first and last date of a financial-year quarter, inclusive. Q1 is
  * April to June, because the income-tax year starts in April. */
-export function quarterRange(
+function quarterRange(
   financialYear: string,
   quarter: TdsQuarter,
 ): { from: string; to: string } {

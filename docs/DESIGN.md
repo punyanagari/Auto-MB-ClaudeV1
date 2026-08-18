@@ -483,10 +483,9 @@ Component and token work is proved by the gates in `docs/UX.md` § Verification
 gates. The two that bite hardest here:
 
 - **`pnpm --filter @auto-mb/web test:e2e`** — the dual-theme real-render axe
-  suite, and the authority on whether a ported token pair is shippable. The
-  `design:contrast` and `design:states` scripts misparse `oklab()` alpha tints,
-  and this palette's status styles are almost entirely alpha tints, so their
-  numbers on those pairs are wrong. Trust the real render.
+  suite, and the sole authority on whether a ported token pair is shippable.
+  This palette's status styles are almost entirely `oklab()` alpha tints, which
+  a source-level reading of a token pair gets wrong. Trust the real render.
 - **`pnpm bundle:check`** — the port adds primitives; the ratchet is what stops
   it adding them invisibly.
 

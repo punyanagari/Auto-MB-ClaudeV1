@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SigningAgent } from '@auto-mb/contracts';
-import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
 import { formatTimestamp } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -71,11 +72,7 @@ export function SigningKioskSettings({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The signing kiosks could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The signing kiosks could not be loaded.'));
       });
     return () => {
       cancelled = true;
@@ -97,11 +94,7 @@ export function SigningKioskSettings({
         setIssuedToken(created.token);
         reload();
       } catch (cause: unknown) {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The kiosk could not be registered.',
-        );
+        setActionError(errorMessage(cause, 'The kiosk could not be registered.'));
       } finally {
         setPending(false);
       }
@@ -118,11 +111,7 @@ export function SigningKioskSettings({
         setRevoking(null);
         reload();
       } catch (cause: unknown) {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The kiosk could not be revoked.',
-        );
+        setActionError(errorMessage(cause, 'The kiosk could not be revoked.'));
       } finally {
         setPending(false);
       }

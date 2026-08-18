@@ -6,13 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -210,7 +205,7 @@ beforeAll(async () => {
       values (
         ${challanId}, ${organisationId}, ${workId}, '2026-08-01',
         ${`PG${String(index)}`},
-        ${jsonb(admin, { name: 'Sr. DEE (G) NR', address: 'New Delhi' })},
+        ${admin.json({ name: 'Sr. DEE (G) NR', address: 'New Delhi' })},
         ${ownerUserId}
       )
     `;
@@ -231,7 +226,7 @@ beforeAll(async () => {
       set status = 'issued',
           challan_number = ${`PG-${codeSuffix}-${String(index)}`},
           sequence_number = ${index + 1},
-          issued_snapshot = ${jsonb(admin, { lines: [] })},
+          issued_snapshot = ${admin.json({ lines: [] })},
           issued_by_user_id = ${ownerUserId}, issued_at = now()
       where id = ${challanId}
     `;
@@ -260,7 +255,7 @@ beforeAll(async () => {
         ${organisationId}, ${workId}, '2026-08-05', ${`PGIC${String(index)}`},
         'issue', 'Site team', 'issued',
         ${`PGIC-${codeSuffix}-${String(index)}`}, ${index + 1},
-        ${jsonb(admin, { lines: [] })}, ${ownerUserId}, ${ownerUserId}, now()
+        ${admin.json({ lines: [] })}, ${ownerUserId}, ${ownerUserId}, now()
       )
     `;
     await admin`
@@ -307,15 +302,15 @@ beforeAll(async () => {
       values (
         ${organisationId}, 'work_item_amendment',
         ${amendmentItemIds[index] as string}, ${workId},
-        ${jsonb(admin, {
+        ${admin.json({
           kind: 'change_item',
           workItemId: amendmentItemIds[index] as string,
           itemNumber: `A/${String(index + 1)}`,
           changes: { quantity: `${String(index + 1)}.000` },
         })},
-        ${jsonb(admin, [
+        ${admin.json([
           { field: 'quantity', before: '1.000', after: `${String(index + 1)}.000` },
-        ])},
+        ] as never)},
         ${`Pagination proof ${String(index)}`}, ${ownerUserId}
       )
     `;
@@ -549,7 +544,7 @@ describe('a cursor from another Work', () => {
       )
       values (
         ${foreignChallanId}, ${organisationId}, ${workBId}, '2026-08-01', 'PGB',
-        ${jsonb(admin, { name: 'Sr. DEE (G) NR', address: 'New Delhi' })},
+        ${admin.json({ name: 'Sr. DEE (G) NR', address: 'New Delhi' })},
         ${ownerUserId}
       )
     `;
@@ -568,7 +563,7 @@ describe('a cursor from another Work', () => {
     await admin`
       update delivery_challans
       set status = 'issued', challan_number = ${`PGB-${codeSuffix}-0`},
-          sequence_number = 1, issued_snapshot = ${jsonb(admin, { lines: [] })},
+          sequence_number = 1, issued_snapshot = ${admin.json({ lines: [] })},
           issued_by_user_id = ${ownerUserId}, issued_at = now()
       where id = ${foreignChallanId}
     `;
@@ -615,13 +610,13 @@ describe('a cursor from another Work', () => {
       values (
         ${foreignApprovalId}, ${organisationId}, 'work_item_amendment',
         ${itemBId}, ${workBId},
-        ${jsonb(admin, {
+        ${admin.json({
           kind: 'change_item',
           workItemId: itemBId,
           itemNumber: 'B/1',
           changes: { quantity: '2.000' },
         })},
-        ${jsonb(admin, [{ field: 'quantity', before: '1.000', after: '2.000' }])},
+        ${admin.json([{ field: 'quantity', before: '1.000', after: '2.000' }] as never)},
         'Foreign-cursor probe', ${ownerUserId}
       )
     `;
@@ -803,7 +798,7 @@ describe('a cursor within one millisecond', () => {
         )
         values (
           ${organisationId}, ${ownerUserId}, 'work.updated', 'works', ${workId},
-          ${jsonb(admin, { probe: occurredAt })}, ${occurredAt}::timestamptz
+          ${admin.json({ probe: occurredAt })}, ${occurredAt}::timestamptz
         )
       `;
     }

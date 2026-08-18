@@ -15,9 +15,11 @@ import type {
   StockMovement,
   StockRegisterResponse,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
-import { navigateOnClick, stockShortagesHash } from '../lib/workspace-routes.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
+import { navigateOnClick, STOCK_SHORTAGES_HASH } from '../lib/workspace-routes.js';
 import { Button, buttonVariants } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -131,7 +133,7 @@ export function StockRegister({
   const [movementCursor, setMovementCursor] = useState<string | null>(null);
   const [pending, setPending] = useState<readonly PendingProductionReceipt[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, reload] = useReload();
   const [paging, setPaging] = useState(false);
   const [query, setQuery] = useState('');
   const [onlyActive, setOnlyActive] = useState(false);
@@ -165,20 +167,12 @@ export function StockRegister({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The stock register could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The stock register could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, loadVersion, onlyActive]);
-
-  const reload = () => {
-    setLoadVersion((current) => current + 1);
-  };
 
   function loadMoreItems(): void {
     if (itemCursor === null) return;
@@ -194,11 +188,7 @@ export function StockRegister({
         setItemCursor(page.nextCursor);
       })
       .catch((cause: unknown) => {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The next page could not be loaded.',
-        );
+        setActionError(errorMessage(cause, 'The next page could not be loaded.'));
       })
       .finally(() => {
         setPaging(false);
@@ -218,11 +208,7 @@ export function StockRegister({
         setMovementCursor(page.nextCursor);
       })
       .catch((cause: unknown) => {
-        setActionError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The next page could not be loaded.',
-        );
+        setActionError(errorMessage(cause, 'The next page could not be loaded.'));
       })
       .finally(() => {
         setPaging(false);
@@ -237,11 +223,7 @@ export function StockRegister({
       setMovementFor(null);
       reload();
     } catch (cause: unknown) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The movement could not be posted.',
-      );
+      setActionError(errorMessage(cause, 'The movement could not be posted.'));
     } finally {
       setBusy(false);
     }
@@ -257,7 +239,7 @@ export function StockRegister({
            handler: `docs/UX.md` § navigation asks that every mock `Link`
            become an address middle-click and open-in-new-tab can use. */
         <a
-          href={stockShortagesHash()}
+          href={STOCK_SHORTAGES_HASH}
           onClick={navigateOnClick(onOpenShortages)}
           className={buttonVariants({ variant: 'outline' })}
         >

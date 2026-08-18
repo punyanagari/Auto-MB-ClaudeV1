@@ -25,7 +25,7 @@ import { Button } from './button.js';
  * The pulse is `motion-safe:` as well as being caught by the global
  * reduced-motion rule in `globals.css`, so the intent is legible at the
  * component and not only in a stylesheet three files away. */
-export function Skeleton({ className, ...props }: React.ComponentProps<'div'>) {
+function Skeleton({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       aria-hidden="true"

@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Field, Actions, FormError, Hint } from '../ui/form.js';
@@ -106,11 +107,7 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
           'asking again.',
       );
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The server could not be reached. Try again.',
-      );
+      setError(errorMessage(cause, 'The server could not be reached. Try again.'));
     } finally {
       setPending(false);
     }
@@ -148,11 +145,7 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
           'the new password; your authenticator app is unchanged.',
       );
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The server could not be reached. Try again.',
-      );
+      setError(errorMessage(cause, 'The server could not be reached. Try again.'));
     } finally {
       setPending(false);
     }
@@ -181,11 +174,7 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
       }
       onSignedIn();
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The server could not be reached. Try again.',
-      );
+      setError(errorMessage(cause, 'The server could not be reached. Try again.'));
     } finally {
       setPending(false);
     }
@@ -208,11 +197,7 @@ export function SignIn({ api, onSignedIn }: SignInProps) {
       // Errors persist inline until a correct code lands — including the
       // 429 lockout message, which tells the operator to wait rather than
       // burn more attempts.
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The server could not be reached. Try again.',
-      );
+      setError(errorMessage(cause, 'The server could not be reached. Try again.'));
     } finally {
       setPending(false);
     }

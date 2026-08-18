@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ApprovalRequest, VariationOrder } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { DataTable } from '../ui/table.js';
@@ -334,8 +336,7 @@ export function Approvals({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   const reload = useCallback(async () => {
     const loaded = await api.listApprovals(organisationId, 'pending');
@@ -353,20 +354,12 @@ export function Approvals({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The approvals queue could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The approvals queue could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   /** Opens the cited order in a new tab. The endpoint needs the
    * organisation header, so the bytes are fetched and handed to the
@@ -383,9 +376,7 @@ export function Approvals({
       }, 60_000);
     } catch (cause) {
       setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The cited variation order could not be opened.',
+        errorMessage(cause, 'The cited variation order could not be opened.'),
       );
     }
   }
@@ -400,11 +391,7 @@ export function Approvals({
       setNotice(done);
       onChanged();
     } catch (cause) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The decision failed; nothing was changed.',
-      );
+      setActionError(errorMessage(cause, 'The decision failed; nothing was changed.'));
     } finally {
       setPending(false);
     }

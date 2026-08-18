@@ -8,9 +8,11 @@ import type {
   EwayBill,
   MovementReason,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatRate, todayIso } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useAction, useReload } from '../lib/view-state.js';
 import { challanHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
@@ -213,15 +215,14 @@ export function DeliveryChallans({
   const [contacts, setContacts] = useState<readonly Contact[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { pending, notice, actionError, act, setActionError } = useAction(
+    'That action could not be completed.',
+  );
   const [detail, setDetail] = useState<ChallanDetailResponse | null>(null);
   /** The cancel confirmation, and the reason it insists on. */
   const [cancelling, setCancelling] = useState(false);
   const [cancelNote, setCancelNote] = useState('');
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   const [challanDate, setChallanDate] = useState(todayIso);
   const [prefix, setPrefix] = useState('DC');
@@ -254,38 +255,12 @@ export function DeliveryChallans({
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          error instanceof RequestFailedError
-            ? error.message
-            : 'The delivery challans could not be loaded.',
-        );
+        setLoadError(errorMessage(error, 'The delivery challans could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
-
-  const act = useCallback(async (run: () => Promise<void>, done: string) => {
-    setPending(true);
-    setActionError(null);
-    setNotice(null);
-    try {
-      await run();
-      setNotice(done);
-    } catch (cause: unknown) {
-      setActionError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'That action could not be completed.',
-      );
-    } finally {
-      setPending(false);
-    }
-  }, []);
 
   // The hash is the source of truth for which record is open, so a
   // pasted `#/delivery-challans/<id>` loads it and the back button
@@ -322,9 +297,7 @@ export function DeliveryChallans({
       .catch((error: unknown) => {
         if (cancelled) return;
         setActionError(
-          error instanceof RequestFailedError
-            ? error.message
-            : 'That delivery challan could not be opened.',
+          errorMessage(error, 'That delivery challan could not be opened.'),
         );
       });
     return () => {

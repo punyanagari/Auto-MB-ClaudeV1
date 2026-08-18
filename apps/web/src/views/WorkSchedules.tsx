@@ -11,7 +11,6 @@ import {
   ClampedText,
   ScheduleAccordionControls,
   ScheduleSection,
-  underScheduleHeader,
   useScheduleAccordion,
 } from '../ui/schedule-section.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -241,7 +240,7 @@ export function WorkSchedules({
             accordion.toggle(schedule.id);
           }}
         >
-          <DataTable className={underScheduleHeader}>
+          <DataTable>
             <caption className="sr-only">
               Awarded items in schedule {schedule.scheduleCode}; amended values show the
               original beside the sanctioned change, and each item carries its GST facts

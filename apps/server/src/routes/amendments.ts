@@ -20,7 +20,6 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope, requireAuthority } from '../authz.js';
 import {
@@ -75,7 +74,7 @@ interface ChangeSet {
 
 /** The stored `proposed` snapshot: everything apply needs, verbatim.
  * Milestone 7 adds the correction paths for issued documents. */
-export type ProposedSnapshot =
+type ProposedSnapshot =
   | {
       kind: 'change_item';
       workItemId: string;
@@ -567,7 +566,7 @@ export async function applyApproval(
         ${newItemId}, ${organisationId}, ${request.work_id},
         ${proposed.scheduleId}, ${proposed.itemNumber}, ${proposed.description},
         ${proposed.unitCode}, ${proposed.quantity}, ${proposed.rate}, true,
-        ${request.id}, ${jsonb(tx, { amendmentApprovalId: request.id })}
+        ${request.id}, ${tx.json({ amendmentApprovalId: request.id })}
       )
     `.catch((error: unknown) => {
       if (error instanceof Error && 'code' in error && error.code === '23505') {
@@ -932,7 +931,7 @@ export function registerAmendmentRoutes(
             )
             values (
               ${organisationId}, 'work_item_amendment', ${item.id}, ${workId},
-              ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${body.reason},
+              ${tx.json(proposed as never)}, ${tx.json(diff as never)}, ${body.reason},
               ${user.id}
             )
             returning id, entity_id, work_id
@@ -1072,7 +1071,7 @@ export function registerAmendmentRoutes(
             )
             values (
               ${organisationId}, 'work_item_amendment', null, ${workId},
-              ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${body.reason},
+              ${tx.json(proposed)}, ${tx.json(diff)}, ${body.reason},
               ${user.id}
             )
             returning id, entity_id, work_id
@@ -1187,7 +1186,7 @@ export function registerAmendmentRoutes(
             )
             values (
               ${organisationId}, 'work_item_amendment', ${item.id}, ${workId},
-              ${jsonb(tx, proposed)}, ${jsonb(tx, diff)}, ${body.reason},
+              ${tx.json(proposed as never)}, ${tx.json(diff as never)}, ${body.reason},
               ${user.id}
             )
             returning id, entity_id, work_id
@@ -1368,7 +1367,7 @@ export function registerAmendmentRoutes(
             ${document.loaNumber}, ${document.loaDate},
             ${document.agreementNumber}, ${document.variationNumber},
             ${objectKey}, ${filename}, ${sha256}, 'application/pdf',
-            ${body.length}, ${jsonb(tx, storedVerdict(recheck))}, true,
+            ${body.length}, ${tx.json(storedVerdict(recheck) as never)}, true,
             ${user.id}
           )
         `.catch((error: unknown) => {
@@ -1754,7 +1753,7 @@ export function registerAmendmentRoutes(
           )
           values (
             ${organisationId}, ${user.id}, 'work.excess_delivery_set', 'works',
-            ${workId}, ${jsonb(tx, { allowExcessDelivery: body.allowExcessDelivery })}
+            ${workId}, ${tx.json({ allowExcessDelivery: body.allowExcessDelivery })}
           )
         `;
         return {

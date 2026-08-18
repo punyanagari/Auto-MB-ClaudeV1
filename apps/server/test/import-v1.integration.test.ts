@@ -6,12 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  removeOrganisationResidue,
-  runMigrations,
-  withTenant,
-} from '@auto-mb/db';
+import { createDatabasePool, runMigrations, withTenant } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import {
   ADDRESS_NOT_RECORDED,
   IMPORT_ACTOR,

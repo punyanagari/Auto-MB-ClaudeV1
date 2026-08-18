@@ -10,7 +10,7 @@ import {
   UpdateMemberRequestSchema,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { jsonb, withUserContext } from '@auto-mb/db';
+import { withUserContext } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import { seedDefaultGstRates } from '../gst-rates.js';
@@ -158,7 +158,7 @@ export function registerIdentityRoutes(
           )
           values (
             ${row.id}, ${user.id}, 'gst_rate.defaults_seeded', 'gst_rates',
-            ${jsonb(tx, { count: seeded, source: 'notified GST rate history (0048)' })}
+            ${tx.json({ count: seeded, source: 'notified GST rate history (0048)' })}
           )
         `;
         // The payroll schedules, for the same reason and in the same
@@ -174,7 +174,7 @@ export function registerIdentityRoutes(
           values (
             ${row.id}, ${user.id}, 'payroll_schedule.defaults_seeded',
             'payroll_statutory_rates',
-            ${jsonb(tx, {
+            ${tx.json({
               count: payrollSeeded,
               source: 'payroll statutory schedules (0089)',
             })}
@@ -299,7 +299,7 @@ export function registerIdentityRoutes(
             values (
               ${organisationId}, ${user.id}, 'membership.added',
               'organisation_memberships',
-              ${jsonb(tx, { memberUserId: target.id, role: body.role })}
+              ${tx.json({ memberUserId: target.id, role: body.role })}
             )
           `;
 
@@ -482,7 +482,7 @@ export function registerIdentityRoutes(
             values (
               ${organisationId}, ${user.id}, 'membership.updated',
               'organisation_memberships',
-              ${jsonb(tx, { memberUserId, before: changes.before, after: changes.after })}
+              ${tx.json({ memberUserId, before: changes.before, after: changes.after } as never)}
             )
           `;
         return tx<MembershipRow[]>`
@@ -624,7 +624,7 @@ export function registerIdentityRoutes(
             values (
               ${organisationId}, ${user.id}, 'membership.assignments_set',
               'work_assignments',
-              ${jsonb(tx, { memberUserId, before: changes.before, after: changes.after })}
+              ${tx.json({ memberUserId, before: changes.before, after: changes.after } as never)}
             )
           `;
         const rows = await tx<{ work_id: string }[]>`

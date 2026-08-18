@@ -31,11 +31,17 @@
     * or an open PowerShell window in the signer's session, running the
       command above.
 
+  COPY ALL THREE FILES. This script dot-sources `kiosk-signing.common.ps1`
+  from beside itself for the guards it shares with `kiosk-signing-check.ps1`
+  — the TLS pin, the transport check, thumbprint normalisation, the store,
+  and SignHash itself. A kiosk that has only this file will refuse to start
+  and say so.
+
   EXECUTION POLICY. A file copied from another machine or downloaded
   arrives with a mark-of-the-web and is blocked whatever the policy says.
-  Clear it once:
+  Clear it once, for all of them:
 
-    Unblock-File .\kiosk-signing-agent.ps1
+    Unblock-File .\kiosk-signing-*.ps1
 
   The machine-wide policy only needs to be RemoteSigned, which is the
   Windows Server default; `-ExecutionPolicy RemoteSigned` in the shortcut
@@ -85,16 +91,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# TLS, pinned. Windows PowerShell 5.1 still negotiates from an old default
-# on some builds, and a modern server simply closes the connection — which
-# surfaces as "The underlying connection was closed", a message that sends
-# an operator hunting for a firewall that is not the problem.
-[Net.ServicePointManager]::SecurityProtocol =
-  [Net.SecurityProtocolType]::SystemDefault -bor [Net.SecurityProtocolType]::Tls12
-
-if ($BaseUrl -notmatch '^https://' -and $BaseUrl -notmatch '^http://(localhost|127\.0\.0\.1)') {
-  throw "BaseUrl must be https:// (http is allowed only for localhost testing): $BaseUrl"
+$common = Join-Path $PSScriptRoot 'kiosk-signing.common.ps1'
+if (-not (Test-Path -LiteralPath $common)) {
+  throw "kiosk-signing.common.ps1 is missing from $PSScriptRoot. Copy all three kiosk-signing files together."
 }
+. $common
+
+Set-KioskTlsDefaults
+Assert-KioskBaseUrl -BaseUrl $BaseUrl
 $BaseUrl = $BaseUrl.TrimEnd('/')
 
 # ---------------------------------------------------------------------
@@ -103,22 +107,8 @@ $BaseUrl = $BaseUrl.TrimEnd('/')
 function Get-SigningCertificate {
   param([string]$Thumbprint)
 
-  $normalised = ($Thumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
-  if ($normalised.Length -ne 40) {
-    throw "A certificate thumbprint is 40 hexadecimal characters; got $($normalised.Length)."
-  }
-
-  # CurrentUser\My is where a token's minidriver surfaces its
-  # certificates for the logged-in user. LocalMachine is deliberately not
-  # searched: a certificate there is not the one the interactive session
-  # can open a PIN dialog for.
-  $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', 'CurrentUser')
-  $store.Open('ReadOnly')
-  try {
-    $match = $store.Certificates | Where-Object { $_.Thumbprint -eq $normalised }
-  } finally {
-    $store.Close()
-  }
+  $normalised = Get-KioskNormalisedThumbprint -Thumbprint $Thumbprint
+  $match = Get-KioskStoreCertificates | Where-Object { $_.Thumbprint -eq $normalised }
 
   if (-not $match) {
     throw "No certificate with thumbprint $normalised is present in CurrentUser\My. Is the token plugged in?"
@@ -162,32 +152,6 @@ function Write-CertificateSummary {
     throw 'This certificate has expired; a signature made with it would not verify.'
   }
   return $key
-}
-
-# ---------------------------------------------------------------------
-# The one cryptographic operation this agent performs.
-#
-# SignHash, not SignData: the server sends a 32-byte SHA-256 digest of
-# the CMS signed attributes and never sends the document. The agent
-# cannot reconstruct what it is signing, and the server cannot be made to
-# accept a signature over anything else — it re-derives this digest from
-# the stored bytes before it will assemble a PDF.
-#
-# THE PIN DIALOG APPEARS HERE, on the first call of each session. It is
-# drawn by the driver onto this session's desktop; that is why this
-# script must not be a service.
-# ---------------------------------------------------------------------
-function Invoke-TokenSignature {
-  param($PrivateKey, [byte[]]$Digest)
-
-  if ($Digest.Length -ne 32) {
-    throw "Expected a 32-byte SHA-256 digest; got $($Digest.Length) bytes."
-  }
-  return $PrivateKey.SignHash(
-    $Digest,
-    [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-    [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-  )
 }
 
 # ---------------------------------------------------------------------
@@ -267,7 +231,7 @@ while ($true) {
 
     try {
       $digest = [Convert]::FromBase64String($job.digest)
-      $signature = Invoke-TokenSignature -PrivateKey $privateKey -Digest $digest
+      $signature = Invoke-KioskSignHash -PrivateKey $privateKey -Digest $digest
       $result = Invoke-Kiosk -Path "/api/signing/agent/requests/$($job.requestId)/result" `
         -Body @{ signature = [Convert]::ToBase64String($signature) } -Token $token
       Write-Host "  signed     : $($result.signedSha256)"

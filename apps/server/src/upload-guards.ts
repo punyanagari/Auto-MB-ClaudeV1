@@ -29,7 +29,7 @@ const PDF_MAGIC = Buffer.from('%PDF-');
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
 
-export interface ConsumedUpload<MediaType extends string> {
+interface ConsumedUpload<MediaType extends string> {
   /** The request body, proven non-empty and proven to carry the format's
    * signature. */
   readonly bytes: Buffer;
@@ -38,14 +38,14 @@ export interface ConsumedUpload<MediaType extends string> {
   readonly mediaType: MediaType;
 }
 
-export interface PdfUploadSpec {
+interface PdfUploadSpec {
   readonly format: 'pdf';
   /** Names the document in the "send a body" refusal, e.g. `'the LOA'`
    * yields "Send the LOA as an application/pdf request body." */
   readonly description: string;
 }
 
-export interface ImageUploadSpec {
+interface ImageUploadSpec {
   readonly format: 'image';
   readonly description: string;
 }

@@ -15,12 +15,8 @@ import type {
 } from '@auto-mb/contracts';
 import { CANONICAL_UNIT_NAMES } from '@auto-mb/loa-parser';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =

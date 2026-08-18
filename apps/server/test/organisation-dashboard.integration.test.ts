@@ -7,13 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { DashboardResponse, OrganisationProfile } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -166,7 +161,7 @@ beforeAll(async () => {
       prepared_by_user_id
     )
     values (
-      ${organisationId}, ${workId}, 1, '300.00', ${jsonb(admin, [])},
+      ${organisationId}, ${workId}, 1, '300.00', ${admin.json([] as never)},
       ${ownerUserId}
     )
   `;
@@ -180,7 +175,7 @@ beforeAll(async () => {
     values (
       ${documentId}, ${organisationId},
       ${`${organisationId}/loa/${documentId}.pdf`}, 'dash.pdf', ${sha256},
-      'application/pdf', 42, 'review', ${jsonb(admin, { sourceText: 'x' })},
+      'application/pdf', 42, 'review', ${admin.json({ sourceText: 'x' })},
       ${ownerUserId}
     )
   `;
@@ -496,7 +491,7 @@ describe('dashboard', () => {
         )
         values (
           ${billId}, ${organisationId}, ${payWorkId}, ${number},
-          ${jsonb(admin, [])}, ${railwayAmount}, ${ownerUserId}, ${bookId},
+          ${admin.json([] as never)}, ${railwayAmount}, ${ownerUserId}, ${bookId},
           'submitted', now()
         )
       `;
@@ -515,9 +510,9 @@ describe('dashboard', () => {
           ${'d'.repeat(64)}, 'application/pdf', 4096,
           ${`DASH-PAY/B${String(number)}`}, '2026-05-11', ${railwayAmount}, true,
           ${`DASH-PAY/OAM/FL2/0${String(number)}`}, ${number}, 'L-79/2026',
-          ${jsonb(admin, { billNumber: 'fixture' })}, ${ownerUserId},
+          ${admin.json({ billNumber: 'fixture' })}, ${ownerUserId},
           'signed_and_intact',
-          ${jsonb(admin, { signatures: [{ index: 1 }, { index: 2 }, { index: 3 }] })},
+          ${admin.json({ signatures: [{ index: 1 }, { index: 2 }, { index: 3 }] })},
           now()
         )
         returning id
@@ -558,7 +553,7 @@ describe('dashboard', () => {
           prepared_by_user_id, mb_id
         )
         values (
-          ${organisationId}, ${payWorkId}, ${number}, ${jsonb(admin, [])},
+          ${organisationId}, ${payWorkId}, ${number}, ${admin.json([] as never)},
           ${railwayAmount}, ${ownerUserId}, ${bookId}
         )
       `;
@@ -707,7 +702,7 @@ describe('dashboard', () => {
         current_date - 100, 'A danger built last, behind eight notices',
         '900000.00', '800000.00', 'per_schedule', ${ownerUserId},
         '80000.00', 30, 200,
-        ${jsonb(admin, { origin: 'fixture', raw: 'PBG 10% within 30 days' })}
+        ${admin.json({ origin: 'fixture', raw: 'PBG 10% within 30 days' })}
       )
     `;
     // Eight bills with no Measurement Book: eight `bill_awaiting_closure`
@@ -719,7 +714,7 @@ describe('dashboard', () => {
           prepared_by_user_id
         )
         values (
-          ${organisationId}, ${rankWorkId}, ${number}, ${jsonb(admin, [])},
+          ${organisationId}, ${rankWorkId}, ${number}, ${admin.json([] as never)},
           '1000.00', ${ownerUserId}
         )
       `;

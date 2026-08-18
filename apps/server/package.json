@@ -16,7 +16,6 @@
     "@auto-mb/documents": "workspace:*",
     "@auto-mb/loa-parser": "workspace:*",
     "@fastify/swagger": "9.8.1",
-    "@fastify/swagger-ui": "6.1.0",
     "@fastify/type-provider-typebox": "5.2.0",
     "@sinclair/typebox": "0.34.52",
     "better-auth": "1.6.26",
@@ -25,8 +24,10 @@
     "pg": "8.22.0",
     "qrcode": "1.5.4"
   },
+  "//devDependencies": "@fastify/swagger-ui sits here, not in dependencies: @fastify/swagger stays a runtime dependency because it generates the OpenAPI document itself, but the browsable UI is registered only behind the fail-closed enableDocsUi gate in src/app.ts, which is off in production and off for an unset NODE_ENV. Shipping its assets in the production image buys nothing.",
   "devDependencies": {
     "@auto-mb/worker": "workspace:*",
+    "@fastify/swagger-ui": "6.1.0",
     "@types/nodemailer": "8.0.1",
     "@types/pg": "8.15.6",
     "@types/qrcode": "1.5.6"

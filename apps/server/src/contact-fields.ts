@@ -25,8 +25,8 @@ import { httpError } from './http.js';
  * shapes at the database for contacts. The contractor is not a deductor,
  * but accepting both shapes for its own GSTIN too costs nothing and
  * removes any chance of refusing an unusual registration. */
-export const GSTIN_STANDARD = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
-export const GSTIN_DEDUCTOR = /^[0-9]{2}[0-9A-Z]{12}D$/;
+const GSTIN_STANDARD = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
+const GSTIN_DEDUCTOR = /^[0-9]{2}[0-9A-Z]{12}D$/;
 
 /** Trims and uppercases, then proves the structure. `undefined` and
  * `null` both mean "no GSTIN" and answer null; callers that must tell
@@ -73,7 +73,7 @@ export function normaliseEmail(raw: string | null | undefined): string | null {
 /** The RBI's IFSC: four letters naming the bank, a '0' the format
  * reserves, then six alphanumerics naming the branch. Migration 0078
  * binds the same pattern on both tables that store one. */
-export const IFSC_SHAPE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const IFSC_SHAPE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
 /**
  * Six to eighteen alphanumerics, at least one of them a digit.
@@ -94,7 +94,7 @@ export const IFSC_SHAPE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
  *
  * Written as one flat lookahead, so it cannot backtrack badly.
  */
-export const BANK_ACCOUNT_NUMBER_SHAPE = /^(?=.*[0-9])[0-9A-Z]{6,18}$/;
+const BANK_ACCOUNT_NUMBER_SHAPE = /^(?=.*[0-9])[0-9A-Z]{6,18}$/;
 
 /** Trims and uppercases, then proves the structure. `undefined` and
  * `null` both mean "no IFSC" and answer null. */

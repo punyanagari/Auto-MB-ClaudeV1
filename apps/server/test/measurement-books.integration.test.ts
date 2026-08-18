@@ -17,10 +17,10 @@ import type { Sql } from '@auto-mb/db';
 import {
   createDatabasePool,
   ensureClusterRoles,
-  removeOrganisationResidue,
   runMigrations,
   withTenant,
 } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 

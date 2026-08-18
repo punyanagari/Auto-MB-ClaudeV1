@@ -1,4 +1,3 @@
-import { jsonb } from '@auto-mb/db';
 import type { TrustAnchorStore } from '@auto-mb/documents';
 import {
   PdfToTextConfigurationError,
@@ -205,7 +204,7 @@ export function createLoaDocumentIntakeHandler(
       const written = await tx`
         update loa_documents
         set extraction_status = ${extraction.status},
-            extraction_payload = ${jsonb(tx, extraction.payload)}
+            extraction_payload = ${tx.json(extraction.payload as never)}
         where id = ${documentId}
           and extraction_status = 'processing'
       `;
@@ -214,7 +213,7 @@ export function createLoaDocumentIntakeHandler(
       await tx`
         update loa_documents
         set signature_status = ${signature.status},
-            signature_verdict = ${jsonb(tx, signature.verdict)},
+            signature_verdict = ${tx.json(signature.verdict)},
             signature_verified_at = ${signature.verifiedAt}
         where id = ${documentId} and signature_status = 'not_checked'
       `;
@@ -225,7 +224,7 @@ export function createLoaDocumentIntakeHandler(
         values (
           ${job.organisationId}, ${job.userId}, 'loa.extracted', 'loa_documents',
           ${documentId},
-          ${jsonb(tx, {
+          ${tx.json({
             extractionStatus: extraction.status,
             signatureStatus: signature.status,
             jobId: job.id,

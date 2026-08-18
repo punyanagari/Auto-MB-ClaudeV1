@@ -18,7 +18,7 @@ import {
 import { Separator } from '../ui/separator.js';
 import { Tooltip } from '../ui/tooltip.js';
 
-export interface AppTopbarProps {
+interface AppTopbarProps {
   readonly sidebarId: string;
   readonly organisationName: string;
   readonly sectionTitle: string;

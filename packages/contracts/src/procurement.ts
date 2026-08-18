@@ -91,7 +91,7 @@ export const PURCHASE_ORDER_STATUSES = [
   'closed',
   'cancelled',
 ] as const;
-export const PurchaseOrderStatusSchema = Type.Union(
+const PurchaseOrderStatusSchema = Type.Union(
   PURCHASE_ORDER_STATUSES.map((status) => Type.Literal(status)),
 );
 export type PurchaseOrderStatus = Static<typeof PurchaseOrderStatusSchema>;
@@ -119,7 +119,7 @@ export type CreatePurchaseOrderRequest = Static<
 /** A line buys an awarded item (`workItemId`) or a consumable the LOA
  * never named — the description always stands on its own, which is why
  * the link is optional and the text is not. */
-export const PurchaseOrderLineInputSchema = Type.Object(
+const PurchaseOrderLineInputSchema = Type.Object(
   {
     workItemId: Type.Optional(UuidSchema),
     ...ProcurementLineInputFields,
@@ -154,7 +154,7 @@ export type CancelPurchaseOrderRequest = Static<
  * per-Work counter lock, close only records that the receipts are
  * complete. Both answer with the detail response below. */
 
-export const PurchaseOrderLineSchema = Type.Object(
+const PurchaseOrderLineSchema = Type.Object(
   {
     ...ProcurementLineFields,
     /** Null on a consumable bought outside the LOA. */
@@ -170,7 +170,7 @@ export const PurchaseOrderLineSchema = Type.Object(
 );
 export type PurchaseOrderLine = Static<typeof PurchaseOrderLineSchema>;
 
-export const PurchaseOrderSchema = Type.Object(
+const PurchaseOrderSchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,
@@ -225,7 +225,7 @@ export type PurchaseOrderDetailResponse = Static<
 /** `details` of the 409 raised when close is asked for an order whose
  * lines are not fully received: the operator's worklist, one row per
  * line still owing material. */
-export const PurchaseOrderOutstandingLineSchema = Type.Object(
+const PurchaseOrderOutstandingLineSchema = Type.Object(
   {
     purchaseOrderLineId: UuidSchema,
     lineNumber: Type.Integer({ minimum: 1 }),
@@ -236,9 +236,6 @@ export const PurchaseOrderOutstandingLineSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type PurchaseOrderOutstandingLine = Static<
-  typeof PurchaseOrderOutstandingLineSchema
->;
 
 export const PurchaseOrderNotFullyReceivedDetailsSchema = Type.Object(
   { outstandingLines: Type.Array(PurchaseOrderOutstandingLineSchema) },
@@ -250,27 +247,25 @@ export type PurchaseOrderNotFullyReceivedDetails = Static<
 
 /* --- Budgetary quotations ---------------------------------------------- */
 
-export const BUDGETARY_QUOTATION_STATUSES = [
+const BUDGETARY_QUOTATION_STATUSES = [
   'draft',
   'issued',
   'expired',
   'converted',
   'withdrawn',
 ] as const;
-export const BudgetaryQuotationStatusSchema = Type.Union(
+const BudgetaryQuotationStatusSchema = Type.Union(
   BUDGETARY_QUOTATION_STATUSES.map((status) => Type.Literal(status)),
 );
-export type BudgetaryQuotationStatus = Static<typeof BudgetaryQuotationStatusSchema>;
 
 /** What an ISSUED quotation can still become. There is no cancellation:
  * an offer that lapsed is `expired`, one that won is `converted`, one the
  * contractor took back is `withdrawn` — and all three keep the number. */
-export const BudgetaryQuotationOutcomeSchema = Type.Union([
+const BudgetaryQuotationOutcomeSchema = Type.Union([
   Type.Literal('expired'),
   Type.Literal('converted'),
   Type.Literal('withdrawn'),
 ]);
-export type BudgetaryQuotationOutcome = Static<typeof BudgetaryQuotationOutcomeSchema>;
 
 /** POST — creates a draft; the same body serves the draft PUT. The
  * addressee is free text BECAUSE the contact may not exist yet: a
@@ -294,7 +289,7 @@ export type CreateBudgetaryQuotationRequest = Static<
 
 /** No `workItemId`: a quotation precedes any award, so there is no Work
  * whose items it could point at. */
-export const BudgetaryQuotationLineInputSchema = Type.Object(
+const BudgetaryQuotationLineInputSchema = Type.Object(
   { ...ProcurementLineInputFields },
   { additionalProperties: false },
 );
@@ -328,13 +323,13 @@ export type SetBudgetaryQuotationOutcomeRequest = Static<
   typeof SetBudgetaryQuotationOutcomeRequestSchema
 >;
 
-export const BudgetaryQuotationLineSchema = Type.Object(
+const BudgetaryQuotationLineSchema = Type.Object(
   { ...ProcurementLineFields },
   { additionalProperties: false },
 );
 export type BudgetaryQuotationLine = Static<typeof BudgetaryQuotationLineSchema>;
 
-export const BudgetaryQuotationSchema = Type.Object(
+const BudgetaryQuotationSchema = Type.Object(
   {
     id: UuidSchema,
     /** Null when the quotation was addressed to someone who is not (yet)

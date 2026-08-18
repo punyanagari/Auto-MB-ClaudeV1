@@ -13,13 +13,11 @@ import type {
   ProductionItemListResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import {
   assertNoForeignKeyOrphans,
-  createDatabasePool,
-  ensureClusterRoles,
   removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+} from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 import { PRODUCTION_DATABASE_REFUSAL_CODES } from '../src/routes/production.js';
 

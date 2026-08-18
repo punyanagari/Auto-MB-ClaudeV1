@@ -31,12 +31,6 @@
 import type { PdfSignatureReport } from '@auto-mb/contracts';
 import { verifyPdfSignatures, type TrustAnchorStore } from './pdf-signature.js';
 
-/** The minimum of a Fastify logger this module needs, so a caller can
- * pass `request.log` without this file depending on Fastify's types. */
-export interface SignatureVerificationLogger {
-  error(context: Record<string, unknown>, message: string): void;
-}
-
 export interface StoredSignatureEvidence {
   readonly status: PdfSignatureReport['status'] | 'not_checked';
   readonly verdict: PdfSignatureReport;
@@ -59,7 +53,9 @@ export interface StoredSignatureEvidence {
 export function verifyUploadedPdf(
   bytes: Buffer,
   anchors: TrustAnchorStore,
-  logger: SignatureVerificationLogger,
+  // The minimum of a Fastify logger this function needs, so a caller can
+  // pass `request.log` without this file depending on Fastify's types.
+  logger: { error(context: Record<string, unknown>, message: string): void },
 ): StoredSignatureEvidence {
   const verifiedAt = new Date();
   try {

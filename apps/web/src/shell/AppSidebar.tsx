@@ -5,7 +5,7 @@ import { Tooltip } from '../ui/tooltip.js';
 import { SidebarNav, type NavSubItem } from './SidebarNav.js';
 import type { ModuleKey } from './navigation.js';
 
-export interface AppSidebarProps {
+interface AppSidebarProps {
   readonly id: string;
   readonly organisationName: string;
   readonly identityInitials: string;

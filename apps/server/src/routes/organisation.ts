@@ -20,7 +20,7 @@ import {
   type UpdateOrganisationProfileRequest,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
-import { jsonb, type Sql, type TransactionSql } from '@auto-mb/db';
+import type { Sql, TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
 import {
@@ -525,7 +525,7 @@ export function registerOrganisationRoutes(
           values (
             ${organisationId}, ${user.id}, 'organisation.profile_updated',
             'organisations', ${organisationId},
-            ${jsonb(tx, { before: changes.before, after: changes.after })}
+            ${tx.json({ before: changes.before, after: changes.after } as never)}
           )
         `;
         return toProfile(updated);
@@ -579,7 +579,7 @@ export function registerOrganisationRoutes(
             values (
               ${organisationId}, ${user.id}, 'organisation.logo_updated',
               'organisations', ${organisationId},
-              ${jsonb(tx, { mediaType, sizeBytes: body.length })}
+              ${tx.json({ mediaType, sizeBytes: body.length })}
             )
           `;
         return toProfile(updated);
@@ -641,7 +641,7 @@ export function registerOrganisationRoutes(
           )
           values (
             ${organisationId}, ${user.id}, 'organisation.logo_removed',
-            'organisations', ${organisationId}, ${jsonb(tx, {})}
+            'organisations', ${organisationId}, ${tx.json({})}
           )
         `;
       });

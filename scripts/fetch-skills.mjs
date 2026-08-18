@@ -9,7 +9,7 @@
  *   node scripts/fetch-skills.mjs           # fetch whatever is missing
  *   node scripts/fetch-skills.mjs --force   # refetch even if present
  *
- * The small skills (caveman, ux-ui-agent-skills wrapper) stay committed.
+ * The small `caveman` skill stays committed.
  * Provenance, licences and the reasoning live in PROVENANCE.md — update
  * the pins there and here together, never separately.
  */

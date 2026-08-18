@@ -9,7 +9,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
@@ -24,30 +24,22 @@
     "bundle:check": "node apps/web/scripts/check-bundle-size.mjs",
     "deadcode:check": "knip --no-config-hints",
     "security:secrets": "secretlint \"**/*\"",
-    "design:contrast": "node scripts/design-audit.mjs measure_render",
-    "design:states": "node scripts/design-audit.mjs verify_states",
-    "design:a11y": "node scripts/design-audit.mjs axe_audit",
-    "design:rtl": "node scripts/design-audit.mjs verify_rtl",
-    "design:taste": "node scripts/design-audit.mjs taste_audit",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm bundle:check && pnpm test && pnpm db:check && pnpm architecture:check && pnpm config:check && pnpm comments:check && pnpm deadcode:check && pnpm security:secrets"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "@secretlint/secretlint-rule-preset-recommend": "13.0.4",
     "@types/node": "22.20.1",
-    "axe-core": "^4.12.1",
     "eslint": "9.39.5",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-security": "4.0.1",
     "globals": "17.8.0",
     "knip": "^6.32.0",
-    "playwright": "^1.62.1",
     "prettier": "3.9.6",
     "secretlint": "13.0.4",
     "tsx": "4.23.5",
     "typescript": "5.9.3",
     "typescript-eslint": "8.65.0",
-    "ux-ui-agent-skills": "^2.4.0",
     "vitest": "4.1.10"
   }
 }

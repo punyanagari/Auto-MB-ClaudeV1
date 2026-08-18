@@ -2,8 +2,9 @@
 
 import { buildIrpPayload, type IrpItem, type IrpPayload } from './gsp/irp-payload.js';
 import { amountInWords as renderAmountInWords } from './amount-in-words.js';
+import { paiseText } from './money.js';
 
-export interface FrozenParty {
+interface FrozenParty {
   readonly designation: string;
   readonly contactPerson: string | null;
   readonly gstin: string | null;
@@ -13,7 +14,7 @@ export interface FrozenParty {
   readonly locality: string | null;
 }
 
-export interface FrozenSupplier {
+interface FrozenSupplier {
   readonly name: string;
   readonly tradeName: string | null;
   readonly gstin: string;
@@ -29,7 +30,7 @@ export interface FrozenSupplier {
  * migration 0057). The v1 snapshot's single cumulative service line
  * NORMALISES into the same shape through `snapshotLines`, so every
  * consumer — the printed document, the IRP payload — reads one thing. */
-export interface FrozenInvoiceLine {
+interface FrozenInvoiceLine {
   readonly position: number;
   readonly isService: boolean;
   readonly hsnSacCode: string;
@@ -83,7 +84,7 @@ export interface TaxInvoiceIssuedSnapshotV1 {
  * single `line` becoming a `lines` array. v1 is NOT rewritten or
  * upgraded: an invoice renders from the snapshot it was issued under,
  * forever, and every stored invoice today is v1. */
-export interface TaxInvoiceIssuedSnapshotV2 {
+interface TaxInvoiceIssuedSnapshotV2 {
   readonly templateVersion: 'ti-v2';
   readonly invoiceNumber: string;
   readonly invoiceDate: string;
@@ -209,6 +210,12 @@ function supplier(value: unknown): FrozenSupplier {
   };
 }
 
+/** The same arithmetic as `money.ts`'s `toPaise`, kept local for its
+ * REFUSAL: a snapshot fault is a `TaxInvoiceSnapshotError` naming the JSON
+ * path, which the invoice, credit-note and e-way routes map onto a 409
+ * carrying `TAX_INVOICE_SNAPSHOT_INVALID`. The shared parser throws a plain
+ * Error, which those routes would surface as a 500 — so the formatter is
+ * shared and this is not. */
 function scaledPaise(value: string, path: string): bigint {
   // Fully anchored, with a fraction bounded to two digits.
   // eslint-disable-next-line security/detect-unsafe-regex
@@ -218,12 +225,6 @@ function scaledPaise(value: string, path: string): bigint {
   return (
     sign * (BigInt(match[2] ?? '0') * 100n + BigInt((match[3] ?? '').padEnd(2, '0')))
   );
-}
-
-function paiseText(value: bigint): string {
-  const sign = value < 0n ? '-' : '';
-  const absolute = value < 0n ? -value : value;
-  return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`;
 }
 
 function integer(value: unknown, path: string): number {

@@ -15,11 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Sql } from '../src/index.js';
-import {
-  assertNoForeignKeyOrphans,
-  createDatabasePool,
-  runMigrations,
-} from '../src/index.js';
+import { createDatabasePool, runMigrations } from '../src/index.js';
+import { assertNoForeignKeyOrphans } from '../src/testing.js';
 
 const execFileAsync = promisify(execFile);
 

@@ -12,9 +12,11 @@ import type {
   MaintenanceLine,
   MaintenanceStatus,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
-import { formatDate, todayISO } from '../format.js';
+import { type ApiClient } from '../api.js';
+import { formatDate, todayIso } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -113,7 +115,7 @@ export function MaintenanceJobCard({
   const [actionError, setActionError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('materials');
   const [pending, setPending] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -128,9 +130,7 @@ export function MaintenanceJobCard({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The maintenance request could not be loaded.',
+          errorMessage(cause, 'The maintenance request could not be loaded.'),
         );
       });
     return () => {
@@ -150,7 +150,7 @@ export function MaintenanceJobCard({
           setDetail(updated);
         })
         .catch((cause: unknown) => {
-          setActionError(cause instanceof RequestFailedError ? cause.message : failure);
+          setActionError(errorMessage(cause, failure));
         })
         .finally(() => {
           setPending(false);
@@ -161,12 +161,7 @@ export function MaintenanceJobCard({
 
   if (loadError !== null) {
     return (
-      <ErrorState
-        onRetry={() => {
-          setLoadVersion((current) => current + 1);
-        }}
-        retryLabel="Retry the maintenance request"
-      >
+      <ErrorState onRetry={retry} retryLabel="Retry the maintenance request">
         {loadError}
       </ErrorState>
     );
@@ -617,7 +612,7 @@ function DispatchTab({
   }, [dispatchedCount]);
   // Empty until somebody types one. An unedited date field must send
   // NOTHING, so the server dates the challan by the ORGANISATION's today
-  // — seeding it from `todayISO()` and always sending it made the
+  // — seeding it from `todayIso()` and always sending it made the
   // browser clock the authority on a date printed on paper, and made the
   // server's own fallback unreachable.
   const [dispatchDate, setDispatchDate] = useState('');
@@ -717,7 +712,7 @@ function DispatchTab({
           <input
             id="dispatch-date"
             type="date"
-            max={todayISO()}
+            max={todayIso()}
             value={dispatchDate}
             aria-describedby="dispatch-date-hint"
             disabled={!enabled}
@@ -893,7 +888,7 @@ function ReturnsTab({
               <input
                 id="return-date"
                 type="date"
-                max={todayISO()}
+                max={todayIso()}
                 value={receivedOn}
                 aria-describedby="return-date-hint"
                 disabled={!enabled}

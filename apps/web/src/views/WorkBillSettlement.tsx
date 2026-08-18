@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BILL_DEDUCTION_HEAD_RULES } from '@auto-mb/contracts';
 import type {
   BillDeductionCategory,
@@ -6,6 +6,7 @@ import type {
   RecordBillPaymentRequest,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Disclosure } from '../ui/disclosure.js';
@@ -109,7 +110,7 @@ export function WorkBillSettlement({
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryable, setRetryable] = useState(true);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, refresh] = useReload();
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -139,10 +140,6 @@ export function WorkBillSettlement({
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
-
-  const refresh = useCallback(() => {
-    setLoadVersion((version) => version + 1);
-  }, []);
 
   async function act(work: () => Promise<void>, success: string) {
     setPending(true);

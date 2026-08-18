@@ -397,24 +397,17 @@ export function maintenanceRequestHash(requestId: string): string {
 }
 
 /** `#/inventory` and its shortage screen, as plain hrefs — what the link
- * between the two renders. */
-export function stockRegisterHash(): string {
-  return workspaceHashOf({ view: { name: 'stock' } });
-}
-
-export function stockShortagesHash(): string {
-  return workspaceHashOf({ view: { name: 'stock-shortages' } });
-}
+ * between the two renders. Derived rather than spelled out, so they
+ * cannot drift from the switch above. */
+export const STOCK_REGISTER_HASH = workspaceHashOf({ view: { name: 'stock' } });
+export const STOCK_SHORTAGES_HASH = workspaceHashOf({
+  view: { name: 'stock-shortages' },
+});
 
 /** `#/employees` and the payroll workspace under it, as plain hrefs —
  * what the link between the two renders. */
-export function employeeRegisterHash(): string {
-  return workspaceHashOf({ view: { name: 'employees' } });
-}
-
-export function payrollHash(): string {
-  return workspaceHashOf({ view: { name: 'payroll' } });
-}
+export const EMPLOYEE_REGISTER_HASH = workspaceHashOf({ view: { name: 'employees' } });
+export const PAYROLL_HASH = workspaceHashOf({ view: { name: 'payroll' } });
 
 export const SETTINGS_HASH = '#/settings';
 export const QUOTATIONS_HASH = '#/quotations';

@@ -1,7 +1,6 @@
 import type { Sql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 
-export type IdentityAction =
+type IdentityAction =
   | 'sign_up'
   | 'sign_in'
   | 'sign_out'
@@ -86,7 +85,7 @@ export async function recordLoginLockout(
       ${'email-sha256:' + event.emailHash},
       'login_locked',
       ${event.requestId},
-      ${jsonb(sql, { emailSha256: event.emailHash })}
+      ${sql.json({ emailSha256: event.emailHash })}
     )
   `;
 }

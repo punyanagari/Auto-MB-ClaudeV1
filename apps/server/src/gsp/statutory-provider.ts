@@ -1,7 +1,7 @@
 import type { ErrorCode } from '@auto-mb/contracts';
 
 export type StatutoryEnvironment = 'sandbox' | 'production';
-export type ProviderOutcome = 'failed' | 'unknown';
+type ProviderOutcome = 'failed' | 'unknown';
 
 export class StatutoryProviderError extends Error {
   constructor(
@@ -65,14 +65,14 @@ export interface ProviderCancellationEvidence {
   readonly rawResponse: string;
 }
 
-export interface GenerateEwayBillByIrnRequest {
+interface GenerateEwayBillByIrnRequest {
   readonly gstin: string;
   readonly irn: string;
   /** Already serialized exact JSON bytes. */
   readonly payloadJson: string;
 }
 
-export interface GenerateEwayBillRequest {
+interface GenerateEwayBillRequest {
   readonly gstin: string;
   /** Already serialized exact JSON bytes. */
   readonly payloadJson: string;

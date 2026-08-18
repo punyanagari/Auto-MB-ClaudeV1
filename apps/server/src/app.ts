@@ -1,6 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import swagger from '@fastify/swagger';
-import swaggerUi from '@fastify/swagger-ui';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import Fastify from 'fastify';
 import pg from 'pg';
@@ -89,7 +88,7 @@ import { assertProductionMalwareScanning } from './upload-guards.js';
 import type { StatutoryProvider } from './gsp/statutory-provider.js';
 import { createMutationOriginGuard, isOriginExemptRoute } from './origin-guard.js';
 
-export interface BuildAppOptions {
+interface BuildAppOptions {
   readonly logger?: boolean;
   readonly databaseUrl?: string;
   readonly enableDocsUi?: boolean;
@@ -390,6 +389,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       options.enableDocsUi ??
       ['development', 'test'].includes(process.env.NODE_ENV ?? '');
     if (enableDocsUi) {
+      // Imported here rather than at module scope so the UI's assets are
+      // only loaded by the environments that actually publish them. A
+      // production image never evaluates this branch, which is why the
+      // package is a devDependency and its absence must not break boot.
+      const { default: swaggerUi } = await import('@fastify/swagger-ui');
       await app.register(swaggerUi, { routePrefix: '/documentation' });
     }
   } catch (error) {
@@ -955,6 +959,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerTenderRoutes(app, authInstance, database, storage, scanner);
     registerProductionRoutes(app, authInstance, database);
     const pdfTrustAnchors = options.pdfTrustAnchors ?? EMPTY_TRUST_ANCHOR_STORE;
+    // Every PDF-rendering route below takes the same endpoint; the default
+    // is the compose-provided local service, resolved once here so the
+    // nine registrations cannot drift apart. Readiness probing above is
+    // deliberately NOT defaulted — an unconfigured test environment must
+    // not fail its health check on a Gotenberg that was never deployed.
+    const gotenbergUrl = options.gotenbergUrl ?? 'http://127.0.0.1:3001';
     registerLoaRoutes(app, authInstance, database, storage, scanner);
     registerContractSourceRoutes(
       app,
@@ -977,20 +987,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     // (0091, ADR-0012): the kiosk lane refuses to store a signature its
     // own verifier does not read as signed_and_intact.
     registerSigningRoutes(app, authInstance, database, storage, pdfTrustAnchors);
-    registerChallanRoutes(
-      app,
-      authInstance,
-      database,
-      storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
-      scanner,
-    );
+    registerChallanRoutes(app, authInstance, database, storage, gotenbergUrl, scanner);
     registerExtensionRoutes(
       app,
       authInstance,
       database,
       storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      gotenbergUrl,
       scanner,
     );
     registerIssueChallanRoutes(
@@ -998,30 +1001,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       authInstance,
       database,
       storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      gotenbergUrl,
       scanner,
     );
-    registerCorrectionRoutes(
-      app,
-      authInstance,
-      database,
-      storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
-    );
+    registerCorrectionRoutes(app, authInstance, database, storage, gotenbergUrl);
     registerPacRoutes(app, authInstance, database, storage, scanner);
-    registerMeasurementBookRoutes(
-      app,
-      authInstance,
-      database,
-      storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
-    );
+    registerMeasurementBookRoutes(app, authInstance, database, storage, gotenbergUrl);
     registerTaxInvoiceRoutes(
       app,
       authInstance,
       database,
       storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      gotenbergUrl,
       options.statutoryProvider,
     );
     registerCreditNoteRoutes(
@@ -1029,7 +1020,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       authInstance,
       database,
       storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      gotenbergUrl,
       options.statutoryProvider,
     );
     registerEwayBillRoutes(
@@ -1037,7 +1028,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       authInstance,
       database,
       storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      gotenbergUrl,
       options.statutoryProvider,
     );
     registerCorrespondenceRoutes(
@@ -1045,7 +1036,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       authInstance,
       database,
       storage,
-      options.gotenbergUrl ?? 'http://127.0.0.1:3001',
+      gotenbergUrl,
       scanner,
     );
     registerWorkCompletionRoutes(app, authInstance, database);

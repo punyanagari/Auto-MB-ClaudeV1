@@ -58,13 +58,8 @@ import { NextCursorSchema, withKeysetQuery } from './pagination.js';
  * invoice in full. Terminal like cancelled — it releases the invoice's
  * Measurement Book — except that cancelling the credit note reverts the
  * invoice to submitted while its MB has not been re-invoiced. */
-export const TAX_INVOICE_STATUSES = [
-  'draft',
-  'submitted',
-  'cancelled',
-  'superseded',
-] as const;
-export const TaxInvoiceStatusSchema = Type.Union(
+const TAX_INVOICE_STATUSES = ['draft', 'submitted', 'cancelled', 'superseded'] as const;
+const TaxInvoiceStatusSchema = Type.Union(
   TAX_INVOICE_STATUSES.map((status) => Type.Literal(status)),
 );
 export type TaxInvoiceStatus = Static<typeof TaxInvoiceStatusSchema>;
@@ -73,11 +68,10 @@ export type TaxInvoiceStatus = Static<typeof TaxInvoiceStatusSchema>;
  * deepening, and the cumulative invoice line is always a service. The
  * 9954xx family is works contracts, but the schema does not hard-code
  * that judgement (the 0035 column holds the same six-digit CHECK). */
-export const SacCodeSchema = Type.String({
+const SacCodeSchema = Type.String({
   pattern: '^[0-9]{6}$',
   description: 'SAC (services accounting) code: exactly six digits.',
 });
-export type SacCode = Static<typeof SacCodeSchema>;
 
 /** The IRN as the IRP mints it: 64 lowercase hex characters. */
 export const IrnSchema = Type.String({
@@ -86,7 +80,7 @@ export const IrnSchema = Type.String({
 });
 export type Irn = Static<typeof IrnSchema>;
 
-export const IRP_PROVIDER_STATES = [
+const IRP_PROVIDER_STATES = [
   'not_requested',
   'registering',
   'registered',
@@ -111,7 +105,7 @@ export type IrpProviderState = Static<typeof IrpProviderStateSchema>;
 /** A line's unit rate. Non-negative — free-issue and nil-rated lines are
  * real — and bounded to the TWO fraction digits its numeric(18,2) column
  * holds, so a third digit is a named 400 rather than a silent rounding. */
-export const LineUnitRateSchema = Type.String({
+const LineUnitRateSchema = Type.String({
   pattern: '^(?:0|[1-9]\\d{0,14})(?:\\.\\d{1,2})?$',
   description:
     'Non-negative unit rate transported as a string; up to two fraction digits.',
@@ -122,7 +116,7 @@ export const LineUnitRateSchema = Type.String({
 /** One line of an ITEMISED invoice, as the client states it. The money
  * is NOT stated: taxable value and the tax heads are computed in SQL
  * numeric at submit from quantity x rate at this line's own GST rate. */
-export const TaxInvoiceLineInputSchema = Type.Object(
+const TaxInvoiceLineInputSchema = Type.Object(
   {
     /** Whether this line supplies a SERVICE or GOODS. Stated, never
      * inferred from the code: it becomes IsServc on the IRP wire and, in
@@ -154,7 +148,7 @@ export type TaxInvoiceLineInput = Static<typeof TaxInvoiceLineInputSchema>;
 
 /** One line as stored. The four money fields are null while the invoice
  * is a draft and frozen together at submit (migration 0057). */
-export const TaxInvoiceLineSchema = Type.Object(
+const TaxInvoiceLineSchema = Type.Object(
   {
     id: UuidSchema,
     position: Type.Integer({ minimum: 1 }),
@@ -399,7 +393,7 @@ export type RecordIrpResponseRequest = Static<typeof RecordIrpResponseRequestSch
 
 // --- Tax invoice read model --------------------------------------------------
 
-export const TaxInvoiceSchema = Type.Object(
+const TaxInvoiceSchema = Type.Object(
   {
     id: UuidSchema,
     /** Null on a DIRECT invoice — one raised against a private customer
@@ -557,7 +551,7 @@ export type TaxInvoiceListResponse = Static<typeof TaxInvoiceListResponseSchema>
  * It is null while the invoice is a draft, exactly as the frozen taxable
  * value and total are: no money exists on an invoice until submit writes
  * it. */
-export const TaxInvoiceRegisterEntrySchema = Type.Object(
+const TaxInvoiceRegisterEntrySchema = Type.Object(
   {
     id: UuidSchema,
     workId: Type.Union([UuidSchema, Type.Null()]),
@@ -608,7 +602,6 @@ export const TaxInvoiceRegisterQuerySchema = withKeysetQuery(
     { additionalProperties: false },
   ),
 );
-export type TaxInvoiceRegisterQuery = Static<typeof TaxInvoiceRegisterQuerySchema>;
 
 /** Every tax invoice in the organisation the caller may see, newest first
  * — work-backed and direct alike. Cancelled and superseded invoices stay
@@ -628,13 +621,13 @@ export type TaxInvoiceRegisterResponse = Static<
 
 // --- E-way bill requests -----------------------------------------------------
 
-export const EWAY_BILL_STATUSES = ['draft', 'generated', 'cancelled'] as const;
-export const EwayBillStatusSchema = Type.Union(
+const EWAY_BILL_STATUSES = ['draft', 'generated', 'cancelled'] as const;
+const EwayBillStatusSchema = Type.Union(
   EWAY_BILL_STATUSES.map((status) => Type.Literal(status)),
 );
 export type EwayBillStatus = Static<typeof EwayBillStatusSchema>;
 
-export const EWAY_PROVIDER_STATES = [
+const EWAY_PROVIDER_STATES = [
   'not_requested',
   'generating',
   'generated',
@@ -644,13 +637,13 @@ export const EWAY_PROVIDER_STATES = [
   'cancelled',
   'cancellation_unknown',
 ] as const;
-export const EwayProviderStateSchema = Type.Union(
+const EwayProviderStateSchema = Type.Union(
   EWAY_PROVIDER_STATES.map((state) => Type.Literal(state)),
 );
 export type EwayProviderState = Static<typeof EwayProviderStateSchema>;
 
-export const TRANSPORT_MODES = ['road', 'rail', 'air', 'ship'] as const;
-export const TransportModeSchema = Type.Union(
+const TRANSPORT_MODES = ['road', 'rail', 'air', 'ship'] as const;
+const TransportModeSchema = Type.Union(
   TRANSPORT_MODES.map((mode) => Type.Literal(mode)),
 );
 export type TransportMode = Static<typeof TransportModeSchema>;
@@ -731,13 +724,12 @@ export type CancelEwayBillRequest = Static<typeof CancelEwayBillRequestSchema>;
 
 /** Which document the consignment travels under. Exactly one of the two
  * source ids is set on every bill (ADR-0013, migration 0076). */
-export const EwayBillSourceSchema = Type.Union([
+const EwayBillSourceSchema = Type.Union([
   Type.Literal('tax_invoice'),
   Type.Literal('delivery_challan'),
 ]);
-export type EwayBillSource = Static<typeof EwayBillSourceSchema>;
 
-export const EwayBillSchema = Type.Object(
+const EwayBillSchema = Type.Object(
   {
     id: UuidSchema,
     /** Null when the source is a delivery challan. */

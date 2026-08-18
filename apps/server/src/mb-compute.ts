@@ -114,7 +114,7 @@ export interface MbComputedLine {
 /** An item whose category has no matrix row to resolve through. The
  * draft preview surfaces these as warnings; finalize collects them all
  * and fails with ONE 409 naming each item and its missing category. */
-export interface MbUnresolvedItem {
+interface MbUnresolvedItem {
   readonly workItemId: string;
   readonly itemNumber: string;
   readonly missingCategory: string;

@@ -1,7 +1,6 @@
 import { Type, type Static, type TString } from '@sinclair/typebox';
 
 export const UuidSchema = Type.String({ format: 'uuid' });
-export type Uuid = Static<typeof UuidSchema>;
 
 /* A REAL calendar date, not merely a YYYY-MM-DD shape: month and day
  * ranges are held, and 29 February is admitted only in a leap year. A
@@ -28,7 +27,6 @@ export const DateOnlySchema = Type.String({
   pattern: `^${DATE_ONLY_PATTERN}$`,
   description: 'Calendar date with no time or timezone.',
 });
-export type DateOnly = Static<typeof DateOnlySchema>;
 
 export const DecimalStringSchema = Type.String({
   pattern: '^-?(?:0|[1-9]\\d*)(?:\\.\\d{1,3})?$',
@@ -58,7 +56,6 @@ export const PercentStringSchema = Type.String({
   description:
     'Computed percentage transported as a string; up to four fraction digits.',
 });
-export type PercentString = Static<typeof PercentStringSchema>;
 
 /** RATE fields carry up to six fraction digits (rate columns are
  * numeric(18,6); v1 agreement rates run to 0.8517/mtr and finer).
@@ -68,7 +65,6 @@ export const RateStringSchema = Type.String({
   description:
     'Rate value transported as a string with up to six fraction digits; authoritative arithmetic is not binary floating point.',
 });
-export type RateString = Static<typeof RateStringSchema>;
 
 /* --- Bounded variants -------------------------------------------------
  * The database already refuses a zero quantity, a negative value, and a
@@ -91,7 +87,6 @@ export const PositiveDecimalStringSchema = Type.String({
   description:
     'Strictly positive decimal transported as a string; up to three fraction digits.',
 });
-export type PositiveDecimalString = Static<typeof PositiveDecimalStringSchema>;
 
 /** Non-negative, up to three fraction digits — money values, whose
  * columns read `CHECK (… >= 0)`. Zero is a legitimate value; a minus
@@ -101,7 +96,6 @@ export const NonNegativeDecimalStringSchema = Type.String({
   description:
     'Non-negative decimal transported as a string; up to three fraction digits.',
 });
-export type NonNegativeDecimalString = Static<typeof NonNegativeDecimalStringSchema>;
 
 /* --- Money, at the scale money is stored ------------------------------
  *
@@ -130,7 +124,6 @@ export const PositiveMoneyStringSchema = Type.String({
   description:
     'Strictly positive money transported as a string; at most two fraction digits, matching the money_amount column.',
 });
-export type PositiveMoneyString = Static<typeof PositiveMoneyStringSchema>;
 
 /** Non-negative money: at most two fraction digits, as stored. Zero is a
  * legitimate value; a minus sign is not. */
@@ -139,7 +132,6 @@ export const NonNegativeMoneyStringSchema = Type.String({
   description:
     'Non-negative money transported as a string; at most two fraction digits, matching the money_amount column.',
 });
-export type NonNegativeMoneyString = Static<typeof NonNegativeMoneyStringSchema>;
 
 /** Non-negative RATE — deliberately not positive. PRODUCT.md invariant 6
  * makes rates non-negative, and free-issue / nil-rate supply lines are
@@ -148,7 +140,6 @@ export const NonNegativeRateStringSchema = Type.String({
   pattern: '^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,6})?$',
   description: 'Non-negative rate transported as a string; up to six fraction digits.',
 });
-export type NonNegativeRateString = Static<typeof NonNegativeRateStringSchema>;
 
 /** A decimal that merely has to FIT its numeric(18,3) column. Sign and
  * floor stay with the route that owns the field — an issue-challan line
@@ -160,7 +151,6 @@ export const StorableDecimalStringSchema = Type.String({
   description:
     'Decimal value that fits its numeric(18,3) column: at most fifteen integer digits.',
 });
-export type StorableDecimalString = Static<typeof StorableDecimalStringSchema>;
 
 /* --- Tax facts (migration 0033) ---------------------------------------
  * A GST tax invoice and an e-way bill cannot be built without them: the
@@ -182,7 +172,6 @@ export const HsnCodeSchema = Type.String({
   pattern: '^[0-9]{6,8}$',
   description: 'HSN (goods) or SAC (services) code: 6 to 8 digits.',
 });
-export type HsnCode = Static<typeof HsnCodeSchema>;
 
 /** Total GST percentage for a line, 0 to 100 inclusive, transported as a
  * string like every other authoritative number here. Two fraction digits
@@ -204,7 +193,6 @@ export const GstRateSchema = Type.String({
   description:
     'GST percentage between 0 and 100 inclusive, with up to two fraction digits.',
 });
-export type GstRate = Static<typeof GstRateSchema>;
 
 /** The goods-vs-service shape of a tax invoice (migration 0057):
  * `service_cumulative` carries ONE service line at a SAC in the invoice
@@ -215,7 +203,7 @@ export type GstRate = Static<typeof GstRateSchema>;
  * It lives here rather than in tax-documents.ts because the organisation
  * profile states the same vocabulary as its default, and organisations.ts
  * is imported BY tax-documents.ts. */
-export const TAX_INVOICE_LINE_SHAPES = ['service_cumulative', 'itemised'] as const;
+const TAX_INVOICE_LINE_SHAPES = ['service_cumulative', 'itemised'] as const;
 export const TaxInvoiceLineShapeSchema = Type.Union(
   TAX_INVOICE_LINE_SHAPES.map((shape) => Type.Literal(shape)),
   {
@@ -233,7 +221,6 @@ export const GstStateCodeSchema = Type.String({
   pattern: '^[0-9]{2}$',
   description: 'Two-digit GST state code.',
 });
-export type GstStateCode = Static<typeof GstStateCodeSchema>;
 
 /** The statutory state names behind those codes. A tax invoice prints
  * `Place Of Supply : Maharashtra (27)` — the name and the code together —
@@ -304,7 +291,6 @@ export const RoundOffStringSchema = Type.String({
   description:
     'Whole-rupee rounding delta in rupees: greater than -0.50 and at most 0.50.',
 });
-export type RoundOffString = Static<typeof RoundOffStringSchema>;
 
 /** Text the DATABASE validates TRIMMED — `length(btrim(x)) BETWEEN n AND
  * m` — while the schema counted raw characters. A note of three spaces

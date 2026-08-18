@@ -14,7 +14,7 @@ const PROBE_TIMEOUT_MS = 2_000;
 
 type ComponentState = 'ok' | 'failed' | 'unconfigured';
 
-export interface ReadinessDeps {
+interface ReadinessDeps {
   readonly database?: Sql;
   readonly storage?: ObjectStorage;
   readonly gotenbergUrl?: string;
@@ -56,7 +56,7 @@ async function shippedMigrationIds(directory: string): Promise<readonly string[]
   return ids;
 }
 
-export type SchemaVersionVerdict =
+type SchemaVersionVerdict =
   | { readonly state: 'ok' }
   | { readonly state: 'behind'; readonly pending: readonly string[] }
   | { readonly state: 'unreadable'; readonly detail: string };
@@ -75,7 +75,7 @@ export type SchemaVersionVerdict =
  * the previous release running against a migrated schema is expected and
  * must stay ready.
  */
-export async function checkSchemaVersion(
+async function checkSchemaVersion(
   database: Sql,
   directory: string,
 ): Promise<SchemaVersionVerdict> {

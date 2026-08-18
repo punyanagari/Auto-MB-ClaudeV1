@@ -12,7 +12,10 @@ import type {
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
-import { assertNoForeignKeyOrphans, removeOrganisationResidue } from '@auto-mb/db';
+import {
+  assertNoForeignKeyOrphans,
+  removeOrganisationResidue,
+} from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 import { loadTrustAnchors } from '@auto-mb/documents';
 import { appendSignature, createTestPki, type TestPki } from './helpers/signed-pdf.js';

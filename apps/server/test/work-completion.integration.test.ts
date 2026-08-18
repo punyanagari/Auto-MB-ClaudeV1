@@ -18,13 +18,8 @@ import type {
   WorkStatusResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  jsonb,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -1253,7 +1248,7 @@ describe('a completed Work accepts no new operational document', () => {
         values (
           ${draftId}, ${organisationId}, ${workId}, '2026-08-07',
           ${`${workCode}-DCX`},
-          ${jsonb(admin, { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' })},
+          ${admin.json({ name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' })},
           ${ownerUserId}
         )
       `;
@@ -1304,7 +1299,7 @@ describe('a completed Work accepts no new operational document', () => {
         )
         values (
           ${organisationId}, ${workId}, '2026-08-07', ${`${workCode}-SQL`},
-          ${jsonb(admin, { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' })},
+          ${admin.json({ name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' })},
           ${ownerUserId}
         )
       `,
@@ -1384,7 +1379,7 @@ describe('a completed Work accepts no new operational document', () => {
         )
         values (
           ${organisationId}, 'work_item_amendment', ${supplyItemId}, ${workId},
-          ${jsonb(admin, { kind: 'change_item' })}, ${jsonb(admin, [])},
+          ${admin.json({ kind: 'change_item' })}, ${admin.json([] as never)},
           'Raw SQL attempt.', ${ownerUserId}
         )
       `,

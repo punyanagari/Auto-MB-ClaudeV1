@@ -15,20 +15,18 @@ import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js
 // reference-level banking record; this is the quantity-bearing
 // certificate the stage-wise Measurement Book bills from.
 
-export const PacCertificateStatusSchema = Type.Union([
+const PacCertificateStatusSchema = Type.Union([
   Type.Literal('recorded'),
   Type.Literal('cancelled'),
 ]);
-export type PacCertificateStatus = Static<typeof PacCertificateStatusSchema>;
 
-export const RecordPacCertificateItemSchema = Type.Object(
+const RecordPacCertificateItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
     certifiedQuantity: DecimalStringSchema,
   },
   { additionalProperties: false },
 );
-export type RecordPacCertificateItem = Static<typeof RecordPacCertificateItemSchema>;
 
 export const RecordPacCertificateRequestSchema = Type.Object(
   {
@@ -52,11 +50,8 @@ export const CancelPacCertificateRequestSchema = Type.Object(
   { note: Type.String({ minLength: 3, maxLength: 1000 }) },
   { additionalProperties: false },
 );
-export type CancelPacCertificateRequest = Static<
-  typeof CancelPacCertificateRequestSchema
->;
 
-export const PacCertificateItemSchema = Type.Object(
+const PacCertificateItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -70,7 +65,6 @@ export const PacCertificateItemSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type PacCertificateItem = Static<typeof PacCertificateItemSchema>;
 
 export const PacCertificateSchema = Type.Object(
   {
@@ -108,7 +102,7 @@ export type PacCertificate = Static<typeof PacCertificateSchema>;
  * at the installed total would cap it at zero and make it uncertifiable
  * and therefore uncompletable. Its ceiling is the sanctioned quantity
  * instead, the same ceiling R5 puts on installation. */
-export const PacCertificationBasisSchema = Type.Union([
+const PacCertificationBasisSchema = Type.Union([
   Type.Literal('installed'),
   Type.Literal('sanctioned'),
 ]);
@@ -126,7 +120,7 @@ export type PacCertificationBasis = Static<typeof PacCertificationBasisSchema>;
  * screen says it. `supportingQuantity` is what the cap is actually
  * measured against, and `certificationBasis` names which of the two
  * rules produced it. */
-export const PacItemSummarySchema = Type.Object(
+const PacItemSummarySchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -156,7 +150,7 @@ export type PacCertificateListResponse = Static<
  * covered / available"), one entry per offending item. `basis` names
  * which ceiling `supporting` is, so a client never has to guess whether
  * it is reading an installed total or a sanctioned one. */
-export const PacCapExceededItemSchema = Type.Object(
+const PacCapExceededItemSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
@@ -167,7 +161,6 @@ export const PacCapExceededItemSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type PacCapExceededItem = Static<typeof PacCapExceededItemSchema>;
 
 export const PacCapExceededDetailsSchema = Type.Object(
   { items: Type.Array(PacCapExceededItemSchema) },

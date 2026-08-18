@@ -19,7 +19,12 @@ import {
 } from '../api.js';
 import { compareDecimalStrings, formatDate, formatInr } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
-import { describeLoadFailure, type LoadFailure } from '../lib/load-failure.js';
+import {
+  errorMessage,
+  describeLoadFailure,
+  type LoadFailure,
+} from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
@@ -151,8 +156,7 @@ export function MeasurementBooks({
    * option quietly disappears, which looks exactly like a Work that has
    * no consignees. */
   const [consigneeFailure, setConsigneeFailure] = useState<LoadFailure | null>(null);
-  /** Bumped by Retry, to re-run the loads below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
   const [actionError, setActionError] = useState<{
     readonly message: string;
     /** Where the refusal is actually fixed, when it names another screen. */
@@ -207,10 +211,7 @@ export function MeasurementBooks({
         setNotice(done);
       } catch (cause) {
         setActionError({
-          message:
-            cause instanceof RequestFailedError
-              ? cause.message
-              : 'The action failed; nothing was changed.',
+          message: errorMessage(cause),
           wayfind: wayfindingOf(cause, { workId }),
         });
         throw cause;
@@ -317,12 +318,7 @@ export function MeasurementBooks({
           finalisation are paused.
         </FormError>
         {loadError.retryable && (
-          <Button
-            variant="outline"
-            onClick={() => {
-              setLoadVersion((current) => current + 1);
-            }}
-          >
+          <Button variant="outline" onClick={retry}>
             Retry Measurement Books
           </Button>
         )}
@@ -383,12 +379,7 @@ export function MeasurementBooks({
             without them — this does not mean the Work has no consignees.
           </FormError>
           {consigneeFailure.retryable && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setLoadVersion((current) => current + 1);
-              }}
-            >
+            <Button variant="outline" onClick={retry}>
               Retry consignees
             </Button>
           )}

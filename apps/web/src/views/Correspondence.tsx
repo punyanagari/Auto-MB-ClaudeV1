@@ -5,10 +5,12 @@ import type {
   CorrespondenceEntry,
   CorrespondenceTab,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -94,12 +96,8 @@ export function Correspondence({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, reload] = useReload();
   const [cancelling, setCancelling] = useState<CorrespondenceEntry | null>(null);
-
-  const reload = useCallback(() => {
-    setLoadVersion((current) => current + 1);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,9 +115,7 @@ export function Correspondence({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The correspondence register could not be loaded.',
+          errorMessage(cause, 'The correspondence register could not be loaded.'),
         );
       });
     return () => {
@@ -138,11 +134,7 @@ export function Correspondence({
         setNextCursor(page.nextCursor);
       })
       .catch((cause: unknown) => {
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The next page could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The next page could not be loaded.'));
       })
       .finally(() => {
         setLoadingMore(false);
@@ -417,11 +409,7 @@ function LetterNumber({
           openPdf(() =>
             api.downloadCorrespondenceLetter(organisationId, entry.id),
           ).catch((cause: unknown) => {
-            setFailure(
-              cause instanceof RequestFailedError
-                ? cause.message
-                : 'The letter could not be opened.',
-            );
+            setFailure(errorMessage(cause, 'The letter could not be opened.'));
           });
         }}
       >
@@ -477,11 +465,7 @@ function CancelLetterDialog({
           .then(onCancelled)
           .catch((cause: unknown) => {
             setPending(false);
-            setFailure(
-              cause instanceof RequestFailedError
-                ? cause.message
-                : 'The letter could not be cancelled.',
-            );
+            setFailure(errorMessage(cause, 'The letter could not be cancelled.'));
           });
       }}
     >

@@ -10,10 +10,10 @@ import type { Sql } from '@auto-mb/db';
 import {
   createDatabasePool,
   ensureClusterRoles,
-  removeOrganisationResidue,
   runMigrations,
   withTenant,
 } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 import { deriveIrn } from '../src/gsp/irn.js';
 

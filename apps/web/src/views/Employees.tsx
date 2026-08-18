@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, Users } from 'lucide-react';
 import type { Contact, Employee, EmployeeSummary } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
-import { describeLoadFailure } from '../lib/load-failure.js';
-import { navigateOnClick, payrollHash } from '../lib/workspace-routes.js';
+import { errorMessage, describeLoadFailure } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
+import { navigateOnClick, PAYROLL_HASH } from '../lib/workspace-routes.js';
 import { Button, buttonVariants } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -80,11 +81,7 @@ export function Employees({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [includeLeavers, setIncludeLeavers] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [loadVersion, setLoadVersion] = useState(0);
-
-  const reload = useCallback(() => {
-    setLoadVersion((current) => current + 1);
-  }, []);
+  const [loadVersion, reload] = useReload();
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -161,7 +158,7 @@ export function Employees({
               `docs/UX.md` § navigation asks that every mock Link become
               an address middle-click and open-in-new-tab can use. */}
           <a
-            href={payrollHash()}
+            href={PAYROLL_HASH}
             onClick={navigateOnClick(onOpenPayroll)}
             className={buttonVariants({ variant: 'outline' })}
           >
@@ -443,11 +440,7 @@ function EmployeeComposer({
         onCreated(payload.employee);
       })
       .catch((cause: unknown) => {
-        setError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The employee could not be saved.',
-        );
+        setError(errorMessage(cause, 'The employee could not be saved.'));
       })
       .finally(() => {
         setPending(false);

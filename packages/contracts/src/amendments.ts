@@ -17,7 +17,7 @@ const DecisionNoteSchema = nonBlankString({ minLength: 3, maxLength: 1000 });
 
 // --- Approval engine (first consumer: work-item amendments) ----------------
 
-export const ApprovalStatusSchema = Type.Union([
+const ApprovalStatusSchema = Type.Union([
   Type.Literal('pending'),
   Type.Literal('approved'),
   Type.Literal('rejected'),
@@ -27,7 +27,7 @@ export type ApprovalStatus = Static<typeof ApprovalStatusSchema>;
 
 /** Everything the engine can decide: work-item amendments (Milestone 6)
  * plus the Milestone 7 correction paths for issued documents. */
-export const ApprovalEntityTypeSchema = Type.Union([
+const ApprovalEntityTypeSchema = Type.Union([
   Type.Literal('work_item_amendment'),
   Type.Literal('challan_cancel_replace'),
   Type.Literal('issue_challan_cancel_replace'),
@@ -36,11 +36,10 @@ export const ApprovalEntityTypeSchema = Type.Union([
    * letter can be read again (migration 0071). The entity is the Work. */
   Type.Literal('work_supersede'),
 ]);
-export type ApprovalEntityType = Static<typeof ApprovalEntityTypeSchema>;
 
 /** Fields a change amendment may touch. quantity '0' omits the item; the
  * floor (already-delivered issued quantity) is enforced at apply time. */
-export const AmendmentChangesSchema = Type.Object(
+const AmendmentChangesSchema = Type.Object(
   {
     quantity: Type.Optional(DecimalStringSchema),
     rate: Type.Optional(RateStringSchema),
@@ -49,7 +48,6 @@ export const AmendmentChangesSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type AmendmentChanges = Static<typeof AmendmentChangesSchema>;
 
 export const ProposeAmendmentRequestSchema = Type.Object(
   {
@@ -96,7 +94,7 @@ export type ProposeRemoveItemRequest = Static<typeof ProposeRemoveItemRequestSch
 /** Every claim the server can make about an uploaded variation order.
  * Mirrors VARIATION_ORDER_CLAIM_CODES in
  * apps/server/src/variation-order-verify.ts, which is the authority. */
-export const VariationOrderClaimCodeSchema = Type.Union([
+const VariationOrderClaimCodeSchema = Type.Union([
   Type.Literal('text_layer'),
   Type.Literal('variation_statement'),
   Type.Literal('loa_number'),
@@ -110,7 +108,7 @@ export const VariationOrderClaimCodeSchema = Type.Union([
 ]);
 export type VariationOrderClaimCode = Static<typeof VariationOrderClaimCodeSchema>;
 
-export const VariationOrderClaimSchema = Type.Object(
+const VariationOrderClaimSchema = Type.Object(
   {
     code: VariationOrderClaimCodeSchema,
     verified: Type.Boolean(),
@@ -128,7 +126,7 @@ export const VariationOrderClaimSchema = Type.Object(
 );
 export type VariationOrderClaim = Static<typeof VariationOrderClaimSchema>;
 
-export const VariationOrderVerdictSchema = Type.Object(
+const VariationOrderVerdictSchema = Type.Object(
   {
     verified: Type.Boolean(),
     claims: Type.Array(VariationOrderClaimSchema),
@@ -146,7 +144,7 @@ export type VariationOrderVerdict = Static<typeof VariationOrderVerdictSchema>;
  * identity is the agreement number plus the variation number, and its link
  * to this Work is the LOA number it prints.
  */
-export const VariationOrderSchema = Type.Object(
+const VariationOrderSchema = Type.Object(
   {
     id: UuidSchema,
     approvalRequestId: UuidSchema,
@@ -169,9 +167,8 @@ export const AttachVariationOrderQuerySchema = Type.Object(
   { filename: Type.String({ minLength: 1, maxLength: 255 }) },
   { additionalProperties: false },
 );
-export type AttachVariationOrderQuery = Static<typeof AttachVariationOrderQuerySchema>;
 
-export const AmendmentDiffEntrySchema = Type.Object(
+const AmendmentDiffEntrySchema = Type.Object(
   {
     field: Type.String(),
     before: Type.Union([Type.String(), Type.Null()]),
@@ -241,20 +238,17 @@ export const ApprovalListQuerySchema = Type.Object(
   { status: Type.Optional(ApprovalStatusSchema) },
   { additionalProperties: false },
 );
-export type ApprovalListQuery = Static<typeof ApprovalListQuerySchema>;
 
 /** Approving may carry an optional note; rejecting must say why. */
 export const ApproveAmendmentRequestSchema = Type.Object(
   { note: Type.Optional(DecisionNoteSchema) },
   { additionalProperties: false },
 );
-export type ApproveAmendmentRequest = Static<typeof ApproveAmendmentRequestSchema>;
 
 export const RejectAmendmentRequestSchema = Type.Object(
   { note: DecisionNoteSchema },
   { additionalProperties: false },
 );
-export type RejectAmendmentRequest = Static<typeof RejectAmendmentRequestSchema>;
 
 // --- Work settings (owner-only) --------------------------------------------
 
@@ -264,7 +258,6 @@ export const UpdateWorkSettingsRequestSchema = Type.Object(
   { allowExcessDelivery: Type.Boolean() },
   { additionalProperties: false },
 );
-export type UpdateWorkSettingsRequest = Static<typeof UpdateWorkSettingsRequestSchema>;
 
 export const WorkSettingsResponseSchema = Type.Object(
   {

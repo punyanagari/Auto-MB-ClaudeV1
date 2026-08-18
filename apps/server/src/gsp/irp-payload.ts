@@ -20,7 +20,7 @@ import {
   type ExactJsonNumber,
 } from './statutory-json.js';
 
-export interface IrpSeller {
+interface IrpSeller {
   gstin: string;
   legalName: string;
   tradeName: string | null;
@@ -30,7 +30,7 @@ export interface IrpSeller {
   stateCode: string;
 }
 
-export interface IrpBuyer {
+interface IrpBuyer {
   gstin: string;
   legalName: string;
   address: string;
@@ -39,12 +39,12 @@ export interface IrpBuyer {
   stateCode: string;
 }
 
-export type IrpShipTo = IrpBuyer;
+type IrpShipTo = IrpBuyer;
 
 /** INV-01 document type: the tax invoice or the Section 34 credit note.
  * A CRN rides the SAME schema with POSITIVE values — NIC's convention
  * is that the document type, not a sign, marks the credit. */
-export type IrpDocumentType = 'INV' | 'CRN';
+type IrpDocumentType = 'INV' | 'CRN';
 
 /**
  * One ItemList entry. A CUMULATIVE invoice contributes exactly one, built
@@ -75,7 +75,7 @@ export interface IrpItem {
   totalItemValue: string;
 }
 
-export interface IrpInvoiceInput {
+interface IrpInvoiceInput {
   /** 'INV' (default) or 'CRN'. */
   documentType?: IrpDocumentType;
   invoiceNumber: string;

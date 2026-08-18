@@ -25,6 +25,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -81,11 +82,11 @@ const REFERENCE_PATTERN = new RegExp(
  * repository, so path resolution cannot see them. Each entry states why.
  *
  * Matched on the BASENAME, which is only safe for a basename that could
- * mean one thing. A framework-generic one — a Next route file, an
- * index module, a route handler — belongs in ALLOWED_EXTERNAL_PATHS
- * below instead: exempting it here would exempt every future comment
- * naming any file of that name anywhere, including a real one that had
- * been moved or deleted.
+ * mean one thing. A framework-generic one — a Next route file, an index
+ * module, a route handler — must not be listed here: exempting it would
+ * exempt every future comment naming any file of that name anywhere,
+ * including a real one that had been moved or deleted. The v0-mock rule
+ * below covers those by the shape of their path instead.
  */
 const ALLOWED_EXTERNAL = new Map([
   ['package.json', 'names the concept, not one file — every workspace has one'],
@@ -93,183 +94,76 @@ const ALLOWED_EXTERNAL = new Map([
   ['node.js', 'the runtime, in prose'],
   ['index.js', 'ESM import specifiers rewritten from .ts are checked by the compiler'],
   ['postgres.js', 'the driver library, referred to by its published name'],
-  [
-    'installation-capture-flow.tsx',
-    'a component of the v0 MOCK repository (punyanagari/Auto-MB-Vercel-du), which AGENTS.md makes the binding UI contract: a replication cites the file it replicates, and that file is deliberately not in this tree',
-  ],
-  [
-    'measurement-book.tsx',
-    'a component of the v0 MOCK repository (punyanagari/Auto-MB-Vercel-du) — same reason as installation-capture-flow.tsx above: the unbillable-variation-exposure panel cites the mock screen it replicates',
-  ],
-  [
-    'work-section-nav.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work page for the section rail it replicates',
-  ],
-  [
-    'work-registers.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the instruments and completion panels for the metric tile and gapless tile grid they replicate',
-  ],
-  [
-    'company-document-library.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the company document library for the two-card grid and bordered credential rows it replicates',
-  ],
-  [
-    'app-sidebar.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the rail census for the module grouping it replicates',
-  ],
-  [
-    'inspection-lifecycle-workspace.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Inspection workspace and by migration 0082 for the job-card anatomy they replicate',
-  ],
-  [
-    'work-inspection-mapping.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work inspection clause tab for the mapping table it replicates',
-  ],
-  [
-    'inspection-checklist-config.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Work inspection clause tab for the checklist card it replicates',
-  ],
-  [
-    'payment-requests-workspace.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Payments workspace for the two-register screen it replicates',
-  ],
 ]);
 
 /**
- * The same idea for references whose BASENAME is too generic to exempt.
+ * Roots that only the v0 MOCK repository (punyanagari/Auto-MB-Vercel-du)
+ * has. AGENTS.md makes the mock the binding UI contract, so a replication
+ * cites the screen or component it replicates, and the mock is
+ * deliberately not in this tree — around forty such citations exist and
+ * every new screen adds more.
  *
- * Matched as a path suffix against the whole reference, so only the
- * route spelled out below is exempt; the same basename under any other
- * route, or on its own, is still checked.
- *
- * The v0 MOCK repository (punyanagari/Auto-MB-Vercel-du) is a Next App
- * Router tree, where every screen is a route file of the same name under
- * its own directory. A replication cites the screen it replicates, and
- * naming the route is the only way to say WHICH screen.
+ * The mock is a Next App Router project: its screens are route files under
+ * `app/` and its components live under `components/`. NO path in this
+ * repository has an `app/` or `components/` segment (the web tree is
+ * `apps/web/src/{ui,views,lib}`), so a `.ts`/`.tsx` reference rooted at
+ * either that resolves nowhere here can only be a mock citation. It needs
+ * no entry, and gets none — write the mock's own path and the rule covers
+ * it, including every screen a later pack replicates.
  */
-const ALLOWED_EXTERNAL_PATHS = new Map([
-  [
-    'app/receivables/page.tsx',
-    'a screen of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Receivables view for the register it replicates',
-  ],
-  [
-    'railway-receivables-workspace.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the Receivables view for the table, tiles and deduction waterfall it replicates',
-  ],
-  [
-    'tender-dashboard.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the tender register for the stat cards, search row and Upcoming/Expired tab pair it replicates',
-  ],
-  [
-    'nit-intake.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the NIT intake screen for the numbered two-card upload-then-review grid it replicates',
-  ],
-  [
-    'tender-workspace.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the tender workspace for the summary card, section rail and bid-checklist rows it replicates',
-  ],
-  ['app/tenders/page.tsx', 'the v0 mock screen the tender register replicates'],
-  ['app/tenders/new/page.tsx', 'the v0 mock screen the NIT intake replicates'],
-  ['app/tenders/[id]/page.tsx', 'the v0 mock screen the tender workspace replicates'],
-  [
-    'app/tenders/company-documents/page.tsx',
-    'the v0 mock screen the company document library replicates',
-  ],
-  [
-    'lib/data.ts',
-    'the v0 mock’s module-scope seed data, cited where a constant here takes its value from the mock rather than inventing one',
-  ],
-  ['app/inspection/page.tsx', 'the v0 mock screen the Inspection workspace replicates'],
-  ['app/inventory/page.tsx', 'the v0 mock screen the stock register replicates'],
-  [
-    'app/inventory/purchase-orders/page.tsx',
-    'the v0 mock screen the shortage-procurement screen replicates',
-  ],
-  [
-    'components/inventory-manager.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the stock register for the stat strip, item table and movement table it replicates',
-  ],
-  [
-    'app/actions/inventory.ts',
-    'the v0 mock’s inventory data layer, cited by migration 0087 as the evidence for a refused field: it reads `location` and `description` off a `StockItem` type that has neither',
-  ],
-  ['app/payments/page.tsx', 'the v0 mock screen the payments workspace replicates'],
-  [
-    'app/correspondence/page.tsx',
-    'the v0 mock screen the correspondence register replicates',
-  ],
-  [
-    'app/correspondence/new/page.tsx',
-    'the v0 mock screen the outward letter composer replicates',
-  ],
-  [
-    'app/correspondence/new/inward/page.tsx',
-    'the v0 mock screen the inward letter upload replicates',
-  ],
-  ['app/production/page.tsx', 'the v0 mock screen the production register replicates'],
-  [
-    'app/production/items/page.tsx',
-    'the v0 mock screen the OEM item master replicates',
-  ],
-  [
-    'app/employees/page.tsx',
-    'the v0 mock screen the employee register replicates (fdfd610)',
-  ],
-  [
-    'app/hr/payroll/page.tsx',
-    'the v0 mock screen the monthly payroll workspace replicates (fdfd610)',
-  ],
-  [
-    'components/hr/employee-workspace.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the employee register, and by migration 0089, for the six-tab workspace whose Directory tab it replicates',
-  ],
-  [
-    'components/payroll-run-workspace.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the payroll screen, and by migration 0090, for the grouped deduction table and expandable computation it replicates',
-  ],
-  [
-    'production-job-card-page.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the production job card for the four-tab layout it replicates',
-  ],
-  [
-    'app/maintenance/page.tsx',
-    'the v0 mock screen the maintenance register replicates',
-  ],
-  [
-    'app/maintenance/new/page.tsx',
-    'the v0 mock screen the site material request form replicates',
-  ],
-  [
-    'app/maintenance/[id]/page.tsx',
-    'the v0 mock screen the maintenance job card replicates',
-  ],
-  [
-    'components/maintenance-dashboard.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the maintenance register for the stage strip and job-card list it replicates',
-  ],
-  [
-    'components/maintenance-job-card.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the maintenance job card for the metric cards, four-tab rail and closure gate it replicates',
-  ],
-  [
-    'components/maintenance-request-form.tsx',
-    'a component of the v0 MOCK repository — see installation-capture-flow.tsx above; cited by the request form for the two-card details-then-materials layout it replicates',
-  ],
-  [
-    'app/actions/maintenance.ts',
-    'the v0 mock’s maintenance data layer, cited by migration 0088 as the evidence for four refused columns: it stores `availableQuantity`, `reservedQuantity`, `dispatchedQuantity` and `receivedReturnQuantity` and writes only one of them, once',
-  ],
-  [
-    'work-controls.tsx',
-    'a component of the v0 MOCK repository — cited by migration 0084 for the "OEM production mapping" card it draws, which is the relation between a canonical item and a manufactured one that this build does not yet implement',
-  ],
-]);
+const V0_MOCK_ROOTS = ['app/', 'components/'];
+
+/**
+ * The mock files cited by BARE basename, plus its seed-data module, which
+ * the rule above cannot reach.
+ *
+ * Shape alone cannot tell these from this repository's own files: `lib/`
+ * does exist here, and so do kebab-case `.tsx` components
+ * (`schedule-section.tsx`, `signature-panel.tsx`, `date-field.tsx`).
+ * Exempting the shape would mean a comment could keep naming one of those
+ * for ever after it was deleted, which is the whole failure this gate
+ * exists to catch. So these stay written down, matched as a path suffix.
+ *
+ * Prefer the mock's real path in new comments — `components/nit-intake.tsx`
+ * over `nit-intake.tsx` — and nothing needs adding here.
+ */
+const V0_MOCK_FILES = [
+  'app-sidebar.tsx',
+  'company-document-library.tsx',
+  'inspection-checklist-config.tsx',
+  'inspection-lifecycle-workspace.tsx',
+  'installation-capture-flow.tsx',
+  'lib/data.ts',
+  'measurement-book.tsx',
+  'nit-intake.tsx',
+  'payment-requests-workspace.tsx',
+  'production-job-card-page.tsx',
+  'railway-receivables-workspace.tsx',
+  'tender-dashboard.tsx',
+  'tender-workspace.tsx',
+  'work-controls.tsx',
+  'work-inspection-mapping.tsx',
+  'work-registers.tsx',
+  'work-section-nav.tsx',
+];
 
 /** Whether a reference names something deliberately outside this tree. */
 function isAllowedExternal(reference) {
-  if (ALLOWED_EXTERNAL.has(path.posix.basename(reference))) return true;
-  return [...ALLOWED_EXTERNAL_PATHS.keys()].some(
-    (suffix) => reference === suffix || reference.endsWith(`/${suffix}`),
+  return ALLOWED_EXTERNAL.has(path.posix.basename(reference));
+}
+
+/**
+ * Whether a reference that resolved NOWHERE is a citation of the v0 mock.
+ *
+ * Consulted only after resolution has already failed, so a mock-shaped
+ * name that does name a file here is still checked as a repository path
+ * — the exemption can never shadow a real one.
+ */
+function isV0MockCitation(reference) {
+  if (!/\.tsx?$/.test(reference)) return false;
+  if (V0_MOCK_ROOTS.some((root) => reference.startsWith(root))) return true;
+  return V0_MOCK_FILES.some(
+    (name) => reference === name || reference.endsWith(`/${name}`),
   );
 }
 
@@ -301,96 +195,60 @@ function listSourceFiles() {
 }
 
 /**
- * Extracts comment text from JavaScript/TypeScript-family source. String and
- * template literals are skipped so that an error message quoting a filename
- * is not mistaken for a reference; regular-expression literals are recognised
- * by the token that precedes them, which is the standard heuristic and is
- * sufficient for this tree.
+ * Extracts comment text from JavaScript/TypeScript-family source, with the
+ * `//` or `/* … *\/` delimiters removed and the 1-based line the comment
+ * starts on.
+ *
+ * TypeScript's own parser does the lexing. Nothing else in reach reads
+ * JavaScript correctly enough for this: an error message quoting a filename
+ * must not read as a reference, which means strings and template literals
+ * have to be skipped, and a regular-expression literal containing `//` must
+ * not open a comment, which means the division-versus-regex ambiguity has to
+ * be settled by a real parse rather than by the preceding character.
+ *
+ * Every comment is trivia of exactly one token — including the end-of-file
+ * token — so walking to the leaves and reading each token's trivia yields
+ * every comment. BOTH range kinds are needed: TypeScript calls a comment
+ * that shares a line with the token before it a TRAILING range and one that
+ * follows a newline a LEADING range, so reading only leading ranges silently
+ * drops every `value, // note` in the tree. They are collected against their
+ * source offset, which also de-duplicates the one position where the two
+ * agree (a comment at the very start of a file).
  */
-function extractJsComments(source) {
-  const comments = [];
-  let index = 0;
-  let line = 1;
-  let previousSignificant = '';
-
-  const push = (text, startLine) => comments.push({ text, line: startLine });
-
-  while (index < source.length) {
-    const char = source[index];
-    const next = source[index + 1];
-
-    if (char === '\n') {
-      line += 1;
-      index += 1;
-      continue;
+function extractJsComments(source, fileName) {
+  const parsed = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const byOffset = new Map();
+  const visit = (node) => {
+    const children = node.getChildren(parsed);
+    if (children.length > 0) {
+      for (const child of children) visit(child);
+      return;
     }
-
-    if (char === '/' && next === '/') {
-      const end = source.indexOf('\n', index);
-      const stop = end === -1 ? source.length : end;
-      push(source.slice(index + 2, stop), line);
-      index = stop;
-      continue;
+    const at = node.getFullStart();
+    const ranges = [
+      ...(ts.getLeadingCommentRanges(source, at) ?? []),
+      ...(ts.getTrailingCommentRanges(source, at) ?? []),
+    ];
+    for (const range of ranges) {
+      const block = range.kind === ts.SyntaxKind.MultiLineCommentTrivia;
+      byOffset.set(range.pos, {
+        // `range.end` for a block comment is past its `*/`; for a line
+        // comment it is the newline, which is not part of the text.
+        text: source.slice(range.pos + 2, block ? range.end - 2 : range.end),
+        line: parsed.getLineAndCharacterOfPosition(range.pos).line + 1,
+      });
     }
-
-    if (char === '/' && next === '*') {
-      const end = source.indexOf('*/', index + 2);
-      const stop = end === -1 ? source.length : end;
-      const text = source.slice(index + 2, stop);
-      push(text, line);
-      line += (text.match(/\n/g) ?? []).length;
-      index = stop + 2;
-      continue;
-    }
-
-    if (char === '"' || char === "'" || char === '`') {
-      index += 1;
-      while (index < source.length) {
-        const stringChar = source[index];
-        if (stringChar === '\\') {
-          index += 2;
-          continue;
-        }
-        if (stringChar === '\n') line += 1;
-        if (stringChar === char) {
-          index += 1;
-          break;
-        }
-        index += 1;
-      }
-      previousSignificant = char;
-      continue;
-    }
-
-    if (char === '/' && /^$|[(,=:[!&|?{};+\-*%<>~^]/.test(previousSignificant)) {
-      // Regular-expression literal: consume to the unescaped closing slash,
-      // honouring character classes so that `[/]` does not end it early.
-      index += 1;
-      let inClass = false;
-      while (index < source.length) {
-        const regexChar = source[index];
-        if (regexChar === '\\') {
-          index += 2;
-          continue;
-        }
-        if (regexChar === '\n') break;
-        if (regexChar === '[') inClass = true;
-        else if (regexChar === ']') inClass = false;
-        else if (regexChar === '/' && !inClass) {
-          index += 1;
-          break;
-        }
-        index += 1;
-      }
-      previousSignificant = '/';
-      continue;
-    }
-
-    if (!/\s/.test(char)) previousSignificant = char;
-    index += 1;
-  }
-
-  return comments;
+  };
+  visit(parsed);
+  return [...byOffset.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, comment]) => comment);
 }
 
 /** Extracts `-- …` and `/* … *\/` comments from SQL. */
@@ -482,7 +340,9 @@ function main() {
       continue;
     }
     const comments =
-      extension === '.sql' ? extractSqlComments(source) : extractJsComments(source);
+      extension === '.sql'
+        ? extractSqlComments(source)
+        : extractJsComments(source, file);
 
     for (const comment of comments) {
       for (const match of comment.text.matchAll(REFERENCE_PATTERN)) {
@@ -502,6 +362,7 @@ function main() {
 
         const matches = resolveReference(reference);
         if (matches.length === 0) {
+          if (isV0MockCitation(reference)) continue;
           failures.push({
             file,
             line: comment.line,

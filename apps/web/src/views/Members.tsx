@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Membership, MembershipRole, Work } from '@auto-mb/contracts';
-import { RequestFailedError, formValue, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -65,11 +67,7 @@ function AssignmentsEditor({
       const payload = await api.setMemberAssignments(organisationId, userId, next);
       setAssigned(payload.workIds);
     } catch (cause) {
-      onError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'Saving the assignments failed.',
-      );
+      onError(errorMessage(cause, 'Saving the assignments failed.'));
     } finally {
       setBusy(false);
     }
@@ -227,8 +225,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   useEffect(() => {
     let cancelled = false;
@@ -242,20 +239,12 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The member list could not be loaded.',
-        );
+        setLoadError(errorMessage(cause, 'The member list could not be loaded.'));
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   const isOwner =
     members?.some(
@@ -275,11 +264,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
       setMembers(updated);
       setNotice(description);
     } catch (cause) {
-      setFormError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The change could not be saved.',
-      );
+      setFormError(errorMessage(cause, 'The change could not be saved.'));
     } finally {
       setPending(false);
     }
@@ -301,11 +286,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
       setNotice(`Added ${email} as ${ROLE_LABELS[role]}.`);
       form.reset();
     } catch (cause) {
-      setFormError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The server could not be reached. Try again.',
-      );
+      setFormError(errorMessage(cause, 'The server could not be reached. Try again.'));
     } finally {
       setPending(false);
     }

@@ -31,7 +31,7 @@ import type { TransactionSql } from '@auto-mb/db';
  * ─────────────────────────────────────────────────────────────────────
  */
 
-export interface PayrollStatutoryRateSeed {
+interface PayrollStatutoryRateSeed {
   readonly parameter: string;
   /** An exact decimal string, never a number: a rate that has been
    * through a JS float has already lost the property that makes it
@@ -180,7 +180,7 @@ export const DEFAULT_PAYROLL_STATUTORY_RATES: readonly PayrollStatutoryRateSeed[
 const MAHARASHTRA_NOTIFICATION =
   'Schedule I entry 1, Maharashtra State Tax on Professions, Trades, Callings and Employments Act 1975, as amended by Maharashtra Act No. XXII of 2023 with effect from 1 April 2023';
 
-export interface ProfessionalTaxSlabSeed {
+interface ProfessionalTaxSlabSeed {
   readonly stateCode: string;
   readonly payeeCategory: 'any' | 'male' | 'female';
   readonly effectiveFrom: string;
@@ -263,7 +263,7 @@ const NEW_REGIME_NOTIFICATION =
 const OLD_REGIME_NOTIFICATION =
   'Paragraph A of Part III of the First Schedule, Finance Act 2025 — rates outside section 115BAC';
 
-export interface IncomeTaxSlabSeed {
+interface IncomeTaxSlabSeed {
   readonly regime: 'old' | 'new';
   readonly payeeCategory: 'general' | 'senior' | 'super_senior';
   readonly effectiveFrom: string;

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import type { InstallationRegisterEntry } from '@auto-mb/contracts';
-import { formValue, RequestFailedError, type ApiClient } from '../api.js';
+import { formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
+import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
@@ -95,8 +97,7 @@ export function InstallationsRegister({
     readonly from: string;
     readonly to: string;
   }>({ from: '', to: '' });
-  /** Bumped by the failure state's retry, to re-run the load below. */
-  const [loadVersion, setLoadVersion] = useState(0);
+  const [loadVersion, retry] = useReload();
 
   const fetchPage = useCallback(
     (cursor?: string) =>
@@ -126,9 +127,7 @@ export function InstallationsRegister({
         .catch((cause: unknown) => {
           if (cancelled) return;
           setLoadError(
-            cause instanceof RequestFailedError
-              ? cause.message
-              : 'The installation records could not be loaded.',
+            errorMessage(cause, 'The installation records could not be loaded.'),
           );
         });
       return () => {
@@ -165,19 +164,13 @@ export function InstallationsRegister({
       .catch((cause: unknown) => {
         if (cancelled) return;
         setLoadError(
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'This Work’s installation records could not be loaded.',
+          errorMessage(cause, 'This Work’s installation records could not be loaded.'),
         );
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, workId, fetchPage, loadVersion]);
-
-  function retry(): void {
-    setLoadVersion((current) => current + 1);
-  }
 
   async function loadMore(): Promise<void> {
     if (nextCursor === null) return;
@@ -189,9 +182,10 @@ export function InstallationsRegister({
       setNextCursor(page.nextCursor);
     } catch (cause) {
       setLoadError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The next page of installation records could not be loaded.',
+        errorMessage(
+          cause,
+          'The next page of installation records could not be loaded.',
+        ),
       );
     } finally {
       setPending(false);

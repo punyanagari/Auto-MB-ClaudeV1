@@ -1,7 +1,6 @@
 import { ApiErrorSchema } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import { httpError } from '../http.js';
 
 /** The error envelope every tenant-scoped route can answer: schema and
@@ -69,7 +68,7 @@ export async function audit(
     )
     values (
       ${organisationId}, ${userId}, ${action}, ${entityType}, ${entityId},
-      ${jsonb(tx, details)}
+      ${tx.json(details as never)}
     )
   `;
 }

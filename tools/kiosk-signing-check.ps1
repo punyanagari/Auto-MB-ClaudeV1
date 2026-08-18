@@ -36,7 +36,7 @@
   running it. From a PowerShell window in the signer's own session — not
   an elevated one, and not over remote desktop:
 
-    Unblock-File .\kiosk-signing-check.ps1
+    Unblock-File .\kiosk-signing-*.ps1
     powershell -ExecutionPolicy RemoteSigned -File .\kiosk-signing-check.ps1 `
       -Thumbprint <40 hex characters>
 
@@ -44,6 +44,9 @@
   the mark-of-the-web blocks it whatever the execution policy says. The
   scripts are not Authenticode-signed, so an AllSigned machine will refuse
   them.
+
+  It dot-sources `kiosk-signing.common.ps1` from beside itself for the
+  guards it shares with the agent, so copy all three files together.
 
 .PARAMETER Thumbprint
   The 40-character SHA-1 thumbprint of the signing certificate.
@@ -84,20 +87,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# TLS, pinned — same reason as the agent script: an unpinned 5.1 host fails
-# a modern endpoint with a message that names the wrong cause.
-[Net.ServicePointManager]::SecurityProtocol =
-  [Net.SecurityProtocolType]::SystemDefault -bor [Net.SecurityProtocolType]::Tls12
-
-# HTTPS or loopback, and nothing else. This is the FIRST script the owner
-# runs, and with -TokenFile it sends the kiosk's bearer credential; one
-# mistyped scheme would put that credential on the wire in clear. The agent
-# script carries the same guard and this one had been missing it.
-if ($BaseUrl -and
-    $BaseUrl -notmatch '^https://' -and
-    $BaseUrl -notmatch '^http://(localhost|127\.0\.0\.1)') {
-  throw "BaseUrl must be https:// (http is allowed only for localhost testing): $BaseUrl"
+$common = Join-Path $PSScriptRoot 'kiosk-signing.common.ps1'
+if (-not (Test-Path -LiteralPath $common)) {
+  throw "kiosk-signing.common.ps1 is missing from $PSScriptRoot. Copy all three kiosk-signing files together."
 }
+. $common
+
+Set-KioskTlsDefaults
+
+# This is the FIRST script the owner runs, and with -TokenFile it sends the
+# kiosk's bearer credential. -BaseUrl is optional here, so the guard is
+# conditional; the agent, whose -BaseUrl is mandatory, applies it always.
+if ($BaseUrl) { Assert-KioskBaseUrl -BaseUrl $BaseUrl }
 
 $failures = New-Object System.Collections.Generic.List[string]
 function Add-Failure { param([string]$Message) $failures.Add($Message); Write-Warning $Message }
@@ -105,19 +106,9 @@ function Add-Failure { param([string]$Message) $failures.Add($Message); Write-Wa
 # ---------------------------------------------------------------------
 # 1. The certificate, by thumbprint.
 # ---------------------------------------------------------------------
-$normalised = ($Thumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
-if ($normalised.Length -ne 40) {
-  throw "A certificate thumbprint is 40 hexadecimal characters; got $($normalised.Length)."
-}
-
-$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', 'CurrentUser')
-$store.Open('ReadOnly')
-try {
-  $all = @($store.Certificates)
-  $matched = @($all | Where-Object { $_.Thumbprint -eq $normalised })
-} finally {
-  $store.Close()
-}
+$normalised = Get-KioskNormalisedThumbprint -Thumbprint $Thumbprint
+$all = Get-KioskStoreCertificates
+$matched = @($all | Where-Object { $_.Thumbprint -eq $normalised })
 
 Write-Host "CurrentUser\My holds $($all.Count) certificate(s)."
 if ($matched.Count -ne 1) {
@@ -180,11 +171,7 @@ $sample = [System.Text.Encoding]::UTF8.GetBytes('auto-mb kiosk signing check')
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 try { $digest = $sha256.ComputeHash($sample) } finally { $sha256.Dispose() }
 
-$signature = $privateKey.SignHash(
-  $digest,
-  [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-  [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-)
+$signature = Invoke-KioskSignHash -PrivateKey $privateKey -Digest $digest
 Write-Host "  signature       : $($signature.Length) bytes"
 if ($signature.Length -ne ($privateKey.KeySize / 8)) {
   Add-Failure "A PKCS#1 signature should be $($privateKey.KeySize / 8) bytes; got $($signature.Length)."
@@ -261,11 +248,8 @@ if ($BaseUrl) {
       foreach ($failure in $failures) { Write-Host "  - $failure" }
       exit 1
     }
-    $jobSignature = $privateKey.SignHash(
-      [Convert]::FromBase64String($job.digest),
-      [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-      [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-    )
+    $jobSignature = Invoke-KioskSignHash -PrivateKey $privateKey `
+      -Digest ([Convert]::FromBase64String($job.digest))
     $body = @{ signature = [Convert]::ToBase64String($jobSignature) } | ConvertTo-Json -Compress
     $result = Invoke-RestMethod -Method Post `
       -Uri "$BaseUrl/api/signing/agent/requests/$($job.requestId)/result" `

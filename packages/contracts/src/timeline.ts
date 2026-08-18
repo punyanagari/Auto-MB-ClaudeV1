@@ -93,7 +93,6 @@ export const TimelineQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type TimelineQuery = Static<typeof TimelineQuerySchema>;
 
 export const EntityTimelineQuerySchema = Type.Object(
   {
@@ -102,9 +101,8 @@ export const EntityTimelineQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type EntityTimelineQuery = Static<typeof EntityTimelineQuerySchema>;
 
-export const TimelineEventSchema = Type.Object(
+const TimelineEventSchema = Type.Object(
   {
     id: UuidSchema,
     occurredAt: Type.String({ format: 'date-time' }),

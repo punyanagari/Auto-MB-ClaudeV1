@@ -27,7 +27,7 @@ const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
  * operator's own words, when the source is a document this product can
  * see but NIC will not issue a bill for.
  */
-export interface EwayBillSourceDescriptor {
+interface EwayBillSourceDescriptor {
   readonly kind: 'tax_invoice' | 'delivery_challan';
   readonly id: string;
   /** The document's own number, for the panel's own sentences. */

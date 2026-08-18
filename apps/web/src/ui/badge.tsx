@@ -1,4 +1,3 @@
-import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../lib/cn.js';
 
 /* The mock's stock badge (`components/ui/badge` at a8e1fde): a 20px
@@ -19,33 +18,33 @@ import { cn } from '../lib/cn.js';
  * the next tone up the same neutral ramp (9.2:1 light, 8.1:1 dark), so
  * the chip keeps the mock's surface and loses only the failing ink. The
  * defect is the mock's and should be fixed there; see the pull request. */
-const badgeVariants = cva(
-  'inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap',
-  {
-    variants: {
-      variant: {
-        default: 'border-primary/20 bg-primary/10 text-primary',
-        neutral: 'bg-muted text-secondary-foreground',
-        success: 'border-success/20 bg-success/10 text-success',
-        warning: 'border-warning/30 bg-warning/15 text-warning-foreground',
-        destructive: 'border-destructive/20 bg-destructive/10 text-destructive',
-        /* The mock carries no informational tone, so `--info` holds the
-         * mock's primary values and this family renders as the mock's
-         * "outward legal act" primary tint. */
-        info: 'border-info/20 bg-info/10 text-info',
-        outline: 'border-border bg-transparent text-foreground',
-      },
-    },
-    defaultVariants: {
-      variant: 'default',
-    },
-  },
-);
+const BADGE_BASE =
+  'inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap';
+
+const BADGE_VARIANTS = {
+  default: 'border-primary/20 bg-primary/10 text-primary',
+  neutral: 'bg-muted text-secondary-foreground',
+  success: 'border-success/20 bg-success/10 text-success',
+  warning: 'border-warning/30 bg-warning/15 text-warning-foreground',
+  destructive: 'border-destructive/20 bg-destructive/10 text-destructive',
+  /* The mock carries no informational tone, so `--info` holds the mock's
+   * primary values and this family renders as the mock's "outward legal
+   * act" primary tint. */
+  info: 'border-info/20 bg-info/10 text-info',
+  outline: 'border-border bg-transparent text-foreground',
+} as const;
 
 export function Badge({
   className,
   variant,
   ...props
-}: React.ComponentProps<'span'> & VariantProps<typeof badgeVariants>) {
-  return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
+}: React.ComponentProps<'span'> & {
+  readonly variant?: keyof typeof BADGE_VARIANTS | null | undefined;
+}) {
+  return (
+    <span
+      className={cn(BADGE_BASE, BADGE_VARIANTS[variant ?? 'default'], className)}
+      {...props}
+    />
+  );
 }

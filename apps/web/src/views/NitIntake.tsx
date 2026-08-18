@@ -7,8 +7,9 @@ import type {
   TenderNoticeField,
   TenderNoticeProposal,
 } from '@auto-mb/contracts';
-import { RequestFailedError, type ApiClient } from '../api.js';
+import { type ApiClient } from '../api.js';
 import { cn } from '../lib/cn.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
@@ -105,9 +106,7 @@ export function NitIntake({
       setForm(formFromProposal(uploaded.proposal));
     } catch (cause) {
       setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The notice could not be uploaded. Nothing was created.',
+        errorMessage(cause, 'The notice could not be uploaded. Nothing was created.'),
       );
     } finally {
       setPending(false);
@@ -134,11 +133,7 @@ export function NitIntake({
       };
       onConfirmed(await api.confirmTenderNotice(organisationId, notice.id, body));
     } catch (cause) {
-      setError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The tender could not be created.',
-      );
+      setError(errorMessage(cause, 'The tender could not be created.'));
     } finally {
       setPending(false);
     }

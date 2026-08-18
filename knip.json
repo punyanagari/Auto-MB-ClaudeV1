@@ -25,28 +25,7 @@
   //     and the @tailwindcss/vite plugin; knip does not read CSS imports.
   //   @secretlint/secretlint-rule-preset-recommend — named as a string in
   //     .secretlintrc.json and loaded by secretlint at run time.
-  //   axe-core, playwright — resolved out of node_modules by the
-  //     ux-ui-agent-skills scripts that the design:* package scripts run.
-  //   ux-ui-agent-skills — its scripts are invoked by path from
-  //     scripts/design-audit.mjs (the design:* runner), a string knip does
-  //     not resolve to the dependency.
-  "ignoreDependencies": [
-    "tailwindcss",
-    "@secretlint/secretlint-rule-preset-recommend",
-    "axe-core",
-    "playwright",
-    "ux-ui-agent-skills"
-  ],
-
-  // stryker — .github/workflows/mutation-weekly.yml installs
-  // @stryker-mutator/core and @stryker-mutator/vitest-runner into the runner
-  // at job time and prints the resolved versions into the log, deliberately
-  // rather than committing them to the root package.json (pack P7). knip sees
-  // the binary invoked with nothing declaring it and reports it as unlisted;
-  // there is no dependency to find, because there is meant not to be one.
-  // Added in pack P6 only because it turned `pnpm deadcode:check` red on
-  // `main` and therefore blocked every subsequent pack's verify.
-  "ignoreBinaries": ["stryker"],
+  "ignoreDependencies": ["tailwindcss", "@secretlint/secretlint-rule-preset-recommend"],
 
   "workspaces": {
     ".": {
@@ -104,13 +83,7 @@
 
     "packages/contracts": {
       "entry": ["src/index.ts"],
-      "project": ["src/**/*.ts"],
-      // Frozen 2026-08-13 — one duplicate export.
-      // CreateCreditNoteRequestSchema and UpdateCreditNoteRequestSchema are
-      // the same object under two names on purpose, so the two request shapes
-      // can diverge later without a wire change. Collapsing them is a contract
-      // decision this pack does not own.
-      "ignore": ["src/credit-notes.ts"]
+      "project": ["src/**/*.ts"]
     },
 
     "packages/db": {
@@ -126,14 +99,7 @@
 
     "packages/loa-parser": {
       "entry": ["src/index.ts", "test/**/*.test.ts"],
-      "project": ["src/**/*.ts", "test/**/*.ts"],
-      // Frozen 2026-08-13 — one unused file. src/tender-document.test.ts is a
-      // 68-line early draft superseded by the 360-line
-      // test/tender-document.test.ts, and this package's vitest `include` is
-      // `test/**/*.{test,spec}.{js,ts}`, so no runner has ever executed it. It
-      // is dead and should go, but it is not one of the files this pack was
-      // scoped to delete, so it is recorded here rather than removed silently.
-      "ignore": ["src/tender-document.test.ts"]
+      "project": ["src/**/*.ts", "test/**/*.ts"]
     }
   }
 }

@@ -9,8 +9,7 @@
     {
       "description": "Group development tooling",
       "matchDepTypes": ["devDependencies"],
-      "groupName": "development tooling",
-      "minimumReleaseAge": "7 days"
+      "groupName": "development tooling"
     }
   ]
 }

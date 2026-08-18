@@ -22,7 +22,6 @@ import {
 } from '@auto-mb/loa-parser';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, requireWriterRole } from '../authz.js';
 import { httpError } from '../http.js';
@@ -418,7 +417,7 @@ export function registerContractSourceRoutes(
             values (
               ${organisationId}, ${user.id}, 'contract_source.rejected',
               'loa_documents', ${parentId},
-              ${jsonb(tx, {
+              ${tx.json({
                 kind,
                 filename,
                 sha256: createHash('sha256').update(body).digest('hex'),
@@ -473,10 +472,10 @@ export function registerContractSourceRoutes(
             values (
               ${documentId}, ${organisationId}, ${objectKey}, ${filename},
               ${sha256}, 'application/pdf', ${body.length}, 'review',
-              ${jsonb(tx, { sourceText, review })},
+              ${tx.json({ sourceText, review } as never)},
               ${current.parent.confirmed_work_id}, ${user.id}, ${kind},
-              ${parentId}, 'matched', ${jsonb(tx, identity)},
-              ${signature.status}, ${jsonb(tx, signature.verdict)},
+              ${parentId}, 'matched', ${tx.json(identity as never)},
+              ${signature.status}, ${tx.json(signature.verdict)},
               ${signature.verifiedAt}
             )
             returning id, parent_loa_document_id, document_kind,
@@ -494,7 +493,7 @@ export function registerContractSourceRoutes(
             values (
               ${organisationId}, ${user.id}, 'contract_source.uploaded',
               'loa_documents', ${documentId},
-              ${jsonb(tx, {
+              ${tx.json({
                 parentLoaDocumentId: parentId,
                 kind,
                 filename,

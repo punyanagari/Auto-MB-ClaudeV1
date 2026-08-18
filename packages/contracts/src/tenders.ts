@@ -20,15 +20,9 @@ import {
 /** Where a bid stands. Forward-only; `awarded` and `lost` are terminal,
  * enforced by the transition trigger in 0083 rather than by whichever
  * route happened to be called. */
-export const TENDER_STATUSES = [
-  'drafted',
-  'submitted',
-  'opened',
-  'awarded',
-  'lost',
-] as const;
+const TENDER_STATUSES = ['drafted', 'submitted', 'opened', 'awarded', 'lost'] as const;
 
-export const TenderStatusSchema = Type.Union(
+const TenderStatusSchema = Type.Union(
   TENDER_STATUSES.map((status) => Type.Literal(status)),
 );
 export type TenderStatus = Static<typeof TenderStatusSchema>;
@@ -41,7 +35,7 @@ export type TenderStatus = Static<typeof TenderStatusSchema>;
  * and the date alone would throw it away. Binding the wall clock to an
  * offset is the server's job, done once against `organisations.timezone`,
  * so a browser in another timezone cannot shift a deadline. */
-export const LocalDateTimeSchema = Type.String({
+const LocalDateTimeSchema = Type.String({
   /* The date half is `DateOnlySchema`'s own pattern, unanchored and
    * reused rather than re-derived, so a wall clock cannot admit a day the
    * calendar does not have. A shape-only `3[01]` accepted
@@ -53,14 +47,13 @@ export const LocalDateTimeSchema = Type.String({
   description:
     'Wall-clock moment in the organisation timezone, YYYY-MM-DDTHH:MM. Never an instant.',
 });
-export type LocalDateTime = Static<typeof LocalDateTimeSchema>;
 
 /* --- The NIT proposal --------------------------------------------------- */
 
 /** One extracted field: what the machine read, the source text it read it
  * from, and whether a human has to look. The `field.ts` contract
  * `@auto-mb/loa-parser` has followed since DC-23, carried to the wire. */
-export const TenderNoticeFieldSchema = Type.Object(
+const TenderNoticeFieldSchema = Type.Object(
   {
     value: Type.Union([Type.String(), Type.Null()]),
     raw: Type.Union([Type.String(), Type.Null()]),
@@ -70,7 +63,7 @@ export const TenderNoticeFieldSchema = Type.Object(
 );
 export type TenderNoticeField = Static<typeof TenderNoticeFieldSchema>;
 
-export const TenderNoticeProposalSchema = Type.Object(
+const TenderNoticeProposalSchema = Type.Object(
   {
     tenderNumber: TenderNoticeFieldSchema,
     authority: TenderNoticeFieldSchema,
@@ -94,12 +87,12 @@ export type TenderNoticeProposal = Static<typeof TenderNoticeProposalSchema>;
  * organisation export hands it back. Two values are all a screen needs:
  * the PDF had nothing to read, or the run failed for some other reason.
  * The detail goes to the server log. */
-export const TENDER_NOTICE_EXTRACTION_ERRORS = [
+const TENDER_NOTICE_EXTRACTION_ERRORS = [
   'pdf_unreadable',
   'extraction_failed',
 ] as const;
 
-export const TenderNoticeExtractionErrorSchema = Type.Union(
+const TenderNoticeExtractionErrorSchema = Type.Union(
   TENDER_NOTICE_EXTRACTION_ERRORS.map((code) => Type.Literal(code)),
 );
 export type TenderNoticeExtractionError = Static<
@@ -136,7 +129,6 @@ export const TenderNoticeUploadQuerySchema = Type.Object(
   { filename: Type.String({ minLength: 1, maxLength: 255 }) },
   { additionalProperties: false },
 );
-export type TenderNoticeUploadQuery = Static<typeof TenderNoticeUploadQuerySchema>;
 
 /** What the reviewer accepted. Every field is sent explicitly, because
  * the proposal is evidence and this is the record: a value the human did
@@ -187,10 +179,10 @@ export type ConfirmTenderRequest = Static<typeof ConfirmTenderRequestSchema>;
  * different remedies, and a screen that showed both as "Expired" would
  * send an operator to renew a document that does not need renewing.
  */
-export const TenderChecklistValiditySchema = CompanyDocumentExpiryStatusSchema;
+const TenderChecklistValiditySchema = CompanyDocumentExpiryStatusSchema;
 export type TenderChecklistValidity = Static<typeof TenderChecklistValiditySchema>;
 
-export const TenderChecklistItemSchema = Type.Object(
+const TenderChecklistItemSchema = Type.Object(
   {
     id: UuidSchema,
     title: Type.String(),
@@ -260,13 +252,10 @@ export const AttachTenderChecklistDocumentRequestSchema = Type.Object(
   { companyDocumentId: Type.Union([UuidSchema, Type.Null()]) },
   { additionalProperties: false },
 );
-export type AttachTenderChecklistDocumentRequest = Static<
-  typeof AttachTenderChecklistDocumentRequestSchema
->;
 
 /* --- The status trail --------------------------------------------------- */
 
-export const TenderStatusEventSchema = Type.Object(
+const TenderStatusEventSchema = Type.Object(
   {
     id: UuidSchema,
     fromStatus: Type.Union([TenderStatusSchema, Type.Null()]),
@@ -298,13 +287,10 @@ export const LinkTenderAwardLetterRequestSchema = Type.Object(
   { loaDocumentId: UuidSchema },
   { additionalProperties: false },
 );
-export type LinkTenderAwardLetterRequest = Static<
-  typeof LinkTenderAwardLetterRequestSchema
->;
 
 /* --- The tender itself -------------------------------------------------- */
 
-export const TenderSummarySchema = Type.Object(
+const TenderSummarySchema = Type.Object(
   {
     id: UuidSchema,
     tenderNumber: Type.String(),
@@ -338,7 +324,7 @@ export const TenderSummarySchema = Type.Object(
 );
 export type TenderSummary = Static<typeof TenderSummarySchema>;
 
-export const TenderAwardSchema = Type.Object(
+const TenderAwardSchema = Type.Object(
   {
     loaDocumentId: UuidSchema,
     loaFilename: Type.String(),
@@ -350,7 +336,6 @@ export const TenderAwardSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type TenderAward = Static<typeof TenderAwardSchema>;
 
 export const TenderDetailSchema = Type.Composite(
   [

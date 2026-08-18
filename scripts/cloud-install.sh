@@ -4,8 +4,9 @@
 # fails the build.
 set -euo pipefail
 
+# package.json's `packageManager` field pins the exact pnpm version and is
+# what corepack reads; naming it again here is a second place to go stale.
 corepack enable
-corepack prepare pnpm@11.17.0 --activate
 pnpm install --frozen-lockfile
 
 # Not every base VM ships Docker (verified: just-in-time boots have no

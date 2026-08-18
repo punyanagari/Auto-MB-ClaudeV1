@@ -16,12 +16,8 @@ import type {
   WorkDetailResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import {
-  createDatabasePool,
-  ensureClusterRoles,
-  removeOrganisationResidue,
-  runMigrations,
-} from '@auto-mb/db';
+import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
+import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { createFileSystemStorage } from '@auto-mb/documents';
 import { runQueuedJobs } from './helpers/worker-jobs.js';
 import { buildApp } from '../src/app.js';

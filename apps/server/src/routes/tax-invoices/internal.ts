@@ -323,7 +323,7 @@ export interface InvoiceLineRow {
   line_value: string | null;
 }
 
-export function toInvoiceLine(row: InvoiceLineRow): TaxInvoiceLine {
+function toInvoiceLine(row: InvoiceLineRow): TaxInvoiceLine {
   return {
     id: row.id,
     position: row.position,
@@ -365,7 +365,7 @@ export async function readInvoiceLines(
 /** A SAC is exactly six digits — services take no eight-digit deepening —
  * while a goods HSN may be deepened to eight. The 0057 CHECK binds the
  * same pairing; this makes the refusal a named 400 that says WHICH line. */
-export function assertLineCodeShape(line: TaxInvoiceLineInput, position: number): void {
+function assertLineCodeShape(line: TaxInvoiceLineInput, position: number): void {
   if (line.isService && !/^[0-9]{6}$/.test(line.hsnSacCode)) {
     throw httpError(
       400,
@@ -579,7 +579,7 @@ export function requireStatus(row: InvoiceRow, status: TaxInvoiceStatus): void {
 /** The description column measures TRIMMED length 3..1000; the trimmed
  * text is also what gets stored, so the invoice says what the operator
  * meant. */
-export function trimmedDescription(value: string): string {
+function trimmedDescription(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length < 3 || trimmed.length > 1000) {
     throw httpError(

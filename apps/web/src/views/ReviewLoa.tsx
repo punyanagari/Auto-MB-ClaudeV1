@@ -18,6 +18,7 @@ import type {
 } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, formatTimestampDate } from '../format.js';
+import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
@@ -27,7 +28,6 @@ import { PageHeader } from '../ui/page-header.js';
 import {
   ScheduleAccordionControls,
   ScheduleSection,
-  underScheduleHeader,
   useScheduleAccordion,
 } from '../ui/schedule-section.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -527,10 +527,7 @@ export function ReviewLoa({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        const message =
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The document could not be loaded.';
+        const message = errorMessage(cause, 'The document could not be loaded.');
         setLoadError(message);
         setExtractionArrival(message);
       });
@@ -559,10 +556,10 @@ export function ReviewLoa({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        const message =
-          cause instanceof RequestFailedError
-            ? cause.message
-            : 'The matched tender evidence could not be loaded.';
+        const message = errorMessage(
+          cause,
+          'The matched tender evidence could not be loaded.',
+        );
         setContractContextError(message);
         setEvidenceArrival(message);
       });
@@ -632,9 +629,7 @@ export function ReviewLoa({
       onDiscarded();
     } catch (cause) {
       setDiscardError(
-        cause instanceof RequestFailedError
-          ? cause.message
-          : 'The letter could not be discarded. Nothing was changed.',
+        errorMessage(cause, 'The letter could not be discarded. Nothing was changed.'),
       );
       setDiscardPending(false);
     }
@@ -1756,7 +1751,7 @@ export function ReviewLoa({
               accordion.toggle(scheduleId);
             }}
           >
-            <DataTable scroll className={`[&_input]:w-28 ${underScheduleHeader}`}>
+            <DataTable scroll className="[&_input]:w-28">
               <caption className="sr-only">
                 Awarded items in schedule {scheduleId}. Values read from the letter are
                 shown as printed; only the ones the parser could not read are editable.

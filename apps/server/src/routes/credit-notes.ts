@@ -14,7 +14,6 @@ import {
 import { Type } from '@sinclair/typebox';
 import { createHash } from 'node:crypto';
 import type { Sql, TransactionSql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess, hasFullWorkScope, requireAuthorities } from '../authz.js';
 import {
@@ -832,7 +831,7 @@ export function registerCreditNoteRoutes(
                 igst_amount = ${invoice.igst_amount},
                 round_off = ${invoice.round_off},
                 total_amount = ${invoice.total_amount},
-                issued_snapshot = ${jsonb(tx, issuedSnapshot)},
+                issued_snapshot = ${tx.json(issuedSnapshot as never)},
                 irp_reporting_deadline = case when ${reportingWindowApplies}
                   then ${note.note_date}::date
                     + ${organisation.irp_reporting_window_days ?? 0}::int

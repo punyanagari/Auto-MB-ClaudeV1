@@ -29,7 +29,7 @@ import {
 
 /** A user-named attribute and its value, as the mock's Specifications
  * card collects them ("Attribute names are created by users"). */
-export const ProductionSpecificationSchema = Type.Object(
+const ProductionSpecificationSchema = Type.Object(
   {
     attribute: Type.String({ minLength: 1, maxLength: 100 }),
     value: Type.String({ minLength: 1, maxLength: 200 }),
@@ -121,7 +121,7 @@ export type ProductionItemListResponse = Static<
  * checkable in linear time. It also gives the view stable ids to key its
  * expand/collapse state on, which a nested literal does not.
  */
-export const BomNodeSchema = Type.Object(
+const BomNodeSchema = Type.Object(
   {
     /** The bill-of-material line this node came from. */
     lineId: UuidSchema,
@@ -179,14 +179,14 @@ export type SaveBomLineRequest = Static<typeof SaveBomLineRequestSchema>;
  * `material-ready`, `dispatch-ready`) are computed from stock and serial
  * counts rather than decided by anybody, and are derived on read here.
  */
-export const JOB_CARD_STATUSES = [
+const JOB_CARD_STATUSES = [
   'planned',
   'in_production',
   'completed',
   'cancelled',
 ] as const;
 
-export const JobCardStatusSchema = Type.Union(
+const JobCardStatusSchema = Type.Union(
   JOB_CARD_STATUSES.map((status) => Type.Literal(status)),
 );
 export type JobCardStatus = Static<typeof JobCardStatusSchema>;
@@ -224,7 +224,7 @@ export type JobCardStatus = Static<typeof JobCardStatusSchema>;
  * one of them BOTH read short. Neither may assume the order is theirs,
  * and the organisation-wide shortage screen stays the authority on how
  * much to buy. */
-export const MaterialRequirementSchema = Type.Object(
+const MaterialRequirementSchema = Type.Object(
   {
     itemId: UuidSchema,
     itemCode: Type.String(),
@@ -244,7 +244,7 @@ export const MaterialRequirementSchema = Type.Object(
 );
 export type MaterialRequirement = Static<typeof MaterialRequirementSchema>;
 
-export const JobCardSummarySchema = Type.Object(
+const JobCardSummarySchema = Type.Object(
   {
     id: UuidSchema,
     /** `PP-26-081`. Built from the financial year and the sequence for
@@ -305,7 +305,7 @@ export const JobCardSummarySchema = Type.Object(
 export type JobCardSummary = Static<typeof JobCardSummarySchema>;
 
 /** One finished unit, and what is known to be inside it. */
-export const FinishedSerialSchema = Type.Object(
+const FinishedSerialSchema = Type.Object(
   {
     id: UuidSchema,
     serialNumber: Type.String(),
@@ -338,7 +338,7 @@ export type FinishedSerial = Static<typeof FinishedSerialSchema>;
  * `FinishedSerial.components`. A second copy on a per-card slot would
  * have to mean "captured into which unit?" and could only ever answer
  * for one of them. */
-export const ComponentSlotSchema = Type.Object(
+const ComponentSlotSchema = Type.Object(
   {
     componentItemId: UuidSchema,
     componentItemCode: Type.String(),
@@ -349,7 +349,7 @@ export const ComponentSlotSchema = Type.Object(
 );
 export type ComponentSlot = Static<typeof ComponentSlotSchema>;
 
-export const DispatchSchema = Type.Object(
+const DispatchSchema = Type.Object(
   {
     id: UuidSchema,
     /** `PP-26-081/D1`. Per job card, built for display. */
@@ -409,7 +409,6 @@ export const JobCardListQuerySchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type JobCardListQuery = Static<typeof JobCardListQuerySchema>;
 
 export const CreateJobCardRequestSchema = Type.Object(
   {

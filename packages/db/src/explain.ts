@@ -13,9 +13,10 @@ import type { TransactionSql } from 'postgres';
  * and there is one parser.
  *
  * It lives in `src` rather than a test directory because the consumers sit
- * in two different workspace packages, and `@auto-mb/db` is already how
- * `packages/db` publishes shared test infrastructure (see `testing.ts`).
- * Production code must never import this module.
+ * in two different workspace packages. It is published on the
+ * `@auto-mb/db/explain` subpath rather than the main barrel, so importing
+ * `@auto-mb/db` from production code cannot pull it in (see `testing.ts`,
+ * which is published the same way for the same reason).
  */
 
 /** The subset of PostgreSQL's `EXPLAIN (FORMAT JSON)` node that this
@@ -37,11 +38,11 @@ export interface PlanNode extends Record<string, unknown> {
 
 /** The plan flattened depth-first, so assertions can ask about the whole
  * tree instead of walking it. */
-export function planNodes(node: PlanNode): PlanNode[] {
+function planNodes(node: PlanNode): PlanNode[] {
   return [node, ...(node.Plans ?? []).flatMap(planNodes)];
 }
 
-export interface ExplainOptions {
+interface ExplainOptions {
   /** Run the statement and report actual rows, loops and timings. Required
    * for anything that reads `Actual Loops` or a duration; omit it when the
    * assertion only needs the SHAPE the planner chose, so the statement is

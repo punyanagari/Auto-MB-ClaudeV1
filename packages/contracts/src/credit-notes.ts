@@ -33,8 +33,8 @@ import { IrnSchema, IrpProviderStateSchema } from './tax-documents.js';
  * transaction).
  */
 
-export const CREDIT_NOTE_STATUSES = ['draft', 'issued', 'cancelled'] as const;
-export const CreditNoteStatusSchema = Type.Union(
+const CREDIT_NOTE_STATUSES = ['draft', 'issued', 'cancelled'] as const;
+const CreditNoteStatusSchema = Type.Union(
   CREDIT_NOTE_STATUSES.map((status) => Type.Literal(status)),
 );
 export type CreditNoteStatus = Static<typeof CreditNoteStatusSchema>;
@@ -42,12 +42,12 @@ export type CreditNoteStatus = Static<typeof CreditNoteStatusSchema>;
 /** Section 34(2) as amended (effective October 2025): the supplier's
  * tax reduction is conditional on the recipient reversing ITC.
  * Recordable evidence, never enforced. */
-export const RECIPIENT_ITC_STATUSES = [
+const RECIPIENT_ITC_STATUSES = [
   'not_applicable',
   'reversal_confirmed',
   'pending',
 ] as const;
-export const RecipientItcStatusSchema = Type.Union(
+const RecipientItcStatusSchema = Type.Union(
   RECIPIENT_ITC_STATUSES.map((status) => Type.Literal(status)),
 );
 export type RecipientItcStatus = Static<typeof RecipientItcStatusSchema>;
@@ -71,7 +71,6 @@ export type CreateCreditNoteRequest = Static<typeof CreateCreditNoteRequestSchem
 
 /** PUT /api/credit-notes/:id — edits the draft. The invoice is the
  * note's SUBJECT, not a field: re-pointing is delete-and-redraft. */
-export const UpdateCreditNoteRequestSchema = CreateCreditNoteRequestSchema;
 export type UpdateCreditNoteRequest = CreateCreditNoteRequest;
 
 /** POST /api/credit-notes/:id/cancel. */
@@ -91,7 +90,7 @@ export type UpdateRecipientItcRequest = Static<typeof UpdateRecipientItcRequestS
 
 // --- Read model ---------------------------------------------------------------
 
-export const CreditNoteSchema = Type.Object(
+const CreditNoteSchema = Type.Object(
   {
     id: UuidSchema,
     taxInvoiceId: UuidSchema,

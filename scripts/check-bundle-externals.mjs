@@ -13,12 +13,12 @@
  *
  * Run it against the bundles in the directory they will occupy at
  * runtime — see the invocation in deploy/Dockerfile.server. Resolution is
- * done by walking `node_modules` upwards from the bundle exactly as Node
- * does, rather than through `import.meta.resolve`, which would resolve
- * relative to THIS file and so answer for the wrong directory.
+ * done with a `require` rooted AT THE BUNDLE, rather than through
+ * `import.meta.resolve`, which would resolve relative to THIS file and so
+ * answer for the wrong directory.
  */
-import { readFile, stat } from 'node:fs/promises';
-import { isBuiltin } from 'node:module';
+import { readFile } from 'node:fs/promises';
+import { createRequire, isBuiltin } from 'node:module';
 import path from 'node:path';
 
 const bundles = process.argv.slice(2);
@@ -35,56 +35,35 @@ if (bundles.length === 0) {
  * bundled module sections. What is reliable is the column: an ESM `import`
  * declaration is a top-level statement, and esbuild writes it starting at
  * column 0, while bundled program text is indented inside a function body.
- * So a statement begins on a line matching `^import` and continues until a
- * line ending in the closing quote of its specifier.
+ * So a statement begins at a line start and runs to the closing quote of
+ * its specifier, which is the last quoted string on the statement's last
+ * line — true of `import x from "spec"` and of a bare `import "spec"`.
+ *
+ * `[^;]` rather than `[\s\S]` bounds the span: an import declaration holds
+ * no semicolon before its specifier, so a line that merely BEGINS with the
+ * word `import` — one buried at column 0 inside a bundled template literal
+ * — cannot swallow the rest of the file looking for a quote.
  */
-function importedSpecifiers(source) {
-  const specifiers = new Set();
-  const lines = source.split('\n');
-  let statement = null;
-  for (const line of lines) {
-    if (statement === null) {
-      if (!STATEMENT_START.test(line)) continue;
-      statement = line;
-    } else {
-      statement += ` ${line.trim()}`;
-    }
-    const closed = SPECIFIER.exec(statement);
-    if (closed !== null) {
-      specifiers.add(closed[1]);
-      statement = null;
-    } else if (statement.length > 4000) {
-      // Not an import after all (a stray top-level `import` inside a
-      // template literal, say). Stop accumulating rather than swallowing
-      // the rest of the bundle.
-      statement = null;
-    }
-  }
-  return specifiers;
-}
+const IMPORT_STATEMENT = /^import[^;]*?["']([^"'\n]+)["'];?$/gm;
 
-const STATEMENT_START = /^import[\s"'{*]/;
-// The specifier is the LAST quoted string in the statement, which for both
-// `import x from "spec"` and `import "spec"` is the one that closes it.
-const SPECIFIER = /["']([^"'\n]+)["'];?\s*$/;
+const importedSpecifiers = (source) =>
+  new Set([...source.matchAll(IMPORT_STATEMENT)].map((match) => match[1]));
 
-/** Node's own lookup: the nearest `node_modules/<name>` walking upwards. */
-async function installed(specifier, fromDirectory) {
-  const parts = specifier.split('/');
-  const packageName = specifier.startsWith('@')
-    ? parts.slice(0, 2).join('/')
-    : parts[0];
-  let directory = fromDirectory;
-  for (;;) {
-    try {
-      const candidate = path.join(directory, 'node_modules', packageName);
-      if ((await stat(candidate)).isDirectory()) return candidate;
-    } catch {
-      // Not here; keep walking.
-    }
-    const parent = path.dirname(directory);
-    if (parent === directory) return undefined;
-    directory = parent;
+/**
+ * Node's own lookup, rooted at the bundle: `createRequire` walks
+ * `node_modules` upwards from the file it is given, which is precisely the
+ * search the runtime will perform.
+ */
+function installed(specifier, bundlePath) {
+  try {
+    createRequire(bundlePath).resolve(specifier);
+    return true;
+  } catch (error) {
+    // Only MODULE_NOT_FOUND means absent. A package that is present but
+    // publishes no CommonJS entry point refuses with a different code
+    // (ERR_PACKAGE_PATH_NOT_EXPORTED and friends) — it is installed, and
+    // the ESM import in the bundle will reach it.
+    return error.code !== 'MODULE_NOT_FOUND';
   }
 }
 
@@ -110,7 +89,7 @@ for (const bundle of bundles) {
       failed = true;
       continue;
     }
-    if ((await installed(specifier, directory)) === undefined) {
+    if (!installed(specifier, absolute)) {
       console.error(
         `${bundle}: external ${specifier} is not installed anywhere above ` +
           `${directory} — add it to apps/server/package.json dependencies, ` +

@@ -12,7 +12,6 @@ import {
   type WorkNotCleanDetails,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { jsonb } from '@auto-mb/db';
 import type { Auth } from '../../auth.js';
 import { assertWorkAccess } from '../../authz.js';
 import { httpError } from '../../http.js';
@@ -648,7 +647,7 @@ export function registerMeasurementBookFinalizeRoutes(
             )
             values (
               ${organisationId}, ${book.work_id}, ${counter.next_value},
-              ${jsonb(tx, lines)}, ${book.total_amount},
+              ${tx.json(lines as never)}, ${book.total_amount},
               ${user.id}, ${id}
             )
             returning id, work_id, bill_number, status, lines_snapshot,
@@ -672,7 +671,7 @@ export function registerMeasurementBookFinalizeRoutes(
             )
             values (
               ${organisationId}, ${user.id}, 'bill.prepared', 'bills', ${row.id},
-              ${jsonb(tx, {
+              ${tx.json({
                 billNumber: row.bill_number,
                 totalAmount: row.total_amount,
                 measurementBookId: id,

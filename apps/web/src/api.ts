@@ -251,7 +251,7 @@ export interface MeResponse {
 
 /** What sign-in produced: a session, or a pending two-factor challenge
  * that verifyTotp / verifyBackupCode must complete. */
-export interface SignInResult {
+interface SignInResult {
   readonly twoFactorRequired: boolean;
 }
 

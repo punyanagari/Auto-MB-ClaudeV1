@@ -28,8 +28,8 @@ import { UuidSchema, nonBlankString } from './primitives.js';
 
 /* --- Vocabulary ----------------------------------------------------------- */
 
-export const SIGNING_DOCUMENT_TYPES = ['delivery_challan', 'tax_invoice'] as const;
-export const SigningDocumentTypeSchema = Type.Union(
+const SIGNING_DOCUMENT_TYPES = ['delivery_challan', 'tax_invoice'] as const;
+const SigningDocumentTypeSchema = Type.Union(
   SIGNING_DOCUMENT_TYPES.map((value) => Type.Literal(value)),
   { description: 'Which issued register the document being signed belongs to.' },
 );
@@ -37,21 +37,20 @@ export type SigningDocumentType = Static<typeof SigningDocumentTypeSchema>;
 
 /** ADR-0012's two lanes. `esign` is modelled and not reachable: no route
  * writes it, because the ESP onboarding it depends on has not landed. */
-export const SIGNING_CHANNELS = ['kiosk_dsc', 'esign'] as const;
-export const SigningChannelSchema = Type.Union(
+const SIGNING_CHANNELS = ['kiosk_dsc', 'esign'] as const;
+const SigningChannelSchema = Type.Union(
   SIGNING_CHANNELS.map((value) => Type.Literal(value)),
   { description: 'How the signature is fulfilled (ADR-0012).' },
 );
-export type SigningChannel = Static<typeof SigningChannelSchema>;
 
-export const SIGNING_REQUEST_STATUSES = [
+const SIGNING_REQUEST_STATUSES = [
   'pending',
   'claimed',
   'signed',
   'failed',
   'cancelled',
 ] as const;
-export const SigningRequestStatusSchema = Type.Union(
+const SigningRequestStatusSchema = Type.Union(
   SIGNING_REQUEST_STATUSES.map((value) => Type.Literal(value)),
   { description: 'Where a signing request has got to.' },
 );
@@ -60,7 +59,7 @@ export type SigningRequestStatus = Static<typeof SigningRequestStatusSchema>;
 /** The Windows thumbprint: SHA-1 of the certificate DER, uppercase hex.
  * The one identifier the agent selects a key by, and the one an operator
  * can compare against their own certificate store. */
-export const CertificateThumbprintSchema = Type.String({
+const CertificateThumbprintSchema = Type.String({
   pattern: '^[0-9A-F]{40}$',
   description:
     'SHA-1 of the certificate DER, uppercase hex — the Windows certificate thumbprint.',
@@ -75,7 +74,7 @@ const NullableThumbprintSchema = Type.Union([CertificateThumbprintSchema, Type.N
 
 /* --- The register a member sees ------------------------------------------- */
 
-export const SigningRequestSchema = Type.Object(
+const SigningRequestSchema = Type.Object(
   {
     id: UuidSchema,
     documentType: SigningDocumentTypeSchema,
@@ -113,7 +112,7 @@ export const SigningRequestSchema = Type.Object(
 );
 export type SigningRequest = Static<typeof SigningRequestSchema>;
 
-export const SigningAgentSchema = Type.Object(
+const SigningAgentSchema = Type.Object(
   {
     id: UuidSchema,
     label: Type.String(),
@@ -148,7 +147,6 @@ export const SigningQueueQuerySchema = Type.Object(
   { status: Type.Optional(SigningRequestStatusSchema) },
   { additionalProperties: false },
 );
-export type SigningQueueQuery = Static<typeof SigningQueueQuerySchema>;
 
 export const CreateSigningRequestSchema = Type.Object(
   {
@@ -239,7 +237,7 @@ export type SigningAgentResponse = Static<typeof SigningAgentResponseSchema>;
  * accept a signature over anything else, because it re-derives this value
  * from the stored bytes before it will assemble anything.
  */
-export const SigningJobSchema = Type.Object(
+const SigningJobSchema = Type.Object(
   {
     requestId: UuidSchema,
     documentType: SigningDocumentTypeSchema,
@@ -255,8 +253,6 @@ export const SigningJobSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type SigningJob = Static<typeof SigningJobSchema>;
-
 export const ClaimSigningJobResponseSchema = Type.Object(
   { job: Type.Union([SigningJobSchema, Type.Null()]) },
   { additionalProperties: false },
@@ -287,7 +283,6 @@ export const SubmitSignatureSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
-export type SubmitSignature = Static<typeof SubmitSignatureSchema>;
 
 export const SubmitSignatureResponseSchema = Type.Object(
   {

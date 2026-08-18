@@ -19,25 +19,23 @@ export const SetCompletionDateRequestSchema = Type.Object(
 );
 export type SetCompletionDateRequest = Static<typeof SetCompletionDateRequestSchema>;
 
-export const WorkCompletionSchema = Type.Object(
+const WorkCompletionSchema = Type.Object(
   {
     originalCompletionDate: Type.Union([DateOnlySchema, Type.Null()]),
     currentCompletionDate: Type.Union([DateOnlySchema, Type.Null()]),
   },
   { additionalProperties: false },
 );
-export type WorkCompletion = Static<typeof WorkCompletionSchema>;
 
 // --- Extension requests -----------------------------------------------------
 
-export const ExtensionRequestStatusSchema = Type.Union([
+const ExtensionRequestStatusSchema = Type.Union([
   Type.Literal('draft'),
   Type.Literal('finalised'),
   Type.Literal('responded'),
 ]);
-export type ExtensionRequestStatus = Static<typeof ExtensionRequestStatusSchema>;
 
-export const ExtensionResponseOutcomeSchema = Type.Union([
+const ExtensionResponseOutcomeSchema = Type.Union([
   Type.Literal('accepted'),
   Type.Literal('modified'),
   Type.Literal('rejected'),
@@ -70,13 +68,12 @@ export type RespondExtensionRequest = Static<typeof RespondExtensionRequestSchem
  * records back-fill paper letters issued before adoption (§5.5) — they
  * are finalised on arrival, occupy the next sequence slot, and carry the
  * paper letter's own reference. */
-export const ExtensionSourceSchema = Type.Union([
+const ExtensionSourceSchema = Type.Union([
   Type.Literal('software'),
   Type.Literal('manual'),
 ]);
-export type ExtensionSource = Static<typeof ExtensionSourceSchema>;
 
-export const ExtensionRequestSchema = Type.Object(
+const ExtensionRequestSchema = Type.Object(
   {
     id: UuidSchema,
     workId: UuidSchema,
@@ -124,9 +121,6 @@ export const ExtensionRequestListResponseSchema = Type.Object(
   { extensionRequests: Type.Array(ExtensionRequestSchema) },
   { additionalProperties: false },
 );
-export type ExtensionRequestListResponse = Static<
-  typeof ExtensionRequestListResponseSchema
->;
 
 export const ExtensionRequestDetailResponseSchema = Type.Object(
   {

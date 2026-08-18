@@ -83,9 +83,7 @@ export interface EwayBillSourceFacts {
  * The whole applicability question, in one expression. A v1 (cumulative
  * SAC) invoice snapshot normalises through `snapshotLines` into a single
  * service line, so it answers false without needing a special case. */
-export function carriesGoods(
-  lines: readonly { readonly isService: boolean }[],
-): boolean {
+function carriesGoods(lines: readonly { readonly isService: boolean }[]): boolean {
   return lines.some((line) => !line.isService);
 }
 
@@ -107,7 +105,7 @@ export function assertCarriesGoods(source: EwayBillSourceFacts): void {
 
 /** One challan line's statutory classification, as either the panel read
  * (readDetail's items) or the route read (delivery_challan_items) holds it. */
-export interface ChallanClassificationLine {
+interface ChallanClassificationLine {
   readonly isService: boolean | null;
   readonly hsnSacCode: string | null;
 }

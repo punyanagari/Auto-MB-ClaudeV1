@@ -55,7 +55,7 @@ import type {
  * three means the bill is still moving through the railway's own approval
  * chain and is not yet an accepted bill, whatever its arithmetic says.
  */
-export const RAILWAY_BILL_SIGNATURE_COUNT = 3;
+const RAILWAY_BILL_SIGNATURE_COUNT = 3;
 
 /**
  * The two document statuses that satisfy the ruling.
@@ -78,7 +78,7 @@ const SETTLEABLE_DOCUMENT_STATUSES: readonly StoredPdfSignatureStatus[] = [
 
 /** Why a bill's signatures do not permit settlement, as a code the route
  * turns into a refusal and the screen turns into a sentence. */
-export type RailwayBillVerdictRefusal =
+type RailwayBillVerdictRefusal =
   | 'not_verified'
   | 'document_status'
   | 'signature_count'
@@ -87,7 +87,7 @@ export type RailwayBillVerdictRefusal =
   | 'signature_signers'
   | 'signature_coverage';
 
-export interface RailwayBillVerdictAssessment {
+interface RailwayBillVerdictAssessment {
   readonly acceptable: boolean;
   readonly refusal: RailwayBillVerdictRefusal | null;
   /** One sentence naming what is wrong with THIS bill, for the refusal
