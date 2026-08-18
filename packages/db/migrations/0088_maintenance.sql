@@ -594,8 +594,15 @@ CREATE UNIQUE INDEX maintenance_dispatches_number_unique
   ON maintenance_dispatches (organisation_id, challan_number);
 CREATE UNIQUE INDEX maintenance_dispatches_sequence_per_work
   ON maintenance_dispatches (organisation_id, work_id, sequence_number);
+-- The request's own challan list, and the non-partial index leading on
+-- the three-column foreign key above — `test/fk-index-coverage` measures
+-- a key as covered only by an index that leads on its columns
+-- unconditionally, so `work_id` sits before the sequence rather than
+-- being left off. It costs nothing: `work_id` is constant within a
+-- request, so the sequence still orders each request's challans.
 CREATE INDEX maintenance_dispatches_request_idx
-  ON maintenance_dispatches (organisation_id, maintenance_request_id, sequence_number);
+  ON maintenance_dispatches
+     (organisation_id, maintenance_request_id, work_id, sequence_number);
 
 ALTER TABLE maintenance_dispatches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE maintenance_dispatches FORCE ROW LEVEL SECURITY;

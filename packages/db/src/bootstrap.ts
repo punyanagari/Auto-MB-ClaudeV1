@@ -238,6 +238,19 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // ever climbs.
   stock_movements: 'SELECT, INSERT',
   stock_movement_counters: 'SELECT, INSERT, UPDATE',
+  // Maintenance: the site material request and everything it produces
+  // (0088). The request and its lines take UPDATE for exactly two acts —
+  // the status walk, and writing a line off — and no DELETE, because a
+  // request carries a number from the moment it is raised. The dispatch
+  // challan, its lines and the defective returns are append-only in the
+  // ledger's sense: they record something that physically happened.
+  maintenance_request_counters: 'SELECT, INSERT, UPDATE',
+  maintenance_requests: 'SELECT, INSERT, UPDATE',
+  maintenance_request_lines: 'SELECT, INSERT, UPDATE',
+  maintenance_dispatch_counters: 'SELECT, INSERT, UPDATE',
+  maintenance_dispatches: 'SELECT, INSERT',
+  maintenance_dispatch_lines: 'SELECT, INSERT',
+  maintenance_returns: 'SELECT, INSERT',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

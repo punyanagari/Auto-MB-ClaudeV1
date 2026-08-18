@@ -86,6 +86,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0084_production.sql': 13,
   '0086_correspondence_register.sql': 4,
   '0087_stock_ledger.sql': 3,
+  '0088_maintenance.sql': 9,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -1607,5 +1608,169 @@ describe('tenant migration contract', () => {
     const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
     expect(raises.length).toBeGreaterThanOrEqual(10);
     expect(sql.match(/USING ERRCODE = '23F\d\d'/g)?.length).toBe(raises.length);
+  });
+
+  it('binds maintenance in 0088', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0088_maintenance.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // FOUR OF THE MOCK'S SIX LINE QUANTITIES HAVE NO WRITER. Only the
+    // ordered quantity, the promised return and the write-off are stored;
+    // available, reserved, dispatched and received-back are derived, and
+    // a column for any of them is the drift this module refused.
+    for (const column of [
+      'quantity quantity_amount NOT NULL CHECK (quantity > 0)',
+      'expected_return_quantity quantity_amount NOT NULL DEFAULT 0',
+      'cancelled_quantity quantity_amount NOT NULL DEFAULT 0',
+    ]) {
+      expect(sql, column).toContain(column);
+    }
+    expect(sql).not.toMatch(/ADD COLUMN\s+available_quantity/i);
+    expect(sql).not.toMatch(/reserved_quantity\s+quantity_amount/i);
+    expect(sql).not.toMatch(/dispatched_quantity\s+quantity_amount/i);
+    expect(sql).not.toMatch(/received_return_quantity\s+quantity_amount/i);
+    // The two functions the derivations go through, so the dispatch
+    // ceiling and the closure gate cannot be computed two different ways.
+    expect(sql).toContain('app_private.maintenance_line_outstanding(org uuid, line uuid)');
+    expect(sql).toContain('app_private.maintenance_line_return_due(org uuid, line uuid)');
+
+    // States are CHECKed text, not an enum, for the reason 0079 and 0086
+    // give about theirs.
+    expect(sql).toMatch(
+      /status IN \('awaiting_approval', 'approved', 'partially_dispatched', 'closed'\)/,
+    );
+    expect(sql).toMatch(/priority IN \('routine', 'urgent', 'critical'\)/);
+    expect(sql).not.toContain('CREATE TYPE');
+
+    // Both numbers are unique, and so is each SEQUENCE they were rendered
+    // from: gap-freeness is only provable if two rows cannot share
+    // serial 7.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX maintenance_requests_number_unique\s+ON maintenance_requests \(organisation_id, request_number\);/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX maintenance_requests_sequence_unique\s+ON maintenance_requests \(organisation_id, financial_year, sequence_number\);/,
+    );
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX maintenance_dispatches_sequence_per_work\s+ON maintenance_dispatches \(organisation_id, work_id, sequence_number\);/,
+    );
+    expect(sql).not.toMatch(/max\(sequence_number\)/);
+    for (const counter of [
+      'maintenance_request_counters',
+      'maintenance_dispatch_counters',
+    ]) {
+      expect(sql, counter).toContain(`CREATE TRIGGER ${counter}_guard_decrease`);
+    }
+
+    // Legal dates are date-only (engineering rule 6), and the two that
+    // bound against the ORGANISATION's today do so through 0082's helper
+    // rather than the server's clock.
+    for (const column of [
+      'required_by date',
+      'dispatch_date date NOT NULL',
+      'received_on date NOT NULL',
+    ]) {
+      expect(sql, column).toContain(column);
+    }
+    expect(sql).not.toContain('dispatch_date timestamptz');
+    expect(
+      sql.match(/app_private\.organisation_today\(NEW\.organisation_id\)/g)?.length,
+    ).toBe(2);
+
+    // Every foreign key is composite, so none can point across the tenant
+    // boundary with RLS never seeing it.
+    for (const composite of [
+      'FOREIGN KEY (organisation_id, work_id) REFERENCES works(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, maintenance_request_id)\n    REFERENCES maintenance_requests(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, production_item_id)\n    REFERENCES production_items(organisation_id, id)',
+      'FOREIGN KEY (organisation_id, maintenance_request_id, work_id)\n    REFERENCES maintenance_requests(organisation_id, id, work_id)',
+      'FOREIGN KEY (organisation_id, maintenance_dispatch_id)\n    REFERENCES maintenance_dispatches(organisation_id, id)',
+    ]) {
+      expect(sql, composite).toContain(composite);
+    }
+
+    // THE LEDGER LEARNS A THIRD SOURCE. An issue may name a job card, a
+    // Work, or — from this migration — the maintenance challan that took
+    // the material off the shelf. Counted rather than paired, so a fourth
+    // source is one more term.
+    expect(sql).toContain('ADD COLUMN maintenance_dispatch_id uuid,');
+    expect(sql).toContain('DROP CONSTRAINT stock_movements_source_shape_check;');
+    expect(sql).toContain(
+      '+ (maintenance_dispatch_id IS NOT NULL)::int = 1',
+    );
+    // The non-partial leading index the new foreign key needs.
+    expect(sql).toContain(
+      'CREATE INDEX stock_movements_maintenance_dispatch_idx\n  ON stock_movements (organisation_id, maintenance_dispatch_id);',
+    );
+
+    // Seven tables, seven policies, all in the ADR-0010 InitPlan shape,
+    // and none of them grants DELETE: a request keeps its number, a
+    // challan records material that physically left.
+    const tables = [
+      'maintenance_request_counters',
+      'maintenance_requests',
+      'maintenance_request_lines',
+      'maintenance_dispatch_counters',
+      'maintenance_dispatches',
+      'maintenance_dispatch_lines',
+      'maintenance_returns',
+    ];
+    for (const table of tables) {
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).toContain(`${table}_tenant_policy`);
+      expect(sql, table).not.toContain(`DELETE ON ${table}`);
+    }
+    // Both arms of all seven policies wrap the helper in a scalar
+    // subquery, which is the whole of ADR-0010.
+    expect(
+      sql.match(
+        /organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)/g,
+      )?.length,
+    ).toBe(tables.length * 2);
+    for (const appendOnly of [
+      'maintenance_dispatches',
+      'maintenance_dispatch_lines',
+      'maintenance_returns',
+    ]) {
+      expect(sql, appendOnly).toContain(
+        `GRANT SELECT, INSERT ON ${appendOnly} TO auto_mb_app;`,
+      );
+      expect(sql, appendOnly).not.toContain(`UPDATE ON ${appendOnly} TO auto_mb_app`);
+    }
+
+    // The closure gate is a rule, not a disabled button, and the terms
+    // are frozen from the moment the request is raised.
+    expect(sql).toContain('material still to dispatch or cancel');
+    expect(sql).toContain('defective units still owed back');
+    expect(sql).toContain(
+      'a raised maintenance request is immutable; close it and raise the corrected one',
+    );
+    expect(sql).toContain(
+      "a maintenance request''s approval is immutable once recorded",
+    );
+
+    // Every function pins its search_path, and none is SECURITY DEFINER.
+    const functions = sql.match(/CREATE FUNCTION app_private\.\w+/g) ?? [];
+    expect(functions.length).toBe(8);
+    expect(sql.match(/SET search_path = pg_catalog, public/g)?.length).toBe(
+      functions.length,
+    );
+    for (const declaration of functions) {
+      const source = sql.slice(sql.indexOf(declaration));
+      expect(source.slice(0, source.indexOf('$$;')), declaration).not.toContain(
+        'SECURITY DEFINER',
+      );
+    }
+
+    // Every RAISE carries a named SQLSTATE from the 23G block, which this
+    // migration is the first to use, so `routes/maintenance.ts` maps it
+    // to a code instead of surfacing a bare 23514 as a 500.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBeGreaterThanOrEqual(12);
+    expect(sql.match(/USING ERRCODE = '23G\d\d'/g)?.length).toBe(raises.length);
   });
 });

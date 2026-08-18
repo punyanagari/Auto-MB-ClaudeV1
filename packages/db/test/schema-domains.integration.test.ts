@@ -189,8 +189,11 @@ describe('the schema at head names all three shapes', () => {
     // quantity — a job card's own quantity is a whole-unit integer, not
     // a measured quantity, because every unit becomes a serial; and 0087
     // adds three, the item's reorder level and the stock movement's own
-    // quantity and running balance.
-    expect(adopted.length).toBe(69);
+    // quantity and running balance; and 0088 adds five, all quantities of
+    // material — what a maintenance line asked for, how much of it is
+    // owed back, how much was written off, how much went on one challan,
+    // and how much came back defective.
+    expect(adopted.length).toBe(74);
   });
 
   it('types every digest column as sha256_hex', () => {

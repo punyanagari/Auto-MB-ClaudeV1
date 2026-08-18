@@ -160,6 +160,23 @@ const COUNTER_TABLES = [
     scope: 'job-card',
     refusal: 'production_dispatch_counters',
   },
+  {
+    // The maintenance request series (0088), per organisation and per
+    // financial year: a store clerk's queue is read across Works, so the
+    // number is organisation-wide. Monotonic because a closed request
+    // keeps its number and there is no delete path to release one.
+    table: 'maintenance_request_counters',
+    scope: 'financial-year',
+    refusal: 'maintenance_request_counters',
+  },
+  {
+    // The maintenance dispatch challan series (0088), per Work like every
+    // other challan counter here. The paper carries the Work's code, and
+    // rewinding would print one challan number on two consignments.
+    table: 'maintenance_dispatch_counters',
+    scope: 'work',
+    refusal: 'maintenance_dispatch_counters',
+  },
 ] as const;
 
 /** The four that migration 0064 added the trigger to. Named here so the
