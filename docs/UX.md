@@ -729,8 +729,10 @@ a person, which is exactly what that family means. `error` takes the
 destructive family beside `cancelled` and `rejected` — and the distinction
 from `low-stock`, which is deliberately warning, is the one worth stating:
 a part that needs reordering is a thing to do, and a row that cannot be
-written is a thing that failed. `pending`, `completed` and `cancelled` were
-already mapped and keep their readings.
+written is a thing that failed. `pending`, `completed`, `cancelled` and
+`superseded` were already mapped and keep their readings — `superseded`
+arrived with the tax-invoice replacement (0051) and reads the same way
+here: not a failure, and no longer the live document either.
 
 **One icon is new to the rail: `Upload`**, for the Imports entry, checked
 against every icon already on it. The screen sits directly beneath Masters
@@ -763,14 +765,62 @@ alternative would be a second place to do something, or a worse answer:
   they are written, and they are retired the way every other record of that
   register is. A bulk undo would be a second, weaker delete path around
   rules the registers already have.
+- **Update an existing record.** An importer CREATES; a row whose natural
+  key already exists is reported as a duplicate, in the register's own
+  words, and never overwrites what is there. Match-and-update is a
+  different feature with a different failure mode — a mistyped key
+  silently rewriting the wrong party's bank details — and it needs a
+  column to match on that the operator chooses deliberately.
+- **Accept a sheet of unlimited size.** Five thousand rows, eight
+  megabytes, and a ceiling on the text the cells expand to. Past any of
+  them the refusal says to split the file, because a synchronous parse is
+  what buys the immediate verdict this screen is built around; the job
+  queue is there when a register arrives that genuinely cannot be split.
 
 **One divergence from the product's own habit, stated so it is not
 mistaken for an oversight:** the row table renders the sheet's raw cells
 beside the errors, unformatted and untruncated. Every other register in
 this product formats what it shows. These are not the product's values —
 they are what somebody typed into Excel, shown so it can be compared with
-the workbook still open on the other monitor, and formatting them would
-hide the trailing space that is the actual defect.
+the workbook still open on the other monitor.
+
+**Those cells do not outlive the decision.** The moment a batch is
+committed or withdrawn its staged cells are emptied, and they are not in
+the organisation export at all. A contacts sheet is a column of bank
+account numbers and IFSCs, and the single-record path is deliberately
+discreet about both — `contact-fields.ts` says of them that they are
+"never audited and never logged". Keeping a second unredacted copy in a
+staging table, echoed on every read and published in a recovery package,
+would be the one place that discretion did not reach. What survives is
+what happened: the row number, the verdict, the error in the register's
+own words, and the record the row became.
+
+That is also why the two reads are gated differently. The batch LIST is
+ordinary register history and every writer sees it — which files were
+imported, when, and how many rows each refused. Opening a batch shows the
+cells, so the batch DETAIL carries the import authority, and the screen
+draws the "Open" control only for a member who holds it. Nobody is
+offered a door that answers 403.
+
+**Uploading a sheet for a register retires the open ones aimed at it**,
+and the batch says `superseded`. The alternative was leaving a validated
+batch committable indefinitely, which turns the ordinary correction loop
+into a trap: upload, read the eleven errors, fix the workbook, upload
+again — and now two batches are committable, the corrected one and the
+one with the typo still in it. Committing the wrong one writes a
+known-bad row and reports success.
+
+**An imported record gets the register's own creation event**, the same
+one the form writes, with the batch id in its payload. A contact brought
+in by a sheet therefore has the history panel a contact typed into the
+form has, and "who added this vendor" is answerable from the vendor
+rather than only from this screen. The batch keeps an event of its own
+beside them, as the provenance those records point back at.
+
+**The row table pages, and the paging is real.** The screen asks for the
+error rows first and the valid ones on request, and both are requests
+against the server's own cursor — not a slice of a response that already
+carried five thousand rows. A batch's rows are never sent in full.
 
 **When the mock grows an import screen, the mock wins.** This entry retires
 the moment there is something to cite, on the § 4 iteration pipeline:

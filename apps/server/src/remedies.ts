@@ -494,6 +494,10 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the Imports screen and act on what it shows now; a finished import keeps its record and cannot be run or withdrawn twice.',
   IMPORT_BATCH_NOT_VALIDATED:
     'Reload the import and wait for every row to carry a verdict before writing any of them to the register.',
+  IMPORT_BATCH_SUPERSEDED:
+    'Open the newest import for this register and run that one; uploading a corrected sheet retires the sheet it corrects.',
+  IMPORT_ROW_IMMUTABLE:
+    'Correct the row in your workbook and upload it again; a staged row is the record of what the file contained.',
   IMPORT_NOTHING_TO_IMPORT:
     'Correct the rows this import lists as errors and upload the sheet again; nothing was written to the register.',
 

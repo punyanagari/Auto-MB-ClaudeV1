@@ -582,8 +582,16 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // where nobody can tell what was uploaded from what was fixed
   // afterwards. The verdict written over them is the outcome.
   //
-  // `imported_record_id` is deliberately NOT here, and the reason is
-  // worth stating because it looks like an omission. It is WRITE-ONCE
+  // `cells` and `imported_record_id` are deliberately NOT here, and the
+  // reason is worth stating because it looks like an omission.
+  //
+  // `cells` may be EMPTIED and may never be changed — the route forgets
+  // a sheet's own text as its batch turns terminal, because a contacts
+  // sheet carries account numbers the direct path never logs. Destroying
+  // evidence is not restating it, so the freeze the scan below reads is
+  // the right reading of the rule.
+  //
+  // `imported_record_id` is WRITE-ONCE
   // rather than mutable: null until the row reaches the register, and
   // frozen from that moment, because re-pointing it at a second record
   // would leave the first orphaned from the row that explains it. The

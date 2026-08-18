@@ -82,6 +82,9 @@ export interface TargetColumn {
    * when it does not. Both or neither. */
   readonly pattern?: RegExp;
   readonly patternMessage?: string;
+  /** Replaces the generic "needs at least N characters" for a column
+   * whose single-record route already has words for it. */
+  readonly shortMessage?: string;
   /** Written into the template's example row. */
   readonly example: string;
   /** Written into the template's notes row, under the header. */
@@ -129,12 +132,28 @@ export interface ImportTarget {
     userId: string,
     row: BuiltRow,
   ) => Promise<string>;
-  /** What to say when a row's natural key is already taken. The two
-   * registers differ and the difference matters: `contacts` is unique
-   * only among ACTIVE rows, so a retired twin does not block a re-import,
-   * while `canonical_items` is unique outright and a retired item must be
-   * reactivated rather than re-created. */
+  /** What to say when a row's natural key is already taken.
+   *
+   * VERBATIM THE SINGLE-RECORD ROUTE'S SENTENCE, and used in both places
+   * a duplicate can be discovered: the staging pass, where it is a
+   * prediction, and the commit pass, where it is the database's own
+   * `23505` translated back into words. The two registers differ and the
+   * difference matters — `contacts` is unique only among ACTIVE rows, so
+   * a retired twin does not block a re-import, while `canonical_items` is
+   * unique outright and a retired item must be reactivated rather than
+   * re-created. An operator told the wrong one of those will delete and
+   * re-upload for an hour. */
   readonly duplicateMessage: string;
+  /** The audit event an imported record gets, which is the SAME event the
+   * single-record route writes. A contact brought in by a sheet then has
+   * the history panel a contact typed into the form has, and "who added
+   * this vendor" is answerable from the vendor rather than only from the
+   * Imports screen. */
+  readonly audit: {
+    readonly action: string;
+    readonly entityType: string;
+    readonly details: (row: BuiltRow) => Record<string, unknown>;
+  };
 }
 
 /** What `validate` needs to answer the duplicate question: the register's
@@ -195,7 +214,9 @@ function readCell(
   }
   if (column.minLength !== undefined && text.length < column.minLength) {
     return {
-      error: `This column needs at least ${String(column.minLength)} characters; it has ${String(text.length)}.`,
+      error:
+        column.shortMessage ??
+        `This column needs at least ${String(column.minLength)} characters; it has ${String(text.length)}.`,
     };
   }
   if (column.maxLength !== undefined && text.length > column.maxLength) {
@@ -317,7 +338,7 @@ const CONTACT_COLUMNS: readonly TargetColumn[] = [
     minLength: 3,
     maxLength: 30,
     example: '02582-222333',
-    note: 'Optional.',
+    note: 'Optional. Format the column as Text — leading zeros matter.',
   },
   {
     key: 'email',
@@ -358,6 +379,11 @@ const CONTACT_COLUMNS: readonly TargetColumn[] = [
     header: 'Locality',
     kind: 'text',
     minLength: 2,
+    // routes/masters.ts answers `LOCALITY_INVALID` with this exact
+    // sentence; the generic "needs at least 2 characters" would be the
+    // same rule in different words, which is the drift this module's
+    // header is written against.
+    shortMessage: 'Locality must contain at least two non-space characters.',
     maxLength: 100,
     example: 'Bhusawal',
     note: 'Optional.',
@@ -425,7 +451,7 @@ const CONTACT_COLUMNS: readonly TargetColumn[] = [
     header: 'Bank account number',
     kind: 'text',
     example: '30123456789',
-    note: 'Part of the bank set. Spaces and hyphens are removed.',
+    note: 'Part of the bank set. Format the column as Text — a long number becomes 3.01235E+15 otherwise. Spaces and hyphens are removed.',
   },
   {
     key: 'bankIfsc',
@@ -490,7 +516,7 @@ function orNull(value: unknown): string | null {
  * lower(coalesce(address, '')))`. Mirrored here so the duplicate a person
  * is warned about is exactly the duplicate the database would refuse. */
 function contactKey(designation: string, address: string | null): string {
-  return `${designation.toLowerCase()} ${(address ?? '').toLowerCase()}`;
+  return `${designation.toLowerCase()}\u0000${(address ?? '').toLowerCase()}`;
 }
 
 const CONTACTS_TARGET: ImportTarget = {
@@ -498,8 +524,24 @@ const CONTACTS_TARGET: ImportTarget = {
   label: 'Contacts',
   sheetName: 'Contacts',
   columns: CONTACT_COLUMNS,
+  // routes/masters.ts § POST /api/masters/contacts, word for word.
   duplicateMessage:
-    'An active contact with this designation and address already exists in the register.',
+    'An active contact with this designation and address already exists.',
+  audit: {
+    action: 'contact.created',
+    entityType: 'contacts',
+    details: (row) => {
+      const contact = row as ContactRow;
+      return {
+        designation: contact.designation,
+        roles: [
+          ...(contact.isConsignee ? ['consignee'] : []),
+          ...(contact.isVendor ? ['vendor'] : []),
+          ...(contact.isClient ? ['client'] : []),
+        ],
+      };
+    },
+  },
 
   existingKeys: async (tx) => {
     const rows = await tx<{ designation: string; address: string | null }[]>`
@@ -709,12 +751,21 @@ const CANONICAL_ITEMS_TARGET: ImportTarget = {
   label: 'Catalogue items',
   sheetName: 'Catalogue items',
   columns: CANONICAL_ITEM_COLUMNS,
-  // Deliberately different from the Contacts sentence. `canonical_items`
-  // is unique outright, not only among active rows, so a retired item is
-  // reactivated rather than re-created — and an operator told the wrong
-  // one of those two things will delete and re-upload for an hour.
+  // routes/masters.ts § POST /api/masters/canonical-items, word for word.
   duplicateMessage:
-    'The catalogue already holds an item with this name; it may be retired, in which case reactivate it instead of importing it again.',
+    'A canonical item with this name already exists (it may be retired — reactivate it instead). Two items claiming one wording would both count the same schedule lines.',
+  audit: {
+    action: 'canonical_item.created',
+    entityType: 'canonical_items',
+    details: (row) => {
+      const item = row as CanonicalItemRow;
+      return {
+        name: item.name,
+        groupName: item.groupName,
+        aliases: item.aliases.length,
+      };
+    },
+  },
 
   existingKeys: async (tx) => {
     const rows = await tx<{ name: string }[]>`select name from canonical_items`;
@@ -728,20 +779,22 @@ const CANONICAL_ITEMS_TARGET: ImportTarget = {
     const errors: RowError[] = [];
 
     const name = values.name as string;
+    // COUNTED BEFORE DE-DUPLICATION, which is where the form counts them:
+    // `CanonicalItemSchema.aliases` carries `maxItems: 50` and is checked
+    // against the request body, before `normaliseAliases` collapses
+    // repeats. Counting after would accept a sheet of sixty aliases that
+    // happen to reduce to forty, which the form would refuse.
+    const written = values.aliases as string[];
+    if (written.length > 50) {
+      errors.push({
+        column: 'aliases',
+        message: `An item takes at most 50 aliases; this row has ${String(written.length)}.`,
+      });
+    }
     // `normaliseAliases` in routes/masters.ts is trim, lower-case, drop
     // blanks, de-duplicate. The `list` cell reader above has already
     // trimmed and dropped the blanks, so what is left of it is one line.
-    // Migration 0078 caps the array at 50 and refuses an empty element;
-    // the cap is checked here so the refusal names the column.
-    const aliases = [
-      ...new Set((values.aliases as string[]).map((alias) => alias.toLowerCase())),
-    ];
-    if (aliases.length > 50) {
-      errors.push({
-        column: 'aliases',
-        message: `An item takes at most 50 aliases; this row has ${String(aliases.length)}.`,
-      });
-    }
+    const aliases = [...new Set(written.map((alias) => alias.toLowerCase()))];
 
     const naturalKey = name.trim().toLowerCase();
     const duplicate = duplicateError(

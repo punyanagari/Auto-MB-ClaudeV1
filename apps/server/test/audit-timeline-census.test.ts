@@ -138,6 +138,11 @@ const DYNAMIC_SITES: Record<
     reason:
       'The master-data route factory passes options.entityType; the registry’s `entityType:` literals are collected by the property scan.',
   },
+  'routes/imports.ts': {
+    sites: 1,
+    reason:
+      'The spreadsheet importer (0094) writes one audit row per imported record in a single statement, so its action and entity type come from the target descriptor (import-targets.ts § audit) rather than being literals at the write site. Nothing is lost to the census: the two entity types it can write, `contacts` and `canonical_items`, are the registers routes/masters.ts already writes and are collected from there — and both are documented below as organisation-level master data. A target added with an entity type nothing else audits would need collecting; that is what this reason is here to make somebody check.',
+  },
 };
 
 /** Every place a row can enter audit_events: a call to an audit helper,

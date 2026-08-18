@@ -4,6 +4,7 @@ import type {
   ImportBatch,
   ImportBatchDetail,
   ImportColumn,
+  ImportRow,
   ImportTarget,
   ImportTargetKey,
 } from '@auto-mb/contracts';
@@ -56,11 +57,11 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
  * nothing to wait for and therefore no spinner to invent.
  */
 
-/** Rows of one batch drawn at a time. Sheets run to thousands and the
- * errors are the point, so the table shows the errors first and pages the
- * rest — a browser asked to lay out five thousand rows of eighteen cells
- * stops being a screen. */
-const ROWS_SHOWN = 200;
+/** Rows asked for per request. The server pages on the same key, so this
+ * is a page rather than a silent ceiling — the first cut drew two hundred
+ * rows out of an unbounded response and offered no way past them, which
+ * was the wrong answer at both ends. */
+const ROWS_PER_PAGE = 100;
 
 interface ImportsProps {
   readonly api: ApiClient;
@@ -102,9 +103,16 @@ export function Imports({ api, organisationId, canImport }: ImportsProps) {
 
   const openBatch = useCallback(
     (batch: ImportBatch) =>
+      // Errors first, because that is what the screen is for. The valid
+      // rows are a second request the operator asks for.
       action.act(async () => {
-        setOpen(await api.readImportBatch(organisationId, batch.id));
-      }, ''),
+        setOpen(
+          await api.readImportBatch(organisationId, batch.id, {
+            limit: ROWS_PER_PAGE,
+            status: 'error',
+          }),
+        );
+      }, null),
     [action, api, organisationId],
   );
 
@@ -207,15 +215,24 @@ export function Imports({ api, organisationId, canImport }: ImportsProps) {
                       )}
                     </td>
                     <td className="whitespace-nowrap">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          void openBatch(batch);
-                        }}
-                      >
-                        Open
-                      </Button>
+                      {/* Drawn only for a member holding the import
+                          authority. The LIST is ordinary register history
+                          and every writer sees it; opening a batch shows
+                          the sheet's own cells, which for a contacts
+                          import are bank account numbers — so the server
+                          gates that read (routes/imports.ts) and this
+                          declines to offer a door that would answer 403. */}
+                      {canImport && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            void openBatch(batch);
+                          }}
+                        >
+                          Open
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -420,10 +437,17 @@ function ColumnGuide({ columns }: { readonly columns: readonly ImportColumn[] })
  * One batch: what it holds, what is wrong with it, and the two things
  * that can be done about it.
  *
- * Errors are drawn FIRST, whatever their row number. The valid rows are
- * not what anybody opened this screen to read, and burying eleven
- * refusals under four hundred passes is how an operator concludes the
- * import "just failed".
+ * THE ERROR ROWS ARRIVE FIRST because the screen asks for them first —
+ * `status: 'error'` on the read, not a sort applied to everything that
+ * came back. The valid rows are not what anybody opened this screen for,
+ * and burying eleven refusals under four hundred passes is how an
+ * operator concludes the import just failed.
+ *
+ * "Show the rows that passed" fetches them, and "Load more" pages either
+ * list. Both are real requests against the server's own cursor: the first
+ * cut sliced two hundred rows out of a response that had already
+ * serialised all five thousand, which was the wrong answer at both ends
+ * and offered no way past the two hundred.
  */
 function BatchDetail({
   api,
@@ -441,13 +465,39 @@ function BatchDetail({
   readonly onWithdraw: () => void;
 }) {
   const action = useAction('The rows could not be written.');
-  const { batch, rows, columns } = detail;
-  const ordered = [...rows].sort((left, right) => {
-    if (left.status === right.status) return left.rowNumber - right.rowNumber;
-    return left.status === 'error' ? -1 : 1;
-  });
-  const shown = ordered.slice(0, ROWS_SHOWN);
+  const paging = useAction('The next rows could not be loaded.');
+  const [extra, setExtra] = useState<readonly ImportRow[]>([]);
+  const [cursor, setCursor] = useState<number | null>(detail.nextRowCursor);
+  const [showingValid, setShowingValid] = useState(false);
+  const { batch, columns } = detail;
+
+  // A fresh detail — a commit, a withdrawal — replaces the page entirely
+  // rather than appending to whatever was on screen before it.
+  const detailKey = `${batch.id}:${batch.status}`;
+  const [seenKey, setSeenKey] = useState(detailKey);
+  if (seenKey !== detailKey) {
+    setSeenKey(detailKey);
+    setExtra([]);
+    setCursor(detail.nextRowCursor);
+    setShowingValid(false);
+  }
+
+  const shown = [...detail.rows, ...extra];
   const open = batch.status === 'validated';
+
+  const loadMore = useCallback(
+    (status: 'error' | 'valid' | undefined, from: number | null) =>
+      paging.act(async () => {
+        const next = await api.readImportBatch(organisationId, batch.id, {
+          limit: ROWS_PER_PAGE,
+          ...(from !== null ? { cursor: from } : {}),
+          ...(status !== undefined ? { status } : {}),
+        });
+        setExtra((current) => [...current, ...next.rows]);
+        setCursor(next.nextRowCursor);
+      }, null),
+    [api, batch.id, organisationId, paging],
+  );
 
   return (
     <Card className="flex flex-col gap-4">
@@ -541,13 +591,39 @@ function BatchDetail({
         </tbody>
       </DataTable>
 
-      {ordered.length > shown.length && (
+      <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-muted-foreground">
-          Showing the first <span className="tabular-nums">{String(shown.length)}</span>{' '}
-          of <span className="tabular-nums">{String(ordered.length)}</span> rows, errors
-          first.
+          Showing <span className="tabular-nums">{String(shown.length)}</span> of{' '}
+          <span className="tabular-nums">{String(batch.rowCount)}</span> rows
+          {showingValid ? '.' : ', errors first.'}
         </p>
-      )}
+        {cursor !== null && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={paging.pending}
+            onClick={() => {
+              void loadMore(showingValid ? 'valid' : 'error', cursor);
+            }}
+          >
+            {paging.pending ? 'Loading…' : 'Load more'}
+          </Button>
+        )}
+        {cursor === null && !showingValid && batch.validRowCount > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={paging.pending}
+            onClick={() => {
+              setShowingValid(true);
+              void loadMore('valid', null);
+            }}
+          >
+            Show the rows that passed
+          </Button>
+        )}
+      </div>
+      {paging.actionError !== null && <FormError>{paging.actionError}</FormError>}
     </Card>
   );
 }

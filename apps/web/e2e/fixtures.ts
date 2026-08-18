@@ -838,6 +838,10 @@ const IMPORT_BATCHES = {
 const IMPORT_BATCH_DETAIL = {
   batch: IMPORT_BATCHES.batches[0],
   columns: IMPORT_COLUMNS,
+  // One page, exhausted — so the scan sees the "Show the rows that
+  // passed" control rather than "Load more". Both are the same button
+  // variant; this is the one an operator reaches first.
+  nextRowCursor: null,
   rows: [
     {
       id: '00000000-0000-4000-8000-000000000951',

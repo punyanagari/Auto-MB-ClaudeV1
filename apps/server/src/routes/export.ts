@@ -21,13 +21,15 @@ const errorResponses = {
  * batch an organisation staged and every row of every sheet it uploaded,
  * with the verdict each row was given and the record it became.
  *
- * The staged rows travel, which is the decision worth recording. A
- * committed import is the provenance of hundreds of live records, and the
- * uploaded workbook is deliberately never stored — the rows ARE the file,
- * as far as anything that can be recovered goes. Exporting the batch
- * without them would publish "412 rows, 9 refused" with nothing behind
- * it, which answers the summary question and loses the one a dispute
- * actually asks: what did the sheet say, and why was that row refused.
+ * WHAT DOES NOT TRAVEL is the row's `cells`, and that is the decision
+ * worth recording. They are the operator's own file, and a contacts
+ * sheet's file is a column of bank account numbers and IFSCs — precisely
+ * the values the direct write path is deliberately discreet about
+ * ("never audited and never logged"). The register they fed already holds
+ * the authoritative copy under that discretion; a second, unredacted copy
+ * in the recovery package would be the one place it did not reach. The
+ * route forgets them as a batch turns terminal, and this section excludes
+ * them regardless, so the format does not depend on that timing.
  *
  * `organisation_memberships.can_sign_documents` (0091) also joins here,
  * and it is a REPAIR rather than an addition: it should have arrived with
@@ -644,23 +646,28 @@ const SECTIONS: readonly ExportSection[] = [
   // feature's, and a reader of a recovery package who does not know they
   // are different will otherwise assume one of them is a duplicate.
   //
-  // BOTH TRAVEL, including the staged rows, and the alternative was
-  // considered. `test/integrity.integration.test.ts` § NOT_EXPORTED is
-  // the place a table is declared scratch, and it holds exactly one entry
-  // after eight waves — a bar this does not clear. The batch alone would
-  // export a claim ("412 rows, 9 refused") with none of its evidence, and
-  // the rows ARE the evidence: what the operator's own file said, which
-  // is the only record of it, because the workbook itself is never
-  // stored. They are bounded by the row cap and they are what makes a
-  // committed import auditable years later.
+  // BOTH TABLES TRAVEL, and the row table travels WITHOUT ITS CELLS.
+  // `test/integrity.integration.test.ts` § NOT_EXPORTED is where a table
+  // is declared scratch, and it holds exactly one entry after eight waves
+  // — a bar neither of these clears. The verdicts are what makes a
+  // committed import auditable: which row, what was wrong with it in the
+  // register's own words, and what it became. None of that is a value.
+  //
+  // The cells are, and for a contacts sheet they are a column of bank
+  // account numbers and IFSCs — the values `contact-fields.ts` says are
+  // "never audited and never logged". The register they fed already holds
+  // the authoritative copy under that discretion, so a second unredacted
+  // copy here would be the one place it did not reach.
   {
     key: 'spreadsheetImportBatches',
     sql: `select * from spreadsheet_import_batches order by created_at, id`,
   },
   {
     key: 'spreadsheetImportRows',
-    sql: `select * from spreadsheet_import_rows order by batch_id, row_number`,
-    jsonbColumns: ['cells', 'errors'],
+    sql: `select id, organisation_id, batch_id, row_number, status, errors,
+                 imported_record_id
+          from spreadsheet_import_rows order by batch_id, row_number`,
+    jsonbColumns: ['errors'],
   },
   // M6/7 retrofit (migration 0028): the unified Contacts master and the
   // Work<->consignee association. consignee_masters was never a section

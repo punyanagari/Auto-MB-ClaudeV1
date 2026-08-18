@@ -190,12 +190,22 @@ $$;
 -- ---------------------------------------------------------------------
 -- 1. The batch.
 --
--- FOUR STATES, walked forwards only:
+-- FIVE STATES, walked forwards only:
 --
---   pending    the file is staged and its rows are not yet judged
---   validated  every row carries a verdict; the operator may commit
---   completed  terminal — the valid rows were written to the register
---   cancelled  terminal — withdrawn, and nothing was written
+--   pending     the file is staged and its rows are not yet judged
+--   validated   every row carries a verdict; the operator may commit
+--   completed   terminal — the valid rows were written to the register
+--   cancelled   terminal — withdrawn, and nothing was written
+--   superseded  terminal — a later sheet was uploaded for this register
+--
+-- `superseded` exists because a validated batch would otherwise stay
+-- committable for ever, which turns the ordinary correction loop into a
+-- trap: upload, read the eleven errors, fix the workbook, upload again —
+-- and now TWO batches are committable, the corrected one and the one
+-- with the typo still in it. Committing the wrong one writes a known-bad
+-- row and reports success. Uploading a sheet for a register therefore
+-- retires every open batch aimed at it, which closes the window before
+-- it opens rather than asking anybody to notice.
 --
 -- `pending` and `validated` are separate even though one request today
 -- moves through both, because the state that matters to an operator is
@@ -228,7 +238,7 @@ CREATE TABLE spreadsheet_import_batches (
   target text NOT NULL CHECK (target IN ('contacts', 'canonical_items')),
 
   status text NOT NULL DEFAULT 'pending' CHECK (
-    status IN ('pending', 'validated', 'completed', 'cancelled')
+    status IN ('pending', 'validated', 'completed', 'cancelled', 'superseded')
   ),
 
   original_filename text NOT NULL CHECK (
@@ -276,9 +286,17 @@ CREATE TABLE spreadsheet_import_batches (
     OR (valid_row_count + error_row_count = row_count
         AND imported_row_count <= valid_row_count)
   ),
+
   CONSTRAINT spreadsheet_import_batches_completion_shape CHECK (
     (completed_at IS NULL) = (completed_by_user_id IS NULL)
     AND (status = 'completed') = (completed_at IS NOT NULL)
+  ),
+  -- A superseded batch is terminal without being an act anybody
+  -- performed: it is what happened to it, so it carries no reason and no
+  -- actor. The two columns that WOULD say who decided are the
+  -- cancellation pair, and they stay null.
+  CONSTRAINT spreadsheet_import_batches_supersession_shape CHECK (
+    status <> 'superseded' OR (cancelled_at IS NULL AND completed_at IS NULL)
   ),
   CONSTRAINT spreadsheet_import_batches_cancellation_shape CHECK (
     (cancelled_at IS NULL) = (cancelled_by_user_id IS NULL)
@@ -454,8 +472,10 @@ BEGIN
     -- judged or withdrawn; `validated` may be committed or withdrawn.
     IF NEW.status <> OLD.status THEN
       IF NOT (
-        (OLD.status = 'pending' AND NEW.status IN ('validated', 'cancelled'))
-        OR (OLD.status = 'validated' AND NEW.status IN ('completed', 'cancelled'))
+        (OLD.status = 'pending'
+           AND NEW.status IN ('validated', 'cancelled', 'superseded'))
+        OR (OLD.status = 'validated'
+           AND NEW.status IN ('completed', 'cancelled', 'superseded'))
       ) THEN
         RAISE EXCEPTION
           'an import batch cannot move from % to %', OLD.status, NEW.status
@@ -517,12 +537,34 @@ BEGIN
     -- place is one where nobody can tell what was uploaded from what was
     -- fixed afterwards.
     IF ROW(
-         NEW.id, NEW.organisation_id, NEW.batch_id, NEW.row_number, NEW.cells
+         NEW.id, NEW.organisation_id, NEW.batch_id, NEW.row_number
        ) IS DISTINCT FROM ROW(
-         OLD.id, OLD.organisation_id, OLD.batch_id, OLD.row_number, OLD.cells
+         OLD.id, OLD.organisation_id, OLD.batch_id, OLD.row_number
        ) THEN
       RAISE EXCEPTION
-        'a staged row''s cells are what the sheet contained and are not edited; upload a corrected sheet instead'
+        'a staged row''s identity is written once; upload a corrected sheet instead'
+        USING ERRCODE = '23L03';
+    END IF;
+
+    -- CELLS MAY BE FORGOTTEN, AND MAY NOT BE CHANGED.
+    --
+    -- The one write this rule admits is emptying them, because a
+    -- contacts sheet carries account numbers and IFSCs and the direct
+    -- path treats both as values never to be audited or logged
+    -- (contact-fields.ts § normaliseContactBankDetails). Staging them
+    -- beyond the moment somebody is reading them to decide would
+    -- undo that for rows whose authoritative copy already lives in
+    -- `contacts`, where the discretion applies. So the route empties
+    -- them as a batch reaches a terminal state.
+    --
+    -- Emptying is not editing: it destroys the evidence rather than
+    -- restating it, so it cannot be used to make a staged row claim
+    -- something it never contained — which is the whole point of the
+    -- rule above. Everything that MEANS anything afterwards (the
+    -- verdict, the errors, the record the row became) is kept.
+    IF NEW.cells IS DISTINCT FROM OLD.cells AND NEW.cells <> '{}'::jsonb THEN
+      RAISE EXCEPTION
+        'a staged row''s cells are what the sheet contained; they may be forgotten but never rewritten'
         USING ERRCODE = '23L03';
     END IF;
 

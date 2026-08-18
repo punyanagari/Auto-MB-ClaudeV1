@@ -28,16 +28,14 @@ import { readXlsxRows, writeXlsxWorkbook } from '../src/xlsx.js';
  *      that changed underneath the batch;
  *   4. the walls: role, authority, the other organisation, and a
  *      finished batch;
- *   5. THE PARSER, attacked as the untrusted input it is — a zip bomb's
- *      header, an XML document type, a formula, a foreign compression;
- *   6. the database's own arm, attacked with raw SQL: staged cells are
- *      evidence and cannot be rewritten.
+ *   5. the database's own arm, attacked with raw SQL: staged cells are
+ *      evidence, and may be forgotten but never rewritten.
  *
- * The workbooks are built by this module's own writer. That is not a
- * tautology as long as the reader and the writer disagree about
- * everything except the format — the writer emits inline strings and the
- * reader is exercised against shared strings, sparse rows and numeric
- * cells by the fixtures below, which are hand-built XML.
+ * THE PARSER'S OWN CASES LIVE IN `xlsx.test.ts`. Every one of them is a
+ * pure function of some bytes — the amplification budget, the quadratic
+ * row scan, the shared-string lookup, the first-tab resolution, each
+ * limit tripped — and none needs a database, an organisation or a
+ * session. What stays here is what a refusal becomes on the wire.
  */
 
 const adminUrl =
@@ -130,6 +128,75 @@ async function upload(
     headers: { 'content-type': XLSX_TYPE },
     payload: bytes,
   });
+}
+
+/** A sheet whose only data row is row 40, with nothing between it and
+ * the header — which is what Excel writes when the rows in between were
+ * never populated. */
+function sparseContactsSheet(): Buffer {
+  const cell = (reference: string, value: string) =>
+    `<c r="${reference}" t="inlineStr"><is><t>${value}</t></is></c>`;
+  const sheet =
+    `<row r="1">${cell('A1', 'Designation')}${cell('B1', 'Address')}</row>` +
+    `<row r="40">${cell('A40', '')}${cell('B40', 'Nowhere')}</row>`;
+  return storedWorkbook(sheet);
+}
+
+/** The smallest container the reader accepts, carrying one sheet. */
+function storedWorkbook(sheetXml: string): Buffer {
+  const parts: [string, string][] = [
+    [
+      'xl/workbook.xml',
+      '<?xml version="1.0"?><workbook xmlns:r="http://x"><sheets>' +
+        '<sheet name="One" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    ],
+    [
+      'xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0"?><Relationships>' +
+        '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+    ],
+    [
+      'xl/worksheets/sheet1.xml',
+      `<?xml version="1.0"?><worksheet><sheetData>${sheetXml}</sheetData></worksheet>`,
+    ],
+  ];
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, text] of parts) {
+    const nameBytes = Buffer.from(name, 'utf8');
+    const data = Buffer.from(text, 'utf8');
+    const checksum = crc32(data);
+    const local = Buffer.alloc(30 + nameBytes.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    nameBytes.copy(local, 30);
+    const central = Buffer.alloc(46 + nameBytes.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBytes.length, 28);
+    central.writeUInt32LE(offset, 42);
+    nameBytes.copy(central, 46);
+    locals.push(local, data);
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+  const directory = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(parts.length, 8);
+  end.writeUInt16LE(parts.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
 }
 
 /** A contacts workbook from a header row and any number of data rows. */
@@ -245,20 +312,17 @@ describe('staging a workbook', () => {
     // the register being untouched until somebody commits.
     expect(await countContacts()).toBe(before);
 
-    // Sheet row numbers, not a sequence: row 1 is the header, so the
-    // first data row is 2 and the operator can find it in Excel.
-    expect(detail.rows.map((row) => row.rowNumber)).toEqual([2, 3, 4, 5]);
-    expect(detail.rows.map((row) => row.status)).toEqual([
-      'valid',
-      'error',
-      'error',
-      'error',
-    ]);
+    // THE UPLOAD ANSWERS WITH THE ERROR PAGE, not every row: a sheet may
+    // hold five thousand and the screen opens on what is wrong with it.
+    // Row 2 passed, so it is not here; rows 3, 4 and 5 are, in sheet
+    // order — the numbers the operator reads in Excel.
+    expect(detail.rows.map((row) => row.rowNumber)).toEqual([3, 4, 5]);
+    expect(detail.rows.every((row) => row.status === 'error')).toBe(true);
 
     // The errors name their COLUMN, which is what makes a batch fixable:
     // "row 47" sends somebody scanning eighteen fields, "row 47, GSTIN"
     // does not.
-    const bad = detail.rows[1];
+    const bad = detail.rows[0];
     expect(bad?.errors.map((error) => error.column).sort()).toEqual(['email', 'gstin']);
     // And they are the REGISTER'S OWN sentences, from the same validator
     // the Contacts form calls — so one mistake reads the same words
@@ -267,10 +331,10 @@ describe('staging a workbook', () => {
       'TDS-deductor GSTIN ending in D',
     );
     expect(
-      detail.rows[2]?.errors.find((error) => error.column === 'designation')?.message,
+      detail.rows[1]?.errors.find((error) => error.column === 'designation')?.message,
     ).toContain('rule R16');
     expect(
-      detail.rows[3]?.errors.find((error) => error.column === 'designation')?.message,
+      detail.rows[2]?.errors.find((error) => error.column === 'designation')?.message,
     ).toContain('required');
 
     // The raw cells travel back, so the screen can show the value that
@@ -289,9 +353,11 @@ describe('staging a workbook', () => {
     const detail = response.json<ImportBatchDetail>();
     // The FIRST passes and the second is refused. Refusing both would be
     // defensible and is worse: somebody who pasted a block twice wants
-    // the register populated once, not the file rejected.
-    expect(detail.rows.map((row) => row.status)).toEqual(['valid', 'error']);
-    expect(detail.rows[1]?.errors[0]?.message).toContain('earlier row of this sheet');
+    // the register populated once, not the file rejected. Only the
+    // refused one comes back, because the upload answers the error page.
+    expect(detail.batch.validRowCount).toBe(1);
+    expect(detail.rows.map((row) => row.rowNumber)).toEqual([3]);
+    expect(detail.rows[0]?.errors[0]?.message).toContain('earlier row of this sheet');
   });
 
   it('ignores a column it does not know and refuses a missing required one', async () => {
@@ -302,7 +368,9 @@ describe('staging a workbook', () => {
       ]),
     );
     expect(withNoise.statusCode, withNoise.body).toBe(201);
-    expect(withNoise.json<ImportBatchDetail>().rows[0]?.status).toBe('valid');
+    // No errors, so the error page is empty and the count says it passed.
+    expect(withNoise.json<ImportBatchDetail>().batch.validRowCount).toBe(1);
+    expect(withNoise.json<ImportBatchDetail>().rows).toHaveLength(0);
 
     const missing = await upload(
       writeXlsxWorkbook('Contacts', [['Address'], ['Akola']]),
@@ -339,11 +407,17 @@ describe('committing a batch', () => {
     expect(await countContacts()).toBe(before + 2);
 
     // Each committed row names the record it became, which is the
-    // provenance the whole feature exists to leave behind.
-    const written = detail.rows.filter((row) => row.importedRecordId !== null);
+    // provenance the whole feature exists to leave behind. Read from the
+    // table rather than the response, which carries the error page.
+    const written = await admin<{ imported_record_id: string | null }[]>`
+      select imported_record_id from spreadsheet_import_rows
+      where batch_id = ${batchId} and imported_record_id is not null
+      order by row_number
+    `;
     expect(written).toHaveLength(2);
     const [contact] = await admin<{ designation: string }[]>`
-      select designation from contacts where id = ${written[0]?.importedRecordId ?? ''}
+      select designation from contacts
+      where id = ${written[0]?.imported_record_id ?? ''}
     `;
     expect(contact?.designation).toBe('Commit One Traders');
 
@@ -364,7 +438,7 @@ describe('committing a batch', () => {
     );
     expect(staged.statusCode, staged.body).toBe(201);
     const detail = staged.json<ImportBatchDetail>();
-    expect(detail.rows[0]?.status).toBe('valid');
+    expect(detail.batch.validRowCount).toBe(1);
     const batchId = detail.batch.id;
 
     // Somebody adds by hand exactly what the sheet is about to add. Days
@@ -419,6 +493,239 @@ describe('committing a batch', () => {
     expect(cancelled.json<ImportBatchDetail>().batch.status).toBe('cancelled');
     expect(cancelled.json<ImportBatchDetail>().batch.cancelledReason).toBe(
       'Uploaded the wrong sheet',
+    );
+  });
+});
+
+describe('the review pass, each finding with its own case', () => {
+  it('numbers errors by the sheet row, across a gap Excel left behind', async () => {
+    // P4. Rows 2 and 40 with nothing between them: positional numbering
+    // would report the second as row 3 and send the operator to a line
+    // that is not the one that is wrong.
+    const bytes = writeXlsxWorkbook('Contacts', []);
+    void bytes;
+    const sparse = sparseContactsSheet();
+    const response = await upload(sparse);
+    expect(response.statusCode, response.body).toBe(201);
+    const detail = response.json<ImportBatchDetail>();
+    expect(detail.rows.map((row) => row.rowNumber)).toEqual([40]);
+    expect(detail.rows[0]?.errors[0]?.column).toBe('designation');
+  });
+
+  it('strips control characters from a filename before trimming it', async () => {
+    // P6. Stripping AFTER trimming left "x \u0001" as the untrimmed "x "
+    // and "\u0001" as "" — both refused by 0094's btrim CHECK as a
+    // 23514, which reaches the caller as an unexplained 500.
+    const trailing = await upload(
+      contactsSheet([['Control Char Traders', 'Latur', '', '', 'yes']]),
+      { filename: 'x \u0001' },
+    );
+    expect(trailing.statusCode, trailing.body).toBe(201);
+    expect(trailing.json<ImportBatchDetail>().batch.originalFilename).toBe('x');
+
+    const onlyControl = await upload(
+      contactsSheet([['Control Char Traders Two', 'Latur', '', '', 'yes']]),
+      { filename: '\u0001' },
+    );
+    // Nothing survives the strip, so it is the named 400 the trimmer
+    // exists to give rather than a constraint violation.
+    expect(onlyControl.statusCode).toBe(400);
+  });
+
+  it('lets a writer without the authority read the register but not a batch', async () => {
+    // A2. The rail draws Imports for every writer, so the LIST must
+    // answer them; the batch DETAIL carries the sheet's own cells, which
+    // for a contacts sheet are bank account numbers, so it does not.
+    const staged = await upload(
+      contactsSheet([['Wall Traders', 'Latur', '', '', 'yes']]),
+    );
+    const batchId = staged.json<ImportBatchDetail>().batch.id;
+
+    const listed = await authed(clerk, {
+      method: 'GET',
+      url: '/api/imports',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    expect(listed.json<ImportBatchList>().batches.length).toBeGreaterThan(0);
+
+    const opened = await authed(clerk, {
+      method: 'GET',
+      url: `/api/imports/${batchId}`,
+      organisationId,
+    });
+    expect(opened.statusCode).toBe(403);
+  });
+
+  it('retires the open batches of a register when a new sheet arrives', async () => {
+    // R2. The correction loop: upload, see the error, fix the workbook,
+    // upload again. Without this the first batch stays committable and
+    // running it writes the typo that was already corrected.
+    const first = await upload(
+      contactsSheet([['Superseded Traders', 'Wardha', '', '', 'yes']]),
+    );
+    const firstId = first.json<ImportBatchDetail>().batch.id;
+    expect(first.json<ImportBatchDetail>().batch.status).toBe('validated');
+
+    await upload(contactsSheet([['Corrected Traders', 'Wardha', '', '', 'yes']]));
+
+    const reread = await authed(owner, {
+      method: 'GET',
+      url: `/api/imports/${firstId}`,
+      organisationId,
+    });
+    expect(reread.json<ImportBatchDetail>().batch.status).toBe('superseded');
+
+    const run = await authed(owner, {
+      method: 'POST',
+      url: `/api/imports/${firstId}/import`,
+      organisationId,
+    });
+    expect(run.statusCode).toBe(409);
+    expect(run.json<{ code: string }>().code).toBe('IMPORT_BATCH_SUPERSEDED');
+  });
+
+  it('forgets the sheet’s cells once the batch is finished, keeping the verdicts', async () => {
+    // R1. A contacts sheet carries account numbers and IFSCs, and the
+    // direct write path treats those as values never audited or logged.
+    // They live from the upload until the decision and no longer.
+    const staged = await upload(
+      writeXlsxWorkbook('Contacts', [
+        [
+          'Designation',
+          'Address',
+          'Bank account holder',
+          'Bank name',
+          'Bank account number',
+          'IFSC',
+        ],
+        [
+          'Payable Traders',
+          'Yavatmal',
+          'Payable Traders',
+          'State Bank of India',
+          '30123456789',
+          'SBIN0000300',
+        ],
+      ]),
+    );
+    const detail = staged.json<ImportBatchDetail>();
+    expect(detail.rows).toHaveLength(0); // no errors staged
+    const batchId = detail.batch.id;
+
+    const [before] = await admin<{ cells: Record<string, string> }[]>`
+      select cells from spreadsheet_import_rows where batch_id = ${batchId}
+    `;
+    expect(before?.cells.bankAccountNumber).toBe('30123456789');
+
+    const committed = await authed(owner, {
+      method: 'POST',
+      url: `/api/imports/${batchId}/import`,
+      organisationId,
+    });
+    expect(committed.statusCode, committed.body).toBe(200);
+
+    const [after] = await admin<
+      { cells: Record<string, string>; imported_record_id: string | null }[]
+    >`
+      select cells, imported_record_id from spreadsheet_import_rows
+      where batch_id = ${batchId}
+    `;
+    expect(after?.cells).toEqual({});
+    // …and what happened to the row is still there.
+    expect(after?.imported_record_id).not.toBeNull();
+  });
+
+  it('writes the register’s own event for every imported record', async () => {
+    // R4. Without it an imported contact has an empty history panel and
+    // "who added this vendor" is answerable only from the Imports screen.
+    const staged = await upload(
+      contactsSheet([['Audited Traders', 'Chandrapur', '', '', 'yes']]),
+    );
+    const batchId = staged.json<ImportBatchDetail>().batch.id;
+    const committed = await authed(owner, {
+      method: 'POST',
+      url: `/api/imports/${batchId}/import`,
+      organisationId,
+    });
+    expect(committed.statusCode, committed.body).toBe(200);
+    // From the table: the commit answers the ERROR page, and this sheet
+    // has none.
+    const [written] = await admin<{ imported_record_id: string | null }[]>`
+      select imported_record_id from spreadsheet_import_rows
+      where batch_id = ${batchId} and imported_record_id is not null
+    `;
+    const recordId = written?.imported_record_id;
+
+    const events = await admin<{ action: string; details: Record<string, unknown> }[]>`
+      select action, details from audit_events
+      where organisation_id = ${organisationId}
+        and entity_type = 'contacts'
+        and entity_id = ${recordId ?? null}
+    `;
+    expect(events.map((event) => event.action)).toEqual(['contact.created']);
+    // The batch rides in the payload, which is what makes the record
+    // point back at the file it came from.
+    expect(events[0]?.details.importBatchId).toBe(batchId);
+  });
+
+  it('pages a batch’s rows rather than sending all of them', async () => {
+    // R3. Five thousand rows of twenty columns were serialised in full
+    // by the upload, the read and the commit.
+    const rows = Array.from({ length: 8 }, (_unused, index) => [
+      `Paged Traders ${String(index)}`,
+      'Gondia',
+      '',
+      '',
+      'yes',
+    ]);
+    const staged = await upload(contactsSheet(rows));
+    const batchId = staged.json<ImportBatchDetail>().batch.id;
+
+    const firstPage = await authed(owner, {
+      method: 'GET',
+      url: `/api/imports/${batchId}?limit=3&status=valid`,
+      organisationId,
+    });
+    expect(firstPage.statusCode, firstPage.body).toBe(200);
+    const page = firstPage.json<ImportBatchDetail>();
+    expect(page.rows).toHaveLength(3);
+    expect(page.nextRowCursor).toBe(page.rows[2]?.rowNumber);
+
+    const secondPage = await authed(owner, {
+      method: 'GET',
+      url: `/api/imports/${batchId}?limit=3&status=valid&cursor=${String(page.nextRowCursor)}`,
+      organisationId,
+    });
+    const next = secondPage.json<ImportBatchDetail>();
+    expect(next.rows).toHaveLength(3);
+    expect(next.rows[0]?.rowNumber).toBeGreaterThan(page.rows[2]?.rowNumber ?? 0);
+  });
+
+  it('answers a commit-time duplicate in the register’s own words', async () => {
+    // A6. The raw driver message used to be persisted into `errors`,
+    // exported, and shown to the operator.
+    const staged = await upload(
+      contactsSheet([['Wording Traders', 'Akot', '', '', 'yes']]),
+    );
+    const batchId = staged.json<ImportBatchDetail>().batch.id;
+    await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: { designation: 'Wording Traders', address: 'Akot', isVendor: true },
+    });
+
+    const committed = await authed(owner, {
+      method: 'POST',
+      url: `/api/imports/${batchId}/import`,
+      organisationId,
+    });
+    expect(committed.statusCode, committed.body).toBe(200);
+    const message = committed.json<ImportBatchDetail>().rows[0]?.errors[0]?.message;
+    // Verbatim routes/masters.ts, and nothing resembling a driver dump.
+    expect(message).toBe(
+      'An active contact with this designation and address already exists.',
     );
   });
 });
@@ -497,7 +804,7 @@ describe('the template', () => {
     );
 
     const rows = readXlsxRows(response.rawPayload);
-    expect(rows[0]).toContain('Item name');
+    expect(rows[0]?.cells).toContain('Item name');
     expect(rows).toHaveLength(3);
 
     // The template a register hands out must be a sheet that register
@@ -506,10 +813,11 @@ describe('the template', () => {
     const back = await upload(response.rawPayload, { target: 'canonical_items' });
     expect(back.statusCode, back.body).toBe(201);
     const detail = back.json<ImportBatchDetail>();
-    // The example row validates; the notes row does not, and that is
-    // deliberate — a template returned unedited should produce a visible
+    // The example row validates and the notes row does not, which is
+    // deliberate — a template returned unedited produces a visible
     // verdict rather than silently importing an example item.
-    expect(detail.rows[0]?.status).toBe('valid');
+    expect(detail.batch.validRowCount).toBe(1);
+    expect(detail.batch.errorRowCount).toBe(1);
   });
 
   it('answers a non-member before it answers which registers exist', async () => {
@@ -522,66 +830,18 @@ describe('the template', () => {
   });
 });
 
-describe('the parser, as the untrusted input it is', () => {
-  it('reads shared strings, sparse rows and numeric cells', () => {
-    // Hand-built rather than written by this module: Excel puts nearly
-    // every string in the shared table and omits empty cells entirely,
-    // and a reader tested only against its own writer would pass while
-    // being unable to open a real workbook.
-    const bytes = handBuiltWorkbook(
-      `<sheetData>
-         <row r="1">
-           <c r="A1" t="s"><v>0</v></c><c r="C1" t="s"><v>1</v></c>
-         </row>
-         <row r="2">
-           <c r="A2" t="s"><v>2</v></c>
-           <c r="C2"><v>42</v></c>
-         </row>
-       </sheetData>`,
-      ['Designation', 'Address', 'Acme &amp; Co'],
-    );
-    const rows = readXlsxRows(bytes);
-    // Column C is index 2 even though B is absent: the cell reference
-    // decides the column, never the position among its siblings.
-    expect(rows[0]).toEqual(['Designation', '', 'Address']);
-    expect(rows[1]).toEqual(['Acme & Co', '', '42']);
-  });
-
-  it('never evaluates a formula, reading only the value on disk', () => {
-    const bytes = handBuiltWorkbook(
-      `<sheetData>
-         <row r="1"><c r="A1" t="str"><f>CONCATENATE("a","b")</f><v>ab</v></c></row>
-       </sheetData>`,
-      [],
-    );
-    expect(readXlsxRows(bytes)[0]).toEqual(['ab']);
-  });
-
-  it('refuses a workbook that declares a document type', async () => {
-    const bytes = handBuiltWorkbook(
-      `<!DOCTYPE x [<!ENTITY a "boom">]><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>`,
-      [],
-    );
-    const response = await upload(bytes);
-    expect(response.statusCode).toBe(400);
-    expect(response.json<{ code: string }>().code).toBe('IMPORT_SHEET_UNREADABLE');
-  });
-
-  it('refuses bytes that are not a workbook at all', async () => {
-    const response = await upload(Buffer.from('%PDF-1.7 not a workbook'));
-    expect(response.statusCode).toBe(400);
-    expect(response.json<{ message: string }>().message).toContain('Save As');
-  });
-});
-
 describe('the database’s own arm', () => {
   it('refuses to rewrite a staged row’s cells, or to reopen a finished batch', async () => {
     const staged = await upload(
       contactsSheet([['Frozen Traders', 'Latur', '', '', 'yes']]),
     );
-    const detail = staged.json<ImportBatchDetail>();
-    const batchId = detail.batch.id;
-    const rowId = detail.rows[0]?.id ?? '';
+    const batchId = staged.json<ImportBatchDetail>().batch.id;
+    // From the table: the upload answers the ERROR page and this sheet
+    // has none, so the row is not in the response.
+    const [staging] = await admin<{ id: string }[]>`
+      select id from spreadsheet_import_rows where batch_id = ${batchId}
+    `;
+    const rowId = staging?.id ?? '';
 
     // The cells are evidence: a staging row whose content could be
     // corrected in place is one where nobody can tell what was uploaded
@@ -627,6 +887,7 @@ describe('the database’s own arm', () => {
     const staged = await upload(
       contactsSheet([['Census Traders', 'Beed', '', '', 'yes']]),
     );
+    expect(staged.statusCode, staged.body).toBe(201);
     const batchId = staged.json<ImportBatchDetail>().batch.id;
     await expect(
       admin`
@@ -639,87 +900,3 @@ describe('the database’s own arm', () => {
     ).rejects.toMatchObject({ code: '23L05' });
   });
 });
-
-/**
- * A workbook this module's writer would never produce: shared strings,
- * sparse cells, formulas, whatever the sheet XML says. Stored rather than
- * deflated, which the reader also has to accept — a real writer uses both.
- */
-function handBuiltWorkbook(
-  sheetData: string,
-  sharedStrings: readonly string[],
-): Buffer {
-  const parts: [string, string][] = [
-    [
-      '[Content_Types].xml',
-      '<?xml version="1.0" encoding="UTF-8"?>' +
-        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-        '<Default Extension="xml" ContentType="application/xml"/></Types>',
-    ],
-    [
-      'xl/workbook.xml',
-      '<?xml version="1.0" encoding="UTF-8"?>' +
-        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-        '<sheets><sheet name="Sheet1" sheetId="1"/></sheets></workbook>',
-    ],
-    [
-      'xl/worksheets/sheet1.xml',
-      '<?xml version="1.0" encoding="UTF-8"?>' +
-        `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${sheetData}</worksheet>`,
-    ],
-  ];
-  if (sharedStrings.length > 0) {
-    parts.push([
-      'xl/sharedStrings.xml',
-      '<?xml version="1.0" encoding="UTF-8"?>' +
-        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-        sharedStrings.map((value) => `<si><t>${value}</t></si>`).join('') +
-        '</sst>',
-    ]);
-  }
-  return storedZip(parts);
-}
-
-/** The STORED (uncompressed) half of the ZIP format, which real writers
- * use for small parts and which the reader must therefore accept. */
-function storedZip(entries: readonly (readonly [string, string])[]): Buffer {
-  const locals: Buffer[] = [];
-  const centrals: Buffer[] = [];
-  let offset = 0;
-  for (const [name, text] of entries) {
-    const nameBytes = Buffer.from(name, 'utf8');
-    const data = Buffer.from(text, 'utf8');
-    const checksum = crc32(data);
-    const local = Buffer.alloc(30 + nameBytes.length);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt32LE(checksum, 14);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(nameBytes.length, 26);
-    nameBytes.copy(local, 30);
-
-    const central = Buffer.alloc(46 + nameBytes.length);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);
-    central.writeUInt16LE(20, 6);
-    central.writeUInt32LE(checksum, 16);
-    central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(data.length, 24);
-    central.writeUInt16LE(nameBytes.length, 28);
-    central.writeUInt32LE(offset, 42);
-    nameBytes.copy(central, 46);
-
-    locals.push(local, data);
-    centrals.push(central);
-    offset += local.length + data.length;
-  }
-  const directory = Buffer.concat(centrals);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
-  end.writeUInt32LE(directory.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, directory, end]);
-}

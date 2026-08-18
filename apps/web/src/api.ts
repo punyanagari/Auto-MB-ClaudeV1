@@ -33,6 +33,7 @@ import type {
   SigningAgentResponse,
   ImportBatchDetail,
   ImportBatchList,
+  ImportRowStatus,
   ImportTargetKey,
   SigningQueueResponse,
   SigningRequestResponse,
@@ -2011,6 +2012,12 @@ export interface ApiClient {
   readonly readImportBatch: (
     organisationId: string,
     batchId: string,
+    options?: {
+      readonly limit?: number;
+      /** The `rowNumber` of the last row of the previous page. */
+      readonly cursor?: number;
+      readonly status?: ImportRowStatus;
+    },
   ) => Promise<ImportBatchDetail>;
   /** Stages a workbook. Writes nothing to the register — that is
    * `commitImportBatch`, and the separation is the whole feature. */
@@ -4747,8 +4754,15 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       const suffix = query.size === 0 ? '' : `?${query.toString()}`;
       return request<ImportBatchList>(`/api/imports${suffix}`, { organisationId });
     },
-    async readImportBatch(organisationId, batchId) {
-      return request<ImportBatchDetail>(`/api/imports/${batchId}`, { organisationId });
+    async readImportBatch(organisationId, batchId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', String(options.cursor));
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchDetail>(`/api/imports/${batchId}${suffix}`, {
+        organisationId,
+      });
     },
     async uploadImportWorkbook(organisationId, target, file) {
       // The raw Blob, exactly as `uploadPdf` sends a PDF — there is no

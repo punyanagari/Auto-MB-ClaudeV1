@@ -2221,6 +2221,26 @@ describe('tenant migration contract', () => {
       "(status = 'error') = (jsonb_array_length(errors) > 0)",
     );
 
+    // CELLS MAY BE FORGOTTEN AND MAY NOT BE CHANGED. A contacts sheet
+    // carries account numbers, and the direct write path treats those as
+    // values never audited or logged; staging them past the decision
+    // would undo that. Emptying is not editing — it destroys the
+    // evidence rather than restating it — so it is the one write the
+    // rule admits, and the assertion pins both halves.
+    expect(sql).toContain(
+      "IF NEW.cells IS DISTINCT FROM OLD.cells AND NEW.cells <> '{}'::jsonb THEN",
+    );
+
+    // A LATER SHEET RETIRES THE OPEN ONES. Without it a validated batch
+    // stays committable for ever and the ordinary correction loop
+    // becomes a trap: fix the workbook, upload again, and the batch with
+    // the typo in it is still runnable.
+    expect(sql).toContain(
+      "status IN ('pending', 'validated', 'completed', 'cancelled', 'superseded')",
+    );
+    expect(sql).toContain("AND NEW.status IN ('validated', 'cancelled', 'superseded')");
+    expect(sql).toContain("AND NEW.status IN ('completed', 'cancelled', 'superseded')");
+
     // The batch's census cannot claim more imported rows than it judged
     // valid, and the two terminal states each require their own timestamp
     // — so a 'completed' row with no completion is refused by the table

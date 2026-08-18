@@ -714,9 +714,22 @@ describe('export completeness is catalog-driven', () => {
         and column_name like 'can\_%'
       order by column_name
     `;
-    // Guard against the query silently matching nothing and the test
-    // passing vacuously on an unmigrated database.
-    expect(grants.length).toBeGreaterThanOrEqual(6);
+    // The live count, not a floor with slack in it. Eight grants exist at
+    // 0094 — issue, cancel, approve amendments, statutory, payments,
+    // sign, payroll, import — and a floor of six would let two of them
+    // disappear from the catalog without this failing, which is the same
+    // shape of hole the census exists to close. A ninth authority edits
+    // this number, which is the point at which somebody reads the list.
+    expect(grants.map((row) => row.column_name)).toEqual([
+      'can_approve_amendments',
+      'can_cancel_documents',
+      'can_import_data',
+      'can_issue_documents',
+      'can_manage_payments',
+      'can_manage_payroll',
+      'can_manage_statutory_reporting',
+      'can_sign_documents',
+    ]);
 
     const response = await authed(owner, {
       method: 'GET',

@@ -5,6 +5,7 @@ import {
   type ErrorCode,
   ImportBatchDetailSchema,
   ImportBatchListSchema,
+  ImportRowsQuerySchema,
   ImportUploadQuerySchema,
   KeysetQuerySchema,
   withKeysetQuery,
@@ -16,9 +17,10 @@ import type { Auth } from '../auth.js';
 import { httpError } from '../http.js';
 import {
   IMPORT_TARGETS,
+  templateRows,
+  type BuiltRow,
   type DuplicateContext,
   type ImportTarget,
-  templateRows,
   type RowError,
   type TargetColumn,
 } from '../import-targets.js';
@@ -35,6 +37,7 @@ import {
   XlsxParseError,
   readXlsxRows,
   writeXlsxWorkbook,
+  type SheetRow,
 } from '../xlsx.js';
 import {
   audit,
@@ -111,17 +114,19 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'The file and target register of an import are recorded once and cannot be changed.',
   ],
   '23L03': [
-    'IMPORT_BATCH_FINISHED',
-    'A staged row records what the sheet contained and is not edited after it is staged.',
+    'IMPORT_ROW_IMMUTABLE',
+    'A staged row records what the sheet contained and cannot be rewritten.',
   ],
   '23L04': [
     'IMPORT_BATCH_FINISHED',
     'The import finished while this was being recorded, so its rows can no longer be written.',
   ],
-  '23L05': [
-    'IMPORT_BATCH_FINISHED',
-    'The import recorded more imported rows than it judged valid and was rolled back.',
-  ],
+  // 23L05 is deliberately ABSENT. It fires when a batch would record more
+  // imported rows than it judged valid, which no sequence of requests can
+  // produce — only a defect in this route's own arithmetic can. Giving it
+  // a 409 and a remedy would tell an operator to retry something that
+  // will fail identically; letting it surface as a 500 says the true
+  // thing, which is that the server got it wrong.
 };
 
 function rethrowWriteRefusal(error: unknown): never {
@@ -138,6 +143,22 @@ function rethrowWriteRefusal(error: unknown): never {
  * page. Imports are occasional — a handful in an organisation's first
  * week and then rarely — so the whole history usually fits one request. */
 const BATCH_PAGE_LIMIT = 100;
+
+/** Rows of one batch per page. The screen asks for the error rows first
+ * and the valid ones after, so the first page of a sheet with eleven bad
+ * rows is those eleven. */
+const ROW_PAGE_LIMIT = 100;
+
+/** One page of rows plus the cursor for the next, built from the
+ * limit-plus-one read above. */
+function rowPage(rows: readonly StagedRow[], limit: number) {
+  const shown = rows.slice(0, limit);
+  return {
+    rows: shown.map(toRow),
+    nextRowCursor:
+      rows.length > limit ? (shown[shown.length - 1]?.row_number ?? null) : null,
+  };
+}
 
 /* --- reading the sheet ----------------------------------------------------- */
 
@@ -378,13 +399,96 @@ async function readBatch(tx: TransactionSql, id: string): Promise<BatchRow> {
   return row;
 }
 
-async function readStagedRows(tx: TransactionSql, batchId: string) {
+/**
+ * One page of a batch's rows, errors first.
+ *
+ * PAGINATED ON THE WIRE, which the first cut was not: a 5,000-row sheet
+ * of twenty columns was serialised in full by the upload, the read AND
+ * the commit, three times over, on top of the expansion the parser's own
+ * budget now bounds. The screen only ever drew two hundred of them.
+ *
+ * ORDERED BY `row_number` ALONE, and the errors-first reading the screen
+ * wants is a `status` FILTER rather than a sort. Sorting by status and
+ * paging by row number is a keyset that silently drops rows: with errors
+ * at 5 and 900 and valid rows at 2 and 3, the first page ends at 900 and
+ * `row_number > 900` returns nothing, losing both valid rows. One sort
+ * key, one cursor, and a caller that wants errors first asks for them
+ * first — which is what the screen does.
+ */
+async function readStagedRows(
+  tx: TransactionSql,
+  batchId: string,
+  page: { readonly limit: number; readonly cursor?: number; readonly status?: string },
+) {
   return await tx<StagedRow[]>`
     select id, row_number, status, cells, errors, imported_record_id
     from spreadsheet_import_rows
     where batch_id = ${batchId}
+      and (${page.status ?? null}::text is null or status = ${page.status ?? null})
+      and (${page.cursor ?? null}::int is null or row_number > ${page.cursor ?? null})
     order by row_number
+    limit ${page.limit + 1}
   `;
+}
+
+/**
+ * Forgets what the sheet said, keeping what happened to it.
+ *
+ * A contacts sheet carries account numbers and IFSCs, and the direct path
+ * is deliberately discreet about both — `normaliseContactBankDetails`
+ * says in its own comment that they are "never audited and never logged".
+ * Staging them for ever, echoing them on every read of the batch and
+ * publishing them in the organisation export undoes that, for rows whose
+ * authoritative copy is already in `contacts` where the discretion
+ * applies.
+ *
+ * So the cells live exactly as long as they are useful: from the upload
+ * until the batch reaches a terminal state, which is the window in which
+ * somebody is reading them to decide. The VERDICTS stay — the error
+ * messages, the row numbers, the record each row became — because those
+ * are what makes a committed import auditable, and none of them carries a
+ * value.
+ *
+ * Runs while the batch is still open, because 0094's row guard refuses
+ * every write to a terminal batch. The guard admits this one write and no
+ * other: cells may become `{}` and may never become anything else.
+ */
+async function forgetCells(tx: TransactionSql, batchId: string): Promise<void> {
+  await tx`
+    update spreadsheet_import_rows
+    set cells = '{}'::jsonb
+    where batch_id = ${batchId} and cells <> '{}'::jsonb
+  `.catch(rethrowWriteRefusal);
+}
+
+/**
+ * The register's own refusal for a row the database would not take, or a
+ * rethrow.
+ *
+ * Two rules, and the second is the one worth stating. A refusal this
+ * function RECOGNISES becomes that row's error in the register's own
+ * words — the same sentence the single-record route answers with, because
+ * a message an operator reads must not depend on which door they came
+ * through. Anything it does not recognise is not a refusal at all: it is
+ * a bug in this pipeline, and it aborts the whole commit rather than
+ * being written into `errors`, exported, and reported as a batch that
+ * "completed". A `TypeError` persisted as a row-level explanation is a
+ * defect wearing an operator's clothes.
+ */
+function rowRefusal(target: ImportTarget, cause: unknown): RowError {
+  const code =
+    cause !== null && typeof cause === 'object' && 'code' in cause
+      ? String(cause.code)
+      : '';
+  if (code === '23505') return { column: null, message: target.duplicateMessage };
+  if (code === '23514' || code === '23502') {
+    return {
+      column: null,
+      message:
+        'The register refused this row because one of its values is not something that column accepts; correct it in the sheet and upload it again.',
+    };
+  }
+  throw cause;
 }
 
 export function registerImportRoutes(
@@ -405,8 +509,19 @@ export function registerImportRoutes(
         querystring: withKeysetQuery(KeysetQuerySchema),
         response: { 200: ImportBatchListSchema, ...errorResponses },
       },
+      // READS CARRY THE WRITER ROLE AND NOTHING MORE. Which imports an
+      // organisation ran, and why eleven rows were refused, is ordinary
+      // register history — and the rail draws this screen for every
+      // writer, so gating the list on the authority would send everyone
+      // who is not a founding owner into a 403 the moment they clicked
+      // it. The authority is what governs POINTING A FILE at a register,
+      // so it sits on upload, commit, cancel and the template.
+      //
+      // Reading a batch's staged CELLS is a different question, because a
+      // contacts sheet carries bank account numbers. That is answered in
+      // the detail route below, not here: this endpoint publishes
+      // filenames and counts.
       role: 'writer',
-      authority: 'import',
     },
     async ({ request, tenant }) => {
       const query = request.query;
@@ -496,17 +611,27 @@ export function registerImportRoutes(
       bodyLimit: MAX_XLSX_UPLOAD_BYTES,
     },
     async ({ request, reply, user, organisationId, tenant }) => {
+      // Cannot throw: the querystring schema is the closed union, so an
+      // unknown target is a 400 from the serialiser before this runs. It
+      // is the same lookup every other route makes, and spelling it the
+      // same way here is cheaper than a cast that says "trust me".
       const target = requireTarget(request.query.target);
       const { bytes } = consumeUpload(request.body, {
         format: 'xlsx',
         description: 'the workbook',
       });
-      // Before the scan, which is the expensive step no ill-formed
-      // request should reach (routes/shared.ts § requireTrimmed).
+      // STRIP FIRST, THEN TRIM. The other order reintroduces exactly the
+      // failure `requireTrimmed` exists to stop: `"x \u0001"` trims to
+      // `"x \u0001"`, passes, and then loses the control character to
+      // become `"x "` — untrimmed, so 0094's `btrim(original_filename) =
+      // original_filename` CHECK refuses it as a 23514, which reaches the
+      // caller as a 500 rather than a 400. `"\u0001"` alone becomes the
+      // empty string the CHECK also refuses. Stripping first means
+      // whatever `requireTrimmed` approves is what the database sees.
       const filename = requireTrimmed(
-        request.query.filename,
+        request.query.filename.replaceAll(/[\p{Cc}\p{Cf}]/gu, ''),
         'Name the file being imported.',
-      ).replaceAll(/[\p{Cc}\p{Cf}]/gu, '');
+      );
 
       // AUTHORISE BEFORE ANYTHING EXPENSIVE TOUCHES THE BYTES, which is
       // the order every other upload route in this application keeps and
@@ -524,7 +649,7 @@ export function registerImportRoutes(
       await tenant(() => Promise.resolve());
       await assertNotMalware(malwareScanner, bytes);
 
-      let sheet: string[][];
+      let sheet: SheetRow[];
       try {
         sheet = readXlsxRows(bytes);
       } catch (cause: unknown) {
@@ -542,14 +667,22 @@ export function registerImportRoutes(
           'The first sheet of that workbook has no rows at all.',
         );
       }
-      const mapping = mapHeaders(target, header);
+      const mapping = mapHeaders(target, header.cells);
 
-      // Row 1 is the header, so the first data row is 2 — the number the
-      // operator reads in the corner of Excel. Blank rows are dropped
-      // rather than staged: Excel leaves hundreds behind when content is
-      // deleted without deleting the rows.
+      // EVERY ROW CARRIES THE NUMBER THE SHEET STATES, not its position
+      // among the rows that happen to be present. Excel omits rows nobody
+      // ever populated, so a file whose data resumes at row 40 after a
+      // blank block would otherwise have every error after the gap
+      // pointing at a line the operator cannot find — which is the exact
+      // promise `spreadsheet_import_rows.row_number` makes ("not a
+      // sequence"). Blank rows are still dropped rather than staged:
+      // Excel leaves hundreds of them behind when content is deleted
+      // without deleting the rows.
       const staged = body
-        .map((row, index) => ({ rowNumber: index + 2, cells: cellsOf(mapping, row) }))
+        .map((row) => ({
+          rowNumber: row.rowNumber,
+          cells: cellsOf(mapping, row.cells),
+        }))
         .filter((row) => !isBlank(row.cells));
       if (staged.length === 0) {
         throw httpError(
@@ -560,6 +693,26 @@ export function registerImportRoutes(
       }
 
       const detail = await tenant(async (tx) => {
+        // A NEW SHEET FOR A REGISTER RETIRES THE OPEN ONES AIMED AT IT.
+        //
+        // Without this a validated batch stays committable for ever, and
+        // the ordinary correction loop becomes a trap: upload, see eleven
+        // errors, fix the workbook, upload again, and now two batches are
+        // committable — the corrected one and the one with the typo still
+        // in it. Committing the wrong one writes a known-bad row and
+        // looks like a success.
+        //
+        // Superseding at UPLOAD rather than at commit is the cheaper half
+        // of the same rule and closes the window completely: by the time
+        // a second batch exists the first can no longer be run at all.
+        // The superseded batch keeps its record and its verdicts, exactly
+        // as a withdrawn one does.
+        await tx`
+          update spreadsheet_import_batches
+          set status = 'superseded'
+          where target = ${target.key} and status in ('pending', 'validated')
+        `.catch(rethrowWriteRefusal);
+
         const existing = await target.existingKeys(tx);
         const judged = judge(target, existing, staged);
         const validCount = judged.filter((row) => row.errors.length === 0).length;
@@ -628,7 +781,15 @@ export function registerImportRoutes(
 
         return {
           batch: toBatch(validated),
-          rows: (await readStagedRows(tx, batch.id)).map(toRow),
+          // Errors first, and one page of them: a sheet may hold five
+          // thousand rows and the screen opens on what is wrong with it.
+          ...rowPage(
+            await readStagedRows(tx, batch.id, {
+              limit: ROW_PAGE_LIMIT,
+              status: 'error',
+            }),
+            ROW_PAGE_LIMIT,
+          ),
           columns: toColumns(target.columns),
         };
       });
@@ -651,21 +812,41 @@ export function registerImportRoutes(
           },
           { additionalProperties: false },
         ),
+        querystring: ImportRowsQuerySchema,
         response: { 200: ImportBatchDetailSchema, ...errorResponses },
       },
+      // THE DETAIL READ KEEPS THE AUTHORITY, where the list above dropped
+      // it, and the difference is what the two publish. The list is
+      // filenames, counts and statuses. This is the staged CELLS — and a
+      // contacts sheet's cells are account numbers and IFSCs, which the
+      // direct path treats as values not to be logged or audited. Reading
+      // them is a narrower act than reading the register's history, so it
+      // carries the narrower grant.
+      //
+      // The screen agrees rather than discovering this: it draws the list
+      // for every writer and the "Open" control only for a member holding
+      // the authority (views/Imports.tsx), so nobody is offered a door
+      // that answers 403.
       role: 'writer',
       authority: 'import',
     },
     async ({ request, tenantSnapshot }) => {
       const { id } = request.params;
+      const query = request.query;
       return await tenantSnapshot(async (tx) => {
         const [batch] = await tx<BatchRow[]>`
           select * from spreadsheet_import_batches where id = ${id}
         `;
         if (!batch) throw httpError(404, 'IMPORT_BATCH_NOT_FOUND', 'No such import.');
+        const limit = query.limit ?? ROW_PAGE_LIMIT;
+        const loaded = await readStagedRows(tx, id, {
+          limit,
+          ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
+          ...(query.status !== undefined ? { status: query.status } : {}),
+        });
         return {
           batch: toBatch(batch),
-          rows: (await readStagedRows(tx, id)).map(toRow),
+          ...rowPage(loaded, limit),
           columns: toColumns(requireTarget(batch.target).columns),
         };
       });
@@ -691,12 +872,35 @@ export function registerImportRoutes(
       },
       role: 'writer',
       authority: 'import',
+      // NO `bodyLimit`, deliberately, and therefore outside the upload
+      // throttle. This is the most expensive call in the module and the
+      // temptation is to put it under the limiter anyway; that was tried
+      // and is wrong twice over.
+      //
+      // It buys no ceiling. A batch commits exactly ONCE — completion is
+      // terminal and the guard refuses a second run — so the only way to
+      // reach this work again is to upload another sheet, and the upload
+      // route is already inside the limiter at thirty per ten minutes.
+      // The expensive path is rate-limited at its real entrance.
+      //
+      // And it breaks a legitimate flow: an operator bringing in a
+      // party master and an item catalogue, correcting each once, spends
+      // four uploads and four commits in a few minutes. Counting the
+      // commits against a window sized for uploads throttles the honest
+      // case while leaving the attacker's cost unchanged.
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       return await tenant(async (tx) => {
         const batch = await readBatch(tx, id);
         const target = requireTarget(batch.target);
+        if (batch.status === 'superseded') {
+          throw httpError(
+            409,
+            'IMPORT_BATCH_SUPERSEDED',
+            'A later sheet was uploaded for this register, so this import can no longer be run; open the newest one instead.',
+          );
+        }
         if (batch.status === 'completed' || batch.status === 'cancelled') {
           throw httpError(
             409,
@@ -712,8 +916,15 @@ export function registerImportRoutes(
           );
         }
 
-        const staged = await readStagedRows(tx, id);
-        const candidates = staged.filter((row) => row.status === 'valid');
+        // Every valid row, not a page of them: this read is the commit's
+        // own working set rather than a response, and it has to write all
+        // of them. Bounded by the sheet's row cap, and never serialised.
+        const candidates = await tx<StagedRow[]>`
+          select id, row_number, status, cells, errors, imported_record_id
+          from spreadsheet_import_rows
+          where batch_id = ${id} and status = 'valid'
+          order by row_number
+        `;
         if (candidates.length === 0) {
           throw httpError(
             409,
@@ -729,7 +940,7 @@ export function registerImportRoutes(
         const claimed = new Set<string>();
         const context: DuplicateContext = { existing, claimed };
 
-        const imported: { id: string; recordId: string }[] = [];
+        const imported: { id: string; recordId: string; built: BuiltRow }[] = [];
         const failed: { id: string; errors: RowError[] }[] = [];
 
         for (const row of candidates) {
@@ -749,20 +960,11 @@ export function registerImportRoutes(
               recordId = await target.insert(sp, organisationId, user.id, verdict.row);
             });
             claimed.add(verdict.naturalKey);
-            imported.push({ id: row.id, recordId });
+            imported.push({ id: row.id, recordId, built: verdict.row });
           } catch (cause: unknown) {
-            failed.push({
-              id: row.id,
-              errors: [
-                {
-                  column: null,
-                  message:
-                    cause instanceof Error && cause.message.length > 0
-                      ? cause.message
-                      : 'The register refused this row.',
-                },
-              ],
-            });
+            // Recognised refusal or rethrow — never the driver's own
+            // message. See `rowRefusal`.
+            failed.push({ id: row.id, errors: [rowRefusal(target, cause)] });
           }
         }
 
@@ -797,6 +999,46 @@ export function registerImportRoutes(
           `.catch(rethrowWriteRefusal);
         }
 
+        // ONE AUDIT EVENT PER IMPORTED RECORD, the same event the direct
+        // route writes, so a contact brought in by a sheet has the same
+        // history panel as one typed into the form. The batch id rides in
+        // the payload, which is what turns "who added this vendor" into a
+        // question answerable from the vendor rather than only from the
+        // Imports screen.
+        //
+        // One statement for all of them: eight hundred inserts in a loop
+        // is what `test/query-write-loop-census.test.ts` exists to
+        // prevent, and there is nothing to isolate here.
+        if (imported.length > 0) {
+          await tx`
+            insert into audit_events ${tx(
+              imported.map((row) => ({
+                organisation_id: organisationId,
+                actor_user_id: user.id,
+                action: target.audit.action,
+                entity_type: target.audit.entityType,
+                entity_id: row.recordId,
+                details: tx.json({
+                  ...target.audit.details(row.built),
+                  importBatchId: id,
+                }),
+              })),
+              'organisation_id',
+              'actor_user_id',
+              'action',
+              'entity_type',
+              'entity_id',
+              'details',
+            )}
+          `;
+        }
+
+        // The cells have done their work: the verdicts are written, the
+        // records exist, and what remains is a bank account number in a
+        // staging table. Before the batch turns terminal, because the row
+        // guard refuses every write to one that has.
+        await forgetCells(tx, id);
+
         const validCount = batch.valid_row_count - failed.length;
         const [completed] = await tx<BatchRow[]>`
           update spreadsheet_import_batches
@@ -811,12 +1053,10 @@ export function registerImportRoutes(
         `.catch(rethrowWriteRefusal);
         if (!completed) throw new Error('import batch completion returned no row');
 
-        // ONE audit row for the batch, not one per record. An import of
-        // eight hundred contacts would otherwise bury every other event
-        // in the organisation's trail for that day, and the question the
-        // trail has to answer — who brought these in, from what file,
-        // when — is a fact about the batch. The batch's own rows carry
-        // the per-record detail and are exported alongside it.
+        // …and one for the batch itself, beside the per-record events
+        // above. It is the provenance the records point back at: who
+        // brought these in, from what file, and how many the register
+        // refused.
         await audit(
           tx,
           organisationId,
@@ -833,7 +1073,10 @@ export function registerImportRoutes(
 
         return {
           batch: toBatch(completed),
-          rows: (await readStagedRows(tx, id)).map(toRow),
+          ...rowPage(
+            await readStagedRows(tx, id, { limit: ROW_PAGE_LIMIT, status: 'error' }),
+            ROW_PAGE_LIMIT,
+          ),
           columns: toColumns(target.columns),
         };
       });
@@ -869,13 +1112,23 @@ export function registerImportRoutes(
       );
       return await tenant(async (tx) => {
         const batch = await readBatch(tx, id);
-        if (batch.status === 'completed' || batch.status === 'cancelled') {
+        if (
+          batch.status === 'completed' ||
+          batch.status === 'cancelled' ||
+          batch.status === 'superseded'
+        ) {
           throw httpError(
             409,
             'IMPORT_BATCH_FINISHED',
             `This import is already ${batch.status} and cannot be withdrawn.`,
           );
         }
+        // Nothing here reached a register, so the cells are the only
+        // copy — and that is exactly why they go: a withdrawn sheet of
+        // vendor bank details has no reason to outlive the decision to
+        // withdraw it. The counts and the row-level errors stay.
+        await forgetCells(tx, id);
+
         const [cancelled] = await tx<BatchRow[]>`
           update spreadsheet_import_batches
           set status = 'cancelled',
@@ -897,7 +1150,10 @@ export function registerImportRoutes(
         );
         return {
           batch: toBatch(cancelled),
-          rows: (await readStagedRows(tx, id)).map(toRow),
+          ...rowPage(
+            await readStagedRows(tx, id, { limit: ROW_PAGE_LIMIT }),
+            ROW_PAGE_LIMIT,
+          ),
           columns: toColumns(requireTarget(batch.target).columns),
         };
       });

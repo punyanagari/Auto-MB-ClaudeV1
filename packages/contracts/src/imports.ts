@@ -35,13 +35,17 @@ export const ImportTargetKeySchema = Type.Union(
 export type ImportTargetKey = Static<typeof ImportTargetKeySchema>;
 
 /** `pending` staged but unjudged, `validated` judged and awaiting a
- * decision, `completed` and `cancelled` terminal. Migration 0094's guard
- * walks these forwards only. */
+ * decision, `completed`, `cancelled` and `superseded` terminal. Migration
+ * 0094's guard walks these forwards only. */
 export const ImportBatchStatusSchema = Type.Union([
   Type.Literal('pending'),
   Type.Literal('validated'),
   Type.Literal('completed'),
   Type.Literal('cancelled'),
+  /** A later sheet was uploaded for the same register, so this one can no
+   * longer be run. Terminal, and nobody decided it — which is why it
+   * carries no reason where `cancelled` does. */
+  Type.Literal('superseded'),
 ]);
 export type ImportBatchStatus = Static<typeof ImportBatchStatusSchema>;
 
@@ -99,6 +103,11 @@ export const ImportRowSchema = Type.Object(
      * cannot be acted on against the open workbook. */
     rowNumber: Type.Integer({ minimum: 2 }),
     status: ImportRowStatusSchema,
+    /** The sheet's own text for this row, and EMPTY once the batch
+     * reaches a terminal state: a contacts sheet carries bank account
+     * numbers, and the direct path treats those as values never to be
+     * logged or audited. They live from the upload until the decision is
+     * made and no longer. The verdict below outlives them. */
     cells: Type.Record(Type.String(), Type.String()),
     errors: Type.Array(ImportRowErrorSchema),
     importedRecordId: Type.Union([UuidSchema, Type.Null()]),
@@ -153,10 +162,28 @@ export type ImportUploadQuery = Static<typeof ImportUploadQuerySchema>;
 /** A batch with its rows. Returned by the upload and by the detail read,
  * because both answer the same question — what did this file contain and
  * what is wrong with it. */
+/** One page of a batch's rows. `status` is a filter rather than a sort:
+ * the screen asks for the error rows first and the valid ones after, so
+ * the cursor pages one homogeneous list at a time. */
+export const ImportRowsQuerySchema = Type.Object(
+  {
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+    /** The `rowNumber` of the last row of the previous page. */
+    cursor: Type.Optional(Type.Integer({ minimum: 1 })),
+    status: Type.Optional(ImportRowStatusSchema),
+  },
+  { additionalProperties: false },
+);
+export type ImportRowsQuery = Static<typeof ImportRowsQuerySchema>;
+
 export const ImportBatchDetailSchema = Type.Object(
   {
     batch: ImportBatchSchema,
     rows: Type.Array(ImportRowSchema),
+    /** The `rowNumber` to send as the next `cursor`, or null when the
+     * filtered list is exhausted. A batch may hold five thousand rows and
+     * no response carries them all. */
+    nextRowCursor: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
     /** The target's column descriptions, so the screen can render the
      * cells in sheet order and label the errors without a second call. */
     columns: Type.Array(ImportColumnSchema),

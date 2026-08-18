@@ -89,6 +89,27 @@ export const XLSX_LIMITS = {
    * column these importers write into is far shorter than this, so a cell
    * this long is a mistake worth showing rather than trimming. */
   maxCellLength: 4_000,
+  /**
+   * Total EXPANDED characters across every cell of the sheet, and the one
+   * limit that is not obvious from the others.
+   *
+   * `maxInflatedBytes` bounds the parts as they sit in the archive. It
+   * does not bound what they expand to, because a SHARED STRING is stored
+   * once and referenced by any number of cells: 5,000 rows x 20 columns
+   * all pointing at one 4,000-character entry is a ~50 KB upload that
+   * resolves to 400 million characters — and then that rectangle is
+   * serialised into jsonb, read back, and serialised again, so the peak is
+   * several times worse. Every other cap in this list passes it.
+   *
+   * Sized against the honest worst case rather than the theoretical one.
+   * The widest register here has twenty columns, and a contact row is
+   * tens of characters per column, not thousands: 5,000 rows of twenty
+   * 30-character columns is 3 million. Sixteen million leaves five times
+   * that headroom and still refuses the amplified case by two orders of
+   * magnitude. The refusal names the sheet, not the trick, because an
+   * operator who has genuinely hit it needs to split the file either way.
+   */
+  maxExpandedChars: 16_000_000,
 } as const;
 
 /** The OOXML spreadsheet media type, spelled once. */
@@ -165,6 +186,14 @@ function readZipParts(bytes: Buffer, wanted: (name: string) => boolean) {
     at += 46 + nameLength + extraLength + commentLength;
 
     if (!wanted(name)) continue;
+    // DUPLICATE ENTRY NAMES ARE REFUSED, not resolved. A ZIP may carry two
+    // entries with one name, and readers disagree about which wins —
+    // Excel takes the first, a last-wins reader takes the second. That
+    // disagreement is a primitive for showing one workbook and importing
+    // another, so neither answer is taken.
+    if (parts.has(name)) {
+      throw new XlsxParseError('The workbook contains the same part twice.');
+    }
 
     // The declared size is checked BEFORE anything is inflated, and the
     // inflate is then given the same ceiling — so neither an honest
@@ -188,6 +217,13 @@ function readZipParts(bytes: Buffer, wanted: (name: string) => boolean) {
     const stored = bytes.subarray(dataAt, dataAt + compressedSize);
 
     if (method === METHOD_STORED) {
+      // Stored means the two sizes are the same value by definition; a
+      // header that says otherwise is describing a part this reader
+      // cannot account for, and the budget above was charged the size it
+      // claimed rather than the size it is.
+      if (compressedSize !== declaredSize) {
+        throw new XlsxParseError('A part of the workbook could not be read.');
+      }
       parts.set(name, stored);
     } else if (method === METHOD_DEFLATED) {
       try {
@@ -223,7 +259,18 @@ function decodeXmlText(value: string): string {
         : Number.parseInt(name.slice(1), 10);
       // Only characters XML itself admits, so a reference cannot smuggle a
       // control character or a lone surrogate into a validated value.
-      if (!Number.isInteger(code) || code < 0x20 || code > 0x10ffff) return '';
+      // 0xD800-0xDFFF is the surrogate range: `String.fromCodePoint` will
+      // happily produce a lone surrogate from one, which is an unpaired
+      // UTF-16 unit that survives every length check and then breaks
+      // whatever finally encodes it.
+      if (
+        !Number.isInteger(code) ||
+        code < 0x20 ||
+        code > 0x10ffff ||
+        (code >= 0xd800 && code <= 0xdfff)
+      ) {
+        return '';
+      }
       return String.fromCodePoint(code);
     },
   );
@@ -241,14 +288,114 @@ function partText(parts: Map<string, Buffer>, name: string): string | undefined 
   return text;
 }
 
+/**
+ * Every `<name ...>...</name>` (and `<name .../>`) in a fragment, found by
+ * WALKING the string rather than backtracking through it.
+ *
+ * This replaced four lazy-quantifier regexes — rows, cells, shared-string
+ * items and text runs — and the reason is a measurement rather than a
+ * preference. A pattern of the shape `<row\b[^>]*>([\s\S]*?)<\/row>` is
+ * O(n^2) on a part full of `<row` with no `</row>`: every start position
+ * rescans the remaining text before failing, which is 686 ms at 160 KB and
+ * hours at the sizes `maxInflatedBytes` allows. A hostile part is a
+ * plausible upload, so the scanner has to be linear on one.
+ *
+ * `indexOf` from a moving cursor is that: each character is examined a
+ * bounded number of times, and an unterminated element ends the walk
+ * instead of restarting it.
+ */
+interface XmlElement {
+  readonly attributes: string;
+  readonly body: string;
+}
+
+/** Whether the character after `<name` ends the element name, so `<row`
+ * does not also match `<rowBreaks`. */
+function endsName(character: string | undefined): boolean {
+  return (
+    character === undefined ||
+    character === '>' ||
+    character === '/' ||
+    /\s/.test(character)
+  );
+}
+
+/** How many times an element OPENS in a fragment. Counted before any body
+ * is read, so a refusal for too many rows fires on a part that opens five
+ * million of them and closes none — which the old scanner could not do,
+ * because its guard sat inside a match loop that never ran. */
+function countOpenings(text: string, name: string): number {
+  const token = `<${name}`;
+  let count = 0;
+  for (
+    let at = text.indexOf(token);
+    at >= 0;
+    at = text.indexOf(token, at + token.length)
+  ) {
+    if (endsName(text[at + token.length])) count += 1;
+  }
+  return count;
+}
+
+function elements(text: string, name: string): XmlElement[] {
+  const token = `<${name}`;
+  const closing = `</${name}>`;
+  const found: XmlElement[] = [];
+  let at = text.indexOf(token);
+
+  while (at >= 0) {
+    const nameEnd = at + token.length;
+    if (!endsName(text[nameEnd])) {
+      at = text.indexOf(token, nameEnd);
+      continue;
+    }
+    const tagEnd = text.indexOf('>', nameEnd);
+    // An element whose start tag never closes ends the walk. There is
+    // nothing after it that can be read, and continuing would be the
+    // rescan this function exists to avoid.
+    if (tagEnd < 0) break;
+    const attributes = text.slice(nameEnd, tagEnd);
+
+    if (attributes.endsWith('/')) {
+      found.push({ attributes: attributes.slice(0, -1), body: '' });
+      at = text.indexOf(token, tagEnd + 1);
+      continue;
+    }
+    const bodyEnd = text.indexOf(closing, tagEnd + 1);
+    if (bodyEnd < 0) break;
+    found.push({ attributes, body: text.slice(tagEnd + 1, bodyEnd) });
+    at = text.indexOf(token, bodyEnd + closing.length);
+  }
+  return found;
+}
+
+/** The value of one attribute of a start tag. */
+function attribute(attributes: string, name: string): string | undefined {
+  const at = attributes.indexOf(`${name}="`);
+  if (at < 0) return undefined;
+  const from = at + name.length + 2;
+  const to = attributes.indexOf('"', from);
+  return to < 0 ? undefined : attributes.slice(from, to);
+}
+
 /** `<t>` runs concatenated — a shared string split across formatting runs
- * arrives as several `<t>` elements and is one value. */
+ * arrives as several `<t>` elements and is one value.
+ *
+ * `<rPh>` is dropped first. It carries the PHONETIC reading of a run
+ * (furigana), which Excel stores as `<t>` elements inside the same `<si>`;
+ * concatenating them appends a pronunciation guide to the value an
+ * operator typed. Rare in this domain and wrong every time it happens.
+ */
 function textRuns(fragment: string): string {
+  let remaining = fragment;
+  for (const phonetic of elements(fragment, 'rPh')) {
+    remaining = remaining.replace(
+      `<rPh${phonetic.attributes}>${phonetic.body}</rPh>`,
+      '',
+    );
+  }
   let out = '';
-  const scanner = /<t\b[^>]*\/>|<t\b[^>]*>([\s\S]*?)<\/t>/g;
-  let match: RegExpExecArray | null;
-  while ((match = scanner.exec(fragment)) !== null)
-    out += decodeXmlText(match[1] ?? '');
+  for (const run of elements(remaining, 't')) out += decodeXmlText(run.body);
   return out;
 }
 
@@ -257,11 +404,7 @@ function textRuns(fragment: string): string {
 function readSharedStrings(parts: Map<string, Buffer>): string[] {
   const xml = partText(parts, 'xl/sharedStrings.xml');
   if (xml === undefined) return [];
-  const strings: string[] = [];
-  const scanner = /<si\b[^>]*\/>|<si\b[^>]*>([\s\S]*?)<\/si>/g;
-  let match: RegExpExecArray | null;
-  while ((match = scanner.exec(xml)) !== null) strings.push(textRuns(match[1] ?? ''));
-  return strings;
+  return elements(xml, 'si').map((item) => textRuns(item.body));
 }
 
 /** The zero-based column a cell reference names. `r="AB7"` is column 27.
@@ -279,68 +422,135 @@ function columnOf(reference: string): number {
 }
 
 /**
- * Every value in the first worksheet, as a rectangle of trimmed strings.
+ * Which part holds the FIRST TAB of the workbook.
+ *
+ * Resolved properly rather than guessed, because both guesses are wrong in
+ * ordinary files. `xl/worksheets/sheet1.xml` is not the first tab of a
+ * workbook whose sheets have been reordered — the filenames record the
+ * order the sheets were CREATED. And a lexicographic sort puts `sheet10`
+ * before `sheet2`. Either way an operator reorders their tabs and the
+ * importer silently reads a different sheet than the one they are looking
+ * at.
+ *
+ * The real answer is two hops: `xl/workbook.xml` lists the sheets in tab
+ * order, each naming a relationship id, and `xl/_rels/workbook.xml.rels`
+ * maps that id to the part.
+ */
+function firstSheetPart(parts: Map<string, Buffer>): string | undefined {
+  const worksheets = [...parts.keys()].filter((name) =>
+    name.startsWith('xl/worksheets/'),
+  );
+  const workbook = partText(parts, 'xl/workbook.xml');
+  const rels = partText(parts, 'xl/_rels/workbook.xml.rels');
+
+  if (workbook !== undefined && rels !== undefined) {
+    const sheets = elements(workbook, 'sheets')[0];
+    const [first] = elements(sheets?.body ?? workbook, 'sheet');
+    const relationshipId =
+      first === undefined ? undefined : attribute(first.attributes, 'r:id');
+    if (relationshipId !== undefined) {
+      for (const relationship of elements(rels, 'Relationship')) {
+        if (attribute(relationship.attributes, 'Id') !== relationshipId) continue;
+        const target = attribute(relationship.attributes, 'Target');
+        if (target === undefined) break;
+        // Targets are relative to `xl/`, and may or may not say so.
+        const resolved = target.startsWith('/')
+          ? target.slice(1)
+          : `xl/${target.replace(/^\.\//, '')}`;
+        if (parts.has(resolved)) return resolved;
+        break;
+      }
+    }
+  }
+  // A workbook this reader cannot navigate still has exactly one sheet in
+  // the overwhelming majority of real cases, so the fallback reads it
+  // rather than refusing outright.
+  if (worksheets.length === 1) return worksheets[0];
+  return worksheets.includes('xl/worksheets/sheet1.xml')
+    ? 'xl/worksheets/sheet1.xml'
+    : worksheets.sort()[0];
+}
+
+/** One row of the sheet, carrying the number the operator sees in Excel's
+ * left margin rather than its position among the rows that happen to be
+ * present. */
+export interface SheetRow {
+  /** The `r` attribute, 1-based, as the sheet states it. */
+  readonly rowNumber: number;
+  readonly cells: readonly string[];
+}
+
+/**
+ * Every value in the first worksheet, as rows of trimmed strings.
  *
  * Everything is a string on the way out — a quantity is `'12'`, not `12` —
  * because the target's own validator is the one place that decides what a
  * column means, and handing it a value this module already guessed the
  * type of would be a second, weaker validator upstream of the real one.
  */
-export function readXlsxRows(bytes: Buffer): string[][] {
+export function readXlsxRows(bytes: Buffer): SheetRow[] {
   const parts = readZipParts(
     bytes,
     (name) =>
       name === 'xl/sharedStrings.xml' ||
       name === 'xl/workbook.xml' ||
+      name === 'xl/_rels/workbook.xml.rels' ||
       name.startsWith('xl/worksheets/'),
   );
 
-  // The first sheet in the workbook's own order, which is the order the
-  // tabs appear in — not the first filename, which is arbitrary.
-  const workbook = partText(parts, 'xl/workbook.xml');
-  const firstSheetName = /<sheet\b[^>]*\/>/.exec(workbook ?? '')?.[0];
-  const sheetPart =
-    firstSheetName !== undefined && parts.has('xl/worksheets/sheet1.xml')
-      ? 'xl/worksheets/sheet1.xml'
-      : [...parts.keys()].filter((name) => name.startsWith('xl/worksheets/')).sort()[0];
+  const sheetPart = firstSheetPart(parts);
   const sheet = sheetPart === undefined ? undefined : partText(parts, sheetPart);
   if (sheet === undefined) {
     throw new XlsxParseError('The workbook has no sheet to read.');
   }
 
+  // BEFORE any body is read. A part that opens five million rows is
+  // refused on the count, whether or not it ever closes one.
+  if (countOpenings(sheet, 'row') > XLSX_LIMITS.maxRows + 1) {
+    throw new XlsxParseError(
+      `The sheet has more than ${String(XLSX_LIMITS.maxRows)} rows; split it and import each part.`,
+    );
+  }
+
   const shared = readSharedStrings(parts);
-  const rows: string[][] = [];
-  const rowScanner = /<row\b[^>]*\/>|<row\b([^>]*)>([\s\S]*?)<\/row>/g;
-  let rowMatch: RegExpExecArray | null;
+  const rows: SheetRow[] = [];
+  let expanded = 0;
+  let position = 0;
 
-  while ((rowMatch = rowScanner.exec(sheet)) !== null) {
-    // +1 for the header, which is a row like any other here.
-    if (rows.length > XLSX_LIMITS.maxRows) {
-      throw new XlsxParseError(
-        `The sheet has more than ${String(XLSX_LIMITS.maxRows)} rows; split it and import each part.`,
-      );
-    }
-    const row: string[] = [];
-    const cellScanner = /<c\b([^>]*)\/>|<c\b([^>]*)>([\s\S]*?)<\/c>/g;
-    let cellMatch: RegExpExecArray | null;
+  for (const rowElement of elements(sheet, 'row')) {
+    position += 1;
+    // The `r` attribute, not the position. Excel omits rows nobody ever
+    // populated, so a sheet whose data resumes at row 40 after a blank
+    // block has thirty-eight fewer `<row>` elements than rows — and every
+    // error message after that gap would name a line the operator cannot
+    // find. Positional numbering is the fallback for a sheet that states
+    // no `r`, which is legal and rare.
+    const stated = Number(attribute(rowElement.attributes, 'r') ?? '');
+    const rowNumber = Number.isInteger(stated) && stated > 0 ? stated : position;
 
-    while ((cellMatch = cellScanner.exec(rowMatch[2] ?? '')) !== null) {
-      const attributes = cellMatch[1] ?? cellMatch[2] ?? '';
-      const body = cellMatch[3] ?? '';
-      const reference = /\br="([A-Z]+)\d+"/.exec(attributes)?.[1];
-      const column = reference === undefined ? row.length : columnOf(reference);
+    const cells: string[] = [];
+    for (const cellElement of elements(rowElement.body, 'c')) {
+      const reference = attribute(cellElement.attributes, 'r');
+      const column = reference === undefined ? cells.length : columnOf(reference);
       if (column < 0 || column >= XLSX_LIMITS.maxColumns) continue;
 
-      const type = /\bt="([a-zA-Z]+)"/.exec(attributes)?.[1] ?? 'n';
+      const type = attribute(cellElement.attributes, 't') ?? 'n';
       // `<f>` — the formula — is never looked at. `<v>` is its cached
       // result as the writer left it on disk, which is data.
-      const cached = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(body)?.[1];
+      const cached = elements(cellElement.body, 'v')[0]?.body;
       let value: string;
       if (type === 's') {
-        const index = Number(decodeXmlText(cached ?? ''));
-        value = Number.isInteger(index) ? (shared[index] ?? '') : '';
+        // A shared-string cell with no `<v>`, or an empty one, is an EMPTY
+        // CELL — not entry zero. `Number('')` is 0 and
+        // `Number.isInteger(0)` is true, so the obvious spelling of this
+        // check silently imports the first string in the table (in
+        // practice a column header) wherever a required cell was left
+        // blank.
+        const raw = cached === undefined ? '' : decodeXmlText(cached).trim();
+        const index = raw.length === 0 ? Number.NaN : Number(raw);
+        value = Number.isInteger(index) && index >= 0 ? (shared[index] ?? '') : '';
       } else if (type === 'inlineStr') {
-        value = textRuns(body);
+        value = textRuns(cellElement.body);
       } else if (type === 'b') {
         value = decodeXmlText(cached ?? '') === '1' ? 'TRUE' : 'FALSE';
       } else if (type === 'e') {
@@ -358,10 +568,18 @@ export function readXlsxRows(bytes: Buffer): string[][] {
           `A cell in the sheet is longer than ${String(XLSX_LIMITS.maxCellLength)} characters.`,
         );
       }
-      while (row.length < column) row.push('');
-      row[column] = value;
+      // Charged AFTER the shared-string lookup, which is the whole point:
+      // the archive is small and the rectangle it resolves to is not.
+      expanded += value.length;
+      if (expanded > XLSX_LIMITS.maxExpandedChars) {
+        throw new XlsxParseError(
+          'The sheet holds more text than this importer will read; split it and import each part.',
+        );
+      }
+      while (cells.length < column) cells.push('');
+      cells[column] = value;
     }
-    rows.push(row);
+    rows.push({ rowNumber, cells });
   }
   return rows;
 }
@@ -453,6 +671,21 @@ function buildZip(entries: readonly (readonly [string, string])[]): Buffer {
  *   formula when the file is opened, which is the spreadsheet-injection
  *   hazard every register export has. Nothing this function writes can
  *   become one, whatever the caller passes.
+ *
+ * EVERY COLUMN IS DECLARED TEXT, and that is the half that matters after
+ * the operator starts typing. Inline strings only govern what THIS file
+ * contains; the moment somebody types into a General column, Excel
+ * decides what they meant. It drops the leading zero from a `022`
+ * telephone code, renders a sixteen-digit bank account in scientific
+ * notation and then hands back `3.01235E+15`, and turns `01/04` into a
+ * date. Two of those columns are the ones this feature exists to carry
+ * accurately — a payment advice built from a mangled account number fails
+ * at the bank, which is the damage path the import authority's MFA
+ * classification is written around.
+ *
+ * A `<cols>` span carrying a style whose number format is `49` (`@`, the
+ * Text format) makes the whole column text before anything is typed into
+ * it, which is what a hand-made template cannot promise.
  */
 export function writeXlsxWorkbook(
   sheetName: string,
@@ -464,12 +697,18 @@ export function writeXlsxWorkbook(
       const written = cells
         .map(
           (value, columnIndex) =>
-            `<c r="${columnName(columnIndex)}${String(reference)}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`,
+            `<c r="${columnName(columnIndex)}${String(reference)}" s="1" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`,
         )
         .join('');
       return `<row r="${String(reference)}">${written}</row>`;
     })
     .join('');
+
+  // The widest row decides how far the Text span reaches. A column an
+  // operator adds beyond it is theirs and gets Excel's own default, which
+  // is correct — this importer would ignore it anyway.
+  const width = Math.max(1, ...rows.map((cells) => cells.length));
+  const textColumns = `<cols><col min="1" max="${String(width)}" style="1" width="18" customWidth="1"/></cols>`;
 
   return buildZip([
     [
@@ -480,6 +719,7 @@ export function writeXlsxWorkbook(
         '<Default Extension="xml" ContentType="application/xml"/>' +
         '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
         '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
         '</Types>',
     ],
     [
@@ -502,12 +742,32 @@ export function writeXlsxWorkbook(
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
         '</Relationships>',
+    ],
+    [
+      // The smallest styles part Excel will open: the five collections it
+      // requires in the order it requires them, one default format and one
+      // that is `numFmtId="49"` — the built-in `@`, Text. `cellXfs` index
+      // 1 is what `s="1"` on a cell and `style="1"` on a column both name.
+      'xl/styles.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>' +
+        '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>' +
+        '<borders count="1"><border/></borders>' +
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+        '<cellXfs count="2">' +
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+        '<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+        '</cellXfs>' +
+        '</styleSheet>',
     ],
     [
       'xl/worksheets/sheet1.xml',
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        textColumns +
         `<sheetData>${sheetRows}</sheetData>` +
         '</worksheet>',
     ],

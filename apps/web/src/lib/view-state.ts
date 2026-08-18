@@ -28,8 +28,14 @@ export interface ViewAction {
    * screen until the operator fixes the input (`docs/UX.md`). */
   readonly actionError: string | null;
   /** Runs one mutation with the pending/notice/error bookkeeping around
-   * it, announcing `done` when it resolves. Never rejects. */
-  readonly act: (work: () => Promise<void>, done: string) => Promise<void>;
+   * it, announcing `done` when it resolves. Never rejects.
+   *
+   * `done` may be null for an action whose SUCCESS is already visible —
+   * opening a record, loading another page — where a toast would be
+   * narrating what the reader is looking at. Passing `''` for that is
+   * what a caller reaches for first and it renders an empty notice box,
+   * which is worse than either. */
+  readonly act: (work: () => Promise<void>, done: string | null) => Promise<void>;
   readonly setPending: (pending: boolean) => void;
   readonly setNotice: (notice: string | null) => void;
   readonly setActionError: (actionError: string | null) => void;
@@ -56,7 +62,7 @@ export function useAction(fallback?: string): ViewAction {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const act = useCallback(
-    async (work: () => Promise<void>, done: string) => {
+    async (work: () => Promise<void>, done: string | null) => {
       setPending(true);
       setActionError(null);
       setNotice(null);
