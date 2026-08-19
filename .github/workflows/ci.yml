@@ -89,8 +89,28 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      # The browser download has been observed to hang indefinitely on a
+      # stalled connection (2026-08-19: three consecutive runs sat in this
+      # step until the job budget killed them, where the same step took
+      # ~40s that morning). Two defences: a cache so a populated runner
+      # never downloads at all, and a per-attempt timeout with retries so
+      # a stalled attempt dies in four minutes instead of eating the job.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright Chromium
-        run: pnpm --filter @auto-mb/web exec playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            if timeout --kill-after=10 240 \
+              pnpm --filter @auto-mb/web exec playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "playwright install attempt ${attempt} failed or stalled; retrying" >&2
+          done
+          echo "playwright install failed after 3 bounded attempts" >&2
+          exit 1
       - name: Build web bundle
         run: pnpm --filter @auto-mb/web build
       - name: Accessibility smoke
