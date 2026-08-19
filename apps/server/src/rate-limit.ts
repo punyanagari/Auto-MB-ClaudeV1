@@ -24,7 +24,8 @@ export interface RateLimitRule {
  * Both implementations of each interface count at the moment of refusal,
  * so the metric measures the control rather than any one caller's
  * bookkeeping. */
-type RateLimitScopeName = 'auth' | 'upload' | 'account_lockout' | 'signing';
+type RateLimitScopeName =
+  'auth' | 'upload' | 'account_lockout' | 'signing' | 'notification_webhook';
 
 interface RateLimiter {
   /** Records an attempt for the key and reports whether it is allowed.

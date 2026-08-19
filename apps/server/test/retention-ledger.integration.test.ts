@@ -6,6 +6,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
   LdAssessment,
   RetentionRelease,
+  TimelineResponse,
   WorkRetentionResponse,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
@@ -121,6 +122,22 @@ function read(workId: string) {
     url: `/api/works/${workId}/retention`,
     organisationId,
   });
+}
+
+/** Blocks until backend `pid` is genuinely parked on a row lock, so a
+ * concurrency proof observes the lock rather than sleeping long enough to
+ * look like it did. `quantity-ceilings.integration.test.ts` in the db
+ * package carries the same helper for the same reason. */
+async function waitUntilBlockedOnLock(pool: Sql, pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const [row] = await pool<{ blocked: boolean }[]>`
+      select wait_event_type = 'Lock' as blocked
+      from pg_stat_activity where pid = ${pid}
+    `;
+    if (row?.blocked === true) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`backend ${String(pid)} never blocked on a lock`);
 }
 
 interface Fixture {
@@ -601,6 +618,94 @@ describe('the retention ledger', () => {
     ).rejects.toMatchObject({ code: '23P01' });
   });
 
+  it('lets exactly one of a racing withdrawal and release through', async () => {
+    // THE RACE THE TWO GUARDS EXIST TO LOSE TOGETHER, and the one they
+    // did not until this lock was added.
+    //
+    // Both arms compute the same balance, and until now they locked
+    // DIFFERENT rows to do it: the release guard serialises on the Work,
+    // and the withdrawal guard locked only the `bill_payments` row it
+    // was updating. Two transactions arriving together each read a total
+    // that did not yet include what the other was about to commit, both
+    // were refused nothing, and the Work was left with 30,000 released
+    // against nothing withheld — a negative balance no guard declined.
+    //
+    // The proof is the quantity-ceilings shape: hold the second writer
+    // on a real lock rather than on a sleep, let the first commit, and
+    // require the second to be REFUSED rather than merely late. Without
+    // the `FOR UPDATE` in `guard_retention_survives_payment_void` the
+    // second writer never blocks at all, so this fails at the wait.
+    const { workId, billId } = await seedWork('RETRACE');
+    const paymentId = await withhold(billId, '470000.00', '30000.00', 'UTR-RETRACE-1');
+
+    // A second pool: the suite's `admin` holds one connection, and this
+    // needs two that can sit in open transactions at once.
+    const race = createDatabasePool({
+      url: adminUrl,
+      max: 2,
+      applicationName: 'auto-mb-retention-race',
+    });
+    const voider = await race.reserve();
+    const releaser = await race.reserve();
+    try {
+      const [releaserBackend] = await releaser<{ pid: number }[]>`
+          select pg_backend_pid() as pid
+        `;
+      if (!releaserBackend) throw new Error('no backend pid');
+
+      await voider.unsafe('begin');
+      await releaser.unsafe('begin');
+
+      // The withdrawal goes first and takes the Work row.
+      await voider`
+          update bill_payments
+          set voided_at = now(), voided_by_user_id = ${ownerUserId},
+              void_reason = 'Recorded against the wrong bill'
+          where id = ${paymentId}
+        `;
+
+      // The release is legal against the 30,000 still visible to it, and
+      // must not stay legal once the withdrawal commits.
+      const pending = releaser`
+          insert into retention_releases (
+            organisation_id, work_id, released_on, amount, basis,
+            recorded_by_user_id
+          )
+          values (
+            ${organisationId}, ${workId}, '2026-06-10', '30000.00', 'pac',
+            ${ownerUserId}
+          )
+        `.catch((error: unknown) => error);
+
+      // Observed from `admin`, not from `race`: both of that pool's two
+      // connections are reserved and sitting in open transactions, so a
+      // third query on it would wait for a connection rather than report
+      // on the lock.
+      await waitUntilBlockedOnLock(admin, releaserBackend.pid);
+      await voider.unsafe('commit');
+
+      const outcome = await pending;
+      expect(
+        outcome,
+        'the release was accepted after the withdrawal it raced committed, ' +
+          'which leaves the Work with more released than was ever withheld',
+      ).toBeInstanceOf(Error);
+      expect(outcome).toMatchObject({ code: '23P01' });
+      await releaser.unsafe('rollback');
+
+      const response = await read(workId);
+      expect(response.statusCode, response.body).toBe(200);
+      const { position } = response.json<WorkRetentionResponse>();
+      expect(position.retentionHeldTotal).toBe('0.00');
+      expect(position.retentionReleasedTotal).toBe('0.00');
+      expect(position.retentionBalance).toBe('0.00');
+    } finally {
+      voider.release();
+      releaser.release();
+      await race.end();
+    }
+  }, 60_000);
+
   it('refuses editing a recorded release, from the database', async () => {
     const { workId, billId } = await seedWork('RETIMM');
     await withhold(billId, '470000.00', '100.00', 'UTR-RETIMM-1');
@@ -977,5 +1082,33 @@ describe('the contract terms', () => {
     });
     expect(again.statusCode, again.body).toBe(404);
     expect(again.json<{ code: string }>().code).toBe('RETENTION_TERMS_NOT_FOUND');
+  });
+
+  it('keeps the saved and cleared events on the Work trail after the row is gone', async () => {
+    // The terms row DELETES, and the Work timeline joins each event's
+    // `entity_id` back to a live register row. Anchored on the terms row's
+    // own id, clearing the terms would take the clearing event AND every
+    // prior save off the trail — the audit trail losing precisely the
+    // history of the thing somebody just erased. They are anchored on the
+    // Work instead, which is why both survive here.
+    const { workId } = await seedWork('TERMTRAIL');
+    await recordTerms(workId);
+    const cleared = await authed({
+      method: 'DELETE',
+      url: `/api/works/${workId}/retention-terms`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(204);
+
+    const trail = await authed({
+      method: 'GET',
+      url: `/api/works/${workId}/timeline?entityTypes=work_retention_terms`,
+      organisationId,
+    });
+    expect(trail.statusCode, trail.body).toBe(200);
+    const actions = trail.json<TimelineResponse>().events.map((event) => event.action);
+    expect(actions).toContain('retention.terms.saved');
+    expect(actions).toContain('retention.terms.cleared');
   });
 });

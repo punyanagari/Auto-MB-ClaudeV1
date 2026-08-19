@@ -76,6 +76,15 @@ SET LOCAL statement_timeout = '5min';
 --
 --   23P01  the release would exceed the retention actually withheld
 --   23P02  a recorded release is immutable; withdraw it instead
+--   23P09  a WITHDRAWN release is immutable, and there is no second
+--          withdrawal — a separate code from 23P02 because the remedy is
+--          not the same one. 23P02 says "withdraw it and record the
+--          corrected release"; against a release already withdrawn that
+--          sentence is advice the operator cannot take, and an operator
+--          told to do something the system will refuse reads it as a bug.
+--          The two rules were one code until the review pass; the block's
+--          own one-code-per-rule discipline is what says they should not
+--          have been.
 --   23P03  the release is dated in the future in the organisation's own
 --          timezone
 --   23P04  the Work carries no liquidated-damages terms to assess against
@@ -440,8 +449,24 @@ GRANT SELECT, INSERT, UPDATE ON retention_releases TO auto_mb_app;
 --     made against a Work that finished on time states zero rather than a
 --     negative levy.
 --   * the cap. `least(…)`, applied to the whole assessment and not to
---     each period, which is what "subject to a maximum of 10% of the
---     contract value" says.
+--     each period, which is what "subject to a maximum of N%" says.
+--
+-- THE CAP IS A PERCENT OF THE ASSESSMENT BASIS, not of the contract value,
+-- and this comment used to say the second while the column computed the
+-- first. `cap_amount` is `basis_amount * ld_cap_percent / 100`, and
+-- `basis_amount` is a snapshot the route DEFAULTS from `works.contract_value`
+-- but which an operator may set lower — the late portion of the contract,
+-- for instance. The two readings agree whenever the basis is the whole
+-- contract value and diverge whenever it is not, and where they diverge
+-- this migration's arithmetic caps at the smaller figure, so a railway that
+-- levied 10% of the contract value against a partial basis cannot be
+-- recorded here.
+--
+-- WHICH READING IS CONTRACTUALLY RIGHT IS AN OPEN OWNER RULING, recorded as
+-- a PROPOSED row in `docs/UX.md` § 21 rather than settled in a merge. The
+-- arithmetic is deliberately UNCHANGED by the review pass that found the
+-- disagreement: this comment is corrected to describe the code, and the
+-- code waits for the ruling.
 --
 -- A generated column cannot reference another generated column in
 -- PostgreSQL, so the period count is written out twice — once as the
@@ -757,8 +782,10 @@ BEGIN
   -- INSERT.
   IF TG_OP = 'UPDATE' THEN
     IF OLD.voided_at IS NOT NULL THEN
-      RAISE EXCEPTION 'a withdrawn retention release is immutable'
-        USING ERRCODE = '23P02', CONSTRAINT = 'retention_release_immutable';
+      RAISE EXCEPTION
+        'a withdrawn retention release is immutable, and cannot be withdrawn again'
+        USING ERRCODE = '23P09',
+              CONSTRAINT = 'retention_release_withdrawal_terminal';
     END IF;
     IF ROW(
       NEW.organisation_id, NEW.work_id, NEW.released_on, NEW.amount, NEW.basis,
@@ -902,6 +929,30 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- THE WORK ROW IS LOCKED BEFORE THE TOTALS ARE READ, and this is the
+  -- half that makes the guard hold under concurrency rather than only
+  -- against a serial operator.
+  --
+  -- Section 5's release guard serialises on the `works` row. Without the
+  -- same lock here the two arms lock DISJOINT rows — a release locks the
+  -- Work and this held a `bill_payments` row and nothing else — so a
+  -- withdrawal racing a release reads a `released` total that does not yet
+  -- include the release the other transaction is about to commit, and the
+  -- release reads a `held` total that still includes the receipt this one
+  -- is about to withdraw. Both guards pass, both commit, and the Work is
+  -- left with more released than was ever withheld: a negative retention
+  -- balance nobody refused.
+  --
+  -- Lock order is bills -> bill_payment_deductions -> works, which is
+  -- acyclic against the release path's works-only, so the two serialise
+  -- rather than deadlock. The lock is taken AFTER the early returns above
+  -- on purpose: a withdrawal that touches no SECURITY_DEPOSIT deduction
+  -- cannot move the held side, and making every ordinary receipt
+  -- withdrawal queue behind the Work would be a cost paid for nothing.
+  PERFORM 1 FROM works w
+  WHERE w.organisation_id = NEW.organisation_id AND w.id = v_work_id
+  FOR UPDATE;
+
   v_held := app_private.work_retention_held(v_work_id);
   v_released := app_private.work_retention_released(v_work_id);
 
@@ -920,7 +971,7 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_retention_survives_payment_void() IS
-  'The other end of the retention invariant: withdrawing a receipt reduces what was ever withheld, and it may not reduce it below what has already been released. Additive to 0067''s own payment guard rather than a replacement of it, and it fires only on a fresh withdrawal so a re-void still meets 0067''s refusal.';
+  'The other end of the retention invariant: withdrawing a receipt reduces what was ever withheld, and it may not reduce it below what has already been released. Additive to 0067''s own payment guard rather than a replacement of it, and it fires only on a fresh withdrawal so a re-void still meets 0067''s refusal. Takes the Work row FOR UPDATE before reading the totals, on the same row the release guard serialises on, so a withdrawal racing a release cannot pass both guards and mint a negative balance.';
 
 CREATE TRIGGER bill_payments_retention_guard
 BEFORE UPDATE ON bill_payments

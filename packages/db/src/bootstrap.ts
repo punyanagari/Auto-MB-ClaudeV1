@@ -243,6 +243,23 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // updates.
   signing_requests: 'SELECT, INSERT, UPDATE',
   signing_agents: 'SELECT, INSERT, UPDATE',
+  // Notifications (0092). None of the four deletes. A channel is what
+  // every historical message went out through, a template is what every
+  // logged message was rendered from, a consent record absent is
+  // indistinguishable from consent never given, and the delivery log is
+  // the answer to "did you tell us". Disabling, withdrawing and opting
+  // out are the operations.
+  notification_channels: 'SELECT, INSERT, UPDATE',
+  notification_templates: 'SELECT, INSERT, UPDATE',
+  notification_consents: 'SELECT, INSERT, UPDATE',
+  notification_messages: 'SELECT, INSERT, UPDATE',
+  // The spreadsheet importer's staging area (0094). No DELETE: a batch
+  // is the answer to "where did these eight hundred contacts come from",
+  // and an abandoned one is cancelled with a reason rather than removed.
+  // The rows go with it — they are the only surviving record of what the
+  // uploaded file said, because the workbook itself is never stored.
+  spreadsheet_import_batches: 'SELECT, INSERT, UPDATE',
+  spreadsheet_import_rows: 'SELECT, INSERT, UPDATE',
   // Payroll (0089, 0090). The three schedules and the employee master
   // retire by end-dating, exactly as gst_rates does, so none of them
   // holds DELETE. Nor does a payroll run at any status: it has claimed a
@@ -271,6 +288,16 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   maintenance_dispatches: 'SELECT, INSERT',
   maintenance_dispatch_lines: 'SELECT, INSERT',
   maintenance_returns: 'SELECT, INSERT',
+  // The platform controls (0096). None of the three holds DELETE, and
+  // each for its own reason: deleting an entitlement row would silently
+  // restore the shipped default and erase who decided otherwise, a
+  // schedule is switched off rather than forgotten so a check an operator
+  // expected is visibly not running, and an export is a disclosure of the
+  // entire organisation — a record of a disclosure that can be removed is
+  // not a record. Expiry empties the storage, never the row.
+  organisation_entitlements: 'SELECT, INSERT, UPDATE',
+  statutory_job_schedules: 'SELECT, INSERT, UPDATE',
+  organisation_export_requests: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',
@@ -354,6 +381,30 @@ const FUNCTION_GRANTS = [
   'app_private.complete_job(uuid, uuid, jsonb)',
   'app_private.fail_job(uuid, uuid, text, timestamptz, text)',
   'app_private.release_job(uuid, uuid, text)',
+  // The kiosk token resolver (0091) and the webhook receipt writer
+  // (0092). Both are SECURITY DEFINER and both were missing from this
+  // list, which is a restore hazard with no symptom: after
+  // `pg_restore --no-owner` they come back owned by the restoring role,
+  // so the resolver reads `signing_agents` through RLS and finds nothing
+  // — every kiosk poll answers "no such token" — and the receipt writer
+  // reads `notification_channels` the same way, so every WhatsApp
+  // delivery receipt silently no-ops and the delivery log freezes at
+  // `sent` forever. Neither failure raises anything.
+  'app_private.resolve_signing_agent(text)',
+  'app_private.record_notification_receipt(text, text, text, timestamptz, text, text)',
+  // The two worker ticks (0096). Same restore hazard as the queue's own
+  // five: they are the ONLY way a recurring check is enqueued or a lapsed
+  // export artefact is reclaimed, and a restore that left them owned by
+  // the restoring role would stop both silently — nothing errors, the
+  // schedules simply stop firing and the whole-organisation bundles stop
+  // expiring.
+  'app_private.enqueue_due_statutory_jobs(integer)',
+  'app_private.expire_lapsed_organisation_exports(integer)',
+  // The platform screen's run history (0096). The application role holds
+  // no privilege on `worker_jobs`, so this definer read is the only way
+  // an organisation can be told what its own scheduled checks found.
+  'app_private.organisation_job_history(integer)',
+  'app_private.fail_stalled_organisation_exports(interval, integer)',
 ];
 
 export async function applyGrants(admin: Sql): Promise<void> {
@@ -399,6 +450,25 @@ export async function applyGrants(admin: Sql): Promise<void> {
   );
   await admin.unsafe(
     `GRANT SELECT, INSERT, UPDATE, DELETE ON worker_jobs TO auto_mb_definer`,
+  );
+  // The tables the two definer functions above reach. BYPASSRLS lifts the
+  // POLICY, never the table privilege, so these grants are separate from
+  // the ownership repair and are exactly as narrow as each function is:
+  // the kiosk resolver only reads, and the receipt writer reads a channel
+  // to find the tenant and moves one message row forwards.
+  await admin.unsafe(`GRANT SELECT ON signing_agents TO auto_mb_definer`);
+  await admin.unsafe(`GRANT SELECT ON notification_channels TO auto_mb_definer`);
+  await admin.unsafe(
+    `GRANT SELECT, UPDATE ON notification_messages TO auto_mb_definer`,
+  );
+  // Migration 0096: the two worker ticks read and advance these across
+  // tenants, because a due schedule and a lapsed artefact both have to be
+  // found before any tenant is bound. SELECT and UPDATE only — the ticks
+  // advance existing rows and never create or remove one, and the INSERT
+  // they do make goes to `worker_jobs` above.
+  await admin.unsafe(
+    `GRANT SELECT, UPDATE ON statutory_job_schedules, organisation_export_requests
+     TO auto_mb_definer`,
   );
   // These functions MUST be owned by the BYPASSRLS definer role: they are
   // SECURITY DEFINER and read organisation_memberships from inside the RLS

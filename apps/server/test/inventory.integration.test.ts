@@ -592,7 +592,18 @@ describe('posting a movement', () => {
     expect(tooMuch.statusCode, tooMuch.body).toBe(409);
     expect(tooMuch.json<{ code: string }>().code).toBe('STOCK_INSUFFICIENT');
 
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    // Tomorrow relative to the organisation's clock, not the runner's:
+    // the route measures "in the future" against org-timezone today, and
+    // between 18:30 and 24:00 UTC a UTC-derived tomorrow is already today
+    // in Asia/Kolkata (the correspondence and company-documents suites
+    // anchor the same way, after measuring exactly this failure).
+    const [row] = await admin<{ today: string }[]>`
+      select (now() at time zone o.timezone)::date::text as today
+      from organisations o where o.id = ${organisationId}
+    `;
+    const tomorrow = new Date(Date.parse(`${row?.today}T00:00:00.000Z`) + 86_400_000)
+      .toISOString()
+      .slice(0, 10);
     const dated = await postMovement({
       productionItemId: smpsItemId,
       movementType: 'adjustment_in',

@@ -416,6 +416,29 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
   /** The e-invoicing declaration travels as three profile fields; a
    * non-applicable declaration clears the date and window with it, so
    * the stored trio always matches what the 0049 CHECK accepts. */
+  async function saveAuditRetention(
+    event: React.FormEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await api.updateOrganisationProfile(organisationId, {
+        auditRetentionMonths: Number(formValue(data, 'audit-retention-months')),
+      });
+      setProfile(updated);
+      setNotice(
+        'The audit register window was saved. No recorded event is ever deleted; this decides how far back the register looks.',
+      );
+    } catch (cause) {
+      setError(errorMessage(cause, 'Saving the audit register window failed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveEinvoiceDeclaration(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -905,6 +928,55 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
             ) : (
               'Not yet declared — the IRP transport is refused until the owner declares it.'
             )}
+          </p>
+        )}
+      </Card>
+
+      {/* The audit register's window (migration 0095). Owner-only like
+          every other declaration on this screen, and deliberately worded
+          as a VIEWING window rather than a retention purge: nothing is
+          deleted, and the floor is the statutory eight years the
+          Companies (Accounts) Rules require the trail to be kept for. */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-base leading-snug font-medium">Audit register</h2>
+            <p className="text-sm text-muted-foreground">
+              How far back the audit register and its exports look.
+            </p>
+          </div>
+        </CardHeader>
+        {isOwner ? (
+          <form onSubmit={(event) => void saveAuditRetention(event)}>
+            <Field>
+              <label htmlFor="audit-retention-months">Window (months)</label>
+              <input
+                id="audit-retention-months"
+                name="audit-retention-months"
+                type="number"
+                inputMode="numeric"
+                min={96}
+                max={600}
+                required
+                defaultValue={profile.auditRetentionMonths ?? 96}
+              />
+              <Hint>
+                96 months is the statutory floor — section 128 of the Companies Act
+                requires eight financial years of books, and the audit trail is kept
+                with them. Nothing older is ever deleted; this only decides how far the
+                register looks back.
+              </Hint>
+            </Field>
+            <Actions>
+              <Button type="submit" disabled={busy}>
+                Save window
+              </Button>
+            </Actions>
+          </form>
+        ) : (
+          <p>
+            {String(profile.auditRetentionMonths ?? 96)} months. Nothing older is
+            deleted; an owner widens the window.
           </p>
         )}
       </Card>

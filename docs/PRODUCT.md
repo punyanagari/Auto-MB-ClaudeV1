@@ -2332,6 +2332,54 @@ come back. The write-off is what makes the gate reachable: a request whose
 stock never arrives, or whose Work is superseded mid-flight, cancels its
 balance with a reason and closes. A closed request is terminal.
 
+### Platform controls: modules, recurring checks, and the organisation's own copy
+
+Three operator surfaces that have nothing to do with contract execution and
+everything to do with running the product for an organisation (migration
+0096). They live together on Settings → Platform because they answer one
+question in three parts: what may this organisation use, what does it check
+on a clock, and can it take its own record away.
+
+**A module entitlement is not a permission, and the distinction is the
+whole rule.** A membership says what a PERSON may do; an entitlement says
+whether a MODULE is available to the ORGANISATION at all. They compose, and
+neither substitutes for the other: a member holding the statutory
+reporting authority in an organisation whose e-way bill module is switched
+off is refused, and so is the owner. Two flags ship, and both name a real
+external dependency rather than a hypothetical one — the e-way bill module
+waits on NIC re-certification, and outbound signing waits on the ESP/TSA
+procurement ADR-0012 settled.
+
+**Both ship ENABLED**, which is the opposite of what those dependencies
+suggest and is deliberate: landing the mechanism must not change what any
+organisation can do on the day it applies. Switching one off is an operator
+act with a note attached, and it stops NEW work only — an organisation that
+turns the e-way bill module off keeps every bill it has already generated,
+because a control that erased history would be a different control.
+Managing the flags needs the owner role AND the entitlements authority.
+
+**A recurring check borrows a real membership.** ADR-0011 refuses the queue
+a service identity, so a schedule records the member who last saved it and
+its jobs run under exactly that authority, re-proved in the database at
+execution. A check enabled by somebody who has since left parks its next
+run rather than running on their behalf, and the remedy — a current member
+saves the check again — is stated on the run history rather than left to be
+inferred from a red chip. One check ships: the performance guarantees and
+PAC certificates whose expiry falls inside a horizon the organisation sets,
+which is the check an agency loses real money by missing.
+
+**The organisation's own copy of itself** is the same complete package the
+owner-only synchronous export has always produced, built once into storage
+and downloaded as a file that survives a closed tab. It needs the export
+authority and full Work access — the package is not Work-scoped, so a
+member who sees only their own Works cannot take one, and it is refused by
+name rather than silently exporting less. The artefact EXPIRES on a clock
+the requester does not choose, and its bytes are deleted when it does,
+because a complete copy of the business is not a thing to leave lying
+around. Every export is recorded permanently even after its file is gone:
+the row states that on a date a named member took the whole organisation
+away, which is a fact worth keeping whether or not the file still exists.
+
 ## 9. Current non-goals and release boundaries
 
 - security-deposit deductions, price variation, and other bill maths not

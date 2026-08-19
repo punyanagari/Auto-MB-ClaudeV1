@@ -113,6 +113,10 @@ const Masters = lazy(() =>
 const Members = lazy(() =>
   import('./Members.js').then((module) => ({ default: module.Members })),
 );
+const AuditTrail = lazy(() =>
+  import('./AuditTrail.js').then((module) => ({ default: module.AuditTrail })),
+);
+const Mis = lazy(() => import('./Mis.js').then((module) => ({ default: module.Mis })));
 const OperationsDashboard = lazy(() =>
   import('./OperationsDashboard.js').then((module) => ({
     default: module.OperationsDashboard,
@@ -163,6 +167,16 @@ const ProductionJobCard = lazy(() =>
     default: module.ProductionJobCard,
   })),
 );
+const OrganisationExportSettings = lazy(() =>
+  import('./OrganisationExportSettings.js').then((module) => ({
+    default: module.OrganisationExportSettings,
+  })),
+);
+const PlatformSettings = lazy(() =>
+  import('./PlatformSettings.js').then((module) => ({
+    default: module.PlatformSettings,
+  })),
+);
 const SigningKioskSettings = lazy(() =>
   import('./SigningKioskSettings.js').then((module) => ({
     default: module.SigningKioskSettings,
@@ -170,6 +184,12 @@ const SigningKioskSettings = lazy(() =>
 );
 const SigningQueue = lazy(() =>
   import('./SigningQueue.js').then((module) => ({ default: module.SigningQueue })),
+);
+const Notifications = lazy(() =>
+  import('./Notifications.js').then((module) => ({ default: module.Notifications })),
+);
+const Imports = lazy(() =>
+  import('./Imports.js').then((module) => ({ default: module.Imports })),
 );
 const StockRegister = lazy(() =>
   import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
@@ -461,6 +481,18 @@ export function OperationsWorkspace({
   // gates the employee register and the payroll run — a vendor-payment
   // manager must not see salaries, PAN, UAN or bank details by default.
   const canManagePayroll = membership?.canManagePayroll ?? false;
+  const canManageNotifications = membership?.canManageNotifications ?? false;
+  // The import authority (migration 0094). The screen stays on the rail
+  // for every writer, because reading which imports an organisation ran
+  // — and why eleven rows were refused — is ordinary register history.
+  // What the authority gates is the half that WRITES: the upload panel
+  // and the button that commits. The server refuses either way.
+  const canImport = membership?.canImportData ?? false;
+  // The platform controls (migration 0096). `canManageEntitlements` is
+  // owner-only in effect — every route needs the owner role beside it —
+  // so the panel takes both and renders for neither alone.
+  const canManageEntitlements = membership?.canManageEntitlements ?? false;
+  const canExportOrg = membership?.canExportOrg ?? false;
   // The retention authority (migration 0098), distinct from payments:
   // that one sends the agency's money out, this one states what the
   // railway is holding back and what it may keep. The server refuses
@@ -1032,6 +1064,19 @@ export function OperationsWorkspace({
                   organisationId={organisation.id}
                   isOwner={membership?.role === 'owner'}
                 />
+                <PlatformSettings
+                  api={api}
+                  organisationId={organisation.id}
+                  isOwner={membership?.role === 'owner'}
+                  canManageEntitlements={canManageEntitlements}
+                  currentUserId={me.user.id}
+                />
+                <OrganisationExportSettings
+                  api={api}
+                  organisationId={organisation.id}
+                  canExportOrg={canExportOrg}
+                  currentUserId={me.user.id}
+                />
                 <AppearanceSettings />
                 <AccountSecurity api={api} />
                 <OrganisationAccessSettings
@@ -1260,6 +1305,33 @@ export function OperationsWorkspace({
                 canModify={canModify}
               />
             )}
+            {view.name === 'imports' && (
+              <Imports
+                api={api}
+                organisationId={organisation.id}
+                canImport={canImport}
+              />
+            )}
+
+            {/* Gated at the SCREEN rather than at a control, because
+                every read this view makes needs the authority: the
+                consent register is a list of counterparties' personal
+                telephone numbers, and the delivery log says who was
+                messaged and when. The rail door stays visible — unlike
+                Employees, whose door leaks that a salary register
+                exists, this one leaks nothing an ordinary member should
+                not know the product has. The server refuses the reads
+                the same way, so this is the door and not the lock. */}
+            {view.name === 'notifications' &&
+              (canManageNotifications ? (
+                <Notifications
+                  api={api}
+                  organisationId={organisation.id}
+                  isOwner={isOwner}
+                />
+              ) : (
+                <NotificationsAuthorityRequired />
+              ))}
 
             {view.name === 'stock' && (
               <StockRegister
@@ -1670,6 +1742,22 @@ export function OperationsWorkspace({
                 currentUserId={me.user.id}
               />
             )}
+
+            {/* Both screens keep their rail door and refuse at the screen,
+                which is the majority precedent here — Employees is the one
+                module whose door is hidden, because a register of salaries
+                is not something to advertise a way into. That an audit
+                trail EXISTS is not a secret; every operator should know
+                their actions are recorded. So the door stays and the
+                server's own refusal is what the screen renders, naming
+                which of its two walls stopped the read. */}
+            {view.name === 'audit' && (
+              <AuditTrail api={api} organisationId={organisation.id} />
+            )}
+
+            {view.name === 'mis' && (
+              <Mis api={api} organisationId={organisation.id} isOwner={isOwner} />
+            )}
           </Suspense>
         </main>
       </div>
@@ -1989,6 +2077,30 @@ export function OperationsWorkspace({
  * matches the topbar's section title rather than always reading
  * "Employees" over a payroll fragment.
  */
+function NotificationsAuthorityRequired() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="Administration"
+        title="Notifications"
+        titleId="notifications-authority-title"
+        description="Messaging channels, templates, consent and delivery."
+      />
+      <Card>
+        <p className="m-0 text-sm">
+          Notifications are behind the notifications authority, and this account does
+          not hold it. The consent register carries counterparties&rsquo; personal
+          telephone numbers and the delivery log says who was messaged, so it is granted
+          per member rather than by role.
+        </p>
+        <p className="m-0 mt-2 text-sm text-muted-foreground">
+          Ask an owner to grant it on the Members screen.
+        </p>
+      </Card>
+    </>
+  );
+}
+
 function PayrollAuthorityRequired({ title }: { readonly title: string }) {
   return (
     <>

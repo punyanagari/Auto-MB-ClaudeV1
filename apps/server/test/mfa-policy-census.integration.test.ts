@@ -212,8 +212,35 @@ describe('MFA authority census', () => {
     // half catches an authority being REMOVED from the union without the
     // wall being reconsidered.
     expect(Object.keys(MFA_REQUIRING_AUTHORITIES).sort()).toEqual([
+      // The audit authority (migration 0095). The first grant on the wall
+      // that authorises no WRITE at all, and it belongs there on the
+      // payroll precedent: a stolen session holding it can read every
+      // action every colleague took, with the before and after of each
+      // change, and export the lot in one request. A read can be worth
+      // stealing an account for.
+      'audit',
       'cancel',
+      // The entitlements authority (0096) decides which modules the
+      // organisation may use at all: a stolen owner session that can turn
+      // the e-way bill module on is one that can start speaking to a
+      // government portal in the organisation's name.
+      'entitlements',
+      // The organisation-export authority (0096) takes the whole
+      // organisation away in one file — every contract, price, payslip and
+      // bank detail it holds. The single highest-value read in the product.
+      'export',
+      // The import authority (migration 0094). Its damage is measured in
+      // rows: a stolen session holding it can commit a prepared workbook
+      // that rewrites every vendor's bank account in a single call, and
+      // the payment advices generated afterwards look exactly like the
+      // organisation's own.
+      'import',
       'issue',
+      // The notifications authority (0092). Whoever holds it can point
+      // the organisation's outbound voice at a number they control and
+      // authorise a recipient nobody agreed to, which is impersonating
+      // the agency to its own customers.
+      'notifications',
       // The payments authority (migration 0080) moves money out of the
       // organisation's bank, so it joins the wall rather than sitting
       // beside it.

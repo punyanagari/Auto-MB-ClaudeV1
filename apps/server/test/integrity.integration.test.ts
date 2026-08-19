@@ -508,6 +508,12 @@ describe('export completeness', () => {
       // export-v24: the signing trail (0091).
       'signingAgents',
       'signingRequests',
+      // export-v25: notifications (0092). The consent register is the one
+      // an organisation cannot reconstruct from anywhere else.
+      'notificationChannels',
+      'notificationTemplates',
+      'notificationConsents',
+      'notificationMessages',
     ]) {
       expect(Array.isArray(exported[section])).toBe(true);
     }
@@ -686,6 +692,80 @@ describe('export completeness is catalog-driven', () => {
     schema_migrations: 'the migration ledger, a property of the database',
   };
 
+  /**
+   * The census above is per-TABLE, and that is exactly how a grant went
+   * missing.
+   *
+   * `members` is the one section whose SQL lists its columns explicitly
+   * rather than selecting `*`, because a membership row carries things a
+   * recovery package should not — and the explicit list is a
+   * hand-maintained list, which is a list that goes stale. It did:
+   * `can_sign_documents` arrived with migration 0091 and was never added,
+   * so from v24 onward a restored organisation came back with signing
+   * revoked from every member. Nothing in this suite could see it,
+   * because the table was present and only a column was absent.
+   *
+   * So the columns get their own census. It is narrow on purpose — only
+   * the authority grants, only on `organisation_memberships` — because
+   * those are the columns whose silent loss is a privilege change nobody
+   * reviewed, and widening it to every column of every table would
+   * re-state `select *` as a test.
+   */
+  it('exports every membership authority grant the catalog knows about', async () => {
+    const grants = await admin<{ column_name: string }[]>`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'organisation_memberships'
+        and column_name like 'can\_%'
+      order by column_name
+    `;
+    // The live list, not a floor with slack in it. A floor of six would
+    // let three of these disappear from the catalog without this failing,
+    // which is the same shape of hole the census exists to close. A
+    // fourteenth authority edits this list, which is the point at which
+    // somebody reads it. Twelve after 0096 adds the two platform
+    // controls; thirteen after 0098 adds retention.
+    expect(grants.map((row) => row.column_name)).toEqual([
+      'can_approve_amendments',
+      'can_cancel_documents',
+      'can_export_org',
+      'can_import_data',
+      'can_issue_documents',
+      'can_manage_entitlements',
+      'can_manage_notifications',
+      'can_manage_payments',
+      'can_manage_payroll',
+      'can_manage_retention',
+      'can_manage_statutory_reporting',
+      'can_sign_documents',
+      'can_view_audit_trail',
+    ]);
+
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/export',
+      organisationId,
+    });
+    expect(response.statusCode).toBe(200);
+    const exported = response.json<{ members: Record<string, unknown>[] }>();
+    const [member] = exported.members;
+    expect(member, 'the export published no membership row to check').toBeDefined();
+
+    const missing = grants
+      .map((row) => row.column_name)
+      .filter((column) => !Object.prototype.hasOwnProperty.call(member ?? {}, column));
+    expect(
+      missing,
+      `membership authority grants absent from the organisation export: ${missing.join(
+        ', ',
+      )}. Add each to the \`members\` section's column list in routes/export.ts — a ` +
+        'grant left off it is silently revoked from every member of a restored ' +
+        'organisation, with no error anywhere, because nothing refuses a column ' +
+        'left false.',
+    ).toEqual([]);
+  });
+
   it('accounts for every table that is not organisation-scoped', async () => {
     const rows = await admin<{ table_name: string; scoped: boolean }[]>`
       select
@@ -732,23 +812,7 @@ describe('export completeness is catalog-driven', () => {
         `organisation-scoped: ${stale.join(', ')}`,
     ).toEqual([]);
   });
-});
 
-describe('the export is one consistent snapshot', () => {
-  /**
-   * The export runs about forty-five sequential SELECTs. Under READ
-   * COMMITTED each takes its own snapshot, so a writer that commits
-   * midway is invisible to the earlier queries and visible to the later
-   * ones — and the package comes out referentially broken.
-   *
-   * The race is made deterministic with a table lock. `loa_documents` is
-   * read after `works` and before `delivery_challans`, so an ACCESS
-   * EXCLUSIVE lock on it parks the export exactly between the parent read
-   * and the child read. A Work and a challan on it then commit into that
-   * window. Under READ COMMITTED the package would carry the challan
-   * without its Work; on the transaction's own snapshot it carries
-   * neither.
-   */
   it('excludes a Work and its challan that commit mid-export, rather than splitting them', async () => {
     const locker = createDatabasePool({
       url: adminUrl,

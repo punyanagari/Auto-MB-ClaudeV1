@@ -133,6 +133,27 @@ export const NonNegativeMoneyStringSchema = Type.String({
     'Non-negative money transported as a string; at most two fraction digits, matching the money_amount column.',
 });
 
+/**
+ * Money that may be NEGATIVE, at the same two-digit scale.
+ *
+ * For a DERIVED balance — a difference between two non-negative totals —
+ * rather than for anything an operator types. Nothing accepts one of these
+ * on the way in; the schema exists so a computed figure that can come back
+ * below zero says so on the wire instead of being typed as non-negative
+ * and quietly failing its own contract.
+ *
+ * The case it was written for is the retention balance: held minus
+ * released. Migration 0098's two guards now hold that difference at or
+ * above zero going forward, but an organisation carrying rows written
+ * before them can still read negative, and a balance the type says cannot
+ * exist is one no reader is required to render honestly.
+ */
+export const SignedMoneyStringSchema = Type.String({
+  pattern: '^-?(?:0|[1-9]\\d{0,14})(?:\\.\\d{1,2})?$',
+  description:
+    'Money transported as a string, which may be negative; at most two fraction digits, matching the money_amount column.',
+});
+
 /** Non-negative RATE — deliberately not positive. PRODUCT.md invariant 6
  * makes rates non-negative, and free-issue / nil-rate supply lines are
  * real, so '0' must keep working. */

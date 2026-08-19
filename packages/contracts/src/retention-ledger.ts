@@ -4,6 +4,7 @@ import {
   DecimalStringSchema,
   NonNegativeMoneyStringSchema,
   PositiveMoneyStringSchema,
+  SignedMoneyStringSchema,
   UuidSchema,
   nonBlankString,
 } from './primitives.js';
@@ -307,7 +308,21 @@ export const WorkRetentionPositionSchema = Type.Object(
     retentionCeilingAmount: Type.Union([NonNegativeMoneyStringSchema, Type.Null()]),
     retentionHeldTotal: NonNegativeMoneyStringSchema,
     retentionReleasedTotal: NonNegativeMoneyStringSchema,
-    retentionBalance: NonNegativeMoneyStringSchema,
+    /** Held minus released, and SIGNED on purpose.
+     *
+     * Two guards hold this at or above zero going forward: a release is
+     * refused above what was ever withheld, and withdrawing a receipt is
+     * refused below what has already been released (both in 0098, and both
+     * now serialising on the same `works` row so a race cannot slip
+     * between them). Neither can reach backwards. An organisation whose
+     * rows predate them — or one restored from an export taken before them
+     * — can still read a negative balance, and typing the field
+     * non-negative would not make it one: it would only mean the wire
+     * contract lies about a figure the screen still has to show. A minus
+     * sign in front of "Still held" is an operator's cue that something
+     * needs reconciling; a serializer error, or a silently clamped zero,
+     * is not. */
+    retentionBalance: SignedMoneyStringSchema,
     ldLeviedTotal: NonNegativeMoneyStringSchema,
     ldDeductedTotal: NonNegativeMoneyStringSchema,
     ldOpenAssessments: Type.Integer({ minimum: 0 }),

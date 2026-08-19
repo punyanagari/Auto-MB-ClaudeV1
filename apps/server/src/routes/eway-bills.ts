@@ -56,6 +56,7 @@ import {
   renderEwayBillHtml,
   type EwayBillRenderEvidence,
 } from '../eway-bill-html.js';
+import { requireEntitlement } from '../entitlements.js';
 import { httpError } from '../http.js';
 import { renderPdfViaGotenberg } from '../pdf-render.js';
 import { assertStandaloneChallanAccess, cancellationNote } from './challans.js';
@@ -433,6 +434,30 @@ function normalisedSave(body: SaveEwayBillRequest): NormalisedSave {
 
 // --- Routes -----------------------------------------------------------------
 
+/**
+ * WHERE THE `eway_bill` ENTITLEMENT BITES, and where it deliberately does
+ * not (migration 0096).
+ *
+ * The flag exists because an organisation's NIC re-certification has not
+ * landed, so the rule is: **it gates STARTING portal work, never finishing
+ * or undoing work already started.**
+ *
+ *   GATED — creating a bill against an invoice or a challan, `/generate`
+ *   (the call that registers with NIC), and `/recover-provider-operation`
+ *   (which re-asks NIC what became of a generation this organisation
+ *   started). All four begin or resume an outbound conversation.
+ *
+ *   OPEN — `/cancel-provider`, and the two manual-evidence routes
+ *   `/nic-response` and `/manual-cancel-response`. Cancellation is the
+ *   only way an organisation retracts a bill it has already generated, and
+ *   a live e-way bill that cannot be cancelled because an owner switched
+ *   the module off is a statutory liability the flag would have created
+ *   rather than prevented. The two manual routes record what already
+ *   happened somewhere else and speak to nobody.
+ *
+ * The same shape as the CREATE gates: switching a module off stops new
+ * work and never erases or strands what exists.
+ */
 export function registerEwayBillRoutes(
   app: AppInstance,
   auth: Auth,
@@ -487,6 +512,13 @@ export function registerEwayBillRoutes(
       const body = normalisedSave(request.body);
       const detail = await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
+        // The organisation must be entitled to the module at all (0096).
+        // Gated on CREATE only, and deliberately: switching the module off
+        // stops an organisation whose NIC re-certification has not landed
+        // from generating anything new, and does NOT hide the bills it has
+        // already generated. A control that erased history would be a
+        // different control.
+        await requireEntitlement(tx, 'eway_bill');
         // The invoice row lock serialises this create against the
         // invoice's cancel (which refuses while a live e-way bill
         // exists) and against a concurrent create on the same invoice.
@@ -627,6 +659,9 @@ export function registerEwayBillRoutes(
       const body = normalisedSave(request.body);
       const detail = await tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
+        // The module entitlement (0096), for the reason the invoice create
+        // above gives.
+        await requireEntitlement(tx, 'eway_bill');
         // The challan row lock serialises this create against the
         // challan's own cancel and against a concurrent create on the
         // same challan, exactly as the invoice lock does above.
@@ -881,6 +916,10 @@ export function registerEwayBillRoutes(
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
       const detail = await tenant(async (tx) => {
+        // Recovery RESUMES a generation, re-asking NIC what became of an
+        // operation this organisation started, so it is on the gated side
+        // of the line drawn below.
+        await requireEntitlement(tx, 'eway_bill');
         const row = await lockEwayBill(tx, id);
         await assertBillAccess(tx, user.id, row);
         // Branched per state, so this route declares nothing and checks
@@ -945,6 +984,12 @@ export function registerEwayBillRoutes(
       const { id } = request.params;
 
       const prepared = await tenant(async (tx) => {
+        // THE ENTITLEMENT GATES STARTING PORTAL WORK (0096). This is the
+        // route that actually speaks to NIC in the organisation's name,
+        // which is the flag's whole stated purpose, so gating only the
+        // two create routes would have left the door it exists to close
+        // standing open.
+        await requireEntitlement(tx, 'eway_bill');
         await recoverStaleStatutoryOperation(tx, { ewayBillId: id });
         const row = await lockEwayBill(tx, id);
         await assertBillAccess(tx, user.id, row);

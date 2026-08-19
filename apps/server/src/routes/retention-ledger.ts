@@ -71,6 +71,10 @@ const RELEASE_EXCEEDS_HELD =
   'This release is larger than the retention still held on this Work. Re-read the position: another release may have been recorded first, or a receipt that withheld retention may have been withdrawn.';
 const RELEASE_IMMUTABLE =
   'A recorded release cannot be edited. Withdraw it with a reason and record the corrected one.';
+/** The other half of what used to be one refusal. Withdrawal is terminal,
+ * so the sentence above — "withdraw it and record the corrected one" — is
+ * a remedy this operator cannot take. */
+const RELEASE_ALREADY_WITHDRAWN = 'This release has already been withdrawn.';
 
 interface TermsRow {
   readonly retention_percent: string | null;
@@ -266,7 +270,13 @@ function trimmedOrNull(value: string | undefined): string | null {
  */
 const DATABASE_REFUSALS: Readonly<Record<string, readonly [ErrorCode, string]>> = {
   '23P01': ['RETENTION_RELEASE_EXCEEDS_HELD', RELEASE_EXCEEDS_HELD],
-  '23P02': ['RETENTION_RELEASE_ALREADY_WITHDRAWN', RELEASE_IMMUTABLE],
+  '23P02': ['RETENTION_RELEASE_IMMUTABLE', RELEASE_IMMUTABLE],
+  // Its own code since the review pass, and not a nicety: 23P02's remedy
+  // is "withdraw it and record the corrected release", which against a
+  // release already withdrawn is advice the system will refuse. One code
+  // for both rules meant one of the two operators was always told to do
+  // something impossible.
+  '23P09': ['RETENTION_RELEASE_ALREADY_WITHDRAWN', RELEASE_ALREADY_WITHDRAWN],
   '23P03': [
     'RETENTION_RELEASE_DATE_FUTURE',
     'A release cannot be dated in the future; check the year on the release letter.',
@@ -595,19 +605,32 @@ export function registerRetentionLedgerRoutes(
         `;
         if (!row) throw new Error('retention terms upsert returned no row');
         const terms = toTerms(row);
-        // The audit entity id is the TERMS ROW's own id, not the Work's.
-        // The Work timeline joins `entity_id` against each register's
-        // primary key (`routes/timeline.ts`), so an event stamped with
-        // the Work id would be written, counted by the census, and never
-        // appear on the trail it was written for.
+        // THE ENTITY ID IS THE WORK'S, not the terms row's, and this is the
+        // one register in the module where that is the honest anchor.
+        //
+        // Every other arm of `workEventPredicate` joins `entity_id` against
+        // a register's live primary key, which works because those rows do
+        // not delete — a release is withdrawn and an assessment cancelled.
+        // Terms DO delete: clearing them is the module's only delete, and
+        // an event anchored on the deleted row's id would take the clearing
+        // event AND every prior save off the Work's trail the moment the
+        // join found no row. That is the audit trail losing exactly the
+        // history of the field somebody just erased.
+        //
+        // The Work id identifies these terms as precisely as the row id
+        // does — the table is one row per Work under a unique key — and it
+        // outlives them, so the arm in `routes/timeline.ts` matches the
+        // Work id directly. `challan_item_serials` already accepts two id
+        // shapes for a comparable reason; this accepts one, and it is the
+        // one that survives.
         await audit(
           tx,
           organisationId,
           user.id,
           'retention.terms.saved',
           'work_retention_terms',
-          row.id,
-          { workId, before, after: terms },
+          workId,
+          { workId, termsId: row.id, before, after: terms },
         );
         return terms;
       });
@@ -659,14 +682,18 @@ export function registerRetentionLedgerRoutes(
             'This Work has no recorded retention or liquidated-damages terms.',
           );
         }
+        // Anchored on the Work, for the reason the save path sets out at
+        // length: the row this event is about no longer exists, so its own
+        // id would join to nothing and take the whole terms history off the
+        // trail with it.
         await audit(
           tx,
           organisationId,
           user.id,
           'retention.terms.cleared',
           'work_retention_terms',
-          removed.id,
-          { workId, before },
+          workId,
+          { workId, termsId: removed.id, before },
         );
       });
       return reply.status(204).send();
@@ -845,7 +872,7 @@ export function registerRetentionLedgerRoutes(
           throw httpError(
             409,
             'RETENTION_RELEASE_ALREADY_WITHDRAWN',
-            'This release has already been withdrawn.',
+            RELEASE_ALREADY_WITHDRAWN,
           );
         }
         const [row] = await tx<ReleaseRow[]>`

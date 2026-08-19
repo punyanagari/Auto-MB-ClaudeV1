@@ -1,6 +1,7 @@
 import type { Sql } from '@auto-mb/db';
 import type { ObjectStorage, TrustAnchorStore } from '@auto-mb/documents';
 import { EMPTY_TRUST_ANCHOR_STORE } from '@auto-mb/documents';
+import { createInstrumentExpiryReviewHandler } from '@auto-mb/worker/handlers/instrument-expiry-review';
 import { createLoaDocumentIntakeHandler } from '@auto-mb/worker/handlers/loa-document-intake';
 import { drainJobs, type JobHandlers, type JobLogger } from '@auto-mb/worker/runtime';
 
@@ -27,6 +28,7 @@ export async function runQueuedJobs(
   const log: JobLogger = { info: () => {}, error: () => {} };
   const handlers: JobHandlers = {
     loa_document_intake: createLoaDocumentIntakeHandler({ storage, trustAnchors }),
+    instrument_expiry_review: createInstrumentExpiryReviewHandler(),
   };
   return drainJobs(database, { handlers, log });
 }

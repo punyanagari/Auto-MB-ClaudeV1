@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 /** The object storage boundary for uploaded documents, as the filesystem
  * implementation defines it. */
@@ -116,8 +119,89 @@ export function createFileSystemStorage(rootDir: string) {
       await rename(temp, file);
       await syncDirectory(dir);
     },
+    /**
+     * The same crash-consistent write, for an object nobody wants resident
+     * (migration 0096's organisation export).
+     *
+     * `put` takes a Buffer, which is right for every document this product
+     * stored until now — a PDF is megabytes and arrives as bytes anyway.
+     * A whole-organisation export is the first object built by streaming
+     * around sixty tables through a cursor precisely so that no table is
+     * ever fully in memory, and buffering the result to hand it to `put`
+     * would undo that at the last step.
+     *
+     * Temp file, fsync, rename, directory sync — the same four steps and
+     * the same reasons, so a reader still cannot observe a half-written
+     * object. Returns the byte count, because the caller has to record the
+     * size of what it wrote and counting a stream twice is a second read.
+     */
+    async putStream(key: string, source: Readable): Promise<number> {
+      const file = resolveKey(key);
+      const dir = path.dirname(file);
+      await mkdir(dir, { recursive: true });
+      const temp = path.join(dir, `.put-${randomUUID()}.tmp`);
+      await pipeline(source, createWriteStream(temp, { flags: 'wx' }));
+      // `r+`, not `r`. Windows refuses fsync on a read-only handle with
+      // EPERM, so the durability step this method exists for would fail on
+      // every development machine while passing in CI — the worst shape a
+      // durability bug can have. `put` above never hits it because it
+      // syncs the same handle it wrote through.
+      const handle = await open(temp, 'r+');
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      const { size } = await stat(temp);
+      await rename(temp, file);
+      await syncDirectory(dir);
+      return size;
+    },
     async get(key: string): Promise<Buffer> {
       return readFile(resolveKey(key));
+    },
+    /**
+     * The read half of `putStream`, for the one object nobody wants
+     * resident: the whole-organisation export.
+     *
+     * `get` returns a Buffer, which is right for every document this
+     * product serves — a PDF is megabytes and the response holds it once.
+     * An export package is built by streaming sixty tables through a
+     * cursor precisely so it is never fully in memory, and reading it back
+     * with `get` would put the entire organisation on the server's heap at
+     * the last step, once per concurrent download.
+     *
+     * It OPENS the file rather than returning a lazy stream, so a missing
+     * or unreadable object fails here — before the caller has committed
+     * anything or written a response header — instead of destroying a
+     * response that has already claimed success.
+     */
+    async getStream(key: string): Promise<{ stream: Readable; size: number }> {
+      const file = resolveKey(key);
+      const handle = await open(file, 'r');
+      try {
+        const { size } = await handle.stat();
+        return { stream: handle.createReadStream({ autoClose: true }), size };
+      } catch (error) {
+        await handle.close();
+        throw error;
+      }
+    },
+    /**
+     * Removes a stored object, and says nothing if it was already gone.
+     *
+     * The only caller is the export expiry sweep (migration 0096), and the
+     * reason this method exists at all is that an expired whole-
+     * organisation bundle left on disk is a copy of the entire business
+     * with no expiry. Every other object in this product is a document the
+     * organisation keeps.
+     *
+     * `force` — a missing file is the sweep's success case, not its error:
+     * the row is marked expired before the bytes go, so a retried sweep and
+     * a hand-cleaned directory both arrive here with nothing to delete.
+     */
+    async remove(key: string): Promise<void> {
+      await rm(resolveKey(key), { force: true });
     },
   };
 }

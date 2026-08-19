@@ -136,7 +136,10 @@ async function resolveEntityCursor(
  * the two can never disagree about which events the trail contains.
  * serials.recorded events carry the challan id as entity_id (the serials
  * were recorded against that challan), so challan_item_serials accepts
- * either id shape.
+ * either id shape. work_retention_terms events carry the WORK id, because
+ * that register is one row per Work and its row DELETES when the terms are
+ * cleared — joining its live primary key would take the clearing event and
+ * every prior save off the trail at the moment they matter most.
  */
 function workEventPredicate(tx: TransactionSql, workId: string) {
   return tx`(
@@ -189,8 +192,7 @@ function workEventPredicate(tx: TransactionSql, workId: string) {
       select id from signing_requests where work_id = ${workId}))
     or (ae.entity_type = 'maintenance_requests' and ae.entity_id in (
       select id from maintenance_requests where work_id = ${workId}))
-    or (ae.entity_type = 'work_retention_terms' and ae.entity_id in (
-      select id from work_retention_terms where work_id = ${workId}))
+    or (ae.entity_type = 'work_retention_terms' and ae.entity_id = ${workId})
     or (ae.entity_type = 'retention_releases' and ae.entity_id in (
       select id from retention_releases where work_id = ${workId}))
     or (ae.entity_type = 'ld_assessments' and ae.entity_id in (
