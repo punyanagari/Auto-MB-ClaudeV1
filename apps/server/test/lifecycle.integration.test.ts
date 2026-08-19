@@ -21,6 +21,7 @@ import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { createFileSystemStorage } from '@auto-mb/documents';
 import { runQueuedJobs } from './helpers/worker-jobs.js';
 import { buildApp } from '../src/app.js';
+import { billPurchaseOrder } from './helpers/vendor-bill.js';
 import { deriveIrn } from '../src/gsp/irn.js';
 
 /**
@@ -690,6 +691,11 @@ describe('3 — delivery challan against the purchase order', () => {
       receivedQuantity: '10.000',
       pendingQuantity: '0.000',
     });
+
+    // Closing also needs the vendor's tax invoice on file (owner ruling
+    // 2026-08-19, migration 0109); this suite is about the lifecycle
+    // around it, so the bill is a fixture.
+    await billPurchaseOrder(admin, purchaseOrderId, ownerUserId);
 
     const closed = await authed(owner, {
       method: 'POST',

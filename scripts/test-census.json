@@ -1,6 +1,6 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 3443,
+  "totalDeclarations": 3465,
   "fileCount": 221,
   "files": {
     "apps/server/test/accepted-rate-compound.test.ts": 8,
@@ -84,7 +84,7 @@
     "apps/server/test/platform.integration.test.ts": 19,
     "apps/server/test/positive-decimal.test.ts": 3,
     "apps/server/test/production.integration.test.ts": 49,
-    "apps/server/test/purchase-orders.integration.test.ts": 23,
+    "apps/server/test/purchase-orders.integration.test.ts": 44,
     "apps/server/test/query-aggregates.integration.test.ts": 7,
     "apps/server/test/query-write-loop-census.test.ts": 2,
     "apps/server/test/quotations.integration.test.ts": 19,
@@ -121,7 +121,7 @@
     "apps/server/test/work-scope-default.test.ts": 3,
     "apps/server/test/work-supersede.integration.test.ts": 23,
     "apps/server/test/xlsx.test.ts": 29,
-    "apps/web/e2e/accessibility.spec.ts": 24,
+    "apps/web/e2e/accessibility.spec.ts": 25,
     "apps/web/e2e/offline.spec.ts": 4,
     "apps/web/e2e/responsive.spec.ts": 4,
     "apps/web/e2e/table-perf.spec.ts": 2,

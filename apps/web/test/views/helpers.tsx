@@ -307,6 +307,8 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listVendorInvoices']>()
       .mockResolvedValue({ invoices: [], totalOutstanding: '0', overdueCount: 0 }),
     recordVendorInvoice: vi.fn<ApiClient['recordVendorInvoice']>(),
+    uploadVendorInvoiceDocument: vi.fn<ApiClient['uploadVendorInvoiceDocument']>(),
+    downloadVendorInvoiceDocument: vi.fn<ApiClient['downloadVendorInvoiceDocument']>(),
     previewVendorTds: vi.fn<ApiClient['previewVendorTds']>(),
     recordVendorPayment: vi.fn<ApiClient['recordVendorPayment']>(),
     voidVendorPayment: vi.fn<ApiClient['voidVendorPayment']>(),
@@ -490,6 +492,10 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     workCompletionReadiness: vi
       .fn<ApiClient['workCompletionReadiness']>()
       .mockResolvedValue({ ready: true, unfinished: [], blockers: [] }),
+    listPurchaseOrders: vi
+      .fn<ApiClient['listPurchaseOrders']>()
+      .mockResolvedValue({ purchaseOrders: [], nextCursor: null }),
+    createPurchaseOrder: vi.fn<ApiClient['createPurchaseOrder']>(),
     listWorkPurchaseOrders: vi
       .fn<ApiClient['listWorkPurchaseOrders']>()
       .mockResolvedValue([]),
@@ -1144,6 +1150,7 @@ export function purchaseOrder(overrides: Partial<PurchaseOrder> = {}): PurchaseO
   return {
     id: PO_ID,
     workId: WORK_ID,
+    workCode: 'DCW-1',
     vendorContactId: VENDOR_CONTACT_ID,
     vendorDesignation: 'Sharma Electricals',
     status: 'issued',
@@ -1154,6 +1161,7 @@ export function purchaseOrder(overrides: Partial<PurchaseOrder> = {}): PurchaseO
     terms: null,
     totalAmount: '400.00',
     cancellationNote: null,
+    lineCount: 1,
     createdAt: '2026-08-01T00:00:00.000Z',
     issuedAt: '2026-08-01T10:00:00.000Z',
     closedAt: null,
@@ -1170,6 +1178,7 @@ export function purchaseOrderDetail(): PurchaseOrderDetailResponse {
       {
         id: PO_LINE_ID,
         workItemId: ITEM_A,
+        productionItemId: null,
         lineNumber: 1,
         description: 'Main switchboard',
         hsnCode: null,

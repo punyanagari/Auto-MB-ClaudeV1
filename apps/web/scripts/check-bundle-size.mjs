@@ -74,10 +74,22 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * `src/format.ts` and dragging the contracts runtime with it — was
  * removed rather than absorbed (`src/format-instant.ts`).
  *
+ * RAISED TO 119,000 when the purchase-order register (0109) took the rail
+ * to twenty-eight modules. Measured at 118.19 kB gzip here, against the
+ * 117,783 the offline pack recorded above: about four hundred bytes for a
+ * rail entry, its `ShoppingCart` lamp, one arm each in the route
+ * serialiser, the parser, the module map and the title map, and one
+ * `React.lazy` import. The room the previous raise left was spent by the
+ * offline pack, which said so; this is the same kind of cost with no room
+ * left to spend, so the line moves rather than the rule bending. The view
+ * itself is NOT in the initial payload — the second assertion in this
+ * file proves it has a chunk of its own, as all fifty do — and no
+ * dependency was added.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 118_000;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_000;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

@@ -98,6 +98,12 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0104_owner_rulings_2026_08_19.sql': 1,
   '0106_mb_measured_overrides.sql': 2,
   '0107_amc_billing_cycles.sql': 1,
+  // Five new guards — the counter's decrease guard, the vendor invoice's
+  // evidence guard, the purchase order's close-evidence guard and the two
+  // line-provenance guards — plus the two 0033 triggers re-created to
+  // widen their event list to `work_id`, which a draft may now be moved
+  // between once the column is nullable (0109).
+  '0109_organisation_purchase_orders.sql': 7,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(

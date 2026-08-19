@@ -222,6 +222,11 @@ test('organisation picker and members workspace pass the axe scan', async ({
             dueOn: '2026-08-01',
             amount: '186400.00',
             workId: null,
+            // The two fields migration 0109 added to the read model. Both
+            // are required by the contract, so a fixture that omits them
+            // is a fixture the real server can never produce.
+            purchaseOrderId: null,
+            document: null,
             tdsSection: '194C',
             tdsPayeeClass: 'other',
             paidTotal: '0',
@@ -2090,6 +2095,35 @@ test('the platform settings pass the axe scan', async ({ page }) => {
   await expect(page.getByText('f'.repeat(64))).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download' })).toBeVisible();
   await expectNoAxeViolations(page, 'organisation export panel');
+});
+
+test('the purchase order register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/purchase-orders');
+
+  /* The top-level register migration 0109 adds, ported from the mock's own
+     `app/purchase-orders/page.tsx` at fdfd610. Its own test rather than a
+     leg of the big picker journey, for the reason Warranties and the
+     signing queue took theirs.
+
+     Scanned with the tab tray, the table and the create disclosure on
+     screen together: the tray is a `role="group"` of `aria-pressed`
+     toggles (the pattern `docs/UX.md` § 9 settles for filter pills), the
+     Against column carries the only in-table link the register has, and
+     the disclosure's form is where label association and focus order
+     actually fail. Both tabs are scanned, because the second one is the
+     one whose rows have no Work behind them and therefore a different
+     cell shape. */
+  await expect(page.getByRole('heading', { name: 'Purchase orders' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Purchase order basis' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'PO number' })).toBeVisible();
+  await expect(page.getByText('PL270-CRB-PO-01')).toBeVisible();
+  await expectNoAxeViolations(page, 'purchase order register, work basis');
+
+  await page.getByRole('button', { name: /Outside any LOA \(/ }).click();
+  await expect(page.getByText('PO-01', { exact: true })).toBeVisible();
+  await expect(page.getByText('Outside any LOA').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'purchase order register, organisation basis');
 });
 
 test('the warranty register passes the axe scan', async ({ page }) => {

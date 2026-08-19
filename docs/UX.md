@@ -2126,6 +2126,103 @@ meaning there. `apps/web/test/numeric-input-census.test.ts` counts the
 source so the distinction cannot rot: a new `type="number"`, or a new bare
 input carrying `inputMode="decimal"`, fails the suite.
 
+### 28. Purchase orders — APPROVED
+
+**Status: APPROVED, owner ruling of 2026-08-19** (locked corrections
+ledger item 14 and its amendment). Numbered 28 by coordinator allocation:
+§§ 24 to 26 are the live-testing, measurement and AMC packs' and § 27 is
+#155's, all four merged ahead of this one. Allocated rather than claimed
+on merge, which is how two packs came to want the same number in the
+first place.
+
+**Mock citations:** `app/purchase-orders/page.tsx` and
+`components/app-sidebar.tsx`, both at `fdfd610`. This is the module the
+rail comment in `apps/web/src/shell/navigation.ts` used to list as drawn
+by the mock and unbuilt here; it is built now, and the omission list is
+down to E-Way Bills.
+
+#### 28a. What is ported verbatim
+
+The mock's page is a `PageHeader` with one primary action, a two-tab
+`Tabs` list whose labels carry counts, and one dense table inside a
+`data-surface` card. All three land as drawn: the header with its
+`Operations` eyebrow, the tab tray, and the table with the mock's own
+column order — PO number over its date, Against over its kind, Vendor,
+the line summary, a right-aligned Value, Expected, Status.
+
+The rail entry takes the mock's own place — Operations, directly after
+Inventory — and the mock's own `ShoppingCart` lamp, which is new to this
+rail and collides with nothing already on it.
+
+#### 28b. Three divergences, each because the mock's data model is not this one
+
+1. **The second tab is "Outside any LOA", not "Private customers".** The
+   mock's `PurchaseOrder.basis` is `work | private-customer` and its
+   fixture rows carry a `customer` name. This application has no
+   private-customer purchase order and no plan for one: what it has, from
+   migration 0109, is an order raised against no LOA at all — office
+   stores, plant, anything bought beside a contract. The tab keeps the
+   mock's position, its count and its grammar, and names the axis this
+   application actually has. Textual only, which § Fidelity contract 2
+   allows app-first.
+
+2. **The Item column is a line COUNT.** The mock's fixture gives an order
+   one `item`, one `qty` and one `unit`, and renders them as a truncated
+   string. This application's order carries up to five hundred lines, and
+   a cell showing the first of them would be a cell that is wrong on
+   every order with two. The column keeps its place and its width and
+   shows how many lines the order carries; the lines themselves are in
+   the opened order below the table.
+
+3. **The tab tray is a `role="group"` of `aria-pressed` toggles, not a
+   `role="tablist"`.** The shared `TabRail` primitive, for the reason § 9
+   gives for the inspection agency pills: `test/a11y-invariants` refuses a
+   tablist without the roving-tabindex pattern to match, and these
+   controls filter one panel in place.
+
+#### 28c. Behaviour the mock cannot express
+
+- **The `?work=` deep link**, as `#/purchase-orders/<workId>`. The mock's
+  own document register carries a `?work=` filter and this application's
+  hash router spells the same thing as a path segment, exactly as
+  Installations and Warranties already do. Narrowed, the register shows
+  the dismissible Work chip those two use and hides the tabs, because one
+  Work is already one basis.
+- **Where an order is created.** The mock's action is a link to
+  `/purchase-orders/new`; this application has no such route and does not
+  invent one. An order against a Work is drafted on that Work's
+  Procurement tab, beside the schedule it buys for, and the register's
+  rows link there. An order with no Work has no such tab, so the
+  register carries its create form in the mock's `Disclosure` grammar and
+  opens the draft into the shared order panel underneath.
+- **The two-part close refusal.** Closing takes two independent facts
+  (owner amendment of 2026-08-19): every line received, and at least one
+  live vendor tax invoice linked to the order carrying its uploaded
+  document. They are separate refusals with separate remedies —
+  `PO_NOT_FULLY_RECEIVED` names the lines still owed material,
+  `PO_NO_TAX_INVOICE` sends the operator to the vendor ledger — and the
+  close button carries a standing `Hint` saying both, so the second one
+  is not a surprise at the end of a receipt run.
+- **The vendor invoice's document.** One cell on the Payments screen's
+  Vendors tab: an upload control while there is none, and the file's own
+  name as a `DownloadButton` once there is. Written once, so the control
+  is simply absent afterwards rather than offered and refused.
+
+#### 28d. What is deliberately NOT here
+
+- **No purchase-order detail route.** An order opens as a panel under the
+  register it was opened from, which is what the Work's Procurement tab
+  has always done. A second address for the same record would need its
+  own breadcrumb, its own not-found state and its own back behaviour, and
+  nothing in the mock asks for one.
+- **No private-customer order.** See 28b.1. The mock's `customer` field
+  has no writer anywhere in this application, and a column that can only
+  ever be empty is worse than a column that is not drawn.
+- **No paging control.** The route pages (`limit`/`cursor`), the screen
+  reads the register whole, which is what every other register here does
+  and what makes the mock's tab counts counts of the register rather than
+  of a page. § 19's register-export posture is unchanged.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

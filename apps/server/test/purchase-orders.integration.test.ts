@@ -241,7 +241,8 @@ beforeAll(async () => {
   // clerk keeps drafting rights without either authority.
   await admin`
     update organisation_memberships
-    set can_issue_documents = true, can_cancel_documents = true
+    set can_issue_documents = true, can_cancel_documents = true,
+        can_manage_payments = true
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
   `;
 
@@ -323,6 +324,42 @@ afterAll(async () => {
   await admin?.end();
   if (storageDir) await rm(storageDir, { recursive: true, force: true });
 });
+
+/**
+ * The other half of the close rule (owner ruling 2026-08-19, migration
+ * 0109): a purchase order does not close until the vendor has billed
+ * for it and the bill is on file. Records one vendor invoice against
+ * the order and uploads its PDF, through the real routes.
+ */
+async function billVendor(
+  orderId: string,
+  vendorContactId: string = vendorId,
+): Promise<string> {
+  const recorded = await authed(owner, {
+    method: 'POST',
+    url: '/api/vendor-invoices',
+    organisationId,
+    payload: {
+      vendorContactId,
+      invoiceNumber: `VI-${randomBytes(4).toString('hex')}`,
+      invoiceDate: '2026-08-05',
+      creditDays: 30,
+      amount: '700.00',
+      purchaseOrderId: orderId,
+    },
+  });
+  expect(recorded.statusCode, recorded.body).toBe(201);
+  const invoiceId = recorded.json<{ id: string }>().id;
+  const uploaded = await authed(owner, {
+    method: 'POST',
+    url: `/api/vendor-invoices/${invoiceId}/document?filename=bill.pdf`,
+    organisationId,
+    headers: { 'content-type': 'application/pdf' },
+    payload: Buffer.from('%PDF-1.4\n<< /Type /Catalog >>\n%%EOF\n', 'utf8'),
+  });
+  expect(uploaded.statusCode, uploaded.body).toBe(200);
+  return invoiceId;
+}
 
 describe('Purchase order lifecycle', () => {
   let purchaseOrderId: string;
@@ -801,7 +838,56 @@ describe('Purchase order lifecycle', () => {
     ]);
   });
 
+  it('refuses to close a fully received order the vendor has not billed for', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${purchaseOrderId}/close`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'PO_NO_TAX_INVOICE' });
+  });
+
+  it('refuses to close while the vendor invoice carries no uploaded document', async () => {
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: '/api/vendor-invoices',
+      organisationId,
+      payload: {
+        vendorContactId: vendorId,
+        invoiceNumber: `VI-paperless-${runId}`,
+        invoiceDate: '2026-08-05',
+        creditDays: 30,
+        amount: '700.00',
+        purchaseOrderId,
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${purchaseOrderId}/close`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'PO_NO_TAX_INVOICE' });
+    // The refusal distinguishes the two: an invoice IS on record, it is
+    // the paper that is missing, and the sentence says so.
+    expect(response.json<{ message: string }>().message).toContain(
+      'no uploaded invoice document',
+    );
+    // Cancelling it takes it out of the count, so the next test starts
+    // from "nothing recorded" again rather than from this one.
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/vendor-invoices/${recorded.json<{ id: string }>().id}/cancel`,
+      organisationId,
+      payload: { reason: 'Recorded against the wrong order.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+  });
+
   it('closes once every line has been fully received', async () => {
+    await billVendor(purchaseOrderId);
     const closed = await authed(owner, {
       method: 'POST',
       url: `/api/purchase-orders/${purchaseOrderId}/close`,
@@ -1161,6 +1247,7 @@ describe('close versus cancel of a linked challan under concurrency', () => {
       organisationId,
     });
     expect(issuedChallan.statusCode, issuedChallan.body).toBe(201);
+    await billVendor(poId);
 
     const closed = await authed(owner, {
       method: 'POST',
@@ -1224,5 +1311,795 @@ describe('close versus cancel of a linked challan under concurrency', () => {
       'purchase_order.closed',
       'purchase_order.reopened_after_challan_cancellation',
     ]);
+  });
+});
+
+/**
+ * Orders raised outside any LOA (migration 0109).
+ *
+ * The same document with one column absent, so what is proved here is
+ * exactly the set of things that column decided: its own gap-free number
+ * series, its own one-draft-per-vendor rule, the work-scope wall that no
+ * longer has anything to stand on, the receipt channel it is left with,
+ * and the register that shows both kinds at once.
+ */
+describe('purchase orders raised outside any LOA', () => {
+  let orderId: string;
+  let lineId: string;
+  let partId: string;
+
+  beforeAll(async () => {
+    partId = randomUUID();
+    await admin`
+      insert into production_items (
+        id, organisation_id, item_code, name, category, unit, manufactured,
+        serial_controlled, created_by_user_id
+      )
+      values (
+        ${partId}, ${organisationId}, ${`ORGPO-${runId.slice(0, 6).toUpperCase()}`},
+        'Office cabinet', 'Furniture', 'Nos', false, false, ${ownerUserId}
+      )
+    `;
+  });
+
+  it('drafts, lines and issues an order with no Work, numbered PO-01', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/purchase-orders',
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draft = created.json<PurchaseOrderDetailResponse>();
+    expect(draft.purchaseOrder.workId).toBeNull();
+    expect(draft.purchaseOrder.workCode).toBeNull();
+    orderId = draft.purchaseOrder.id;
+
+    // A second draft for the same vendor in the same series is refused by
+    // the 0109 partial unique index, exactly as the per-Work one is.
+    const duplicate = await authed(owner, {
+      method: 'POST',
+      url: '/api/purchase-orders',
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(duplicate.statusCode, duplicate.body).toBe(409);
+    expect(duplicate.json()).toMatchObject({ code: 'PO_DRAFT_EXISTS' });
+
+    // A line cannot name a Work item, because there is no Work whose
+    // schedule it could belong to.
+    const wrongLine = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${orderId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: itemAId,
+            description: 'Contract item on an order with no contract',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '10',
+          },
+        ],
+      },
+    });
+    expect(wrongLine.statusCode, wrongLine.body).toBe(409);
+    expect(wrongLine.json()).toMatchObject({
+      code: 'PO_LINE_WORK_ITEM_WITHOUT_WORK',
+    });
+
+    const saved = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${orderId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            productionItemId: partId,
+            description: 'Office cabinet',
+            unitCode: 'Nos',
+            quantity: '3',
+            rate: '2500',
+          },
+        ],
+      },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    lineId = saved.json<PurchaseOrderDetailResponse>().lines[0]?.id ?? '';
+    expect(lineId).not.toBe('');
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    const order = issued.json<PurchaseOrderDetailResponse>().purchaseOrder;
+    // The organisation series, not the Work's: no work code in front.
+    expect(order.poNumber).toBe('PO-01');
+    expect(order.sequenceNumber).toBe(1);
+    expect(order.totalAmount).toBe('7500.00');
+  });
+
+  it('numbers the next work-less order PO-02, leaving the Work series alone', async () => {
+    const created = await authed(owner, {
+      method: 'POST',
+      url: '/api/purchase-orders',
+      organisationId,
+      payload: { vendorContactId: secondVendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const second = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    const lined = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${second}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            description: 'Site office rent deposit',
+            unitCode: 'Lot',
+            quantity: '1',
+            rate: '5000',
+          },
+        ],
+      },
+    });
+    expect(lined.statusCode, lined.body).toBe(200);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${second}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    expect(issued.json<PurchaseOrderDetailResponse>().purchaseOrder.poNumber).toBe(
+      'PO-02',
+    );
+
+    // Gap-free: the counter and the issued sequences agree.
+    const [counter] = await admin<{ next_value: number }[]>`
+      select next_value from organisation_purchase_order_counters
+      where organisation_id = ${organisationId}
+    `;
+    expect(counter?.next_value).toBe(2);
+    const sequences = await admin<{ sequence_number: number }[]>`
+      select sequence_number from purchase_orders
+      where organisation_id = ${organisationId} and work_id is null
+        and sequence_number is not null
+      order by sequence_number
+    `;
+    expect(sequences.map((row) => row.sequence_number)).toEqual([1, 2]);
+  });
+
+  it('receives onto the shelf and closes only once the vendor has billed', async () => {
+    const received = await authed(owner, {
+      method: 'POST',
+      url: '/api/stock/movements',
+      organisationId,
+      payload: {
+        productionItemId: partId,
+        movementType: 'purchase_receipt',
+        quantity: '3',
+        movementDate: '2026-08-09',
+        purchaseOrderLineId: lineId,
+      },
+    });
+    // The 0087 guard used to read the order's Work and refuse a NULL one
+    // as "missing"; 0109 exempts it, so a work-less receipt is legal.
+    expect(received.statusCode, received.body).toBe(201);
+
+    const unbilled = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/close`,
+      organisationId,
+    });
+    expect(unbilled.statusCode, unbilled.body).toBe(409);
+    expect(unbilled.json()).toMatchObject({ code: 'PO_NO_TAX_INVOICE' });
+
+    await billVendor(orderId);
+    const closed = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/close`,
+      organisationId,
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    expect(closed.json<PurchaseOrderDetailResponse>().purchaseOrder.status).toBe(
+      'closed',
+    );
+  });
+
+  it('refuses the close at the database when the route is bypassed', async () => {
+    // PO-02 above was issued and never billed, which is exactly the arena:
+    // reached with admin SQL, past every route check, the trigger is the
+    // only thing left standing between it and a closed order with no
+    // evidence behind it.
+    const [row] = await admin<{ id: string }[]>`
+      select id from purchase_orders
+      where organisation_id = ${organisationId} and work_id is null
+        and status = 'issued'
+      order by sequence_number desc limit 1
+    `;
+    const target = row?.id ?? '';
+    expect(target).not.toBe('');
+    await expect(
+      admin`update purchase_orders set status = 'closed', closed_at = now()
+            where id = ${target}`,
+    ).rejects.toMatchObject({ code: '23U01' });
+  });
+
+  it('shows both series in the register and narrows to one Work on demand', async () => {
+    const all = await authed(owner, {
+      method: 'GET',
+      url: '/api/purchase-orders',
+      organisationId,
+    });
+    expect(all.statusCode, all.body).toBe(200);
+    const register = all.json<{
+      purchaseOrders: { id: string; workId: string | null; workCode: string | null }[];
+      nextCursor: string | null;
+    }>();
+    expect(register.nextCursor).toBeNull();
+    expect(register.purchaseOrders.some((order) => order.workId === null)).toBe(true);
+    expect(register.purchaseOrders.some((order) => order.workId === workId)).toBe(true);
+    expect(
+      register.purchaseOrders.find((order) => order.workId === workId)?.workCode,
+    ).toBe(workCode);
+
+    const narrowed = await authed(owner, {
+      method: 'GET',
+      url: `/api/purchase-orders?work=${workId}`,
+      organisationId,
+    });
+    expect(narrowed.statusCode, narrowed.body).toBe(200);
+    expect(
+      narrowed
+        .json<{ purchaseOrders: { workId: string | null }[] }>()
+        .purchaseOrders.every((order) => order.workId === workId),
+    ).toBe(true);
+
+    const orgOnly = await authed(owner, {
+      method: 'GET',
+      url: '/api/purchase-orders?basis=organisation',
+      organisationId,
+    });
+    expect(
+      orgOnly
+        .json<{ purchaseOrders: { workId: string | null }[] }>()
+        .purchaseOrders.every((order) => order.workId === null),
+    ).toBe(true);
+  });
+
+  it('shows a work-less order to every member, and a foreign tenant none', async () => {
+    // A work-less order is in everyone's scope because there is no Work
+    // whose assignment could narrow it — the wall applies exactly where
+    // there is a Work behind the order and nowhere else.
+    const response = await authed(viewer, {
+      method: 'GET',
+      url: '/api/purchase-orders?basis=organisation',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(
+      response.json<{ purchaseOrders: { workId: string | null }[] }>().purchaseOrders
+        .length,
+    ).toBeGreaterThan(0);
+
+    const outside = await authed(outsider, {
+      method: 'GET',
+      url: '/api/purchase-orders',
+      organisationId: outsiderOrganisationId,
+    });
+    expect(outside.statusCode, outside.body).toBe(200);
+    expect(outside.json<{ purchaseOrders: unknown[] }>().purchaseOrders).toEqual([]);
+  });
+});
+
+/**
+ * The vendor tax invoice a purchase order closes against (migration
+ * 0109): what may be linked to what, and the one file it carries.
+ *
+ * Proved here rather than in `payments.integration.test.ts` because the
+ * rules are about the ORDER — which orders admit a bill, and what the
+ * bill has to carry before a close will accept it — and this suite is the
+ * one that already has orders in every state.
+ */
+describe('the vendor tax invoice a purchase order closes against', () => {
+  it('refuses a bill against a draft order or another vendor', async () => {
+    const draftId = await draftReadyToIssue((await freshWork('VB')).workId);
+
+    const againstDraft = await authed(owner, {
+      method: 'POST',
+      url: '/api/vendor-invoices',
+      organisationId,
+      payload: {
+        vendorContactId: vendorId,
+        invoiceNumber: `VI-draft-${runId}`,
+        invoiceDate: '2026-08-08',
+        creditDays: 30,
+        amount: '10.00',
+        purchaseOrderId: draftId,
+      },
+    });
+    expect(againstDraft.statusCode, againstDraft.body).toBe(409);
+    expect(againstDraft.json()).toMatchObject({
+      code: 'VENDOR_INVOICE_ORDER_MISMATCH',
+    });
+
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${draftId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    const wrongVendor = await authed(owner, {
+      method: 'POST',
+      url: '/api/vendor-invoices',
+      organisationId,
+      payload: {
+        vendorContactId: secondVendorId,
+        invoiceNumber: `VI-vendor-${runId}`,
+        invoiceDate: '2026-08-08',
+        creditDays: 30,
+        amount: '10.00',
+        purchaseOrderId: draftId,
+      },
+    });
+    expect(wrongVendor.statusCode, wrongVendor.body).toBe(409);
+    expect(wrongVendor.json()).toMatchObject({
+      code: 'VENDOR_INVOICE_ORDER_MISMATCH',
+    });
+    expect(wrongVendor.json<{ message: string }>().message).toContain(
+      'different vendor',
+    );
+  });
+
+  it('stores the document once, serves it back, and freezes the link', async () => {
+    const orderWork = await freshWork('VD');
+    const orderId = await draftReadyToIssue(orderWork.workId);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    const invoiceId = await billVendor(orderId);
+
+    // The bytes come back, as a PDF, from the route the register links to.
+    const download = await authed(owner, {
+      method: 'GET',
+      url: `/api/vendor-invoices/${invoiceId}/document`,
+      organisationId,
+    });
+    expect(download.statusCode, download.body).toBe(200);
+    expect(download.headers['content-type']).toContain('application/pdf');
+    expect(download.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
+
+    // Written once: a second upload is refused rather than swapping the
+    // evidence a close may already have rested on.
+    const again = await authed(owner, {
+      method: 'POST',
+      url: `/api/vendor-invoices/${invoiceId}/document?filename=other.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: Buffer.from('%PDF-1.4\n<< /Type /Catalog >>\n%%EOF\n', 'utf8'),
+    });
+    expect(again.statusCode, again.body).toBe(409);
+    expect(again.json()).toMatchObject({ code: 'VENDOR_INVOICE_DOCUMENT_EXISTS' });
+
+    // And the database refuses the same two moves past the route.
+    await expect(
+      admin`update vendor_invoices set purchase_order_id = null where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+    await expect(
+      admin`update vendor_invoices set original_filename = 'swapped.pdf'
+            where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+
+    // Anything that is not a PDF never reaches storage at all.
+    const secondOrder = await draftReadyToIssue((await freshWork('VE')).workId);
+    const secondIssued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${secondOrder}/issue`,
+      organisationId,
+    });
+    expect(secondIssued.statusCode, secondIssued.body).toBe(201);
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: '/api/vendor-invoices',
+      organisationId,
+      payload: {
+        vendorContactId: vendorId,
+        invoiceNumber: `VI-notpdf-${runId}`,
+        invoiceDate: '2026-08-08',
+        creditDays: 30,
+        amount: '10.00',
+        purchaseOrderId: secondOrder,
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const notPdf = await authed(owner, {
+      method: 'POST',
+      url: `/api/vendor-invoices/${recorded.json<{ id: string }>().id}/document?filename=x.pdf`,
+      organisationId,
+      headers: { 'content-type': 'application/pdf' },
+      payload: Buffer.from('This is not a PDF at all.', 'utf8'),
+    });
+    expect(notPdf.statusCode, notPdf.body).toBe(400);
+    expect(notPdf.json()).toMatchObject({ code: 'NOT_A_PDF' });
+  });
+});
+
+/**
+ * The three things the review pass found the evidence rule did not yet
+ * hold. Each is proved at the layer that holds it.
+ */
+describe('the evidence rule under a writer that is not a route', () => {
+  let orderId: string;
+  let invoiceId: string;
+
+  beforeAll(async () => {
+    const arena = await freshWork('EV');
+    orderId = await draftReadyToIssue(arena.workId);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    invoiceId = await billVendor(orderId);
+  });
+
+  it('refuses an invoice attributed to a Work its order does not buy for', async () => {
+    const other = await freshWork('EW');
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/vendor-invoices',
+      organisationId,
+      payload: {
+        vendorContactId: vendorId,
+        invoiceNumber: `VI-crosswork-${runId}`,
+        invoiceDate: '2026-08-08',
+        creditDays: 30,
+        amount: '10.00',
+        workId: other.workId,
+        purchaseOrderId: orderId,
+      },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'VENDOR_INVOICE_ORDER_MISMATCH',
+    });
+
+    // Omitting the Work is not a disagreement: the order's own is
+    // inherited, so the vendor ledger and the order cannot drift apart
+    // by omission.
+    const inherited = await authed(owner, {
+      method: 'POST',
+      url: '/api/vendor-invoices',
+      organisationId,
+      payload: {
+        vendorContactId: vendorId,
+        invoiceNumber: `VI-inherit-${runId}`,
+        invoiceDate: '2026-08-08',
+        creditDays: 30,
+        amount: '10.00',
+        purchaseOrderId: orderId,
+      },
+    });
+    expect(inherited.statusCode, inherited.body).toBe(201);
+    const [row] = await admin<{ work_id: string | null }[]>`
+      select work_id from vendor_invoices
+      where id = ${inherited.json<{ id: string }>().id}
+    `;
+    const [order] = await admin<{ work_id: string | null }[]>`
+      select work_id from purchase_orders where id = ${orderId}
+    `;
+    expect(row?.work_id).toBe(order?.work_id);
+  });
+
+  it('refuses to delete the only evidence a closed order rests on', async () => {
+    // Closed with admin SQL rather than through the route: this order's
+    // lines were never received, and the receipt half of the close rule
+    // is the OTHER half — proved at length above. What matters here is
+    // that the order is closed, and the close-evidence trigger passing
+    // this write is itself the proof that the evidence is in place.
+    await admin`
+      update purchase_orders set status = 'closed', closed_at = now()
+      where id = ${orderId}
+    `;
+
+    // No route deletes a vendor invoice; this is exactly the writer the
+    // second layer exists for.
+    await expect(
+      admin`delete from vendor_invoices where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+
+    // The uploader attribution is frozen with the rest of the group, so
+    // a closed order's evidence cannot be re-attributed either.
+    await expect(
+      admin`update vendor_invoices set document_uploaded_by_user_id = 'someone-else'
+            where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+  });
+
+  it('lets an invoice go when it is not the last evidence', async () => {
+    // A second documented invoice against the same order makes the first
+    // one deletable again: what the guard protects is the ORDER's
+    // evidence, not any particular row.
+    const second = await billVendor(orderId);
+    const removed = await admin`
+      delete from vendor_invoices where id = ${second} returning id
+    `;
+    expect(removed).toHaveLength(1);
+  });
+
+  it('re-checks the letter date when a draft is moved onto another Work', async () => {
+    // `work_id` became writable when it became nullable, and a draft
+    // moved onto another Work also moves between the two number series.
+    // Neither 0033 trigger watched the column before 0109 widened their
+    // event lists, so this write used to pass unchecked.
+    //
+    // A REAL move, to a different Work whose letter is dated after the
+    // order it would be supposed to have authorised. The draft carries
+    // only a free-text consumable line, so the line-provenance guard of
+    // § 6a has nothing to say and the date guard is what refuses.
+    const home = await freshWork('EX');
+    const draftId = await draftReadyToIssue(home.workId);
+    const elsewhere = await freshWork('EY');
+    await admin`
+      update works set letter_date = '2026-12-01' where id = ${elsewhere.workId}
+    `;
+    await expect(
+      admin`update purchase_orders set work_id = ${elsewhere.workId}
+            where id = ${draftId}`,
+    ).rejects.toMatchObject({ code: 'P0001' });
+  });
+});
+
+/**
+ * The findings the independent review of #160 raised, each proved at the
+ * layer that answers it.
+ */
+describe('the evidence a closed order rests on cannot be withdrawn', () => {
+  let orderId: string;
+  let invoiceId: string;
+
+  beforeAll(async () => {
+    const arena = await freshWork('CV');
+    orderId = await draftReadyToIssue(arena.workId);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    invoiceId = await billVendor(orderId);
+    await admin`
+      update purchase_orders set status = 'closed', closed_at = now()
+      where id = ${orderId}
+    `;
+  });
+
+  it('refuses the cancel route on the only invoice closing an order', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/vendor-invoices/${invoiceId}/cancel`,
+      organisationId,
+      payload: { reason: 'Filed against the wrong order.' },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'VENDOR_INVOICE_CLOSES_ORDER' });
+  });
+
+  it('refuses the same cancel at the database, and the delete behind it', async () => {
+    // Cancel-then-delete was the two-statement way around the delete arm.
+    await expect(
+      admin`update vendor_invoices set cancelled_at = now(),
+              cancelled_by_user_id = ${ownerUserId},
+              cancel_reason = 'Withdrawn by direct SQL'
+            where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+    await expect(
+      admin`delete from vendor_invoices where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+  });
+
+  it('lets the invoice go once a replacement stands in its place', async () => {
+    const replacement = await billVendor(orderId);
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/vendor-invoices/${invoiceId}/cancel`,
+      organisationId,
+      payload: { reason: 'Superseded by the corrected bill.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(replacement).not.toBe(invoiceId);
+  });
+});
+
+describe('the close guard reads the invoice as evidence, not as a foreign key', () => {
+  it('refuses to close against another vendor’s bill or another Work’s ledger', async () => {
+    const arena = await freshWork('EG');
+    const orderId = await draftReadyToIssue(arena.workId);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    // An honest invoice, then bent two ways past the routes that refuse
+    // each — the guard is what stands when they are gone.
+    const invoiceId = await billVendor(orderId);
+    await admin`
+      update vendor_invoices set vendor_contact_id = ${secondVendorId}
+      where id = ${invoiceId}
+    `;
+    await expect(
+      admin`update purchase_orders set status = 'closed', closed_at = now()
+            where id = ${orderId}`,
+    ).rejects.toMatchObject({ code: '23U01' });
+
+    await admin`
+      update vendor_invoices set vendor_contact_id = ${vendorId}, work_id = null
+      where id = ${invoiceId}
+    `;
+    await expect(
+      admin`update purchase_orders set status = 'closed', closed_at = now()
+            where id = ${orderId}`,
+    ).rejects.toMatchObject({ code: '23U01' });
+
+    // Put it back and the same close is accepted, so the refusals above
+    // are the two rules and not something else about this fixture.
+    await admin`
+      update vendor_invoices set work_id = ${arena.workId} where id = ${invoiceId}
+    `;
+    const closed = await admin`
+      update purchase_orders set status = 'closed', closed_at = now()
+      where id = ${orderId} returning id
+    `;
+    expect(closed).toHaveLength(1);
+  });
+});
+
+describe('a line’s item belongs to its order’s Work', () => {
+  it('refuses to move a draft onto a Work its lines do not belong to', async () => {
+    const home = await freshWork('PA');
+    const elsewhere = await freshWork('PB');
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${home.workId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draftId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    // A line that names `home`'s OWN item, which is what gives the draft
+    // provenance to lose. A free-text line would have none and the move
+    // would be legal.
+    const lined = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${draftId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: home.itemId,
+            description: 'Item from this Work’s own schedule',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '100',
+          },
+        ],
+      },
+    });
+    expect(lined.statusCode, lined.body).toBe(200);
+
+    // A real move, to a DIFFERENT Work: the draft's line cites `home`'s
+    // schedule, and `elsewhere` has a schedule of its own.
+    await expect(
+      admin`update purchase_orders set work_id = ${elsewhere.workId}
+            where id = ${draftId}`,
+    ).rejects.toMatchObject({ code: '23U03' });
+
+    // And to no Work at all, which would issue it in the organisation
+    // series citing a schedule it has no Work to have.
+    await expect(
+      admin`update purchase_orders set work_id = null where id = ${draftId}`,
+    ).rejects.toMatchObject({ code: '23U03' });
+  });
+
+  it('refuses a line naming an item from outside its order’s Work', async () => {
+    const home = await freshWork('PC');
+    const elsewhere = await freshWork('PD');
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${home.workId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draftId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+
+    // The route inserts lines through a join on the order's Work, so
+    // this shape has never been reachable through the API. The guard is
+    // what holds for a writer that reaches the table directly.
+    await expect(
+      admin`
+        insert into purchase_order_lines (
+          organisation_id, purchase_order_id, work_item_id, line_number,
+          description, unit_code, quantity, rate, line_amount
+        )
+        values (
+          ${organisationId}, ${draftId}, ${elsewhere.itemId}, 1,
+          'Another Work''s item', 'Nos', 1, 100, 100
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23U03' });
+  });
+});
+
+describe('an issued order never changes series', () => {
+  it('refuses work -> organisation and organisation -> work alike', async () => {
+    // The central promise of the two-series design is that a number,
+    // once handed out, cannot be renumbered into the other series. 0045
+    // freezes `work_id` on an issued order; this is that promise as a
+    // test rather than as a sentence.
+    const arena = await freshWork('SR');
+    const workOrder = await draftReadyToIssue(arena.workId);
+    expect(
+      (
+        await authed(owner, {
+          method: 'POST',
+          url: `/api/purchase-orders/${workOrder}/issue`,
+          organisationId,
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const orgCreated = await authed(owner, {
+      method: 'POST',
+      url: '/api/purchase-orders',
+      organisationId,
+      payload: { vendorContactId: secondVendorId, poDate: '2026-08-08' },
+    });
+    expect(orgCreated.statusCode, orgCreated.body).toBe(201);
+    const orgOrder = orgCreated.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${orgOrder}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            description: 'Office consumable',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '5',
+          },
+        ],
+      },
+    });
+    expect(
+      (
+        await authed(owner, {
+          method: 'POST',
+          url: `/api/purchase-orders/${orgOrder}/issue`,
+          organisationId,
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    // work -> organisation
+    await expect(
+      admin`update purchase_orders set work_id = null where id = ${workOrder}`,
+    ).rejects.toMatchObject({ code: '23514' });
+    // organisation -> work
+    await expect(
+      admin`update purchase_orders set work_id = ${arena.workId}
+            where id = ${orgOrder}`,
+    ).rejects.toMatchObject({ code: '23514' });
   });
 });

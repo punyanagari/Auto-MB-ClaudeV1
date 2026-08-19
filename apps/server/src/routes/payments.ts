@@ -11,6 +11,7 @@ import {
   RecordVendorPaymentSchema,
   TdsPreviewResponseSchema,
   TdsReturnQuerySchema,
+  UploadVendorInvoiceDocumentQuerySchema,
   VendorInvoiceSchema,
   VendorLedgerResponseSchema,
   VendorPaymentSchema,
@@ -26,11 +27,25 @@ import {
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
+import type { ObjectStorage } from '@auto-mb/documents';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { financialYearLabel } from '../financial-year.js';
 import { httpError } from '../http.js';
-import { audit, errorResponses, IdParamsSchema } from './shared.js';
+import type { MalwareScanner } from '../malware-scan.js';
+import {
+  MAX_PDF_UPLOAD_BYTES,
+  assertNotMalware,
+  consumeUpload,
+  storePdfUpload,
+} from '../upload-guards.js';
+import {
+  audit,
+  errorResponses,
+  IdParamsSchema,
+  requireTrimmed,
+  upstreamErrorResponses,
+} from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 
@@ -127,6 +142,11 @@ interface VendorInvoiceRow {
   due_on: string;
   amount: string;
   work_id: string | null;
+  purchase_order_id: string | null;
+  original_filename: string | null;
+  document_sha256: string | null;
+  document_size_bytes: string | null;
+  document_uploaded_at: Date | null;
   tds_section: VendorInvoice['tdsSection'];
   tds_payee_class: VendorInvoice['tdsPayeeClass'];
   paid_total: string;
@@ -146,7 +166,10 @@ const VENDOR_INVOICE_COLUMNS = `
   i.id, i.vendor_contact_id, c.designation as vendor_name,
   i.invoice_number, i.invoice_date::text as invoice_date, i.credit_days,
   (i.invoice_date + i.credit_days)::text as due_on,
-  i.amount::text as amount, i.work_id, i.tds_section, i.tds_payee_class,
+  i.amount::text as amount, i.work_id, i.purchase_order_id,
+  i.original_filename, i.document_sha256,
+  i.document_size_bytes::text as document_size_bytes, i.document_uploaded_at,
+  i.tds_section, i.tds_payee_class,
   coalesce(p.paid_total, 0)::text as paid_total,
   (i.amount - coalesce(p.paid_total, 0))::text as outstanding_amount,
   i.cancelled_at, i.cancel_reason, i.created_at
@@ -224,6 +247,19 @@ function toVendorInvoice(
     dueOn: row.due_on,
     amount: row.amount,
     workId: row.work_id,
+    purchaseOrderId: row.purchase_order_id,
+    // The object key is deliberately not published: it is an internal
+    // address, and what an operator checks a document by is its name,
+    // its digest and its size. The bytes come from the serve route.
+    document:
+      row.document_uploaded_at === null
+        ? null
+        : {
+            filename: row.original_filename ?? '',
+            sha256: row.document_sha256 ?? '',
+            sizeBytes: Number(row.document_size_bytes ?? '0'),
+            uploadedAt: row.document_uploaded_at.toISOString(),
+          },
     tdsSection: row.tds_section,
     tdsPayeeClass: row.tds_payee_class,
     paidTotal: row.paid_total,
@@ -401,10 +437,128 @@ async function assertRequestScope(
   if (workId !== null) await assertWorkAccess(tx, userId, workId);
 }
 
+/**
+ * The purchase order an invoice may be billed against (migration 0109).
+ *
+ * Three conditions, and each has a reason rather than a preference:
+ *
+ *  - the order must be ISSUED or CLOSED. A draft has ordered nothing, so
+ *    there is nothing for a vendor to have billed for; a cancelled order
+ *    is one the organisation has said is never coming.
+ *  - it must be on the SAME vendor. A bill from one supplier against an
+ *    order placed on another is a mis-keyed link, and it would be one
+ *    the close rule then treats as evidence.
+ *  - a work-linked order is reachable only by someone its Work is
+ *    reachable by, exactly as {@link assertRequestScope} decides for the
+ *    request register. A work-less order carries no such dimension.
+ *  - the invoice's own Work attribution must AGREE with the order's. The
+ *    composite foreign key proves only the tenant, so without this an
+ *    invoice can sit in one Work's ledger while being the close evidence
+ *    for another Work's order — two registers telling different stories
+ *    about the same rupees. Both directions are refused: a Work the
+ *    order does not have, and a Work the order has that the invoice
+ *    contradicts.
+ */
+async function assertBillableOrder(
+  tx: TransactionSql,
+  userId: string,
+  purchaseOrderId: string,
+  vendorContactId: string,
+  workId: string | null,
+): Promise<string | null> {
+  const [order] = await tx<
+    { work_id: string | null; status: string; vendor_contact_id: string }[]
+  >`
+    select work_id, status, vendor_contact_id from purchase_orders
+    where id = ${purchaseOrderId}
+  `;
+  if (order === undefined) {
+    throw httpError(404, 'PURCHASE_ORDER_NOT_FOUND', 'No such purchase order.', {
+      field: 'purchaseOrderId',
+    });
+  }
+  await assertRequestScope(tx, userId, order.work_id);
+  if (order.status !== 'issued' && order.status !== 'closed') {
+    throw httpError(
+      409,
+      'VENDOR_INVOICE_ORDER_MISMATCH',
+      `That purchase order is ${order.status}; a vendor bills against an order that has been issued.`,
+      { field: 'purchaseOrderId' },
+    );
+  }
+  if (order.vendor_contact_id !== vendorContactId) {
+    throw httpError(
+      409,
+      'VENDOR_INVOICE_ORDER_MISMATCH',
+      'That purchase order was placed on a different vendor.',
+      { field: 'purchaseOrderId' },
+    );
+  }
+  // An omitted `workId` on a work-linked order is not a disagreement: the
+  // order's Work is inherited below rather than demanded here, because
+  // the operator has already said which order this bills for.
+  if (workId !== null && workId !== order.work_id) {
+    throw httpError(
+      409,
+      'VENDOR_INVOICE_ORDER_MISMATCH',
+      order.work_id === null
+        ? 'That purchase order was raised outside any LOA, so an invoice against it carries no Work.'
+        : 'That purchase order buys for a different Work than the one this invoice is attributed to.',
+      { field: 'purchaseOrderId' },
+    );
+  }
+  return order.work_id;
+}
+
+/** One lowercase word: `assertSafeObjectKey` accepts `[a-z]+` for the
+ * area segment of a key and nothing else. */
+const VENDOR_INVOICE_STORAGE_AREA = 'vendorinvoice';
+
+/**
+ * The invoice this upload may land on, locked for the rest of the
+ * transaction.
+ *
+ * A cancelled invoice takes no document: it is a bill the organisation
+ * has said it does not owe, and attaching paper to it would produce
+ * evidence the close rule deliberately does not count.
+ */
+async function loadUndocumentedInvoice(
+  tx: TransactionSql,
+  userId: string,
+  id: string,
+): Promise<void> {
+  const [row] = await tx<
+    { work_id: string | null; object_key: string | null; cancelled_at: Date | null }[]
+  >`
+    select work_id, object_key, cancelled_at from vendor_invoices
+    where id = ${id} for update
+  `;
+  if (row === undefined) {
+    throw httpError(404, 'VENDOR_INVOICE_NOT_FOUND', 'No such vendor invoice.');
+  }
+  await assertRequestScope(tx, userId, row.work_id);
+  if (row.cancelled_at !== null) {
+    throw httpError(
+      409,
+      'VENDOR_INVOICE_CANCELLED',
+      'This vendor invoice has been cancelled; record the bill again to file its document.',
+    );
+  }
+  if (row.object_key !== null) {
+    throw httpError(
+      409,
+      'VENDOR_INVOICE_DOCUMENT_EXISTS',
+      'This vendor invoice already carries its uploaded document.',
+    );
+  }
+}
+
 export function registerPaymentsWorkspaceRoutes(
   app: AppInstance,
   auth: Auth,
   database: Sql,
+  storage: ObjectStorage,
+  scanner: MalwareScanner,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
 
@@ -896,11 +1050,27 @@ export function registerPaymentsWorkspaceRoutes(
             { field: 'vendorContactId' },
           );
         }
+        // The Work the row is written with. An invoice against a
+        // work-linked order INHERITS that order's Work when the request
+        // named none, so the two registers cannot drift apart by
+        // omission; a request that named one has already been proved to
+        // agree with the order, and to be reachable by this caller.
+        let workId = body.workId ?? null;
+        if (body.purchaseOrderId !== undefined) {
+          workId = await assertBillableOrder(
+            tx,
+            user.id,
+            body.purchaseOrderId,
+            body.vendorContactId,
+            workId,
+          );
+        }
         const [row] = await tx<{ id: string }[]>`
           insert into vendor_invoices (
             organisation_id, vendor_contact_id, vendor_snapshot,
             invoice_number, invoice_date, credit_days, amount, work_id,
-            tds_section, tds_payee_class, recorded_by_user_id
+            purchase_order_id, tds_section, tds_payee_class,
+            recorded_by_user_id
           )
           select ${organisationId}, ${body.vendorContactId},
                  jsonb_build_object(
@@ -909,7 +1079,8 @@ export function registerPaymentsWorkspaceRoutes(
                  ),
                  ${body.invoiceNumber}, ${body.invoiceDate}::date,
                  ${body.creditDays}, ${body.amount}::money_amount,
-                 ${body.workId ?? null}, ${body.tdsSection ?? null},
+                 ${workId}, ${body.purchaseOrderId ?? null},
+                 ${body.tdsSection ?? null},
                  ${body.tdsPayeeClass ?? null}, ${user.id}
           from contacts c where c.id = ${body.vendorContactId}
           returning id
@@ -1077,6 +1248,138 @@ export function registerPaymentsWorkspaceRoutes(
       citation: tdsSectionRule(invoice.tds_section).provision.citation,
     };
   }
+
+  /**
+   * The vendor's own tax invoice, as a stored PDF (migration 0109).
+   *
+   * WHY AN UPLOAD AND NOT A REFERENCE. `payment_requests.proofReference`
+   * argues at length for a typed reference over a stored key, and the
+   * argument turns on what the proof is FOR: a claim an approver reads
+   * once. This one is different. A purchase order does not close without
+   * it, and a gate on a text field is a gate on a keystroke — so the
+   * bytes are stored and there is a route that serves them back, which
+   * is the pair that makes a proof producible.
+   *
+   * ONE FILE, WRITTEN ONCE. The database freezes the group
+   * (`app_private.guard_vendor_invoice_evidence_update`), so re-uploading
+   * over a closed order's evidence is refused rather than silently
+   * accepted; the way to correct a mis-filed bill is to cancel the
+   * invoice and record it again, which the register keeps a trace of.
+   *
+   * Authorisation and state BEFORE the scan, the same ordering the
+   * company document library and `routes/loa.ts` use: an unauthorised
+   * caller, or one uploading over a document that already exists, must
+   * not spend scanner capacity.
+   */
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/vendor-invoices/:id/document',
+      authority: 'payments',
+      bodyLimit: MAX_PDF_UPLOAD_BYTES,
+      schema: {
+        params: IdParamsSchema,
+        querystring: UploadVendorInvoiceDocumentQuerySchema,
+        response: { 200: VendorInvoiceSchema, ...upstreamErrorResponses },
+      },
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const filename = requireTrimmed(
+        request.query.filename,
+        'Give the uploaded file a name.',
+      );
+      const { bytes } = consumeUpload(request.body, {
+        format: 'pdf',
+        description: "the vendor's tax invoice",
+      });
+
+      await tenant(async (tx) => {
+        await loadUndocumentedInvoice(tx, user.id, id);
+      });
+      await assertNotMalware(scanner, bytes);
+      const stored = await storePdfUpload(
+        storage,
+        organisationId,
+        VENDOR_INVOICE_STORAGE_AREA,
+        bytes,
+      );
+
+      return tenant(async (tx) => {
+        // Re-read under the row lock: between the pre-check and here a
+        // concurrent upload may have claimed the slot, and the guard
+        // would otherwise turn that race into a bare 500.
+        await loadUndocumentedInvoice(tx, user.id, id);
+        await tx`
+          update vendor_invoices
+          set object_key = ${stored.objectKey},
+              original_filename = ${filename},
+              document_sha256 = ${stored.sha256},
+              document_media_type = 'application/pdf',
+              document_size_bytes = ${bytes.length},
+              document_uploaded_at = now(),
+              document_uploaded_by_user_id = ${user.id}
+          where id = ${id}
+        `;
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'vendor_invoice.document_uploaded',
+          'vendor_invoice',
+          id,
+          { filename, sha256: stored.sha256, sizeBytes: bytes.length },
+        );
+        return loadVendorInvoice(tx, id);
+      });
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/vendor-invoices/:id/document',
+      authority: 'payments',
+      schema: {
+        params: IdParamsSchema,
+        response: { 200: Type.Any(), ...errorResponses },
+      },
+    },
+    async ({ request, reply, user, tenant }) => {
+      const { id } = request.params;
+      const document = await tenant(async (tx) => {
+        const [row] = await tx<
+          {
+            object_key: string | null;
+            original_filename: string | null;
+            work_id: string | null;
+          }[]
+        >`
+          select object_key, original_filename, work_id
+          from vendor_invoices where id = ${id}
+        `;
+        if (!row || row.object_key === null) {
+          throw httpError(
+            404,
+            'VENDOR_INVOICE_DOCUMENT_NOT_FOUND',
+            'No such vendor invoice, or nothing has been uploaded against it yet.',
+          );
+        }
+        await assertRequestScope(tx, user.id, row.work_id);
+        return {
+          objectKey: row.object_key,
+          filename: row.original_filename ?? 'vendor-invoice.pdf',
+        };
+      });
+      const bytes = await storage.get(document.objectKey);
+      void reply.type('application/pdf');
+      void reply.header(
+        'content-disposition',
+        `inline; filename*=UTF-8''${encodeURIComponent(document.filename)}`,
+      );
+      return reply.send(bytes);
+    },
+  );
 
   /**
    * What the server would deduct on a proposed payment.
@@ -1397,6 +1700,31 @@ export function registerPaymentsWorkspaceRoutes(
             'VENDOR_INVOICE_HAS_PAYMENTS',
             'Void this invoice’s payments before cancelling it.',
           );
+        }
+        // And cancelling the last live documented invoice on a CLOSED
+        // purchase order would leave that order closed on nothing —
+        // exactly the state migration 0109's close rule exists to
+        // refuse, reached by the back door two months later.
+        // `app_private.guard_vendor_invoice_evidence_update` holds the
+        // same rule against every other writer; this is the half that
+        // arrives as a sentence with a remedy.
+        if (invoice.document !== null && invoice.purchaseOrderId !== null) {
+          const [order] = await tx<{ po_number: string | null }[]>`
+            select po.po_number from purchase_orders po
+            where po.id = ${invoice.purchaseOrderId} and po.status = 'closed'
+              and not exists (
+                select 1 from vendor_invoices other
+                where other.purchase_order_id = po.id and other.id <> ${id}
+                  and other.cancelled_at is null and other.object_key is not null
+              )
+          `;
+          if (order !== undefined) {
+            throw httpError(
+              409,
+              'VENDOR_INVOICE_CLOSES_ORDER',
+              `This is the only tax invoice closing purchase order ${order.po_number ?? ''}; record the replacement bill against that order before cancelling this one.`,
+            );
+          }
         }
         await tx`
           update vendor_invoices

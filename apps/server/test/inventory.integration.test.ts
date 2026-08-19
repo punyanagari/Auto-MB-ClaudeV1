@@ -20,6 +20,7 @@ import {
   removeOrganisationResidue,
 } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
+import { billPurchaseOrder } from './helpers/vendor-bill.js';
 
 /**
  * The stock ledger, end to end (migration 0087).
@@ -877,6 +878,10 @@ describe('shortage procurement', () => {
     expect(balanced.lines[0]?.receivedQuantity).toBe('11.000');
     expect(balanced.lines[0]?.pendingQuantity).toBe('0.000');
 
+    // Closing also needs the vendor's tax invoice on file (migration
+    // 0109); this test is about the stock receipt balance, so the bill
+    // is a fixture.
+    await billPurchaseOrder(admin, draft.id, ownerUserId);
     const closed = await authed(owner, {
       method: 'POST',
       url: `/api/purchase-orders/${draft.id}/close`,

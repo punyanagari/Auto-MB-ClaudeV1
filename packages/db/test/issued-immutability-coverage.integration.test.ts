@@ -65,6 +65,40 @@ import {
  *     of it.
  */
 const DECLARED_MUTABLE: Record<string, readonly string[]> = {
+  // The vendor liability register (0080), which 0109 gave a guard. That
+  // guard is NARROW on purpose and this table is not an issued document:
+  // it records what a vendor has billed this organisation, and every
+  // ordinary fact on it stays correctable. What 0109 freezes is exactly
+  // the evidence a purchase order's close rests on — the order the bill
+  // is against, and the uploaded document — and only ONCE SET, so a bill
+  // recorded without either can still gain both. Everything below is the
+  // liability itself and its lifecycle.
+  vendor_invoices: [
+    'id',
+    'organisation_id',
+    'vendor_contact_id',
+    'vendor_snapshot',
+    'invoice_number',
+    'invoice_date',
+    'credit_days',
+    'amount',
+    'work_id',
+    'tds_section',
+    'tds_payee_class',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancel_reason',
+    'recorded_by_user_id',
+    'created_at',
+    'updated_at',
+    // The eight the 0109 guard freezes ONCE SET — the order link and the
+    // seven that describe the uploaded document, the uploader among them
+    // — are read out of that guard by the census itself and are
+    // deliberately absent here. The group matches
+    // `vendor_invoices_document_shape_check` exactly, so a closed order's
+    // evidence cannot be swapped OR re-attributed after the fact.
+  ],
+
   // The OEM item master (0084). Its guard is narrow on purpose: it is a
   // MASTER, and a master is meant to be edited. What it freezes is the
   // three things a physical object depends on — the tenant and

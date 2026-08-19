@@ -19,6 +19,7 @@ import {
   Receipt,
   ScanSearch,
   ShieldCheck,
+  ShoppingCart,
   Settings as SettingsIcon,
   Factory,
   Truck,
@@ -46,6 +47,7 @@ export type ModuleKey =
   | 'search'
   | 'installations'
   | 'warranties'
+  | 'purchase-orders'
   | 'production'
   | 'stock'
   | 'signing'
@@ -78,20 +80,14 @@ export interface NavGroup {
  * (`components/app-sidebar` at `a8e1fde`): an unlabelled first group,
  * then Documents, Operations and Administration.
  *
- * The mock draws modules this build has no route for — E-Way Bills,
- * Purchase orders, Maintenance — and those are omitted rather than
- * rendered as dead entries. Production (migration 0084), Correspondence
- * (0086) and Inventory (0087) all left that list in the previous wave:
- * Production and Inventory take the places the mock gives them under
- * Operations, and Correspondence the last under Documents. Employees
- * (0089, 0090) leaves it in this one, taking the mock's own first place
- * under Administration.
- * Purchase orders, Employees — and those are omitted rather than
- * rendered as dead entries. Production (migration 0084), Correspondence
- * (0086), Inventory (0087) and Maintenance (0088) have all left that
- * list: Production, Inventory and Maintenance take the places the mock
- * gives them under Operations, and Correspondence the last under
- * Documents.
+ * The mock draws modules this build has no route for, and those are
+ * omitted rather than rendered as dead entries. The list has shrunk to
+ * one — E-Way Bills. Production (migration 0084), Correspondence (0086),
+ * Inventory (0087) and Maintenance (0088) left it in earlier waves,
+ * Employees (0089, 0090) after them, and Purchase orders (0109) leaves
+ * it here: each takes the place the mock gives it, Production, Inventory,
+ * Purchase orders and Maintenance under Operations, Correspondence last
+ * under Documents, Employees first under Administration.
  * Quotations runs the other way: the mock draws it under Documents in its
  * own list, so it keeps its place here.
  *
@@ -158,6 +154,11 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'warranties', label: 'Warranties', icon: ShieldCheck },
       { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
       { key: 'stock', label: 'Inventory', icon: Boxes },
+      // Purchase orders (migration 0109) takes the place the mock gives
+      // it — directly after Inventory under Operations — with the mock's
+      // own `ShoppingCart`, which is new to this rail and collides with
+      // nothing already on it (`components/app-sidebar.tsx` at fdfd610).
+      { key: 'purchase-orders', label: 'Purchase orders', icon: ShoppingCart },
       // The mock gives Maintenance `ClipboardCheck`, which is already
       // Inspection's lamp on this rail. Two identical icons in one group
       // is worse than one substituted, so it takes `Hammer` — recorded
@@ -241,6 +242,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'installations', workId: null };
     case 'warranties':
       return { name: 'warranties', workId: null };
+    case 'purchase-orders':
+      return { name: 'purchase-orders', workId: null };
     case 'production':
       return { name: 'production', workId: null };
     case 'stock':
@@ -328,6 +331,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'maintenance':
     case 'installations':
     case 'warranties':
+    case 'purchase-orders':
     case 'production':
     case 'masters':
     case 'members':
@@ -441,6 +445,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Installations';
     case 'warranties':
       return 'Warranties';
+    case 'purchase-orders':
+      return 'Purchase orders';
     case 'stock':
       return 'Inventory';
     case 'stock-shortages':

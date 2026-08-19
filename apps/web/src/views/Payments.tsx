@@ -6,6 +6,7 @@ import type {
   CreatablePaymentRequestKind,
   PaymentRequestCategory,
   PaymentRequestKind,
+  PurchaseOrder,
   TdsPreviewResponse,
   VendorInvoice,
 } from '@auto-mb/contracts';
@@ -20,7 +21,7 @@ import { formatDate, formatInr, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
-import { Actions, Field, FormError, FormNotice } from '../ui/form.js';
+import { Actions, Field, FormError, FormNotice, Hint } from '../ui/form.js';
 import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
@@ -921,6 +922,7 @@ function VendorRegister({
                 Outstanding
               </th>
               <th scope="col">TDS</th>
+              <th scope="col">Invoice PDF</th>
               <th scope="col">Action</th>
             </tr>
           </thead>
@@ -954,6 +956,17 @@ function VendorRegister({
                         206AA — no PAN
                       </span>
                     )}
+                  </td>
+                  <td>
+                    <VendorInvoiceDocumentCell
+                      api={api}
+                      organisationId={organisationId}
+                      invoice={invoice}
+                      canManagePayments={canManagePayments}
+                      pending={pending}
+                      onAct={onAct}
+                      onReload={onReload}
+                    />
                   </td>
                   <td>
                     {canManagePayments &&
@@ -1041,6 +1054,98 @@ function VendorRegister({
 }
 
 /** Recording what a vendor billed. */
+/**
+ * The vendor's own tax invoice, as one table cell (migration 0109).
+ *
+ * A purchase order does not close until one of its invoices carries this
+ * file, so the cell is a state as much as a control: uploaded (name the
+ * file and offer it back), or not (offer the upload). The file input is
+ * hidden behind its label rather than styled, which is what every other
+ * upload control in this application does.
+ *
+ * Written once. A second upload is refused by the server and by the
+ * database, so the control simply is not offered once the file is there —
+ * correcting a mis-filed bill means cancelling the invoice and recording
+ * it again, which the register keeps a trace of.
+ */
+function VendorInvoiceDocumentCell({
+  api,
+  organisationId,
+  invoice,
+  canManagePayments,
+  pending,
+  onAct,
+  onReload,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly invoice: VendorInvoice;
+  readonly canManagePayments: boolean;
+  readonly pending: boolean;
+  readonly onAct: (run: () => Promise<void>, success: string) => Promise<void>;
+  readonly onReload: () => Promise<void>;
+}) {
+  const inputId = `vendor-invoice-file-${invoice.id}`;
+  /* NULLISH, not `!== null`. The contract makes `document` required and
+     the server always sends it, but this cell renders inside a row that
+     renders inside the whole ledger: a payload that omits the field —
+     an older cached response, a stale fixture — would make
+     `invoice.document.filename` throw and take the entire vendor
+     register down to a blank panel. A missing document and an absent
+     field mean the same thing to an operator, and neither is worth a
+     white screen. */
+  const document = invoice.document ?? null;
+  if (document !== null) {
+    // The serve route carries the `payments` authority; the ledger read
+    // does not. A member who can read this register without that
+    // authority is shown the file's name and no control, rather than a
+    // download that answers 403.
+    return canManagePayments ? (
+      <DownloadButton
+        label={document.filename}
+        filename={document.filename}
+        fetchBlob={() => api.downloadVendorInvoiceDocument(organisationId, invoice.id)}
+      />
+    ) : (
+      <span className="text-xs text-muted-foreground">{document.filename}</span>
+    );
+  }
+  if (!canManagePayments || invoice.cancelledAt !== null) {
+    return <span className="text-xs text-muted-foreground">Not uploaded</span>;
+  }
+  return (
+    <>
+      <label
+        htmlFor={inputId}
+        className="text-primary cursor-pointer text-sm underline"
+      >
+        Upload PDF
+      </label>
+      <input
+        id={inputId}
+        type="file"
+        accept="application/pdf"
+        className="sr-only"
+        disabled={pending}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file === undefined) return;
+          void onAct(async () => {
+            await api.uploadVendorInvoiceDocument(
+              organisationId,
+              invoice.id,
+              file,
+              file.name,
+            );
+            await onReload();
+          }, `The tax invoice for ${invoice.invoiceNumber} is on file.`);
+        }}
+      />
+    </>
+  );
+}
+
 function NewVendorInvoiceForm({
   api,
   organisationId,
@@ -1069,6 +1174,49 @@ function NewVendorInvoiceForm({
   const [amount, setAmount] = useState('');
   const [section, setSection] = useState<'' | '194C' | '194J'>('');
   const [payeeClass, setPayeeClass] = useState<'individual_huf' | 'other'>('other');
+  const [purchaseOrderId, setPurchaseOrderId] = useState('');
+  const [orders, setOrders] = useState<readonly PurchaseOrder[]>([]);
+
+  /* The orders this vendor could have billed for (migration 0109): issued
+     or closed, since a draft has ordered nothing. The picker is a
+     convenience — the link stays optional and the server decides — but it
+     is also the only way an operator can satisfy a purchase order's close
+     rule, so it is offered rather than hidden behind a field. */
+  useEffect(() => {
+    /* Cleared on EVERY vendor change, not only on the empty one. A
+       selection left behind from the previous vendor is an id the new
+       vendor's option list does not contain: the controlled select shows
+       empty while the submit still carries it, and if the new vendor has
+       no billable order the whole field unmounts and carries it invisibly
+       — either way the operator is refused for a value they were shown as
+       unset. */
+    setPurchaseOrderId('');
+    if (vendor === '') {
+      setOrders([]);
+      return;
+    }
+    let cancelled = false;
+    /* Narrowed at the SERVER, not in the browser: the register grows
+       without limit and this control needs at most a page of it. `issued`
+       is the status a bill is normally raised against; a closed order can
+       take a second invoice, and the operator reaches that one from the
+       order itself rather than from a dropdown of every order this
+       organisation has ever placed. */
+    api
+      .listPurchaseOrders(organisationId, { status: 'issued', limit: 100 })
+      .then((result) => {
+        if (cancelled) return;
+        setOrders(
+          result.purchaseOrders.filter((order) => order.vendorContactId === vendor),
+        );
+      })
+      .catch(() => {
+        // The picker simply is not offered; the invoice still records.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, vendor]);
 
   const ready = vendor !== '' && number.trim() !== '' && amount.trim() !== '';
 
@@ -1184,6 +1332,33 @@ function NewVendorInvoiceForm({
           </select>
         </Field>
       )}
+      {orders.length > 0 && (
+        <Field>
+          <label htmlFor="invoice-purchase-order">Against purchase order</label>
+          <select
+            id="invoice-purchase-order"
+            className="input"
+            value={purchaseOrderId}
+            onChange={(event) => {
+              setPurchaseOrderId(event.target.value);
+            }}
+          >
+            <option value="">No purchase order</option>
+            {orders.map((order) => (
+              <option key={order.id} value={order.id}>
+                {order.poNumber ?? 'Draft'}
+                {order.workCode !== null
+                  ? ` — ${order.workCode}`
+                  : ' — outside any LOA'}
+              </option>
+            ))}
+          </select>
+          <Hint>
+            A purchase order does not close until one of its vendor invoices is recorded
+            here with its PDF uploaded.
+          </Hint>
+        </Field>
+      )}
       <Actions>
         <Button
           disabled={pending || !ready}
@@ -1195,6 +1370,7 @@ function NewVendorInvoiceForm({
                 invoiceDate,
                 creditDays: Number(creditDays),
                 amount: amount.trim(),
+                ...(purchaseOrderId === '' ? {} : { purchaseOrderId }),
                 ...(section === ''
                   ? {}
                   : { tdsSection: section, tdsPayeeClass: payeeClass }),

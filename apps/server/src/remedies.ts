@@ -352,6 +352,24 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the register: this receipt has already been withdrawn, and the amount it carried is outstanding again.',
   VENDOR_INVOICE_NOT_FOUND:
     'Reload the vendor ledger: the invoice was cancelled or belongs to another organisation, so record it again if it is genuinely outstanding.',
+  // The two halves of the close rule (migration 0109) are separate codes
+  // because they are separate errands: one is chased at the gate, the
+  // other in the accounts inbox.
+  PO_NO_TAX_INVOICE:
+    "Record the vendor's tax invoice against this order on the Payments screen's Vendors tab and upload the invoice PDF, then close the order.",
+  VENDOR_INVOICE_ORDER_MISMATCH:
+    'Pick a purchase order that is issued or closed and placed on this same vendor; an order still in draft has ordered nothing to bill for.',
+  VENDOR_INVOICE_CLOSES_ORDER:
+    'Record the replacement bill against that purchase order and upload its PDF first; a closed order keeps the evidence it was closed on until another one stands in its place.',
+  VENDOR_INVOICE_DOCUMENT_EXISTS:
+    "Cancel this invoice and record it again with the right file: a bill's own paper is stored once so a closed order's evidence cannot be swapped afterwards.",
+  // Crossed the three-throw coverage bar when the document routes (0109)
+  // became a second and third caller: a cancelled bill takes no paper and
+  // is no evidence for a purchase order's close.
+  VENDOR_INVOICE_CANCELLED:
+    'Record the bill again if it is genuinely owed; a cancelled invoice takes no document and closes no purchase order.',
+  VENDOR_INVOICE_DOCUMENT_NOT_FOUND:
+    'Upload the vendor invoice PDF from the vendor ledger; the invoice was recorded without its paper.',
   VENDOR_PAYMENT_EXCEEDS_INVOICE:
     'Reload the vendor ledger and pay at most what the invoice still shows outstanding; record the rest against the invoice it actually belongs to.',
   VENDOR_PAYMENT_TDS_EXCEEDS_GROSS:
