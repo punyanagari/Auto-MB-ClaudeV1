@@ -135,6 +135,10 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'WARRANTY_STATE',
     'A warranty term belongs to the Work it was recorded against; record the term on the right Work.',
   ],
+  '23Q11': [
+    'WARRANTY_FINAL_BILL_MISSING',
+    "The Work's final bill changed while the defect liability period was being started; reload the Work and read the date the period now runs from.",
+  ],
   // A second live period against one installation loses the race to the
   // partial unique index rather than to a guard, so it arrives as 23505.
   '23505': [
@@ -508,6 +512,19 @@ export function registerWarrantyRoutes(
 
         let startOn = installation.installed_on;
         let pacCertificateId: string | null = null;
+        // A certificate is meaningful on exactly one basis. Refused first,
+        // and with the basis named, so an operator who sent one against a
+        // Work whose contract does not run from provisional acceptance is
+        // told what the contract actually says.
+        if (terms.startBasis !== 'pac' && body.pacCertificateId !== undefined) {
+          throw httpError(
+            409,
+            'WARRANTY_PAC_BASIS_INVALID',
+            terms.startBasis === 'installation'
+              ? "This Work's defect liability period runs from the installation date, so no PAC certificate is involved."
+              : "This Work's defect liability period runs from the final bill, so no PAC certificate is involved.",
+          );
+        }
         if (terms.startBasis === 'pac') {
           if (body.pacCertificateId === undefined) {
             throw httpError(
@@ -562,12 +579,35 @@ export function registerWarrantyRoutes(
           }
           startOn = certificate.issue_date;
           pacCertificateId = certificate.id;
-        } else if (body.pacCertificateId !== undefined) {
-          throw httpError(
-            409,
-            'WARRANTY_PAC_BASIS_INVALID',
-            "This Work's defect liability period runs from the installation date, so no PAC certificate is involved.",
-          );
+        } else if (terms.startBasis === 'final_bill') {
+          // The date is NOT a parameter and not a default the operator may
+          // override: the contract says the clock starts when the final
+          // bill is raised, so the product reads that date and pins the
+          // period to it. `app_private.work_final_bill_date` is the same
+          // function migration 0112's guard enforces with, called rather
+          // than reimplemented as a join here, so the two layers cannot
+          // disagree about which day a Work's liability began.
+          const [row] = await tx<{ final_bill_date: string | null }[]>`
+            select app_private.work_final_bill_date(
+              ${organisationId}, ${installation.work_id}
+            )::text as final_bill_date
+          `;
+          const finalBillDate = row?.final_bill_date ?? null;
+          if (finalBillDate === null) {
+            throw httpError(
+              409,
+              'WARRANTY_FINAL_BILL_MISSING',
+              "This Work's defect liability period runs from its final bill, and no final bill has been raised yet. Finalise the final Measurement Book and prepare its bill first; the period then starts on that bill's date.",
+            );
+          }
+          if (finalBillDate < installation.installed_on) {
+            throw httpError(
+              409,
+              'WARRANTY_START_OUT_OF_RANGE',
+              `The final bill is dated ${finalBillDate}, before the units went in on ${installation.installed_on}; a defect liability period cannot start before the installation.`,
+            );
+          }
+          startOn = finalBillDate;
         }
 
         // `dlp_expires_on` and `original_expires_on` are deliberately not

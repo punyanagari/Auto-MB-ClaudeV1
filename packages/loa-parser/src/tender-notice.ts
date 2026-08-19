@@ -11,6 +11,13 @@
  * for, when does it close, what is it worth, what earnest money does it
  * demand, and who may bid.
  *
+ * TWO PRINTED SHAPES are read. The general one is a list of labelled
+ * lines, which is what a division's own notice looks like. The other is
+ * the IREPS "TENDER DOCUMENT" page every e-tender on ireps.gov.in is
+ * published as, which states the same facts in COLUMNS — see the block
+ * above `IREPS_MARKER` for what that costs a line-oriented reader and how
+ * the columnar reader answers it.
+ *
  * Everything here is a PROPOSAL (`AGENTS.md` rule 10). Each field carries
  * its own matched source text and its own `needsReview`, and a field that
  * cannot be located confidently is `null` with `needsReview: true` rather
@@ -99,6 +106,219 @@ const ELIGIBILITY_LABELS: readonly RegExp[] = [
   /^eligibility(?:\s+(?:criteria|criterion|requirement|conditions?))?\s*[:-]\s*(?<value>.*)$/i,
   /^(?:minimum\s+)?qualification(?:\s+criteria)?\s*[:-]\s*(?<value>.*)$/i,
 ];
+
+// ---------------------------------------------------------------------
+// The IREPS "TENDER DOCUMENT" layout.
+//
+// Every notice published through ireps.gov.in prints the same first page,
+// and it is not a list of labelled lines: it is a set of TABLES, laid out
+// in columns that `pdftotext -layout` preserves as runs of spaces. The
+// label readers above cannot see any of it, because `normalizeLines`
+// collapses every run of whitespace to one space BEFORE they run — which
+// is right for prose and destroys a column boundary.
+//
+// The damage that does is not merely a field going unread. On the header
+// line
+//
+//   Tender No: BPLNWKS2026-27TELEAMC02        Closing Date/Time: 15/06/2026 15:00
+//
+// the collapsed line is one line to `firstLabelValue`, so `(?<value>.+)$`
+// swallows the whole of it and the tender number comes back as
+// "BPLNWKS2026-27TELEAMC02 Closing Date/Time: 15/06/2026 15:00" — a
+// CONFIDENT reading of a number that does not exist. A field that reads
+// null is a field a reviewer fills in; a field that reads wrong and
+// unflagged is one they confirm.
+//
+// So this reader works on the RAW lines, where the columns are still
+// there, and everything below rests on one observation: on an IREPS page
+// two or more spaces is a column gap and one space is a word gap. Split a
+// line on that and each cell is a field, read whole and never bled into
+// its neighbour.
+//
+// It is gated on the marker line the layout always carries, so no other
+// notice shape in the corpus can reach any of it.
+// ---------------------------------------------------------------------
+
+/** The centred banner under the masthead on every page of an IREPS
+ * tender document, and the one thing that identifies the layout. */
+const IREPS_MARKER = 'TENDER DOCUMENT';
+
+/** One printed line split into its column cells. */
+function gapCells(rawLine: string): readonly string[] {
+  return rawLine
+    .trim()
+    .split(/\s{2,}/)
+    .map((cell) => cell.trim())
+    .filter((cell) => cell.length > 0);
+}
+
+/** True where a line begins in the label column — column zero. Every
+ * label in the NIT HEADER table starts there, and every continuation of a
+ * wrapped cell is indented past it, which is the only signal separating
+ * the two. */
+function startsAtLabelColumn(line: string): boolean {
+  return line.length > 0 && !/^\s/.test(line);
+}
+
+/**
+ * A labelled row of the four-column NIT HEADER table, read as the FIRST
+ * value column only.
+ *
+ * The table prints two label/value pairs per row:
+ *
+ *   Advertised Value       11503728.60      Tendering Section   SNT TELE
+ *   Earnest Money (Rs.)    230100.00        Validity of Offer ( Days)  60
+ *
+ * so cell 1 is this label's value and cells 2 and 3 belong to an entirely
+ * different field. Taking anything but cell 1 would read a tendering
+ * section as an advertised value, or 60 days of bid validity as an
+ * earnest money deposit.
+ */
+function irepsRowValue(lines: readonly string[], label: RegExp): TenderField | null {
+  for (const line of lines) {
+    if (!startsAtLabelColumn(line)) continue;
+    const cells = gapCells(line);
+    const first = cells[0];
+    if (first === undefined || !label.test(first)) continue;
+    const value = cells[1];
+    return value === undefined
+      ? { value: null, raw: line.trim(), needsReview: true }
+      : { value, raw: line.trim(), needsReview: false };
+  }
+  return null;
+}
+
+/**
+ * A NIT HEADER cell whose text wraps over several printed lines.
+ *
+ * The Name of Work is the one field on the page long enough to do this,
+ * and the wrapping has a shape worth stating: the label is VERTICALLY
+ * CENTRED in its cell, so the printed text runs both above and below the
+ * label's own line.
+ *
+ *                          Comprehensive Annual Maintenance Contract of ...
+ *                          Controller unit, Coach Guidance System, ...
+ *   Name of Work
+ *                          Glace Display Board, Single Line Display ...
+ *                          MABA, ASKN, RTA and SHRN for a period of 5 years.
+ *
+ * Reading downward alone would lose the first half of the work's name,
+ * which is the half naming what the contract is for. Both runs stop at
+ * the first line that is blank or begins in the label column, which is
+ * where the cell ends in both directions.
+ */
+function irepsWrappedCell(lines: readonly string[], label: RegExp): TenderField | null {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (!startsAtLabelColumn(line)) continue;
+    const cells = gapCells(line);
+    const first = cells[0];
+    if (first === undefined || !label.test(first)) continue;
+
+    const above: string[] = [];
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = lines[cursor] ?? '';
+      if (candidate.trim().length === 0 || startsAtLabelColumn(candidate)) break;
+      above.unshift(candidate.trim());
+    }
+    const below: string[] = [];
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      const candidate = lines[cursor] ?? '';
+      if (candidate.trim().length === 0 || startsAtLabelColumn(candidate)) break;
+      below.push(candidate.trim());
+    }
+
+    const value = [...above, ...cells.slice(1), ...below].join(' ').trim();
+    return value.length > 0
+      ? {
+          value,
+          raw: [...above, line.trim(), ...below].join('\n'),
+          needsReview: false,
+        }
+      : { value: null, raw: line.trim(), needsReview: true };
+  }
+  return null;
+}
+
+/** The four fields the columnar header and the NIT HEADER table state,
+ * plus the masthead. Null everywhere the layout is absent or the field is
+ * not on the page, which hands the reading back to the label readers. */
+interface IrepsNoticeFields {
+  readonly tenderNumber: TenderField | null;
+  readonly authority: TenderField | null;
+  readonly title: TenderField | null;
+  readonly closing: TenderField | null;
+  readonly estimatedValue: TenderField | null;
+  readonly emdAmount: TenderField | null;
+}
+
+const NO_IREPS_FIELDS: IrepsNoticeFields = {
+  tenderNumber: null,
+  authority: null,
+  title: null,
+  closing: null,
+  estimatedValue: null,
+  emdAmount: null,
+};
+
+const IREPS_TENDER_NUMBER_CELL = /^tender\s+no\.?\s*[:-]\s*(?<value>\S.*)$/i;
+const IREPS_CLOSING_CELL = /^closing\s+date\s*\/\s*time\s*[:-]\s*(?<value>\S.*)$/i;
+const IREPS_ADVERTISED_VALUE_ROW = /^advertised\s+value$/i;
+const IREPS_EARNEST_MONEY_ROW = /^earnest\s+money(?:\s*\(\s*rs\.?\s*\))?$/i;
+const IREPS_NAME_OF_WORK_ROW = /^name\s+of\s+work$/i;
+
+function readIrepsNotice(rawText: string): IrepsNoticeFields {
+  // Not `normalizeLines`: this whole reader exists because the column
+  // gaps it collapses are the data.
+  const lines = rawText.replace(/\r\n?/g, '\n').split('\n');
+  const markerAt = lines.findIndex((line) => line.trim() === IREPS_MARKER);
+  if (markerAt === -1) return NO_IREPS_FIELDS;
+
+  // The masthead: the printed line above the banner, which is where every
+  // IREPS page names the division and the zone inviting the tender —
+  // "BHOPAL DIVISION-S AND T/WEST CENTRAL RLY". There is no labelled
+  // inviting-authority field anywhere on the document.
+  let authority: TenderField | null = null;
+  for (let cursor = markerAt - 1; cursor >= 0; cursor -= 1) {
+    const text = (lines[cursor] ?? '').trim();
+    if (text.length === 0) continue;
+    authority = { value: text, raw: text, needsReview: false };
+    break;
+  }
+
+  let tenderNumber: TenderField | null = null;
+  let closing: TenderField | null = null;
+  for (const line of lines) {
+    for (const cell of gapCells(line)) {
+      const number = IREPS_TENDER_NUMBER_CELL.exec(cell);
+      if (number !== null && tenderNumber === null) {
+        tenderNumber = {
+          value: (number.groups?.value ?? '').trim(),
+          raw: cell,
+          needsReview: false,
+        };
+      }
+      const closes = IREPS_CLOSING_CELL.exec(cell);
+      if (closes !== null && closing === null) {
+        closing = {
+          value: (closes.groups?.value ?? '').trim(),
+          raw: cell,
+          needsReview: false,
+        };
+      }
+    }
+    if (tenderNumber !== null && closing !== null) break;
+  }
+
+  return {
+    tenderNumber,
+    authority,
+    title: irepsWrappedCell(lines, IREPS_NAME_OF_WORK_ROW),
+    closing,
+    estimatedValue: irepsRowValue(lines, IREPS_ADVERTISED_VALUE_ROW),
+    emdAmount: irepsRowValue(lines, IREPS_EARNEST_MONEY_ROW),
+  };
+}
 
 /** `10:00`, `15.30`, `1500 hrs`, `3:00 PM`. Returns `HH:MM` on a 24-hour
  * clock, or null when the fragment states no time at all. */
@@ -228,16 +448,30 @@ function rupeeAmount(field: TenderField): TenderField {
  * Every field is independent: a notice that names its EMD and not its
  * estimated cost yields one resolved field and one flagged one, and the
  * reviewer fills the hole. Nothing is inferred from anything else.
+ *
+ * TWO READERS, IN ONE ORDER. The IREPS columnar reader runs first and
+ * wins every field it resolves, because it is the SPECIFIC shape: it
+ * knows the page it is reading and which column each figure sits in. The
+ * label readers are the general fallback for every other notice, and on
+ * an IREPS page they are wrong rather than merely blind — see the block
+ * above `IREPS_MARKER`. On any notice without the marker line the first
+ * reader returns nothing at all and the behaviour is exactly what it was.
  */
 export function reviewTenderNotice(rawText: string): TenderNoticeReview {
   const lines = normalizeLines(rawText);
+  const ireps = readIrepsNotice(rawText);
 
-  const tenderNumber = firstLabelValue(lines, TENDER_NUMBER_LABELS);
-  const authority = firstLabelValue(lines, AUTHORITY_LABELS);
-  const title = firstWrappedLabelValue(lines, TITLE_LABELS);
-  const bidClosesAtLocal = closingMoment(firstLabelValue(lines, CLOSING_LABELS));
-  const estimatedValue = rupeeAmount(firstLabelValue(lines, ESTIMATED_VALUE_LABELS));
-  const emdAmount = rupeeAmount(firstLabelValue(lines, EMD_LABELS));
+  const tenderNumber =
+    ireps.tenderNumber ?? firstLabelValue(lines, TENDER_NUMBER_LABELS);
+  const authority = ireps.authority ?? firstLabelValue(lines, AUTHORITY_LABELS);
+  const title = ireps.title ?? firstWrappedLabelValue(lines, TITLE_LABELS);
+  const bidClosesAtLocal = closingMoment(
+    ireps.closing ?? firstLabelValue(lines, CLOSING_LABELS),
+  );
+  const estimatedValue = rupeeAmount(
+    ireps.estimatedValue ?? firstLabelValue(lines, ESTIMATED_VALUE_LABELS),
+  );
+  const emdAmount = rupeeAmount(ireps.emdAmount ?? firstLabelValue(lines, EMD_LABELS));
   const eligibility = firstWrappedLabelValue(lines, ELIGIBILITY_LABELS);
 
   const fields = [

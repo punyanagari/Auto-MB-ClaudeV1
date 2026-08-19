@@ -25,4 +25,5 @@ export function warrantyCountdown(daysToExpiry: number | null): string {
 export const WARRANTY_BASIS_LABELS: Readonly<Record<WarrantyStartBasis, string>> = {
   installation: 'the installation date',
   pac: 'the PAC certificate date',
+  final_bill: 'the final bill date',
 };

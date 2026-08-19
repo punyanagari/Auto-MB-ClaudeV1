@@ -150,7 +150,7 @@ async function recordInstallation(options: {
 
 async function saveTerms(
   dlpMonths: number,
-  startBasis: 'installation' | 'pac',
+  startBasis: 'installation' | 'pac' | 'final_bill',
   work = workId,
 ) {
   return authed(owner, {
@@ -529,6 +529,144 @@ describe('starting a defect liability period', () => {
     expect(foreign.json<{ code: string }>().code).toBe('PAC_CERTIFICATE_NOT_FOUND');
 
     expect((await saveTerms(24, 'installation')).statusCode).toBe(200);
+  });
+});
+
+/**
+ * The third start basis (migration 0112), over HTTP.
+ *
+ * `packages/db`'s warranty suite attacks the guard with raw SQL. What this
+ * pair proves is the refusal an operator actually meets, and the date the
+ * route writes when it does not refuse — the Work's final bill's date, and
+ * never the installation date the other basis would have used.
+ *
+ * ON ITS OWN WORK. A Work carrying a live final Measurement Book refuses
+ * new installations outright (migration 0027, restated by 0031), so
+ * raising the fixture bill on the Work the rest of this file shares would
+ * stop every later case from recording one. The order below is the
+ * operator's real order: record the installation, raise the final bill,
+ * then start the period.
+ */
+describe('the final-bill start basis', () => {
+  const billedWorkId = randomUUID();
+  const billedItemId = randomUUID();
+  let installationId: string;
+  /** The final bill's date: a day before today, while the units went in
+   * over a year earlier. The two dates this basis could wrongly land on —
+   * the installation's and the organisation's today — are therefore both
+   * distinguishable from the right one. */
+  let billDate: string;
+
+  beforeAll(async () => {
+    const scheduleId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${billedWorkId}, ${organisationId}, ${`WARRB-${runId.toUpperCase()}`},
+        ${`WARRB-letter-${runId}`}, '2025-06-01', 'A Work billed to its end',
+        2000.00, 1800.00, 'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (
+        id, organisation_id, work_id, schedule_code, title, position
+      )
+      values (${scheduleId}, ${organisationId}, ${billedWorkId}, 'A',
+              'Schedule A', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${billedItemId}, ${organisationId}, ${billedWorkId}, ${scheduleId},
+        'A/1', 'Final-bill fixture item', 'Nos', 10.000, 100.00
+      )
+    `;
+    billDate = await shiftDays(today, -1);
+    installationId = await recordInstallation({
+      work: billedWorkId,
+      item: billedItemId,
+      installedOn: earliest,
+    });
+  }, 60_000);
+
+  it('refuses the basis while the Work has no final bill, and names what to raise', async () => {
+    expect((await saveTerms(24, 'final_bill', billedWorkId)).statusCode).toBe(200);
+
+    const refusedStart = await startPeriod(installationId);
+    expect(refusedStart.statusCode, refusedStart.body).toBe(409);
+    const body = refusedStart.json<{ code: string; message: string }>();
+    expect(body.code).toBe('WARRANTY_FINAL_BILL_MISSING');
+    // The remedy is an act, not a restatement of the refusal.
+    expect(body.message).toContain('Measurement Book');
+
+    // A certificate is not the missing piece either, and the refusal says
+    // which basis this Work is actually on.
+    const withCertificate = await startPeriod(installationId, {
+      pacCertificateId: randomUUID(),
+    });
+    expect(withCertificate.statusCode).toBe(409);
+    const certificateBody = withCertificate.json<{
+      code: string;
+      message: string;
+    }>();
+    expect(certificateBody.code).toBe('WARRANTY_PAC_BASIS_INVALID');
+    expect(certificateBody.message).toContain('final bill');
+  });
+
+  it("starts on the final bill's date, not on the installation date", async () => {
+    // The final bill, seeded as one really arrives: a final Measurement
+    // Book finalised, and the bill prepared from it. There is no HTTP path
+    // that raises one without a whole payment cycle behind it, and the
+    // subject here is the date the bill carries, not how it came to exist.
+    const bookId = randomUUID();
+    await admin`
+      insert into measurement_books (
+        id, organisation_id, work_id, status, kind, mb_date, created_by_user_id
+      )
+      values (
+        ${bookId}, ${organisationId}, ${billedWorkId}, 'draft', 'final',
+        ${billDate}, ${ownerUserId}
+      )
+    `;
+    await admin`
+      update measurement_books
+      set status = 'finalized', mb_number = ${`WARRB-${runId}-MB-FINAL`},
+          sequence_number = 1, total_amount = 1000.00,
+          remark_template_version = 'mb-remark-v1', finalized_at = now(),
+          finalized_by_user_id = ${ownerUserId}
+      where id = ${bookId}
+    `;
+    await admin`
+      insert into bills (
+        organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+        prepared_by_user_id, mb_id
+      )
+      values (
+        ${organisationId}, ${billedWorkId}, 1, '[]'::jsonb, 1000.00,
+        ${ownerUserId}, ${bookId}
+      )
+    `;
+
+    const started = await startPeriod(installationId);
+    expect(started.statusCode, started.body).toBe(201);
+    const warranty = started.json<Warranty>();
+    expect(warranty.startBasis).toBe('final_bill');
+    expect(warranty.dlpStartOn).toBe(billDate);
+    expect(warranty.installedOn).toBe(earliest);
+    // No certificate is involved on this basis.
+    expect(warranty.pacReference).toBeNull();
+    // The expiry is the database's own, read back rather than predicted —
+    // and measured from the bill date, which is the point of the basis.
+    const [expected] = await admin<{ expiry: string }[]>`
+      select app_private.warranty_expiry(${billDate}::date, 24)::text as expiry
+    `;
+    expect(warranty.dlpExpiresOn).toBe(expected?.expiry);
   });
 });
 

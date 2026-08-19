@@ -239,10 +239,13 @@ export function WorkWarranty({
                 <option value="pac">
                   The PAC certificate date (provisional acceptance)
                 </option>
+                <option value="final_bill">The final bill date</option>
               </select>
               <Hint>
                 Periods already started keep the term they began under; this changes
-                only the ones started from now on.
+                only the ones started from now on. On the final bill basis every period
+                starts on the date of this Work&rsquo;s final bill, and none can be
+                started until that bill is raised.
               </Hint>
             </Field>
             <Field>
