@@ -109,16 +109,21 @@ ALTER TABLE challan_item_serials
 -- key whose referencing side has no usable index turns a parent update into
 -- a sequential scan).
 --
--- The predicate is `work_item_id IS NOT NULL` and NOT `origin =
--- 'installation'`, which selects exactly the same rows (the CHECK above
--- makes the two equivalent) and is the only one of the two the planner can
--- PROVE from a referential query. That query is `… WHERE work_item_id = $1`
--- with $1 non-null, which implies `IS NOT NULL` and implies nothing at all
--- about `origin`. One index, both jobs, and it stays the size of the
--- installation-added rows rather than of the whole table.
+-- PLAIN, not partial. Two earlier drafts of this line carried a WHERE —
+-- first `origin = 'installation'`, then `work_item_id IS NOT NULL` — on the
+-- reasoning that both select the same rows (the CHECK above makes them
+-- equivalent) and the second is the one a referential query could prove.
+-- That reasoning is about the PLANNER, and an index backing a foreign key
+-- has to satisfy something stricter than the planner: the rows a
+-- referential check must consider under MATCH SIMPLE include the ones with
+-- a NULL `work_item_id`, which a partial index does not contain at all. So
+-- a partial index is not FK coverage, whatever the planner makes of it, and
+-- `packages/db/test/fk-index-coverage.integration.test.ts` is right to
+-- refuse one. Indexing every row is the correct answer here, not the
+-- census-appeasing one; the delivery serials it also covers are the cheap
+-- part of it.
 CREATE INDEX challan_item_serials_work_item_idx
-  ON challan_item_serials (organisation_id, work_item_id, work_id)
-  WHERE work_item_id IS NOT NULL;
+  ON challan_item_serials (organisation_id, work_item_id, work_id);
 
 -- 2. Line lineage: the 0056 guard, restated with its full body and one
 -- new first branch.
