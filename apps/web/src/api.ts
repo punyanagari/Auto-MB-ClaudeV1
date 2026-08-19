@@ -164,7 +164,6 @@ import type {
   ProposeRemoveItemRequest,
   OrganisationProfile,
   Receipt,
-  RecordMbEntryRequest,
   RecordReceiptRequest,
   RecordSerialsRequest,
   RespondExtensionRequest,
@@ -228,12 +227,12 @@ import type {
   WorkItemPaymentCategory,
   WorkItemPaymentCategoryResponse,
   PacCertificate,
+  AmcCycleProposalResponse,
   PacCertificateListResponse,
   RecordPacCertificateRequest,
   CreateMeasurementBookRequest,
   MeasurementBookDetailResponse,
   ReceivedRailwayBill,
-  RailwayMeasurement,
   RailwayMeasurementResponse,
   ReceivedRailwayBillListResponse,
   BillPayment,
@@ -250,7 +249,9 @@ import type {
   WorkRetentionResponse,
   WorkRetentionTerms,
   MeasurementBookListResponse,
+  SetMbMeasuredQuantitiesRequest,
   SetMbSourcesRequest,
+  SetScheduleAmcCycleRequest,
   MergeMeasurementBooksRequest,
   PurchaseOrder,
   PurchaseOrderStatus,
@@ -693,11 +694,6 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly MbEntry[]>;
-  readonly recordMbEntry: (
-    organisationId: string,
-    workId: string,
-    body: RecordMbEntryRequest,
-  ) => Promise<MbEntry>;
   /** The Work's bills AND its billing position. The summary is served
    * beside the list rather than derived from it: measured, billed and
    * unbilled are money, and money is summed in SQL numeric, never in the
@@ -1229,6 +1225,21 @@ export interface ApiClient {
     organisationId: string,
     certificateId: string,
   ) => Promise<Blob>;
+  /** What the next acceptance certificate should certify, per AMC item,
+   * on every schedule that states a billing cadence. A proposal only —
+   * it writes nothing and the certificate route is unchanged. */
+  readonly getAmcCycleProposal: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<AmcCycleProposalResponse>;
+  /** Sets or clears one schedule's AMC billing cadence. Both fields move
+   * together; two nulls remove it. */
+  readonly setScheduleAmcCycle: (
+    organisationId: string,
+    workId: string,
+    scheduleId: string,
+    body: SetScheduleAmcCycleRequest,
+  ) => Promise<void>;
   /** Stage-wise Measurement Books (Milestone 8 phase 2). Bill
    * preparation moved here: a bill is prepared FROM a finalized MB
    * (the Milestone 5 unbilled-measurements sweep endpoint is gone). */
@@ -1262,6 +1273,14 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
     body: SetMbSourcesRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  /** Replaces the draft's whole set of downward measured-quantity
+   * adjustments; an item absent from the body measures what its claimed
+   * sources deliver. */
+  readonly setMeasurementBookMeasuredQuantities: (
+    organisationId: string,
+    measurementBookId: string,
+    body: SetMbMeasuredQuantitiesRequest,
   ) => Promise<MeasurementBookDetailResponse>;
   readonly finalizeMeasurementBook: (
     organisationId: string,
@@ -1313,23 +1332,23 @@ export interface ApiClient {
     measurementBookId: string,
     file: Blob,
     filename: string,
-  ) => Promise<RailwayMeasurement>;
+  ) => Promise<RailwayMeasurementResponse>;
   readonly getRailwayMeasurement: (
     organisationId: string,
     measurementBookId: string,
-  ) => Promise<RailwayMeasurement | null>;
+  ) => Promise<RailwayMeasurementResponse>;
   /** One line, confirmed by one member, when the PDF could not be read.
    * Singular on purpose: the fallback is an act per line. */
   readonly confirmRailwayMeasurementLine: (
     organisationId: string,
     railwayMeasurementId: string,
     itemNumber: string,
-  ) => Promise<RailwayMeasurement | null>;
+  ) => Promise<RailwayMeasurementResponse>;
   readonly discardRailwayMeasurement: (
     organisationId: string,
     railwayMeasurementId: string,
     reason?: string,
-  ) => Promise<RailwayMeasurement | null>;
+  ) => Promise<RailwayMeasurementResponse>;
   /** Outstanding with the railway, one position per prepared bill, with
    * the receipts that produced it. The three figures never collapse into
    * one: money the railway KEPT is settled, money that never arrived is
@@ -3347,13 +3366,6 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       );
       return payload.entries;
     },
-    async recordMbEntry(organisationId, workId, body) {
-      return request<MbEntry>(`/api/works/${workId}/mb-entries`, {
-        method: 'POST',
-        body,
-        organisationId,
-      });
-    },
     async listBills(organisationId, workId) {
       return request<BillListResponse>(`/api/works/${workId}/bills`, {
         organisationId,
@@ -4056,6 +4068,19 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         { organisationId },
       );
     },
+    async getAmcCycleProposal(organisationId, workId) {
+      return request<AmcCycleProposalResponse>(
+        `/api/works/${workId}/amc-cycle-proposal`,
+        { organisationId },
+      );
+    },
+    async setScheduleAmcCycle(organisationId, workId, scheduleId, body) {
+      await request<void>(`/api/works/${workId}/schedules/${scheduleId}/amc-cycle`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
     async recordWorkPacCertificate(organisationId, workId, body) {
       return request<PacCertificate>(`/api/works/${workId}/pac-certificates`, {
         method: 'POST',
@@ -4125,6 +4150,16 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       return request<MeasurementBookDetailResponse>(
         `/api/measurement-books/${measurementBookId}`,
         { organisationId },
+      );
+    },
+    async setMeasurementBookMeasuredQuantities(
+      organisationId,
+      measurementBookId,
+      body,
+    ) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/measured-quantities`,
+        { method: 'PUT', body, organisationId },
       );
     },
     async setMeasurementBookSources(organisationId, measurementBookId, body) {
@@ -4206,29 +4241,26 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         },
       );
       if (!response.ok) throw await parseError(response);
-      const body = (await response.json()) as RailwayMeasurementResponse;
-      return body.measurement as RailwayMeasurement;
+      return (await response.json()) as RailwayMeasurementResponse;
     },
     async getRailwayMeasurement(organisationId, measurementBookId) {
-      const { measurement } = await request<RailwayMeasurementResponse>(
+      return request<RailwayMeasurementResponse>(
         `/api/measurement-books/${measurementBookId}/railway-measurement`,
         { organisationId },
       );
-      return measurement;
     },
     async confirmRailwayMeasurementLine(
       organisationId,
       railwayMeasurementId,
       itemNumber,
     ) {
-      const { measurement } = await request<RailwayMeasurementResponse>(
+      return request<RailwayMeasurementResponse>(
         `/api/railway-measurements/${railwayMeasurementId}/confirm-line`,
         { method: 'POST', body: { itemNumber }, organisationId },
       );
-      return measurement;
     },
     async discardRailwayMeasurement(organisationId, railwayMeasurementId, reason) {
-      const { measurement } = await request<RailwayMeasurementResponse>(
+      return request<RailwayMeasurementResponse>(
         `/api/railway-measurements/${railwayMeasurementId}/discard`,
         {
           method: 'POST',
@@ -4236,7 +4268,6 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
           organisationId,
         },
       );
-      return measurement;
     },
     async listBillSettlement(organisationId, workId) {
       const { positions } = await request<BillSettlementResponse>(

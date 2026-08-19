@@ -420,34 +420,24 @@ describe('G1 — the confirmed LOA letter date', () => {
   });
 });
 
-describe('G18 — the MB entry measurement date', () => {
-  it('refuses a measurement in the future or before the LOA letter date', async () => {
-    const future = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemId,
-        measuredQuantity: '1',
-        measuredOn: daysFromToday(2),
-      },
-    });
-    expect(future.statusCode, future.body).toBe(400);
-    expect(future.json()).toMatchObject({ code: 'MB_ENTRY_DATE_FUTURE' });
-
-    const beforeLoa = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemId,
-        measuredQuantity: '1',
-        measuredOn: '2025-05-31',
-      },
-    });
-    expect(beforeLoa.statusCode, beforeLoa.body).toBe(400);
-    expect(beforeLoa.json()).toMatchObject({ code: 'MB_ENTRY_DATE_BEFORE_LOA' });
-    expect(beforeLoa.json<{ message: string }>().message).toContain(LETTER_DATE);
+describe('G18 — the retired MB entry writer', () => {
+  // G18 used to be the loose register's own date window
+  // (MB_ENTRY_DATE_FUTURE / MB_ENTRY_DATE_BEFORE_LOA). Its writer was
+  // removed on 2026-08-19 (owner-sanctioned) — measurement that reaches
+  // a bill happens in a Measurement Book, whose own date guard is G20
+  // below. What is left to hold is that the writer is gone and stays
+  // gone: a route re-added without this window would reopen the hole
+  // these two cases were written for.
+  it('has no writer to date-check, whatever the date', async () => {
+    for (const measuredOn of [daysFromToday(2), '2025-05-31', LETTER_DATE]) {
+      const attempt = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workId}/mb-entries`,
+        organisationId,
+        payload: { workItemId: itemId, measuredQuantity: '1', measuredOn },
+      });
+      expect(attempt.statusCode, attempt.body).toBe(404);
+    }
 
     const [stored] = await admin<{ count: string }[]>`
       select count(*)::text as count from mb_entries
@@ -456,35 +446,26 @@ describe('G18 — the MB entry measurement date', () => {
     expect(stored?.count).toBe('0');
   });
 
-  it('accepts any date inside the window, letter date included', async () => {
-    // The paper-backlog case: a site measurement typed up long after the
-    // fact, on the earliest day the contract can carry.
-    const onLetterDate = await authed(owner, {
-      method: 'POST',
+  it('still serves the register it can no longer be written to', async () => {
+    await admin`
+      insert into mb_entries (
+        organisation_id, work_id, work_item_id, measured_quantity,
+        measured_on, mb_book_ref, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${workId}, ${itemId}, '2.000', ${LETTER_DATE},
+        'MB-1/p7', ${ownerUserId}
+      )
+    `;
+    const listed = await authed(owner, {
+      method: 'GET',
       url: `/api/works/${workId}/mb-entries`,
       organisationId,
-      payload: {
-        workItemId: itemId,
-        measuredQuantity: '2',
-        measuredOn: LETTER_DATE,
-        mbBookRef: 'MB-1/p7',
-      },
     });
-    expect(onLetterDate.statusCode, onLetterDate.body).toBe(201);
-    expect(onLetterDate.json<{ measuredOn: string }>().measuredOn).toBe(LETTER_DATE);
-
-    const recent = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemId,
-        deliveryChallanId: issuedChallanId,
-        measuredQuantity: '3',
-        measuredOn: daysFromToday(-2),
-      },
-    });
-    expect(recent.statusCode, recent.body).toBe(201);
+    expect(listed.statusCode, listed.body).toBe(200);
+    expect(listed.json<{ entries: { measuredOn: string }[] }>().entries).toMatchObject([
+      { measuredOn: LETTER_DATE },
+    ]);
   });
 });
 

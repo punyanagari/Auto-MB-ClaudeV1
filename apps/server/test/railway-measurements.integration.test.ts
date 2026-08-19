@@ -444,6 +444,47 @@ describe('recording the railway measurement', () => {
     expect(discarded.statusCode, discarded.body).toBe(200);
     const third = await uploadMeasurement(bookId, measurementPdf(letterNumber));
     expect(third.statusCode, third.body).toBe(201);
+    // …and the discarded one is still on the panel. The bypass migration
+    // 0111's header names — discard a mismatch, upload something
+    // unreadable, confirm by hand — is audited but not visible where the
+    // next decision gets taken, and this is what makes it visible.
+    const history = third.json<RailwayMeasurementResponse>().discarded;
+    expect(history.map((entry) => entry.id)).toEqual([measurement?.id]);
+    expect(history[0]?.discardedAt).not.toBeNull();
+  });
+
+  it('will not discard the measurement a standing bill rests on, in both layers', async () => {
+    const { workId, bookId, letterNumber } = await seedBook({
+      organisationId,
+      userId: ownerUserId,
+      label: nextLabel(),
+    });
+    const uploaded = await uploadMeasurement(bookId, measurementPdf(letterNumber));
+    const { measurement } = uploaded.json<RailwayMeasurementResponse>();
+    await insertBillDirectly(workId, bookId);
+
+    // The route refuses, with the act the operator has to do first.
+    const blocked = await authed({
+      method: 'POST',
+      url: `/api/railway-measurements/${measurement?.id ?? ''}/discard`,
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: {},
+    });
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(blocked.json<{ code: string }>().code).toBe('RAILWAY_BILL_ALREADY_RECORDED');
+
+    // And so does the database — which is the arm that matters, because
+    // the route reads the bill without a lock and the two routes lock
+    // different rows, so nothing else serialises a discard against a
+    // concurrent upload.
+    await expect(
+      admin`
+        update railway_measurements
+        set discarded_at = now(), discarded_by_user_id = ${ownerUserId}
+        where id = ${measurement?.id ?? ''}
+      `,
+    ).rejects.toMatchObject({ code: '23V07' });
   });
 
   it('does not let another organisation upload against, or read, this book', async () => {
@@ -476,7 +517,7 @@ describe('the gate on recording a railway bill', () => {
     });
     // The database's own arm, proved by writing straight past the route.
     await expect(insertBillDirectly(workId, bookId)).rejects.toMatchObject({
-      code: '23R01',
+      code: '23V01',
     });
   });
 
@@ -491,7 +532,7 @@ describe('the gate on recording a railway bill', () => {
       measurementPdf(letterNumber, { quantities: ['2.1', '0.64'] }),
     );
     await expect(insertBillDirectly(workId, bookId)).rejects.toMatchObject({
-      code: '23R02',
+      code: '23V02',
     });
   });
 
@@ -531,7 +572,7 @@ describe('the fallback for a measurement nobody could read', () => {
     expect(measurement?.lines.map((line) => line.itemNumber)).toEqual(['A/1', 'A/6']);
 
     await expect(insertBillDirectly(workId, bookId)).rejects.toMatchObject({
-      code: '23R03',
+      code: '23V03',
     });
 
     const firstConfirmed = await confirmLine(measurement?.id ?? '', 'A/1');
@@ -539,7 +580,7 @@ describe('the fallback for a measurement nobody could read', () => {
     // ONE line is not the fallback. Half-confirmed is still refused, and
     // the refusal names what is left.
     await expect(insertBillDirectly(workId, bookId)).rejects.toMatchObject({
-      code: '23R03',
+      code: '23V03',
     });
 
     const secondConfirmed = await confirmLine(measurement?.id ?? '', 'A/6');
@@ -572,7 +613,7 @@ describe('the fallback for a measurement nobody could read', () => {
         )
         values (${organisationId}, ${measurement?.id ?? ''}, 'Z/9', ${ownerUserId})
       `,
-    ).rejects.toMatchObject({ code: '23R06' });
+    ).rejects.toMatchObject({ code: '23V06' });
   });
 
   it('will not let a MISMATCH be confirmed away, in either layer', async () => {
@@ -598,7 +639,7 @@ describe('the fallback for a measurement nobody could read', () => {
         )
         values (${organisationId}, ${measurement?.id ?? ''}, 'A/1', ${ownerUserId})
       `,
-    ).rejects.toMatchObject({ code: '23R05' });
+    ).rejects.toMatchObject({ code: '23V05' });
   });
 
   it('refuses a line the railway did not measure, and names it', async () => {
@@ -635,7 +676,7 @@ describe('the recorded reading is evidence', () => {
           line_verdicts = '[{"itemNumber":"A/1","matched":true,"refusal":null,"detail":null}]'::jsonb
         where id = ${measurement?.id ?? ''}
       `,
-    ).rejects.toMatchObject({ code: '23R04' });
+    ).rejects.toMatchObject({ code: '23V04' });
   });
 
   it('serves the stored PDF back, and not to another organisation', async () => {

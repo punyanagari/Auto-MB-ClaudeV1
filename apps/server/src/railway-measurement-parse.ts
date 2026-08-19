@@ -170,15 +170,24 @@ function closed(item: OpenItem): ParsedMeasurementItem {
  * Throws `RailwayMeasurementParseError` naming what could not be read.
  */
 export function parseRailwayMeasurement(rawText: string): ParsedRailwayMeasurement {
-  // FORM FEEDS ARE REMOVED FIRST, and this is not tidying. Poppler emits
-  // `\f` at a page break with no newline of its own, so a heading that
-  // happens to fall at the top of a page arrives as `\fReason for
+  // FORM FEEDS BECOME NEWLINES FIRST, and this is not tidying. Poppler
+  // emits `\f` at a page break with no newline of its own, so a heading
+  // that happens to fall at the top of a page arrives as `\fReason for
   // Reduction : …` — one cell whose text does not start with the label
   // it plainly starts with. In MB-1 of the settlement corpus exactly one
   // item is affected (A/19, page 3), which is the shape of bug that
   // passes every hand-written fixture and fails on the second real
-  // document. A page break carries no measurement.
-  const layoutText = rawText.replaceAll('\f', '');
+  // document.
+  //
+  // A NEWLINE and not an empty string, which is strictly the safer of the
+  // two. Deleting the byte welds the last line of one page onto the first
+  // line of the next whenever the break lands mid-line, and the welded
+  // result is a line whose column positions are the sum of two pages'
+  // — so `cellsOf` reads cells that were never side by side. Replacing
+  // it starts a fresh line instead, which is what the page break meant.
+  // The only cost is one blank line where the `\f` already followed a
+  // newline, and blank lines are skipped everywhere below.
+  const layoutText = rawText.replaceAll('\f', '\n');
   const heading = MEASUREMENT_HEADING.exec(layoutText);
   if (heading?.[1] === undefined) {
     throw new RailwayMeasurementParseError(

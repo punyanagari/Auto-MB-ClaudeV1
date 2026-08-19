@@ -116,6 +116,7 @@ const TENANT_TABLES = [
   'measurement_book_merge_provenance',
   'measurement_book_lines',
   'mb_sources',
+  'mb_measured_overrides',
   'measurement_book_counters',
   'import_batches',
   'import_records',
@@ -560,6 +561,10 @@ const DELETE_ALLOWED_TABLES = [
   // by trigger (0024).
   'measurement_books',
   'mb_sources',
+  // Downward measured-quantity adjustments are draft-only state: the
+  // route replaces the whole set on every save, and deleting the draft
+  // deletes them (0106).
+  'mb_measured_overrides',
   // Inspection configuration is configuration: clearing an item's agency
   // or dropping a demanded document is how an operator says the contract
   // does not ask for it, and the coverage of a call that has not yet gone
@@ -1040,6 +1045,18 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${measurementBook.id}, ${work.id},
               'installation', ${installation.id})
+    `;
+    // The downward measured-quantity adjustment (0106). Written while the
+    // book is still a draft — its guard permits nothing afterwards — and
+    // at zero, which is at or under whatever the claimed installation
+    // measures whatever this seed's quantities are.
+    await tx`
+      insert into mb_measured_overrides (
+        organisation_id, measurement_book_id, work_id, work_item_id,
+        measured_installed
+      )
+      values (${organisationId}, ${measurementBook.id}, ${work.id},
+              ${workItem.id}, '0.000')
     `;
     await tx`
       insert into measurement_book_lines (

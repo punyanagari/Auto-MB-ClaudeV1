@@ -167,3 +167,90 @@ export const PacCapExceededDetailsSchema = Type.Object(
   { additionalProperties: false },
 );
 export type PacCapExceededDetails = Static<typeof PacCapExceededDetailsSchema>;
+
+// --- AMC billing cycles (owner ruling 2026-08-19; migration 0107) -----------
+//
+// A maintenance schedule that states a cadence — M periods and the word
+// the agency calls one of them — can say what the NEXT acceptance
+// certificate should certify for each of its AMC items, instead of the
+// operator dividing the sanctioned quantity by hand every quarter.
+//
+// This is a PROPOSAL and only a proposal. Nothing here writes anything,
+// the certification cap (R18, widened by 0068) is unchanged, and an
+// operator is free to certify a different quantity: the cadence has no
+// vote in what the railway actually accepted.
+
+/** One AMC item's next-period proposal, on a schedule that states a
+ * cadence. */
+const AmcCycleItemProposalSchema = Type.Object(
+  {
+    workItemId: UuidSchema,
+    itemNumber: Type.String(),
+    description: Type.String(),
+    unitCode: Type.String(),
+    /** Q — the sanctioned quantity the whole cadence divides. */
+    totalQuantity: DecimalStringSchema,
+    /** What non-cancelled certificates already cover. */
+    certifiedQuantity: DecimalStringSchema,
+    /** How many whole periods that cover amounts to, read back through
+     * the same split that produced it. */
+    periodsCertified: Type.Integer({ minimum: 0 }),
+    /** The period this proposal is for (periodsCertified + 1), or null
+     * once every period is certified. */
+    nextPeriod: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+    /** q(n) = round3(Q*n/M) - round3(Q*(n-1)/M); null once every period
+     * is certified. Summed over all M periods this is exactly Q. */
+    proposedQuantity: Type.Union([DecimalStringSchema, Type.Null()]),
+    /** PROPOSE AND PROVE: false when Q does not divide into M equal
+     * periods at the quantity column's three decimal places, so the
+     * split wobbles in the third decimal across periods. The owner
+     * accepted the wobble; the screen still says it is there rather than
+     * presenting an uneven split as an even one. */
+    divides: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+export type AmcCycleItemProposal = Static<typeof AmcCycleItemProposalSchema>;
+
+/** One schedule's cadence and every AMC item under it. */
+const AmcCycleScheduleProposalSchema = Type.Object(
+  {
+    scheduleId: UuidSchema,
+    scheduleCode: Type.String(),
+    title: Type.String(),
+    /** M, always present here — a schedule with no cadence is not
+     * proposed on at all. */
+    billingPeriods: Type.Integer({ minimum: 1 }),
+    cycleNoun: Type.String(),
+    items: Type.Array(AmcCycleItemProposalSchema),
+  },
+  { additionalProperties: false },
+);
+
+export const AmcCycleProposalResponseSchema = Type.Object(
+  {
+    /** Empty when no schedule of this Work states a cadence, which is the
+     * ordinary case for a Work with no maintenance. */
+    schedules: Type.Array(AmcCycleScheduleProposalSchema),
+  },
+  { additionalProperties: false },
+);
+export type AmcCycleProposalResponse = Static<typeof AmcCycleProposalResponseSchema>;
+
+/** PUT /api/works/:id/schedules/:scheduleId/amc-cycle — sets or clears a
+ * schedule's cadence. Both fields move together: sending two nulls
+ * clears the cadence, sending two values sets it, and a half-stated pair
+ * is refused (route and CHECK, migration 0107). */
+export const SetScheduleAmcCycleRequestSchema = Type.Object(
+  {
+    billingPeriods: Type.Union([
+      Type.Integer({ minimum: 1, maximum: 600 }),
+      Type.Null(),
+    ]),
+    cycleNoun: Type.Union([Type.String({ minLength: 1, maxLength: 30 }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type SetScheduleAmcCycleRequest = Static<
+  typeof SetScheduleAmcCycleRequestSchema
+>;

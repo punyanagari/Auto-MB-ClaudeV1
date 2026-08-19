@@ -1490,6 +1490,13 @@ recorded, and the open question at the end of this entry approved as
 recorded too). Numbered 22 by coordinator allocation; 17 to 21 belong to
 the packs of this wave and the one before it that landed ahead of it.
 
+**Row 22m was added by a later ruling of the same day**, item 19 of the
+owner's live-testing corrections ledger: a third start basis, the Work's
+final bill. It is recorded as a row of this entry rather than as an entry
+of its own because it changes one select on a surface this entry already
+governs, and a reviewer looking for what the warranty screens ship should
+find all of it in one place.
+
 **There is no mock citation for either surface, and this entry exists so
 that absence is a recorded decision rather than an omission a reviewer has
 to guess at.** `AGENTS.md` § Design contract says a pull request touching
@@ -1537,20 +1544,21 @@ credential lapsing is a problem while a defect liability period ending is
 the outcome the whole contract is aimed at. Reusing the word would have
 put a red lamp on every warranty that completed successfully.
 
-| #   | The application ships                                                                       | Why, with nothing in the mock to weigh it against                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 22a | The Work's card lives INSIDE the Instruments tab, not on a tab of its own                   | The period is the reason the Performance Bank Guarantee above it is still with the railway. The two facts an office compares — when cover ends and when the guarantee lapses — are useless a tab apart, and a `WORK_TABS` entry for one card would put them there.                                                                                                                                                                                             |
-| 22b | A rail entry under Operations, beside Installations, with `ShieldCheck`                     | The register answers a question that crosses contracts — what comes out of warranty this quarter — which is a rail question. `ShieldCheck` is not on the rail anywhere else; every other Operations lamp is taken.                                                                                                                                                                                                                                             |
-| 22c | The register READS; every act stays on the Work                                             | Starting a period is decided against that Work's contract term and its installations, so an act with no Work in front of it would be a form that has to ask which Work first — which is the Work page. The installation register took the same shape for the same reason (§ Approved divergences 4).                                                                                                                                                           |
-| 22d | A countdown column in words — "45 days left", "78 days over" — not a progress bar           | A warranty is not progress towards anything; it is time an obligation still has to run. The figure is the SERVER's, measured against the organisation's own calendar day, and the screen prints it rather than computing it — the browser's midnight is not the one that decides a legal date.                                                                                                                                                                 |
-| 22e | No warranty CERTIFICATE, no number, no counter                                              | Migration 0018 already freezes the guarantee text on the Delivery Challan as an issued page. A second warranty document would be a second place to look for one statement, and a numbered series nobody asked for. This pack tracks a PERIOD; it issues nothing.                                                                                                                                                                                               |
-| 22f | The guarantee shortfall is REPORTED, never enforced                                         | The railway holds the guarantee, and the agency cannot refuse reality by refusing a write. The card names the gap in days and says what clears it; nothing here blocks an act because a bank guarantee is short.                                                                                                                                                                                                                                               |
-| 22g | The start picker is capped at fifty with a flag, not paged                                  | It is a picker, and a picker cannot page. The same posture the correspondence composer's thread options already record. Start a period on the ones offered and the next ones appear.                                                                                                                                                                                                                                                                           |
-| 22h | An installation carrying a period that is not voided cannot be cancelled                    | Cancelling it would remove the ground the period stands on while the railway still holds a guarantee measured against its expiry. The refusal points at voiding the period first — the shape the PAC-coverage refusal on the same button already has.                                                                                                                                                                                                          |
-| 22i | An installation whose period was DISCHARGED can never be cancelled, and the message says so | This is a deliberate terminal, not a dead end: a discharged period is a completed legal cycle, and the record it rests on is permanent from that point exactly as an issued document is. Stated here because a refusal that pointed at a void the guard would itself refuse would be worse than the terminal.                                                                                                                                                  |
-| 22j | Voiding is the only way out of a live period                                                | It is what makes a mistyped extension recoverable — void and start again, the cancel-and-re-record path an installation already has — and it is the one thing standing between a fat-fingered ten-year expiry and a record nobody can correct.                                                                                                                                                                                                                 |
-| 22k | Discharge is confirmed in a dialog that restates the item and the day the period runs to    | Closure is terminal (22i) and it freezes the installation record for good, and its button is one of three identically shaped disclosures repeated once per live period — the only thing telling one stack from the next is a heading that has scrolled away by the time the submit button is reached. The identity belongs inside the submit path, not only above it. Closure stays terminal by design; this adds a sentence, not a state.                     |
-| 22l | The dashboard's PBG countdown carries the DLP cover date it is measured against             | Two surfaces read the same guarantee: this alert counts it down to its own expiry, the Work's card measures it against the warranty it secures. Unjoined they contradict in both directions — a mild "expires in 40 days" beside a 911-day shortfall, or a renewal nag on a guarantee whose every period is discharged and which is therefore releasable. One date makes the countdown answerable. Null where no live period measures it, which is not a zero. |
+| #   | The application ships                                                                       | Why, with nothing in the mock to weigh it against                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 22a | The Work's card lives INSIDE the Instruments tab, not on a tab of its own                   | The period is the reason the Performance Bank Guarantee above it is still with the railway. The two facts an office compares — when cover ends and when the guarantee lapses — are useless a tab apart, and a `WORK_TABS` entry for one card would put them there.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 22b | A rail entry under Operations, beside Installations, with `ShieldCheck`                     | The register answers a question that crosses contracts — what comes out of warranty this quarter — which is a rail question. `ShieldCheck` is not on the rail anywhere else; every other Operations lamp is taken.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 22c | The register READS; every act stays on the Work                                             | Starting a period is decided against that Work's contract term and its installations, so an act with no Work in front of it would be a form that has to ask which Work first — which is the Work page. The installation register took the same shape for the same reason (§ Approved divergences 4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 22d | A countdown column in words — "45 days left", "78 days over" — not a progress bar           | A warranty is not progress towards anything; it is time an obligation still has to run. The figure is the SERVER's, measured against the organisation's own calendar day, and the screen prints it rather than computing it — the browser's midnight is not the one that decides a legal date.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 22e | No warranty CERTIFICATE, no number, no counter                                              | Migration 0018 already freezes the guarantee text on the Delivery Challan as an issued page. A second warranty document would be a second place to look for one statement, and a numbered series nobody asked for. This pack tracks a PERIOD; it issues nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 22f | The guarantee shortfall is REPORTED, never enforced                                         | The railway holds the guarantee, and the agency cannot refuse reality by refusing a write. The card names the gap in days and says what clears it; nothing here blocks an act because a bank guarantee is short.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 22g | The start picker is capped at fifty with a flag, not paged                                  | It is a picker, and a picker cannot page. The same posture the correspondence composer's thread options already record. Start a period on the ones offered and the next ones appear.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 22h | An installation carrying a period that is not voided cannot be cancelled                    | Cancelling it would remove the ground the period stands on while the railway still holds a guarantee measured against its expiry. The refusal points at voiding the period first — the shape the PAC-coverage refusal on the same button already has.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 22i | An installation whose period was DISCHARGED can never be cancelled, and the message says so | This is a deliberate terminal, not a dead end: a discharged period is a completed legal cycle, and the record it rests on is permanent from that point exactly as an issued document is. Stated here because a refusal that pointed at a void the guard would itself refuse would be worse than the terminal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 22j | Voiding is the only way out of a live period                                                | It is what makes a mistyped extension recoverable — void and start again, the cancel-and-re-record path an installation already has — and it is the one thing standing between a fat-fingered ten-year expiry and a record nobody can correct.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 22k | Discharge is confirmed in a dialog that restates the item and the day the period runs to    | Closure is terminal (22i) and it freezes the installation record for good, and its button is one of three identically shaped disclosures repeated once per live period — the only thing telling one stack from the next is a heading that has scrolled away by the time the submit button is reached. The identity belongs inside the submit path, not only above it. Closure stays terminal by design; this adds a sentence, not a state.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 22l | The dashboard's PBG countdown carries the DLP cover date it is measured against             | Two surfaces read the same guarantee: this alert counts it down to its own expiry, the Work's card measures it against the warranty it secures. Unjoined they contradict in both directions — a mild "expires in 40 days" beside a 911-day shortfall, or a renewal nag on a guarantee whose every period is discharged and which is therefore releasable. One date makes the countdown answerable. Null where no live period measures it, which is not a zero.                                                                                                                                                                                                                                                                                                                                                                             |
+| 22m | A third start basis, "The final bill date", in the same select — no date field beside it    | Owner ruling of 2026-08-19. Railway letters commonly run the warranty from the raising of the final bill rather than from the units going in, and there was nowhere to record that. It is an OPTION, not a field: the date is the contract's, so the product reads it and pins the period to it exactly, the way the other two bases are pinned (migration 0112, SQLSTATE 23Q11, enforced in the route and again in the guard). A Work with no final bill yet is refused with the sentence that says what to raise, rather than offered a date box to type a guess into. The date itself is the `mb_date` of the finalized final Measurement Book the bill was prepared from, because `bills` carries no date column — the hint under the select says the period starts on the final bill's date and that none can start before it exists. |
 
 **Two additions on surfaces this pack did not create**, both recorded so
 they are not mistaken for drive-by edits: the installation cancel button
@@ -1729,7 +1737,274 @@ mock might put it in the topbar — and the staleness sentence, which the
 mock might make a chip. Neither is load-bearing; the caching rules and the
 write refusal are.
 
-### 24. Railway measurement — the panel before the bill panel
+### 24. Live-testing corrections, 2026-08-19 — APPROVED
+
+Six owner-ruled corrections from live testing. Every one of them is
+app-side: the mock draws no Work that can be configured, no payment
+matrix with data behind it, and no LOA review screen, so none of these
+has a mock counterpart to replicate and none is a departure from one.
+They are recorded here rather than round-tripped through v0, on the
+precedent of §§ 3 and 5.
+
+**Excess-delivery toggle moves to the Deliveries tab.** It sat in the
+Work header as the only control amid a strip of read-only figures, which
+made a per-Work setting look like a Work-wide one. The cap it lifts is
+the delivery cap and nothing else (migration 0046; installation has been
+outside it since 0077), so it now sits above the deliveries it governs.
+Same route, same owner-only gate, same toast copy, same quiet
+label-and-control row. Non-owners still read Allowed / Not allowed in
+the same place.
+
+**Item numbers sort naturally.** `item_number` is text, so
+`ORDER BY item_number` reads A1/1, A1/10, A1/11, A1/2 — an order no
+schedule is written in, and one an operator reconciling a printed letter
+has to hunt through past the ninth row. One comparator
+(`compareItemNumbers`, `@auto-mb/contracts`) now decides the reading for
+both sides of the wire. The LOA review screen's item editor is
+deliberately NOT re-sorted: its item numbers are editable text, and a
+table that re-ordered itself between keystrokes would be worse than the
+order it fixed. Its rows arrive in the letter's printed order already.
+
+**Bounded control columns.** A `wrapCell` description beside a `<select>`
+starved the select to nothing: auto table layout ignores a cell's
+`max-width` when it distributes columns, and `globals.css` gives every
+control `min-width: 0`, so the prose took the whole budget and ran on
+underneath. `controlCell` (`ui/table.tsx`) puts a MIN-width on the
+control's cell, which auto layout does honour. Applied everywhere a
+control shares a table row with free text: the payment matrix, the
+payment-setup dialog, the LOA review item editor, the challan editor,
+the inspection-clause table (whose description cell was not even
+`wrapCell` — it is now), and both selects on the Members matrix.
+
+**Completion date proposed from the letter.** The parser has always read
+the completion period and nothing consumed it. The review screen now
+proposes letter date + N months, states the derivation under the field,
+and leaves it overwritable or blank. It follows a CORRECTED letter date
+— the field is the derivation until the reviewer types a date of their
+own, and from that moment it is theirs and stops moving. Calendar months with month-end
+clamping — 31 January plus one month is 28 February — because liquidated
+damages are counted from this date.
+
+**Payment matrix stages autofill to zero.** A row saves only at an exact
+sum of 100, so once the typed stages reach 100 every remaining stage can
+only be 0. The form fills them rather than holding the row refused while
+the operator types three zeros to agree with it. Ordinary editable
+values: typing over one takes the sum off 100 and stops any further
+filling.
+
+**Not selected, and a residual category with a name.** The item-category
+select's blank option was called "Uncategorised" and resolved, silently,
+through the Work's UNCATEGORISED matrix row — so an item nobody had
+looked at and an item deliberately parked in the residual bucket were
+the same choice, and the setup dialog's "still uncategorised" count
+never reached zero on a Work that was fully configured. The blank option
+is now **Not selected**: it saves, it demands no matrix row, and it
+bills nothing until it is answered — the Measurement Book names the item
+at finalisation, which is the refusal that was always the net.
+UNCATEGORISED is a choice of its own, and its matrix row carries a
+per-Work editable name, because railway schedules call their residual
+bucket "Other items", "Miscellaneous" or "Balance work" and the operator
+should read the schedule's own word. That name is what every surface
+shows — the matrix row header, the item-category select, the stage
+inputs' accessible labels, the setup dialog, the billing-readiness
+checklist and the Work's own configuration banner — because one screen
+calling it two things is worse than not renaming it at all. Display
+only; the key never moves.
+
+The Work's configuration banner and the billing-readiness checklist each
+grew a SECOND line for the same reason: "no matrix row for X" and "no
+category chosen" are different failures with different remedies, and
+readiness reported green on the second because it was reading it as the
+first.
+
+**The Remedy column leaves the unfinished-items worklist.** The
+quantities stay and say the same thing in less space.
+
+### 25. Editable measured quantity on Measurement Book drafts — APPROVED
+
+Owner ruling of 2026-08-19 (live-testing ledger item 2(a), verbatim): "MB
+books drafts: per-line measured quantity becomes EDITABLE DOWNWARD ONLY,
+capped at the claimed source's quantity — partial measurement of a claimed
+challan/installation."
+
+**The operator's situation.** A delivery challan says ten were delivered.
+Eight were accepted at site this month and two are still lying uninspected
+at the station. The challan is the evidence and does not change; what
+changes is what this Measurement Book measures.
+
+**What the screen offers.** On a DRAFT book's preview table, the Supplied Δ
+and Installed Δ cells become fields. Each shows what the operator may
+enter and, beside it, what the claimed sources actually deliver — "8 of
+10". The claimed figure is also the field's accessible description, so the
+pair reads as a pair to a screen reader rather than as a loose number. A
+stage the draft claims nothing for shows no field: there is nothing there
+to reduce. One **Save measured quantities** action replaces the draft's
+whole set, and the answer is the server's recomputed preview — the
+amounts, the total and the remarks move together, never against a figure
+still being typed.
+
+**Downward only, floored at zero.** A figure above what the sources
+deliver is refused, naming every offending line with both numbers
+(`MB_MEASURED_ABOVE_SOURCE`); a negative one is refused before the request
+opens a transaction. Zero is legal and means "measure none of it from
+these sources".
+
+**Only a field a keystroke landed in becomes an adjustment.** Every other
+field carries back the adjustment already stored. This matters because a
+field is seeded with the figure that will be BILLED, and on a line the
+sanction clamp has already reduced that is lower than what the sources
+claim — so a screen that inferred "the operator changed this" from the
+number would write an adjustment on every clamped line, and that
+adjustment would cap the item there for good once an amendment reopened
+the sanction. Emptying a field clears the adjustment.
+
+**A line adjusted to nothing STAYS on the preview, and out of the book.**
+Without the first half it would vanish the moment an operator typed 0,
+taking the field that would undo it with it. Without the second, a zero
+line would print on a Measurement Book and ride into a bill. So finalize
+asks the QUANTITIES rather than the line count: it refuses a book whose
+every line measures nothing with the `MB_EMPTY` sentence it always used,
+and leaves the zero lines out of the snapshot, the document and the bill.
+
+**An item this book claims nothing of cannot be adjusted at all**
+(`MB_MEASURED_ITEM_NOT_CLAIMED`). Its cap is zero, and an adjustment is
+what would put its line on the book — blocking finalize on an item nobody
+selected a source for.
+
+**Adjustments travel through a merge.** A consignee who measured eight of
+a claimed ten on their own record sheet has stated a fact about the site,
+so the merged book's adjustment for that item is the sum of what the
+records EFFECTIVELY measure — each sheet's own figure where it made one,
+its full claim where it did not. The records' own adjustment rows go in
+the same transaction. Un-merge restores the records and their claims but
+not their individual figures: the merge folded several into one sum, and
+the operator re-enters what they measured.
+
+**Where the unmeasured quantity goes.** Nowhere, this book. It stays
+outside it exactly as an over-installed quantity stays outside every book
+under the sanction clamp (see _Business-rule note: installation above
+sanctioned quantity_), and the FINAL Measurement Book's final-bill stage —
+whose base is the item's lifetime delivered or installed quantity, not a
+delta over selected sources — sweeps it up wherever the payment matrix
+gives that stage a share. On a matrix that gives the final-bill stage
+nothing, an unmeasured quantity is not billed at all; that is the same
+arithmetic the clamp has always had, and the screen states the two figures
+so the choice is a deliberate one.
+
+**And it is stated in rupees.** Above the register, on the same warning
+surface the unbillable variation exposure uses and for the same reason:
+without it the reduction appears in no number on the screen at all — the
+lines show what will be billed, the total sums them, and what the operator
+declined to measure is nowhere. It counts the adjustment only, never the
+sanction clamp's own remainder, which the exposure beside it already
+states.
+
+**Lifetime.** The adjustments belong to the draft. Deleting the draft
+deletes them; finalizing freezes them and the finalized line carries the
+reduced quantity as the snapshot it always carried. A finalized book shows
+one figure and no field.
+
+**App-side divergence.** The mock has no counterpart: its Measurement Book
+is a static table with no draft lifecycle to edit. Built inside the mock's
+grammar with its own table, field and action components; no new visual
+language.
+
+### 26. AMC billing cycles — APPROVED
+
+Owner ruling of 2026-08-19 (live-testing ledger item 6, LOCKED), derived
+from six real annual-maintenance letters.
+
+**The unit is the SCHEDULE, not the Work and not the item.** PL-218
+(Nagpur) prices a quarterly maintenance schedule beside a visit schedule
+billed per trip — twelve periods and eighteen over the same three years.
+One Work-level cadence could not describe the letter, and a per-item one
+would ask the operator to type the same number against every item and let
+them disagree.
+
+**What the schedules screen offers.** Each schedule carries two fields:
+how many billing periods its maintenance is measured in, and the word the
+agency calls one of them ("quarter", "month", "year", "half-year",
+"visit"). Both move together — two values set the cycle, two blanks remove
+it, and a half-stated pair is refused (`AMC_CYCLE_INCOMPLETE`). The word
+is the word alone: "quarter", never "quarterly bill" or "1 quarter".
+
+**No default is guessed.** A schedule with no cycle stated proposes
+nothing and bills exactly as it bills today. The owner's rulings default a
+no-cycle letter to one period (final bill for the total) and a
+monthly-priced letter to quarterly — and both are defaults the IMPORT
+PROPOSES and the operator confirms, never values the product writes on its
+own.
+
+**What the cycle proposes.** On the acceptance-certificate screen, each
+schedule that states a cycle shows what the NEXT period should certify per
+AMC item: the period number, what is certified so far, and the proposed
+quantity
+
+    proposed = round3(Q x n / M) - what is certified so far
+
+which is a REMAINDER, not the period's own width. The difference matters
+because certificates are the railway's: one taken by hand at a different
+figure would otherwise put every period after it out by the same amount
+and leave the contract short of Q, or over the sanction cap. Reconciling
+against the certified total instead makes the last period exactly
+Q - certified, whatever happened before it — so the cadence always closes
+on Q, a cycle changed mid-contract self-corrects, and no period ever
+proposes a quantity the cap would refuse. Where Q does not divide evenly
+the periods differ in the third decimal, and the row says so rather than
+presenting an uneven split as an even one.
+
+**How many periods are closed** is asked of the split itself — how many of
+its boundaries the certified total has reached — never of a ratio.
+Rounding a ratio is wrong at both ends: it puts a whole period at 0.9999
+of one, and it calls 99 of 100 over four periods "all four certified"
+while a unit is still outstanding.
+
+**It is a proposal and only a proposal.** Nothing about it writes
+anything, the certification cap is unchanged, and an operator certifying a
+different quantity is certifying what the railway actually accepted. A
+Measurement Book always certifies the FULL period quantity: downtime is a
+bill-time PENALTY deduction, never a short certificate.
+
+**What the Measurement Book says.** On a Work whose schedule states a
+cycle, an AMC line's ACCEPTANCE-CERTIFICATE stage counts PERIODS instead
+of quantity, inside the existing remark grammar and with the existing
+spellings — "Prepaid 95% for 2 quarters. Now to pay 95% for 1 quarter."
+The prepaid clause is still omitted on a first book.
+
+Only that stage. A cycle divides the certified quantity and nothing else,
+so a delivery challan against the same item keeps the item's own unit
+rather than being counted against a Q it has no relationship to.
+
+**A part-period is never rounded up to a whole one.** The remark is frozen
+into a finalised document and read as a contractual statement, so half a
+quarter reads "0.5 quarters", not "1 quarter". Only a figure integral
+within the split's own third-decimal wobble reads as a whole period.
+
+The clause can only appear on a Work carrying a cycle, which no
+already-finalised Measurement Book does, so the remark template version
+does not move.
+
+**A cycle is not changed on a Work that is closed.** A completed Work
+refuses it under R8, like every other operational change; the cadence
+decides what every later certificate is proposed at.
+
+**What does not change.** No payment-matrix change, no per-item axis, and
+the rate is still the ACCEPTED rate the server derives.
+
+**Letters that print a negotiated per-item bid rate** — PL-257's shape —
+accept that rate less the rebate on the total value, never the advertised
+one. The rule is written and proved against the letter's own printed
+totals, but nothing computes with it yet: that letter's item table does
+not parse, so the figures it needs are not extracted. The caller lands
+with the importer work that makes those rows readable. Until then a
+letter of the shape reaches a human anyway — its non-zero rebate is a
+letter-level review flag.
+
+**App-side divergence.** The mock draws neither surface: its Work carries
+no maintenance schedule and no acceptance certificates. Both are built
+from the mock's existing table, field and action components.
+
+### 29. Railway measurement — the panel before the bill panel
 
 **Status: application-first, owner ruling of 2026-08-19 (live-testing
 corrections item 17; migration 0111).**
@@ -1764,7 +2039,7 @@ conversation with the railway; a button that let an operator confirm past
 it would make the whole comparison theatre, and the server refusing the
 click afterwards would only make that a worse experience rather than a
 safer one. The refusal is enforced twice on the server as well
-(`routes/railway-measurements.ts`, and migration 0111's `23R05`), so the
+(`routes/railway-measurements.ts`, and migration 0111's `23V05`), so the
 screen and the database agree about it.
 
 **The unreadable shape is deliberately more work than reading a verdict.**
@@ -1772,6 +2047,17 @@ Each line is confirmed on its own, by name, and the confirmation is
 recorded against the member who made it. There is no "confirm all": the
 fallback is an act per line, and a single control would be the single
 click the model refuses.
+
+**What was walked away from is listed under what stands.** Discarding a
+mismatch and uploading a document the parser cannot read re-enters the
+gate through the manual confirmation path — a route that is fully audited
+and, without this, invisible on the one screen where the next decision
+gets taken. So the panel lists every measurement previously discarded
+against the book, each with the verdict it carried and the date it was
+discarded. Refusing the second upload instead was considered and refused:
+the bypass uses a DIFFERENT document, so a digest check would catch only
+the honest re-upload of the same file. Visibility is the honest fix, and
+the place for it is here rather than in the audit register.
 
 **The bill panel below names the precondition in its own words** rather
 than leaving an operator to discover it by being refused. Its upload hint
@@ -2053,7 +2339,14 @@ against the same measurement; after the IRP's 24-hour cancellation window a
 Section 34 credit note is the lawful instrument instead.
 
 The older site `mb_entries` surface is labelled **Measurement evidence** rather
-than presented as the formal Measurement Book itself. External statutory
+than presented as the formal Measurement Book itself, and since 2026-08-19 it is
+**read-only**: its manual quantity form is gone and its write route was removed
+outright (owner-sanctioned). ADR-0006 decision 2 had already replaced its billing
+role with bills raised from a finalised Measurement Book, so leaving a writer
+open meant a Work could be measured two ways that never met, only one of which
+reaches a bill. The rows recorded before then stay — they still gate Delivery
+Challan cancellation, still export, and still appear on the Work timeline — and
+the tab points the operator at the Measurement Books below it for anything new. External statutory
 registration status is shown separately from local invoice status: a locally
 issued invoice is never represented as IRP-registered without verified provider
 evidence.

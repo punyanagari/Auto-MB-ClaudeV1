@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { MeasurementBook, RailwayMeasurement } from '@auto-mb/contracts';
+import type {
+  MeasurementBook,
+  RailwayMeasurement,
+  RailwayMeasurementResponse,
+} from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
 import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
@@ -41,7 +45,7 @@ import { formatTimestampDate } from '../format.js';
  * `AGENTS.md` § Design contract 2 and 4, built in the grammar the sibling
  * `RailwayBillPanel` already established — the same `.data-surface`
  * wrapper, the same `DataTable`, the same dot-plus-label status chip, the
- * same file `Field` and `Hint`. No new visual language. `docs/UX.md` § 24
+ * same file `Field` and `Hint`. No new visual language. `docs/UX.md` § 29
  * records the stance.
  */
 
@@ -79,6 +83,7 @@ export function RailwayMeasurementPanel({
   onChanged,
 }: RailwayMeasurementPanelProps) {
   const [measurement, setMeasurement] = useState<RailwayMeasurement | null>(null);
+  const [discarded, setDiscarded] = useState<readonly RailwayMeasurement[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, refresh] = useReload();
@@ -92,9 +97,10 @@ export function RailwayMeasurementPanel({
     setLoadError(null);
     api
       .getRailwayMeasurement(organisationId, book.id)
-      .then((loadedMeasurement) => {
+      .then((payload) => {
         if (cancelled) return;
-        setMeasurement(loadedMeasurement);
+        setMeasurement(payload.measurement);
+        setDiscarded(payload.discarded);
         setLoaded(true);
       })
       .catch((cause: unknown) => {
@@ -109,6 +115,14 @@ export function RailwayMeasurementPanel({
       cancelled = true;
     };
   }, [api, organisationId, book.id, loadVersion]);
+
+  /** Both halves of what a mutation answers with, so a discard shows up
+   * in the history in the same render that removes it from the live
+   * slot. */
+  function applyPayload(payload: RailwayMeasurementResponse): void {
+    setMeasurement(payload.measurement);
+    setDiscarded(payload.discarded);
+  }
 
   async function act(work: () => Promise<void>, success: string) {
     setPending(true);
@@ -231,7 +245,7 @@ export function RailwayMeasurementPanel({
                           disabled={pending}
                           onClick={() => {
                             void act(async () => {
-                              setMeasurement(
+                              applyPayload(
                                 await api.confirmRailwayMeasurementLine(
                                   organisationId,
                                   measurement.id,
@@ -253,6 +267,49 @@ export function RailwayMeasurementPanel({
             </tbody>
           </DataTable>
         </>
+      )}
+
+      {/* WHAT WAS WALKED AWAY FROM.
+          Discarding a mismatch and uploading a document this parser
+          cannot read re-enters the gate through the manual confirmation
+          path (migration 0111 states the same, in the header). Every step
+          of that is audited — but an audit register is not where the next
+          decision is taken, and this panel is. Listing the discarded
+          measurements here puts the mark in front of the person about to
+          close the book, which is the honest fix: refusing the second
+          upload would not work, because the bypass uses a different
+          document. */}
+      {discarded.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h5 className="m-0 text-sm font-medium">Previously recorded and discarded</h5>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
+            {discarded.map((entry) => (
+              <li key={entry.id} className="flex flex-wrap items-center gap-2">
+                <StatusChip
+                  status={entry.matchStatus}
+                  tone={STATUS_TONE[entry.matchStatus]}
+                >
+                  {STATUS_LABEL[entry.matchStatus]}
+                </StatusChip>
+                <span className="text-muted-foreground">
+                  {entry.originalFilename}, recorded{' '}
+                  <span className="tabular-nums">
+                    {formatTimestampDate(entry.createdAt)}
+                  </span>
+                  {entry.discardedAt !== null && (
+                    <>
+                      {' '}
+                      and discarded{' '}
+                      <span className="tabular-nums">
+                        {formatTimestampDate(entry.discardedAt)}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {actionError !== null && (
@@ -278,7 +335,7 @@ export function RailwayMeasurementPanel({
                 input instanceof HTMLInputElement ? (input.files?.[0] ?? null) : null;
               if (file === null) return;
               void act(async () => {
-                setMeasurement(
+                applyPayload(
                   await api.uploadRailwayMeasurement(
                     organisationId,
                     book.id,
@@ -319,7 +376,7 @@ export function RailwayMeasurementPanel({
             disabled={pending}
             onClick={() => {
               void act(async () => {
-                setMeasurement(
+                applyPayload(
                   await api.discardRailwayMeasurement(organisationId, measurement.id),
                 );
               }, 'Railway measurement discarded; another can be recorded against this book.');

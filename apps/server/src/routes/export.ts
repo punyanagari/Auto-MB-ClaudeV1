@@ -17,7 +17,7 @@ const errorResponses = {
 } as const;
 
 /**
- * export-v31: the railway's own measurement (0111) joins the package —
+ * export-v32: the railway's own measurement (0111) joins the package —
  * the document IWRCMS raises its On-Account Bill from, its per-line
  * verdicts, and the manual confirmations that stood in for a reading
  * when the PDF could not be extracted.
@@ -35,6 +35,25 @@ const errorResponses = {
  * The bytes ride in the archive beside the bill's. A verdict without the
  * document it was computed over is a claim, which is the same reason
  * every other inbound PDF in this package carries its file.
+ *
+ * (Numbered 32 and not 31: this pack was written against v30 and claimed
+ * v31, and 0106's measured-quantity adjustments below took that number
+ * on main first. Two formats sharing one string is the failure that
+ * matters — the note under v24 says so at length — so the later merge
+ * moves, every time.)
+ *
+ * export-v31: the measured-quantity adjustments (0106) join the package —
+ * one row per draft Measurement Book line an operator reduced.
+ *
+ * They live only on DRAFTS, which is exactly why they travel. A restored
+ * organisation whose open draft came back with its source selection but
+ * not its adjustments would recompute that draft at the full claimed
+ * quantity, and the operator would meet the difference as a preview that
+ * silently disagrees with the one they left. Finalized books need nothing
+ * here: their lines already carry the adjusted quantity as the snapshot.
+ *
+ * The AMC billing cycles (0107) add no entry: `workSchedules` already
+ * exports with `select *`, so the two new columns ride it.
  *
  * export-v30: the defect liability periods (0099) join the package — the
  * Work's warranty term, and one row per installation whose warranty
@@ -404,7 +423,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v31';
+export const EXPORT_FORMAT_VERSION = 'export-v32';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -578,7 +597,11 @@ const SECTIONS: readonly ExportSection[] = [
     // later matcher is a different statement from the one the
     // organisation relied on.
     key: 'railwayMeasurements',
-    sql: `select * from railway_measurements order by created_at`,
+    // `, id` closes the order: two measurements recorded in one second
+    // would otherwise come back in whatever order the planner chose, and
+    // a package whose row order is not deterministic cannot be diffed
+    // against the one taken yesterday.
+    sql: `select * from railway_measurements order by created_at, id`,
     jsonbColumns: ['line_verdicts', 'extraction_payload'],
     manifest: {
       bucket: 'railway-measurement',
@@ -852,6 +875,11 @@ const SECTIONS: readonly ExportSection[] = [
           order by measurement_book_id, item_number, id`,
   },
   { key: 'mbSources', sql: `select * from mb_sources order by created_at, id` },
+  {
+    key: 'mbMeasuredOverrides',
+    sql: `select * from mb_measured_overrides
+          order by measurement_book_id, work_item_id, id`,
+  },
   {
     key: 'measurementBookMergeProvenance',
     sql: `select * from measurement_book_merge_provenance

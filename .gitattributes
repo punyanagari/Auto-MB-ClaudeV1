@@ -1,0 +1,14 @@
+# The LOA parser's regression corpus is EVIDENCE, and its bytes are the
+# evidence. Every fixture's SHA-256 is pinned — in `fixtures/corpus.json`
+# for the six letters, and in `test/tender-notice.test.ts` for the IREPS
+# notice — and those digests are computed over the file exactly as it sits
+# on disk.
+#
+# Git's end-of-line normalisation would break that pin on any checkout
+# whose platform disagrees with the one the digest was taken on: the same
+# committed blob would arrive as different bytes on Windows and on Linux,
+# and the pin would fail on one of them while proving nothing on the
+# other. `-text` turns normalisation off for these files, so the working
+# copy is byte-identical to the blob everywhere and the digest means what
+# it says.
+packages/loa-parser/fixtures/*.txt -text

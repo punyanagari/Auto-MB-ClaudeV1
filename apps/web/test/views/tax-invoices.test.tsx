@@ -794,8 +794,12 @@ describe('WorkDetail billing readiness panel', () => {
     await openWorkTab('Bills');
 
     expect(
-      await screen.findByText(/4 of 4 prerequisites still need attention/),
+      await screen.findByText(/4 of 5 prerequisites still need attention/),
     ).toBeTruthy();
+    // Five now, not four: "every item has a payment category" is its own
+    // prerequisite since migration 0105, and this fixture's item does
+    // have one — so it is the met one, and only the other four link.
+    expect(screen.getByText('Every item has a payment category')).toBeTruthy();
     const matrixLink = screen.getByRole('link', { name: 'Open the payment matrix' });
     expect(matrixLink.getAttribute('href')).toBe(`#/works/${WORK_ID}/schedules`);
     const contactsLink = screen.getByRole('link', { name: 'Open Masters → Contacts' });

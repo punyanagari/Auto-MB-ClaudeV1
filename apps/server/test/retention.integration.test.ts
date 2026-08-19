@@ -175,7 +175,8 @@ beforeAll(async () => {
   await admin`
     insert into work_items (
       id, organisation_id, work_id, schedule_id, item_number, description,
-      unit_code, awarded_quantity, effective_rate, requires_serials
+      unit_code, awarded_quantity, effective_rate, requires_serials,
+      payment_category
     )
     values
       -- Item A stays unflagged: these tests exercise the voluntary
@@ -183,9 +184,9 @@ beforeAll(async () => {
       -- lives in serials.integration.test.ts, where issue is blocked
       -- until the draft lines are serial-complete.
       (${itemAId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
-       'Main switchboard', 'Nos', 5.000, 100.00, false),
+       'Main switchboard', 'Nos', 5.000, 100.00, false, 'UNCATEGORISED'),
       (${itemBId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/2',
-       'Cable set', 'Set', 2.000, 250.50, false)
+       'Cable set', 'Set', 2.000, 250.50, false, 'UNCATEGORISED')
   `;
 
   // Draft and issue one challan (A: 3, B: 1.5) through the real API.
@@ -390,48 +391,31 @@ describe('contract instruments', () => {
 });
 
 describe('Measurement Book and the first partial-billing cycle', () => {
-  it('caps cumulative measurement at the delivered quantity', async () => {
-    const first = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemAId,
-        deliveryChallanId: challanId,
-        measuredQuantity: '2',
-        // Inside the measurement window: on or after the LOA letter date
-        // and not in the future (the challan issued on this date proves
-        // it is not).
-        measuredOn: '2026-08-08',
-        mbBookRef: 'MB-1/p3',
-      },
-    });
-    expect(first.statusCode, first.body).toBe(201);
+  it('no longer accepts a measurement against the delivered quantity', async () => {
+    // This case used to prove the loose register's own delivered-quantity
+    // ceiling (MEASUREMENT_EXCEEDS_DELIVERY). That ceiling was a second
+    // copy of a rule the Measurement Book engine already enforces on the
+    // quantities it sweeps, and the writer carrying it was removed on
+    // 2026-08-19 (owner-sanctioned). One writer, one ceiling.
+    for (const measuredQuantity of ['2', '1.5']) {
+      const attempt = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workId}/mb-entries`,
+        organisationId,
+        payload: {
+          workItemId: itemAId,
+          deliveryChallanId: challanId,
+          measuredQuantity,
+          measuredOn: '2026-08-08',
+        },
+      });
+      expect(attempt.statusCode, attempt.body).toBe(404);
+    }
 
-    const over = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemAId,
-        measuredQuantity: '1.5',
-        measuredOn: '2026-08-08',
-      },
-    });
-    expect(over.statusCode).toBe(409);
-    expect(over.json()).toMatchObject({ code: 'MEASUREMENT_EXCEEDS_DELIVERY' });
-
-    const second = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemAId,
-        measuredQuantity: '1',
-        measuredOn: '2026-08-08',
-      },
-    });
-    expect(second.statusCode, second.body).toBe(201);
+    const [stored] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_entries where work_id = ${workId}
+    `;
+    expect(stored?.count).toBe('0');
   });
 
   it('prepares a bill from a finalized Measurement Book under issue authority', async () => {
@@ -683,7 +667,10 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       'serial.installed',
       'instrument.created',
       'instrument.updated',
-      'mb.recorded',
+      // 'mb.recorded' is deliberately absent: the loose register's writer
+      // was removed on 2026-08-19 (owner-sanctioned), so no new event of
+      // that action is ever written. The measurement that reaches a bill
+      // is the Measurement Book's, and its three events follow.
       'measurement_book.created',
       'measurement_book.sources_updated',
       'measurement_book.finalized',

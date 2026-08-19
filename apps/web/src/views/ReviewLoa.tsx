@@ -30,7 +30,7 @@ import {
   ScheduleSection,
   useScheduleAccordion,
 } from '../ui/schedule-section.js';
-import { DataTable, wrapCell } from '../ui/table.js';
+import { DataTable, controlCell, wrapCell } from '../ui/table.js';
 import {
   Field,
   FieldRow,
@@ -44,6 +44,7 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { TenderTermsReview } from './TenderTermsReview.js';
 import {
   asExtractionPayload,
+  completionDateFrom,
   exactRowsTotal,
   formatMinorUnits,
   normaliseDecimal,
@@ -147,6 +148,10 @@ interface HeaderDraft {
    * (migration 0062). Never extracted — the letter does not say — so it is
    * always an answerable question here, defaulted to the common case. */
   gstBasis: GstBasis;
+  /** The contractual completion date, prefilled as letter date plus the
+   * completion period the letter prints, and overwritable. Empty when the
+   * letter states no period this screen can do arithmetic on. */
+  completionDate: string;
 }
 
 interface PbgDraft {
@@ -205,6 +210,15 @@ function buildHeaderDraft(payload: ExtractionPayloadView): HeaderDraft {
     // ordinary Indian works contract, and the control below makes the
     // rarer answer a deliberate act rather than a discovery.
     gstBasis: 'inclusive',
+    // Derived from the letter's own two facts, and re-derived while the
+    // reviewer corrects the letter date — see `updateHeader`. A prefill
+    // that stayed put under a corrected date would quietly disagree with
+    // the hint that explains it.
+    completionDate:
+      completionDateFrom(
+        letterDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(letterDate) ? letterDate : '',
+        header.completionPeriod,
+      ) ?? '',
   };
 }
 
@@ -448,6 +462,9 @@ export function ReviewLoa({
    * only a fresh upload brings it back. */
   const [discardAsked, setDiscardAsked] = useState(false);
   const [discardPending, setDiscardPending] = useState(false);
+  /** Whether the reviewer has typed a completion date of their own. While
+   * false the field follows the letter date; once true it is theirs. */
+  const [completionDateTouched, setCompletionDateTouched] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
   /** The drafts exactly as the extraction produced them. Everything that
    * differs from this is the reviewer's work, and losing it is what the
@@ -619,6 +636,30 @@ export function ReviewLoa({
     [payload],
   );
 
+  /** The completion period as printed, for the hint under the completion
+   * date. `null` when the letter states none, which is a legitimate
+   * letter and not a parse failure. */
+  const completionPeriod = useMemo(() => {
+    const period = payload?.review.header.completionPeriod;
+    if (period === undefined) return null;
+    if (period.value !== null && period.unit === 'month') {
+      return `${String(period.value)} month${period.value === 1 ? '' : 's'}`;
+    }
+    return period.raw;
+  }, [payload]);
+
+  /** The date that period implies from the letter date CURRENTLY typed —
+   * recomputed as the reviewer edits it, so the hint stays honest even
+   * though the prefilled field deliberately does not move. */
+  const derivedCompletionDate = useMemo(
+    () =>
+      completionDateFrom(
+        header?.letterDate ?? '',
+        payload?.review.header.completionPeriod,
+      ),
+    [header, payload],
+  );
+
   async function discard() {
     setDiscardPending(true);
     setDiscardError(null);
@@ -718,7 +759,23 @@ export function ReviewLoa({
   }
 
   function updateHeader<K extends keyof HeaderDraft>(key: K, value: HeaderDraft[K]) {
-    setHeader((current) => (current === null ? null : { ...current, [key]: value }));
+    // The completion date is a DERIVED prefill until the reviewer touches
+    // it. Correcting the letter date has to move it — the whole field is
+    // "letter date plus the period the letter prints", and one that
+    // stayed behind would contradict the hint under it. The moment the
+    // reviewer types a date of their own, the derivation stops: an answer
+    // they gave is not a proposal to be overwritten.
+    if (key === 'completionDate') setCompletionDateTouched(true);
+    setHeader((current) => {
+      if (current === null) return null;
+      const next = { ...current, [key]: value };
+      if (key === 'letterDate' && !completionDateTouched) {
+        next.completionDate =
+          completionDateFrom(String(value), payload?.review.header.completionPeriod) ??
+          '';
+      }
+      return next;
+    });
   }
 
   function updatePbg<K extends keyof PbgDraft>(key: K, value: PbgDraft[K]) {
@@ -834,6 +891,14 @@ export function ReviewLoa({
         'Select the percentage direction printed on the letter.',
       );
     }
+    if (header.completionDate.length > 0) {
+      if (!DATE_ONLY_PATTERN.test(header.completionDate)) {
+        flag('completion-date', 'Enter the completion date, or leave it blank.');
+      } else if (header.completionDate < header.letterDate) {
+        // The same rule the column's CHECK and both server routes hold.
+        flag('completion-date', 'The completion date cannot precede the letter date.');
+      }
+    }
     const submissionDays = Number.parseInt(pbg.submissionDays, 10);
     if (pbg.required && (!Number.isInteger(submissionDays) || submissionDays < 1)) {
       flag('pbg-submission-days', 'Enter the PBG submission window in days (1–180).');
@@ -862,6 +927,9 @@ export function ReviewLoa({
       contractValue: header.contractValue,
       pricingShape: header.pricingShape,
       gstBasis: header.gstBasis,
+      ...(header.completionDate.length > 0
+        ? { completionDate: header.completionDate }
+        : {}),
       ...(withPercentage && header.letterPercentageDirection !== ''
         ? {
             letterPercentage: header.letterPercentage,
@@ -1410,6 +1478,45 @@ export function ReviewLoa({
             </Field>
           )}
         </FieldRow>
+        <Field>
+          <label htmlFor="completion-date">Completion date</label>
+          <input
+            id="completion-date"
+            ref={(node) => {
+              registerField('completion-date', node);
+            }}
+            type="date"
+            value={header.completionDate}
+            onChange={(event) => {
+              updateHeader('completionDate', event.target.value);
+            }}
+            aria-invalid={fieldErrors['completion-date'] !== undefined}
+            aria-describedby={
+              fieldErrors['completion-date'] !== undefined
+                ? 'completion-date-error'
+                : 'completion-date-hint'
+            }
+          />
+          {/* The derivation, stated rather than implied: the reviewer is
+              being asked to confirm arithmetic, and arithmetic they
+              cannot see is arithmetic they cannot check. It is a
+              proposal — the letter's period is what the parser read, and
+              the date is theirs to overwrite or clear. */}
+          <Hint id="completion-date-hint">
+            {completionPeriod !== null
+              ? `${completionPeriod} from the letter date${
+                  derivedCompletionDate === null
+                    ? '. Enter the date the contract runs to.'
+                    : `, which is ${formatDate(derivedCompletionDate)}. Overwrite it if the letter says otherwise.`
+                }`
+              : 'The letter states no completion period. Enter the date the contract runs to, or leave it blank and set it later.'}
+          </Hint>
+          {fieldErrors['completion-date'] !== undefined && (
+            <FieldError id="completion-date-error">
+              {fieldErrors['completion-date']}
+            </FieldError>
+          )}
+        </Field>
         {!locks.title && (
           <Field>
             <label htmlFor="work-title">Work description</label>
@@ -1880,7 +1987,7 @@ export function ReviewLoa({
                           />
                         )}
                       </td>
-                      <td>
+                      <td className={controlCell}>
                         {/* Optional, reviewer's judgement — extraction
                             proposes no category, because the letter's
                             item table does not carry one. A row left

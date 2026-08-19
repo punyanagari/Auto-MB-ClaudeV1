@@ -237,7 +237,6 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createInstrument: vi.fn<ApiClient['createInstrument']>(),
     updateInstrument: vi.fn<ApiClient['updateInstrument']>(),
     listMbEntries: vi.fn<ApiClient['listMbEntries']>().mockResolvedValue([]),
-    recordMbEntry: vi.fn<ApiClient['recordMbEntry']>(),
     listBills: vi
       .fn<ApiClient['listBills']>()
       .mockResolvedValue({ bills: [], summary: NO_BILLING }),
@@ -355,6 +354,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
         instrumentExpiresOn: null,
         shortfallDays: null,
       },
+      finalBillDate: null,
       candidates: [],
       candidatesTruncated: false,
       warranties: [],
@@ -409,6 +409,12 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadPacCertificateDocument: vi.fn<ApiClient['uploadPacCertificateDocument']>(),
     downloadPacCertificateDocument:
       vi.fn<ApiClient['downloadPacCertificateDocument']>(),
+    getAmcCycleProposal: vi
+      .fn<ApiClient['getAmcCycleProposal']>()
+      .mockResolvedValue({ schedules: [] }),
+    setScheduleAmcCycle: vi.fn<ApiClient['setScheduleAmcCycle']>(),
+    setMeasurementBookMeasuredQuantities:
+      vi.fn<ApiClient['setMeasurementBookMeasuredQuantities']>(),
     listWorkMeasurementBooks: vi
       .fn<ApiClient['listWorkMeasurementBooks']>()
       .mockResolvedValue({ books: [] }),
@@ -430,7 +436,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadRailwayMeasurement: vi.fn<ApiClient['uploadRailwayMeasurement']>(),
     getRailwayMeasurement: vi
       .fn<ApiClient['getRailwayMeasurement']>()
-      .mockResolvedValue(null),
+      .mockResolvedValue({ measurement: null, discarded: [] }),
     confirmRailwayMeasurementLine: vi.fn<ApiClient['confirmRailwayMeasurementLine']>(),
     discardRailwayMeasurement: vi.fn<ApiClient['discardRailwayMeasurement']>(),
     listBillSettlement: vi.fn<ApiClient['listBillSettlement']>().mockResolvedValue([]),
@@ -1065,6 +1071,8 @@ export function challanWork(requiresSerials = false): WorkDetailResponse {
         scheduleCode: 'A',
         title: 'Schedule A',
         position: 1,
+        amcBillingPeriods: null,
+        amcCycleNoun: null,
         items: [
           {
             id: ITEM_A,
@@ -1074,6 +1082,11 @@ export function challanWork(requiresSerials = false): WorkDetailResponse {
             unitCode: 'Nos',
             awardedQuantity: '5.000',
             effectiveRate: '100.00',
+            // The residual category, matching the UNCATEGORISED matrix
+            // row the readiness tests configure. Since migration 0105 an
+            // absent category means NOT SELECTED, which is its own
+            // unmet prerequisite.
+            paymentCategory: 'UNCATEGORISED',
             requiresSerials,
           },
         ],

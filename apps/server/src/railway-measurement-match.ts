@@ -223,6 +223,21 @@ export function matchRailwayMeasurement(
     seen.add(key);
 
     const expected = expectedQuantity(line);
+    // ponytail: EXACT equality, and the ceiling is the railway's printer
+    // rather than the arithmetic. Every quantity in the settlement corpus
+    // is exact — the stage quantities are whole units and the products
+    // land on one or two decimals — so nothing real is refused today. The
+    // case that would be is a FRACTIONAL quantity times a percentage that
+    // does not terminate: 3.333 Mtr at 64% is exactly 2.13312, IWRCMS
+    // prints 2.133, and this comparison would call a document that agrees
+    // a mismatch. The upgrade path is a print-precision-aware compare —
+    // accept a printed value that is the correct rounding of the exact
+    // product to the number of decimals it actually printed — and it is
+    // deliberately not built here, because guessing the railway's
+    // rounding rule from zero examples of it is how a matcher starts
+    // accepting documents that do not agree. Build it against the first
+    // real fractional-quantity sheet, which will also say which way it
+    // rounds.
     if (renderQuantity(found.quantity) !== renderQuantity(expected)) {
       verdicts.push(
         mismatched(

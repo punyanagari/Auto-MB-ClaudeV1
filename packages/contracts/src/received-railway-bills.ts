@@ -230,7 +230,19 @@ export const RailwayMeasurementSchema = Type.Object(
 export type RailwayMeasurement = Static<typeof RailwayMeasurementSchema>;
 
 export const RailwayMeasurementResponseSchema = Type.Object(
-  { measurement: Type.Union([RailwayMeasurementSchema, Type.Null()]) },
+  {
+    measurement: Type.Union([RailwayMeasurementSchema, Type.Null()]),
+    /** Every measurement previously discarded against this book, newest
+     * first.
+     *
+     * Carried because discarding a MISMATCHED measurement and uploading
+     * one this parser cannot read re-enters the gate through the manual
+     * confirmation path. Every step of that is audited, but an audit
+     * trail is not where the next decision gets made — this panel is. A
+     * discarded mismatch listed beside the live measurement puts the mark
+     * in front of the person about to close the book on it. */
+    discarded: Type.Array(RailwayMeasurementSchema),
+  },
   { additionalProperties: false },
 );
 export type RailwayMeasurementResponse = Static<

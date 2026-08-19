@@ -65,6 +65,32 @@ SET LOCAL statement_timeout = '5min';
 -- leaving the distinction to a route.
 --
 -- ---------------------------------------------------------------------
+-- TWO THINGS THIS MODEL DOES NOT DO, STATED SO THEY ARE POSTURE RATHER
+-- THAN OVERSIGHT.
+--
+-- ONE AUTHORITY UPLOADS AND CONFIRMS. `issue` covers both, so the member
+-- who files an unreadable measurement is the member who may confirm its
+-- lines — no separation of duties, and on that path the authority is
+-- standing in for a machine check rather than beside one. It is the
+-- posture the sibling bill route already holds (0066: one `issue`
+-- authority uploads the document the closure rests on), and this
+-- migration matches it rather than inventing a second model for the
+-- document one step upstream. Splitting it — a `confirm` authority, or
+-- simply "not the uploader" — is a future pack's change and needs an
+-- owner ruling, because in a two-person agency it can mean nobody may
+-- confirm anything.
+--
+-- A DISCARD AND A RE-UPLOAD RE-ENTER THE GATE. Nothing here stops an
+-- operator meeting a mismatch, discarding it, uploading a document this
+-- parser cannot read, and confirming the lines by hand. Every step is
+-- audited and every discarded row stays, so the route is a marked one
+-- rather than a hidden one — and the screen lists the discarded
+-- measurements of a book beside the live one precisely so the marks are
+-- where the decision is made. Refusing the second upload was considered
+-- and refused: the bypass uses a DIFFERENT document, so a digest check
+-- catches only the honest re-upload of the same file.
+--
+-- ---------------------------------------------------------------------
 -- THE SPLIT BETWEEN THE TWO LAYERS, stated rather than implied.
 --
 -- 0066 § 3 drew this line and it is drawn the same way here. The database
@@ -78,10 +104,36 @@ SET LOCAL statement_timeout = '5min';
 -- lives in two languages drifts between them.
 --
 -- ---------------------------------------------------------------------
--- SQLSTATEs: the 23R block, which this migration is the first to use.
+-- SQLSTATEs: the 23V block, which this migration is the first to use.
 -- (`I` and `O` are skipped in this schema's allocation because they read
 -- as digits at a glance, and the one thing an operator does with a
 -- SQLSTATE is read it aloud.)
+--
+-- THIS PACK PICKED THE WRONG BLOCK TWICE, and the second time is the
+-- more useful story.
+--
+-- 23R first: it was the next free block when this migration was written,
+-- and by the time it reached review 0106 had taken 23R01/23R02 and 0107
+-- had taken 23R03. Nothing caught it, because the per-file "next free
+-- block" assertion reads only its own file — which is how three earlier
+-- packs collided the same way.
+--
+-- Then 23U, which pack 3B (0109, org-level purchase orders) claimed
+-- while this pack was being corrected. The two packs were in flight at
+-- once and neither could see the other's choice.
+--
+-- The fix for both is the same and it is the part of this pack most
+-- worth keeping: the repo-wide census in `migration-contract.test.ts`
+-- ("gives every custom SQLSTATE in the 23 block exactly one owning
+-- rule"). It reads every migration file rather than one, so the next
+-- collision fails at merge-down instead of at review — and it counts
+-- GUARDS rather than files, so the house style of restating a guard with
+-- CREATE OR REPLACE does not read as a collision.
+--
+-- 23S and 23T are held by the wave ledger for E-whatsapp-delivery and
+-- E-msme. That allocation lives outside the repository, so the census
+-- cannot see it and this comment is the only record of why the blocks
+-- between 23R and 23V were skipped.
 
 -- ---------------------------------------------------------------------
 -- 1. The measurement.
@@ -286,6 +338,17 @@ GRANT SELECT, INSERT ON railway_measurement_confirmations TO auto_mb_app;
 -- extracting a fact was that nobody gets to assert it. Discard is
 -- terminal. The same posture `guard_received_railway_bill_update` takes,
 -- with 0066's own words.
+--
+-- AND A MEASUREMENT A BILL RESTS ON IS NOT DETACHABLE. The route refuses
+-- that too, and the route alone is not enough for two reasons that
+-- compound. It reads the bill WITHOUT a lock, so a discard and an upload
+-- can interleave and leave a recorded bill whose gate has been removed
+-- from under it — the exact shape of the write skew 0066 § 3 documents
+-- for its own closure check. And the two routes lock different rows, so
+-- neither serialises against the other. The arm below re-reads under
+-- READ COMMITTED inside the UPDATE's own snapshot, which is what closes
+-- it, and it is what makes this section's "enforced twice" claim true of
+-- the discard rather than only of the insert.
 -- ---------------------------------------------------------------------
 CREATE FUNCTION app_private.guard_railway_measurement_update()
 RETURNS trigger
@@ -295,7 +358,20 @@ AS $$
 BEGIN
   IF OLD.discarded_at IS NOT NULL THEN
     RAISE EXCEPTION 'a discarded railway measurement is immutable'
-      USING ERRCODE = '23R04';
+      USING ERRCODE = '23V04';
+  END IF;
+
+  IF OLD.discarded_at IS NULL AND NEW.discarded_at IS NOT NULL
+     AND EXISTS (
+       SELECT 1 FROM received_railway_bills b
+       WHERE b.organisation_id = OLD.organisation_id
+         AND b.measurement_book_id = OLD.measurement_book_id
+         AND b.discarded_at IS NULL
+     ) THEN
+    RAISE EXCEPTION
+      'railway measurement % admitted a recorded On-Account Bill and cannot be discarded while that bill stands',
+      OLD.id
+      USING ERRCODE = '23V07';
   END IF;
 
   IF ROW(
@@ -311,7 +387,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION
       'a railway measurement''s bytes and its reading are written once and never change'
-      USING ERRCODE = '23R04';
+      USING ERRCODE = '23V04';
   END IF;
 
   RETURN NEW;
@@ -361,20 +437,20 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION
       'no railway measurement % in this organisation', NEW.railway_measurement_id
-      USING ERRCODE = '23R05';
+      USING ERRCODE = '23V05';
   END IF;
 
   IF measurement.discarded_at IS NOT NULL THEN
     RAISE EXCEPTION
       'railway measurement % is discarded and cannot be confirmed', measurement.id
-      USING ERRCODE = '23R05';
+      USING ERRCODE = '23V05';
   END IF;
 
   IF measurement.match_status <> 'unreadable' THEN
     RAISE EXCEPTION
       'railway measurement % was read (%); its lines are matched by the reading, not confirmed by hand',
       measurement.id, measurement.match_status
-      USING ERRCODE = '23R05';
+      USING ERRCODE = '23V05';
   END IF;
 
   IF NOT EXISTS (
@@ -386,7 +462,7 @@ BEGIN
     RAISE EXCEPTION
       'item % is not a line of the Measurement Book this measurement is about',
       NEW.item_number
-      USING ERRCODE = '23R06';
+      USING ERRCODE = '23V06';
   END IF;
 
   RETURN NEW;
@@ -440,14 +516,14 @@ BEGIN
     RAISE EXCEPTION
       'Measurement Book % has no railway measurement on record, so no On-Account Bill can be recorded against it',
       NEW.measurement_book_id
-      USING ERRCODE = '23R01';
+      USING ERRCODE = '23V01';
   END IF;
 
   IF measurement.match_status = 'mismatched' THEN
     RAISE EXCEPTION
       'the railway measurement for Measurement Book % disagrees with it, so no On-Account Bill can be recorded against it',
       NEW.measurement_book_id
-      USING ERRCODE = '23R02';
+      USING ERRCODE = '23V02';
   END IF;
 
   IF measurement.match_status = 'unreadable' THEN
@@ -471,7 +547,7 @@ BEGIN
       RAISE EXCEPTION
         'the railway measurement for Measurement Book % could not be read and these lines are not confirmed yet: %',
         NEW.measurement_book_id, unconfirmed
-        USING ERRCODE = '23R03';
+        USING ERRCODE = '23V03';
     END IF;
   END IF;
 

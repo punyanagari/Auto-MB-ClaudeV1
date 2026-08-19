@@ -66,7 +66,7 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
  * A mismatch is deliberately not confirmable. It is a disagreement about
  * quantities, not a reading problem, and clicking past it would make the
  * whole comparison theatre. The database refuses it too
- * (`guard_railway_measurement_confirmation`, 23R05), so the distinction
+ * (`guard_railway_measurement_confirmation`, 23V05), so the distinction
  * does not rest on this file remembering it.
  *
  * ## The upload is not a claim
@@ -227,9 +227,54 @@ export async function liveRailwayMeasurementForBook(
 }
 
 /**
+ * Every measurement previously discarded against a book, newest first.
+ *
+ * The bypass migration 0111's header states — discard a mismatch, upload
+ * something unreadable, confirm the lines — is audited but not visible
+ * where the next decision is taken. This is what makes it visible: the
+ * discarded rows keep their match status and their per-line verdicts, so
+ * a mismatch somebody walked away from is listed beside the measurement
+ * that replaced it.
+ */
+async function discardedRailwayMeasurementsForBook(
+  tx: TransactionSql,
+  measurementBookId: string,
+): Promise<readonly RailwayMeasurement[]> {
+  const rows = await tx<MeasurementRow[]>`
+    select ${tx.unsafe(MEASUREMENT_COLUMNS)}
+    from railway_measurements m
+    where m.measurement_book_id = ${measurementBookId}
+      and m.discarded_at is not null
+    order by m.discarded_at desc, m.id
+  `;
+  const itemNumbers = await bookItemNumbersOf(tx, measurementBookId);
+  return Promise.all(
+    rows.map(async (row) =>
+      toRailwayMeasurement(row, itemNumbers, await confirmationsOf(tx, row.id)),
+    ),
+  );
+}
+
+/** The whole panel's payload: what stands, and what was walked away
+ * from. One reader, so the four routes that answer with it cannot drift
+ * into showing different halves. */
+async function railwayMeasurementPayload(
+  tx: TransactionSql,
+  measurementBookId: string,
+): Promise<{
+  measurement: RailwayMeasurement | null;
+  discarded: readonly RailwayMeasurement[];
+}> {
+  return {
+    measurement: await liveRailwayMeasurementForBook(tx, measurementBookId),
+    discarded: await discardedRailwayMeasurementsForBook(tx, measurementBookId),
+  };
+}
+
+/**
  * The route half of migration 0111's gate, in the words an operator can
  * act on. The database holds the same three refusals under the lock
- * (`guard_railway_bill_needs_measurement`, 23R01–23R03); this one runs
+ * (`guard_railway_bill_needs_measurement`, 23V01–23V03); this one runs
  * first, so a 409 with a remedy is the normal outcome and the SQLSTATE is
  * what a lost race produces.
  *
@@ -486,13 +531,9 @@ export function registerRailwayMeasurementRoutes(
             sha256,
           },
         );
-        return toRailwayMeasurement(
-          row,
-          await bookItemNumbersOf(tx, measurementBookId),
-          [],
-        );
+        return railwayMeasurementPayload(tx, measurementBookId);
       });
-      return reply.status(201).send({ measurement: result });
+      return reply.status(201).send(result);
     },
   );
 
@@ -519,9 +560,7 @@ export function registerRailwayMeasurementRoutes(
           );
         }
         await assertWorkAccess(tx, user.id, book.work_id);
-        return {
-          measurement: await liveRailwayMeasurementForBook(tx, measurementBookId),
-        };
+        return railwayMeasurementPayload(tx, measurementBookId);
       });
     },
   );
@@ -567,7 +606,7 @@ export function registerRailwayMeasurementRoutes(
             'This railway measurement is discarded; confirming its lines would confirm nothing.',
           );
         }
-        // The database refuses this too (23R05). Refused here first so the
+        // The database refuses this too (23V05). Refused here first so the
         // operator is told what to read instead, rather than meeting a
         // SQLSTATE.
         if (row.match_status !== 'unreadable') {
@@ -605,9 +644,7 @@ export function registerRailwayMeasurementRoutes(
           id,
           { measurementBookId: row.measurement_book_id, itemNumber },
         );
-        return {
-          measurement: await liveRailwayMeasurementForBook(tx, row.measurement_book_id),
-        };
+        return railwayMeasurementPayload(tx, row.measurement_book_id);
       });
     },
   );
@@ -680,9 +717,7 @@ export function registerRailwayMeasurementRoutes(
           id,
           { measurementBookId: row.measurement_book_id, reason: reason ?? null },
         );
-        return {
-          measurement: await liveRailwayMeasurementForBook(tx, row.measurement_book_id),
-        };
+        return railwayMeasurementPayload(tx, row.measurement_book_id);
       });
     },
   );

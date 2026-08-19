@@ -60,9 +60,11 @@ describe('the railway measurement panel', () => {
   it('offers the upload, and sends only the file', async () => {
     const uploadRailwayMeasurement = vi
       .fn<ReturnType<typeof stubApi>['uploadRailwayMeasurement']>()
-      .mockResolvedValue(measurement());
+      .mockResolvedValue({ measurement: measurement(), discarded: [] });
     const api = stubApi({
-      getRailwayMeasurement: vi.fn().mockResolvedValue(null),
+      getRailwayMeasurement: vi
+        .fn()
+        .mockResolvedValue({ measurement: null, discarded: [] }),
       uploadRailwayMeasurement,
     });
     renderPanel(api);
@@ -89,14 +91,20 @@ describe('the railway measurement panel', () => {
   });
 
   it('says the bill cannot be recorded when nothing is on record', async () => {
-    const api = stubApi({ getRailwayMeasurement: vi.fn().mockResolvedValue(null) });
+    const api = stubApi({
+      getRailwayMeasurement: vi
+        .fn()
+        .mockResolvedValue({ measurement: null, discarded: [] }),
+    });
     renderPanel(api);
     expect(await screen.findByText(/cannot be recorded before it/i)).not.toBeNull();
   });
 
   it('reports a matched measurement without asking for anything', async () => {
     const api = stubApi({
-      getRailwayMeasurement: vi.fn().mockResolvedValue(measurement()),
+      getRailwayMeasurement: vi
+        .fn()
+        .mockResolvedValue({ measurement: measurement(), discarded: [] }),
     });
     renderPanel(api);
     expect(await screen.findByText('Matched')).not.toBeNull();
@@ -105,8 +113,9 @@ describe('the railway measurement panel', () => {
 
   it('names each differing line, and offers no way to confirm past a mismatch', async () => {
     const api = stubApi({
-      getRailwayMeasurement: vi.fn().mockResolvedValue(
-        measurement({
+      getRailwayMeasurement: vi.fn().mockResolvedValue({
+        discarded: [],
+        measurement: measurement({
           matchStatus: 'mismatched',
           settles: false,
           lines: [
@@ -121,7 +130,7 @@ describe('the railway measurement panel', () => {
             },
           ],
         }),
-      ),
+      }),
     });
     renderPanel(api);
     expect(await screen.findByText('Does not match')).not.toBeNull();
@@ -133,8 +142,9 @@ describe('the railway measurement panel', () => {
   it('asks for a confirmation per line when nothing could be read', async () => {
     const confirmRailwayMeasurementLine = vi
       .fn<ReturnType<typeof stubApi>['confirmRailwayMeasurementLine']>()
-      .mockResolvedValue(
-        measurement({
+      .mockResolvedValue({
+        discarded: [],
+        measurement: measurement({
           matchStatus: 'unreadable',
           settles: true,
           lines: [
@@ -148,10 +158,11 @@ describe('the railway measurement panel', () => {
             },
           ],
         }),
-      );
+      });
     const api = stubApi({
-      getRailwayMeasurement: vi.fn().mockResolvedValue(
-        measurement({
+      getRailwayMeasurement: vi.fn().mockResolvedValue({
+        discarded: [],
+        measurement: measurement({
           matchStatus: 'unreadable',
           settles: false,
           lines: [
@@ -165,7 +176,7 @@ describe('the railway measurement panel', () => {
             },
           ],
         }),
-      ),
+      }),
       confirmRailwayMeasurementLine,
     });
     renderPanel(api);
@@ -183,5 +194,37 @@ describe('the railway measurement panel', () => {
         'A/1',
       );
     });
+  });
+
+  it('lists a discarded mismatch beside the measurement that replaced it', async () => {
+    // The bypass migration 0111's header names: a mismatch discarded, an
+    // unreadable document uploaded, its lines confirmed by hand. Every
+    // step is audited — and an audit register is not where the next
+    // decision is taken. This panel is, so the mark belongs here.
+    const api = stubApi({
+      getRailwayMeasurement: vi.fn().mockResolvedValue({
+        measurement: measurement({ matchStatus: 'unreadable', settles: true }),
+        discarded: [
+          measurement({
+            id: 'measurement-0',
+            originalFilename: 'CMB-01-first-try.pdf',
+            matchStatus: 'mismatched',
+            settles: false,
+            discardedAt: '2026-05-11T09:00:00.000Z',
+          }),
+        ],
+      }),
+    });
+    renderPanel(api);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Previously recorded and discarded' }),
+    ).not.toBeNull();
+    expect(screen.getByText(/CMB-01-first-try\.pdf/)).not.toBeNull();
+    // The verdict it was walked away from, not just that something was:
+    // "a measurement was discarded" is a fact anybody would shrug at,
+    // and "a measurement that DISAGREED was discarded" is the one worth
+    // seeing before the book is closed.
+    expect(screen.getAllByText('Does not match')).toHaveLength(1);
   });
 });

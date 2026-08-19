@@ -213,7 +213,14 @@ describe('the schema at head names all three shapes', () => {
     // 2026-08-19 made the cap a percentage of the whole contract rather
     // than of the assessment basis, and a generated column cannot reach
     // another table for the figure.
-    expect(adopted.length).toBe(112);
+    //
+    // 0106 adds two more, both on `mb_measured_overrides`: the supplied
+    // and installed quantities an operator reduced a draft Measurement
+    // Book's line to. They are quantities that are compared against
+    // `delivery_challan_items.quantity` and `installations.quantity`
+    // inside a trigger, so a different precision here would be a silent
+    // rounding difference on a comparison that decides what is billed.
+    expect(adopted.length).toBe(114);
   });
 
   it('types every digest column as sha256_hex', () => {

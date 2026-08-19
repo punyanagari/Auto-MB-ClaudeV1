@@ -67,6 +67,8 @@ function freshWork(): WorkDetailResponse {
         scheduleCode: 'A',
         title: 'Schedule A',
         position: 1,
+        amcBillingPeriods: null,
+        amcCycleNoun: null,
         items: [
           {
             id: SUPPLY_ITEM,
@@ -233,9 +235,16 @@ describe('the payment setup prompt after a Work is created', () => {
     // The dialog is spent, but the Work is still unconfigured — so the
     // page keeps saying so, quietly and in place, rather than by
     // re-opening a modal the operator already dismissed.
+    // Three of the four items on this fixture have no category chosen and
+    // one is SPARE_SUPPLY, so the banner has BOTH things to say — and
+    // says them apart. Before migration 0105 a NULL category fell through
+    // to UNCATEGORISED, so the banner demanded a residual matrix row that
+    // would not have made those items billable.
     expect(
       await screen.findByText(/This Work has no payment matrix row for/),
     ).toBeTruthy();
+    expect(screen.getByText(/no payment category chosen/)).toBeTruthy();
+    expect(screen.queryByText(/row for Uncategorised items/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Open payment setup' })).toBeTruthy();
   }, 20_000);
 });
@@ -486,7 +495,11 @@ describe('WorkPaymentSetup', () => {
     const refusal = await screen.findByText(/Enter the stage percentages for/);
     expect(refusal.textContent).toContain('Purely installation');
     expect(refusal.textContent).toContain('Spare supply');
-    expect(refusal.textContent).toContain('Uncategorised items');
+    // The residual row is NOT demanded any more (migration 0105): an
+    // item with nothing chosen resolves through no row, so there is no
+    // row this save could be asked to add. It bills nothing until it is
+    // answered, and the Measurement Book names the item, not a category.
+    expect(refusal.textContent).not.toContain('Uncategorised items');
     // The one category that IS configured is not named.
     expect(refusal.textContent).not.toContain('Supply +');
     expect(saveWorkPaymentSetup).not.toHaveBeenCalled();

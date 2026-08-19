@@ -12,6 +12,13 @@ export const TIMELINE_ENTITY_TYPES = [
   'challan_receipts',
   'challan_item_serials',
   'work_instruments',
+  // The completion-extension trail (0011). Applying, finalising, the
+  // railway's approval letter arriving, and the outcome being recorded
+  // are the four acts that move a Work's contractual deadline — and
+  // only the move itself used to reach this timeline, audited against
+  // the Work. A deadline that changes with no letter beside it is the
+  // one fact on a Work's history nobody can check.
+  'extension_requests',
   'mb_entries',
   'bills',
   // The payment register (0067). Money received is the one part of the
@@ -113,6 +120,13 @@ export const TIMELINE_ENTITY_TYPES = [
   // same list.
   'installation_warranties',
   'work_warranty_terms',
+  // The AMC billing cadence (0107). Setting or clearing how many periods
+  // a maintenance schedule bills in decides what every acceptance
+  // certificate is proposed at afterwards and what the Measurement Book
+  // remark says a period is — the same footing `payment_matrices` sits
+  // on above. A schedule's cadence changing under a half-certified
+  // contract, with no trail saying who changed it, is the gap.
+  'work_schedules',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

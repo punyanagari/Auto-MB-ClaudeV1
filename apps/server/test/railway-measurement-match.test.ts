@@ -46,6 +46,14 @@ function bookLine(overrides: Partial<MeasurementBookLine>): MeasurementBookLine 
     priorInstalled: '0.000',
     priorPac: '0.000',
     priorFinalBill: '0.000',
+    // 0106's measured-quantity adjustment: the CLAIMED figure a draft
+    // line was reduced from. Null on a finalized book's lines, and the
+    // matcher reads neither — it compares what was measured, not what
+    // could have been.
+    sourceSupplied: null,
+    sourceInstalled: null,
+    overrideSupplied: null,
+    overrideInstalled: null,
     amountSupply: '0.00',
     amountInstallation: '0.00',
     amountPac: '0.00',

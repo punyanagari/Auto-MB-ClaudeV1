@@ -240,8 +240,25 @@ BEGIN
   --
   -- `pending -> failed` is here because a revocation kills the requests
   -- the revoked kiosk was raised for, and most of those have never been
-  -- picked up. `claimed -> cancelled` is the operator's exit from a lease
-  -- that lapsed. Both doors are 0091's and both are unchanged.
+  -- picked up. Without it, revoking a kiosk holding one pending request
+  -- raises 23J01 inside the revoke transaction and rolls the revocation
+  -- itself back — the credential stays live because a request it can
+  -- never fulfil exists. The outcome CHECK and the claim-shape CHECK both
+  -- already admit a failure that was never claimed; this is the third arm
+  -- agreeing with them.
+  --
+  -- `claimed -> cancelled` is the operator's exit from a LEASE THAT
+  -- LAPSED (see 0091's `expires_at`). Only the route can tell a live
+  -- claim from a dead one, because only the route knows the clock it is
+  -- comparing against; what this arm guarantees is that the door exists
+  -- at all. Without it the partial unique index blocks the document
+  -- forever.
+  --
+  -- Both doors are 0091's and both are unchanged. The reasoning is
+  -- restated rather than referenced because a CREATE OR REPLACE states
+  -- the whole body: a reader of this file sees the arms and nothing
+  -- about why they are there, and "look in 0091" is a footnote that
+  -- stops being followed the first time the two files disagree.
   IF NEW.status <> OLD.status THEN
     IF NOT (
       (OLD.status = 'pending' AND NEW.status IN ('claimed', 'cancelled', 'failed'))

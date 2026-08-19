@@ -183,6 +183,10 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the Measurement Book; the railway bill that settled this measurement is already recorded against it, and a closure is never re-taken.',
   MB_NOT_FINALIZED:
     'Finalize the Measurement Book first; a draft has measured nothing the railway could have billed.',
+  MB_MEASURED_ABOVE_SOURCE:
+    'Lower the figure to the quantity shown beside it, or select the challan or installation that carries the rest.',
+  AMC_CYCLE_INCOMPLETE:
+    'Enter both the number of billing periods and the word this schedule calls one of them, or clear both to remove the cycle.',
   TAX_INVOICE_STATUS_CONFLICT:
     'Reload the invoice; a submitted invoice is corrected by issuing a credit note against it, never by editing.',
   CREDIT_NOTE_STATUS_CONFLICT:
@@ -241,8 +245,13 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Cancel the final Measurement Book first — it closes the Work's payment cycle, so anything recorded after it could never be billed.",
   MB_SOURCE_ALREADY_BILLED:
     'Pick measurements no live Measurement Book already carries; each source is billed exactly once.',
+  // Two call sites since 0111, and one sentence has to serve both: the
+  // bill upload refusing a second bill, and the measurement discard
+  // refusing to pull the ground out from under the bill that stands on
+  // it. Both are answered by discarding that bill first, so the remedy
+  // names the act rather than the screen either caller was on.
   RAILWAY_BILL_ALREADY_RECORDED:
-    'Discard the railway bill already recorded against this measurement before uploading another; one bill settles one measurement.',
+    "Discard the railway bill recorded against this measurement first — from the Measurement Book's Railway bill panel; one bill settles one measurement, and the measurement that admitted it cannot be withdrawn while it stands.",
   CONTACT_EXISTS:
     'Open the existing contact in Masters, Contacts and edit it rather than adding a second under the same designation and address.',
   DUPLICATE_ENTRY:

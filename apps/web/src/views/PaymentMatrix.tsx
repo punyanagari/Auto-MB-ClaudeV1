@@ -12,9 +12,11 @@ import { type ApiClient } from '../api.js';
 import { errorMessage } from '../lib/load-failure.js';
 import {
   CATEGORY_LABELS,
-  ITEM_CATEGORY_OPTIONS,
+  itemCategoryOptions,
   LOCKED_AMC_STAGES,
   STAGE_FIELDS,
+  autoZeroStages,
+  categoryLabelOf,
   draftFrom,
   draftProblem,
   draftTouched,
@@ -25,7 +27,7 @@ import {
 } from '../lib/payment-matrix.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { DataTable, controlCell, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
@@ -118,6 +120,10 @@ export function PaymentMatrix({
 }: PaymentMatrixProps) {
   const [rows, setRows] = useState<readonly PaymentMatrixRow[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
+  /** The residual row's per-Work name, held beside its percentages and
+   * saved by the same button (migration 0105). Empty means "use the
+   * product's own wording", which is what the placeholder shows. */
+  const [residualLabel, setResidualLabel] = useState('');
   const [tenderContext, setTenderContext] = useState<ContractSourceContext | null>(
     null,
   );
@@ -142,6 +148,9 @@ export function PaymentMatrix({
           );
         }
         setDrafts(initial);
+        setResidualLabel(
+          loaded.find((row) => row.category === 'UNCATEGORISED')?.categoryLabel ?? '',
+        );
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -184,7 +193,11 @@ export function PaymentMatrix({
   ) {
     setDrafts((current) => ({
       ...current,
-      [category]: { ...(current[category] ?? draftFrom(undefined)), [field]: value },
+      [category]: autoZeroStages(
+        category,
+        { ...(current[category] ?? draftFrom(undefined)), [field]: value },
+        field,
+      ),
     }));
   }
 
@@ -321,7 +334,7 @@ export function PaymentMatrix({
             if (!canModify) {
               return (
                 <tr key={category}>
-                  <th scope="row">{CATEGORY_LABELS[category]}</th>
+                  <th scope="row">{categoryLabelOf(category, rows)}</th>
                   {STAGE_FIELDS.map(([field]) => (
                     <td key={field} className={numericCell}>
                       {saved?.[field] ?? '—'}
@@ -337,7 +350,30 @@ export function PaymentMatrix({
             }
             return (
               <tr key={category}>
-                <th scope="row">{CATEGORY_LABELS[category]}</th>
+                <th scope="row">
+                  {category === 'UNCATEGORISED' ? (
+                    // The one category the operator may rename, because
+                    // it is the only one whose meaning is the Work's
+                    // rather than the product's: every schedule has a
+                    // residual bucket and every schedule calls it
+                    // something else. Display only — the row's key, and
+                    // everything that resolves through it, is untouched.
+                    // Saved with the row, by the row's own Save button.
+                    <input
+                      aria-label="Name for the uncategorised-items row on this Work"
+                      className="w-full"
+                      value={residualLabel}
+                      maxLength={60}
+                      placeholder={CATEGORY_LABELS.UNCATEGORISED}
+                      disabled={pending}
+                      onChange={(event) => {
+                        setResidualLabel(event.target.value);
+                      }}
+                    />
+                  ) : (
+                    CATEGORY_LABELS[category]
+                  )}
+                </th>
                 {STAGE_FIELDS.map(([field, label]) => {
                   // An AMC item is never delivered and never installed
                   // (migration 0068), so those two stage deltas are
@@ -350,7 +386,7 @@ export function PaymentMatrix({
                   return (
                     <td key={field}>
                       <input
-                        aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
+                        aria-label={`${label} for ${categoryLabelOf(category, rows)}`}
                         value={locked ? '0' : draft[field]}
                         inputMode="decimal"
                         disabled={locked}
@@ -371,29 +407,40 @@ export function PaymentMatrix({
                     <Button
                       disabled={pending || problem !== null}
                       onClick={() =>
-                        void act(async () => {
-                          const row = await api.upsertPaymentMatrixRow(
-                            organisationId,
-                            workId,
-                            category,
-                            {
-                              pctSupply: submitted.pctSupply,
-                              pctInstallation: submitted.pctInstallation,
-                              pctPac: submitted.pctPac,
-                              pctFinalBill: submitted.pctFinalBill,
-                            },
-                          );
-                          setRows((current) => [
-                            ...(current ?? []).filter(
-                              (candidate) => candidate.category !== category,
-                            ),
-                            row,
-                          ]);
-                          setDrafts((current) => ({
-                            ...current,
-                            [category]: draftFrom(row),
-                          }));
-                        }, `Percentages saved for ${CATEGORY_LABELS[category]}.`)
+                        void act(
+                          async () => {
+                            const row = await api.upsertPaymentMatrixRow(
+                              organisationId,
+                              workId,
+                              category,
+                              {
+                                pctSupply: submitted.pctSupply,
+                                pctInstallation: submitted.pctInstallation,
+                                pctPac: submitted.pctPac,
+                                pctFinalBill: submitted.pctFinalBill,
+                                ...(category === 'UNCATEGORISED'
+                                  ? {
+                                      categoryLabel:
+                                        residualLabel.trim().length > 0
+                                          ? residualLabel.trim()
+                                          : null,
+                                    }
+                                  : {}),
+                              },
+                            );
+                            setRows((current) => [
+                              ...(current ?? []).filter(
+                                (candidate) => candidate.category !== category,
+                              ),
+                              row,
+                            ]);
+                            setDrafts((current) => ({
+                              ...current,
+                              [category]: draftFrom(row),
+                            }));
+                          },
+                          `Percentages saved for ${categoryLabelOf(category, rows)}.`,
+                        )
                       }
                     >
                       Save
@@ -403,22 +450,30 @@ export function PaymentMatrix({
                         variant="outline"
                         disabled={pending}
                         onClick={() =>
-                          void act(async () => {
-                            await api.deletePaymentMatrixRow(
-                              organisationId,
-                              workId,
-                              category,
-                            );
-                            setRows((current) =>
-                              (current ?? []).filter(
-                                (candidate) => candidate.category !== category,
-                              ),
-                            );
-                            setDrafts((current) => ({
-                              ...current,
-                              [category]: draftFrom(undefined),
-                            }));
-                          }, `${CATEGORY_LABELS[category]} row removed.`)
+                          void act(
+                            async () => {
+                              await api.deletePaymentMatrixRow(
+                                organisationId,
+                                workId,
+                                category,
+                              );
+                              setRows((current) =>
+                                (current ?? []).filter(
+                                  (candidate) => candidate.category !== category,
+                                ),
+                              );
+                              setDrafts((current) => ({
+                                ...current,
+                                [category]: draftFrom(undefined),
+                              }));
+                              // The row's per-Work name goes with the row.
+                              // Left behind, it would sit in the input
+                              // under a placeholder that says otherwise and
+                              // come back on the next save.
+                              if (category === 'UNCATEGORISED') setResidualLabel('');
+                            },
+                            `${categoryLabelOf(category, rows)} row removed.`,
+                          )
                         }
                       >
                         Remove
@@ -473,7 +528,7 @@ export function PaymentMatrix({
                 <td className={wrapCell}>
                   {item.effectiveDescription ?? item.description}
                 </td>
-                <td>
+                <td className={controlCell}>
                   {canModify ? (
                     <select
                       aria-label={`Payment category for ${item.itemNumber}`}
@@ -494,7 +549,7 @@ export function PaymentMatrix({
                         }, `Payment category updated for ${item.itemNumber}.`);
                       }}
                     >
-                      {ITEM_CATEGORY_OPTIONS.map(([value, label]) => (
+                      {itemCategoryOptions(rows).map(([value, label]) => (
                         <option key={value} value={value}>
                           {label}
                         </option>
@@ -508,8 +563,8 @@ export function PaymentMatrix({
                     >
                       {item.paymentCategory === null ||
                       item.paymentCategory === undefined
-                        ? 'Uncategorised'
-                        : CATEGORY_LABELS[item.paymentCategory]}
+                        ? 'Not selected'
+                        : categoryLabelOf(item.paymentCategory, rows)}
                     </span>
                   )}
                 </td>

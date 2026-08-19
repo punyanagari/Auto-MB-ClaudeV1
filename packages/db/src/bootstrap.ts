@@ -163,6 +163,11 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // (0024).
   measurement_books: 'SELECT, INSERT, UPDATE, DELETE',
   mb_sources: 'SELECT, INSERT, UPDATE, DELETE',
+  // The downward measured-quantity adjustments (0106): draft-only state,
+  // deleted with the draft they belong to and replaced wholesale by the
+  // route that sets them, so DELETE here is a draft-editing privilege.
+  // The 0106 guard refuses every write once the book has left `draft`.
+  mb_measured_overrides: 'SELECT, INSERT, UPDATE, DELETE',
   measurement_book_lines: 'SELECT, INSERT, UPDATE',
   measurement_book_counters: 'SELECT, INSERT, UPDATE',
   measurement_book_merge_provenance: 'SELECT, INSERT',

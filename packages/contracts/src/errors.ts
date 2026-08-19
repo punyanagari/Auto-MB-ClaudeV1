@@ -101,6 +101,7 @@ export const ERROR_CODES = [
   'ADVANCE_BILLS_DUE',
   'ADVANCE_NOT_OPEN',
   'ALREADY_A_MEMBER',
+  'AMC_CYCLE_INCOMPLETE',
   'AMENDMENT_EMPTY',
   'AMENDMENT_FLOOR_VIOLATION',
   'AMENDMENT_INVALID',
@@ -357,12 +358,14 @@ export const ERROR_CODES = [
   'MB_DATE_FUTURE',
   'MB_DRAFT_EXISTS',
   'MB_EMPTY',
-  'MB_ENTRY_DATE_BEFORE_LOA',
-  'MB_ENTRY_DATE_FUTURE',
   'MB_FINAL_DRAFTS_OPEN',
   'MB_FINAL_SWEEP_INCOMPLETE',
   'MB_HAS_MERGED_RECORDS',
   'MB_KIND_CONFLICT',
+  'MB_MEASURED_ABOVE_SOURCE',
+  'MB_MEASURED_DUPLICATED',
+  'MB_MEASURED_ITEM_NOT_CLAIMED',
+  'MB_MEASURED_NEGATIVE',
   'MB_MERGE_DUPLICATED',
   'MB_MERGE_EMPTY',
   'MB_MERGE_NOT_RECORD_DRAFT',
@@ -381,7 +384,6 @@ export const ERROR_CODES = [
   'MB_STATUS_CONFLICT',
   'MEASUREMENT_BOOK_NOT_FOUND',
   'MEASUREMENT_BOOK_REINVOICED',
-  'MEASUREMENT_EXCEEDS_DELIVERY',
   'MEMBER_NOT_FOUND',
   'MFA_ENROLMENT_REQUIRED',
   'MFA_REQUIRED_BY_POLICY',
@@ -433,6 +435,7 @@ export const ERROR_CODES = [
   'PAYMENT_MATRIX_AMC_STAGE_INVALID',
   'PAYMENT_MATRIX_CATEGORY_DUPLICATE',
   'PAYMENT_MATRIX_CATEGORY_INVALID',
+  'PAYMENT_MATRIX_CATEGORY_LABEL_NOT_ALLOWED',
   'PAYMENT_MATRIX_PERCENTAGE_INVALID',
   'PAYMENT_MATRIX_ROW_MISSING',
   'PAYMENT_MATRIX_SUM_INVALID',
@@ -501,11 +504,16 @@ export const ERROR_CODES = [
   'RAILWAY_BILL_MEASUREMENT_UNMATCHED',
   'RAILWAY_BILL_NOT_FOR_WORK',
   'RAILWAY_BILL_NOT_FOUND',
-  // The measurement the bill is raised from (migration 0111). The first
-  // three are the gate's three refusals — no measurement, a measurement
-  // that disagrees, a measurement nobody could read and nobody has
-  // confirmed — and they are separate codes because they are three
-  // different pieces of work for the operator.
+  // The measurement the bill is raised from (migration 0111).
+  //
+  // GATE FIRST, then the rest alphabetically — deliberately out of the
+  // file's usual A-to-Z run, and stated because nothing enforces order in
+  // here so a reader would otherwise take it for an accident. The first
+  // three ARE the gate: no measurement, a measurement that disagrees, and
+  // a measurement nobody could read and nobody has confirmed. They are
+  // three codes rather than one because they are three different pieces
+  // of work for the operator, and reading them as a group is how anyone
+  // checks the gate is completely covered.
   'RAILWAY_MEASUREMENT_MISSING',
   'RAILWAY_MEASUREMENT_UNMATCHED',
   'RAILWAY_MEASUREMENT_UNCONFIRMED',
@@ -645,6 +653,7 @@ export const ERROR_CODES = [
   'WARRANTY_ALREADY_STARTED',
   'WARRANTY_END_INVALID',
   'WARRANTY_EXTENSION_INVALID',
+  'WARRANTY_FINAL_BILL_MISSING',
   'WARRANTY_INSTALLATION_NOT_RECORDED',
   'WARRANTY_NOT_FOUND',
   'WARRANTY_PAC_BASIS_INVALID',

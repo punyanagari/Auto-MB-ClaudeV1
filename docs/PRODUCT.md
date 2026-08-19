@@ -686,6 +686,27 @@ to disagree is a disagreement about quantities, not a reading problem; the
 remedy is to settle it with the railway and upload the corrected sheet.
 The screen draws no control for it and the database refuses one.
 
+**Two things this model deliberately does not do**, recorded as posture
+rather than left to be discovered:
+
+- **One authority uploads and confirms.** `issue` covers both, so on the
+  unreadable path the member who files a measurement is the member who
+  may confirm its lines. It is the posture the received bill already
+  holds, and splitting it needs an owner ruling — in a two-person agency
+  a separation-of-duties rule can mean nobody may confirm anything.
+- **A discard and a re-upload re-enter the gate.** Nothing refuses an
+  operator who meets a mismatch, discards it, uploads something the
+  parser cannot read, and confirms by hand. Every step is audited, the
+  discarded rows are kept, and the panel lists them beside the live
+  measurement with the verdict each carried — so the route is marked
+  rather than hidden. Refusing the second upload would not close it: the
+  bypass uses a different document.
+
+**A measurement a bill rests on cannot be withdrawn.** Once an On-Account
+Bill is recorded, discarding the measurement that admitted it would leave
+the bill standing on nothing; the route and the database both refuse it,
+and the remedy is to discard the bill first.
+
 **The gate.** A received railway bill records against a Measurement Book
 only when that book's railway measurement is on file and either matched by
 the reading or confirmed line by line. Enforced twice, and the split is

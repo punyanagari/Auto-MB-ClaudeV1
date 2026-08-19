@@ -29,6 +29,7 @@ const ENTITY_FILTERS = [
   { value: 'challan_receipts', label: 'Receipts' },
   { value: 'challan_item_serials', label: 'Serials' },
   { value: 'work_instruments', label: 'Instruments' },
+  { value: 'extension_requests', label: 'Extensions' },
   { value: 'mb_entries', label: 'Measurements' },
   { value: 'bills', label: 'Bills' },
   { value: 'bill_payments', label: 'Payments received' },

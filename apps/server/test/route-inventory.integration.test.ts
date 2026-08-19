@@ -248,6 +248,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     "one railway bill per measurement, and a Work's measurements are its Measurement Books",
   ],
   [
+    'GET /api/measurement-books/:id/railway-measurement',
+    'one measurement book, and the answer is its ONE live railway measurement plus the ones discarded before it — a partial unique index allows exactly one live row, and a book that has been through more than a handful of discarded uploads has an operational problem a page control would hide rather than solve',
+  ],
+  [
     'GET /api/works/:id/bill-settlement',
     'one position per prepared bill, and a bill is prepared from a Measurement Book; the whole point of the answer is that it is a Work-wide total',
   ],
@@ -300,6 +304,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ['GET /api/works/:id/purchase-orders', 'grows per Work — next candidate'],
   ['GET /api/works/:id/correction-notices', 'grows per Work — next candidate'],
   ['GET /api/works/:id/pac-certificates', 'grows per Work — next candidate'],
+  [
+    'GET /api/works/:id/amc-cycle-proposal',
+    "the next period's proposed certified quantity, one row per AMC item of each schedule that states a billing cycle (migration 0107). Bounded by the Work's own maintenance schedule, which is a handful of items and never grows with time — the proposal is recomputed, never accumulated, so a second page could only ever repeat the answer",
+  ],
   [
     'GET /api/works/:id/measurement-books',
     'grows per Work; pack P11 owns this route this wave',

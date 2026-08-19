@@ -194,11 +194,13 @@ afterAll(async () => {
 });
 
 describe('site measurement evidence after the sweep removal', () => {
-  it('keeps mb-entries recordable but the Milestone 5 bill sweep endpoint is gone', async () => {
+  it('leaves the register readable with no writer, and no bill sweep', async () => {
     await issueChallan('50000.000');
 
-    // mb_entries stay recordable site measurement evidence (ADR-0006
-    // decision 4): the delivered-quantity cap and endpoint are intact.
+    // The manual writer is REMOVED (2026-08-19, owner-sanctioned): the
+    // loose register is site-measurement history now, and measurement
+    // that reaches a bill happens in a Measurement Book. Fastify has no
+    // POST handler on this url at all, so the refusal is a 404.
     const measured = await authed(owner, {
       method: 'POST',
       url: `/api/works/${workId}/mb-entries`,
@@ -209,7 +211,15 @@ describe('site measurement evidence after the sweep removal', () => {
         measuredOn: '2026-08-08',
       },
     });
-    expect(measured.statusCode, measured.body).toBe(201);
+    expect(measured.statusCode, measured.body).toBe(404);
+
+    // The read survives, which is what "read-only" means here.
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/mb-entries`,
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
 
     // The 100%-of-measured sweep (POST /api/works/:id/bills) is REMOVED:
     // bills are prepared from a finalized Measurement Book instead
@@ -265,18 +275,19 @@ describe('cancellation after downstream evidence', () => {
 
   it('refuses to cancel once a measurement references the challan', async () => {
     const challanId = await issueChallan('10.000');
-    const measured = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId,
-        deliveryChallanId: challanId,
-        measuredQuantity: '2.000',
-        measuredOn: '2026-08-08',
-      },
-    });
-    expect(measured.statusCode, measured.body).toBe(201);
+    // Seeded directly: the write route is gone, and the rule under test
+    // is the cancellation guard, which answers for the rows a database
+    // already holds however they arrived.
+    await admin`
+      insert into mb_entries (
+        organisation_id, work_id, work_item_id, delivery_challan_id,
+        measured_quantity, measured_on, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${workId}, ${workItemId}, ${challanId},
+        '2.000', '2026-08-08', ${ownerUserId}
+      )
+    `;
 
     const cancelled = await authed(owner, {
       method: 'POST',
@@ -289,7 +300,14 @@ describe('cancellation after downstream evidence', () => {
 });
 
 describe('measurement provenance', () => {
-  it('rejects a challan reference from another Work', async () => {
+  it('has no writer left to claim provenance with, on any Work', async () => {
+    // This used to prove the route's own provenance checks: an item from
+    // another Work, and a fabricated challan id. Those checks were the
+    // only thing standing between a caller and an mb_entry naming a
+    // challan it had nothing to do with — `mb_entries.delivery_challan_id`
+    // carries no foreign key (migration 0006), only an index (0046).
+    // Removing the writer closes the hole outright rather than guarding
+    // it, and this test now holds that door shut.
     const foreignWorkId = randomUUID();
     await admin`
       insert into works (
@@ -302,34 +320,20 @@ describe('measurement provenance', () => {
         ${ownerUserId}
       )
     `;
-    const response = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${foreignWorkId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId,
-        deliveryChallanId: randomUUID(),
-        measuredQuantity: '1.000',
-        measuredOn: '2026-08-08',
-      },
-    });
-    // The item belongs to the other Work, so the item check fires first;
-    // a fabricated challan id on the right Work also dies.
-    expect([404, 409]).toContain(response.statusCode);
-
-    const fabricated = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId,
-        deliveryChallanId: randomUUID(),
-        measuredQuantity: '1.000',
-        measuredOn: '2026-08-08',
-      },
-    });
-    expect(fabricated.statusCode).toBe(404);
-    expect(fabricated.json<{ code: string }>().code).toBe('CHALLAN_NOT_FOUND');
+    for (const target of [foreignWorkId, workId]) {
+      const response = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${target}/mb-entries`,
+        organisationId,
+        payload: {
+          workItemId,
+          deliveryChallanId: randomUUID(),
+          measuredQuantity: '1.000',
+          measuredOn: '2026-08-08',
+        },
+      });
+      expect(response.statusCode, response.body).toBe(404);
+    }
   });
 
   it('the serial lineage FK rejects a line that belongs to another challan', async () => {
@@ -421,6 +425,19 @@ describe('export completeness', () => {
         ${importRecordId}, ${organisationId}, 'work', 'audit-fixture',
         ${`legacy-${runId}`}, ${workId}, ${importBatchId}, ${'b'.repeat(64)},
         ${admin.json({ legacyField: 'preserved exactly' })}
+      )
+    `;
+    // Retiring the loose register's WRITER did not retire the register:
+    // its rows still leave with the organisation, so the export
+    // assertion below needs one that does not depend on a route.
+    await admin`
+      insert into mb_entries (
+        organisation_id, work_id, work_item_id, measured_quantity,
+        measured_on, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${workId}, ${workItemId}, '1.000', '2026-08-08',
+        ${ownerUserId}
       )
     `;
     const response = await authed(owner, {

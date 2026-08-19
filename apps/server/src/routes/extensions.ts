@@ -618,7 +618,10 @@ export function registerExtensionRoutes(
           'extension.updated',
           'extension_requests',
           id,
-          { proposedCompletionDate: body.proposedCompletionDate },
+          {
+            workId: extension.work_id,
+            proposedCompletionDate: body.proposedCompletionDate,
+          },
         );
         return readDetail(tx, id);
       });
@@ -798,6 +801,7 @@ export function registerExtensionRoutes(
           'extension_requests',
           id,
           {
+            workId: extension.work_id,
             requestNumber,
             sequence,
             proposedCompletionDate: extension.proposed_completion_date,
@@ -893,12 +897,13 @@ export function registerExtensionRoutes(
       await storage.put(objectKey, pdf);
 
       return tenant(async (tx) => {
-        const updated = await tx`
+        const [updated] = await tx<{ work_id: string }[]>`
           update extension_requests
           set rendered_object_key = ${objectKey}, rendered_sha256 = ${sha256}
           where id = ${id} and status in ('finalised', 'responded')
+          returning work_id
         `;
-        if (updated.count === 0) {
+        if (updated === undefined) {
           // The request stopped being finalised while Gotenberg rendered;
           // the stored PDF is an orphan, not evidence — no audit entry.
           throw httpError(
@@ -914,7 +919,7 @@ export function registerExtensionRoutes(
           'extension.rendered',
           'extension_requests',
           id,
-          { sha256 },
+          { workId: updated.work_id, sha256 },
         );
         return readDetail(tx, id);
       });
@@ -1083,7 +1088,7 @@ export function registerExtensionRoutes(
           'extension.response_document_uploaded',
           'extension_requests',
           id,
-          { sizeBytes: body.length, sha256: responseSha256 },
+          { workId: extension.work_id, sizeBytes: body.length, sha256: responseSha256 },
         );
         return readDetail(tx, id);
       });
@@ -1198,6 +1203,7 @@ export function registerExtensionRoutes(
           'extension_requests',
           id,
           {
+            workId: extension.work_id,
             outcome: body.outcome,
             grantedCompletionDate: granted,
           },

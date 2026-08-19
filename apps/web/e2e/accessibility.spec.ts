@@ -483,6 +483,11 @@ async function openMeasurementBook(
         warnings: [],
         previewTotal: null,
         unbillableVariationExposure: '0.00',
+        // 0106's rupee value of what the measured-quantity adjustments
+        // left out. Required by the response schema, and the screen
+        // formats it unconditionally — a mock that omits it blanks the
+        // whole workspace rather than failing near the missing field.
+        measurementAdjustedAway: '0.00',
       }),
     ),
   );
@@ -500,6 +505,28 @@ async function openMeasurementBook(
           createdAt: '2026-08-06T00:00:00.000Z',
           ...measurement,
         },
+        // The MB-02 leg carries a discarded mismatch as well, so the
+        // "previously recorded and discarded" list is on screen for the
+        // scan: it is the one place this panel puts a destructive chip
+        // inside body text rather than at the top of a section.
+        discarded:
+          mbNumber === 'DCW-1-MB-02'
+            ? [
+                {
+                  id: 'ffffffff-0000-4000-8000-ffffffffffff',
+                  workId,
+                  measurementBookId: bookId,
+                  originalFilename: 'CMB-01-first-try.pdf',
+                  sha256: 'b'.repeat(64),
+                  sizeBytes: 2048,
+                  matchStatus: 'mismatched',
+                  lines: [],
+                  settles: false,
+                  discardedAt: '2026-08-06T09:00:00.000Z',
+                  createdAt: '2026-08-05T00:00:00.000Z',
+                },
+              ]
+            : [],
       }),
     ),
   );
@@ -509,11 +536,11 @@ async function openMeasurementBook(
   const row = page.getByRole('button', { name: mbNumber });
   await expect(row).toBeVisible();
   await row.click();
-  // The book's own detail first, so a failure says whether the book
-  // opened or the panel inside it did not.
-  await expect(
-    page.getByRole('heading', { name: new RegExp(`Measurement Book ${mbNumber}`) }),
-  ).toBeVisible();
+  // The panel's own heading is the wait, and the only one. An
+  // intermediate assertion on the book's heading was scaffolding while
+  // the two-books-per-shape bug was being found; it outlived its use and
+  // was itself brittle — the heading interleaves chips with its text, so
+  // its accessible name is not the string it reads as.
   await expect(
     page.getByRole('heading', { name: 'Railway measurement' }),
   ).toBeVisible();
@@ -534,6 +561,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   const ITEM_ID = '55555555-5555-4555-8555-555555555555';
   const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
   const CHALLAN_ITEM_ID = '66666666-6666-4666-8666-666666666666';
+  // The open DRAFT Measurement Book, whose preview carries the editable
+  // measured-quantity fields (docs/UX.md § 25).
+  const MB_DRAFT_ID = 'eeeeeeee-9999-4999-8999-eeeeeeeeeeee';
   // The register row the scan opens, and the document behind it.
   const INVOICE_ID = '88888888-8888-4888-8888-888888888888';
   const OPENED_INVOICE = {
@@ -1261,7 +1291,96 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             finalizedAt: '2026-08-06T10:00:00.000Z',
             cancelledAt: null,
           },
+          {
+            id: MB_DRAFT_ID,
+            workId: WORK_ID,
+            status: 'draft',
+            isFinal: false,
+            mbDate: '2026-08-09',
+            mbNumber: null,
+            sequenceNumber: null,
+            totalAmount: null,
+            remarkTemplateVersion: null,
+            templateVersion: null,
+            renderedAvailable: false,
+            cancellationNote: null,
+            billId: null,
+            createdAt: '2026-08-09T00:00:00.000Z',
+            finalizedAt: null,
+            cancelledAt: null,
+          },
         ],
+      }),
+    ),
+  );
+  // The draft's preview, so the measurement leg can scan the editable
+  // measured-quantity fields (docs/UX.md § 25) where colour actually
+  // lands on them: a field, its claimed-quantity description beside it,
+  // and the amount the pair prices.
+  await page.route(`**/api/measurement-books/${MB_DRAFT_ID}`, (route) =>
+    route.fulfill(
+      json({
+        book: {
+          id: MB_DRAFT_ID,
+          workId: WORK_ID,
+          status: 'draft',
+          kind: 'on_account',
+          isFinal: false,
+          consigneeContactId: null,
+          mergedIntoId: null,
+          mbDate: '2026-08-09',
+          mbNumber: null,
+          sequenceNumber: null,
+          totalAmount: null,
+          remarkTemplateVersion: null,
+          templateVersion: null,
+          renderedAvailable: false,
+          cancellationNote: null,
+          billId: null,
+          createdAt: '2026-08-09T00:00:00.000Z',
+          finalizedAt: null,
+          cancelledAt: null,
+          closedAt: null,
+          closedByReceivedBillId: null,
+        },
+        sources: [],
+        lines: [
+          {
+            workItemId: ITEM_ID,
+            itemNumber: 'A/1',
+            description: 'Signalling cable',
+            unitCode: 'mtr',
+            paymentCategory: 'SUPPLY',
+            resolvedCategory: 'SUPPLY',
+            pctSupply: '80.00',
+            pctInstallation: '0.00',
+            pctPac: '0.00',
+            pctFinalBill: '20.00',
+            effectiveRate: '100.000000',
+            deltaSupplied: '8.000',
+            deltaInstalled: '0.000',
+            sourceSupplied: '10.000',
+            sourceInstalled: '0.000',
+            overrideSupplied: '8.000',
+            overrideInstalled: null,
+            deltaPac: '0.000',
+            deltaFinalBill: '0',
+            priorSupplied: '0.000',
+            priorInstalled: '0.000',
+            priorPac: '0.000',
+            priorFinalBill: '0.000',
+            amountSupply: '640.00',
+            amountInstallation: '0.00',
+            amountPac: '0.00',
+            amountFinalBill: '0.00',
+            lineTotal: '640.00',
+            remark: 'Now to pay 80% for 8 mtr.',
+          },
+        ],
+        warnings: [],
+        previewTotal: '640.00',
+        unbillableVariationExposure: '0',
+        measurementAdjustedAway: '160.00',
       }),
     ),
   );
@@ -1339,6 +1458,24 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByText('FINAL BILL', { exact: true })).toBeVisible();
   await expectNoAxeViolations(page, 'work detail — measurement');
 
+  // The DRAFT's preview, scanned separately because that is where the
+  // editable measured quantity lives (docs/UX.md § 25): a field,
+  // the claimed figure beside it as its own description, and the amount
+  // the pair prices. The register above carries none of them.
+  await page.getByRole('button', { name: 'Draft', exact: true }).click();
+  await expect(page.getByLabel('Supplied quantity measured for item A/1')).toHaveValue(
+    '8.000',
+  );
+  await expect(page.getByText('of 10.000')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Save measured quantities' }),
+  ).toBeVisible();
+  // The rupee value of what the adjustment left out, on the warning
+  // surface the unbillable exposure already uses — scanned because it is
+  // colour on colour and the one place the reduction is stated as money.
+  await expect(page.getByText('Measured down on this Measurement Book')).toBeVisible();
+  await expectNoAxeViolations(page, 'work detail — measurement book draft');
+
   /* The railway measurement panel (0111), scanned in the two shapes that
      put colour on a word. The MATCHED shape reuses the success chip every
      register already draws and needs no separate pass; the two below are
@@ -1395,6 +1532,12 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   // phrase, and the chip is what this scan is about.
   await expect(page.getByText('Could not be read', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Confirm item A/1' })).toBeVisible();
+  // The discarded-history list, scanned with the rest: a destructive chip
+  // inside body text is a contrast pairing the section headings above it
+  // never produce.
+  await expect(
+    page.getByRole('heading', { name: 'Previously recorded and discarded' }),
+  ).toBeVisible();
   await expectNoAxeViolations(page, 'railway measurement — awaiting confirmation');
 
   await openTab('Bills');

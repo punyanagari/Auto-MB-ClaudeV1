@@ -172,6 +172,19 @@ export const ConfirmWorkRequestSchema = Type.Object(
      * the letter date. */
     gstBasis: Type.Optional(GstBasisSchema),
     gstRate: Type.Optional(GstRateSchema),
+    /** The contractual completion date, which the review screen proposes
+     * as the letter date plus the completion period the letter prints
+     * (`header.completionPeriod`, packages/loa-parser) and the reviewer
+     * may overwrite.
+     *
+     * Optional, because a letter that states no period leaves the date to
+     * be set later through `PUT /api/works/:id/completion-dates` — the
+     * one-time set that has always existed. Sending it here writes the
+     * same pair of columns that route writes, at creation, which is when
+     * the letter is still in the reviewer's hands. It stays a WRITE-ONCE
+     * value either way: migration 0011's works guard lets it move
+     * afterwards only through a responded extension request. */
+    completionDate: Type.Optional(DateOnlySchema),
     pbgRequirement: Type.Optional(ConfirmPbgRequirementSchema),
     /** At most one row per matrix category, which is what the reviewer's
      * editor offers. The bound was a bare `5` and stayed there when
@@ -315,6 +328,13 @@ const WorkScheduleSchema = Type.Object(
     scheduleCode: Type.String({ minLength: 1, maxLength: 50 }),
     title: Type.String({ minLength: 1, maxLength: 1000 }),
     position: Type.Integer({ minimum: 1 }),
+    /** The AMC billing cadence, when this schedule states one (migration
+     * 0107): M periods and the word the agency calls one of them. Both
+     * null on every schedule that is not maintenance, and on a
+     * maintenance schedule whose cadence nobody has confirmed yet — the
+     * import proposes a default, it is not assumed. */
+    amcBillingPeriods: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+    amcCycleNoun: Type.Union([Type.String(), Type.Null()]),
     items: Type.Array(WorkItemSchema),
   },
   { additionalProperties: false },
