@@ -5,13 +5,16 @@ SET statement_timeout = '5min';
 -- Migration 0112: a defect liability period may start from the Work's
 -- FINAL BILL.
 --
--- Numbering: 0105 has since landed on main (the uncategorised-item
--- category, PR #154) and 0106 to 0111 stay reserved by packs that have
--- not merged yet, so this corrections pack takes 0112. The runner sorts
--- file names and requires only that ids be unique
--- (`packages/db/src/migration-runner.ts`), so the gap costs nothing —
--- and the merge that brought 0105 in needed no renumbering here, which
--- is the property the reserved block was chosen for.
+-- Numbering: this pack was written while 0105 to 0111 were RESERVED by
+-- packs still in flight, so it took the first id past that block rather
+-- than the next free one. Several of those packs have landed since
+-- (0105, 0106 and 0107 at the time of writing) and this file has needed
+-- no renumbering through any of them, which is the whole point of
+-- reserving a block: the runner sorts file names and requires only that
+-- ids be unique (`packages/db/src/migration-runner.ts`), so a gap costs
+-- nothing and a collision would have cost a rewrite on every merge.
+-- Deliberately NOT restated as a list of who holds what — that sentence
+-- is stale the next time anything merges.
 --
 -- ## The rule
 --
