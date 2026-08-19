@@ -20,10 +20,10 @@ import { Type, type Static } from '@sinclair/typebox';
  * provision citations to render a deduction row honestly. This package is
  * the only module both halves already depend on, so it is the only place
  * a single copy can actually be single. The precedent it deliberately
- * does NOT follow is `apps/server/src/gst-rates.ts`, whose
- * `DEFAULT_GST_RATES` is seed data for a per-organisation table an owner
- * then edits; these values are not editable configuration, they are what
- * the statute currently says.
+ * does NOT follow is the GST rate history, which migration 0103's
+ * `app_private.seed_default_statutory_rows` writes as seed data for a
+ * per-organisation table an owner then edits; these values are not
+ * editable configuration, they are what the statute currently says.
  *
  * ─────────────────────────────────────────────────────────────────────
  * EVERY NUMBER BELOW IS UNVERIFIED AND REQUIRES OWNER CONFIRMATION.

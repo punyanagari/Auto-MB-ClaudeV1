@@ -13,8 +13,6 @@ import type { Sql } from '@auto-mb/db';
 import { withUserContext } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import { seedDefaultGstRates } from '../gst-rates.js';
-import { seedDefaultPayrollSchedules } from '../payroll-rates.js';
 import { httpError } from '../http.js';
 import { mfaEnforcementEnabled, mfaGate } from '../mfa-policy.js';
 import { requireUser } from '../session.js';
@@ -158,15 +156,23 @@ export function registerIdentityRoutes(
           select app_private.create_organisation_with_owner(${body.name}, ${body.slug}) as id
         `;
         if (!row) throw new Error('organisation bootstrap returned no row');
-        // Seed the notified GST rate history (migration 0048 seeded
-        // organisations that already existed; this seeds the new one) in
-        // the SAME transaction, so no organisation ever exists whose
-        // invoices every rate check would refuse. Binding the tenant here
-        // is legitimate: the owner membership the definer function just
-        // created is visible to this transaction, so
-        // current_organisation_id() proves it like any other request.
+        // Seed the notified GST rate history and the payroll statutory
+        // schedules (migrations 0048 and 0089 seeded the organisations
+        // that already existed; this seeds the new one) in the SAME
+        // transaction, so no organisation ever exists whose invoices every
+        // rate check would refuse or whose first payroll run refuses every
+        // employee by name. Binding the tenant here is legitimate: the
+        // owner membership the definer function just created is visible to
+        // this transaction, so current_organisation_id() proves it like
+        // any other request — and migration 0103's seeding function is
+        // INVOKER-rights precisely so that this binding, not the
+        // function's own authority, is what admits the writes.
         await tx`select set_config('app.organisation_id', ${row.id}, true)`;
-        const seeded = await seedDefaultGstRates(tx, row.id);
+        const [counts] = await tx<{ gst_rate_rows: number; payroll_rows: number }[]>`
+          select * from app_private.seed_default_statutory_rows(${row.id})
+        `;
+        if (!counts) throw new Error('statutory seeding returned no row');
+        const seeded = counts.gst_rate_rows;
         await tx`
           insert into audit_events (
             organisation_id, actor_user_id, action, entity_type, details
@@ -176,12 +182,10 @@ export function registerIdentityRoutes(
             ${tx.json({ count: seeded, source: 'notified GST rate history (0048)' })}
           )
         `;
-        // The payroll schedules, for the same reason and in the same
-        // transaction (migration 0089 seeded the organisations that
-        // already existed). Without them the first payroll run refuses
-        // every employee by name, which is a true refusal and a useless
-        // first experience.
-        const payrollSeeded = await seedDefaultPayrollSchedules(tx, row.id);
+        // The payroll schedules, audited separately because they are a
+        // separate register an owner can be asked about — the one call
+        // above wrote both.
+        const payrollSeeded = counts.payroll_rows;
         await tx`
           insert into audit_events (
             organisation_id, actor_user_id, action, entity_type, details
