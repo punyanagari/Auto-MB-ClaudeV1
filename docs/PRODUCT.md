@@ -811,12 +811,14 @@ railway withheld, and what is still owed. The distinction is the point:
   deposits and the agency reclaims in GSTR-7A;
 - **income-tax TDS** under section 194C, which surfaces on Form 26AS;
 - **security deposit / retention**, held by the railway against the contract.
-  This product records that it was withheld and nothing more: there is no
-  release path, no schedule of what is due back and no reconciliation
-  against what was eventually returned, so a retention figure here answers
-  "how much has been held" and never "how much is still held";
+  The retention ledger (0098) derives what is held from the SECURITY_DEPOSIT
+  deductions of live payments — never mirrored into a second table — and
+  stores only the release side, under the invariant that released can never
+  exceed held; the Work's instruments panel answers both "how much has been
+  held" and "how much is still held";
 - **liquidated damages**, the pre-agreed contractual recovery for delay
-  under a named GCC clause;
+  under a named GCC clause, assessed on the Work with a dated delay window
+  and the recorded rate (0098);
 - **BOCW cess**, 1% under section 3 of the Building and Other Construction
   Workers' Welfare Cess Act 1996, reconciled against a cess return to the
   State welfare board;
