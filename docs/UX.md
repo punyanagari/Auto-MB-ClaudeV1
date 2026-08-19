@@ -1587,6 +1587,75 @@ mock might put it in the topbar — and the staleness sentence, which the
 mock might make a chip. Neither is load-bearing; the caching rules and the
 write refusal are.
 
+### 24. Live-testing corrections, 2026-08-19 — APPROVED
+
+Six owner-ruled corrections from live testing. Every one of them is
+app-side: the mock draws no Work that can be configured, no payment
+matrix with data behind it, and no LOA review screen, so none of these
+has a mock counterpart to replicate and none is a departure from one.
+They are recorded here rather than round-tripped through v0, on the
+precedent of §§ 3 and 5.
+
+**Excess-delivery toggle moves to the Deliveries tab.** It sat in the
+Work header as the only control amid a strip of read-only figures, which
+made a per-Work setting look like a Work-wide one. The cap it lifts is
+the delivery cap and nothing else (migration 0046; installation has been
+outside it since 0077), so it now sits above the deliveries it governs.
+Same route, same owner-only gate, same toast copy, same quiet
+label-and-control row. Non-owners still read Allowed / Not allowed in
+the same place.
+
+**Item numbers sort naturally.** `item_number` is text, so
+`ORDER BY item_number` reads A1/1, A1/10, A1/11, A1/2 — an order no
+schedule is written in, and one an operator reconciling a printed letter
+has to hunt through past the ninth row. One comparator
+(`compareItemNumbers`, `@auto-mb/contracts`) now decides the reading for
+both sides of the wire. The LOA review screen's item editor is
+deliberately NOT re-sorted: its item numbers are editable text, and a
+table that re-ordered itself between keystrokes would be worse than the
+order it fixed. Its rows arrive in the letter's printed order already.
+
+**Bounded control columns.** A `wrapCell` description beside a `<select>`
+starved the select to nothing: auto table layout ignores a cell's
+`max-width` when it distributes columns, and `globals.css` gives every
+control `min-width: 0`, so the prose took the whole budget and ran on
+underneath. `controlCell` (`ui/table.tsx`) puts a MIN-width on the
+control's cell, which auto layout does honour. Applied to the four
+places where a payment-category or purchase-order select shares a row
+with a description: the payment matrix, the payment-setup dialog, the
+LOA review item editor, and the challan editor.
+
+**Completion date proposed from the letter.** The parser has always read
+the completion period and nothing consumed it. The review screen now
+proposes letter date + N months, states the derivation under the field,
+and leaves it overwritable or blank. Calendar months with month-end
+clamping — 31 January plus one month is 28 February — because liquidated
+damages are counted from this date.
+
+**Payment matrix stages autofill to zero.** A row saves only at an exact
+sum of 100, so once the typed stages reach 100 every remaining stage can
+only be 0. The form fills them rather than holding the row refused while
+the operator types three zeros to agree with it. Ordinary editable
+values: typing over one takes the sum off 100 and stops any further
+filling.
+
+**Not selected, and a residual category with a name.** The item-category
+select's blank option was called "Uncategorised" and resolved, silently,
+through the Work's UNCATEGORISED matrix row — so an item nobody had
+looked at and an item deliberately parked in the residual bucket were
+the same choice, and the setup dialog's "still uncategorised" count
+never reached zero on a Work that was fully configured. The blank option
+is now **Not selected**: it saves, it demands no matrix row, and it
+bills nothing until it is answered — the Measurement Book names the item
+at finalisation, which is the refusal that was always the net.
+UNCATEGORISED is a choice of its own, and its matrix row carries a
+per-Work editable name, because railway schedules call their residual
+bucket "Other items", "Miscellaneous" or "Balance work" and the operator
+should read the schedule's own word. Display only; the key never moves.
+
+**The Remedy column leaves the unfinished-items worklist.** The
+quantities stay and say the same thing in less space.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
@@ -1858,7 +1927,14 @@ against the same measurement; after the IRP's 24-hour cancellation window a
 Section 34 credit note is the lawful instrument instead.
 
 The older site `mb_entries` surface is labelled **Measurement evidence** rather
-than presented as the formal Measurement Book itself. External statutory
+than presented as the formal Measurement Book itself, and since 2026-08-19 it is
+**read-only**: its manual quantity form is gone and its write route was removed
+outright (owner-sanctioned). ADR-0006 decision 2 had already replaced its billing
+role with bills raised from a finalised Measurement Book, so leaving a writer
+open meant a Work could be measured two ways that never met, only one of which
+reaches a bill. The rows recorded before then stay — they still gate Delivery
+Challan cancellation, still export, and still appear on the Work timeline — and
+the tab points the operator at the Measurement Books below it for anything new. External statutory
 registration status is shown separately from local invoice status: a locally
 issued invoice is never represented as IRP-registered without verified provider
 evidence.

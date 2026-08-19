@@ -6,7 +6,6 @@ import {
   InstrumentSchema,
   KeysetQuerySchema,
   MbEntryListResponseSchema,
-  MbEntrySchema,
   ReceiptSchema,
   RecordReceiptRequestSchema,
   RecordSerialsRequestSchema,

@@ -217,9 +217,7 @@ function buildHeaderDraft(payload: ExtractionPayloadView): HeaderDraft {
     // letter date makes the stale proposal visible rather than silent.
     completionDate:
       completionDateFrom(
-        letterDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(letterDate)
-          ? letterDate
-          : '',
+        letterDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(letterDate) ? letterDate : '',
         header.completionPeriod,
       ) ?? '',
   };
@@ -880,10 +878,7 @@ export function ReviewLoa({
         flag('completion-date', 'Enter the completion date, or leave it blank.');
       } else if (header.completionDate < header.letterDate) {
         // The same rule the column's CHECK and both server routes hold.
-        flag(
-          'completion-date',
-          'The completion date cannot precede the letter date.',
-        );
+        flag('completion-date', 'The completion date cannot precede the letter date.');
       }
     }
     const submissionDays = Number.parseInt(pbg.submissionDays, 10);

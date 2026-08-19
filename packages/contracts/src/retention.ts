@@ -1,11 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { NextCursorSchema } from './pagination.js';
-import {
-  DateOnlySchema,
-  DecimalStringSchema,
-  PositiveDecimalStringSchema,
-  UuidSchema,
-} from './primitives.js';
+import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
 
 // --- Delivery receipt -----------------------------------------------------
 

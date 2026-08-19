@@ -60,7 +60,10 @@ describe('completionDateFrom', () => {
     // the one-time set route all hold. A positive month count cannot
     // break it, and this is the assertion that says so.
     for (const months of [1, 3, 12, 18, 24, 36, 60]) {
-      const derived = completionDateFrom('2026-02-28', { value: months, unit: 'month' });
+      const derived = completionDateFrom('2026-02-28', {
+        value: months,
+        unit: 'month',
+      });
       expect(derived, String(months)).not.toBeNull();
       expect(derived! >= '2026-02-28', String(months)).toBe(true);
     }

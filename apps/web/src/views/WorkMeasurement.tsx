@@ -127,9 +127,8 @@ export function WorkMeasurement({
               sent rather than left to find it. */}
           {canCreateDocuments && (
             <p className="text-muted-foreground">
-              New measurement is recorded in a Measurement Book, below — it sweeps
-              the delivered and installed quantities itself, so nothing is typed
-              twice.
+              New measurement is recorded in a Measurement Book, below — it sweeps the
+              delivered and installed quantities itself, so nothing is typed twice.
             </p>
           )}
         </>

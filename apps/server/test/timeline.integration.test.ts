@@ -136,13 +136,13 @@ async function seedWork(code: string): Promise<{ workId: string; itemIds: string
   await admin`
     insert into work_items (
       id, organisation_id, work_id, schedule_id, item_number,
-      description, unit_code, awarded_quantity, effective_rate
+      description, unit_code, awarded_quantity, effective_rate, payment_category
     )
     values
       (${itemIds[0] ?? ''}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
-       'Axle counter unit', 'Nos', '100.000', '10.00'),
+       'Axle counter unit', 'Nos', '100.000', '10.00', 'UNCATEGORISED'),
       (${itemIds[1] ?? ''}, ${organisationId}, ${workId}, ${scheduleId}, 'A/2',
-       'Signal cable drum', 'Nos', '50.000', '20.00')
+       'Signal cable drum', 'Nos', '50.000', '20.00', 'UNCATEGORISED')
   `;
   // The LOA-confirm flow writes work.created; a directly-seeded fixture
   // records the same event so the timeline covers the whole life cycle.

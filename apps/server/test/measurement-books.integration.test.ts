@@ -443,7 +443,7 @@ beforeAll(async () => {
         unit: 'mtr',
         quantity: '10000.000',
         rate: '1.00',
-        paymentCategory: null,
+        paymentCategory: 'UNCATEGORISED',
       },
     ],
   });
@@ -486,7 +486,7 @@ beforeAll(async () => {
         unit: 'RMT',
         quantity: '1000.000',
         rate: '5.00',
-        paymentCategory: null,
+        paymentCategory: 'UNCATEGORISED',
       },
     ],
   });
@@ -1781,7 +1781,7 @@ describe('review hardening: cancel work-lock and DB cancel backstops', () => {
           unit: 'mtr',
           quantity: '10000.000',
           rate: '1.00',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });
@@ -2174,7 +2174,7 @@ describe('review hardening: draft-claim remedies, selection write-skew, dead cla
           unit: 'mtr',
           quantity: '10000.000',
           rate: '1.00',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });
@@ -2342,7 +2342,7 @@ describe('review hardening: 6dp rates carry exactly into amounts and snapshots',
           unit: 'mtr',
           quantity: '10000.000',
           rate: '0.8517',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });
@@ -2463,7 +2463,7 @@ describe('the three kinds (0034): record MBs, merge, and un-merge', () => {
           unit: 'mtr',
           quantity: '10000.000',
           rate: '2.00',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });

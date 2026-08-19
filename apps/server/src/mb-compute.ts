@@ -79,8 +79,9 @@ export interface MbComputedLine {
   readonly description: string;
   readonly unitCode: string;
   readonly paymentCategory: WorkItemPaymentCategory | null;
-  /** The matrix row the item resolved through ('UNCATEGORISED' for
-   * uncategorised items). */
+  /** The matrix row the item resolved through. Always the item's own
+   * category since migration 0105 — an item with none resolves through
+   * nothing and never reaches a line. */
   readonly resolvedCategory: string;
   readonly percentages: PaymentMatrixPercentages;
   readonly effectiveRate: string;
@@ -272,7 +273,11 @@ export function computeMeasurementBook(input: {
       unresolved.push({
         workItemId: item.workItemId,
         itemNumber: item.itemNumber,
-        missingCategory: resolution.missingCategory,
+        // NULL from the resolver means the item has no category YET, so
+        // there is no row to name. `NOT_SELECTED` is that state on the
+        // wire — a token the finalize route turns into the sentence
+        // that says the remedy is a decision, not a matrix row.
+        missingCategory: resolution.missingCategory ?? 'NOT_SELECTED',
       });
       continue;
     }

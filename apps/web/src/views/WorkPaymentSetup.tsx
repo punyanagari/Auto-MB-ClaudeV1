@@ -102,14 +102,16 @@ function effectiveDescriptionOf(item: WorkItem): string {
  * The matrix row an item will actually bill through — the client half of
  * the server's `resolvePaymentPercentages`.
  *
- * An uncategorised item is not "no row needed": it resolves through the
- * Work's UNCATEGORISED row, and a Work with uncategorised items and no
- * UNCATEGORISED row is as unbillable as one missing its SUPPLY row. A
- * categorised item deliberately does NOT fall back — its own row is the
- * only one that answers for it.
+ * NULL means "no row, because nothing has been chosen yet" (migration
+ * 0105). It is a legitimate state to save in and it demands no matrix
+ * row: the item simply does not bill until somebody decides, and the
+ * Measurement Book says so by name at finalisation. That is the whole
+ * point of splitting it away from UNCATEGORISED, which IS a decision
+ * and does demand its row. A categorised item deliberately does not
+ * fall back — its own row is the only one that answers for it.
  */
-function resolvedCategoryOf(chosen: string): PaymentMatrixCategory {
-  return chosen === '' ? 'UNCATEGORISED' : (chosen as PaymentMatrixCategory);
+function resolvedCategoryOf(chosen: string): PaymentMatrixCategory | null {
+  return chosen === '' ? null : (chosen as PaymentMatrixCategory);
 }
 
 export function WorkPaymentSetup({
@@ -261,6 +263,12 @@ export function WorkPaymentSetup({
    * ago, and the Measurement Book will name it either way. A row already
    * saved counts as covered even when its inputs are blanked here —
    * blanking does not delete (see the note the table carries).
+   *
+   * Items with nothing chosen are absent by construction — their
+   * resolved category is null — which is the change migration 0105
+   * bought. This dialog used to refuse a save while any item was
+   * uncategorised and the residual row was unset, on a Work the operator
+   * had opened to configure precisely because they had not decided yet.
    */
   const missingCoverage = PAYMENT_MATRIX_CATEGORIES.filter((category) => {
     const used = workItems.some(
@@ -467,11 +475,16 @@ export function WorkPaymentSetup({
                   nothing was proposed. Change any of them below.
                 </p>
               ) : (
+                // A to-do, not a blocker. Save works with items left
+                // unselected; they simply do not bill until they are
+                // answered, and the Measurement Book names them then.
                 <p className="text-sm text-muted-foreground">
                   No category could be read from the descriptions of the{' '}
-                  {uncategorisedCount} uncategorised item
-                  {uncategorisedCount === 1 ? '' : 's'}, so{' '}
-                  {uncategorisedCount === 1 ? 'it is' : 'they are'} yours to set.
+                  {uncategorisedCount} item
+                  {uncategorisedCount === 1 ? '' : 's'} still unselected, so{' '}
+                  {uncategorisedCount === 1 ? 'it is' : 'they are'} yours to set. You
+                  can save without them and come back — an unselected item bills nothing
+                  until it is answered.
                 </p>
               )}
               <DataTable scroll={false}>

@@ -40,13 +40,15 @@ export interface PaymentMatrixRowData extends PaymentMatrixPercentages {
  *
  * - `resolved: true` — `percentages` carry the exact strings of the
  *   matrix row the item resolves through, and `category` names that
- *   row's key (the item's own category, or 'UNCATEGORISED').
- * - `resolved: false` — the required row does not exist.
- *   `missingCategory` names the row that must be created. Phase 2's MB
- *   finalization collects these across ALL items on the MB and fails
- *   with one precise error naming every affected item — resolution
- *   never silently substitutes another row (a categorised item does NOT
- *   fall back to the UNCATEGORISED row).
+ *   row's key — always the item's own category.
+ * - `resolved: false` — the item cannot be billed as it stands.
+ *   `missingCategory` names the row that must be created, or is NULL
+ *   when the item has no category YET (migration 0105) and there is
+ *   therefore no row to look for — the remedy is a decision, not a row.
+ *   Phase 2's MB finalization collects these across ALL items on the MB
+ *   and fails with one precise error naming every affected item —
+ *   resolution never silently substitutes another row (a categorised
+ *   item does NOT fall back to the residual row).
  */
 type PaymentPercentageResolution =
   | {
@@ -56,7 +58,7 @@ type PaymentPercentageResolution =
     }
   | {
       readonly resolved: false;
-      readonly missingCategory: PaymentMatrixCategory;
+      readonly missingCategory: PaymentMatrixCategory | null;
     };
 
 /**
@@ -68,8 +70,8 @@ type PaymentPercentageResolution =
  * Contract:
  * - `matrix` must be the FULL set of the Work's matrix rows (any
  *   subset would fabricate missing-row failures).
- * - `paymentCategory` is the item's stored category or null
- *   (uncategorised).
+ * - `paymentCategory` is the item's stored category, or null when
+ *   nobody has chosen one yet.
  * - The returned percentage strings are the row's values verbatim;
  *   callers snapshot them onto finalised documents unchanged so later
  *   matrix edits never alter history (ADR-0006 decision 5).
@@ -78,7 +80,17 @@ export function resolvePaymentPercentages(
   matrix: readonly PaymentMatrixRowData[],
   paymentCategory: WorkItemPaymentCategory | null,
 ): PaymentPercentageResolution {
-  const needed: PaymentMatrixCategory = paymentCategory ?? 'UNCATEGORISED';
+  // An item with no category resolves through NOTHING. It used to fall
+  // through to the residual row, which meant an item nobody had looked
+  // at billed silently on any Work that happened to configure one — and
+  // left the operator's "still uncategorised" count describing a
+  // mixture of a to-do and a decision. Since migration 0105 the
+  // decision has a value of its own (`UNCATEGORISED`), so NULL can mean
+  // the one thing it should: not answered.
+  if (paymentCategory === null) {
+    return { resolved: false, missingCategory: null };
+  }
+  const needed: PaymentMatrixCategory = paymentCategory;
   const row = matrix.find((candidate) => candidate.category === needed);
   if (row === undefined) {
     return { resolved: false, missingCategory: needed };

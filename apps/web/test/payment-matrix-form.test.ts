@@ -40,6 +40,7 @@ function savedRow(values: Partial<PaymentMatrixRow> = {}): PaymentMatrixRow {
     pctInstallation: '0.00',
     pctPac: '10.00',
     pctFinalBill: '10.00',
+    categoryLabel: null,
     createdAt: '2026-08-08T00:00:00.000Z',
     updatedAt: '2026-08-08T00:00:00.000Z',
     ...values,
@@ -155,7 +156,9 @@ describe('autoZeroStages', () => {
       draft({ pctPac: '100', pctFinalBill: '0' }),
     );
     expect(
-      draftProblem(submittedDraft('AMC', autoZeroStages('AMC', draft({ pctPac: '100' })))),
+      draftProblem(
+        submittedDraft('AMC', autoZeroStages('AMC', draft({ pctPac: '100' }))),
+      ),
     ).toBeNull();
   });
 

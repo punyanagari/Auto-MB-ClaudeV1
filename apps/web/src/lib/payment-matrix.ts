@@ -1,5 +1,5 @@
 import type { PaymentMatrixCategory, PaymentMatrixRow } from '@auto-mb/contracts';
-import { WORK_ITEM_PAYMENT_CATEGORIES } from '@auto-mb/contracts';
+import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
 
 /**
  * The payment matrix as a FORM: the four stage percentages of one
@@ -22,6 +22,22 @@ export const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
   UNCATEGORISED: 'Uncategorised items',
 };
 
+/** What a category is called on THIS Work: the residual row's operator-
+ * chosen name where one was given (migration 0105), the product's own
+ * wording everywhere else. Railway schedules name their residual bucket
+ * differently — "Other items", "Miscellaneous", "Balance work" — and an
+ * operator reconciling a printed schedule should read the schedule's own
+ * word. The KEY never moves; only the wording does. */
+export function categoryLabelOf(
+  category: PaymentMatrixCategory,
+  rows: readonly PaymentMatrixRow[] | null | undefined,
+): string {
+  const stored = rows?.find((row) => row.category === category)?.categoryLabel;
+  return stored !== null && stored !== undefined && stored.length > 0
+    ? stored
+    : CATEGORY_LABELS[category];
+}
+
 /**
  * The options an item-category select offers, in the order both the
  * Schedules screen and the setup dialog show them.
@@ -31,13 +47,18 @@ export const CATEGORY_LABELS: Record<PaymentMatrixCategory, string> = {
  * something the other does not, on a field whose value decides which
  * matrix row bills the item.
  *
- * The empty value is the item's own uncategorised STATE, not the
- * UNCATEGORISED matrix row, so it keeps its own shorter name — an item
- * is "Uncategorised"; the row it falls back to is "Uncategorised items".
+ * The empty value is NOT SELECTED: nobody has decided yet. It used to be
+ * called "Uncategorised" and to resolve, silently, through the
+ * UNCATEGORISED matrix row — so an item nobody had looked at and an item
+ * deliberately parked in the residual bucket were the same choice, and
+ * the operator's "still uncategorised" count never reached zero on a
+ * fully configured Work. Since migration 0105 they are two options: this
+ * one, which bills nothing until it is answered, and UNCATEGORISED,
+ * which is an answer.
  */
 export const ITEM_CATEGORY_OPTIONS: readonly (readonly [string, string])[] = [
-  ['', 'Uncategorised'],
-  ...WORK_ITEM_PAYMENT_CATEGORIES.map(
+  ['', 'Not selected'],
+  ...PAYMENT_MATRIX_CATEGORIES.map(
     (category) => [category, CATEGORY_LABELS[category]] as const,
   ),
 ];

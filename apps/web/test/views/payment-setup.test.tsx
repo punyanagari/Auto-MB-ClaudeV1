@@ -486,7 +486,11 @@ describe('WorkPaymentSetup', () => {
     const refusal = await screen.findByText(/Enter the stage percentages for/);
     expect(refusal.textContent).toContain('Purely installation');
     expect(refusal.textContent).toContain('Spare supply');
-    expect(refusal.textContent).toContain('Uncategorised items');
+    // The residual row is NOT demanded any more (migration 0105): an
+    // item with nothing chosen resolves through no row, so there is no
+    // row this save could be asked to add. It bills nothing until it is
+    // answered, and the Measurement Book names the item, not a category.
+    expect(refusal.textContent).not.toContain('Uncategorised items');
     // The one category that IS configured is not named.
     expect(refusal.textContent).not.toContain('Supply +');
     expect(saveWorkPaymentSetup).not.toHaveBeenCalled();

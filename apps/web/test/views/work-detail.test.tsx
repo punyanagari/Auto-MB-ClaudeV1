@@ -12,7 +12,6 @@ import type { PurchaseOrderDetailResponse } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
 import {
-  openForm,
   submitButton,
   stubApi,
   ORG_ID,
@@ -752,12 +751,13 @@ describe('WorkDetail R8 completion panel', () => {
       await screen.findByText('Items not yet at 100% executed value'),
     ).toBeTruthy();
     expect(screen.getByText('full delivery and installation')).toBeTruthy();
-    expect(screen.getByText('uncategorised')).toBeTruthy();
+    // NULL is "not selected" since migration 0105, and the Remedy column
+    // is gone (2026-08-19): the row states the numbers and the operator
+    // reads the direction off them.
+    expect(screen.getByText('not selected')).toBeTruthy();
     expect(screen.getAllByText('2.000').length).toBeGreaterThan(0);
-    expect(screen.getByText('short — amend the quantity down')).toBeTruthy();
-    expect(
-      screen.getByText('above the sanctioned quantity — amend the quantity up'),
-    ).toBeTruthy();
+    expect(screen.queryByText('Remedy')).toBeNull();
+    expect(screen.queryByText('short — amend the quantity down')).toBeNull();
   });
 
   it('names every clean-state blocker from the 409 details', async () => {
@@ -1048,7 +1048,7 @@ describe('WorkDetail amendments', () => {
 
     expect(await screen.findByText('This Work cannot be completed yet.')).toBeTruthy();
     expect(screen.getByText('Draft delivery challan dated 2026-08-09')).toBeTruthy();
-    expect(screen.getByText('short — amend the quantity down')).toBeTruthy();
+    expect(screen.getByText('Items not yet at 100% executed value')).toBeTruthy();
     expect(screen.queryByLabelText('Why this Work is being completed')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Complete Work' })).toBeNull();
   });
@@ -1230,6 +1230,10 @@ describe('WorkDetail amendments', () => {
     renderAmended(amendedApi({ setWorkSettings }), { isOwner: true });
     await screen.findByRole('button', { name: /^Overview/ });
 
+    // The toggle lifts the DELIVERY cap and nothing else, so it lives on
+    // the Deliveries tab (2026-08-19) rather than in the Work header,
+    // where it was the one control amid read-only figures.
+    await openWorkTab('Deliveries');
     const toggle = await screen.findByLabelText(
       'Allow issuing beyond sanctioned quantities',
     );
@@ -1240,6 +1244,8 @@ describe('WorkDetail amendments', () => {
 
     cleanup();
     renderAmended(amendedApi());
+    await screen.findByRole('button', { name: /^Overview/ });
+    await openWorkTab('Deliveries');
     // The second render has to finish loading before the read-only variant
     // of the switch exists to assert on.
     expect(await screen.findByText('Not allowed')).toBeTruthy();

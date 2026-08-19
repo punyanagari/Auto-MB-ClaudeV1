@@ -16,6 +16,7 @@ import {
   LOCKED_AMC_STAGES,
   STAGE_FIELDS,
   autoZeroStages,
+  categoryLabelOf,
   draftFrom,
   draftProblem,
   draftTouched,
@@ -119,6 +120,10 @@ export function PaymentMatrix({
 }: PaymentMatrixProps) {
   const [rows, setRows] = useState<readonly PaymentMatrixRow[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
+  /** The residual row's per-Work name, held beside its percentages and
+   * saved by the same button (migration 0105). Empty means "use the
+   * product's own wording", which is what the placeholder shows. */
+  const [residualLabel, setResidualLabel] = useState('');
   const [tenderContext, setTenderContext] = useState<ContractSourceContext | null>(
     null,
   );
@@ -143,6 +148,9 @@ export function PaymentMatrix({
           );
         }
         setDrafts(initial);
+        setResidualLabel(
+          loaded.find((row) => row.category === 'UNCATEGORISED')?.categoryLabel ?? '',
+        );
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -325,7 +333,7 @@ export function PaymentMatrix({
             if (!canModify) {
               return (
                 <tr key={category}>
-                  <th scope="row">{CATEGORY_LABELS[category]}</th>
+                  <th scope="row">{categoryLabelOf(category, rows)}</th>
                   {STAGE_FIELDS.map(([field]) => (
                     <td key={field} className={numericCell}>
                       {saved?.[field] ?? '—'}
@@ -341,7 +349,30 @@ export function PaymentMatrix({
             }
             return (
               <tr key={category}>
-                <th scope="row">{CATEGORY_LABELS[category]}</th>
+                <th scope="row">
+                  {category === 'UNCATEGORISED' ? (
+                    // The one category the operator may rename, because
+                    // it is the only one whose meaning is the Work's
+                    // rather than the product's: every schedule has a
+                    // residual bucket and every schedule calls it
+                    // something else. Display only — the row's key, and
+                    // everything that resolves through it, is untouched.
+                    // Saved with the row, by the row's own Save button.
+                    <input
+                      aria-label="Name for the uncategorised-items row on this Work"
+                      className="w-full"
+                      value={residualLabel}
+                      maxLength={60}
+                      placeholder={CATEGORY_LABELS.UNCATEGORISED}
+                      disabled={pending}
+                      onChange={(event) => {
+                        setResidualLabel(event.target.value);
+                      }}
+                    />
+                  ) : (
+                    CATEGORY_LABELS[category]
+                  )}
+                </th>
                 {STAGE_FIELDS.map(([field, label]) => {
                   // An AMC item is never delivered and never installed
                   // (migration 0068), so those two stage deltas are
@@ -385,6 +416,14 @@ export function PaymentMatrix({
                               pctInstallation: submitted.pctInstallation,
                               pctPac: submitted.pctPac,
                               pctFinalBill: submitted.pctFinalBill,
+                              ...(category === 'UNCATEGORISED'
+                                ? {
+                                    categoryLabel:
+                                      residualLabel.trim().length > 0
+                                        ? residualLabel.trim()
+                                        : null,
+                                  }
+                                : {}),
                             },
                           );
                           setRows((current) => [

@@ -342,7 +342,11 @@ function CompletionShortfall({
             {unfinished.map((item) => (
               <tr key={item.workItemId}>
                 <th scope="row">{item.itemNumber}</th>
-                <td>{item.category ?? 'uncategorised'}</td>
+                {/* NULL is "not selected yet" since migration 0105, and
+                    it is the reason an item can sit here billing
+                    nothing — so the cell says that rather than naming a
+                    category the item does not have. */}
+                <td>{item.category ?? 'not selected'}</td>
                 <td>{REQUIREMENT_LABELS[item.requirement]}</td>
                 <td className={numericCell}>{item.requiredQuantity}</td>
                 <td className={numericCell}>{item.deliveredQuantity}</td>

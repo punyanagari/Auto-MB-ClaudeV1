@@ -174,7 +174,8 @@ beforeAll(async () => {
   await admin`
     insert into work_items (
       id, organisation_id, work_id, schedule_id, item_number, description,
-      unit_code, awarded_quantity, effective_rate, requires_serials
+      unit_code, awarded_quantity, effective_rate, requires_serials,
+      payment_category
     )
     values
       -- Item A stays unflagged: these tests exercise the voluntary
@@ -182,9 +183,9 @@ beforeAll(async () => {
       -- lives in serials.integration.test.ts, where issue is blocked
       -- until the draft lines are serial-complete.
       (${itemAId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
-       'Main switchboard', 'Nos', 5.000, 100.00, false),
+       'Main switchboard', 'Nos', 5.000, 100.00, false, 'UNCATEGORISED'),
       (${itemBId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/2',
-       'Cable set', 'Set', 2.000, 250.50, false)
+       'Cable set', 'Set', 2.000, 250.50, false, 'UNCATEGORISED')
   `;
 
   // Draft and issue one challan (A: 3, B: 1.5) through the real API.
@@ -656,7 +657,10 @@ describe('Measurement Book and the first partial-billing cycle', () => {
       'serial.installed',
       'instrument.created',
       'instrument.updated',
-      'mb.recorded',
+      // 'mb.recorded' is deliberately absent: the loose register's writer
+      // was removed on 2026-08-19 (owner-sanctioned), so no new event of
+      // that action is ever written. The measurement that reaches a bill
+      // is the Measurement Book's, and its three events follow.
       'measurement_book.created',
       'measurement_book.sources_updated',
       'measurement_book.finalized',
