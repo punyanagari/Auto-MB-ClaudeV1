@@ -768,6 +768,8 @@ describe('PaymentMatrix', () => {
       scheduleCode: 'A',
       title: 'Supply of switchgear',
       position: 1,
+      amcBillingPeriods: null,
+      amcCycleNoun: null,
       items,
     },
   ];
