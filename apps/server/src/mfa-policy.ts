@@ -128,6 +128,12 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // and bank detail it holds. This is the single highest-value read in
   // the product, so it sits on the wall beside payments and payroll.
   export: true,
+  // Retention states what the railway is holding and records that it
+  // came back. A stolen session that can write a release can make the
+  // agency's own record of an unpaid security deposit read as settled,
+  // which is a theft nobody would notice until the maintenance period
+  // ended — so it joins the wall beside payments.
+  retention: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -145,6 +151,7 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   audit: 'can_view_audit_trail',
   entitlements: 'can_manage_entitlements',
   export: 'can_export_org',
+  retention: 'can_manage_retention',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

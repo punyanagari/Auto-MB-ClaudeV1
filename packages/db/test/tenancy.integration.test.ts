@@ -231,6 +231,12 @@ const TENANT_TABLES = [
   'organisation_entitlements',
   'statutory_job_schedules',
   'organisation_export_requests',
+  // Retention, security deposit and liquidated damages (0098). The
+  // contract's terms first, because an assessment is refused without
+  // them; the release and the assessment hang off the Work.
+  'work_retention_terms',
+  'retention_releases',
+  'ld_assessments',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -440,6 +446,13 @@ const DELETE_REVOKED_TABLES = [
   // said, because the workbook itself is never stored (0094).
   'spreadsheet_import_batches',
   'spreadsheet_import_rows',
+  // A recorded retention release and a liquidated-damages assessment are
+  // both money records: the first is WITHDRAWN with a reason and the
+  // second is CANCELLED with one, so the mistake and its correction stay
+  // on the record together. Only the contract's terms delete, and they
+  // are in DELETE_ALLOWED_TABLES below (0098).
+  'retention_releases',
+  'ld_assessments',
   // A maintenance request carries a number from the moment it is raised
   // and closes rather than disappearing; its lines are cancelled with a
   // reason rather than removed; the challan, its lines and the defective
@@ -466,6 +479,11 @@ const DELETE_REVOKED_TABLES = [
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // A Work's retention and liquidated-damages terms are configuration
+  // read off its letter, not a record of an act: a Work that turns out to
+  // state none goes back to having none. Every assessment already made
+  // keeps its own frozen snapshot and is unaffected (0098).
+  'work_retention_terms',
   // A payslip is cleared and rewritten every time a DRAFT run is
   // recalculated, which is the only reason DELETE exists on the table at
   // all; the 0090 guard refuses every delete once the run is finalised
@@ -1090,6 +1108,47 @@ async function seedTenantGraph(
       values
         (${organisationId}, ${billPayment.id}, 'GST_TDS', '1.00', null),
         (${organisationId}, ${billPayment.id}, 'SECURITY_DEPOSIT', '1.00', null)
+    `;
+
+    /* Retention and liquidated damages (0098). The security-deposit
+       deduction above is the ₹1 the railway withheld, so the ₹1 release
+       here is exactly what the ledger permits — the guard refuses a
+       release beyond what was ever held, and a seed that could not be
+       written would say nothing about tenancy.
+
+       The release date is two days back rather than a literal, because
+       the guard compares it against today in the ORGANISATION'S timezone
+       and a hard-coded date makes the suite depend on the wall clock. */
+    await tx`
+      insert into work_retention_terms (
+        organisation_id, work_id, retention_percent, retention_limit_percent,
+        defect_liability_months, ld_rate_percent, ld_period_days,
+        ld_cap_percent, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, '10', '5', 24, '0.5', 7, '10', ${userId}
+      )
+    `;
+    await tx`
+      insert into retention_releases (
+        organisation_id, work_id, released_on, amount, basis, reference,
+        recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, (now() - interval '2 days')::date, '1.00',
+        'pac', ${`REL-${workCode}`}, ${userId}
+      )
+    `;
+    await tx`
+      insert into ld_assessments (
+        organisation_id, work_id, assessed_on, basis_amount, basis_label,
+        scheduled_completion_date, assessed_to_date, ld_rate_percent,
+        ld_period_days, ld_cap_percent, assessed_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, '2026-02-15', '1000.00', 'Contract value',
+        '2026-01-01', '2026-02-01', '0.5', 7, '10', ${userId}
+      )
     `;
 
     /* The outbound half of the cash position (0080). The beneficiary is

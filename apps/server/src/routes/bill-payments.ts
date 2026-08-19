@@ -822,12 +822,45 @@ export function registerBillPaymentRoutes(
         if (bill.status === 'paid') {
           throw httpError(409, 'BILL_ALREADY_PAID', REGISTER_CLOSED);
         }
+        // Retention held is DERIVED from this receipt's SECURITY_DEPOSIT
+        // deduction (migration 0098), so withdrawing the receipt reduces
+        // what was ever withheld on the Work — and it may not reduce it
+        // below what has already been released. The whole comparison is
+        // done in SQL: three decimal strings through `Number()` is the
+        // float arithmetic engineering rule 5 forbids, on the figures that
+        // decide whether the ledger stays honest.
+        //
+        // `app_private.guard_retention_survives_payment_void` refuses the
+        // same thing, which is what holds when a release is recorded
+        // between this read and the update. This is the arm that says it
+        // in a sentence.
+        const [retention] = await tx<{ stranded: boolean; shortfall: string }[]>`
+          with withdrawn as (
+            select coalesce(sum(d.amount::numeric), 0) as total
+            from bill_payment_deductions d
+            where d.bill_payment_id = ${id} and d.category = 'SECURITY_DEPOSIT'
+          )
+          select app_private.work_retention_released(${bill.work_id})
+                   > app_private.work_retention_held(${bill.work_id})
+                     - withdrawn.total as stranded,
+                 (app_private.work_retention_released(${bill.work_id})
+                   - (app_private.work_retention_held(${bill.work_id})
+                      - withdrawn.total))::text as shortfall
+          from withdrawn
+        `;
+        if (retention?.stranded === true) {
+          throw httpError(
+            409,
+            'RETENTION_RELEASE_STRANDED',
+            `This receipt is what withheld the retention already released on this Work; withdrawing it would leave ${retention.shortfall} released against nothing withheld. Withdraw the release first.`,
+          );
+        }
         await tx`
           update bill_payments
           set voided_at = now(), voided_by_user_id = ${user.id},
               void_reason = ${reason}
           where id = ${id}
-        `;
+        `.catch(rethrowWriteRefusal);
         const payment = await readPayment(tx, id);
         await audit(
           tx,
@@ -871,6 +904,15 @@ const DATABASE_REFUSALS: Readonly<Record<string, readonly [ErrorCode, string]>> 
   '23A04': [
     'BILL_PAYMENT_ALREADY_VOIDED',
     'This payment was withdrawn while the receipt was being recorded.',
+  ],
+  // Migration 0098's other end of the retention invariant. Withdrawing a
+  // receipt reduces what was ever withheld on the Work, and it may not
+  // reduce it below what has already been released. The void route checks
+  // it first under the bill's lock; this is the arm that holds when a
+  // release is recorded between that check and the update.
+  '23P08': [
+    'RETENTION_RELEASE_STRANDED',
+    'A retention release on this Work was recorded against what this receipt withheld. Withdraw the release first, then withdraw this receipt.',
   ],
 };
 

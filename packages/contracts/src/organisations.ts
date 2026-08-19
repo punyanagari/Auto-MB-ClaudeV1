@@ -96,6 +96,14 @@ const MembershipSchema = Type.Object(
      * delegating the organisation; the route additionally requires full
      * work scope, because the package is not work-scoped. */
     canExportOrg: Type.Boolean(),
+    /** The retention authority (migration 0098): may record a Work's
+     * retention and liquidated-damages terms, record and withdraw a
+     * retention release, and assess, levy or waive liquidated damages.
+     * Separate from canManagePayments because that authority sends the
+     * agency's money out and this one states what the railway is holding
+     * and what it may keep. Defaults false and is not backfilled — an
+     * owner grants it per member, including to themselves. */
+    canManageRetention: Type.Boolean(),
     /** Whether the member's ACCOUNT has completed TOTP enrolment. Owners
      * see it in the member list so authority is granted to enrolled
      * accounts, not enrolment chased afterwards (finding 36). */
@@ -136,6 +144,7 @@ export const AddMemberRequestSchema = Type.Object(
     canViewAuditTrail: Type.Optional(Type.Boolean()),
     canManageEntitlements: Type.Optional(Type.Boolean()),
     canExportOrg: Type.Optional(Type.Boolean()),
+    canManageRetention: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -486,6 +495,7 @@ export const UpdateMemberRequestSchema = Type.Object(
     canViewAuditTrail: Type.Optional(Type.Boolean()),
     canManageEntitlements: Type.Optional(Type.Boolean()),
     canExportOrg: Type.Optional(Type.Boolean()),
+    canManageRetention: Type.Optional(Type.Boolean()),
     status: Type.Optional(
       Type.Union([Type.Literal('active'), Type.Literal('disabled')]),
     ),

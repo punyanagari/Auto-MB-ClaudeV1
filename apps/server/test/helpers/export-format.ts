@@ -18,4 +18,4 @@
  * suite EXPECTS, and bumping the server's own constant without bumping
  * this one is exactly the mistake the assertions exist to catch.
  */
-export const EXPECTED_EXPORT_VERSION = 'export-v28';
+export const EXPECTED_EXPORT_VERSION = 'export-v29';

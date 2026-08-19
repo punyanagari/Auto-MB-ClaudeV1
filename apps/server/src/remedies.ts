@@ -63,6 +63,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   PAC_CERTIFICATE_NOT_FOUND:
     "Open the certificate from the Work's guarantees and acceptance tab.",
   EXTENSION_NOT_FOUND: "Open the extension from the Work's completion section.",
+  INSTRUMENT_NOT_FOUND:
+    "Pick the guarantee again from the Work's Instruments tab; a guarantee lodged against a different Work secures a different contract and is never selectable here.",
   NOTICE_NOT_FOUND: 'Open the correction notice from the challan it corrects.',
   APPROVAL_NOT_FOUND:
     'Open the request from the Approvals queue; a decided or withdrawn request leaves it.',
@@ -553,6 +555,42 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   INTERNAL_ERROR:
     'Try again, and quote the request id above to your administrator if it recurs.',
   RATE_LIMITED: 'Wait a few minutes before trying again.',
+
+  // ---- Retention and liquidated damages (0098) --------------------------
+  //
+  // Two ledgers with opposite directions, and the remedies say which one
+  // the operator is standing in: a retention refusal sends them to the
+  // payment register, because what is held is what the railway actually
+  // withheld there; a damages refusal sends them to the Work's terms,
+  // because an assessment is a reading of the contract.
+  RETENTION_RELEASE_EXCEEDS_HELD:
+    "Re-read the retention position on the Work's Instruments tab before recording this release: only what the railway actually withheld can come back, and a withdrawn receipt takes its retention out of the balance.",
+  RETENTION_RELEASE_ALREADY_WITHDRAWN:
+    'Reload the register; a withdrawn release keeps its record and its reason, and a corrected one is recorded as a new release.',
+  RETENTION_RELEASE_DUPLICATE_REFERENCE:
+    'Check whether this release letter is already in the register under the same reference, and withdraw the earlier one first if it was recorded in error.',
+  RETENTION_RELEASE_DATE_FUTURE:
+    'Check the year on the release letter; a release is dated the day the railway released the money, which cannot be later than today.',
+  RETENTION_RELEASE_STRANDED:
+    "Withdraw the release on the Work's Instruments tab first; retention that was never withheld cannot have come back, and the two records have to be retracted in that order.",
+  RETENTION_RELEASE_UNDESCRIBED:
+    'Say what the release is for in the description, because an unnamed release cannot be reconciled against the railway’s own letter later.',
+  RETENTION_INSTRUMENT_REQUIRED:
+    "Pick the guarantee the retention was released against, or record it first on the Work's Instruments tab if it is not there yet.",
+  RETENTION_TERMS_LD_INCOMPLETE:
+    'Fill the rate, the chargeable period and the cap together, since an assessment cannot be computed from two of the three.',
+  RETENTION_TERMS_EMPTY:
+    "Record at least one term, or leave the Work's terms unset — a record that states nothing is not a record.",
+  LD_TERMS_MISSING:
+    "Record the contract's liquidated-damages terms on the Work first: the rate, the chargeable period and the cap are read from there and never typed into an assessment.",
+  LD_ASSESSMENT_WINDOW_INVALID:
+    'Check the years on the completion date and the date the delay is measured to; the window runs from the contractual completion date forwards and an assessment cannot be dated before the period it covers.',
+  LD_DRAFT_EXISTS:
+    'Levy, waive or cancel the draft assessment on this Work before making another, so there is one current answer rather than two.',
+  LD_LEVY_EXCEEDS_ASSESSMENT:
+    'Assess again on the basis the railway used if it took more than the contract permits, rather than recording a levy above the assessment.',
+  LD_ASSESSMENT_STATUS_CONFLICT:
+    'Reload the assessment before deciding it; a levied one may still be waived or cancelled, and a waived or cancelled one is final.',
 };
 
 /** Codes the error handler mints itself; they are legitimate catalog keys

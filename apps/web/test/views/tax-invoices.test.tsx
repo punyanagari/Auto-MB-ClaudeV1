@@ -43,6 +43,7 @@ describe('WorkDetail tax invoices', () => {
         canCancel
         canApprove={false}
         canManageStatutory={true}
+        canManageRetention={true}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
@@ -725,6 +726,7 @@ describe('WorkDetail billing readiness panel', () => {
         canCancel
         canApprove={false}
         canManageStatutory={true}
+        canManageRetention={true}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
@@ -897,6 +899,7 @@ describe('WorkBills line rendering', () => {
         canCancel
         canApprove={false}
         canManageStatutory={true}
+        canManageRetention={true}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}
@@ -933,6 +936,7 @@ describe('Tax invoice draft gating and wayfinding', () => {
         canCancel
         canApprove={false}
         canManageStatutory={true}
+        canManageRetention={true}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}

@@ -15,6 +15,7 @@ export interface MembershipRow {
   can_view_audit_trail: boolean;
   can_manage_entitlements: boolean;
   can_export_org: boolean;
+  can_manage_retention: boolean;
 }
 
 export async function membershipOf(
@@ -26,7 +27,7 @@ export async function membershipOf(
            can_manage_statutory_reporting, can_manage_payments,
            can_sign_documents, can_manage_payroll, can_manage_notifications,
            can_import_data, can_view_audit_trail,
-           can_manage_entitlements, can_export_org
+           can_manage_entitlements, can_export_org, can_manage_retention
     from organisation_memberships
     where user_id = ${userId}
       and organisation_id = app_private.current_organisation_id()
@@ -195,7 +196,15 @@ export type DocumentAuthority =
    * authority cannot express — full work scope — because the package is
    * not work-scoped and an assigned-scope member would otherwise receive
    * every Work the product hides from them. */
-  | 'export';
+  | 'export'
+  /** Stating what the railway is holding back and what it may keep
+   * (0098): the contract's retention and liquidated-damages terms, a
+   * retention release, and the assessment, levy or waiver of liquidated
+   * damages. Separate from `payments`, which governs money leaving the
+   * agency's own bank — the person who chases a security-deposit release
+   * at the end of a maintenance period is not whoever approves a travel
+   * claim, and neither grant should imply the other. */
+  | 'retention';
 
 /** Named refusals, so a denial says which authority is missing rather
  * than interpolating an internal token into prose. */
@@ -220,6 +229,8 @@ const AUTHORITY_REFUSALS: Record<DocumentAuthority, string> = {
     'Your membership does not carry the entitlements authority, which is required to switch this organisation’s modules on or off and to configure its recurring statutory checks. It is granted to owners only.',
   export:
     'Your membership does not carry the organisation-export authority, which is required to request or download a copy of the whole organisation record.',
+  retention:
+    'Your membership does not carry the retention authority, which is required to record a contract’s retention and liquidated-damages terms, to record or withdraw a retention release, and to assess, levy or waive liquidated damages.',
 };
 
 /** Exhaustive by construction: a new `DocumentAuthority` that is not
@@ -240,6 +251,7 @@ const AUTHORITY_COLUMNS: Record<
     | 'can_view_audit_trail'
     | 'can_manage_entitlements'
     | 'can_export_org'
+    | 'can_manage_retention'
   >
 > = {
   issue: 'can_issue_documents',
@@ -253,6 +265,7 @@ const AUTHORITY_COLUMNS: Record<
   audit: 'can_view_audit_trail',
   entitlements: 'can_manage_entitlements',
   export: 'can_export_org',
+  retention: 'can_manage_retention',
 };
 
 function authorityGranted(
