@@ -74,6 +74,25 @@ export const TIMELINE_ENTITY_TYPES = [
   // writes `maintenance_dispatches` or `maintenance_returns` as an
   // entity type, so neither needs a line in the census either way.
   'maintenance_requests',
+  // Retention, security deposit and liquidated damages (0098). Three
+  // entity types, and all three belong on the Work's own trail because
+  // all three are acts on THIS contract rather than on the organisation.
+  //
+  // The terms are the Work's reading of its own letter, on exactly the
+  // footing `payment_matrices` sits on above: recording them decides what
+  // every later assessment computes from, so a trail that showed an
+  // assessment appear with no sign of the rates behind it would be a
+  // trail with the decision missing.
+  'work_retention_terms',
+  // Money coming back is the end of the story the bill and the payment
+  // register began. A Work whose trail stops at "the railway withheld
+  // ₹1,50,000" and never says it was released is the exact gap this
+  // module exists to close.
+  'retention_releases',
+  // And the damages: assessed, levied, waived or cancelled. Each is a
+  // decision about money on this contract, and the assessment is the one
+  // record that explains a deduction the railway made.
+  'ld_assessments',
   // The defect liability period and the Work's warranty term (0099).
   // Starting a period fixes the date the railway's Performance Bank
   // Guarantee is measured against, and extending one is the only place

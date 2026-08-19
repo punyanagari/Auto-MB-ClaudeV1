@@ -80,6 +80,10 @@ interface WorkDetailProps {
   /** Holds can_manage_statutory_reporting — gates the IRP/NIC portal
    * surfaces inside the tax-invoice tab (migration 0061). */
   readonly canManageStatutory: boolean;
+  /** Holds can_manage_retention — gates the retention ledger and the
+   * liquidated-damages assessments inside the instruments tab
+   * (migration 0098). */
+  readonly canManageRetention: boolean;
   readonly isOwner: boolean;
   readonly onNewChallan: (workId: string, workCode: string) => void;
   readonly onOpenChallan: (challanId: string) => void;
@@ -386,6 +390,7 @@ export function WorkDetail({
   canCancel,
   canApprove,
   canManageStatutory,
+  canManageRetention,
   isOwner,
   onNewChallan,
   onOpenChallan,
@@ -1706,6 +1711,7 @@ export function WorkDetail({
             setInstruments={setInstruments}
             canModify={canModify}
             canCreateDocuments={canCreateDocuments}
+            canManageRetention={canManageRetention}
             pending={pending}
             act={act}
           />

@@ -39,6 +39,7 @@ interface MembershipRow {
   can_view_audit_trail: boolean;
   can_manage_entitlements: boolean;
   can_export_org: boolean;
+  can_manage_retention: boolean;
   /** From auth_users."twoFactorEnabled" (nullable there; coalesced in SQL).
    * Surfaced so owners can see enrolment BEFORE granting authority —
    * granting to an unenrolled account walls them off on their next
@@ -65,6 +66,7 @@ function toMembership(row: MembershipRow): Membership {
     canViewAuditTrail: row.can_view_audit_trail,
     canManageEntitlements: row.can_manage_entitlements,
     canExportOrg: row.can_export_org,
+    canManageRetention: row.can_manage_retention,
     twoFactorEnabled: row.two_factor_enabled,
     status: row.status,
   };
@@ -95,6 +97,7 @@ export function registerIdentityRoutes(
                    m.can_manage_payroll, m.can_manage_notifications,
                    m.can_import_data, m.can_view_audit_trail,
                    m.can_manage_entitlements, m.can_export_org,
+                   m.can_manage_retention,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -226,6 +229,7 @@ export function registerIdentityRoutes(
                    m.can_manage_payroll, m.can_manage_notifications,
                    m.can_import_data, m.can_view_audit_trail,
                    m.can_manage_entitlements, m.can_export_org,
+                   m.can_manage_retention,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -283,7 +287,7 @@ export function registerIdentityRoutes(
               can_manage_payments, can_sign_documents,
               can_manage_payroll, can_manage_notifications, can_import_data,
               can_view_audit_trail, can_manage_entitlements, can_export_org,
-              status
+              can_manage_retention, status
             )
             values (
               ${organisationId}, ${target.id}, ${body.role},
@@ -300,6 +304,7 @@ export function registerIdentityRoutes(
               ${body.canViewAuditTrail ?? false},
               ${body.canManageEntitlements ?? false},
               ${body.canExportOrg ?? false},
+              ${body.canManageRetention ?? false},
               'active'
             )
           `.catch((error: unknown) => {
@@ -332,6 +337,7 @@ export function registerIdentityRoutes(
                    m.can_manage_payroll, m.can_manage_notifications,
                    m.can_import_data, m.can_view_audit_trail,
                    m.can_manage_entitlements, m.can_export_org,
+                   m.can_manage_retention,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m
@@ -398,6 +404,7 @@ export function registerIdentityRoutes(
             can_view_audit_trail: boolean;
             can_manage_entitlements: boolean;
             can_export_org: boolean;
+            can_manage_retention: boolean;
           }[]
         >`
             select role, status, work_scope, can_issue_documents,
@@ -405,9 +412,8 @@ export function registerIdentityRoutes(
                    can_manage_statutory_reporting, can_manage_payments,
                    can_sign_documents, can_manage_payroll,
                    can_manage_notifications, can_import_data,
-                   can_view_audit_trail
-                   can_manage_notifications,
-                   can_manage_entitlements, can_export_org
+                   can_view_audit_trail, can_manage_entitlements,
+                   can_export_org, can_manage_retention
             from organisation_memberships
             where user_id = ${memberUserId}
               and organisation_id = app_private.current_organisation_id()
@@ -482,6 +488,8 @@ export function registerIdentityRoutes(
                 ),
               can_export_org =
                 coalesce(${body.canExportOrg ?? null}, can_export_org),
+              can_manage_retention =
+                coalesce(${body.canManageRetention ?? null}, can_manage_retention),
               status = coalesce(${body.status ?? null}, status),
               updated_at = now()
             where user_id = ${memberUserId}
@@ -510,6 +518,7 @@ export function registerIdentityRoutes(
             canViewAuditTrail: current.can_view_audit_trail,
             canManageEntitlements: current.can_manage_entitlements,
             canExportOrg: current.can_export_org,
+            canManageRetention: current.can_manage_retention,
             status: current.status,
           },
           {
@@ -532,6 +541,7 @@ export function registerIdentityRoutes(
             canManageEntitlements:
               body.canManageEntitlements ?? current.can_manage_entitlements,
             canExportOrg: body.canExportOrg ?? current.can_export_org,
+            canManageRetention: body.canManageRetention ?? current.can_manage_retention,
             status: body.status ?? current.status,
           },
         );
@@ -553,6 +563,7 @@ export function registerIdentityRoutes(
                    m.can_manage_payroll, m.can_manage_notifications,
                    m.can_import_data, m.can_view_audit_trail,
                    m.can_manage_entitlements, m.can_export_org,
+                   m.can_manage_retention,
                    coalesce(u."twoFactorEnabled", false) as two_factor_enabled,
                    m.status
             from organisation_memberships m

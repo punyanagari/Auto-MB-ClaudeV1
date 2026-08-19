@@ -93,6 +93,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0092_notifications.sql': 4,
   '0094_data_imports.sql': 2,
   '0096_platform_controls.sql': 5,
+  '0098_retention_and_liquidated_damages.sql': 6,
   '0099_warranty_dlp.sql': 6,
 };
 

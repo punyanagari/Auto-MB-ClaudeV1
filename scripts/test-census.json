@@ -1,7 +1,7 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 3191,
-  "fileCount": 207,
+  "totalDeclarations": 3224,
+  "fileCount": 209,
   "files": {
     "apps/server/test/amc-schedule.integration.test.ts": 20,
     "apps/server/test/amendments.integration.test.ts": 50,
@@ -94,6 +94,7 @@
     "apps/server/test/received-railway-bills.integration.test.ts": 33,
     "apps/server/test/record-guards.integration.test.ts": 11,
     "apps/server/test/reply-inside-transaction-census.test.ts": 2,
+    "apps/server/test/retention-ledger.integration.test.ts": 23,
     "apps/server/test/retention.integration.test.ts": 8,
     "apps/server/test/route-inventory.integration.test.ts": 5,
     "apps/server/test/scale-budget.integration.test.ts": 5,
@@ -169,6 +170,7 @@
     "apps/web/test/views/work-bill-settlement.test.tsx": 8,
     "apps/web/test/views/work-detail.test.tsx": 42,
     "apps/web/test/views/work-panels.test.tsx": 24,
+    "apps/web/test/views/work-retention.test.tsx": 10,
     "apps/web/test/views/work-supersede.test.tsx": 7,
     "apps/web/test/views/works-loa.test.tsx": 30,
     "apps/web/test/views/workspace-shell.test.tsx": 19,

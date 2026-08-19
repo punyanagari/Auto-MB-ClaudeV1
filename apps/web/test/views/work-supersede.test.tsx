@@ -146,6 +146,7 @@ describe('the Work page', () => {
         canCancel
         canApprove
         canManageStatutory
+        canManageRetention
         isOwner
         onNewChallan={noop}
         onOpenChallan={noop}

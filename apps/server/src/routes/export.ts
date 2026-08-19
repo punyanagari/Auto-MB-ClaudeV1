@@ -46,11 +46,38 @@ const errorResponses = {
  * string identifies a format, two formats sharing one string is the
  * failure that matters, and a gap is not.
  *
- * export-v29 IS THE RETENTION PACK OF THIS WAVE and its block belongs
- * directly below this line. It is merging alongside this one rather than
- * before it, so the slot is named here instead of left as a silent gap —
- * a reader who finds v30 sitting on v28 should know the missing number
- * is allocated and arriving, not skipped.
+ * export-v29: retention, security deposit and liquidated damages (0098)
+ * join the package — the contract's own deduction terms, every retention
+ * release, and every liquidated-damages assessment with the snapshot it
+ * was computed from.
+ *
+ * The requirement this section answers is the one a deduction register
+ * cannot answer alone. `bill_payment_deductions` already travels and says
+ * what the railway KEPT; on its own that is a record of money leaving and
+ * nothing else. An organisation restored from an export has to be able to
+ * say what is still HELD against a contract closed years ago, and to show
+ * the railway which completion date, which rate and which cap produced
+ * the damages it argued about. So:
+ *
+ *   held      stays derived, and needs nothing new here: it is the
+ *             SECURITY_DEPOSIT deductions of the payment register, which
+ *             this package has carried since export-v1.
+ *   released  `retentionReleases`, including the withdrawn rows and their
+ *             reasons — a release that was retracted is part of the
+ *             balance's history and dropping it would make the arithmetic
+ *             unreconstructable.
+ *   assessed  `ldAssessments`, whose generated columns travel as ordinary
+ *             values. The frozen snapshot beside them is what makes the
+ *             figures re-derivable rather than merely believable.
+ *   agreed    `workRetentionTerms`, the contract's own rates, which are
+ *             read off a letter the product may not hold a copy of.
+ *
+ * The version numbers between v24 and this one belong to the packs of the
+ * waves that landed ahead of it — v25 through v28, whose notes follow. The
+ * numbers were ALLOCATED by the coordinator rather than claimed on merge,
+ * for the reason the v15, v17 and v21 notes record at length: a version
+ * string identifies a format, two formats sharing one string is the
+ * failure that matters, and a gap is not.
  *
  * export-v27: the audit authority and the retention policy (0095) join the
  * package.
@@ -470,7 +497,7 @@ const SECTIONS: readonly ExportSection[] = [
                  can_manage_payroll, can_sign_documents, can_import_data,
                  can_manage_notifications, can_view_audit_trail,
                  can_manage_entitlements, can_export_org,
-                 status, created_at
+                 can_manage_retention, status, created_at
           from organisation_memberships
           where organisation_id = app_private.current_organisation_id()
           order by created_at`,
@@ -1376,6 +1403,30 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'organisationExportRequests',
     sql: `select * from organisation_export_requests
           order by requested_at, id`,
+  },
+  // Retention, security deposit and liquidated damages (0098). The
+  // generated columns of `ld_assessments` are exported as plain values
+  // beside the snapshot they were derived from, which is what makes a
+  // restored assessment checkable rather than merely readable: a reader
+  // years later can recompute the figure from the same four inputs and
+  // see that it matches.
+  {
+    key: 'workRetentionTerms',
+    sql: `select * from work_retention_terms order by work_id`,
+  },
+  {
+    // Withdrawn releases travel too, with their reasons. A retracted
+    // release is part of the balance's history — dropping it would leave
+    // a restored organisation unable to explain why its retention
+    // position moved, which is exactly the reconstruction an export is
+    // for.
+    key: 'retentionReleases',
+    sql: `select * from retention_releases
+          order by work_id, released_on, id`,
+  },
+  {
+    key: 'ldAssessments',
+    sql: `select * from ld_assessments order by work_id, assessed_on, id`,
   },
 ];
 

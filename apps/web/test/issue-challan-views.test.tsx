@@ -285,6 +285,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     }),
     recordBillPayment: vi.fn(),
     voidBillPayment: vi.fn(),
+    getWorkRetention: vi.fn(),
+    saveWorkRetentionTerms: vi.fn(),
+    clearWorkRetentionTerms: vi.fn(),
+    recordRetentionRelease: vi.fn(),
+    voidRetentionRelease: vi.fn(),
+    assessLd: vi.fn(),
+    decideLdAssessment: vi.fn(),
     closeMeasurementBook: vi.fn(),
     renderMeasurementBook: vi.fn(),
     downloadMeasurementBookPdf: vi.fn(),
@@ -1089,6 +1096,7 @@ describe('WorkDetail Issue Challans section', () => {
         canCancel
         canApprove={false}
         canManageStatutory={true}
+        canManageRetention={true}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}

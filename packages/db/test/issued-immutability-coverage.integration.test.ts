@@ -733,6 +733,68 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'last_downloaded_at',
     'updated_at',
   ],
+
+  // A recorded retention release (0098), on exactly the terms
+  // `bill_payments` sits on above: every fact of it is frozen the moment
+  // it is written — there is no edit path at all — and the only later act
+  // is the withdrawal, which is the three columns below plus the
+  // maintained timestamp.
+  retention_releases: [
+    'id',
+    'updated_at',
+    'voided_at',
+    'voided_by_user_id',
+    'void_reason',
+  ],
+
+  // A liquidated-damages assessment (0098). Everything the arithmetic was
+  // computed FROM is frozen — the basis, the window and the three terms —
+  // and so are the generated figures, which cannot be written at all.
+  // What moves is the decision: the status walks draft -> levied ->
+  // waived/cancelled and never back, the levy is written once (the guard
+  // refuses a second value), and the reason and the decider are the
+  // record of who decided what.
+  //
+  // `notes` is genuinely free and is the only ordinary column here that
+  // is: it is the operator's own working note about a computation, not
+  // part of it.
+  //
+  // `id` and `levied_amount` are absent deliberately, and for two
+  // different reasons. `id` is in the frozen snapshot's own comparison,
+  // like every other identity column this census reads as covered.
+  // `levied_amount` IS written — that is the levy — but only once: the
+  // guard refuses any change to a value already set, which the freeze
+  // detector reads as frozen and which is the honest reading. Correcting
+  // what the railway took is a waiver of this assessment and a new one,
+  // so the trail says what was claimed and what replaced it.
+  //
+  // THE FIVE GENERATED COLUMNS ARE LISTED HERE AND ARE NOT MUTABLE, and
+  // the mismatch is worth naming rather than leaving to be discovered.
+  // `delay_days`, `chargeable_periods`, `uncapped_amount`, `cap_amount`
+  // and `assessed_amount` are STORED GENERATED: PostgreSQL refuses the
+  // assignment outright, before any trigger runs, so they are not merely
+  // frozen but unwritable, and each is a pure function of the snapshot
+  // columns the guard does freeze. This census reads its catalog straight
+  // from `pg_attribute` and has no notion of a generated column, so the
+  // only two ways to satisfy it are to list them here or to write a
+  // comparison into the guard for a value that can never differ. Listing
+  // them is what `measurement_books.is_final` already does, for the same
+  // reason, so the shape follows the precedent rather than inventing a
+  // third answer.
+  ld_assessments: [
+    'updated_at',
+    'status',
+    'levy_reference',
+    'outcome_reason',
+    'notes',
+    'decided_by_user_id',
+    'decided_at',
+    'delay_days',
+    'chargeable_periods',
+    'uncapped_amount',
+    'cap_amount',
+    'assessed_amount',
+  ],
 };
 
 /**

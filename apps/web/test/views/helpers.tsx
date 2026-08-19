@@ -439,6 +439,34 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     }),
     recordBillPayment: vi.fn<ApiClient['recordBillPayment']>(),
     voidBillPayment: vi.fn<ApiClient['voidBillPayment']>(),
+    // Retention and liquidated damages (0098). The read resolves to an
+    // empty position rather than being left unresolved: it is fetched by
+    // the instruments tab on mount, and a stub that never settles would
+    // leave every test of that tab asserting against a skeleton.
+    getWorkRetention: vi.fn<ApiClient['getWorkRetention']>().mockResolvedValue({
+      position: {
+        workId: WORK_ID,
+        contractValue: '0.00',
+        retentionCeilingAmount: null,
+        retentionHeldTotal: '0.00',
+        retentionReleasedTotal: '0.00',
+        retentionBalance: '0.00',
+        ldLeviedTotal: '0.00',
+        ldDeductedTotal: '0.00',
+        ldOpenAssessments: 0,
+      },
+      terms: null,
+      releases: [],
+      assessments: [],
+      currentCompletionDate: null,
+      instruments: [],
+    }),
+    saveWorkRetentionTerms: vi.fn<ApiClient['saveWorkRetentionTerms']>(),
+    clearWorkRetentionTerms: vi.fn<ApiClient['clearWorkRetentionTerms']>(),
+    recordRetentionRelease: vi.fn<ApiClient['recordRetentionRelease']>(),
+    voidRetentionRelease: vi.fn<ApiClient['voidRetentionRelease']>(),
+    assessLd: vi.fn<ApiClient['assessLd']>(),
+    decideLdAssessment: vi.fn<ApiClient['decideLdAssessment']>(),
     closeMeasurementBook: vi.fn<ApiClient['closeMeasurementBook']>(),
     renderMeasurementBook: vi.fn<ApiClient['renderMeasurementBook']>(),
     downloadMeasurementBookPdf: vi.fn<ApiClient['downloadMeasurementBookPdf']>(),
@@ -920,6 +948,7 @@ export function membership(overrides: Partial<Membership>): Membership {
     canViewAuditTrail: true,
     canManageEntitlements: true,
     canExportOrg: true,
+    canManageRetention: true,
     twoFactorEnabled: false,
     status: 'active',
     ...overrides,
