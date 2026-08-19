@@ -31,7 +31,7 @@ import { PurchaseOrderPanel } from './purchase-order-panel.js';
  * no private-customer order, and the second axis it does have is the one
  * migration 0109 created — an order raised outside any LOA. The tab keeps
  * the mock's place, its count and its grammar, and says what this
- * application's second kind actually is (`docs/UX.md` § 27).
+ * application's second kind actually is (`docs/UX.md` § 28).
  *
  * READING, PLUS THE ONE THING THAT HAS NOWHERE ELSE TO HAPPEN. A
  * work-linked order is drafted, lined, issued and closed on its Work's

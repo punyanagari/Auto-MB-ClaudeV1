@@ -1187,16 +1187,18 @@ function NewVendorInvoiceForm({
       return;
     }
     let cancelled = false;
+    /* Narrowed at the SERVER, not in the browser: the register grows
+       without limit and this control needs at most a page of it. `issued`
+       is the status a bill is normally raised against; a closed order can
+       take a second invoice, and the operator reaches that one from the
+       order itself rather than from a dropdown of every order this
+       organisation has ever placed. */
     api
-      .listPurchaseOrders(organisationId)
+      .listPurchaseOrders(organisationId, { status: 'issued', limit: 100 })
       .then((result) => {
         if (cancelled) return;
         setOrders(
-          result.purchaseOrders.filter(
-            (order) =>
-              order.vendorContactId === vendor &&
-              (order.status === 'issued' || order.status === 'closed'),
-          ),
+          result.purchaseOrders.filter((order) => order.vendorContactId === vendor),
         );
       })
       .catch(() => {

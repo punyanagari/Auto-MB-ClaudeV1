@@ -103,12 +103,16 @@ SET LOCAL statement_timeout = '5min';
 --
 --   23U01  the purchase order has no vendor tax invoice on file
 --   23U02  the vendor invoice's order link or document is already fixed
+--   23U03  a purchase order line's item is not on the order's Work
 --
--- WHY 23U AND NOT THE NEXT LETTER. The letters run to 23Q (0099), and
--- 23R, 23S and 23T stand allocated by the Wave D/E namespace ledger to
--- E-offline, E-whatsapp-delivery and E-msme-43bh. Two of those are held
--- rather than cancelled, and a corrections pack must not spend a
--- reservation it did not make, so this takes the first letter past them.
+-- WHY 23U AND NOT THE NEXT LETTER, as the ledger actually stands. 23R is
+-- SPENT: 0106 and 0107 took it while this branch was open. 23S and 23T
+-- are still held by the Wave D/E namespace ledger for E-whatsapp-delivery
+-- and E-msme-43bh, both of which are held rather than cancelled, and a
+-- corrections pack must not spend a reservation it did not make. So this
+-- takes 23U, and #159 takes 23V after it — both by coordinator
+-- allocation rather than by claiming the next free letter on merge,
+-- which is how 23R came to be claimed twice in the first place.
 -- I and O are skipped throughout the family because they read as 1 and 0
 -- and the one thing an operator does with a SQLSTATE is read it aloud.
 --
@@ -133,13 +137,16 @@ SET LOCAL statement_timeout = '5min';
 --   Functions replaced            3  (guard_purchase_order_date,
 --                                     guard_purchase_order_work_active,
 --                                     guard_stock_movement)
---   Functions created             2  (guard_purchase_order_close_evidence,
---                                     guard_vendor_invoice_evidence_update)
---   Triggers created              5  (the counter's decrease guard, the
+--   Functions created             4  (guard_purchase_order_close_evidence,
+--                                     guard_vendor_invoice_evidence_update,
+--                                     guard_purchase_order_work_provenance,
+--                                     guard_purchase_order_line_provenance)
+--   Triggers created              7  (the counter's decrease guard, the
 --                                     close-evidence guard, the vendor
---                                     invoice evidence guard, and the two
---                                     re-created in § 4 to widen their
---                                     event list to `work_id`)
+--                                     invoice evidence guard, the two
+--                                     line-provenance guards of § 6a, and
+--                                     the two re-created in § 4 to widen
+--                                     their event list to `work_id`)
 --   Triggers dropped              2  (the same two, re-created immediately)
 --   Indexes created               4
 --   RLS policies created          1
@@ -609,6 +616,103 @@ COMMENT ON FUNCTION app_private.guard_stock_movement() IS
   'Allocates the ledger position, which is also the per-item mutex; refuses a movement dated ahead of the organisation''s today or behind the part''s own last movement; binds a receipt to the despatch or purchase order line that admits it and a movement to a live job card or Work, reaching through both to the Work behind them where there is one — a job card serving a private order and, since 0109, a purchase order raised outside any LOA each have no Work to reach and are exempt; computes balance_after from the previous row under that mutex; and refuses a movement that would take the balance below zero.';
 
 -- ═════════════════════════════════════════════════════════════════════
+-- § 6a. A LINE'S ITEM BELONGS TO ITS ORDER'S WORK
+-- ═════════════════════════════════════════════════════════════════════
+--
+-- `purchase_order_lines.work_item_id` has a composite tenant FK to
+-- `work_items` and nothing more: it proves the item belongs to this
+-- ORGANISATION, never that it belongs to the order's Work. The route has
+-- always closed the gap, by INSERTING lines through a join on
+-- `wi.work_id = <the order's work>` — so the shape was never reachable
+-- through the API and never needed a second layer.
+--
+-- 0109 makes it reachable. `work_id` was NOT NULL and set once at insert;
+-- now it is nullable, and moving a draft between Works — or to none — is
+-- an ordinary UPDATE. A draft carrying Work A's items, moved onto Work B,
+-- issues as Work B's document citing Work A's schedule; moved to NULL, it
+-- issues in the organisation series citing a schedule it has no Work to
+-- have. Neither is a shape the route can produce, and both are two
+-- statements away for anything that reaches the table directly.
+--
+-- Two triggers because there are two ways in — move the parent, or add a
+-- line — and one predicate, written once in each direction. The
+-- line-side arm is the older rule made explicit; the parent-side arm is
+-- the one this migration owes.
+
+CREATE FUNCTION app_private.guard_purchase_order_work_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_stray uuid;
+BEGIN
+  SELECT pol.work_item_id INTO v_stray
+  FROM purchase_order_lines pol
+  WHERE pol.organisation_id = NEW.organisation_id
+    AND pol.purchase_order_id = NEW.id
+    AND pol.work_item_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM work_items wi
+      WHERE wi.organisation_id = pol.organisation_id
+        AND wi.id = pol.work_item_id
+        AND wi.work_id IS NOT DISTINCT FROM NEW.work_id
+    )
+  LIMIT 1;
+
+  IF v_stray IS NOT NULL THEN
+    RAISE EXCEPTION
+      'purchase order % carries line item %, which is not on work %',
+      NEW.id, v_stray, coalesce(NEW.work_id::text, '(none)')
+      USING ERRCODE = '23U03';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER purchase_orders_work_provenance
+BEFORE UPDATE OF work_id ON purchase_orders
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_purchase_order_work_provenance();
+
+CREATE FUNCTION app_private.guard_purchase_order_line_provenance()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_work uuid;
+  v_ok boolean;
+BEGIN
+  IF NEW.work_item_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT po.work_id INTO v_work
+  FROM purchase_orders po
+  WHERE po.organisation_id = NEW.organisation_id AND po.id = NEW.purchase_order_id;
+
+  SELECT EXISTS (
+    SELECT 1 FROM work_items wi
+    WHERE wi.organisation_id = NEW.organisation_id
+      AND wi.id = NEW.work_item_id
+      AND wi.work_id IS NOT DISTINCT FROM v_work
+  ) INTO v_ok;
+
+  IF NOT v_ok THEN
+    RAISE EXCEPTION
+      'purchase order line names item %, which is not on work %',
+      NEW.work_item_id, coalesce(v_work::text, '(none)')
+      USING ERRCODE = '23U03';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER purchase_order_lines_work_provenance
+BEFORE INSERT OR UPDATE OF work_item_id ON purchase_order_lines
+FOR EACH ROW EXECUTE FUNCTION app_private.guard_purchase_order_line_provenance();
+
+-- ═════════════════════════════════════════════════════════════════════
 -- § 7. THE VENDOR INVOICE GAINS AN ORDER AND A FILE
 -- ═════════════════════════════════════════════════════════════════════
 
@@ -693,14 +797,25 @@ CREATE UNIQUE INDEX vendor_invoices_object_key
 -- invoice stays available and stays visible, which is the honest way to
 -- withdraw it.
 --
--- THREE WAYS TO REMOVE THE EVIDENCE, AND ALL THREE ARE HERE. Re-pointing
+-- FOUR WAYS TO REMOVE THE EVIDENCE, AND ALL FOUR ARE HERE. Re-pointing
 -- the link and overwriting the document are the two obvious ones. The
 -- third is DELETING the invoice outright, which no route in this
 -- application does — and which is exactly the writer this layer exists
 -- for, since a guard that only covers the paths the routes already take
--- covers nothing. A row that is a CLOSED order's only remaining evidence
--- cannot be deleted; an invoice against an order that is still open, or
--- one of several, deletes freely.
+-- covers nothing.
+--
+-- The fourth is CANCELLING it, and that one a route does do
+-- (`POST /api/vendor-invoices/:id/cancel`). A cancelled invoice does not
+-- count as evidence — the close guard below says so in its own WHERE —
+-- so cancelling the last live documented invoice on a closed order
+-- reaches precisely the state this pack exists to refuse, by the back
+-- door and two months later. It also defeats the delete arm above in two
+-- statements for a direct-SQL writer: cancel, then delete.
+--
+-- All four are the same test, written once: a row that is a CLOSED
+-- order's only remaining live documented evidence cannot leave that
+-- role. An invoice against an order that is still open, or one of
+-- several, cancels and deletes freely.
 --
 -- The frozen group is all SEVEN document columns plus the link, matching
 -- `vendor_invoices_document_shape_check` exactly. Leaving the uploader
@@ -713,7 +828,11 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  IF TG_OP = 'DELETE' THEN
+  -- The delete arm and the cancel arm ask one question, so they share
+  -- one function: does this row stop being a closed order's evidence,
+  -- and is there none left behind it?
+  IF TG_OP = 'DELETE'
+     OR (NEW.cancelled_at IS NOT NULL AND OLD.cancelled_at IS NULL) THEN
     IF OLD.purchase_order_id IS NOT NULL
        AND OLD.cancelled_at IS NULL
        AND OLD.object_key IS NOT NULL
@@ -736,7 +855,9 @@ BEGIN
         OLD.id, OLD.purchase_order_id
         USING ERRCODE = '23U02';
     END IF;
-    RETURN OLD;
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
   END IF;
 
   IF OLD.purchase_order_id IS NOT NULL
@@ -778,6 +899,19 @@ FOR EACH ROW EXECUTE FUNCTION app_private.guard_vendor_invoice_evidence_update()
 -- A cancelled invoice does not count: it is a bill this organisation has
 -- said it does not owe, and an order closed on the strength of a bill
 -- nobody owes is closed on nothing.
+--
+-- AND THE INVOICE HAS TO BE THIS ORDER'S. The route refuses an invoice
+-- billed by another vendor, or attributed to a Work the order does not
+-- buy for, at the moment it is recorded — but the route is one writer.
+-- Repeated here because these two are not cosmetic agreement rules: they
+-- are what makes the linked invoice EVIDENCE rather than a foreign key.
+-- A bill from a different supplier proves nothing about this order, and
+-- a bill sitting in another Work's ledger closes an order while telling
+-- that Work's books a different story about the same rupees.
+--
+-- Both are compared with IS NOT DISTINCT FROM on the Work, so a
+-- work-less order matches a work-less invoice: NULL = NULL is NULL, and
+-- a NULL arm here would silently accept nothing at all.
 CREATE FUNCTION app_private.guard_purchase_order_close_evidence()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -791,9 +925,11 @@ BEGIN
         AND vi.purchase_order_id = NEW.id
         AND vi.cancelled_at IS NULL
         AND vi.object_key IS NOT NULL
+        AND vi.vendor_contact_id = NEW.vendor_contact_id
+        AND vi.work_id IS NOT DISTINCT FROM NEW.work_id
     ) THEN
       RAISE EXCEPTION
-        'purchase order % has no live vendor tax invoice carrying its uploaded document',
+        'purchase order % has no live vendor tax invoice of its own vendor and Work carrying an uploaded document',
         NEW.id
         USING ERRCODE = '23U01';
     END IF;
@@ -803,7 +939,7 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_purchase_order_close_evidence() IS
-  'The owner ruling of 2026-08-19: closing any purchase order requires at least one live vendor tax invoice linked to it and carrying its uploaded document. Independent of the receipt balance, which the route checks separately and names separately.';
+  'The owner ruling of 2026-08-19: closing any purchase order requires at least one live vendor tax invoice linked to it, billed by its own vendor, attributed to its own Work (or to none, as it is), and carrying its uploaded document. Independent of the receipt balance, which the route checks separately and names separately.';
 
 -- Fires before `purchase_orders_update_guard` (0045), which triggers on
 -- the same event: PostgreSQL runs BEFORE triggers in name order and

@@ -1835,20 +1835,271 @@ describe('the evidence rule under a writer that is not a route', () => {
     expect(removed).toHaveLength(1);
   });
 
-  it('re-checks the letter date when a draft is moved between Works', async () => {
+  it('re-checks the letter date when a draft is moved onto another Work', async () => {
     // `work_id` became writable when it became nullable, and a draft
     // moved onto another Work also moves between the two number series.
     // Neither 0033 trigger watched the column before 0109 widened their
     // event lists, so this write used to pass unchecked.
-    const arena = await freshWork('EX');
-    const draftId = await draftReadyToIssue(arena.workId);
-    // A letter dated after the order it is supposed to have authorised.
+    //
+    // A REAL move, to a different Work whose letter is dated after the
+    // order it would be supposed to have authorised. The draft carries
+    // only a free-text consumable line, so the line-provenance guard of
+    // § 6a has nothing to say and the date guard is what refuses.
+    const home = await freshWork('EX');
+    const draftId = await draftReadyToIssue(home.workId);
+    const elsewhere = await freshWork('EY');
     await admin`
-      update works set letter_date = '2026-12-01' where id = ${arena.workId}
+      update works set letter_date = '2026-12-01' where id = ${elsewhere.workId}
     `;
     await expect(
-      admin`update purchase_orders set work_id = ${arena.workId}
+      admin`update purchase_orders set work_id = ${elsewhere.workId}
             where id = ${draftId}`,
     ).rejects.toMatchObject({ code: 'P0001' });
+  });
+});
+
+/**
+ * The findings the independent review of #160 raised, each proved at the
+ * layer that answers it.
+ */
+describe('the evidence a closed order rests on cannot be withdrawn', () => {
+  let orderId: string;
+  let invoiceId: string;
+
+  beforeAll(async () => {
+    const arena = await freshWork('CV');
+    orderId = await draftReadyToIssue(arena.workId);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+    invoiceId = await billVendor(orderId);
+    await admin`
+      update purchase_orders set status = 'closed', closed_at = now()
+      where id = ${orderId}
+    `;
+  });
+
+  it('refuses the cancel route on the only invoice closing an order', async () => {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/vendor-invoices/${invoiceId}/cancel`,
+      organisationId,
+      payload: { reason: 'Filed against the wrong order.' },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'VENDOR_INVOICE_CLOSES_ORDER' });
+  });
+
+  it('refuses the same cancel at the database, and the delete behind it', async () => {
+    // Cancel-then-delete was the two-statement way around the delete arm.
+    await expect(
+      admin`update vendor_invoices set cancelled_at = now(),
+              cancelled_by_user_id = ${ownerUserId},
+              cancel_reason = 'Withdrawn by direct SQL'
+            where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+    await expect(
+      admin`delete from vendor_invoices where id = ${invoiceId}`,
+    ).rejects.toMatchObject({ code: '23U02' });
+  });
+
+  it('lets the invoice go once a replacement stands in its place', async () => {
+    const replacement = await billVendor(orderId);
+    const cancelled = await authed(owner, {
+      method: 'POST',
+      url: `/api/vendor-invoices/${invoiceId}/cancel`,
+      organisationId,
+      payload: { reason: 'Superseded by the corrected bill.' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(replacement).not.toBe(invoiceId);
+  });
+});
+
+describe('the close guard reads the invoice as evidence, not as a foreign key', () => {
+  it('refuses to close against another vendor’s bill or another Work’s ledger', async () => {
+    const arena = await freshWork('EG');
+    const orderId = await draftReadyToIssue(arena.workId);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/purchase-orders/${orderId}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+
+    // An honest invoice, then bent two ways past the routes that refuse
+    // each — the guard is what stands when they are gone.
+    const invoiceId = await billVendor(orderId);
+    await admin`
+      update vendor_invoices set vendor_contact_id = ${secondVendorId}
+      where id = ${invoiceId}
+    `;
+    await expect(
+      admin`update purchase_orders set status = 'closed', closed_at = now()
+            where id = ${orderId}`,
+    ).rejects.toMatchObject({ code: '23U01' });
+
+    await admin`
+      update vendor_invoices set vendor_contact_id = ${vendorId}, work_id = null
+      where id = ${invoiceId}
+    `;
+    await expect(
+      admin`update purchase_orders set status = 'closed', closed_at = now()
+            where id = ${orderId}`,
+    ).rejects.toMatchObject({ code: '23U01' });
+
+    // Put it back and the same close is accepted, so the refusals above
+    // are the two rules and not something else about this fixture.
+    await admin`
+      update vendor_invoices set work_id = ${arena.workId} where id = ${invoiceId}
+    `;
+    const closed = await admin`
+      update purchase_orders set status = 'closed', closed_at = now()
+      where id = ${orderId} returning id
+    `;
+    expect(closed).toHaveLength(1);
+  });
+});
+
+describe('a line’s item belongs to its order’s Work', () => {
+  it('refuses to move a draft onto a Work its lines do not belong to', async () => {
+    const home = await freshWork('PA');
+    const elsewhere = await freshWork('PB');
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${home.workId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draftId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    // A line that names `home`'s OWN item, which is what gives the draft
+    // provenance to lose. A free-text line would have none and the move
+    // would be legal.
+    const lined = await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${draftId}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            workItemId: home.itemId,
+            description: 'Item from this Work’s own schedule',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '100',
+          },
+        ],
+      },
+    });
+    expect(lined.statusCode, lined.body).toBe(200);
+
+    // A real move, to a DIFFERENT Work: the draft's line cites `home`'s
+    // schedule, and `elsewhere` has a schedule of its own.
+    await expect(
+      admin`update purchase_orders set work_id = ${elsewhere.workId}
+            where id = ${draftId}`,
+    ).rejects.toMatchObject({ code: '23U03' });
+
+    // And to no Work at all, which would issue it in the organisation
+    // series citing a schedule it has no Work to have.
+    await expect(
+      admin`update purchase_orders set work_id = null where id = ${draftId}`,
+    ).rejects.toMatchObject({ code: '23U03' });
+  });
+
+  it('refuses a line naming an item from outside its order’s Work', async () => {
+    const home = await freshWork('PC');
+    const elsewhere = await freshWork('PD');
+    const created = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${home.workId}/purchase-orders`,
+      organisationId,
+      payload: { vendorContactId: vendorId, poDate: '2026-08-08' },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const draftId = created.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+
+    // The route inserts lines through a join on the order's Work, so
+    // this shape has never been reachable through the API. The guard is
+    // what holds for a writer that reaches the table directly.
+    await expect(
+      admin`
+        insert into purchase_order_lines (
+          organisation_id, purchase_order_id, work_item_id, line_number,
+          description, unit_code, quantity, rate, line_amount
+        )
+        values (
+          ${organisationId}, ${draftId}, ${elsewhere.itemId}, 1,
+          'Another Work''s item', 'Nos', 1, 100, 100
+        )
+      `,
+    ).rejects.toMatchObject({ code: '23U03' });
+  });
+});
+
+describe('an issued order never changes series', () => {
+  it('refuses work -> organisation and organisation -> work alike', async () => {
+    // The central promise of the two-series design is that a number,
+    // once handed out, cannot be renumbered into the other series. 0045
+    // freezes `work_id` on an issued order; this is that promise as a
+    // test rather than as a sentence.
+    const arena = await freshWork('SR');
+    const workOrder = await draftReadyToIssue(arena.workId);
+    expect(
+      (
+        await authed(owner, {
+          method: 'POST',
+          url: `/api/purchase-orders/${workOrder}/issue`,
+          organisationId,
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const orgCreated = await authed(owner, {
+      method: 'POST',
+      url: '/api/purchase-orders',
+      organisationId,
+      payload: { vendorContactId: secondVendorId, poDate: '2026-08-08' },
+    });
+    expect(orgCreated.statusCode, orgCreated.body).toBe(201);
+    const orgOrder = orgCreated.json<PurchaseOrderDetailResponse>().purchaseOrder.id;
+    await authed(owner, {
+      method: 'PUT',
+      url: `/api/purchase-orders/${orgOrder}/lines`,
+      organisationId,
+      payload: {
+        lines: [
+          {
+            description: 'Office consumable',
+            unitCode: 'Nos',
+            quantity: '1',
+            rate: '5',
+          },
+        ],
+      },
+    });
+    expect(
+      (
+        await authed(owner, {
+          method: 'POST',
+          url: `/api/purchase-orders/${orgOrder}/issue`,
+          organisationId,
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    // work -> organisation
+    await expect(
+      admin`update purchase_orders set work_id = null where id = ${workOrder}`,
+    ).rejects.toMatchObject({ code: '23514' });
+    // organisation -> work
+    await expect(
+      admin`update purchase_orders set work_id = ${arena.workId}
+            where id = ${orgOrder}`,
+    ).rejects.toMatchObject({ code: '23514' });
   });
 });

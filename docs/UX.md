@@ -2004,12 +2004,14 @@ letter-level review flag.
 no maintenance schedule and no acceptance certificates. Both are built
 from the mock's existing table, field and action components.
 
-### 27. Purchase orders — APPROVED
+### 28. Purchase orders — APPROVED
 
 **Status: APPROVED, owner ruling of 2026-08-19** (locked corrections
-ledger item 14 and its amendment). Numbered 27 because §§ 24 to 26 are the
-live-testing, measurement and AMC packs' — all three merged
-ahead of this one.
+ledger item 14 and its amendment). Numbered 28 by coordinator allocation:
+§§ 24 to 26 are the live-testing, measurement and AMC packs', all three
+merged ahead of this one, and § 27 is held by #155, which is still in
+flight. Allocated rather than claimed on merge, which is how two packs
+came to want the same number in the first place.
 
 **Mock citations:** `app/purchase-orders/page.tsx` and
 `components/app-sidebar.tsx`, both at `fdfd610`. This is the module the
@@ -2017,7 +2019,7 @@ rail comment in `apps/web/src/shell/navigation.ts` used to list as drawn
 by the mock and unbuilt here; it is built now, and the omission list is
 down to E-Way Bills.
 
-#### 27a. What is ported verbatim
+#### 28a. What is ported verbatim
 
 The mock's page is a `PageHeader` with one primary action, a two-tab
 `Tabs` list whose labels carry counts, and one dense table inside a
@@ -2030,7 +2032,7 @@ The rail entry takes the mock's own place — Operations, directly after
 Inventory — and the mock's own `ShoppingCart` lamp, which is new to this
 rail and collides with nothing already on it.
 
-#### 27b. Three divergences, each because the mock's data model is not this one
+#### 28b. Three divergences, each because the mock's data model is not this one
 
 1. **The second tab is "Outside any LOA", not "Private customers".** The
    mock's `PurchaseOrder.basis` is `work | private-customer` and its
@@ -2056,7 +2058,7 @@ rail and collides with nothing already on it.
    tablist without the roving-tabindex pattern to match, and these
    controls filter one panel in place.
 
-#### 27c. Behaviour the mock cannot express
+#### 28c. Behaviour the mock cannot express
 
 - **The `?work=` deep link**, as `#/purchase-orders/<workId>`. The mock's
   own document register carries a `?work=` filter and this application's
@@ -2084,14 +2086,14 @@ rail and collides with nothing already on it.
   name as a `DownloadButton` once there is. Written once, so the control
   is simply absent afterwards rather than offered and refused.
 
-#### 27d. What is deliberately NOT here
+#### 28d. What is deliberately NOT here
 
 - **No purchase-order detail route.** An order opens as a panel under the
   register it was opened from, which is what the Work's Procurement tab
   has always done. A second address for the same record would need its
   own breadcrumb, its own not-found state and its own back behaviour, and
   nothing in the mock asks for one.
-- **No private-customer order.** See 27b.1. The mock's `customer` field
+- **No private-customer order.** See 28b.1. The mock's `customer` field
   has no writer anywhere in this application, and a column that can only
   ever be empty is worse than a column that is not drawn.
 - **No paging control.** The route pages (`limit`/`cursor`), the screen

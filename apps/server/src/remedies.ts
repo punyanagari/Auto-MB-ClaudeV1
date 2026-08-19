@@ -355,6 +355,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Record the vendor's tax invoice against this order on the Payments screen's Vendors tab and upload the invoice PDF, then close the order.",
   VENDOR_INVOICE_ORDER_MISMATCH:
     'Pick a purchase order that is issued or closed and placed on this same vendor; an order still in draft has ordered nothing to bill for.',
+  VENDOR_INVOICE_CLOSES_ORDER:
+    'Record the replacement bill against that purchase order and upload its PDF first; a closed order keeps the evidence it was closed on until another one stands in its place.',
   VENDOR_INVOICE_DOCUMENT_EXISTS:
     "Cancel this invoice and record it again with the right file: a bill's own paper is stored once so a closed order's evidence cannot be swapped afterwards.",
   // Crossed the three-throw coverage bar when the document routes (0109)

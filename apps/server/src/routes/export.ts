@@ -17,6 +17,28 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v33: purchase orders raised outside any LOA (0109) bring a
+ * second numbering counter, and the vendor tax invoice brings BYTES.
+ *
+ * `organisationPurchaseOrderCounters` is a new top-level section, which
+ * is what moves this version at all: a restored organisation without it
+ * would hand out `PO-01` a second time. The two altered tables need no
+ * entry — `purchaseOrders` and `vendorInvoices` both export `select *`,
+ * so the relaxed `work_id` and the eight new invoice columns ride them.
+ *
+ * THE MANIFEST BUCKET IS THE POINT OF THE VERSION, THOUGH. 0109 made a
+ * purchase order's close depend on a vendor tax invoice whose PDF is
+ * stored, and its own header says why the bytes are stored rather than
+ * referenced: "a stored key with no upload behind it and no route to
+ * fetch it is a proof that cannot be produced". An export that published
+ * the invoice ROW without the file would restore an organisation holding
+ * closed orders whose proof cannot be produced — the same sentence, one
+ * layer out. The bytes travel, beside the credential and certificate
+ * PDFs they sit next to in kind.
+ *
+ * (export-v32 is #159's; this pack takes v33 by coordinator allocation
+ * rather than by claiming the next free number on merge.)
+ *
  * export-v31: the measured-quantity adjustments (0106) join the package —
  * one row per draft Measurement Book line an operator reduced.
  *
@@ -398,7 +420,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v31';
+export const EXPORT_FORMAT_VERSION = 'export-v33';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -433,7 +455,8 @@ type ManifestBucket =
   | 'credit-note'
   | 'tax-invoice-render'
   | 'eway-bill-render'
-  | 'signed-document';
+  | 'signed-document'
+  | 'vendor-invoice';
 
 const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'organisation-logo',
@@ -453,6 +476,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'tax-invoice-render',
   'eway-bill-render',
   'signed-document',
+  'vendor-invoice',
 ];
 
 type ExportRow = Record<string, unknown>;
@@ -691,9 +715,29 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select * from payment_request_counters order by fy_label`,
   },
   {
+    // The vendor's own tax invoice (0080), and since 0109 its stored PDF.
+    // The bytes travel for the reason the credential PDFs do and then
+    // one more: a purchase order does not CLOSE without this file, so an
+    // export that published the row alone would restore an organisation
+    // holding closed orders it cannot produce the proof for. Nullable
+    // throughout — most vendor invoices carry no document at all — so
+    // the entry is emitted only where there is an object to name.
     key: 'vendorInvoices',
     sql: `select * from vendor_invoices
           order by vendor_contact_id, invoice_date, id`,
+    manifest: {
+      bucket: 'vendor-invoice',
+      entries: (row) =>
+        row.object_key === null
+          ? []
+          : [
+              {
+                kind: 'vendor-invoice',
+                objectKey: row.object_key,
+                sha256: row.document_sha256 ?? null,
+              },
+            ],
+    },
   },
   {
     key: 'vendorPayments',

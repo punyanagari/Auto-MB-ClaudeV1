@@ -180,11 +180,12 @@ beforeAll(async () => {
   await admin`
     insert into contacts (
       id, organisation_id, designation, address, pincode, state_code,
-      locality, is_client, active, created_by_user_id
+      locality, is_client, is_vendor, active, created_by_user_id
     )
     values (
       ${buyerContactId}, ${organisationId}, ${`Paginated buyer ${runId}`},
-      'New Delhi 110001', '110001', '07', 'New Delhi', true, true, ${ownerUserId}
+      'New Delhi 110001', '110001', '07', 'New Delhi', true, true, true,
+      ${ownerUserId}
     )
   `;
 
@@ -314,6 +315,26 @@ beforeAll(async () => {
         ${`Pagination proof ${String(index)}`}, ${ownerUserId}
       )
     `;
+    // The purchase-order register (0109). Raised outside any LOA, which
+    // is the shape whose rows have no Work behind them — the register's
+    // scope predicate and its cursor predicate both carry a NULL arm the
+    // other registers here do not, and this is what pages through it.
+    // ISSUED rather than draft: the 0109 partial unique index holds one
+    // open draft per vendor in this series, so five drafts on one vendor
+    // is the one shape the register cannot be seeded with.
+    await admin`
+      insert into purchase_orders (
+        organisation_id, work_id, vendor_contact_id, status, po_number,
+        sequence_number, po_date, vendor_snapshot, total_amount,
+        issued_at, issued_by_user_id, created_by_user_id
+      )
+      values (
+        ${organisationId}, null, ${buyerContactId}, 'issued',
+        ${`PO-${String(index + 1).padStart(2, '0')}`}, ${index + 1},
+        '2026-08-05', ${admin.json({ designation: 'Paginated vendor' })},
+        '100.00', now(), ${ownerUserId}, ${ownerUserId}
+      )
+    `;
   }
 }, 120_000);
 
@@ -390,6 +411,11 @@ const REGISTERS = [
     name: 'the per-Work amendment history',
     url: () => `/api/works/${workId}/amendments`,
     key: 'approvals',
+  },
+  {
+    name: 'the organisation-wide purchase-order register',
+    url: () => '/api/purchase-orders?basis=organisation',
+    key: 'purchaseOrders',
   },
 ] as const;
 

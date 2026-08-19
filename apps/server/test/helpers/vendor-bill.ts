@@ -19,6 +19,13 @@ import type { Sql } from '@auto-mb/db';
  * demands, and no bytes are stored: nothing in these suites fetches the
  * document back, and a fixture that wrote a real object would need a
  * storage directory each of them would then have to own.
+ *
+ * VENDOR AND WORK ARE READ OFF THE ORDER, not chosen. The close guard
+ * requires the invoice to be billed by the order's own vendor and
+ * attributed to the order's own Work, and a fixture that seeded a
+ * dishonest row would be a fixture that has to be relaxed the moment the
+ * rule is enforced — which is exactly how this one was found violating
+ * the Work rule three suites wide.
  */
 export async function billPurchaseOrder(
   admin: Sql,
@@ -29,13 +36,15 @@ export async function billPurchaseOrder(
   const [row] = await admin<{ id: string }[]>`
     insert into vendor_invoices (
       organisation_id, vendor_contact_id, invoice_number, invoice_date,
-      credit_days, amount, purchase_order_id, object_key, original_filename,
-      document_sha256, document_media_type, document_size_bytes,
-      document_uploaded_at, document_uploaded_by_user_id, recorded_by_user_id
+      credit_days, amount, work_id, purchase_order_id, object_key,
+      original_filename, document_sha256, document_media_type,
+      document_size_bytes, document_uploaded_at,
+      document_uploaded_by_user_id, recorded_by_user_id
     )
     select po.organisation_id, po.vendor_contact_id,
            ${`VI-${objectKey.slice(0, 8)}`}, po.po_date, 30,
-           greatest(coalesce(po.total_amount, 0), 1)::money_amount, po.id,
+           greatest(coalesce(po.total_amount, 0), 1)::money_amount,
+           po.work_id, po.id,
            po.organisation_id::text || '/vendorinvoice/' || ${objectKey} || '.pdf',
            'vendor-invoice.pdf',
            ${createHash('sha256').update(objectKey).digest('hex')},

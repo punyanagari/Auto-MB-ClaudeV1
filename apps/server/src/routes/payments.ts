@@ -1701,6 +1701,31 @@ export function registerPaymentsWorkspaceRoutes(
             'Void this invoice’s payments before cancelling it.',
           );
         }
+        // And cancelling the last live documented invoice on a CLOSED
+        // purchase order would leave that order closed on nothing —
+        // exactly the state migration 0109's close rule exists to
+        // refuse, reached by the back door two months later.
+        // `app_private.guard_vendor_invoice_evidence_update` holds the
+        // same rule against every other writer; this is the half that
+        // arrives as a sentence with a remedy.
+        if (invoice.document !== null && invoice.purchaseOrderId !== null) {
+          const [order] = await tx<{ po_number: string | null }[]>`
+            select po.po_number from purchase_orders po
+            where po.id = ${invoice.purchaseOrderId} and po.status = 'closed'
+              and not exists (
+                select 1 from vendor_invoices other
+                where other.purchase_order_id = po.id and other.id <> ${id}
+                  and other.cancelled_at is null and other.object_key is not null
+              )
+          `;
+          if (order !== undefined) {
+            throw httpError(
+              409,
+              'VENDOR_INVOICE_CLOSES_ORDER',
+              `This is the only tax invoice closing purchase order ${order.po_number ?? ''}; record the replacement bill against that order before cancelling this one.`,
+            );
+          }
+        }
         await tx`
           update vendor_invoices
           set cancelled_at = now(), cancelled_by_user_id = ${user.id},
