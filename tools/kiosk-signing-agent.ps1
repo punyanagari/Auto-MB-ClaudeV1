@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   The Auto-MB kiosk signing agent (ADR-0012 lane 2, migration 0091).
 
