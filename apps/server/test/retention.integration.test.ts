@@ -15,6 +15,7 @@ import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
+import { seedConfirmedRailwayMeasurement } from './helpers/railway-measurement-seed.js';
 
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
@@ -551,6 +552,15 @@ describe('Measurement Book and the first partial-billing cycle', () => {
     const [book] = await admin<{ work_id: string }[]>`
     select work_id from measurement_books where id = ${measurementBookId}
   `;
+    // 0111's precondition, on the same terms as the closure below it: the
+    // gate is proved where it lives, and what this suite needs is its
+    // result.
+    await seedConfirmedRailwayMeasurement(admin, {
+      organisationId,
+      workId: book?.work_id ?? '',
+      measurementBookId,
+      userId: ownerUserId,
+    });
     const [recorded] = await admin<{ id: string }[]>`
     insert into received_railway_bills (
       organisation_id, work_id, measurement_book_id, object_key,

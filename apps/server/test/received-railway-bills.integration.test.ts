@@ -20,6 +20,7 @@ import { buildApp } from '../src/app.js';
 import { loadTrustAnchors } from '@auto-mb/documents';
 import { appendSignature, createTestPki, type TestPki } from './helpers/signed-pdf.js';
 import { railwayBillText, textLayoutPdf } from './helpers/railway-bill-pdf.js';
+import { seedConfirmedRailwayMeasurement } from './helpers/railway-measurement-seed.js';
 
 /**
  * The railway bill, end to end: recorded against the Measurement Book it
@@ -198,29 +199,13 @@ async function seedFinalizedBook(options: {
   `;
   // The railway's own measurement of that book (0111), without which no
   // On-Account Bill may be recorded against it.
-  //
-  // Recorded as `unreadable` with no confirmations, and that is not a
-  // shortcut — it is the honest row for these books. They are seeded
-  // straight into the database with NO `measurement_book_lines`, so
-  // there is nothing to compare and nothing to confirm: the gate's
-  // unreadable arm looks for unconfirmed lines, finds a book with none,
-  // and opens. Fabricating a `matched` verdict list against a book with
-  // no lines would be a fixture asserting a comparison that never
-  // happened.
   if (options.withMeasurement !== false) {
-    await admin`
-      insert into railway_measurements (
-        organisation_id, work_id, measurement_book_id, object_key,
-        original_filename, sha256, media_type, size_bytes, match_status,
-        line_verdicts, uploaded_by_user_id
-      )
-      values (
-        ${options.organisationId}, ${workId}, ${bookId},
-        ${`${options.organisationId}/railwaymeasurement/${bookId}.pdf`},
-        'measurement.pdf', ${randomBytes(32).toString('hex')}, 'application/pdf',
-        1024, 'unreadable', '[]'::jsonb, ${options.userId}
-      )
-    `;
+    await seedConfirmedRailwayMeasurement(admin, {
+      organisationId: options.organisationId,
+      workId,
+      measurementBookId: bookId,
+      userId: options.userId,
+    });
   }
   // Only the payment gate needs a prepared bill. The other twenty seeded
   // books were each creating one and never using it, which is twenty
