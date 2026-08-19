@@ -15,6 +15,7 @@ import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * Platform: which modules this organisation may use, and which recurring
@@ -353,10 +354,8 @@ export function PlatformSettings({
                 </label>
                 <label className="field">
                   <span>Days ahead</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
+                  <NumericInput
+                    integer
                     defaultValue={schedule.horizonDays}
                     disabled={pending}
                     className="tabular-nums"

@@ -16,6 +16,7 @@ import { Actions, Field, FieldError, FieldRow, Hint } from '../ui/form.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * What the railway is still holding, and what it kept because the work
@@ -349,11 +350,9 @@ export function WorkRetention({
             <FieldRow>
               <Field>
                 <label htmlFor="retention-percent">Retention per bill (%)</label>
-                <input
+                <NumericInput
                   id="retention-percent"
                   name="retentionPercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.retentionPercent ?? ''}
                   className="font-mono tabular-nums"
@@ -362,11 +361,9 @@ export function WorkRetention({
               </Field>
               <Field>
                 <label htmlFor="retention-limit-percent">Ceiling (% of contract)</label>
-                <input
+                <NumericInput
                   id="retention-limit-percent"
                   name="retentionLimitPercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.retentionLimitPercent ?? ''}
                   className="font-mono tabular-nums"
@@ -379,17 +376,17 @@ export function WorkRetention({
                 <label htmlFor="defect-liability-months">
                   Defect liability (months)
                 </label>
-                <input
+                <NumericInput
+                  integer
                   id="defect-liability-months"
                   name="defectLiabilityMonths"
-                  type="number"
-                  min={0}
-                  max={120}
-                  // A liability period is a count of months. Without the
-                  // step the browser accepts "1.5", which the request
-                  // builder then drops silently rather than sending — a
-                  // field that appears to save and does not.
-                  step={1}
+                  // A liability period is a count of months, which is what
+                  // `integer` buys: the decimal point cannot be typed at
+                  // all. This used to be a `step={1}` on a number input,
+                  // and without that step the browser accepted "1.5",
+                  // which the request builder then dropped silently
+                  // rather than sending — a field that appeared to save
+                  // and did not.
                   disabled={pending}
                   defaultValue={terms?.defectLiabilityMonths ?? ''}
                   className="font-mono tabular-nums"
@@ -400,11 +397,9 @@ export function WorkRetention({
             <FieldRow>
               <Field>
                 <label htmlFor="ld-rate-percent">Damages rate (%)</label>
-                <input
+                <NumericInput
                   id="ld-rate-percent"
                   name="ldRatePercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.ldRatePercent ?? ''}
                   className="font-mono tabular-nums"
@@ -447,11 +442,9 @@ export function WorkRetention({
               </Field>
               <Field>
                 <label htmlFor="ld-cap-percent">Damages cap (%)</label>
-                <input
+                <NumericInput
                   id="ld-cap-percent"
                   name="ldCapPercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.ldCapPercent ?? ''}
                   className="font-mono tabular-nums"
@@ -619,11 +612,9 @@ export function WorkRetention({
               </Field>
               <Field>
                 <label htmlFor="release-amount">Amount</label>
-                <input
+                <NumericInput
                   id="release-amount"
                   name="amount"
-                  type="text"
-                  inputMode="decimal"
                   required
                   disabled={pending}
                   className="font-mono tabular-nums"
@@ -898,11 +889,9 @@ export function WorkRetention({
             <FieldRow>
               <Field>
                 <label htmlFor="basis-amount">Basis</label>
-                <input
+                <NumericInput
                   id="basis-amount"
                   name="basisAmount"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   className="font-mono tabular-nums"
                 />
@@ -1056,10 +1045,8 @@ export function WorkRetention({
           {deciding.decision === 'levy' ? (
             <Field>
               <label htmlFor="ld-levied-amount">What the railway levied</label>
-              <input
+              <NumericInput
                 id="ld-levied-amount"
-                type="text"
-                inputMode="decimal"
                 value={leviedAmount}
                 disabled={pending}
                 aria-describedby="ld-levied-amount-hint"

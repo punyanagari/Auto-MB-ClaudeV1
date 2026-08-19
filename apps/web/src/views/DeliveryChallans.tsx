@@ -22,6 +22,7 @@ import { ConfirmDialog } from '../ui/confirm.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { EwayBillsPanel } from './EwayBillsPanel.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The delivery tab of the Challans module — the movement document's
@@ -689,9 +690,9 @@ export function DeliveryChallans({
                   </Field>
                   <Field>
                     <label htmlFor="standalone-distance">Distance (km)</label>
-                    <input
+                    <NumericInput
+                      integer
                       id="standalone-distance"
-                      inputMode="numeric"
                       value={transportDistanceKm}
                       onChange={(event) => {
                         setTransportDistanceKm(event.target.value);
@@ -758,9 +759,8 @@ export function DeliveryChallans({
                         >
                           Line {index + 1} quantity
                         </label>
-                        <input
+                        <NumericInput
                           id={`standalone-line-${String(index)}-quantity`}
-                          inputMode="decimal"
                           value={line.quantity}
                           onChange={(event) => {
                             updateLine(index, { quantity: event.target.value });
@@ -774,9 +774,8 @@ export function DeliveryChallans({
                         >
                           Line {index + 1} rate
                         </label>
-                        <input
+                        <NumericInput
                           id={`standalone-line-${String(index)}-rate`}
-                          inputMode="decimal"
                           value={line.rate}
                           onChange={(event) => {
                             updateLine(index, { rate: event.target.value });

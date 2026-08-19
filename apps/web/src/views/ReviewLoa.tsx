@@ -58,6 +58,7 @@ import {
   letterLocksOf,
   type ItemLocks,
 } from '../loa-locked-fields.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface ReviewLoaProps {
   readonly api: ApiClient;
@@ -1442,7 +1443,7 @@ export function ReviewLoa({
           {!locks.advertisedValue && (
             <Field>
               <label htmlFor="advertised-value">Advertised value (₹)</label>
-              <input
+              <NumericInput
                 id="advertised-value"
                 ref={(node) => {
                   registerField('advertised-value', node);
@@ -1452,7 +1453,6 @@ export function ReviewLoa({
                   updateHeader('advertisedValue', event.target.value);
                 }}
                 required
-                inputMode="decimal"
                 aria-invalid={fieldErrors['advertised-value'] !== undefined}
                 aria-describedby={
                   fieldErrors['advertised-value'] !== undefined
@@ -1470,7 +1470,7 @@ export function ReviewLoa({
           {!locks.contractValue && (
             <Field>
               <label htmlFor="contract-value">Contract value (₹)</label>
-              <input
+              <NumericInput
                 id="contract-value"
                 ref={(node) => {
                   registerField('contract-value', node);
@@ -1480,7 +1480,6 @@ export function ReviewLoa({
                   updateHeader('contractValue', event.target.value);
                 }}
                 required
-                inputMode="decimal"
                 aria-invalid={fieldErrors['contract-value'] !== undefined}
                 aria-describedby={
                   fieldErrors['contract-value'] !== undefined
@@ -1520,7 +1519,7 @@ export function ReviewLoa({
               {!locks.letterPercentage && (
                 <Field>
                   <label htmlFor="letter-percentage">Percentage</label>
-                  <input
+                  <NumericInput
                     id="letter-percentage"
                     ref={(node) => {
                       registerField('letter-percentage', node);
@@ -1530,7 +1529,6 @@ export function ReviewLoa({
                       updateHeader('letterPercentage', event.target.value);
                     }}
                     required
-                    inputMode="decimal"
                     aria-invalid={fieldErrors['letter-percentage'] !== undefined}
                     aria-describedby={
                       fieldErrors['letter-percentage'] !== undefined
@@ -1655,25 +1653,22 @@ export function ReviewLoa({
             {!locks.pbgClause && (
               <Field>
                 <label htmlFor="pbg-amount">Required amount (₹)</label>
-                <input
+                <NumericInput
                   id="pbg-amount"
                   value={pbg.requiredAmount}
                   onChange={(event) => {
                     updatePbg('requiredAmount', event.target.value);
                   }}
                   required
-                  inputMode="decimal"
                 />
               </Field>
             )}
             {!locks.pbgClause && (
               <Field>
                 <label htmlFor="pbg-submission-days">Submit within (days)</label>
-                <input
+                <NumericInput
+                  integer
                   id="pbg-submission-days"
-                  type="number"
-                  min={1}
-                  max={180}
                   ref={(node) => {
                     registerField('pbg-submission-days', node);
                   }}
@@ -1699,10 +1694,9 @@ export function ReviewLoa({
             {!locks.pbgExtensionDays && (
               <Field>
                 <label htmlFor="pbg-extension-days">Extension window (days)</label>
-                <input
+                <NumericInput
+                  integer
                   id="pbg-extension-days"
-                  type="number"
-                  min={0}
                   value={pbg.extensionDays}
                   onChange={(event) => {
                     updatePbg('extensionDays', event.target.value);
@@ -1713,13 +1707,12 @@ export function ReviewLoa({
             {!locks.pbgPenalInterest && (
               <Field>
                 <label htmlFor="pbg-penal-interest">Penal interest (% p.a.)</label>
-                <input
+                <NumericInput
                   id="pbg-penal-interest"
                   value={pbg.penalInterestPercent}
                   onChange={(event) => {
                     updatePbg('penalInterestPercent', event.target.value);
                   }}
-                  inputMode="decimal"
                 />
               </Field>
             )}
@@ -1846,7 +1839,7 @@ export function ReviewLoa({
                             label={`Quantity for row ${item.itemSno} in schedule ${scheduleId}`}
                           />
                         ) : (
-                          <input
+                          <NumericInput
                             aria-label={`Quantity for row ${item.itemSno} in schedule ${scheduleId}`}
                             value={item.awardedQuantity}
                             onChange={(event) => {
@@ -1855,7 +1848,6 @@ export function ReviewLoa({
                               });
                             }}
                             required
-                            inputMode="decimal"
                           />
                         )}
                       </td>
@@ -1867,7 +1859,7 @@ export function ReviewLoa({
                             label={`Rate for row ${item.itemSno} in schedule ${scheduleId}`}
                           />
                         ) : (
-                          <input
+                          <NumericInput
                             aria-label={`Rate for row ${item.itemSno} in schedule ${scheduleId}`}
                             value={item.effectiveRate}
                             onChange={(event) => {
@@ -1876,7 +1868,6 @@ export function ReviewLoa({
                               });
                             }}
                             required
-                            inputMode="decimal"
                           />
                         )}
                       </td>

@@ -16,6 +16,7 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
 import { formatDate, formatInr } from '../format.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * What the railway actually paid, and what is still outstanding with it.
@@ -383,11 +384,9 @@ export function WorkBillSettlement({
                         <label htmlFor={`received-amount-${position.billId}`}>
                           Amount credited
                         </label>
-                        <input
+                        <NumericInput
                           id={`received-amount-${position.billId}`}
                           name="receivedAmount"
-                          type="text"
-                          inputMode="decimal"
                           required
                           disabled={pending}
                           className="font-mono tabular-nums"
@@ -418,11 +417,9 @@ export function WorkBillSettlement({
                           <label htmlFor={`${field.category}-${position.billId}`}>
                             {field.label}
                           </label>
-                          <input
+                          <NumericInput
                             id={`${field.category}-${position.billId}`}
                             name={field.category}
-                            type="text"
-                            inputMode="decimal"
                             disabled={pending}
                             className="font-mono tabular-nums"
                           />
@@ -436,11 +433,9 @@ export function WorkBillSettlement({
                         <label htmlFor={`other-${position.billId}`}>
                           Other deduction
                         </label>
-                        <input
+                        <NumericInput
                           id={`other-${position.billId}`}
                           name="OTHER"
-                          type="text"
-                          inputMode="decimal"
                           disabled={pending}
                           className="font-mono tabular-nums"
                         />

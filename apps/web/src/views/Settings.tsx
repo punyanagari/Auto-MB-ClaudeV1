@@ -19,6 +19,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { DataTable } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /** The mock constrains Settings, and only Settings, to `max-w-4xl`
  * (`app/settings/page` at fdfe5ef). The workspace mounts this screen
@@ -887,13 +888,10 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
                   <label htmlFor="einvoice-window-days">
                     IRP reporting window (days)
                   </label>
-                  <input
+                  <NumericInput
+                    integer
                     id="einvoice-window-days"
                     name="einvoice-window-days"
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={365}
                     defaultValue={profile.irpReportingWindowDays ?? ''}
                   />
                   <Hint>
@@ -950,13 +948,10 @@ export function Settings({ api, organisationId, isOwner }: SettingsProps) {
           <form onSubmit={(event) => void saveAuditRetention(event)}>
             <Field>
               <label htmlFor="audit-retention-months">Window (months)</label>
-              <input
+              <NumericInput
+                integer
                 id="audit-retention-months"
                 name="audit-retention-months"
-                type="number"
-                inputMode="numeric"
-                min={96}
-                max={600}
                 required
                 defaultValue={profile.auditRetentionMonths ?? 96}
               />

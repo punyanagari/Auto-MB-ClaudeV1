@@ -27,6 +27,7 @@ import { TabRail } from '../ui/tab-rail.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { maintenanceChipKey } from './Maintenance.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * One maintenance job card, in the mock's four tabs.
@@ -686,13 +687,9 @@ function DispatchTab({
                 <label className="sr-only" htmlFor={`dispatch-${line.id}`}>
                   Quantity of {line.description} on this challan
                 </label>
-                <input
+                <NumericInput
                   id={`dispatch-${line.id}`}
                   className="w-24 text-right"
-                  type="number"
-                  min="0"
-                  step="0.001"
-                  max={line.outstandingQuantity}
                   disabled={!enabled || Number(line.outstandingQuantity) <= 0}
                   value={quantities[line.id] ?? ''}
                   onChange={(event) => {
@@ -871,11 +868,8 @@ function ReturnsTab({
             </Field>
             <Field>
               <label htmlFor="return-quantity">Quantity received</label>
-              <input
+              <NumericInput
                 id="return-quantity"
-                type="number"
-                min="0"
-                step="0.001"
                 value={quantity}
                 disabled={!enabled}
                 onChange={(event) => {

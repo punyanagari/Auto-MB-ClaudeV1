@@ -16,6 +16,7 @@ import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /** Which quantity the R18 cap measures against, in the operator's own
  * words. An installable item is capped at what was installed; an AMC
@@ -414,10 +415,9 @@ export function PacCertificates({
                         ? ` (${BASIS_LABELS[summary.certificationBasis]} ${summary.supportingQuantity}, certified ${summary.pacCertifiedQuantity}, available ${summary.availableQuantity})`
                         : ''}
                     </label>
-                    <input
+                    <NumericInput
                       id={`pac-qty-${item.id}`}
                       name={`pac-qty-${item.id}`}
-                      inputMode="decimal"
                     />
                   </Field>
                 );

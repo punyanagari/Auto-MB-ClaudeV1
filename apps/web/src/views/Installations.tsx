@@ -21,6 +21,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface InstallationsProps {
   readonly api: ApiClient;
@@ -526,12 +527,7 @@ export function Installations({
                 </Field>
                 <Field>
                   <label htmlFor="inst-quantity">2. Quantity installed</label>
-                  <input
-                    id="inst-quantity"
-                    name="inst-quantity"
-                    inputMode="decimal"
-                    required
-                  />
+                  <NumericInput id="inst-quantity" name="inst-quantity" required />
                   {activeBalance !== undefined && (
                     <DeliveredBalance
                       balance={activeBalance}

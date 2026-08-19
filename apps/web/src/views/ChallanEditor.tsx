@@ -16,6 +16,7 @@ import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, ActionBar, FormError, FieldError, Hint } from '../ui/form.js';
 import { formatRate } from '../format.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface ChallanEditorProps {
   readonly api: ApiClient;
@@ -223,9 +224,8 @@ const ItemRow = memo(function ItemRow({
       <td className={numericCell}>{item.deliveredQuantity}</td>
       <td className={numericCell}>{item.remainingQuantity}</td>
       <td>
-        <input
+        <NumericInput
           aria-label={`Quantity of ${item.itemNumber} on this challan`}
-          inputMode="decimal"
           ref={(node) => {
             registerField(quantityField, node);
           }}

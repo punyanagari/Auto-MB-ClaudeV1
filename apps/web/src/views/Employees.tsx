@@ -16,6 +16,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The employee register (migrations 0089 and 0090).
@@ -651,10 +652,9 @@ function EmployeeComposer({
 
         <Field>
           <label htmlFor="employee-basic">Basic</label>
-          <input
+          <NumericInput
             id="employee-basic"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={basic}
             onChange={(event) => {
               setBasic(event.target.value);
@@ -663,10 +663,9 @@ function EmployeeComposer({
         </Field>
         <Field>
           <label htmlFor="employee-da">Dearness allowance</label>
-          <input
+          <NumericInput
             id="employee-da"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={da}
             onChange={(event) => {
               setDa(event.target.value);
@@ -675,10 +674,9 @@ function EmployeeComposer({
         </Field>
         <Field>
           <label htmlFor="employee-hra">House rent allowance</label>
-          <input
+          <NumericInput
             id="employee-hra"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={hra}
             onChange={(event) => {
               setHra(event.target.value);
@@ -687,10 +685,9 @@ function EmployeeComposer({
         </Field>
         <Field>
           <label htmlFor="employee-other">Other allowances</label>
-          <input
+          <NumericInput
             id="employee-other"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={other}
             onChange={(event) => {
               setOther(event.target.value);

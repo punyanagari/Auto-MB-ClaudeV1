@@ -10,6 +10,7 @@ import { Card, CardHeader } from '../ui/card.js';
 import { Actions, Field, FieldRow, FormError, Hint } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * Raising a site material request.
@@ -482,11 +483,8 @@ export function MaintenanceRequestForm({
                     <label htmlFor={`line-quantity-${String(line.key)}`}>
                       Quantity
                     </label>
-                    <input
+                    <NumericInput
                       id={`line-quantity-${String(line.key)}`}
-                      type="number"
-                      min="0.001"
-                      step="0.001"
                       value={line.quantity}
                       onChange={(event) => {
                         update(line.key, { quantity: event.currentTarget.value });
@@ -520,12 +518,8 @@ export function MaintenanceRequestForm({
                     <label htmlFor={`line-return-${String(line.key)}`}>
                       Defective qty expected back
                     </label>
-                    <input
+                    <NumericInput
                       id={`line-return-${String(line.key)}`}
-                      type="number"
-                      min="0"
-                      step="0.001"
-                      max={line.quantity}
                       value={line.expectedReturnQuantity}
                       onChange={(event) => {
                         update(line.key, {

@@ -3,6 +3,7 @@ import { formValue } from '../../api.js';
 import { Field, FieldRow, Hint } from '../../ui/form.js';
 import { InvoiceLineEditor, type DraftLine } from './InvoiceLineEditor.js';
 import { BuyerOptions, GstRateOptions } from './shared.js';
+import { NumericInput } from '../../ui/numeric-input.js';
 
 /**
  * Everything a tax invoice states about itself that is the same whether
@@ -200,10 +201,9 @@ export function InvoiceFactFields({
                 <GstRateOptions rates={gstRates} />
               </select>
             ) : (
-              <input
+              <NumericInput
                 id={`${idPrefix}-gst-rate`}
                 name={`${idPrefix}-gst-rate`}
-                inputMode="decimal"
                 required
                 placeholder="18"
               />

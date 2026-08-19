@@ -21,6 +21,7 @@ import { ProgressBar } from '../ui/progress.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The production register.
@@ -518,13 +519,10 @@ function JobCardForm({
           </Field>
           <Field>
             <label htmlFor="job-card-quantity">Quantity</label>
-            <input
+            <NumericInput
+              integer
               id="job-card-quantity"
               required
-              type="number"
-              min={1}
-              max={100000}
-              step={1}
               value={quantity}
               onChange={(event) => {
                 setQuantity(event.currentTarget.value);

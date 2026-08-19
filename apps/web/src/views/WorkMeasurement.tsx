@@ -7,6 +7,7 @@ import { DataTable, numericCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { MeasurementBooks } from './MeasurementBooks.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface WorkMeasurementProps {
   readonly api: ApiClient;
@@ -171,12 +172,7 @@ export function WorkMeasurement({
                 </Field>
                 <Field>
                   <label htmlFor="mb-quantity">Measured quantity</label>
-                  <input
-                    id="mb-quantity"
-                    name="mb-quantity"
-                    inputMode="decimal"
-                    required
-                  />
+                  <NumericInput id="mb-quantity" name="mb-quantity" required />
                 </Field>
                 <Field>
                   <label htmlFor="mb-date">Measured on</label>

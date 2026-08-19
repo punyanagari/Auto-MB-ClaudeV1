@@ -21,6 +21,7 @@ import { Disclosure } from '../ui/disclosure.js';
 import { Field, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Timeline } from './Timeline.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface ChallanDetailProps {
   readonly api: ApiClient;
@@ -1107,12 +1108,11 @@ export function ChallanDetail({
                     <label htmlFor={`correction-qty-${item.workItemId}`}>
                       Quantity — {item.description}
                     </label>
-                    <input
+                    <NumericInput
                       id={`correction-qty-${item.workItemId}`}
                       name={`correction-qty-${item.workItemId}`}
                       defaultValue={item.quantity}
                       required
-                      inputMode="decimal"
                     />
                   </Field>
                 ))}

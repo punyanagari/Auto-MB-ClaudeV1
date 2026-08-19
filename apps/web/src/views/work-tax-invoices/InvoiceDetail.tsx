@@ -23,6 +23,7 @@ import {
   type DraftLine,
 } from './InvoiceLineEditor.js';
 import { BuyerOptions, GstRateOptions, type ActRunner } from './shared.js';
+import { NumericInput } from '../../ui/numeric-input.js';
 
 interface InvoiceDetailProps {
   readonly api: ApiClient;
@@ -416,10 +417,9 @@ export function InvoiceDetail({
                       <GstRateOptions rates={gstRates} />
                     </select>
                   ) : (
-                    <input
+                    <NumericInput
                       id="edit-invoice-gst-rate"
                       name="edit-invoice-gst-rate"
-                      inputMode="decimal"
                       required
                       defaultValue={invoice.gstRate ?? ''}
                     />

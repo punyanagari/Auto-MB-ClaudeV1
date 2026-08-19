@@ -6,6 +6,7 @@ import type {
 import { Button } from '../../ui/button.js';
 import { Field, FieldRow, Actions, Hint } from '../../ui/form.js';
 import { GstRateOptions } from './shared.js';
+import { NumericInput } from '../../ui/numeric-input.js';
 
 /**
  * The line editor for an ITEMISED tax invoice (migration 0057).
@@ -162,9 +163,8 @@ export function InvoiceLineEditor({
             <FieldRow>
               <Field>
                 <label htmlFor={`${id}-quantity`}>Quantity</label>
-                <input
+                <NumericInput
                   id={`${id}-quantity`}
-                  inputMode="decimal"
                   required
                   value={line.quantity}
                   onChange={(event) => {
@@ -188,9 +188,8 @@ export function InvoiceLineEditor({
             <FieldRow>
               <Field>
                 <label htmlFor={`${id}-rate`}>Unit rate</label>
-                <input
+                <NumericInput
                   id={`${id}-rate`}
-                  inputMode="decimal"
                   required
                   value={line.unitRate}
                   onChange={(event) => {
@@ -218,9 +217,8 @@ export function InvoiceLineEditor({
                     <GstRateOptions rates={gstRates} />
                   </select>
                 ) : (
-                  <input
+                  <NumericInput
                     id={`${id}-gst-rate`}
-                    inputMode="decimal"
                     required
                     value={line.gstRate}
                     onChange={(event) => {
