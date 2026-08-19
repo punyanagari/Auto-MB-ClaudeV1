@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PaymentMatrixRow } from '@auto-mb/contracts';
 import {
+  autoZeroStages,
   draftFrom,
   draftProblem,
   draftTouched,
@@ -39,6 +40,7 @@ function savedRow(values: Partial<PaymentMatrixRow> = {}): PaymentMatrixRow {
     pctInstallation: '0.00',
     pctPac: '10.00',
     pctFinalBill: '10.00',
+    categoryLabel: null,
     createdAt: '2026-08-08T00:00:00.000Z',
     updatedAt: '2026-08-08T00:00:00.000Z',
     ...values,
@@ -112,5 +114,95 @@ describe('sameRowPercentages', () => {
       sameRowPercentages(draftFrom(savedRow({ pctSupply: '70.00' })), savedRow()),
     ).toBe(false);
     expect(sameRowPercentages(draftFrom(savedRow()), undefined)).toBe(false);
+  });
+});
+
+describe('autoZeroStages', () => {
+  it('fills the untouched stages once the typed ones reach 100', () => {
+    expect(autoZeroStages('SUPPLY', draft({ pctSupply: '100' }))).toEqual(
+      draft({
+        pctSupply: '100',
+        pctInstallation: '0',
+        pctPac: '0',
+        pctFinalBill: '0',
+      }),
+    );
+    expect(
+      draftProblem(autoZeroStages('SUPPLY', draft({ pctSupply: '100' }))),
+    ).toBeNull();
+    expect(
+      autoZeroStages('SUPPLY', draft({ pctSupply: '92.5', pctFinalBill: '7.5' })),
+    ).toEqual(
+      draft({
+        pctSupply: '92.5',
+        pctInstallation: '0',
+        pctPac: '0',
+        pctFinalBill: '7.5',
+      }),
+    );
+  });
+
+  it('counts an AMC row’s locked stages as the zeros they are sent as', () => {
+    // submittedDraft forces supply and installation to 0 (migration
+    // 0068), so a 95/5 AMC row is already balanced and nothing is filled.
+    expect(autoZeroStages('AMC', draft({ pctPac: '95', pctFinalBill: '5' }))).toEqual(
+      draft({ pctPac: '95', pctFinalBill: '5' }),
+    );
+    // Only the genuinely blank stage is filled. The two locked ones are
+    // left as they are: the row renders them as 0 and submits them as 0
+    // whatever the draft holds, so writing into them would be the form
+    // storing a value the operator never typed and cannot edit.
+    expect(autoZeroStages('AMC', draft({ pctPac: '100' }))).toEqual(
+      draft({ pctPac: '100', pctFinalBill: '0' }),
+    );
+    expect(
+      draftProblem(
+        submittedDraft('AMC', autoZeroStages('AMC', draft({ pctPac: '100' }))),
+      ),
+    ).toBeNull();
+  });
+
+  it('never refills the field the operator just cleared', () => {
+    // A balanced row is 100 plus three zeros, so clearing one of the
+    // zeros leaves the rest summing to 100 — and an unconditional fill
+    // put it straight back, making it the one input on the screen that
+    // could not be emptied.
+    const balanced = draft({
+      pctSupply: '100',
+      pctInstallation: '0',
+      pctPac: '0',
+      pctFinalBill: '0',
+    });
+    const cleared = { ...balanced, pctPac: '' };
+    expect(autoZeroStages('SUPPLY', cleared, 'pctPac')).toEqual(cleared);
+    // Any OTHER blank still fills, so clearing one field does not switch
+    // the behaviour off for the rest of the row.
+    const twoBlank = { ...balanced, pctPac: '', pctFinalBill: '' };
+    expect(autoZeroStages('SUPPLY', twoBlank, 'pctPac')).toEqual({
+      ...twoBlank,
+      pctFinalBill: '0',
+    });
+    // Without the hint — the caller that does not know which field moved
+    // — the old behaviour stands.
+    expect(autoZeroStages('SUPPLY', cleared)).toEqual(balanced);
+  });
+
+  it('leaves a row alone until it balances, and never fights an edit', () => {
+    // Short of 100, over 100, mid-typing garbage, text the wire refuses,
+    // and a row already full: in every one the draft comes back as typed.
+    for (const partial of [
+      draft({ pctSupply: '60' }),
+      draft({ pctSupply: '60', pctInstallation: '50' }),
+      draft({ pctSupply: '1.' }),
+      draft({ pctSupply: ' 100' }),
+      draft({
+        pctSupply: '80',
+        pctInstallation: '0',
+        pctPac: '10',
+        pctFinalBill: '10',
+      }),
+    ]) {
+      expect(autoZeroStages('SUPPLY', partial)).toEqual(partial);
+    }
   });
 });

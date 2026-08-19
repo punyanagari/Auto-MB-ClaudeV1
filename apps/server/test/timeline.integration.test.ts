@@ -136,13 +136,13 @@ async function seedWork(code: string): Promise<{ workId: string; itemIds: string
   await admin`
     insert into work_items (
       id, organisation_id, work_id, schedule_id, item_number,
-      description, unit_code, awarded_quantity, effective_rate
+      description, unit_code, awarded_quantity, effective_rate, payment_category
     )
     values
       (${itemIds[0] ?? ''}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
-       'Axle counter unit', 'Nos', '100.000', '10.00'),
+       'Axle counter unit', 'Nos', '100.000', '10.00', 'UNCATEGORISED'),
       (${itemIds[1] ?? ''}, ${organisationId}, ${workId}, ${scheduleId}, 'A/2',
-       'Signal cable drum', 'Nos', '50.000', '20.00')
+       'Signal cable drum', 'Nos', '50.000', '20.00', 'UNCATEGORISED')
   `;
   // The LOA-confirm flow writes work.created; a directly-seeded fixture
   // records the same event so the timeline covers the whole life cycle.
@@ -438,19 +438,6 @@ describe('per-Work timeline read API', () => {
     });
     expect(serials.statusCode, serials.body).toBe(201);
 
-    const measured = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workAId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemA1Id,
-        deliveryChallanId: challanId,
-        measuredQuantity: '1.000',
-        measuredOn: '2026-08-04',
-      },
-    });
-    expect(measured.statusCode, measured.body).toBe(201);
-
     // Stage-wise billing (Milestone 8 phase 2): matrix row seeded
     // directly (no audit event), then draft MB → claim the issued
     // challan → finalize → prepare the bill FROM the finalized MB.
@@ -524,7 +511,6 @@ describe('per-Work timeline read API', () => {
       'measurement_book.finalized',
       'measurement_book.sources_updated',
       'measurement_book.created',
-      'mb.recorded',
       'serials.recorded',
       'challan.received',
       'challan.issued',

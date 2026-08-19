@@ -404,7 +404,10 @@ export function registerMeasurementBookDraftingRoutes(
           );
         }
         // Deleting the draft removes its claims entirely — the sources
-        // return to the open pool with no residue.
+        // return to the open pool with no residue. Its measured-quantity
+        // adjustments go the same way: they are instructions to a
+        // computation that is about to stop existing (migration 0106).
+        await tx`delete from mb_measured_overrides where measurement_book_id = ${id}`;
         await tx`delete from mb_sources where measurement_book_id = ${id}`;
         await tx`delete from measurement_books where id = ${id}`;
         await audit(

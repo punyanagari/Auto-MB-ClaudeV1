@@ -1364,6 +1364,7 @@ export const WORK_WARRANTY = {
     instrumentExpiresOn: '2027-12-19',
     shortfallDays: 45,
   },
+  finalBillDate: null,
   candidates: [
     {
       installationId: '44444444-4444-4444-8444-444444444446',

@@ -420,6 +420,13 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // froze its own copy.
   work_warranty_terms: ['id', 'updated_at', 'dlp_months', 'start_basis', 'notes'],
 
+  // The schedule is written once, from the letter it was confirmed from
+  // (0001; there was no UPDATE route for it at all until 0107). What
+  // 0107 opens is the AMC billing cadence and nothing else — the freeze
+  // deliberately still covers `accepted_percentage`, the multiplier
+  // every derived rate on the Work is computed through.
+  work_schedules: ['amc_billing_periods', 'amc_cycle_noun'],
+
   // Same created_at note as delivery_challans.
   issue_challans: [
     'id',

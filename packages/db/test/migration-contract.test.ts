@@ -96,6 +96,8 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0098_retention_and_liquidated_damages.sql': 6,
   '0099_warranty_dlp.sql': 6,
   '0104_owner_rulings_2026_08_19.sql': 1,
+  '0106_mb_measured_overrides.sql': 2,
+  '0107_amc_billing_cycles.sql': 1,
   // Three new guards — the counter's decrease guard, the vendor invoice's
   // evidence guard and the purchase order's close-evidence guard — plus
   // the two 0033 triggers re-created to widen their event list to
@@ -3116,5 +3118,107 @@ describe('the owner rulings of 2026-08-19 (0104)', () => {
       );
     expect(definers).toHaveLength(1);
     expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(2);
+  });
+
+  it('caps the measured quantity downward only in 0106', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0106_mb_measured_overrides.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+
+    // A tenant table on the house shape: the organisation reference, the
+    // composite-FK target, and both composite foreign keys.
+    expect(sql).toContain('organisation_id uuid NOT NULL REFERENCES organisations(id)');
+    expect(sql).toContain('UNIQUE (organisation_id, id)');
+    expect(sql).toContain(
+      'UNIQUE (organisation_id, measurement_book_id, work_item_id)',
+    );
+    expect(sql).toContain('REFERENCES measurement_books(organisation_id, id, work_id)');
+    expect(sql).toContain('REFERENCES work_items(organisation_id, id, work_id)');
+
+    // Downward only, floored at zero, and never a row that says nothing.
+    expect(sql).toContain(
+      'CHECK (measured_supplied IS NULL OR measured_supplied >= 0)',
+    );
+    expect(sql).toContain(
+      'CHECK (measured_installed IS NULL OR measured_installed >= 0)',
+    );
+    expect(sql).toContain('num_nonnulls(measured_supplied, measured_installed) > 0');
+
+    // The cap trigger re-derives the claimed totals from mb_sources
+    // rather than trusting the writer, and only counts UNRELEASED claims
+    // in their billable state.
+    expect(sql).toContain('CREATE FUNCTION app_private.guard_mb_measured_override()');
+    expect(sql).toContain('SET search_path = pg_catalog, public');
+    expect(sql).toContain('ms.released_at IS NULL');
+    expect(sql).toContain("dc.status = 'issued'");
+    expect(sql).toContain("i.status = 'recorded'");
+
+    // The tenancy floor.
+    expect(sql).toContain(
+      'ALTER TABLE mb_measured_overrides ENABLE ROW LEVEL SECURITY;',
+    );
+    expect(sql).toContain(
+      'ALTER TABLE mb_measured_overrides FORCE ROW LEVEL SECURITY;',
+    );
+    expect(sql).toContain('CREATE POLICY mb_measured_overrides_tenant_policy');
+    expect(sql).toContain(
+      'organisation_id = (SELECT app_private.current_organisation_id())',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON mb_measured_overrides TO auto_mb_app;',
+    );
+
+    // Guards sort before the touch trigger, so a refused write raises
+    // before updated_at moves.
+    expect(sql).toContain('CREATE TRIGGER mb_measured_overrides_guard_mutation');
+    expect(sql).toContain('CREATE TRIGGER mb_measured_overrides_touch_updated_at');
+
+    // Every RAISE carries a code from the newly claimed 23R block.
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBe(3);
+    expect(sql.match(/USING ERRCODE = '23R\d\d'/g)?.length).toBe(raises.length);
+    expect(sql).toContain(
+      "ERRCODE = '23R01', CONSTRAINT = 'mb_override_above_claimed'",
+    );
+    expect(sql).toContain(
+      "ERRCODE = '23R02', CONSTRAINT = 'mb_override_book_not_draft'",
+    );
+  });
+
+  it('opens work_schedules for the AMC cycle and for nothing else in 0107', async () => {
+    const sql = await readFile(
+      path.join(migrationsDirectory, '0107_amc_billing_cycles.sql'),
+      'utf8',
+    );
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+
+    // Two nullable columns, coherent as a pair, with no DEFAULT — the
+    // import PROPOSES a cadence and the operator confirms it, so a
+    // database default would make the guess silently and permanently.
+    expect(sql).toContain('ADD COLUMN amc_billing_periods integer');
+    expect(sql).toContain('amc_billing_periods IS NULL OR amc_billing_periods > 0');
+    expect(sql).toContain('ADD COLUMN amc_cycle_noun text');
+    expect(sql).toContain('CONSTRAINT work_schedules_amc_cycle_coherent');
+    expect(sql).not.toMatch(/amc_billing_periods[^;]*SET DEFAULT/);
+
+    // Opening UPDATE for the cadence must not open it for the schedule's
+    // identity or for accepted_percentage, which every derived rate on
+    // the Work is computed through. This is the table's FIRST trigger.
+    expect(sql).toContain('CREATE FUNCTION app_private.guard_work_schedule_update()');
+    expect(sql).toContain('SET search_path = pg_catalog, public');
+    expect(sql).toContain('NEW.accepted_percentage');
+    expect(sql).toContain('NEW.schedule_code');
+    expect(sql).toContain('CREATE TRIGGER work_schedules_guard_update');
+    // The two cadence columns are the only ones absent from the frozen
+    // ROW comparison, which is what makes them the only editable pair.
+    expect(sql).not.toMatch(/ROW\([^)]*amc_billing_periods/);
+
+    const raises = sql.match(/RAISE EXCEPTION/g) ?? [];
+    expect(raises.length).toBe(1);
+    expect(sql.match(/USING ERRCODE = '23R\d\d'/g)?.length).toBe(raises.length);
+    expect(sql).toContain("ERRCODE = '23R03', CONSTRAINT = 'work_schedule_frozen'");
   });
 });

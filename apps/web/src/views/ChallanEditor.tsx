@@ -13,7 +13,7 @@ import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { DataTable, controlCell, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, ActionBar, FormError, FieldError, Hint } from '../ui/form.js';
 import { formatRate } from '../format.js';
 
@@ -268,7 +268,7 @@ const ItemRow = memo(function ItemRow({
           ))}
       </td>
       {offersPoLines && (
-        <td>
+        <td className={controlCell}>
           {poChoices !== undefined && poChoices.length > 0 ? (
             <select
               aria-label={`Purchase order line for ${item.itemNumber}`}

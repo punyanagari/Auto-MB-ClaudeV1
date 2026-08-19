@@ -21,6 +21,17 @@
  * rules in this module — punctuation, ordering, phrasing, rendering of
  * numbers — must bump this constant. Historical MBs are never re-rendered:
  * they keep the snapshotted text and the version they were rendered with.
+ *
+ * THE AMC PERIOD CLAUSE (owner ruling Q3, 2026-08-19) DOES NOT BUMP IT,
+ * and the argument is the rule's own: what the version protects is that
+ * no already-finalised MB's string could have been rendered differently.
+ * The clause fires only when a line's schedule carries
+ * `amc_billing_periods`, a column migration 0107 creates — so on every MB
+ * finalised before it, the input is absent and this module's output is
+ * character-for-character what v1 produced. The regression workbook
+ * (`apps/server/test/fixtures/mb-remark-workbook.v1.json`) carries no
+ * cadence and stays byte-green, which is the check that says so rather
+ * than the claim.
  */
 export const MB_REMARK_TEMPLATE_VERSION = 'mb-remark-v1';
 
@@ -42,6 +53,21 @@ export interface MbRemarkStageInput {
   readonly deltaQuantity: string;
 }
 
+/**
+ * An AMC item's billing cadence, when its schedule states one (migration
+ * 0107). Present ONLY for AMC items on a schedule carrying
+ * `amc_billing_periods`; absent everywhere else, which is every line the
+ * template version below was authored against.
+ */
+export interface MbRemarkAmcCycle {
+  /** Q — the sanctioned quantity the cadence divides. */
+  readonly totalQuantity: string;
+  /** M — how many billing periods it divides into. */
+  readonly billingPeriods: number;
+  /** The word the agency calls one period: 'quarter', 'month', 'visit'. */
+  readonly cycleNoun: string;
+}
+
 interface MbRemarkInput {
   /** The item's unit string, rendered verbatim (e.g. 'mtr', 'Set', 'RMT'). */
   readonly unit: string;
@@ -50,6 +76,14 @@ interface MbRemarkInput {
    * MB_STAGE_ORDER. A stage may be omitted entirely (treated as absent).
    */
   readonly stages: ReadonlyArray<MbRemarkStageInput>;
+  /**
+   * When present, every fragment counts PERIODS instead of quantity: the
+   * owner's Q3 ruling of 2026-08-19 keeps this engine's grammar and has
+   * the AMC branch render period language INSIDE it — "Now to pay 95% for
+   * 1 quarter." See `stageFragment` for the arithmetic and
+   * MB_REMARK_TEMPLATE_VERSION for why this is not a version bump.
+   */
+  readonly amcCycle?: MbRemarkAmcCycle;
 }
 
 interface StageAmountInput {
@@ -249,8 +283,88 @@ function stagesInRenderOrder(
   return ordered;
 }
 
-/** '<pct>% for <qty> <unit>' — the shared per-stage fragment of both clauses. */
-function stageFragment(percent: string, quantity: string, unit: string): string {
+/**
+ * How many billing periods a quantity is, on a cadence that splits Q into
+ * M periods: `quantity * M / Q`, in exact hundredths.
+ *
+ * IT NEVER ROUNDS A PART-PERIOD UP TO A WHOLE ONE. The remark is frozen
+ * into a finalised Measurement Book and read as a contractual statement,
+ * so a certificate covering half a quarter must not print "for 1
+ * quarter". Only a value that is integral WITHIN THE SPLIT'S OWN WOBBLE
+ * is rendered as an integer — the running-total split rounds each
+ * cumulative to three decimals, so a whole period can arrive as
+ * 0.9999 of one (Q=10, M=3: 3.333 * 3 / 10) and must still read "1".
+ * That tolerance is a thousand times smaller than the smallest fraction
+ * this could be asked to print, so it can never swallow a real
+ * part-period.
+ *
+ * Anything else renders as a two-decimal fraction of a period ("0.5
+ * quarters"), and a quantity that is not a period at all returns null,
+ * which sends the caller back to the quantity fragment.
+ */
+const PERIOD_SCALE = 2;
+const PERIOD_TOLERANCE_HUNDREDTHS = 1n; // 0.01 of a period
+
+function periodsOf(quantity: string, cycle: MbRemarkAmcCycle): string | null {
+  const q = parseDecimal(quantity);
+  const total = parseDecimal(cycle.totalQuantity);
+  if (total.units <= 0n || q.units <= 0n) {
+    return null;
+  }
+  // quantity * M / Q, with both quantities rescaled to a common scale so
+  // the ratio is scale-free, carried in hundredths of a period.
+  const scale = Math.max(q.scale, total.scale);
+  const numerator =
+    rescale(q, scale).units *
+    BigInt(cycle.billingPeriods) *
+    10n ** BigInt(PERIOD_SCALE);
+  const denominator = rescale(total, scale).units;
+  const hundredths = (numerator * 2n + denominator) / (denominator * 2n);
+  if (hundredths <= 0n) {
+    return null;
+  }
+  const remainder = hundredths % 100n;
+  if (remainder <= PERIOD_TOLERANCE_HUNDREDTHS) {
+    return (hundredths / 100n).toString();
+  }
+  if (100n - remainder <= PERIOD_TOLERANCE_HUNDREDTHS) {
+    return (hundredths / 100n + 1n).toString();
+  }
+  // Trailing zeros go, exactly as they do on a quantity: the grammar
+  // reads "0.5 quarters", never "0.50 quarters".
+  return renderQuantity(formatScaled({ units: hundredths, scale: PERIOD_SCALE }));
+}
+
+/** '<pct>% for <qty> <unit>' — the shared per-stage fragment of both
+ * clauses. On an AMC cadence the quantity and unit become a period count
+ * and the schedule's own word for a period ("95% for 1 quarter"), which
+ * is the owner's Q3 ruling rendered inside this grammar rather than
+ * beside it.
+ *
+ * ONLY ON THE ACCEPTANCE-CERTIFICATE STAGE. A maintenance cadence
+ * divides the certified quantity and nothing else, so a supply or
+ * installation delta on the same item — a delivery challan against a
+ * maintenance schedule — would be counted against a Q it has no
+ * relationship to. Those stages keep the item's own unit.
+ *
+ * A quantity the cadence cannot express as a period at all (a zero
+ * total, or a quantity too small to be a hundredth of one) falls back to
+ * the quantity, because a sentence saying "for 0 quarters" would be
+ * worse than the number it replaced. */
+function stageFragment(
+  stage: MbStage,
+  percent: string,
+  quantity: string,
+  unit: string,
+  cycle: MbRemarkAmcCycle | undefined,
+): string {
+  if (cycle !== undefined && stage === 'pac') {
+    const periods = periodsOf(quantity, cycle);
+    if (periods !== null) {
+      const noun = periods === '1' ? cycle.cycleNoun : `${cycle.cycleNoun}s`;
+      return `${renderPercent(percent)}% for ${periods} ${noun}`;
+    }
+  }
   return `${renderPercent(percent)}% for ${renderQuantity(quantity)} ${unit}`;
 }
 
@@ -270,11 +384,21 @@ export function computeMbRemark(input: MbRemarkInput): string {
 
   const prepaid = ordered
     .filter((s) => isPositive(s.percent) && isPositive(s.priorCumulativeQuantity))
-    .map((s) => stageFragment(s.percent, s.priorCumulativeQuantity, input.unit));
+    .map((s) =>
+      stageFragment(
+        s.stage,
+        s.percent,
+        s.priorCumulativeQuantity,
+        input.unit,
+        input.amcCycle,
+      ),
+    );
 
   const nowToPay = ordered
     .filter((s) => isPositive(s.deltaQuantity))
-    .map((s) => stageFragment(s.percent, s.deltaQuantity, input.unit));
+    .map((s) =>
+      stageFragment(s.stage, s.percent, s.deltaQuantity, input.unit, input.amcCycle),
+    );
 
   const clauses: string[] = [];
   if (prepaid.length > 0) {
@@ -346,6 +470,21 @@ export function resolveFinalBillBase(input: FinalBillBaseInput): FinalBillBaseRe
     case 'AMC':
       branch = 'certified';
       break;
+    // The residual category and "nothing chosen yet" take the same
+    // branch, and they take it for the same reason: neither says what
+    // the item MOVES on, so the description is the only evidence there
+    // is. Migration 0105 split them apart as billing STATES — an
+    // UNCATEGORISED item bills through the Work's residual row, a NULL
+    // one bills nothing until it is answered — but that split says
+    // nothing about which quantity a final bill is earned on, so the
+    // reading here is deliberately shared rather than duplicated.
+    //
+    // A NULL item never actually reaches this function today: it fails
+    // to resolve percentages first and the Measurement Book refuses to
+    // finalize. The arm stays because the draft PREVIEW computes before
+    // it refuses, and a preview that threw would answer a 500 where the
+    // operator should be reading the list of items to categorise.
+    case 'UNCATEGORISED':
     case null:
       branch = input.description.toLowerCase().includes('installation')
         ? 'installed'

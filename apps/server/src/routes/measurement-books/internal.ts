@@ -1,4 +1,5 @@
 import {
+  byItemNumber,
   type MbSourceConflictDetails,
   type MbSourceRef,
   type MbSourceType,
@@ -350,7 +351,84 @@ export async function loadItemInputs(
     // AMC item on a final MB, which is the overwhelming majority, and
     // `computeForBook` overlays the real figure for the rest.
     cumulativeAmcCertified: '0',
+    // Neither of the two overlays below is loaded here, for the same
+    // reason: this statement's plan shape is under a measured buffer
+    // ratchet and the overlays are empty on almost every book.
+    // `computeForBook` fills them.
+    measuredSupplied: null,
+    measuredInstalled: null,
+    amcBillingPeriods: null,
+    amcCycleNoun: null,
   }));
+}
+
+/**
+ * The operator's downward measured-quantity adjustments for one book
+ * (migration 0106), keyed by Work item.
+ *
+ * ITS OWN STATEMENT, not a join in `ITEM_INPUTS_SQL`, following the
+ * precedent `loadAmcCertified` sets below and for a stronger version of
+ * the same reason: the table is EMPTY for every draft nobody adjusted,
+ * which is almost all of them, and this is one index-only probe of
+ * `mb_measured_overrides_measurement_book_id_work_item_id_key`'s leading
+ * columns against a statement whose six grouped CTEs are the module's
+ * hottest read. Issued for a draft or a finalizing book; a finalized book
+ * reads its stored lines and never computes.
+ */
+export async function loadMeasuredOverrides(
+  tx: TransactionSql,
+  bookId: string,
+): Promise<Map<string, { supplied: string | null; installed: string | null }>> {
+  const rows = await tx<
+    {
+      work_item_id: string;
+      measured_supplied: string | null;
+      measured_installed: string | null;
+    }[]
+  >`
+    select work_item_id,
+           measured_supplied::text as measured_supplied,
+           measured_installed::text as measured_installed
+    from mb_measured_overrides
+    where measurement_book_id = ${bookId}
+  `;
+  return new Map(
+    rows.map((row) => [
+      row.work_item_id,
+      { supplied: row.measured_supplied, installed: row.measured_installed },
+    ]),
+  );
+}
+
+/**
+ * Each AMC item's schedule cadence (migration 0107), keyed by Work item.
+ *
+ * Read only to render period language in the remark, and only for an item
+ * whose category is AMC — so, like `loadAmcCertified`, this is scoped to
+ * AMC items and issued only when the book actually carries one. A Work
+ * with no maintenance schedule never issues it at all.
+ */
+export async function loadAmcCycles(
+  tx: TransactionSql,
+  workId: string,
+): Promise<Map<string, { periods: number; noun: string }>> {
+  const rows = await tx<
+    { work_item_id: string; amc_billing_periods: number; amc_cycle_noun: string }[]
+  >`
+    select wi.id as work_item_id, ws.amc_billing_periods, ws.amc_cycle_noun
+    from work_items wi
+    join work_schedules ws on ws.id = wi.schedule_id
+    where wi.work_id = ${workId} and wi.deleted_at is null
+      and wi.payment_category = 'AMC'
+      and ws.amc_billing_periods is not null
+      and ws.amc_cycle_noun is not null
+  `;
+  return new Map(
+    rows.map((row) => [
+      row.work_item_id,
+      { periods: row.amc_billing_periods, noun: row.amc_cycle_noun },
+    ]),
+  );
 }
 
 /**
@@ -406,17 +484,35 @@ export async function computeForBook(
   // which runs only on the final MB. A non-final MB, and a final MB on a
   // Work with no maintenance schedule, issue no extra statement at all —
   // see `loadAmcCertified` for what that saves and why it is not a CTE.
-  const needsAmcBase =
-    book.is_final && loaded.some((item) => item.paymentCategory === 'AMC');
+  const hasAmc = loaded.some((item) => item.paymentCategory === 'AMC');
+  const needsAmcBase = book.is_final && hasAmc;
   const certified = needsAmcBase
     ? await loadAmcCertified(tx, book.work_id)
     : new Map<string, string>();
-  const items = needsAmcBase
-    ? loaded.map((item) => ({
-        ...item,
-        cumulativeAmcCertified: certified.get(item.workItemId) ?? '0',
-      }))
-    : loaded;
+  // The cadence is remark wording, so it is read for any book carrying an
+  // AMC item, final or not — unlike the certified base above, which only
+  // the final book's final-bill stage consults.
+  const cycles = hasAmc
+    ? await loadAmcCycles(tx, book.work_id)
+    : new Map<string, { periods: number; noun: string }>();
+  const overrides = await loadMeasuredOverrides(tx, book.id);
+  const items =
+    needsAmcBase || hasAmc || overrides.size > 0
+      ? loaded.map((item) => {
+          const cycle = cycles.get(item.workItemId);
+          const override = overrides.get(item.workItemId);
+          return {
+            ...item,
+            ...(needsAmcBase
+              ? { cumulativeAmcCertified: certified.get(item.workItemId) ?? '0' }
+              : {}),
+            measuredSupplied: override?.supplied ?? null,
+            measuredInstalled: override?.installed ?? null,
+            amcBillingPeriods: cycle?.periods ?? null,
+            amcCycleNoun: cycle?.noun ?? null,
+          };
+        })
+      : loaded;
   return computeMeasurementBook({ matrix, isFinal: book.is_final, items });
 }
 
@@ -435,6 +531,10 @@ export function toLine(line: MbComputedLine): MeasurementBookLine {
     effectiveRate: line.effectiveRate,
     deltaSupplied: line.deltaSupplied,
     deltaInstalled: line.deltaInstalled,
+    sourceSupplied: line.sourceSupplied,
+    sourceInstalled: line.sourceInstalled,
+    overrideSupplied: line.overrideSupplied,
+    overrideInstalled: line.overrideInstalled,
     deltaPac: line.deltaPac,
     deltaFinalBill: line.deltaFinalBill,
     priorSupplied: line.priorSupplied,
@@ -508,33 +608,53 @@ export async function readStoredLines(
     where measurement_book_id = ${bookId}
     order by item_number
   `;
-  return rows.map((row) => ({
-    workItemId: row.work_item_id,
-    itemNumber: row.item_number,
-    description: row.description,
-    unitCode: row.unit_code,
-    paymentCategory: row.payment_category as WorkItemPaymentCategory | null,
-    resolvedCategory: row.resolved_category,
-    pctSupply: row.pct_supply,
-    pctInstallation: row.pct_installation,
-    pctPac: row.pct_pac,
-    pctFinalBill: row.pct_final_bill,
-    effectiveRate: canonicalRateText(row.effective_rate),
-    deltaSupplied: row.delta_supplied,
-    deltaInstalled: row.delta_installed,
-    deltaPac: row.delta_pac,
-    deltaFinalBill: row.delta_final_bill,
-    priorSupplied: row.prior_supplied,
-    priorInstalled: row.prior_installed,
-    priorPac: row.prior_pac,
-    priorFinalBill: row.prior_final_bill,
-    amountSupply: row.amount_supply,
-    amountInstallation: row.amount_installation,
-    amountPac: row.amount_pac,
-    amountFinalBill: row.amount_final_bill,
-    lineTotal: row.line_total,
-    remark: row.remark,
-  }));
+  // Natural order, decided here rather than in the ORDER BY above:
+  // `item_number` is text, so SQL reads A1/1, A1/10, A1/11, A1/2. This is
+  // the read the finalised MB's detail, its PDF and a NEW bill's
+  // lines_snapshot are all built from, so sorting it is what puts a
+  // printed document into the order its schedule is written in.
+  //
+  // It moves no persisted bytes. The stored rows keep their own order,
+  // and a lines_snapshot already written to a bill is frozen JSON — only
+  // documents produced from here on read naturally.
+  return byItemNumber(
+    rows.map((row) => ({
+      workItemId: row.work_item_id,
+      itemNumber: row.item_number,
+      description: row.description,
+      unitCode: row.unit_code,
+      paymentCategory: row.payment_category as WorkItemPaymentCategory | null,
+      resolvedCategory: row.resolved_category,
+      pctSupply: row.pct_supply,
+      pctInstallation: row.pct_installation,
+      pctPac: row.pct_pac,
+      pctFinalBill: row.pct_final_bill,
+      effectiveRate: canonicalRateText(row.effective_rate),
+      deltaSupplied: row.delta_supplied,
+      deltaInstalled: row.delta_installed,
+      // The snapshot has no column for what the sources measured before
+      // an adjustment (0106), nor for the adjustment itself, and
+      // deliberately does not: what the book bills is what it recorded.
+      // A finalized line reports null on all four and the screen prints
+      // one figure.
+      sourceSupplied: null,
+      sourceInstalled: null,
+      overrideSupplied: null,
+      overrideInstalled: null,
+      deltaPac: row.delta_pac,
+      deltaFinalBill: row.delta_final_bill,
+      priorSupplied: row.prior_supplied,
+      priorInstalled: row.prior_installed,
+      priorPac: row.prior_pac,
+      priorFinalBill: row.prior_final_bill,
+      amountSupply: row.amount_supply,
+      amountInstallation: row.amount_installation,
+      amountPac: row.amount_pac,
+      amountFinalBill: row.amount_final_bill,
+      lineTotal: row.line_total,
+      remark: row.remark,
+    })),
+  );
 }
 
 /** Detail assembly: drafts COMPUTE the preview from live state;
@@ -601,6 +721,7 @@ export async function readDetail(
       warnings: [...computation.unresolved],
       previewTotal: computation.totalAmount,
       unbillableVariationExposure,
+      measurementAdjustedAway: computation.adjustedAwayAmount,
     };
   }
   return {
@@ -610,6 +731,8 @@ export async function readDetail(
     warnings: [],
     previewTotal: book.total_amount,
     unbillableVariationExposure,
+    // A finalized book records what it billed, not what it declined to.
+    measurementAdjustedAway: '0.00',
   };
 }
 

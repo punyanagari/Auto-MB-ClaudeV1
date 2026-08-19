@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
+  byItemNumber,
+  compareItemNumbers,
   CancelChallanRequestSchema,
   ChallanDetailResponseSchema,
   ChallanListResponseSchema,
@@ -1543,17 +1545,22 @@ export function registerChallanRoutes(
                   location: issueSource.location,
                   sourceChallanNumber: issueSource.challan_number,
                 },
-          items: rows.map((row) => ({
-            workItemId: row.work_item_id,
-            itemNumber: row.item_number,
-            description: row.description,
-            unitCode: row.unit_code,
-            awardedQuantity: row.awarded,
-            effectiveQuantity: row.effective,
-            deliveredQuantity: row.delivered,
-            remainingQuantity: row.remaining,
-            effectiveRate: canonicalRateText(row.rate),
-          })),
+          // Natural order. `item_number` is text, so the SQL sorts A1/1,
+          // A1/10, A1/11, A1/2 — the order this picker used to offer the
+          // operator, who is reading the letter's schedule beside it.
+          items: byItemNumber(
+            rows.map((row) => ({
+              workItemId: row.work_item_id,
+              itemNumber: row.item_number,
+              description: row.description,
+              unitCode: row.unit_code,
+              awardedQuantity: row.awarded,
+              effectiveQuantity: row.effective,
+              deliveredQuantity: row.delivered,
+              remainingQuantity: row.remaining,
+              effectiveRate: canonicalRateText(row.rate),
+            })),
+          ),
         };
       });
     },
@@ -2313,6 +2320,7 @@ export function registerChallanRoutes(
               'QUANTITY_EXCEEDED',
               `Issuing would exceed the permitted quantity for: ${exceeded
                 .map((row) => row.item_number)
+                .sort(compareItemNumbers)
                 .join(', ')}.`,
             );
           }
@@ -2462,7 +2470,10 @@ export function registerChallanRoutes(
             order by wi.item_number
           `;
         if (stale.length > 0) {
-          const changed = stale
+          const changed = [...stale]
+            .sort((left, right) =>
+              compareItemNumbers(left.item_number, right.item_number),
+            )
             .map((line) => `${line.item_number} (${line.fields.join(', ')})`)
             .join('; ');
           throw httpError(
@@ -2497,7 +2508,10 @@ export function registerChallanRoutes(
               order by wi.item_number
             `;
           if (incomplete.length > 0) {
-            const detail = incomplete
+            const detail = [...incomplete]
+              .sort((left, right) =>
+                compareItemNumbers(left.item_number, right.item_number),
+              )
               .map(
                 (line) =>
                   `${line.item_number} (${line.recorded} of ${line.quantity} serials recorded)`,

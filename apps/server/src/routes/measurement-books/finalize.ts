@@ -1,4 +1,5 @@
 import {
+  MB_NOT_SELECTED_CATEGORY,
   BillSchema,
   CancelMeasurementBookRequestSchema,
   MeasurementBookDetailResponseSchema,
@@ -16,6 +17,7 @@ import type { Auth } from '../../auth.js';
 import { assertWorkAccess } from '../../authz.js';
 import { httpError } from '../../http.js';
 import { parseJsonbColumn } from '../../jsonb-column.js';
+import { lineHasQuantity } from '../../mb-compute.js';
 import { MB_REMARK_TEMPLATE_VERSION } from '../../mb-remark.js';
 import { assertWorkOperable } from '../../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from '../shared.js';
@@ -234,13 +236,22 @@ export function registerMeasurementBookFinalizeRoutes(
           const details: MbPercentagesUnresolvedDetails = {
             items: [...computation.unresolved],
           };
+          // Two different remedies, so two different sentences. An item
+          // with no category chosen (migration 0105) needs a decision,
+          // not a matrix row, and telling its operator to "add the
+          // missing NOT_SELECTED row" would send them looking for a row
+          // that cannot exist.
           const names = computation.unresolved
-            .map((item) => `${item.itemNumber} (missing ${item.missingCategory} row)`)
+            .map((item) =>
+              item.missingCategory === MB_NOT_SELECTED_CATEGORY
+                ? `${item.itemNumber} (no payment category chosen)`
+                : `${item.itemNumber} (missing ${item.missingCategory} row)`,
+            )
             .join('; ');
           throw httpError(
             409,
             'MB_PERCENTAGES_UNRESOLVED',
-            `The payment matrix cannot price every item on this Measurement Book — ${names}. Add the missing matrix rows and retry.`,
+            `The payment matrix cannot price every item on this Measurement Book — ${names}. Choose a payment category for every item named, add the missing matrix rows, and retry.`,
             details,
           );
         }
@@ -267,7 +278,15 @@ export function registerMeasurementBookFinalizeRoutes(
         // clamps to nothing, and the book has a line. Only a Work that
         // measured nothing whatsoever reaches this refusal, which is what
         // it always meant.
-        if (computation.lines.length === 0) {
+        //
+        // A LINE MAY NOW BE PRESENT AND MEASURE NOTHING (migration 0106):
+        // an operator who adjusts an item's measured quantity down to
+        // zero keeps its line in the preview, so the field they typed
+        // into is still there to undo. That is a draft affordance, not a
+        // book — so the refusal asks the question it always asked, "is
+        // there anything to bill", of the quantities rather than of the
+        // line count.
+        if (!computation.lines.some(lineHasQuantity)) {
           throw httpError(
             409,
             'MB_EMPTY',
@@ -301,7 +320,14 @@ export function registerMeasurementBookFinalizeRoutes(
         // computeMeasurementBook produced and is cast by PostgreSQL to
         // the column's own numeric type — the same path a per-row
         // parameter took, and still never through a JS float.
-        const lines = computation.lines;
+        // ONLY the lines that measure something. An adjusted-to-nothing
+        // line exists so the draft keeps the field that would undo it
+        // (mb-compute's `isAdjusted` note); it is a draft affordance and
+        // has no business in an immutable snapshot, in the printed
+        // document, or in the bill's own copy of these lines. The
+        // refusal above has already established that at least one line
+        // survives this filter.
+        const lines = computation.lines.filter(lineHasQuantity);
         await tx`
           insert into measurement_book_lines (
             organisation_id, measurement_book_id, work_id, work_item_id,
@@ -626,7 +652,20 @@ export function registerMeasurementBookFinalizeRoutes(
           `;
         if (!counter) throw new Error('bill counter upsert returned no row');
 
-        const lines = await readStoredLines(tx, id);
+        // The bill's own copy of the lines. The four draft-only fields
+        // the read shape carries — what the sources measured before an
+        // adjustment, and the adjustment itself — are null on every
+        // stored line and are dropped here rather than frozen into a
+        // bill as four columns of nothing (migration 0106).
+        const lines = (await readStoredLines(tx, id)).map(
+          ({
+            sourceSupplied: _sourceSupplied,
+            sourceInstalled: _sourceInstalled,
+            overrideSupplied: _overrideSupplied,
+            overrideInstalled: _overrideInstalled,
+            ...line
+          }) => line,
+        );
         const [row] = await tx<
           {
             id: string;
