@@ -71,9 +71,11 @@ import type {
   NotificationTemplateListResponse,
   NotificationTemplateResponse,
   RecordNotificationConsent,
+  RecordStaffNotificationConsent,
   SaveNotificationChannel,
   SendNotification,
   SetNotificationTemplateStatus,
+  StaffNotificationConsentResponse,
   SigningRequestResponse,
   SigningRequestStatus,
   ApiError,
@@ -2261,6 +2263,13 @@ export interface ApiClient {
     organisationId: string,
     body: RecordNotificationConsent,
   ) => Promise<NotificationConsentResponse>;
+  /** The employee half of the consent split (owner ruling of
+   * 2026-08-19): one act over the whole staff register, answering with
+   * what it did rather than with a row. */
+  readonly recordStaffNotificationConsents: (
+    organisationId: string,
+    body: RecordStaffNotificationConsent,
+  ) => Promise<StaffNotificationConsentResponse>;
   readonly listNotifications: (
     organisationId: string,
     options?: { readonly limit?: number; readonly cursor?: string },
@@ -5311,6 +5320,12 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async recordStaffNotificationConsents(organisationId, body) {
+      return request<StaffNotificationConsentResponse>(
+        '/api/notification-consents/staff',
+        { method: 'POST', body, organisationId },
+      );
     },
     async listNotifications(organisationId, options) {
       return request<NotificationMessageListResponse>(

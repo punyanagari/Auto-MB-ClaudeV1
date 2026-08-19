@@ -329,7 +329,7 @@ describe('the organisation export panel', () => {
     return stubApi({
       listOrganisationExports: vi
         .fn()
-        .mockResolvedValue({ exports: records, retentionHours: 168 }),
+        .mockResolvedValue({ exports: records, retentionHours: 720 }),
       requestOrganisationExport: vi.fn(),
     });
   }
@@ -361,7 +361,7 @@ describe('the organisation export panel', () => {
             formatVersion: 'export-v28',
             byteSize: '4194304',
             sha256: DIGEST,
-            expiresAt: '2026-08-25T10:04:00.000Z',
+            expiresAt: '2026-09-17T10:04:00.000Z',
             failureReason: null,
             downloadCount: 0,
           },
@@ -417,7 +417,7 @@ describe('the organisation export panel', () => {
             formatVersion: 'export-v28',
             byteSize: '4194304',
             sha256: DIGEST,
-            expiresAt: '2026-08-08T10:04:00.000Z',
+            expiresAt: '2026-08-31T10:04:00.000Z',
             failureReason: null,
             downloadCount: 2,
           },

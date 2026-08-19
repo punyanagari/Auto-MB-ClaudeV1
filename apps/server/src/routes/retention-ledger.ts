@@ -291,7 +291,18 @@ const DATABASE_REFUSALS: Readonly<Record<string, readonly [ErrorCode, string]>> 
   ],
   '23P06': [
     'LD_LEVY_EXCEEDS_ASSESSMENT',
-    'The levy cannot exceed the assessment. If the railway took more, assess again on the basis it used.',
+    'The levy cannot exceed the assessment. The cap is that percentage of the whole contract value, so check the contract terms if the railway took more.',
+  ],
+  // Owner ruling of 2026-08-19 (migration 0104): the cap is a percentage
+  // of the Work's contract value, so a Work carrying none has no cap —
+  // and a cap of zero would silently make every assessment on it zero
+  // rupees through `least(...)` rather than failing. The route refuses it
+  // first with the sentence below; this is the arm that holds when the
+  // contract value is amended to zero between the route's read and the
+  // insert.
+  '23P10': [
+    'LD_CONTRACT_VALUE_MISSING',
+    'This Work carries no contract value, and the damages cap is a percentage of it. Record the contract value on the Work first.',
   ],
 };
 
@@ -996,20 +1007,36 @@ export function registerRetentionLedgerRoutes(
         // request — they come from the recorded terms, so an assessment
         // cannot quietly be computed at a rate the contract never stated.
         //
-        // A Work whose contract value is zero cannot be the default: the
-        // column refuses a basis of zero (damages on nothing are nothing,
-        // and a row asserting them is noise), and without this the
-        // operator would meet that CHECK as a bare 500 rather than a
-        // sentence naming the field they have to fill.
+        // THE CAP IS NOT THE BASIS, since the owner ruling of 2026-08-19
+        // (migration 0104). The rate still charges on the basis above;
+        // the ceiling it is held under is that cap percentage of the
+        // Work's whole contract value, snapshotted onto the row by the
+        // database. So a Work with no contract value has no ceiling — and
+        // a ceiling of zero is not "no ceiling", it is every assessment
+        // silently becoming zero rupees through `least(...)`. Refused
+        // here with the field named; migration 0104's trigger raises
+        // 23P10 for the same rule under concurrency.
+        //
+        // Both comparisons run in PostgreSQL rather than in JavaScript,
+        // because these are money values and this file computes none of
+        // them (engineering rule 5).
         const basisAmount = body.basisAmount ?? work.contract_value;
-        const [positive] = await tx<{ ok: boolean }[]>`
-          select ${basisAmount}::numeric > 0 as ok
+        const [positive] = await tx<{ basis: boolean; contract: boolean }[]>`
+          select ${basisAmount}::numeric > 0 as basis,
+                 ${work.contract_value}::numeric > 0 as contract
         `;
-        if (positive?.ok !== true) {
+        if (positive?.contract !== true) {
+          throw httpError(
+            409,
+            'LD_CONTRACT_VALUE_MISSING',
+            'This Work carries no contract value, and the damages cap is a percentage of it. Record the contract value on the Work first.',
+          );
+        }
+        if (positive.basis !== true) {
           throw httpError(
             400,
             'LD_ASSESSMENT_WINDOW_INVALID',
-            'Liquidated damages need a basis greater than zero. This Work carries no contract value, so the basis has to be given — the value of the delayed portion, or whatever the contract charges damages on.',
+            'Liquidated damages need a basis greater than zero — the value of the delayed portion, or whatever the contract charges damages on.',
           );
         }
         const basisLabel =

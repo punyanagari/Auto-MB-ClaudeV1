@@ -162,6 +162,9 @@ function renderNotifications(
     createNotificationTemplate: vi.fn().mockResolvedValue({ template: template() }),
     setNotificationTemplateStatus: vi.fn().mockResolvedValue({ template: template() }),
     recordNotificationConsent: vi.fn().mockResolvedValue({ consent: consent() }),
+    recordStaffNotificationConsents: vi
+      .fn()
+      .mockResolvedValue({ recorded: 3, alreadyRecorded: 1, withoutAddress: 2 }),
     sendNotification: vi.fn().mockResolvedValue({ message: message() }),
     listContacts: vi.fn().mockResolvedValue(options.contacts ?? [CONTACT]),
   });
@@ -313,6 +316,28 @@ describe('the notifications screen', () => {
       state: 'opted_in',
       evidence: 'Signed the delivery acknowledgement',
     });
+  });
+
+  it('records staff consent in one act and reports all three outcomes', async () => {
+    // The employee half of the owner ruling of 2026-08-19. The act takes
+    // only a channel — everything else is a fact about the staff contact
+    // already on file — and it answers with three counts, because "3
+    // recorded" alone would hide the two whose number is not in a form
+    // this channel can use.
+    const api = renderNotifications();
+    fireEvent.click(await screen.findByText('Record consent for staff'));
+    fireEvent.click(screen.getByRole('button', { name: 'Record staff consent' }));
+    await waitFor(() => {
+      expect(api.recordStaffNotificationConsents).toHaveBeenCalled();
+    });
+    expect(vi.mocked(api.recordStaffNotificationConsents).mock.calls[0]?.[1]).toEqual({
+      channel: 'whatsapp',
+    });
+    expect(
+      await screen.findByText(
+        '3 recorded, 1 already on the register, 2 with no usable address.',
+      ),
+    ).toBeTruthy();
   });
 
   it('sends a template to a contact and never names an address', async () => {
