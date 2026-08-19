@@ -481,13 +481,76 @@ describe('the AMC billing-cycle period clause', () => {
     ).toBe('Prepaid 90% for 2 years. Now to pay 90% for 1 year.');
   });
 
-  it('falls back to the quantity rather than saying "for 0 quarters"', () => {
-    // A quantity smaller than half a period is not a period, and a
-    // sentence claiming none would be worse than the number it replaced.
+  it('NEVER rounds a part-period up to a whole one', () => {
+    // Half a quarter's quantity is half a quarter. Rounding it to "1
+    // quarter" would freeze a claim for a period that was not certified
+    // into a contractual document that can never be corrected.
     expect(
       computeMbRemark({
         unit: 'Nos',
         amcCycle: cycle,
+        stages: [
+          {
+            stage: 'pac',
+            percent: '95',
+            priorCumulativeQuantity: '0',
+            deltaQuantity: '6',
+          },
+        ],
+      }),
+    ).toBe('Now to pay 95% for 0.5 quarters.');
+    // And two-and-a-bit periods read as two-and-a-bit.
+    expect(
+      computeMbRemark({
+        unit: 'Nos',
+        amcCycle: cycle,
+        stages: [
+          {
+            stage: 'pac',
+            percent: '95',
+            priorCumulativeQuantity: '0',
+            deltaQuantity: '30',
+          },
+        ],
+      }),
+    ).toBe('Now to pay 95% for 2.5 quarters.');
+  });
+
+  it('counts periods ONLY on the acceptance-certificate stage', () => {
+    // A maintenance cadence divides the certified quantity. A delivery
+    // challan against the same item measures metres of cable, and
+    // counting it against the maintenance Q would be an invented number.
+    expect(
+      computeMbRemark({
+        unit: 'Nos',
+        amcCycle: cycle,
+        stages: [
+          {
+            stage: 'supply',
+            percent: '10',
+            priorCumulativeQuantity: '0',
+            deltaQuantity: '24',
+          },
+          {
+            stage: 'pac',
+            percent: '85',
+            priorCumulativeQuantity: '0',
+            deltaQuantity: '12',
+          },
+        ],
+      }),
+    ).toBe('Now to pay 10% for 24 Nos and 85% for 1 quarter.');
+  });
+
+  it('falls back to the quantity rather than saying "for 0 quarters"', () => {
+    // Below a hundredth of a period there is no fraction left to print,
+    // and a sentence claiming none would be worse than the number it
+    // replaced. 1 of a 9600-unit contract over 8 quarters is 0.0008 of
+    // one.
+    expect(
+      computeMbRemark({
+        unit: 'Nos',
+        amcCycle: { totalQuantity: '9600', billingPeriods: 8, cycleNoun: 'quarter' },
         stages: [
           {
             stage: 'pac',

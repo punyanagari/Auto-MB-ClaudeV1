@@ -144,6 +144,7 @@ export function registerMeasurementBookMeasuredQuantityRoutes(
               stage: 'supplied' | 'installed';
               entered: string;
               measured: string;
+              unclaimed: boolean;
             }[]
           >`
             with requested as (
@@ -181,7 +182,8 @@ export function registerMeasurementBookMeasuredQuantityRoutes(
               from requested r
             )
             select wi.id as work_item_id, wi.item_number, s.stage,
-                   s.entered::text as entered, s.measured::text as measured
+                   s.entered::text as entered, s.measured::text as measured,
+                   (c.supplied = 0 and c.installed = 0) as unclaimed
             from requested r
             join claimed c on c.work_item_id = r.work_item_id
             join work_items wi on wi.id = r.work_item_id
@@ -189,12 +191,37 @@ export function registerMeasurementBookMeasuredQuantityRoutes(
               values ('supplied', r.measured_supplied, c.supplied),
                      ('installed', r.measured_installed, c.installed)
             ) as s(stage, entered, measured)
-            where s.entered is not null and s.entered > s.measured
+            -- Two refusals from one descent: an adjustment above what
+            -- the book claims, and an adjustment on an item the book
+            -- claims nothing of at all. The second cannot be found by
+            -- the first's comparison, because its cap is zero and the
+            -- adjustment the operator can pass it is also zero.
+            where (s.entered is not null and s.entered > s.measured)
+               or (c.supplied = 0 and c.installed = 0)
             order by wi.item_number, s.stage
           `;
-          if (offenders.length > 0) {
+          // AN ITEM THIS BOOK MEASURES NOTHING OF IS NOT AN ITEM TO
+          // ADJUST. Its cap is zero, so the only adjustment the cap
+          // admits is zero — and any adjustment is what puts the line ON
+          // the book (mb-compute keeps an adjusted line whatever it
+          // measures), which then blocks finalize on an item nobody
+          // selected a source for. Refused by name here rather than met
+          // as an unresolved-percentages failure two screens later.
+          const unclaimed = offenders.filter((row) => row.unclaimed);
+          if (unclaimed.length > 0) {
+            const names = [...new Set(unclaimed.map((row) => row.item_number))].join(
+              ', ',
+            );
+            throw httpError(
+              409,
+              'MB_MEASURED_ITEM_NOT_CLAIMED',
+              `This Measurement Book claims no delivery or installation for ${names}, so there is nothing to reduce there.`,
+            );
+          }
+          const above = offenders.filter((row) => !row.unclaimed);
+          if (above.length > 0) {
             const details: MbMeasuredAboveSourceDetails = {
-              items: offenders.map((row) => ({
+              items: above.map((row) => ({
                 workItemId: row.work_item_id,
                 itemNumber: row.item_number,
                 stage: row.stage,
@@ -202,7 +229,7 @@ export function registerMeasurementBookMeasuredQuantityRoutes(
                 measured: row.measured,
               })),
             };
-            const named = offenders
+            const named = above
               .map(
                 (row) =>
                   `${row.item_number} ${row.stage} ${row.entered} against ${row.measured} measured`,

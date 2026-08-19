@@ -42,6 +42,8 @@ function line(overrides: Partial<MeasurementBookLine> = {}): MeasurementBookLine
     deltaInstalled: '0.000',
     sourceSupplied: '10.000',
     sourceInstalled: '0.000',
+    overrideSupplied: null,
+    overrideInstalled: null,
     deltaPac: '0.000',
     deltaFinalBill: '0',
     priorSupplied: '0.000',
@@ -80,6 +82,7 @@ function detail(
     warnings: [],
     previewTotal: '800.00',
     unbillableVariationExposure: '0',
+    measurementAdjustedAway: '0.00',
   };
 }
 
@@ -172,6 +175,112 @@ describe('the measured quantity on a draft Measurement Book line', () => {
           .value,
       ).toBe('8.000');
     });
+  });
+
+  it('writes NO adjustment when a clamped line is saved untouched', async () => {
+    // The regression this guards: the field is seeded with the BILLED
+    // figure, and on a sanction-clamped line that is already below what
+    // the sources claim. Deciding "unchanged" by comparing the two would
+    // save an adjustment at the clamped quantity on every clamped line —
+    // and that adjustment would then cap the item there for good, once
+    // an amendment reopened the sanction.
+    const book = draft();
+    const clamped = line({
+      deltaInstalled: '5.000',
+      sourceInstalled: '40.000',
+      overrideInstalled: null,
+    });
+    const setMeasurementBookMeasuredQuantities = vi
+      .fn()
+      .mockResolvedValue(detail(book, [clamped]));
+    const api = stubApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [book] }),
+      getMeasurementBook: vi.fn().mockResolvedValue(detail(book, [clamped])),
+      setMeasurementBookMeasuredQuantities,
+    });
+    await openDraft(api);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Save measured quantities' }),
+    );
+    await waitFor(() => {
+      expect(setMeasurementBookMeasuredQuantities).toHaveBeenCalled();
+    });
+    expect(setMeasurementBookMeasuredQuantities.mock.calls[0]?.[2]).toEqual({
+      overrides: [
+        { workItemId: ITEM_ID, measuredSupplied: null, measuredInstalled: null },
+      ],
+    });
+  });
+
+  it('echoes an adjustment nobody touched instead of dropping it', async () => {
+    // The other half of the same rule: the save replaces the whole set,
+    // so a field the operator did not edit has to carry its stored
+    // adjustment back or the save would silently clear it.
+    const book = draft();
+    const adjusted = line({ deltaSupplied: '8.000', overrideSupplied: '8' });
+    const setMeasurementBookMeasuredQuantities = vi
+      .fn()
+      .mockResolvedValue(detail(book, [adjusted]));
+    const api = stubApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [book] }),
+      getMeasurementBook: vi.fn().mockResolvedValue(detail(book, [adjusted])),
+      setMeasurementBookMeasuredQuantities,
+    });
+    await openDraft(api);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Save measured quantities' }),
+    );
+    await waitFor(() => {
+      expect(setMeasurementBookMeasuredQuantities).toHaveBeenCalled();
+    });
+    expect(setMeasurementBookMeasuredQuantities.mock.calls[0]?.[2]).toEqual({
+      overrides: [
+        { workItemId: ITEM_ID, measuredSupplied: '8', measuredInstalled: null },
+      ],
+    });
+  });
+
+  it('clears an adjustment when its field is emptied', async () => {
+    const book = draft();
+    const adjusted = line({ deltaSupplied: '8.000', overrideSupplied: '8' });
+    const setMeasurementBookMeasuredQuantities = vi
+      .fn()
+      .mockResolvedValue(detail(book, [adjusted]));
+    const api = stubApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [book] }),
+      getMeasurementBook: vi.fn().mockResolvedValue(detail(book, [adjusted])),
+      setMeasurementBookMeasuredQuantities,
+    });
+    const field = await openDraft(api);
+    fireEvent.change(field, { target: { value: '' } });
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Save measured quantities' }),
+    );
+    await waitFor(() => {
+      expect(setMeasurementBookMeasuredQuantities).toHaveBeenCalled();
+    });
+    // An emptied field is no adjustment — never the empty string, which
+    // the request schema would refuse as a malformed decimal.
+    expect(setMeasurementBookMeasuredQuantities.mock.calls[0]?.[2]).toEqual({
+      overrides: [
+        { workItemId: ITEM_ID, measuredSupplied: null, measuredInstalled: null },
+      ],
+    });
+  });
+
+  it('states what the adjustments left out, in rupees', async () => {
+    const book = draft();
+    const api = stubApi({
+      listWorkMeasurementBooks: vi.fn().mockResolvedValue({ books: [book] }),
+      getMeasurementBook: vi.fn().mockResolvedValue({
+        ...detail(book, [line({ deltaSupplied: '8.000', overrideSupplied: '8' })]),
+        measurementAdjustedAway: '160.00',
+      }),
+    });
+    await openDraft(api);
+    expect(
+      await screen.findByText('Measured down on this Measurement Book'),
+    ).toBeTruthy();
   });
 
   it('offers no field where the sources claim nothing to reduce', async () => {

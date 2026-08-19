@@ -284,53 +284,85 @@ function stagesInRenderOrder(
 }
 
 /**
- * How many whole billing periods a quantity is, on a cadence that splits
- * Q into M periods: `round(quantity * M / Q)`, exact over scaled BigInt.
+ * How many billing periods a quantity is, on a cadence that splits Q into
+ * M periods: `quantity * M / Q`, in exact hundredths.
  *
- * The inverse of the running-total split the cadence proposes with
- * (`q(n) = round3(Q*n/M) - round3(Q*(n-1)/M)`), and it is exact for the
- * quantities that split produces because the owner's Q4 ruling settles
- * that a Measurement Book always certifies the FULL period quantity —
- * so the cumulative certified quantity is always `round3(Q*k/M)` for
- * some whole k, and rounding `k ± 0.0005·M/Q` to the nearest integer
- * recovers k. Anything else on the line is a quantity this cadence did
- * not produce, and the nearest whole period is the honest reading of it
- * for a sentence.
+ * IT NEVER ROUNDS A PART-PERIOD UP TO A WHOLE ONE. The remark is frozen
+ * into a finalised Measurement Book and read as a contractual statement,
+ * so a certificate covering half a quarter must not print "for 1
+ * quarter". Only a value that is integral WITHIN THE SPLIT'S OWN WOBBLE
+ * is rendered as an integer — the running-total split rounds each
+ * cumulative to three decimals, so a whole period can arrive as
+ * 0.9999 of one (Q=10, M=3: 3.333 * 3 / 10) and must still read "1".
+ * That tolerance is a thousand times smaller than the smallest fraction
+ * this could be asked to print, so it can never swallow a real
+ * part-period.
+ *
+ * Anything else renders as a two-decimal fraction of a period ("0.5
+ * quarters"), and a quantity that is not a period at all returns null,
+ * which sends the caller back to the quantity fragment.
  */
-function periodsOf(quantity: string, cycle: MbRemarkAmcCycle): bigint | null {
+const PERIOD_SCALE = 2;
+const PERIOD_TOLERANCE_HUNDREDTHS = 1n; // 0.01 of a period
+
+function periodsOf(quantity: string, cycle: MbRemarkAmcCycle): string | null {
   const q = parseDecimal(quantity);
   const total = parseDecimal(cycle.totalQuantity);
-  if (total.units <= 0n) {
+  if (total.units <= 0n || q.units <= 0n) {
     return null;
   }
   // quantity * M / Q, with both quantities rescaled to a common scale so
-  // the ratio is scale-free before the division rounds it.
+  // the ratio is scale-free, carried in hundredths of a period.
   const scale = Math.max(q.scale, total.scale);
-  const numerator = rescale(q, scale).units * BigInt(cycle.billingPeriods);
+  const numerator =
+    rescale(q, scale).units *
+    BigInt(cycle.billingPeriods) *
+    10n ** BigInt(PERIOD_SCALE);
   const denominator = rescale(total, scale).units;
-  const periods = (numerator * 2n + denominator) / (denominator * 2n);
-  return periods > 0n ? periods : null;
+  const hundredths = (numerator * 2n + denominator) / (denominator * 2n);
+  if (hundredths <= 0n) {
+    return null;
+  }
+  const remainder = hundredths % 100n;
+  if (remainder <= PERIOD_TOLERANCE_HUNDREDTHS) {
+    return (hundredths / 100n).toString();
+  }
+  if (100n - remainder <= PERIOD_TOLERANCE_HUNDREDTHS) {
+    return (hundredths / 100n + 1n).toString();
+  }
+  // Trailing zeros go, exactly as they do on a quantity: the grammar
+  // reads "0.5 quarters", never "0.50 quarters".
+  return renderQuantity(formatScaled({ units: hundredths, scale: PERIOD_SCALE }));
 }
 
 /** '<pct>% for <qty> <unit>' — the shared per-stage fragment of both
  * clauses. On an AMC cadence the quantity and unit become a period count
  * and the schedule's own word for a period ("95% for 1 quarter"), which
  * is the owner's Q3 ruling rendered inside this grammar rather than
- * beside it. A quantity the cadence cannot express as a whole period —
- * a zero total, or a fraction that rounds to no period at all — falls
- * back to the quantity, because a sentence saying "for 0 quarters" would
- * be worse than the number it replaced. */
+ * beside it.
+ *
+ * ONLY ON THE ACCEPTANCE-CERTIFICATE STAGE. A maintenance cadence
+ * divides the certified quantity and nothing else, so a supply or
+ * installation delta on the same item — a delivery challan against a
+ * maintenance schedule — would be counted against a Q it has no
+ * relationship to. Those stages keep the item's own unit.
+ *
+ * A quantity the cadence cannot express as a period at all (a zero
+ * total, or a quantity too small to be a hundredth of one) falls back to
+ * the quantity, because a sentence saying "for 0 quarters" would be
+ * worse than the number it replaced. */
 function stageFragment(
+  stage: MbStage,
   percent: string,
   quantity: string,
   unit: string,
   cycle: MbRemarkAmcCycle | undefined,
 ): string {
-  if (cycle !== undefined) {
+  if (cycle !== undefined && stage === 'pac') {
     const periods = periodsOf(quantity, cycle);
     if (periods !== null) {
-      const noun = periods === 1n ? cycle.cycleNoun : `${cycle.cycleNoun}s`;
-      return `${renderPercent(percent)}% for ${periods.toString()} ${noun}`;
+      const noun = periods === '1' ? cycle.cycleNoun : `${cycle.cycleNoun}s`;
+      return `${renderPercent(percent)}% for ${periods} ${noun}`;
     }
   }
   return `${renderPercent(percent)}% for ${renderQuantity(quantity)} ${unit}`;
@@ -353,12 +385,20 @@ export function computeMbRemark(input: MbRemarkInput): string {
   const prepaid = ordered
     .filter((s) => isPositive(s.percent) && isPositive(s.priorCumulativeQuantity))
     .map((s) =>
-      stageFragment(s.percent, s.priorCumulativeQuantity, input.unit, input.amcCycle),
+      stageFragment(
+        s.stage,
+        s.percent,
+        s.priorCumulativeQuantity,
+        input.unit,
+        input.amcCycle,
+      ),
     );
 
   const nowToPay = ordered
     .filter((s) => isPositive(s.deltaQuantity))
-    .map((s) => stageFragment(s.percent, s.deltaQuantity, input.unit, input.amcCycle));
+    .map((s) =>
+      stageFragment(s.stage, s.percent, s.deltaQuantity, input.unit, input.amcCycle),
+    );
 
   const clauses: string[] = [];
   if (prepaid.length > 0) {

@@ -251,6 +251,88 @@ export function registerMeasurementBookMergeRoutes(
               ${provenanceRows.map((entry) => entry.sourceId)}::uuid[]
             ) as prov(record_id, source_type, source_id)
           `;
+        // THE ADJUSTMENTS MOVE WITH THE SOURCES (migration 0106). A
+        // consignee who measured eight of a claimed ten on their own
+        // record sheet has stated a fact about the site, and the merged
+        // book has to bill eight — so the target's adjustment for an
+        // item is the SUM of what the records EFFECTIVELY measure for
+        // it: each record's own adjusted figure where it made one, and
+        // its full claimed figure where it did not. An item no record
+        // adjusted gets no adjustment at all, so a merge of untouched
+        // sheets writes nothing.
+        //
+        // Read BEFORE the claims are deleted, because the effective
+        // figures are computed from those very claims.
+        const carried = await tx<
+          {
+            work_item_id: string;
+            measured_supplied: string | null;
+            measured_installed: string | null;
+          }[]
+        >`
+            with claimed as (
+              select ms.measurement_book_id, dci.work_item_id,
+                     sum(dci.quantity) as supplied, 0::numeric as installed
+              from mb_sources ms
+              join delivery_challans dc
+                on dc.id = ms.source_id and dc.status = 'issued'
+              join delivery_challan_items dci
+                on dci.delivery_challan_id = ms.source_id
+              where ms.measurement_book_id = any(${body.recordMbIds}::uuid[])
+                and ms.source_type = 'delivery_challan'
+                and ms.released_at is null
+              group by ms.measurement_book_id, dci.work_item_id
+              union all
+              select ms.measurement_book_id, i.work_item_id,
+                     0::numeric, sum(i.quantity)
+              from mb_sources ms
+              join installations i
+                on i.id = ms.source_id and i.status = 'recorded'
+              where ms.measurement_book_id = any(${body.recordMbIds}::uuid[])
+                and ms.source_type = 'installation'
+                and ms.released_at is null
+              group by ms.measurement_book_id, i.work_item_id
+            ),
+            per_record as (
+              select measurement_book_id, work_item_id,
+                     sum(supplied)::numeric(18,3) as supplied,
+                     sum(installed)::numeric(18,3) as installed
+              from claimed
+              group by measurement_book_id, work_item_id
+            ),
+            effective as (
+              select p.work_item_id,
+                     -- least(), so a record's adjustment left behind by a
+                     -- source it no longer claims can only reduce.
+                     least(coalesce(o.measured_supplied, p.supplied), p.supplied)
+                       as supplied,
+                     least(coalesce(o.measured_installed, p.installed), p.installed)
+                       as installed,
+                     o.measured_supplied is not null as adjusted_supplied,
+                     o.measured_installed is not null as adjusted_installed
+              from per_record p
+              left join mb_measured_overrides o
+                on o.measurement_book_id = p.measurement_book_id
+               and o.work_item_id = p.work_item_id
+            )
+            select work_item_id,
+                   case when bool_or(adjusted_supplied)
+                        then sum(supplied)::numeric(18,3)::text end as measured_supplied,
+                   case when bool_or(adjusted_installed)
+                        then sum(installed)::numeric(18,3)::text end as measured_installed
+            from effective
+            group by work_item_id
+            having bool_or(adjusted_supplied) or bool_or(adjusted_installed)
+            order by work_item_id
+          `;
+        // The records' own adjustment rows go now, while the records are
+        // still drafts. After the status flip below, 0106's guard
+        // refuses every mutation on them and they would be stranded on a
+        // merged book for good.
+        await tx`
+            delete from mb_measured_overrides
+            where measurement_book_id = any(${body.recordMbIds}::uuid[])
+          `;
         // The claim transfer: delete off the records (draft-time
         // claims delete cleanly, 0024), then claim the union on the
         // target. The union has no duplicates — the partial unique
@@ -279,6 +361,26 @@ export function registerMeasurementBookMergeRoutes(
           }
           throw error;
         });
+        // The carried adjustments, written once the target holds the
+        // claims they are capped against — 0106's trigger reads those
+        // claims, and each figure is a sum of the records' effective
+        // quantities over exactly the sources the target now has, so it
+        // can never exceed them.
+        if (carried.length > 0) {
+          await tx`
+              insert into mb_measured_overrides (
+                organisation_id, measurement_book_id, work_id, work_item_id,
+                measured_supplied, measured_installed
+              )
+              select ${organisationId}, ${target.id}, ${workId}, req.work_item_id,
+                     req.measured_supplied, req.measured_installed
+              from unnest(
+                ${carried.map((row) => row.work_item_id)}::uuid[],
+                ${carried.map((row) => row.measured_supplied)}::numeric(18,3)[],
+                ${carried.map((row) => row.measured_installed)}::numeric(18,3)[]
+              ) as req(work_item_id, measured_supplied, measured_installed)
+            `;
+        }
         // Mark the records merged, pointing at the draft that
         // absorbed them.
         await tx`
@@ -493,9 +595,23 @@ export function registerMeasurementBookMergeRoutes(
         // loosened check here.
         await validateSources(tx, book.work_id, restored, true);
         // The target draft's own measured-quantity adjustments go with it
-        // (migration 0106) — they were written against a source selection
-        // that is being taken apart, and nothing in the restored records
-        // could inherit them honestly.
+        // (migration 0106), and the pair is now symmetric in the only
+        // sense that matters: merge deletes the records' adjustment rows
+        // and writes one carried row on the target, un-merge deletes that
+        // row and restores the records' claims. No adjustment row is ever
+        // stranded on a merged book, and no book is ever left billing an
+        // adjustment whose sources it no longer holds.
+        //
+        // ACCEPTED LOSS, stated rather than hidden: the per-record
+        // adjustments themselves are not restored. Merge folded several
+        // records' figures into one sum, and un-picking that sum would
+        // mean storing each record's own figure in the provenance ledger
+        // — a schema addition for an operation the module already
+        // documents as lossy at its edges (the dead-end note below).
+        // The records come back as they began, claims intact and nothing
+        // measured down, and the operator re-enters what they measured.
+        // No money is wrong meanwhile: an unadjusted record measures its
+        // full claim, which is what it claimed.
         await tx`delete from mb_measured_overrides where measurement_book_id = ${id}`;
         await tx`delete from mb_sources where measurement_book_id = ${id}`;
         // Every restored claim in ONE statement: the record each source

@@ -64,9 +64,12 @@ let fakeGotenberg: http.Server;
 let organisationId: string;
 let ownerUserId: string;
 let consigneeMasterId: string;
+const consigneeContactAId = randomUUID();
+const consigneeContactBId = randomUUID();
 
 let measureWorkId: string;
 let cableItemId: string;
+let spareItemId: string;
 let amcWorkId: string;
 let amcScheduleId: string;
 let supplyScheduleId: string;
@@ -198,6 +201,21 @@ async function issueChallan(
   });
   expect(issued.statusCode, issued.body).toBe(201);
   return challanId;
+}
+
+async function createRecordDraft(
+  workId: string,
+  mbDate: string,
+  consigneeContactId: string,
+): Promise<MeasurementBookDetailResponse> {
+  const response = await authed(owner, {
+    method: 'POST',
+    url: `/api/works/${workId}/measurement-books`,
+    organisationId,
+    payload: { mbDate, kind: 'record', consigneeContactId },
+  });
+  expect(response.statusCode, response.body).toBe(201);
+  return response.json<MeasurementBookDetailResponse>();
 }
 
 async function createDraft(
@@ -349,6 +367,19 @@ beforeAll(async () => {
     where organisation_id = ${organisationId} and user_id = ${ownerUserId}
   `;
 
+  // Two consignee CONTACTS, so two record Measurement Books can run in
+  // parallel and be merged (the merge path D1 exercises).
+  for (const [index, id] of [consigneeContactAId, consigneeContactBId].entries()) {
+    await admin`
+      insert into contacts (
+        id, organisation_id, designation, address, is_consignee, is_vendor,
+        active, created_by_user_id
+      )
+      values (${id}, ${organisationId}, ${`SSE MQ ${String(index + 1)}`},
+              'Division office', true, false, true, ${ownerUserId})
+    `;
+  }
+
   consigneeMasterId = randomUUID();
   await admin`
     insert into consignee_masters (
@@ -359,6 +390,7 @@ beforeAll(async () => {
   `;
 
   cableItemId = randomUUID();
+  spareItemId = randomUUID();
   const measureScheduleId = randomUUID();
   measureWorkId = await seedWork({
     code: `MQ1${runId.slice(0, 4).toUpperCase()}`,
@@ -372,6 +404,16 @@ beforeAll(async () => {
         unit: 'mtr',
         quantity: '10000.000',
         rate: '100.00',
+        paymentCategory: 'SUPPLY',
+      },
+      {
+        id: spareItemId,
+        scheduleId: measureScheduleId,
+        itemNumber: '2',
+        description: 'Cable gland',
+        unit: 'Nos',
+        quantity: '500.000',
+        rate: '20.00',
         paymentCategory: 'SUPPLY',
       },
     ],
@@ -523,6 +565,28 @@ describe('the downward-only measured quantity on a draft (migration 0106)', () =
     expect(response.statusCode).toBe(403);
   });
 
+  it('refuses an adjustment on an item this book claims nothing of', async () => {
+    // Its cap is zero, so the only figure the cap admits is zero — and a
+    // zero adjustment is what would put the item's line ON the book and
+    // then block finalize on an item nobody selected a source for.
+    const spare = randomUUID();
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      select ${spare}, ${organisationId}, ${measureWorkId}, wi.schedule_id,
+             'Z/9', 'Unclaimed spare', 'Nos', '5.000', '10.00', 'SUPPLY'
+      from work_items wi where wi.id = ${cableItemId}
+    `;
+    const response = await setMeasured(draftId, [
+      { workItemId: spare, measuredSupplied: '0', measuredInstalled: null },
+    ]);
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('MB_MEASURED_ITEM_NOT_CLAIMED');
+    await admin`delete from work_items where id = ${spare}`;
+  });
+
   it('clears an adjustment when the entered figure equals the claimed one', async () => {
     // The client sends null for "no adjustment", and the route stores no
     // row rather than a row of nulls — so a draft nobody adjusted carries
@@ -659,11 +723,121 @@ describe('the downward-only measured quantity on a draft (migration 0106)', () =
       organisationId,
     });
     expect(deleted.statusCode, deleted.body).toBe(204);
-    const [row] = await admin<{ count: string }[]>`
+    const [gone] = await admin<{ count: string }[]>`
       select count(*)::text as count from mb_measured_overrides
       where measurement_book_id = ${zeroed}
     `;
-    expect(row?.count).toBe('0');
+    expect(gone?.count).toBe('0');
+  });
+
+  it('leaves an adjusted-to-nothing line OUT of the finalized snapshot', async () => {
+    // The zero line is a draft affordance — it exists so the field that
+    // would undo it is still on screen. It has no business in an
+    // immutable snapshot, in the printed document, or in the bill.
+    const both = await issueChallan(measureWorkId, 'MQZ', [
+      { workItemId: cableItemId, quantity: '6.000' },
+      { workItemId: spareItemId, quantity: '4.000' },
+    ]);
+    const mixed = (await createDraft(measureWorkId, { mbDate: '2026-08-06' })).book.id;
+    await setSources(mixed, [{ sourceType: 'delivery_challan', sourceId: both }]);
+    const applied = await setMeasured(mixed, [
+      { workItemId: spareItemId, measuredSupplied: '0', measuredInstalled: null },
+    ]);
+    expect(applied.statusCode, applied.body).toBe(200);
+    // Both lines are on the DRAFT.
+    expect(applied.json<MeasurementBookDetailResponse>().lines).toHaveLength(2);
+
+    const finalized = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mixed}/finalize`,
+      organisationId,
+    });
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    // One line on the BOOK.
+    const detail = finalized.json<MeasurementBookDetailResponse>();
+    expect(detail.lines).toHaveLength(1);
+    expect(detail.lines[0]?.workItemId).toBe(cableItemId);
+    const rows = await admin<{ count: string }[]>`
+      select count(*)::text as count from measurement_book_lines
+      where measurement_book_id = ${mixed}
+    `;
+    expect(rows[0]?.count).toBe('1');
+
+    // And the bill's own copy carries neither the dropped line nor the
+    // four draft-only fields.
+    const bill = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${mixed}/bill`,
+      organisationId,
+    });
+    expect(bill.statusCode, bill.body).toBe(201);
+    const snapshot = bill.json<{ linesSnapshot: Record<string, unknown>[] }>()
+      .linesSnapshot;
+    expect(snapshot).toHaveLength(1);
+    expect(Object.keys(snapshot[0] ?? {})).not.toContain('sourceSupplied');
+    expect(Object.keys(snapshot[0] ?? {})).not.toContain('overrideSupplied');
+  });
+});
+
+describe('an adjustment travels with its sources through a merge', () => {
+  it('bills what the record measured, not what its challan claimed', async () => {
+    // Two consignees, two record sheets, one challan each. The first
+    // measures eight of its claimed ten; the second measures all five of
+    // its own. The merged book has to bill thirteen.
+    const challanA = await issueChallan(measureWorkId, 'MQA', [
+      { workItemId: cableItemId, quantity: '10.000' },
+    ]);
+    const challanB = await issueChallan(measureWorkId, 'MQB', [
+      { workItemId: cableItemId, quantity: '5.000' },
+    ]);
+    const recordA = (
+      await createRecordDraft(measureWorkId, '2026-08-10', consigneeContactAId)
+    ).book.id;
+    const recordB = (
+      await createRecordDraft(measureWorkId, '2026-08-10', consigneeContactBId)
+    ).book.id;
+    await setSources(recordA, [{ sourceType: 'delivery_challan', sourceId: challanA }]);
+    await setSources(recordB, [{ sourceType: 'delivery_challan', sourceId: challanB }]);
+    const adjusted = await setMeasured(recordA, [
+      { workItemId: cableItemId, measuredSupplied: '8', measuredInstalled: null },
+    ]);
+    expect(adjusted.statusCode, adjusted.body).toBe(200);
+
+    const merged = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${measureWorkId}/measurement-books/merge`,
+      organisationId,
+      payload: { recordMbIds: [recordA, recordB], mbDate: '2026-08-11' },
+    });
+    expect(merged.statusCode, merged.body).toBe(201);
+    const target = merged.json<MeasurementBookDetailResponse>();
+
+    // 8 from the adjusted sheet plus 5 from the untouched one.
+    expect(target.lines[0]?.deltaSupplied).toBe('13.000');
+    expect(target.lines[0]?.sourceSupplied).toBe('15.000');
+    expect(target.lines[0]?.overrideSupplied).toBe('13.000');
+    // And the records keep no adjustment row to be stranded on a merged
+    // book, where 0106's guard would refuse every attempt to remove it.
+    const [left] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_measured_overrides
+      where measurement_book_id = any(${[recordA, recordB]}::uuid[])
+    `;
+    expect(left?.count).toBe('0');
+
+    // FINALIZING bills the same thirteen, which is the half a preview
+    // alone would not prove.
+    const finalized = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${target.book.id}/finalize`,
+      organisationId,
+      payload: {},
+    });
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const rows = await admin<{ delta_supplied: string }[]>`
+      select delta_supplied::text as delta_supplied
+      from measurement_book_lines where measurement_book_id = ${target.book.id}
+    `;
+    expect(rows[0]?.delta_supplied).toBe('13.000');
   });
 });
 
@@ -843,6 +1017,176 @@ describe('the AMC billing cadence (migration 0107)', () => {
     expect(item?.periodsCertified).toBe(8);
     expect(item?.nextPeriod).toBeNull();
     expect(item?.proposedQuantity).toBeNull();
+  });
+
+  it('reconciles against a certificate taken SHORT of its period, in both directions', async () => {
+    // The railway certifies what it accepted, not what this product
+    // proposed. A period taken short must not shift every later period
+    // by the same amount and leave the contract short of Q — and one
+    // taken long must not push the total over the 0068 cap.
+    const short = randomUUID();
+    const shortSchedule = randomUUID();
+    const shortItem = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (${short}, ${organisationId}, ${`MQ3${runId.slice(0, 4).toUpperCase()}`},
+              ${`L-MQ3${runId}`}, '2025-06-01', 'Drift work', '100000.00',
+              '90000.00', 'per_schedule', ${ownerUserId})
+    `;
+    await admin`
+      insert into work_schedules (
+        id, organisation_id, work_id, schedule_code, title, position,
+        amc_billing_periods, amc_cycle_noun
+      )
+      values (${shortSchedule}, ${organisationId}, ${short}, 'D', 'Schedule D', 1,
+              4, 'quarter')
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values (${shortItem}, ${organisationId}, ${short}, ${shortSchedule}, 'D/1',
+              'Comprehensive AMC of display boards', 'Nos', '100.000', '50.00',
+              'AMC')
+    `;
+    await insertMatrixRow(short, 'AMC', ['0.00', '0.00', '95.00', '5.00']);
+
+    // A hand-certified 10 where the split's first period is 25.
+    await certify(short, `PAC-SHORT-${runId}`, [
+      { workItemId: shortItem, certifiedQuantity: '10.000' },
+    ]);
+    let item = (await proposal(short)).schedules[0]?.items[0];
+    // No period is closed yet, and the proposal is what it takes to
+    // REACH the first period's cumulative — not another whole period.
+    expect(item?.periodsCertified).toBe(0);
+    expect(item?.nextPeriod).toBe(1);
+    expect(item?.proposedQuantity).toBe('15.000');
+
+    // Now the other direction: certify 13 instead of the proposed 15.
+    await certify(short, `PAC-LONG-${runId}`, [
+      { workItemId: shortItem, certifiedQuantity: '13.000' },
+    ]);
+    item = (await proposal(short)).schedules[0]?.items[0];
+    expect(item?.certifiedQuantity).toBe('23.000');
+    expect(item?.periodsCertified).toBe(0);
+    expect(item?.proposedQuantity).toBe('2.000');
+
+    // Following the proposal from here lands on exactly Q, whatever the
+    // drift was — which is the property the whole cadence rests on.
+    for (let period = 1; period <= 4; period += 1) {
+      const next = (await proposal(short)).schedules[0]?.items[0];
+      if (next?.proposedQuantity == null) break;
+      await certify(short, `PAC-R${String(period)}-${runId}`, [
+        { workItemId: shortItem, certifiedQuantity: next.proposedQuantity },
+      ]);
+    }
+    item = (await proposal(short)).schedules[0]?.items[0];
+    expect(item?.certifiedQuantity).toBe('100.000');
+    expect(item?.nextPeriod).toBeNull();
+  });
+
+  it('reconciles a cadence changed mid-contract', async () => {
+    // Certify two quarters of eight, then switch the schedule to four
+    // periods. The remainder formula recomputes against what is actually
+    // certified, so the contract still closes on exactly Q.
+    const mid = randomUUID();
+    const midSchedule = randomUUID();
+    const midItem = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (${mid}, ${organisationId}, ${`MQ4${runId.slice(0, 4).toUpperCase()}`},
+              ${`L-MQ4${runId}`}, '2025-06-01', 'Mid-term work', '100000.00',
+              '90000.00', 'per_schedule', ${ownerUserId})
+    `;
+    await admin`
+      insert into work_schedules (
+        id, organisation_id, work_id, schedule_code, title, position,
+        amc_billing_periods, amc_cycle_noun
+      )
+      values (${midSchedule}, ${organisationId}, ${mid}, 'E', 'Schedule E', 1,
+              8, 'quarter')
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values (${midItem}, ${organisationId}, ${mid}, ${midSchedule}, 'E/1',
+              'Comprehensive AMC of clocks', 'Nos', '96.000', '50.00', 'AMC')
+    `;
+    await insertMatrixRow(mid, 'AMC', ['0.00', '0.00', '95.00', '5.00']);
+
+    for (const period of [1, 2]) {
+      const next = (await proposal(mid)).schedules[0]?.items[0];
+      await certify(mid, `PAC-M${String(period)}-${runId}`, [
+        { workItemId: midItem, certifiedQuantity: next?.proposedQuantity ?? '0' },
+      ]);
+    }
+    expect((await proposal(mid)).schedules[0]?.items[0]?.certifiedQuantity).toBe(
+      '24.000',
+    );
+
+    const switched = await setCycle(mid, midSchedule, {
+      billingPeriods: 4,
+      cycleNoun: 'half-year',
+    });
+    expect(switched.statusCode, switched.body).toBe(204);
+    // 24 of 96 over four periods is exactly one closed period.
+    const after = (await proposal(mid)).schedules[0]?.items[0];
+    expect(after?.periodsCertified).toBe(1);
+    expect(after?.proposedQuantity).toBe('24.000');
+
+    for (let period = 2; period <= 4; period += 1) {
+      const next = (await proposal(mid)).schedules[0]?.items[0];
+      if (next?.proposedQuantity == null) break;
+      await certify(mid, `PAC-N${String(period)}-${runId}`, [
+        { workItemId: midItem, certifiedQuantity: next.proposedQuantity },
+      ]);
+    }
+    const closed = (await proposal(mid)).schedules[0]?.items[0];
+    expect(closed?.certifiedQuantity).toBe('96.000');
+    expect(closed?.nextPeriod).toBeNull();
+  });
+
+  it('refuses to change a cadence on a completed Work', async () => {
+    // On a Work of its own, so the shared one is never left completed
+    // for the cases after this. The 0031 guard wants the completing
+    // member and the note, which is how the route moves the status.
+    const closed = randomUUID();
+    const closedSchedule = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (${closed}, ${organisationId}, ${`MQ5${runId.slice(0, 4).toUpperCase()}`},
+              ${`L-MQ5${runId}`}, '2025-06-01', 'Closed work', '100000.00',
+              '90000.00', 'per_schedule', ${ownerUserId})
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${closedSchedule}, ${organisationId}, ${closed}, 'F', 'Schedule F', 1)
+    `;
+    await admin`
+      update works
+      set status = 'completed', completed_at = now(),
+          completed_by_user_id = ${ownerUserId},
+          completion_note = 'closed for this case'
+      where id = ${closed}
+    `;
+    const response = await setCycle(closed, closedSchedule, {
+      billingPeriods: 4,
+      cycleNoun: 'quarter',
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('WORK_COMPLETED');
   });
 
   it('says so when the cadence does not divide the sanctioned quantity evenly', async () => {

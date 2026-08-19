@@ -858,6 +858,13 @@ export function detectAmcSchedules(
   }
   const flags: ReviewFlag[] = [];
   for (const [scheduleId, group] of bySchedule) {
+    // NEVER for the unbound group. `UNBOUND` is items.ts's fallback for
+    // an item it could not attach to any schedule at all — it is not a
+    // schedule id, no schedule of that name exists in the letter, and a
+    // schedule-scoped flag pointing at one would send a reviewer to a
+    // target they cannot open. Those items are already flagged
+    // individually by the layout-junk trigger.
+    if (scheduleId === 'UNBOUND') continue;
     if (group.length === 0) continue;
     if (!group.every((item) => AMC_TOKEN_RE.test(item.description))) continue;
     flags.push({
@@ -865,7 +872,12 @@ export function detectAmcSchedules(
       scope: 'schedule',
       targetId: scheduleId,
       rawBlock: group.map((item) => item.raw.anchorLine).join('\n'),
-      message: `Every item in schedule ${scheduleId} is an annual-maintenance line -- categorise the whole schedule as AMC and set its billing cycle on it, rather than reading each description; one item's description may carry a neighbour's wording.`,
+      // "Every item", which on a one-item schedule is that one item —
+      // said plainly here because a reader meeting the flag on a
+      // single-line schedule should not have to wonder whether the
+      // trigger measured anything (PL270's B and D are exactly that
+      // shape, and are genuine maintenance schedules).
+      message: `All ${String(group.length)} item(s) in schedule ${scheduleId} are annual-maintenance lines -- categorise the whole schedule as AMC and set its billing cycle on it, rather than reading each description; one item's description may carry a neighbour's wording.`,
       detail: { scheduleId, itemCount: group.length },
     });
   }

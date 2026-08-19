@@ -7,6 +7,7 @@ import { exactRowsTotal } from '../loa-payload.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import { FormError } from '../ui/form.js';
 import {
   ClampedText,
   ScheduleAccordionControls,
@@ -87,6 +88,10 @@ function AmcCycleEditor({
     schedule.amcBillingPeriods === null ? '' : String(schedule.amcBillingPeriods),
   );
   const [noun, setNoun] = useState(schedule.amcCycleNoun ?? '');
+  /** Refused here rather than sent. "abc" parses to NaN, which serialises
+   * as null and would reach the server as "clear the cycle" — an answer
+   * nobody asked for, and one that reads as success. */
+  const [refusal, setRefusal] = useState<string | null>(null);
   if (!canModify) {
     return (
       <p className="text-muted-foreground">
@@ -103,6 +108,17 @@ function AmcCycleEditor({
         event.preventDefault();
         const trimmedPeriods = periods.trim();
         const trimmedNoun = noun.trim();
+        if (trimmedPeriods !== '' && !/^[1-9][0-9]{0,2}$/.test(trimmedPeriods)) {
+          setRefusal('The number of billing periods is a whole number, 1 or more.');
+          return;
+        }
+        if ((trimmedPeriods === '') !== (trimmedNoun === '')) {
+          setRefusal(
+            'Enter both the number of periods and the word this schedule calls one of them, or clear both.',
+          );
+          return;
+        }
+        setRefusal(null);
         onSave(
           trimmedPeriods === '' ? null : Number.parseInt(trimmedPeriods, 10),
           trimmedNoun === '' ? null : trimmedNoun,
@@ -137,6 +153,7 @@ function AmcCycleEditor({
       <Button type="submit" variant="outline" size="sm" disabled={pending}>
         Save cycle
       </Button>
+      {refusal !== null && <FormError>{refusal}</FormError>}
     </form>
   );
 }

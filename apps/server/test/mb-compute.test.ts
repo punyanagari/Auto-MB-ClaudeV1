@@ -573,6 +573,82 @@ describe('computeMeasurementBook with an adjusted measured quantity', () => {
     expect(computation.lines).toEqual([]);
   });
 
+  it('reports the stored adjustment beside the billed figure, and they differ under the clamp', () => {
+    // The two are NOT the same number, which is the whole reason the
+    // stored one travels: an adjustment of 20 against a sanction that
+    // leaves room for 5 bills 5, and a screen that inferred "unchanged"
+    // from the billed figure would rewrite the adjustment to 5 on the
+    // next save — capping the item at 5 for good once an amendment
+    // reopened the sanction.
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          deltaInstalled: '40.000',
+          priorInstalled: '25',
+          sanctionedQuantity: '30',
+          measuredInstalled: '20',
+        }),
+      ],
+    });
+    const [line] = computation.lines;
+    expect(line?.deltaInstalled).toBe('5');
+    expect(line?.overrideInstalled).toBe('20');
+    expect(line?.sourceInstalled).toBe('40.000');
+    // And an unadjusted stage reports no adjustment at all.
+    expect(line?.overrideSupplied).toBeNull();
+  });
+
+  it('prices what the adjustment left out, so the reduction is not invisible', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          deltaSupplied: '10.000',
+          measuredSupplied: '8',
+        }),
+      ],
+    });
+    // 2 x 100 x 80% — what the two unmeasured units would have billed.
+    expect(computation.adjustedAwayAmount).toBe('160.00');
+    expect(computation.totalAmount).toBe('640.00');
+  });
+
+  it('reports nothing left out when nothing was adjusted', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [itemInput({ effectiveRate: '100.00', deltaSupplied: '10.000' })],
+    });
+    expect(computation.adjustedAwayAmount).toBe('0.00');
+  });
+
+  it('counts only the adjustment, never the sanction clamp, as left out', () => {
+    // The clamp's own remainder is the Work's unbillable variation
+    // exposure and is reported there; double-counting it here would
+    // state the same rupees twice on one screen.
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          deltaInstalled: '40.000',
+          priorInstalled: '25',
+          sanctionedQuantity: '30',
+          measuredInstalled: '3',
+        }),
+      ],
+    });
+    // The clamp allows 5; the adjustment takes it to 3. Only the 2 the
+    // operator declined is counted: 2 x 100 x 10%.
+    expect(computation.lines[0]?.deltaInstalled).toBe('3');
+    expect(computation.adjustedAwayAmount).toBe('20.00');
+  });
+
   it('narrates the adjusted quantity in the remark, not the one it replaced', () => {
     const computation = computeMeasurementBook({
       matrix: [matrixRow],

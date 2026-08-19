@@ -267,6 +267,19 @@ const MeasurementBookLineSchema = Type.Object(
      * priced; these two are equal to it on every line nobody adjusted. */
     sourceSupplied: Type.Union([DecimalStringSchema, Type.Null()]),
     sourceInstalled: Type.Union([DecimalStringSchema, Type.Null()]),
+    /** The STORED adjustment, per stage, or null where the operator has
+     * made none. Distinct from `deltaSupplied` above, which is what will
+     * be billed: the two differ whenever the sanction clamp or a
+     * deselected source has already reduced the line further.
+     *
+     * It travels because a screen that replaces the whole set of
+     * adjustments on every save has to be able to send back an
+     * adjustment nobody touched. Inferring "unchanged" from the billed
+     * figure writes a fresh adjustment at the clamped quantity on every
+     * clamped line, which then caps the item for good once an amendment
+     * reopens the sanction. Null on a finalized or cancelled book. */
+    overrideSupplied: Type.Union([DecimalStringSchema, Type.Null()]),
+    overrideInstalled: Type.Union([DecimalStringSchema, Type.Null()]),
     /** Final MB only: final-bill base minus prior; '0' elsewhere. */
     deltaFinalBill: DecimalStringSchema,
     priorSupplied: DecimalStringSchema,
@@ -331,6 +344,17 @@ export const MeasurementBookDetailResponseSchema = Type.Object(
      * zero when the variation lands. The lines above are already
      * clamped; this is what the clamp left out, stated in rupees. */
     unbillableVariationExposure: DecimalStringSchema,
+    /** What this book's own downward adjustments left out, in rupees
+     * (migration 0106) — the counterpart of the exposure above, on the
+     * same footing: the clamp says what a sanction left outside every
+     * book, and this says what the operator's own pen left outside THIS
+     * one.
+     *
+     * Priced exactly as the lines are: per stage, at the stage
+     * percentage and the accepted rate, rounded per line and summed
+     * (R13). '0.00' on a book nobody adjusted, and on every finalized
+     * book — a snapshot records what it billed, not what it did not. */
+    measurementAdjustedAway: DecimalStringSchema,
   },
   { additionalProperties: false },
 );

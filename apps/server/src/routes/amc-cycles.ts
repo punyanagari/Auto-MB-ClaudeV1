@@ -8,6 +8,7 @@ import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../auth.js';
 import { assertWorkAccess } from '../authz.js';
 import { httpError } from '../http.js';
+import { assertWorkOperable } from '../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -108,13 +109,19 @@ const AMC_CYCLE_PROPOSAL_SQL = `
   ),
   counted as (
     select b.*,
-           case
-             when b.total_quantity > 0 then least(
-               b.m,
-               greatest(0, round(b.certified_quantity * b.m / b.total_quantity)::int)
-             )
-             else 0
-           end as periods_certified
+           -- HOW MANY PERIODS ARE CLOSED, asked of the split itself
+           -- rather than of a ratio: the number of period boundaries
+           -- round3(Q*k/M) that the certified total has reached. A
+           -- ratio would have to round, and rounding is wrong at both
+           -- ends — round3 puts a whole period at 0.9999 of one
+           -- (Q=10, M=3), and 99 of 100 over 4 periods rounds UP to
+           -- "all four certified" while a unit is still outstanding.
+           -- M is a period count, so this counts to at most a few dozen.
+           (
+             select count(*)
+             from generate_series(1, b.m) as k
+             where round(b.total_quantity * k / b.m, 3) <= b.certified_quantity
+           )::int as periods_certified
     from base b
   )
   select c.schedule_id, c.schedule_code, c.title,
@@ -125,10 +132,26 @@ const AMC_CYCLE_PROPOSAL_SQL = `
          c.periods_certified,
          case when c.periods_certified >= c.m then null
               else c.periods_certified + 1 end as next_period,
+         -- THE REMAINDER, not the period's own width. The proposal is
+         -- what it takes to REACH the next period's cumulative from
+         -- wherever the certificates actually stand:
+         --
+         --     round3(Q*n/M) - certified
+         --
+         -- rather than round3(Q*n/M) - round3(Q*(n-1)/M), which assumes
+         -- every earlier period was certified at exactly its own width.
+         -- Certificates are the railway's, not this product's, and one
+         -- taken by hand at a different figure would otherwise put every
+         -- period after it out by the same amount and land the contract
+         -- short of Q or over the 0068 cap. Reconciling against the
+         -- certified total instead makes the LAST period Q - certified,
+         -- whatever happened before it, so the cadence always closes on
+         -- Q exactly. It also makes a mid-contract change of M
+         -- self-correcting.
          case when c.periods_certified >= c.m then null
               else (
                 round(c.total_quantity * (c.periods_certified + 1) / c.m, 3)
-                - round(c.total_quantity * c.periods_certified / c.m, 3)
+                - c.certified_quantity
               )::text
          end as proposed_quantity,
          (round(c.total_quantity / c.m, 3) * c.m = c.total_quantity) as divides
@@ -249,6 +272,14 @@ export function registerAmcCycleRoutes(
 
       await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
+        // R8: a completed Work is closed to operational change, and the
+        // cadence decides what every later certificate is proposed at.
+        // A superseded Work is soft-deleted and never reaches here.
+        const [work] = await tx<{ status: string }[]>`
+          select status from works where id = ${workId} and deleted_at is null
+        `;
+        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+        assertWorkOperable(work.status, 'changing a maintenance billing cycle');
         const [schedule] = await tx<
           {
             id: string;

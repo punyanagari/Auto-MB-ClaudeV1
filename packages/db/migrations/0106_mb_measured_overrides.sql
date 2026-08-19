@@ -99,10 +99,17 @@ COMMENT ON TABLE mb_measured_overrides IS
   'Per (draft Measurement Book, Work item) instruction to measure LESS than the claimed sources deliver, per stage. Owner ruling of 2026-08-19: a draft line''s measured quantity is editable downward only, capped at the claimed source quantity and floored at zero. Holds no money — the same computation prices a reduced quantity exactly as it prices an unreduced one.';
 
 -- One index per composite foreign key, each leading on exactly that
--- key's columns (0046's rule, as `fk-index-coverage.integration.test.ts`
--- measures it: a non-partial index whose leading columns are the key's,
--- in order). The book index doubles as the computation's own read —
--- every override of one book at once, and the book is the only way in.
+-- key's columns in the key's own order. 0046's rule as
+-- `fk-index-coverage.integration.test.ts` actually measures it: an index
+-- covers a key when it shares the key's leading columns AND at least the
+-- first two of them — so the (organisation_id, measurement_book_id,
+-- work_item_id) unique constraint above does NOT cover the
+-- measurement_books key, whose third column is work_id. Hence two
+-- explicit indexes rather than the one the constraint looked like it
+-- was already providing.
+--
+-- The book index doubles as the computation's own read — every override
+-- of one book at once, and the book is the only way in.
 CREATE INDEX mb_measured_overrides_book_idx
   ON mb_measured_overrides (organisation_id, measurement_book_id, work_id);
 CREATE INDEX mb_measured_overrides_item_idx

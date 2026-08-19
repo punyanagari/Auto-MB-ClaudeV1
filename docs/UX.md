@@ -1841,11 +1841,36 @@ deliver is refused, naming every offending line with both numbers
 opens a transaction. Zero is legal and means "measure none of it from
 these sources".
 
-**A line adjusted to nothing STAYS on the preview.** Without that it would
-vanish the moment an operator typed 0, taking the field that would undo it
-with it. It is still not a book: finalize asks the quantities rather than
-the line count, and refuses a book whose every line measures nothing with
-the `MB_EMPTY` sentence it always used.
+**Only a field a keystroke landed in becomes an adjustment.** Every other
+field carries back the adjustment already stored. This matters because a
+field is seeded with the figure that will be BILLED, and on a line the
+sanction clamp has already reduced that is lower than what the sources
+claim — so a screen that inferred "the operator changed this" from the
+number would write an adjustment on every clamped line, and that
+adjustment would cap the item there for good once an amendment reopened
+the sanction. Emptying a field clears the adjustment.
+
+**A line adjusted to nothing STAYS on the preview, and out of the book.**
+Without the first half it would vanish the moment an operator typed 0,
+taking the field that would undo it with it. Without the second, a zero
+line would print on a Measurement Book and ride into a bill. So finalize
+asks the QUANTITIES rather than the line count: it refuses a book whose
+every line measures nothing with the `MB_EMPTY` sentence it always used,
+and leaves the zero lines out of the snapshot, the document and the bill.
+
+**An item this book claims nothing of cannot be adjusted at all**
+(`MB_MEASURED_ITEM_NOT_CLAIMED`). Its cap is zero, and an adjustment is
+what would put its line on the book — blocking finalize on an item nobody
+selected a source for.
+
+**Adjustments travel through a merge.** A consignee who measured eight of
+a claimed ten on their own record sheet has stated a fact about the site,
+so the merged book's adjustment for that item is the sum of what the
+records EFFECTIVELY measure — each sheet's own figure where it made one,
+its full claim where it did not. The records' own adjustment rows go in
+the same transaction. Un-merge restores the records and their claims but
+not their individual figures: the merge folded several into one sum, and
+the operator re-enters what they measured.
 
 **Where the unmeasured quantity goes.** Nowhere, this book. It stays
 outside it exactly as an over-installed quantity stays outside every book
@@ -1857,6 +1882,14 @@ gives that stage a share. On a matrix that gives the final-bill stage
 nothing, an unmeasured quantity is not billed at all; that is the same
 arithmetic the clamp has always had, and the screen states the two figures
 so the choice is a deliberate one.
+
+**And it is stated in rupees.** Above the register, on the same warning
+surface the unbillable variation exposure uses and for the same reason:
+without it the reduction appears in no number on the screen at all — the
+lines show what will be billed, the total sums them, and what the operator
+declined to measure is nowhere. It counts the adjustment only, never the
+sanction clamp's own remainder, which the exposure beside it already
+states.
 
 **Lifetime.** The adjustments belong to the draft. Deleting the draft
 deletes them; finalizing freezes them and the finalized line carries the
@@ -1899,13 +1932,24 @@ schedule that states a cycle shows what the NEXT period should certify per
 AMC item: the period number, what is certified so far, and the proposed
 quantity
 
-    q(n) = round3(Q x n / M) - round3(Q x (n-1) / M)
+    proposed = round3(Q x n / M) - what is certified so far
 
-a running total rather than Q/M repeated, so the periods sum to exactly Q
-and the last certificate closes the sanction cap with no remainder nobody
-can bill. Where Q does not divide evenly the periods differ in the third
-decimal, and the row says so rather than presenting an uneven split as an
-even one.
+which is a REMAINDER, not the period's own width. The difference matters
+because certificates are the railway's: one taken by hand at a different
+figure would otherwise put every period after it out by the same amount
+and leave the contract short of Q, or over the sanction cap. Reconciling
+against the certified total instead makes the last period exactly
+Q - certified, whatever happened before it — so the cadence always closes
+on Q, a cycle changed mid-contract self-corrects, and no period ever
+proposes a quantity the cap would refuse. Where Q does not divide evenly
+the periods differ in the third decimal, and the row says so rather than
+presenting an uneven split as an even one.
+
+**How many periods are closed** is asked of the split itself — how many of
+its boundaries the certified total has reached — never of a ratio.
+Rounding a ratio is wrong at both ends: it puts a whole period at 0.9999
+of one, and it calls 99 of 100 over four periods "all four certified"
+while a unit is still outstanding.
 
 **It is a proposal and only a proposal.** Nothing about it writes
 anything, the certification cap is unchanged, and an operator certifying a
@@ -1914,17 +1958,39 @@ Measurement Book always certifies the FULL period quantity: downtime is a
 bill-time PENALTY deduction, never a short certificate.
 
 **What the Measurement Book says.** On a Work whose schedule states a
-cycle, an AMC line's remark counts PERIODS instead of quantity, inside the
-existing remark grammar and with the existing spellings — "Prepaid 95% for
-2 quarters. Now to pay 95% for 1 quarter." The prepaid clause is still
-omitted on a first book. The clause can only appear on a Work carrying a
-cycle, which no already-finalised Measurement Book does, so the remark
-template version does not move.
+cycle, an AMC line's ACCEPTANCE-CERTIFICATE stage counts PERIODS instead
+of quantity, inside the existing remark grammar and with the existing
+spellings — "Prepaid 95% for 2 quarters. Now to pay 95% for 1 quarter."
+The prepaid clause is still omitted on a first book.
+
+Only that stage. A cycle divides the certified quantity and nothing else,
+so a delivery challan against the same item keeps the item's own unit
+rather than being counted against a Q it has no relationship to.
+
+**A part-period is never rounded up to a whole one.** The remark is frozen
+into a finalised document and read as a contractual statement, so half a
+quarter reads "0.5 quarters", not "1 quarter". Only a figure integral
+within the split's own third-decimal wobble reads as a whole period.
+
+The clause can only appear on a Work carrying a cycle, which no
+already-finalised Measurement Book does, so the remark template version
+does not move.
+
+**A cycle is not changed on a Work that is closed.** A completed Work
+refuses it under R8, like every other operational change; the cadence
+decides what every later certificate is proposed at.
 
 **What does not change.** No payment-matrix change, no per-item axis, and
-the rate is still the ACCEPTED rate the server derives — which for a
-letter printing per-item negotiated bid rates is that rate less the
-rebate on the total value, and is never the rate the letter advertises.
+the rate is still the ACCEPTED rate the server derives.
+
+**Letters that print a negotiated per-item bid rate** — PL-257's shape —
+accept that rate less the rebate on the total value, never the advertised
+one. The rule is written and proved against the letter's own printed
+totals, but nothing computes with it yet: that letter's item table does
+not parse, so the figures it needs are not extracted. The caller lands
+with the importer work that makes those rows readable. Until then a
+letter of the shape reaches a human anyway — its non-zero rebate is a
+letter-level review flag.
 
 **App-side divergence.** The mock draws neither surface: its Work carries
 no maintenance schedule and no acceptance certificates. Both are built

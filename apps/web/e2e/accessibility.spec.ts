@@ -1217,6 +1217,8 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             deltaInstalled: '0.000',
             sourceSupplied: '10.000',
             sourceInstalled: '0.000',
+            overrideSupplied: '8.000',
+            overrideInstalled: null,
             deltaPac: '0.000',
             deltaFinalBill: '0',
             priorSupplied: '0.000',
@@ -1234,6 +1236,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
         warnings: [],
         previewTotal: '640.00',
         unbillableVariationExposure: '0',
+        measurementAdjustedAway: '160.00',
       }),
     ),
   );
@@ -1323,6 +1326,10 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Save measured quantities' }),
   ).toBeVisible();
+  // The rupee value of what the adjustment left out, on the warning
+  // surface the unbillable exposure already uses — scanned because it is
+  // colour on colour and the one place the reduction is stated as money.
+  await expect(page.getByText('Measured down on this Measurement Book')).toBeVisible();
   await expectNoAxeViolations(page, 'work detail — measurement book draft');
 
   await openTab('Bills');

@@ -320,7 +320,14 @@ export function registerMeasurementBookFinalizeRoutes(
         // computeMeasurementBook produced and is cast by PostgreSQL to
         // the column's own numeric type — the same path a per-row
         // parameter took, and still never through a JS float.
-        const lines = computation.lines;
+        // ONLY the lines that measure something. An adjusted-to-nothing
+        // line exists so the draft keeps the field that would undo it
+        // (mb-compute's `isAdjusted` note); it is a draft affordance and
+        // has no business in an immutable snapshot, in the printed
+        // document, or in the bill's own copy of these lines. The
+        // refusal above has already established that at least one line
+        // survives this filter.
+        const lines = computation.lines.filter(lineHasQuantity);
         await tx`
           insert into measurement_book_lines (
             organisation_id, measurement_book_id, work_id, work_item_id,
@@ -645,7 +652,20 @@ export function registerMeasurementBookFinalizeRoutes(
           `;
         if (!counter) throw new Error('bill counter upsert returned no row');
 
-        const lines = await readStoredLines(tx, id);
+        // The bill's own copy of the lines. The four draft-only fields
+        // the read shape carries — what the sources measured before an
+        // adjustment, and the adjustment itself — are null on every
+        // stored line and are dropped here rather than frozen into a
+        // bill as four columns of nothing (migration 0106).
+        const lines = (await readStoredLines(tx, id)).map(
+          ({
+            sourceSupplied: _sourceSupplied,
+            sourceInstalled: _sourceInstalled,
+            overrideSupplied: _overrideSupplied,
+            overrideInstalled: _overrideInstalled,
+            ...line
+          }) => line,
+        );
         const [row] = await tx<
           {
             id: string;

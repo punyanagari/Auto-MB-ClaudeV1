@@ -81,20 +81,55 @@ interface SourceCandidate {
   readonly label: string;
 }
 
+/** One line's two fields as typed, and whether the operator has touched
+ * either. `dirty` is the whole point: what a field READS cannot decide
+ * whether it was edited, because the figure it is seeded with is the
+ * BILLED one and the sanction clamp may already have reduced it below
+ * what the sources claim. Saving that figure back as an adjustment would
+ * write one on every clamped line, and that adjustment would then cap the
+ * item for good once an amendment reopened the sanction. So a field is
+ * sent as an adjustment only when a keystroke landed in it. */
+interface MeasuredEntry {
+  readonly supplied: string;
+  readonly installed: string;
+  readonly suppliedDirty: boolean;
+  readonly installedDirty: boolean;
+}
+
 /** The measured-quantity fields as the preview leaves them: the adjusted
  * figure, which equals the claimed one on every line nobody adjusted.
  * Empty for a finalized or cancelled book — its lines are a snapshot and
  * nothing on them is editable. */
 function seedMeasured(
   detail: MeasurementBookDetailResponse,
-): ReadonlyMap<string, { supplied: string; installed: string }> {
+): ReadonlyMap<string, MeasuredEntry> {
   if (detail.book.status !== 'draft') return new Map();
   return new Map(
     detail.lines.map((line) => [
       line.workItemId,
-      { supplied: line.deltaSupplied, installed: line.deltaInstalled },
+      {
+        supplied: line.deltaSupplied,
+        installed: line.deltaInstalled,
+        suppliedDirty: false,
+        installedDirty: false,
+      },
     ]),
   );
+}
+
+/** What one field is worth on save: the typed figure where a keystroke
+ * landed, an emptied field as no adjustment at all, and otherwise the
+ * adjustment already stored — echoed back unchanged, so replacing the
+ * whole set never silently drops one nobody touched. */
+function measuredFor(
+  entry: MeasuredEntry,
+  stage: 'supplied' | 'installed',
+  stored: string | null,
+): string | null {
+  const dirty = stage === 'supplied' ? entry.suppliedDirty : entry.installedDirty;
+  if (!dirty) return stored;
+  const typed = (stage === 'supplied' ? entry.supplied : entry.installed).trim();
+  return typed === '' ? null : typed;
 }
 
 const KIND_LABELS: Record<MeasurementBookKind, string> = {
@@ -165,8 +200,7 @@ const MeasurementLineRow = memo(function MeasurementLineRow({
   readonly line: MeasurementBookLine;
   /** The operator's in-flight figures for this line, or undefined where
    * the book is not a draft. */
-  readonly entered:
-    { readonly supplied: string; readonly installed: string } | undefined;
+  readonly entered: MeasuredEntry | undefined;
   readonly onMeasuredChange: (
     workItemId: string,
     stage: 'supplied' | 'installed',
@@ -242,9 +276,9 @@ export function MeasurementBooks({
   /** The measured quantities as typed, per Work item, for the open draft.
    * Seeded from the preview, so an untouched field already reads what the
    * claimed sources deliver and saving changes nothing. */
-  const [measured, setMeasured] = useState<
-    ReadonlyMap<string, { readonly supplied: string; readonly installed: string }>
-  >(new Map());
+  const [measured, setMeasured] = useState<ReadonlyMap<string, MeasuredEntry>>(
+    new Map(),
+  );
   /** The Work's consignees: the pick list for a record MB's author, and
    * the names the record-draft rows carry. */
   const [consignees, setConsignees] = useState<readonly Contact[]>([]);
@@ -347,7 +381,14 @@ export function MeasurementBooks({
         const line = current.get(workItemId);
         if (line === undefined) return current;
         const next = new Map(current);
-        next.set(workItemId, { ...line, [stage]: value });
+        // The keystroke is what marks the field as an adjustment; see
+        // `MeasuredEntry` for why the value alone cannot.
+        next.set(
+          workItemId,
+          stage === 'supplied'
+            ? { ...line, supplied: value, suppliedDirty: true }
+            : { ...line, installed: value, installedDirty: true },
+        );
         return next;
       });
     },
@@ -563,6 +604,33 @@ export function MeasurementBooks({
             </div>
             <span className="font-mono font-semibold tabular-nums text-warning-foreground">
               {formatInr(detail.unbillableVariationExposure)}
+            </span>
+          </div>
+        )}
+
+      {/* What THIS book's own adjustments left out, drawn on the same
+          footing as the exposure above and for the same reason: without
+          it the reduction appears in no number on the screen. The lines
+          show what will be billed, the total sums them, and the quantity
+          the operator declined to measure is nowhere. Priced by the
+          server through the same stage percentages and accepted rate the
+          lines are; printed in full rupees, not a compact form, because
+          it is money a later book has to pick up. */}
+      {detail !== null &&
+        compareDecimalStrings(detail.measurementAdjustedAway, '0') > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4">
+            <div>
+              <p className="text-sm font-medium text-warning-foreground">
+                Measured down on this Measurement Book
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Value of the claimed quantity this book does not measure. It stays
+                unbilled here and is picked up by a later book, or by the final bill
+                stage where the payment matrix gives it one.
+              </p>
+            </div>
+            <span className="font-mono font-semibold tabular-nums text-warning-foreground">
+              {formatInr(detail.measurementAdjustedAway)}
             </span>
           </div>
         )}
@@ -1145,20 +1213,23 @@ export function MeasurementBooks({
                         overrides: [...measured.entries()].map(
                           ([workItemId, entry]) => {
                             const line = lineByItem.get(workItemId);
-                            // Equal to what the sources deliver is not an
-                            // adjustment, so it is sent as null and no row
-                            // is written. That keeps a draft nobody touched
-                            // free of adjustment rows entirely.
+                            // Only a field a keystroke landed in becomes
+                            // an adjustment; every other field echoes the
+                            // adjustment already stored, so a save never
+                            // invents one and never drops one. See
+                            // `measuredFor`.
                             return {
                               workItemId,
-                              measuredSupplied:
-                                line?.sourceSupplied === entry.supplied
-                                  ? null
-                                  : entry.supplied,
-                              measuredInstalled:
-                                line?.sourceInstalled === entry.installed
-                                  ? null
-                                  : entry.installed,
+                              measuredSupplied: measuredFor(
+                                entry,
+                                'supplied',
+                                line?.overrideSupplied ?? null,
+                              ),
+                              measuredInstalled: measuredFor(
+                                entry,
+                                'installed',
+                                line?.overrideInstalled ?? null,
+                              ),
                             };
                           },
                         ),

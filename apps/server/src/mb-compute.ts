@@ -116,6 +116,12 @@ export interface MbComputedLine {
    * them and does not need one. */
   readonly sourceSupplied: string;
   readonly sourceInstalled: string;
+  /** The STORED adjustment per stage, passed straight through so a
+   * screen replacing the whole set can send back one nobody touched.
+   * Not the same as the two deltas above: those are what will be billed
+   * after the sanction clamp has had its say. */
+  readonly overrideSupplied: string | null;
+  readonly overrideInstalled: string | null;
   /** BILLED certified quantity, clamped the same way and for the same
    * reason — a non-AMC certificate attests installed work, which is no
    * longer bounded by the sanction. */
@@ -161,6 +167,17 @@ export interface MbComputation {
   readonly totalAmount: string;
   /** Items that would appear on the MB but cannot resolve percentages. */
   readonly unresolved: readonly MbUnresolvedItem[];
+  /** What the operator's own downward adjustments left out of this book,
+   * in rupees — priced through the same stage percentages and accepted
+   * rate the lines are, rounded per line and summed (R13). '0.00' when
+   * nothing was adjusted.
+   *
+   * It exists because without it the reduction is invisible to every
+   * number on the screen: the lines show what will be billed, the total
+   * sums them, and the quantity the operator declined to measure appears
+   * nowhere at all. The counterpart of the Work's unbillable variation
+   * exposure, on the same footing. */
+  readonly adjustedAwayAmount: string;
 }
 
 // eslint-disable-next-line security/detect-unsafe-regex -- fully anchored, two adjacent digit runs with no nested quantifier; linear on all inputs (same shape as mb-remark.ts)
@@ -314,6 +331,7 @@ export function computeMeasurementBook(input: {
   const lines: MbComputedLine[] = [];
   const unresolved: MbUnresolvedItem[] = [];
   let totalAmount = '0.00';
+  let adjustedAwayAmount = '0.00';
 
   // Natural order (`compareItemNumbers`), which is the order the letter's
   // schedule is written in: A1/2 before A1/10, not after it. A finalized
@@ -465,6 +483,8 @@ export function computeMeasurementBook(input: {
       deltaInstalled,
       sourceSupplied: item.deltaSupplied,
       sourceInstalled: item.deltaInstalled,
+      overrideSupplied: item.measuredSupplied,
+      overrideInstalled: item.measuredInstalled,
       deltaPac,
       deltaFinalBill,
       priorSupplied: item.priorSupplied,
@@ -480,7 +500,41 @@ export function computeMeasurementBook(input: {
     };
     lines.push(line);
     totalAmount = addDecimalStrings(totalAmount, amounts.total);
+
+    // What the adjustment left out, in rupees: the same two stages
+    // priced at what the sources measure, less what they were priced at
+    // after the reduction. Computed only on a line that was actually
+    // adjusted, so an unadjusted book issues no arithmetic at all.
+    if (isAdjusted) {
+      const unreduced = computeStageAmounts({
+        effectiveRate: item.effectiveRate,
+        stages: [
+          {
+            stage: 'supply',
+            percent: percentages.pctSupply,
+            deltaQuantity: item.deltaSupplied,
+          },
+          {
+            stage: 'installation',
+            percent: percentages.pctInstallation,
+            deltaQuantity: clampToSanctioned({
+              priorQuantity: item.priorInstalled,
+              deltaQuantity: item.deltaInstalled,
+              sanctionedQuantity: item.sanctionedQuantity,
+            }),
+          },
+        ],
+      });
+      const reduced = addDecimalStrings(
+        byStage.get('supply') ?? '0.00',
+        byStage.get('installation') ?? '0.00',
+      );
+      adjustedAwayAmount = addDecimalStrings(
+        adjustedAwayAmount,
+        subtractDecimalStrings(unreduced.total, reduced),
+      );
+    }
   }
 
-  return { lines, totalAmount, unresolved };
+  return { lines, totalAmount, unresolved, adjustedAwayAmount };
 }

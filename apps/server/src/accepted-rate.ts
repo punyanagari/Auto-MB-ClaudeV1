@@ -129,6 +129,22 @@ export function acceptedRateFrom(
  * accepted = the NEGOTIATED per-item bid rate x (1 - the rebate on the
  * total value).
  *
+ * NOTHING CALLS THIS IN PRODUCTION YET, and that is deliberate rather
+ * than an oversight. The shape needs two figures the extraction cannot
+ * supply: PL-257's item table does not decompose at all — the negotiated
+ * Bid Rate column defeats the anchor tail, and the parser answers by
+ * keeping every raw line and raising `layout_junk` on all thirteen rows
+ * (`packages/loa-parser/test/amc-corpus.test.ts` pins exactly that).
+ * Wiring a caller before those rows parse would mean feeding it the
+ * ADVERTISED rate, which is the one number the ruling says is wrong.
+ * The rule is written and proved here against the letter's own printed
+ * totals; the caller lands with the SBC-shaped importer work that makes
+ * the rows readable.
+ *
+ * Nothing mis-prices meanwhile: a letter of this shape prints a non-zero
+ * `Rebate on Total Value`, which `detectUnexpectedRebate` flags at
+ * letter level, so it reaches a human before any rate is confirmed.
+ *
  * A THIRD SHAPE, not a variation of the two above, and the difference is
  * which number the percentage is applied TO. Shapes A and B apply a
  * letter- or schedule-level tender result to the ADVERTISED rate,

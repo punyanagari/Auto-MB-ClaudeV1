@@ -795,6 +795,7 @@ describe('MeasurementBooks workspace', () => {
     warnings: [],
     previewTotal: '4000.00',
     unbillableVariationExposure: '0.00',
+    measurementAdjustedAway: '0.00',
   };
 
   const FINAL_DETAIL = {
@@ -804,6 +805,7 @@ describe('MeasurementBooks workspace', () => {
     warnings: [],
     previewTotal: '4000.00',
     unbillableVariationExposure: '0.00',
+    measurementAdjustedAway: '0.00',
   };
 
   const CANDIDATES: Partial<ApiClient> = {

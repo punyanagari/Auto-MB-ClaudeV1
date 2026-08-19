@@ -533,6 +533,8 @@ export function toLine(line: MbComputedLine): MeasurementBookLine {
     deltaInstalled: line.deltaInstalled,
     sourceSupplied: line.sourceSupplied,
     sourceInstalled: line.sourceInstalled,
+    overrideSupplied: line.overrideSupplied,
+    overrideInstalled: line.overrideInstalled,
     deltaPac: line.deltaPac,
     deltaFinalBill: line.deltaFinalBill,
     priorSupplied: line.priorSupplied,
@@ -631,11 +633,14 @@ export async function readStoredLines(
       deltaSupplied: row.delta_supplied,
       deltaInstalled: row.delta_installed,
       // The snapshot has no column for what the sources measured before
-      // an adjustment (0106), and deliberately does not: what the book
-      // bills is what it recorded. A finalized line reports null and the
-      // screen prints one figure.
+      // an adjustment (0106), nor for the adjustment itself, and
+      // deliberately does not: what the book bills is what it recorded.
+      // A finalized line reports null on all four and the screen prints
+      // one figure.
       sourceSupplied: null,
       sourceInstalled: null,
+      overrideSupplied: null,
+      overrideInstalled: null,
       deltaPac: row.delta_pac,
       deltaFinalBill: row.delta_final_bill,
       priorSupplied: row.prior_supplied,
@@ -716,6 +721,7 @@ export async function readDetail(
       warnings: [...computation.unresolved],
       previewTotal: computation.totalAmount,
       unbillableVariationExposure,
+      measurementAdjustedAway: computation.adjustedAwayAmount,
     };
   }
   return {
@@ -725,6 +731,8 @@ export async function readDetail(
     warnings: [],
     previewTotal: book.total_amount,
     unbillableVariationExposure,
+    // A finalized book records what it billed, not what it declined to.
+    measurementAdjustedAway: '0.00',
   };
 }
 
