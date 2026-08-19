@@ -62,7 +62,9 @@ export type FlagCode =
   | 'unexpected_item_breakup'
   | 'unexpected_rebate'
   | 'unexpected_above_par'
-  | 'banned_items_block';
+  | 'banned_items_block'
+  | 'amc_schedule'
+  | 'amc_recurrence_prose';
 
 /** Criterion 1's structured payload: PL280's corrigendum proposes correcting
  * a printed unit in PROSE, and the parser must never apply the override —
@@ -808,6 +810,134 @@ export function detectBannedItemsBranch(
 }
 
 // ---------------------------------------------------------------------------
+// annual maintenance: the schedule is the signal, and the cadence is prose
+// ---------------------------------------------------------------------------
+//
+// Two triggers added for the owner's AMC billing-cycle ruling of
+// 2026-08-19 (`docs/UX.md` § 26). Both exist because the importer has to
+// propose a maintenance cadence and must never guess one, and both are
+// measured against the corpus rather than reasoned about: the first fires
+// on 7 of the corpus's 24 schedules, the second on 1 letter.
+
+const AMC_TOKEN_RE = /\bAMC\b|annual\s+maintenance/i;
+
+/**
+ * THE SCHEDULE IS THE AMC SIGNAL, NOT THE DESCRIPTION — flagged per
+ * schedule when EVERY one of its items carries a maintenance token.
+ *
+ * The threshold is "every", not "most", and it was chosen by measurement
+ * rather than taste. At 100% the trigger selects exactly the schedules a
+ * reader would call maintenance schedules — PL273's A, PL280's AB,
+ * PL270's B and D (the two the AMC engine's own integration test names as
+ * PL270's maintenance schedules, arrived at independently) — and leaves
+ * out PL275's B, whose 5 maintenance items sit among 24 supply ones and
+ * which is therefore a supply schedule with maintenance lines in it, not
+ * a maintenance schedule.
+ *
+ * WHY THE SCHEDULE AND NOT THE ITEM. The ledger's own framing of the
+ * PL280 hazard is "item 11 is an AMC line without the AMC token — the
+ * schedule is the AMC signal, not the description", and the parse proves
+ * why an item-level trigger cannot answer it: `parseItems` assembles a
+ * description from the physical lines around its anchor, so adjacent
+ * descriptions overlap by construction (`detectQtyDecomposition`'s note),
+ * and PL280's item 11 reads as carrying a token that belongs to its
+ * neighbours. Measured: 12 of 12 PL280 items match `AMC_TOKEN_RE`, so an
+ * item-level "missing token" trigger would find nothing at all on the one
+ * letter that motivated it. The schedule is the unit the signal is
+ * actually reliable on.
+ */
+export function detectAmcSchedules(
+  items: readonly ParsedItem[],
+): readonly ReviewFlag[] {
+  const bySchedule = new Map<string, ParsedItem[]>();
+  for (const item of items) {
+    const scheduleId = item.schedule?.id ?? 'UNBOUND';
+    const group = bySchedule.get(scheduleId);
+    if (group === undefined) bySchedule.set(scheduleId, [item]);
+    else group.push(item);
+  }
+  const flags: ReviewFlag[] = [];
+  for (const [scheduleId, group] of bySchedule) {
+    // NEVER for the unbound group. `UNBOUND` is items.ts's fallback for
+    // an item it could not attach to any schedule at all — it is not a
+    // schedule id, no schedule of that name exists in the letter, and a
+    // schedule-scoped flag pointing at one would send a reviewer to a
+    // target they cannot open. Those items are already flagged
+    // individually by the layout-junk trigger.
+    if (scheduleId === 'UNBOUND') continue;
+    if (group.length === 0) continue;
+    if (!group.every((item) => AMC_TOKEN_RE.test(item.description))) continue;
+    flags.push({
+      code: 'amc_schedule',
+      scope: 'schedule',
+      targetId: scheduleId,
+      rawBlock: group.map((item) => item.raw.anchorLine).join('\n'),
+      // "Every item", which on a one-item schedule is that one item —
+      // said plainly here because a reader meeting the flag on a
+      // single-line schedule should not have to wonder whether the
+      // trigger measured anything (PL270's B and D are exactly that
+      // shape, and are genuine maintenance schedules).
+      message: `All ${String(group.length)} item(s) in schedule ${scheduleId} are annual-maintenance lines -- categorise the whole schedule as AMC and set its billing cycle on it, rather than reading each description; one item's description may carry a neighbour's wording.`,
+      detail: { scheduleId, itemCount: group.length },
+    });
+  }
+  return flags;
+}
+
+// "(For 1st year quantity is 04 Job ,so in 3 years quantity will be 12
+// Jobs.)" — PL218's phrasing, and the corpus's only one: measured across
+// all ten letters, no other fixture contains this sentence shape at all.
+// Deliberately narrow, per this module's charter; a letter phrasing the
+// same fact differently needs its own pattern rather than a speculative
+// general "find the recurrence in arbitrary prose" parser.
+const AMC_RECURRENCE_RE =
+  /For\s+(?:the\s+)?1st\s+year\s+quantity\s+is\s+(\d+)\s+([A-Za-z]+)\s*,?\s*so\s+in\s+(\d+)\s+years?\s+quantity\s+will\s+be\s+(\d+)/i;
+
+/**
+ * THE BILLING CADENCE IS IN PROSE, NOT IN A COLUMN.
+ *
+ * PL218 (Nagpur, SECR) prices two schedules on two different cadences:
+ * a maintenance schedule whose items recur four times a year and a visit
+ * schedule whose items recur six. The printed Qty column carries the
+ * TOTAL over the contract on both, so nothing in the table distinguishes
+ * them, and a Work-level cadence could not describe the letter at all —
+ * which is why migration 0107 puts `amc_billing_periods` on the SCHEDULE.
+ *
+ * Flagged per item, with the first-year and whole-contract quantities on
+ * the detail, so the reviewer confirms each schedule's cadence from the
+ * letter's own arithmetic instead of dividing by hand. Nothing is
+ * derived and nothing is applied: like every trigger here, this is
+ * additive.
+ */
+export function detectAmcRecurrenceProse(
+  items: readonly ParsedItem[],
+): readonly ReviewFlag[] {
+  const flags: ReviewFlag[] = [];
+  for (const item of items) {
+    const match = AMC_RECURRENCE_RE.exec(flatten(item.description));
+    if (match === null) continue;
+    const firstYear = Number.parseInt(match[1] ?? '', 10);
+    const years = Number.parseInt(match[3] ?? '', 10);
+    const total = Number.parseInt(match[4] ?? '', 10);
+    flags.push({
+      code: 'amc_recurrence_prose',
+      scope: 'item',
+      targetId: itemTargetId(item),
+      rawBlock: match[0],
+      message: `The printed Qty column (${item.qty} ${item.qtyUnit ?? ''}) is the whole-contract total of a recurrence stated only in prose: ${String(firstYear)} ${match[2] ?? ''} in the first year, ${String(total)} over ${String(years)} years. Confirm this schedule's billing cycle from that arithmetic -- schedules of one letter can run on different cycles.`,
+      detail: {
+        first_year_qty: firstYear,
+        years,
+        total_qty: total,
+        unit_word: match[2] ?? '',
+        source: 'prose',
+      },
+    });
+  }
+  return flags;
+}
+
+// ---------------------------------------------------------------------------
 // roll-up
 // ---------------------------------------------------------------------------
 
@@ -896,6 +1026,8 @@ export function reviewLoaLetter(
     ...detectUnexpectedRebate(pricingShape, letterTargetId),
     ...detectUnexpectedAbovePar(items),
     ...detectBannedItemsBranch(rawText, letterTargetId),
+    ...detectAmcSchedules(items),
+    ...detectAmcRecurrenceProse(items),
   ];
 
   return {

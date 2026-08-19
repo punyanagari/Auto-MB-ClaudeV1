@@ -220,6 +220,8 @@ function workEventPredicate(tx: TransactionSql, workId: string) {
     -- happened to this Work, and the term has no life of its own to
     -- open (migration 0099).
     or (ae.entity_type = 'work_warranty_terms' and ae.entity_id = ${workId})
+    or (ae.entity_type = 'work_schedules' and ae.entity_id in (
+      select id from work_schedules where work_id = ${workId}))
   )`;
 }
 

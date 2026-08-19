@@ -109,6 +109,62 @@ export const SetMbSourcesRequestSchema = Type.Object(
 );
 export type SetMbSourcesRequest = Static<typeof SetMbSourcesRequestSchema>;
 
+/** One line's downward measured-quantity adjustment (owner ruling of
+ * 2026-08-19; migration 0106). A null stage states nothing and leaves
+ * that stage measuring what the claimed sources deliver; a zero states
+ * "measure none of it from these sources", which is a different and
+ * legal thing to say.
+ *
+ * There is deliberately no acceptance-certificate stage here: the same
+ * owner session ruled that a Measurement Book always certifies the FULL
+ * period quantity and that downtime is a bill-time PENALTY deduction,
+ * never a short certificate. */
+const MbMeasuredOverrideSchema = Type.Object(
+  {
+    workItemId: UuidSchema,
+    measuredSupplied: Type.Union([DecimalStringSchema, Type.Null()]),
+    measuredInstalled: Type.Union([DecimalStringSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type MbMeasuredOverride = Static<typeof MbMeasuredOverrideSchema>;
+
+/** PUT .../measured-quantities — REPLACES the draft's whole set of
+ * adjustments, exactly as the sources endpoint replaces its selection.
+ * An item absent from the array measures what its sources deliver. */
+export const SetMbMeasuredQuantitiesRequestSchema = Type.Object(
+  {
+    overrides: Type.Array(MbMeasuredOverrideSchema, { maxItems: 1000 }),
+  },
+  { additionalProperties: false },
+);
+export type SetMbMeasuredQuantitiesRequest = Static<
+  typeof SetMbMeasuredQuantitiesRequestSchema
+>;
+
+/** 409 details when an adjustment states more than the claimed sources
+ * measure (MB_MEASURED_ABOVE_SOURCE): every offending line at once. */
+export const MbMeasuredAboveSourceDetailsSchema = Type.Object(
+  {
+    items: Type.Array(
+      Type.Object(
+        {
+          workItemId: UuidSchema,
+          itemNumber: Type.String(),
+          stage: Type.Union([Type.Literal('supplied'), Type.Literal('installed')]),
+          entered: DecimalStringSchema,
+          measured: DecimalStringSchema,
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type MbMeasuredAboveSourceDetails = Static<
+  typeof MbMeasuredAboveSourceDetailsSchema
+>;
+
 export const CancelMeasurementBookRequestSchema = Type.Object(
   {
     note: Type.String({ minLength: 3, maxLength: 1000 }),
@@ -200,6 +256,30 @@ const MeasurementBookLineSchema = Type.Object(
     deltaSupplied: DecimalStringSchema,
     deltaInstalled: DecimalStringSchema,
     deltaPac: DecimalStringSchema,
+    /** What the draft's claimed sources measure for this line BEFORE the
+     * operator's downward adjustment (migration 0106) — so a screen can
+     * print "computed 10 / entered 8" rather than only the number that
+     * will be billed. Null on a finalized or cancelled book: its lines
+     * are the immutable snapshot, and what the sources measured that day
+     * is not part of it.
+     *
+     * `deltaSupplied` above is the adjusted figure and is the one that is
+     * priced; these two are equal to it on every line nobody adjusted. */
+    sourceSupplied: Type.Union([DecimalStringSchema, Type.Null()]),
+    sourceInstalled: Type.Union([DecimalStringSchema, Type.Null()]),
+    /** The STORED adjustment, per stage, or null where the operator has
+     * made none. Distinct from `deltaSupplied` above, which is what will
+     * be billed: the two differ whenever the sanction clamp or a
+     * deselected source has already reduced the line further.
+     *
+     * It travels because a screen that replaces the whole set of
+     * adjustments on every save has to be able to send back an
+     * adjustment nobody touched. Inferring "unchanged" from the billed
+     * figure writes a fresh adjustment at the clamped quantity on every
+     * clamped line, which then caps the item for good once an amendment
+     * reopens the sanction. Null on a finalized or cancelled book. */
+    overrideSupplied: Type.Union([DecimalStringSchema, Type.Null()]),
+    overrideInstalled: Type.Union([DecimalStringSchema, Type.Null()]),
     /** Final MB only: final-bill base minus prior; '0' elsewhere. */
     deltaFinalBill: DecimalStringSchema,
     priorSupplied: DecimalStringSchema,
@@ -264,6 +344,17 @@ export const MeasurementBookDetailResponseSchema = Type.Object(
      * zero when the variation lands. The lines above are already
      * clamped; this is what the clamp left out, stated in rupees. */
     unbillableVariationExposure: DecimalStringSchema,
+    /** What this book's own downward adjustments left out, in rupees
+     * (migration 0106) — the counterpart of the exposure above, on the
+     * same footing: the clamp says what a sanction left outside every
+     * book, and this says what the operator's own pen left outside THIS
+     * one.
+     *
+     * Priced exactly as the lines are: per stage, at the stage
+     * percentage and the accepted rate, rounded per line and summed
+     * (R13). '0.00' on a book nobody adjusted, and on every finalized
+     * book — a snapshot records what it billed, not what it did not. */
+    measurementAdjustedAway: DecimalStringSchema,
   },
   { additionalProperties: false },
 );
