@@ -125,6 +125,9 @@ const TENANT_TABLES = [
   'purchase_orders',
   'purchase_order_lines',
   'purchase_order_counters',
+  // The second purchase-order series, for orders raised outside any LOA
+  // (0109).
+  'organisation_purchase_order_counters',
   'budgetary_quotations',
   'budgetary_quotation_lines',
   'budgetary_quotation_counters',
@@ -379,8 +382,9 @@ const DELETE_REVOKED_TABLES = [
   // Cutover provenance is an append-only ledger (0025).
   'import_batches',
   'import_records',
-  // Numbering state for the procurement documents (0033).
+  // Numbering state for the procurement documents (0033, 0109).
   'purchase_order_counters',
+  'organisation_purchase_order_counters',
   'budgetary_quotation_counters',
   // Invoice numbering is a GST rule-46 serial; the invoice itself
   // cancels, never deletes, once submitted (0035).
@@ -1334,6 +1338,10 @@ async function seedTenantGraph(
     await tx`
       insert into purchase_order_counters (organisation_id, work_id, next_value)
       values (${organisationId}, ${work.id}, 2)
+    `;
+    await tx`
+      insert into organisation_purchase_order_counters (organisation_id, next_value)
+      values (${organisationId}, 2)
     `;
 
     const [quotation] = await tx<{ id: string }[]>`

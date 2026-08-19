@@ -1753,9 +1753,11 @@ describe('WorkDetail procurement tab', () => {
     });
 
     // The draft editor opened with one empty line; picking the Work item
-    // prefills its description and unit, both still editable.
+    // prefills its description and unit, both still editable. The select's
+    // value is prefixed because one control carries both receipt channels
+    // (migration 0109): `w:` an awarded item, `p:` a stock part.
     fireEvent.change(await screen.findByLabelText('Line 1 item'), {
-      target: { value: ITEM_A },
+      target: { value: `w:${ITEM_A}` },
     });
     expect(screen.getByLabelText<HTMLInputElement>('Line 1 description').value).toBe(
       'Main switchboard',

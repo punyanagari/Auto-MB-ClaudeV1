@@ -335,18 +335,32 @@ async function searchRegister(
                po.status, po.po_date::text as date,
                po.work_id, w.work_code
         from purchase_orders po
-        join works w on w.id = po.work_id
+        left join works w on w.id = po.work_id and w.deleted_at is null
         left join contacts c on c.id = po.vendor_contact_id
-        where w.deleted_at is null
-          and (
+        where (
             po.po_number ilike ${pattern}
             or po.vendor_snapshot->>'designation' ilike ${pattern}
             or c.designation ilike ${pattern}
           )
-          and (${full} or exists (
-            select 1 from work_assignments wa
-            where wa.work_id = po.work_id and wa.user_id = ${userId}
-          ))
+          -- A deleted Work still hides its orders, which is what the
+          -- inner join used to say. Restated explicitly because the join
+          -- can no longer say it: an order with a Work must have found
+          -- that Work live.
+          and (po.work_id is null or w.id is not null)
+          -- The credit note's shape above, and for the same reason since
+          -- migration 0109: an order raised outside any LOA has no Work,
+          -- so an inner join would drop it from search entirely and the
+          -- work-scope arm has nothing to test it against. Every member
+          -- of the organisation sees it, exactly as they see the
+          -- budgetary quotations below.
+          and (
+            ${full}
+            or po.work_id is null
+            or exists (
+              select 1 from work_assignments wa
+              where wa.work_id = po.work_id and wa.user_id = ${userId}
+            )
+          )
         order by po.po_date desc, po.id
         limit ${GROUP_LIMIT + 1}
       `;

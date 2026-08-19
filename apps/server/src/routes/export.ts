@@ -1288,6 +1288,14 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select * from purchase_order_counters order by work_id`,
   },
   {
+    // The second purchase-order series (0109), for orders raised outside
+    // any LOA. Exported beside the per-Work one for the reason every
+    // counter here travels: a restore without it hands out `PO-01` a
+    // second time.
+    key: 'organisationPurchaseOrderCounters',
+    sql: `select * from organisation_purchase_order_counters order by organisation_id`,
+  },
+  {
     // Not a document series, but exported for the same reason every
     // other counter is: a restore that replayed the ledger without it
     // would start the next movement's position back at one and put two

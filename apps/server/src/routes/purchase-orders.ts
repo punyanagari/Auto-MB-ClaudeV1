@@ -4,7 +4,10 @@ import {
   PURCHASE_ORDER_STATUSES,
   PurchaseOrderDetailResponseSchema,
   PurchaseOrderListResponseSchema,
+  PurchaseOrderRegisterQuerySchema,
+  PurchaseOrderRegisterResponseSchema,
   SavePurchaseOrderLinesRequestSchema,
+  withKeysetQuery,
   type PurchaseOrder,
   type PurchaseOrderDetailResponse,
   type PurchaseOrderLine,
@@ -17,7 +20,8 @@ import { Type } from '@sinclair/typebox';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { auditDiff } from '../audit-diff.js';
 import type { Auth } from '../auth.js';
-import { assertWorkAccess, requireWriterRole } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope, requireWriterRole } from '../authz.js';
+import { keysetPage, sqlLimit } from '../pagination.js';
 import { draftConflictError, nameDraftConflict } from '../draft-conflict.js';
 import { assertGstRateNotified } from '../gst-rates.js';
 import { httpError } from '../http.js';
@@ -36,27 +40,48 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
 
 /**
  * Purchase orders (migration 0033; legacy spec §5.8): what the contractor
- * buys IN to supply a Work.
+ * buys IN.
  *
- * Draft (one per Work, no number) -> issued (gapless
- * `<work_code>-PO-NN` under the per-Work counter row lock, vendor
- * snapshotted, total frozen) -> closed once every line has been fully
- * received, or cancelled with a note it keeps forever. The whole posture —
- * one transaction per request, the document row locked before any state
+ * Draft (one per vendor per series, no number) -> issued (gapless number
+ * under a counter row lock, vendor snapshotted, total frozen) -> closed
+ * once every line has been fully received AND the vendor has billed for
+ * it, or cancelled with a note it keeps forever. The whole posture — one
+ * transaction per request, the document row locked before any state
  * transition, issue and cancel behind their explicit authorities, every
  * transition audited — is the delivery challan's (routes/challans.ts),
  * because a purchase order is the same kind of object: a numbered document
  * that leaves the building.
  *
- * CLOSING IS DERIVED, NEVER ASSERTED. A line is fully received when the
- * quantities on ISSUED delivery challan items pointing at it reach the
- * quantity ordered; an order closes only when no line is still owed
- * anything, and the refusal names every line that still is. The
- * received/pending balance is recomputed from live challan rows on EVERY
- * read — never stored — so a receipt released later (its challan
- * cancelled) shows up as pending again even on an order already recorded
- * as closed. The status records a transition that was true when it was
- * made; the balance is always the truth of now.
+ * TWO SERIES, ONE DOCUMENT (migration 0109). An order raised against an
+ * award carries `work_id` and is numbered `<work_code>-PO-NN` from
+ * `purchase_order_counters`, per Work. An order raised outside any LOA
+ * carries `work_id IS NULL` and is numbered `PO-NN` from
+ * `organisation_purchase_order_counters`, per organisation. Everything
+ * between those two facts is the same code path, which is the reason it
+ * is one module rather than two.
+ *
+ * AUTHORIZATION FOLLOWS THE WORK, AND THERE MAY BE NONE. Every route here
+ * used to call `assertWorkAccess` unconditionally; a work-less order has
+ * no Work whose assignment could be checked, so {@link assertOrderAccess}
+ * applies the wall exactly when there is a Work behind it. The role and
+ * authority gates are unchanged and apply to both kinds: a work-less
+ * order is not a less-protected order, it is an order the work-scope
+ * dimension does not describe. Tenancy is untouched — RLS is what stops
+ * one organisation reading another's, and it never consulted the Work.
+ *
+ * CLOSING IS DERIVED, NEVER ASSERTED, AND NOW TAKES TWO FACTS. A line is
+ * fully received when the quantities on ISSUED delivery challan items (or
+ * stock movements, per line) pointing at it reach the quantity ordered;
+ * an order closes only when no line is still owed anything AND a live
+ * vendor tax invoice carrying its uploaded document points at the order
+ * (owner ruling, 2026-08-19). The two refusals are named separately
+ * because their remedies are: `PO_NOT_FULLY_RECEIVED` is chased at the
+ * gate, `PO_NO_TAX_INVOICE` in the accounts inbox. The received/pending
+ * balance is recomputed from live rows on EVERY read — never stored — so
+ * a receipt released later (its challan cancelled) shows up as pending
+ * again even on an order already recorded as closed. The status records a
+ * transition that was true when it was made; the balance is always the
+ * truth of now.
  */
 
 /** `status=open` is the challan editor's filter: the orders a delivery
@@ -80,7 +105,9 @@ const ListQuerySchema = Type.Object(
 
 interface PurchaseOrderRow {
   id: string;
-  work_id: string;
+  /** Null on an order raised outside any LOA (migration 0109). */
+  work_id: string | null;
+  work_code: string | null;
   vendor_contact_id: string;
   vendor_designation: string;
   status: PurchaseOrderStatus;
@@ -91,6 +118,7 @@ interface PurchaseOrderRow {
   terms: string | null;
   total_amount: string | null;
   cancellation_note: string | null;
+  line_count: number;
   created_at: Date;
   issued_at: Date | null;
   closed_at: Date | null;
@@ -102,24 +130,33 @@ interface PurchaseOrderRow {
  * contact never rewrites history), the live contact master while the
  * order is still a draft and has snapshotted nothing. */
 const PO_COLUMNS = `
-  po.id, po.work_id, po.vendor_contact_id,
+  po.id, po.work_id, w.work_code,
+  po.vendor_contact_id,
   coalesce(po.vendor_snapshot->>'designation', c.designation) as vendor_designation,
   po.status, po.po_number, po.sequence_number, po.po_date::text as po_date,
   po.expected_on::text as expected_on, po.terms,
   po.total_amount::text as total_amount, po.cancellation_note,
+  (select count(*) from purchase_order_lines pol
+    where pol.purchase_order_id = po.id)::int as line_count,
   po.created_at, po.issued_at, po.closed_at, po.cancelled_at
 `;
 
+/** LEFT join on works, because migration 0109 made the Work optional: an
+ * inner join here would silently drop every work-less order from every
+ * read in this module. */
 const PO_FROM = `
   from purchase_orders po
   join contacts c on c.organisation_id = po.organisation_id
     and c.id = po.vendor_contact_id
+  left join works w on w.organisation_id = po.organisation_id
+    and w.id = po.work_id
 `;
 
 function toPurchaseOrder(row: PurchaseOrderRow): PurchaseOrder {
   return {
     id: row.id,
     workId: row.work_id,
+    workCode: row.work_code,
     vendorContactId: row.vendor_contact_id,
     vendorDesignation: row.vendor_designation,
     status: row.status,
@@ -130,6 +167,7 @@ function toPurchaseOrder(row: PurchaseOrderRow): PurchaseOrder {
     terms: row.terms,
     totalAmount: row.total_amount,
     cancellationNote: row.cancellation_note,
+    lineCount: row.line_count,
     createdAt: row.created_at.toISOString(),
     issuedAt: row.issued_at?.toISOString() ?? null,
     closedAt: row.closed_at?.toISOString() ?? null,
@@ -140,6 +178,7 @@ function toPurchaseOrder(row: PurchaseOrderRow): PurchaseOrder {
 interface LineRow {
   id: string;
   work_item_id: string | null;
+  production_item_id: string | null;
   line_number: number;
   description: string;
   hsn_code: string | null;
@@ -170,7 +209,8 @@ interface LineRow {
  */
 async function readLines(tx: TransactionSql, purchaseOrderId: string) {
   return (await tx.unsafe(
-    `select pol.id, pol.work_item_id, pol.line_number, pol.description,
+    `select pol.id, pol.work_item_id, pol.production_item_id, pol.line_number,
+            pol.description,
             pol.hsn_code, pol.unit_code, pol.quantity::text as quantity,
             pol.rate::text as rate, pol.gst_rate::text as gst_rate,
             pol.line_amount::text as line_amount,
@@ -189,6 +229,7 @@ function toLine(row: LineRow): PurchaseOrderLine {
   return {
     id: row.id,
     workItemId: row.work_item_id,
+    productionItemId: row.production_item_id,
     lineNumber: row.line_number,
     description: row.description,
     hsnCode: row.hsn_code,
@@ -247,6 +288,36 @@ async function lockPurchaseOrder(
   return row;
 }
 
+/** One draft per vendor per SERIES. Both partial unique indexes say so —
+ * `purchase_orders_one_draft_per_work_vendor` (0045) for the per-Work
+ * series and `purchase_orders_one_draft_per_vendor_org` (0109) for the
+ * organisation one — and the sentence names which series the caller is
+ * in, because "on this Work" is a lie on an order that has none. */
+function draftConflictMessage(workId: string | null): string {
+  return workId === null
+    ? 'This vendor already has a draft purchase order outside any Work; issue or delete it first.'
+    : 'This vendor already has a draft purchase order on this Work; issue or delete it first.';
+}
+
+/** The open draft this vendor already holds in the SAME series, or null.
+ * `is not distinct from` rather than `=` so a NULL Work matches a NULL
+ * Work: the org series is one bucket, and each Work is another. */
+async function findOpenDraft(
+  tx: TransactionSql,
+  workId: string | null,
+  vendorContactId: string,
+  excludingId?: string,
+): Promise<string | null> {
+  const [row] = await tx<{ id: string }[]>`
+    select id from purchase_orders
+    where work_id is not distinct from ${workId}
+      and vendor_contact_id = ${vendorContactId}
+      and status = 'draft'
+      and (${excludingId === undefined} or id <> ${excludingId ?? null})
+  `;
+  return row?.id ?? null;
+}
+
 function requireStatus(row: PurchaseOrderRow, status: PurchaseOrderStatus): void {
   if (row.status !== status) {
     throw httpError(
@@ -285,24 +356,58 @@ function trimmedText(
   return trimmed;
 }
 
+/**
+ * The work-scope wall, applied exactly where there is a Work to apply it
+ * to (migration 0109).
+ *
+ * A work-less purchase order is reachable by any member of the
+ * organisation whose role and authority the route already checked. That
+ * is not a relaxation of work-scope: work-scope answers "which Works may
+ * this member see", and an order raised outside any LOA is not in any
+ * Work's answer. RLS is what keeps it inside the organisation, and RLS
+ * never read the Work.
+ */
+export async function assertOrderAccess(
+  tx: TransactionSql,
+  userId: string,
+  workId: string | null,
+): Promise<void> {
+  if (workId === null) return;
+  await assertWorkAccess(tx, userId, workId);
+}
+
 /** Product contract, and the 0033 `purchase_orders_date_guard` trigger in
  * friendly form: an order is never dated in the future and never before
  * the Work's LOA letter date — a contractor cannot buy against an award
  * that did not exist yet. "Today" is the organisation's own timezone, not
- * the server clock. */
+ * the server clock.
+ *
+ * An order raised outside any LOA keeps the future bound and loses the
+ * lower one, because there is no award it could precede. Its today is
+ * read from the organisation directly, which is all the Work join was
+ * ever a route to. */
 export async function assertPurchaseOrderDate(
   tx: TransactionSql,
-  workId: string,
+  workId: string | null,
   poDate: string,
 ): Promise<void> {
-  const [bounds] = await tx<{ letter_date: string; today: string }[]>`
-    select w.letter_date::text as letter_date,
+  const [bounds] = await tx<
+    { work_id: string | null; letter_date: string | null; today: string }[]
+  >`
+    select w.id as work_id, w.letter_date::text as letter_date,
            (now() at time zone o.timezone)::date::text as today
-    from works w
-    join organisations o on o.id = w.organisation_id
-    where w.id = ${workId}
+    from organisations o
+    left join works w
+      on w.organisation_id = o.id and w.id = ${workId}
+    where o.id = (select app_private.current_organisation_id())
   `;
-  if (!bounds) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  // Existence is decided by the Work's own id, never by its letter date:
+  // `letter_date` is nullable and the 0033 trigger says so by returning
+  // early on a NULL one, so reading absence off that column would turn a
+  // Work with no letter on file into a Work that does not exist.
+  if (!bounds || (workId !== null && bounds.work_id === null)) {
+    throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+  }
   // ISO dates compare correctly as strings.
   if (poDate > bounds.today) {
     throw httpError(
@@ -311,7 +416,7 @@ export async function assertPurchaseOrderDate(
       `The purchase order date cannot be in the future (today is ${bounds.today}).`,
     );
   }
-  if (poDate < bounds.letter_date) {
+  if (bounds.letter_date !== null && poDate < bounds.letter_date) {
     throw httpError(
       400,
       'PO_DATE_INVALID',
@@ -442,7 +547,7 @@ async function writeLines(
   tx: TransactionSql,
   organisationId: string,
   purchaseOrderId: string,
-  workId: string,
+  workId: string | null,
   poDate: string,
   lines: readonly PurchaseOrderLineInput[],
 ): Promise<void> {
@@ -459,6 +564,7 @@ async function writeLines(
     readonly lineNumber: number;
     readonly label: string;
     readonly workItemId: string | undefined;
+    readonly productionItemId: string | null;
     readonly description: string;
     readonly unitCode: string;
     readonly hsnCode: string | null;
@@ -469,10 +575,22 @@ async function writeLines(
   const prepared: PreparedLine[] = lines.map((line, index) => {
     const lineNumber = index + 1;
     const label = `Line ${String(lineNumber)}`;
+    if (line.workItemId !== undefined && line.productionItemId !== undefined) {
+      // The two links are the two receipt channels (0087), and a line is
+      // received on exactly one. Refused here rather than resolved by
+      // precedence, because either precedence produces a line whose
+      // channel is not the one the operator picked.
+      throw httpError(
+        400,
+        'PO_LINE_INVALID',
+        `${label}: a line either buys a Work item, which arrives on a delivery challan, or a stock part, which arrives on the shelf — not both.`,
+      );
+    }
     return {
       lineNumber,
       label,
       workItemId: line.workItemId,
+      productionItemId: line.productionItemId ?? null,
       description: trimmedText(
         line.description,
         3,
@@ -501,6 +619,30 @@ async function writeLines(
     }
   }
 
+  // Every part named on a line, proved live in one statement. A retired
+  // part takes nothing more in (0087's own guard says so at the ledger),
+  // so ordering against one is refused where the operator can still do
+  // something about it rather than at the receipt weeks later.
+  const partLines = prepared.filter((line) => line.productionItemId !== null);
+  if (partLines.length > 0) {
+    const live = await tx<{ id: string }[]>`
+      select id from production_items
+      where id = any(${[...new Set(partLines.map((line) => line.productionItemId))]}::uuid[])
+        and active
+    `;
+    const liveIds = new Set(live.map((row) => row.id));
+    const missing = partLines.find(
+      (line) => line.productionItemId !== null && !liveIds.has(line.productionItemId),
+    );
+    if (missing !== undefined) {
+      throw httpError(
+        404,
+        'PRODUCTION_ITEM_NOT_FOUND',
+        `${missing.label}: no such live stock part.`,
+      );
+    }
+  }
+
   // quantity x rate wider than the numeric(18,2) amount column: a 22003
   // carries no HTTP status, so it would reach the operator as 'The
   // request could not be completed.' Name the offending line instead —
@@ -522,14 +664,16 @@ async function writeLines(
   if (manualLines.length > 0) {
     await tx`
       insert into purchase_order_lines (
-        organisation_id, purchase_order_id, work_item_id, line_number,
-        description, hsn_code, unit_code, quantity, rate, gst_rate,
-        line_amount
+        organisation_id, purchase_order_id, work_item_id, production_item_id,
+        line_number, description, hsn_code, unit_code, quantity, rate,
+        gst_rate, line_amount
       )
-      select ${organisationId}, ${purchaseOrderId}, null, l.line_number,
+      select ${organisationId}, ${purchaseOrderId}, null, l.production_item_id,
+             l.line_number,
              l.description, l.hsn_code, l.unit_code, l.quantity, l.rate,
              l.gst_rate, (l.quantity * l.rate)::numeric(18,2)
       from unnest(
+        ${manualLines.map((line) => line.productionItemId)}::uuid[],
         ${manualLines.map((line) => line.lineNumber)}::int[],
         ${manualLines.map((line) => line.description)}::text[],
         ${manualLines.map((line) => line.hsnCode)}::text[],
@@ -538,12 +682,24 @@ async function writeLines(
         ${manualLines.map((line) => line.rate)}::numeric(18,6)[],
         ${manualLines.map((line) => line.gstRate)}::numeric(5,2)[]
       ) as l(
-        line_number, description, hsn_code, unit_code, quantity, rate, gst_rate
+        production_item_id, line_number, description, hsn_code, unit_code,
+        quantity, rate, gst_rate
       )
     `.catch((error: unknown) => nameOverflow(error, manualLines));
   }
 
   const itemLines = prepared.filter((line) => line.workItemId !== undefined);
+  if (itemLines.length > 0 && workId === null) {
+    // Named rather than left to the join below to come up empty: with no
+    // Work there is no schedule these ids could belong to, and "the
+    // selected item does not belong to this Work" would be a refusal
+    // about a Work that is not there.
+    throw httpError(
+      409,
+      'PO_LINE_WORK_ITEM_WITHOUT_WORK',
+      `${itemLines[0]?.label ?? 'A line'}: this order is not raised against a Work, so its lines cannot name a Work item — describe what is being bought instead.`,
+    );
+  }
   if (itemLines.length > 0) {
     const inserted = await tx<{ work_item_id: string }[]>`
       insert into purchase_order_lines (
@@ -596,6 +752,7 @@ async function readLineInputs(
   const rows = await tx<
     {
       work_item_id: string | null;
+      production_item_id: string | null;
       description: string;
       hsn_code: string | null;
       unit_code: string;
@@ -604,7 +761,7 @@ async function readLineInputs(
       gst_rate: string | null;
     }[]
   >`
-    select work_item_id, description, hsn_code, unit_code,
+    select work_item_id, production_item_id, description, hsn_code, unit_code,
            quantity::text as quantity, rate::text as rate,
            gst_rate::text as gst_rate
     from purchase_order_lines
@@ -613,6 +770,7 @@ async function readLineInputs(
   `;
   return rows.map((row) => ({
     workItemId: row.work_item_id,
+    productionItemId: row.production_item_id,
     description: row.description,
     hsnCode: row.hsn_code,
     unitCode: row.unit_code,
@@ -644,7 +802,8 @@ export async function createPurchaseOrderDraft(
   input: {
     readonly organisationId: string;
     readonly userId: string;
-    readonly workId: string;
+    /** Null raises the order outside any LOA (migration 0109). */
+    readonly workId: string | null;
     readonly vendorContactId: string;
     readonly poDate: string;
     readonly expectedOn?: string | null;
@@ -668,11 +827,7 @@ export async function createPurchaseOrderDraft(
       // A concurrent create won between the pre-check and this insert;
       // the transaction is aborted, so the route-level catch names the
       // winner from a fresh read.
-      throw httpError(
-        409,
-        'PO_DRAFT_EXISTS',
-        'This vendor already has a draft purchase order on this Work; issue or delete it first.',
-      );
+      throw httpError(409, 'PO_DRAFT_EXISTS', draftConflictMessage(input.workId));
     }
     throw error;
   });
@@ -697,12 +852,172 @@ export async function createPurchaseOrderDraft(
 
 // --- Routes -----------------------------------------------------------------
 
+/**
+ * Which orders a member may see, as one SQL predicate over an alias bound
+ * to `purchase_orders`.
+ *
+ * Written once and used TWICE — for the register's rows and for its
+ * cursor — because those two predicates disagreeing is exactly the
+ * oracle `workScopedCursorRowId` exists to close: a cursor validated more
+ * widely than the rows it positions lets a caller binary-search a record
+ * they may not list. The shared helper cannot be used here because its
+ * predicate has no arm for a row with no Work, and a work-less order is
+ * in everyone's scope rather than nobody's.
+ *
+ * `$1` is the full-scope boolean and `$2` the user id; both are always
+ * bound parameters and `alias` is a fixed identifier from this file.
+ */
+function visibleOrderSql(alias: string): string {
+  return `(${alias}.work_id is null or $1::boolean or exists (
+     select 1 from work_assignments wa
+     where wa.work_id = ${alias}.work_id and wa.user_id = $2))`;
+}
+
 export function registerPurchaseOrderRoutes(
   app: AppInstance,
   auth: Auth,
   database: Sql,
 ): void {
   const tenantRoute = createTenantRouteRegistrar(app, auth, database);
+
+  // ------------------------------------------------------------------
+  // The organisation-wide register (migration 0109).
+  //
+  // Every order the caller may see, of both series, newest first. The
+  // Work's own Procurement tab keeps answering the narrower question and
+  // is untouched; `?work=` is that same narrowing expressed as a deep
+  // link, so a row's Work opens this register already filtered rather
+  // than sending the operator to a different screen.
+  // ------------------------------------------------------------------
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/purchase-orders',
+      schema: {
+        querystring: withKeysetQuery(PurchaseOrderRegisterQuerySchema),
+        response: { 200: PurchaseOrderRegisterResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ request, user, tenant }) => {
+      const query = request.query;
+      const statusFilter = query.status === 'open' ? 'issued' : (query.status ?? null);
+      const openOnly = query.status === 'open';
+      // `?work=` is a narrowing, so it implies the work basis; asking for
+      // both a Work and the organisation basis is a contradiction rather
+      // than an empty register, and the narrower of the two wins.
+      const basis = query.work !== undefined ? 'work' : (query.basis ?? null);
+      return tenant(async (tx) => {
+        const full = await hasFullWorkScope(tx, user.id);
+        // The cursor is proven against the SAME predicate the rows are.
+        let cursor: string | null = null;
+        if (query.cursor !== undefined) {
+          const [row] = (await tx.unsafe(
+            `select po.id from purchase_orders po
+             where po.id = $3 and ${visibleOrderSql('po')}`,
+            [full, user.id, query.cursor],
+          )) as unknown as { id: string }[];
+          if (!row) {
+            throw httpError(
+              400,
+              'CURSOR_INVALID',
+              'The pagination cursor does not name a row in this register.',
+            );
+          }
+          cursor = row.id;
+        }
+        const rows = (await tx.unsafe(
+          `select ${PO_COLUMNS} ${PO_FROM}
+             where ${visibleOrderSql('po')}
+               and ($3::uuid is null or po.work_id = $3)
+               and ($4::text is null
+                 or (case when $4 = 'work' then po.work_id is not null
+                          else po.work_id is null end))
+               and ($5::text is null or po.status = $5)
+               and (
+                 not $6::boolean
+                 or exists (
+                   select 1 from purchase_order_lines pol
+                   where pol.purchase_order_id = po.id
+                     and pol.quantity > ${receivedQuantitySql()}
+                 )
+               )
+               and ($7::uuid is null
+                 or (po.po_date, po.created_at, po.id) < (
+                   select c.po_date, c.created_at, c.id
+                   from purchase_orders c where c.id = $7::uuid))
+             order by po.po_date desc, po.created_at desc, po.id desc
+             limit $8`,
+          [
+            full,
+            user.id,
+            query.work ?? null,
+            basis,
+            statusFilter,
+            openOnly,
+            cursor,
+            sqlLimit(query.limit),
+          ],
+        )) as unknown as PurchaseOrderRow[];
+        const paged = keysetPage(rows, query.limit, (row) => row.id);
+        return {
+          purchaseOrders: paged.rows.map(toPurchaseOrder),
+          nextCursor: paged.nextCursor,
+        };
+      });
+    },
+  );
+
+  // A draft with no Work behind it. The per-Work POST is unchanged and
+  // sits below; this one differs only in what it does not do — no
+  // `assertWorkAccess`, no works row lock, no R8 check, because there is
+  // no Work to hold any of them against.
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/purchase-orders',
+      schema: {
+        body: CreatePurchaseOrderRequestSchema,
+        response: { 201: PurchaseOrderDetailResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const body = request.body;
+      const terms =
+        body.terms === undefined
+          ? null
+          : trimmedText(body.terms, 3, 4000, 'PO_TERMS_INVALID', 'The terms');
+
+      const detail = await tenant(async (tx) => {
+        await assertPurchaseOrderDate(tx, null, body.poDate);
+        await requireVendor(tx, body.vendorContactId);
+        const existingDraft = await findOpenDraft(tx, null, body.vendorContactId);
+        if (existingDraft !== null) {
+          throw draftConflictError(
+            'PO_DRAFT_EXISTS',
+            draftConflictMessage(null),
+            existingDraft,
+          );
+        }
+        const createdId = await createPurchaseOrderDraft(tx, {
+          organisationId,
+          userId: user.id,
+          workId: null,
+          vendorContactId: body.vendorContactId,
+          poDate: body.poDate,
+          expectedOn: body.expectedOn ?? null,
+          terms,
+        });
+        return readDetail(tx, createdId);
+      }).catch(async (error: unknown) => {
+        throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
+          tenant((tx) => findOpenDraft(tx, null, body.vendorContactId)),
+        );
+      });
+      return reply.status(201).send(detail);
+    },
+  );
+
   tenantRoute(
     {
       method: 'GET',
@@ -779,16 +1094,12 @@ export function registerPurchaseOrderRoutes(
         // One open draft per Work and vendor (0045 partial unique index):
         // independent vendors may be drafted in parallel, while the 409
         // names a duplicate for the same vendor.
-        const [existingDraft] = await tx<{ id: string }[]>`
-            select id from purchase_orders
-            where work_id = ${workId} and vendor_contact_id = ${body.vendorContactId}
-              and status = 'draft'
-          `;
-        if (existingDraft) {
+        const existingDraft = await findOpenDraft(tx, workId, body.vendorContactId);
+        if (existingDraft !== null) {
           throw draftConflictError(
             'PO_DRAFT_EXISTS',
-            'This vendor already has a draft purchase order on this Work; issue or delete it first.',
-            existingDraft.id,
+            draftConflictMessage(workId),
+            existingDraft,
           );
         }
 
@@ -804,15 +1115,7 @@ export function registerPurchaseOrderRoutes(
         return readDetail(tx, createdId);
       }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
-          tenant(async (tx) => {
-            const [row] = await tx<{ id: string }[]>`
-              select id from purchase_orders
-              where work_id = ${workId}
-                and vendor_contact_id = ${body.vendorContactId}
-                and status = 'draft'
-            `;
-            return row?.id ?? null;
-          }),
+          tenant((tx) => findOpenDraft(tx, workId, body.vendorContactId)),
         );
       });
       return reply.status(201).send(detail);
@@ -831,13 +1134,13 @@ export function registerPurchaseOrderRoutes(
     async ({ request, user, tenant }) => {
       const { id } = request.params;
       return tenant(async (tx) => {
-        const [ref] = await tx<{ work_id: string }[]>`
+        const [ref] = await tx<{ work_id: string | null }[]>`
           select work_id from purchase_orders where id = ${id}
         `;
         if (!ref) {
           throw httpError(404, 'PURCHASE_ORDER_NOT_FOUND', 'No such purchase order.');
         }
-        await assertWorkAccess(tx, user.id, ref.work_id);
+        await assertOrderAccess(tx, user.id, ref.work_id);
         return readDetail(tx, id);
       });
     },
@@ -863,24 +1166,24 @@ export function registerPurchaseOrderRoutes(
       return tenant(async (tx) => {
         await requireWriterRole(tx, user.id);
         const order = await lockPurchaseOrder(tx, id);
-        await assertWorkAccess(tx, user.id, order.work_id);
+        await assertOrderAccess(tx, user.id, order.work_id);
         // An issued order is a document that left the building: no edits,
         // ever (rule 7). The 0033 line trigger backstops the same rule for
         // the lines against every writer.
         requireStatus(order, 'draft');
         await assertPurchaseOrderDate(tx, order.work_id, body.poDate);
         const vendor = await requireVendor(tx, body.vendorContactId);
-        const [existingDraft] = await tx<{ id: string }[]>`
-          select id from purchase_orders
-          where work_id = ${order.work_id}
-            and vendor_contact_id = ${body.vendorContactId}
-            and status = 'draft' and id <> ${id}
-        `;
-        if (existingDraft) {
+        const existingDraft = await findOpenDraft(
+          tx,
+          order.work_id,
+          body.vendorContactId,
+          id,
+        );
+        if (existingDraft !== null) {
           throw draftConflictError(
             'PO_DRAFT_EXISTS',
-            'This vendor already has a draft purchase order on this Work; issue or delete it first.',
-            existingDraft.id,
+            draftConflictMessage(order.work_id),
+            existingDraft,
           );
         }
         await tx`
@@ -893,7 +1196,7 @@ export function registerPurchaseOrderRoutes(
             throw httpError(
               409,
               'PO_DRAFT_EXISTS',
-              'This vendor already has a draft purchase order on this Work; issue or delete it first.',
+              draftConflictMessage(order.work_id),
             );
           }
           throw error;
@@ -925,15 +1228,11 @@ export function registerPurchaseOrderRoutes(
       }).catch(async (error: unknown) => {
         throw await nameDraftConflict(error, 'PO_DRAFT_EXISTS', () =>
           tenant(async (tx) => {
-            const [row] = await tx<{ id: string }[]>`
-              select id from purchase_orders
-              where work_id = (
-                select work_id from purchase_orders where id = ${id}
-              )
-                and vendor_contact_id = ${body.vendorContactId}
-                and status = 'draft' and id <> ${id}
+            const [self] = await tx<{ work_id: string | null }[]>`
+              select work_id from purchase_orders where id = ${id}
             `;
-            return row?.id ?? null;
+            if (!self) return null;
+            return findOpenDraft(tx, self.work_id, body.vendorContactId, id);
           }),
         );
       });
@@ -956,7 +1255,7 @@ export function registerPurchaseOrderRoutes(
       const body = request.body;
       return tenant(async (tx) => {
         const order = await lockPurchaseOrder(tx, id);
-        await assertWorkAccess(tx, user.id, order.work_id);
+        await assertOrderAccess(tx, user.id, order.work_id);
         requireStatus(order, 'draft');
         const linesBefore = await readLineInputs(tx, id);
         await writeLines(
@@ -1003,7 +1302,7 @@ export function registerPurchaseOrderRoutes(
       const { id } = request.params;
       await tenant(async (tx) => {
         const order = await lockPurchaseOrder(tx, id);
-        await assertWorkAccess(tx, user.id, order.work_id);
+        await assertOrderAccess(tx, user.id, order.work_id);
         // Rule 8: a draft is not yet a document, so it is deleted rather
         // than cancelled. Anything issued keeps its number forever.
         requireStatus(order, 'draft');
@@ -1040,20 +1339,26 @@ export function registerPurchaseOrderRoutes(
       const { id } = request.params;
       const detail = await tenant(async (tx) => {
         const order = await lockPurchaseOrder(tx, id);
-        await assertWorkAccess(tx, user.id, order.work_id);
+        await assertOrderAccess(tx, user.id, order.work_id);
         requireStatus(order, 'draft');
 
         // Lock order works -> counter matches every other numbering
         // writer, so an issue and a Work completion serialise instead of
-        // deadlocking.
-        const [work] = await tx<{ work_code: string; status: string }[]>`
-            select work_code, status from works
-            where id = ${order.work_id} and deleted_at is null
-            for update
-          `;
-        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        // R8: a completed Work accepts no new procurement.
-        assertWorkOperable(work.status, 'issuing a purchase order');
+        // deadlocking. An order raised outside any LOA has no Work to
+        // lock and no R8 to satisfy; its serialisation point is its own
+        // counter row, taken below.
+        let workCode: string | null = null;
+        if (order.work_id !== null) {
+          const [work] = await tx<{ work_code: string; status: string }[]>`
+              select work_code, status from works
+              where id = ${order.work_id} and deleted_at is null
+              for update
+            `;
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          // R8: a completed Work accepts no new procurement.
+          assertWorkOperable(work.status, 'issuing a purchase order');
+          workCode = work.work_code;
+        }
 
         const [lineCount] = await tx<{ total: string }[]>`
             select count(*)::text as total from purchase_order_lines
@@ -1077,19 +1382,38 @@ export function registerPurchaseOrderRoutes(
             from purchase_order_lines where purchase_order_id = ${id}
           `;
 
-        // Serialised per-Work numbering: the counter row lock orders
-        // concurrent issues, and a rolled-back transaction rolls the
-        // counter back with it, so numbers are gapless per Work.
-        const [counter] = await tx<{ next_value: number }[]>`
-            insert into purchase_order_counters (organisation_id, work_id)
-            values (${organisationId}, ${order.work_id})
-            on conflict (organisation_id, work_id)
-            do update set next_value = purchase_order_counters.next_value + 1
-            returning next_value
-          `;
+        // Serialised numbering: the counter row lock orders concurrent
+        // issues, and a rolled-back transaction rolls the counter back
+        // with it, so numbers are gapless within their series.
+        //
+        // TWO SERIES, PICKED BY THE ORDER'S OWN SHAPE (migration 0109).
+        // An order against an award numbers per Work; one raised outside
+        // any LOA numbers per organisation, exactly as the budgetary
+        // quotation — the other work-less document in this module — has
+        // since 0033. The two cannot collide inside the unique index on
+        // (organisation_id, po_number), because a work code is never
+        // empty and `PO-01` is therefore never `<code>-PO-01`.
+        const [counter] =
+          order.work_id === null
+            ? await tx<{ next_value: number }[]>`
+                insert into organisation_purchase_order_counters (organisation_id)
+                values (${organisationId})
+                on conflict (organisation_id)
+                do update set
+                  next_value = organisation_purchase_order_counters.next_value + 1
+                returning next_value
+              `
+            : await tx<{ next_value: number }[]>`
+                insert into purchase_order_counters (organisation_id, work_id)
+                values (${organisationId}, ${order.work_id})
+                on conflict (organisation_id, work_id)
+                do update set next_value = purchase_order_counters.next_value + 1
+                returning next_value
+              `;
         if (!counter) throw new Error('counter upsert returned no row');
         const sequence = counter.next_value;
-        const poNumber = `${work.work_code}-PO-${String(sequence).padStart(2, '0')}`;
+        const suffix = `PO-${String(sequence).padStart(2, '0')}`;
+        const poNumber = workCode === null ? suffix : `${workCode}-${suffix}`;
 
         await tx`
             update purchase_orders
@@ -1147,7 +1471,7 @@ export function registerPurchaseOrderRoutes(
       const note = cancellationNote(body.note);
       return tenant(async (tx) => {
         const order = await lockPurchaseOrder(tx, id);
-        await assertWorkAccess(tx, user.id, order.work_id);
+        await assertOrderAccess(tx, user.id, order.work_id);
         // Only an issued order cancels: a draft is deleted (rule 8), and a
         // closed one is finished. Receipts already recorded against the
         // order's lines are NOT disturbed — the delivered material is the
@@ -1192,7 +1516,7 @@ export function registerPurchaseOrderRoutes(
         // only when the receipts already say the order is complete, so it
         // is a writer action rather than an issue/cancel authority.
         const order = await lockPurchaseOrder(tx, id);
-        await assertWorkAccess(tx, user.id, order.work_id);
+        await assertOrderAccess(tx, user.id, order.work_id);
         requireStatus(order, 'issued');
 
         // Row-lock every challan that has fed this order, so a receipt
@@ -1245,6 +1569,37 @@ export function registerPurchaseOrderRoutes(
             'PO_NOT_FULLY_RECEIVED',
             `A purchase order closes only when every line has been received against an issued delivery challan — still open: ${names}.`,
             details,
+          );
+        }
+
+        // THE SECOND HALF OF THE CLOSE RULE (owner ruling 2026-08-19,
+        // migration 0109). Material arriving and the vendor billing for
+        // it are independent facts, so they are independent refusals: an
+        // operator who has taken delivery of everything and is waiting on
+        // the invoice must be told that, not told to check the gate
+        // again. A cancelled invoice does not count — it is a bill this
+        // organisation has said it does not owe — and neither does one
+        // recorded without its paper, because evidence nobody can produce
+        // is not evidence. `app_private.guard_purchase_order_close_evidence`
+        // holds the same rule against every other writer and under the
+        // concurrency this read cannot see.
+        const [evidence] = await tx<{ live: string; documented: string }[]>`
+          select
+            count(*) filter (where cancelled_at is null)::text as live,
+            count(*) filter (
+              where cancelled_at is null and object_key is not null
+            )::text as documented
+          from vendor_invoices where purchase_order_id = ${id}
+        `;
+        if (evidence?.documented === '0') {
+          throw httpError(
+            409,
+            'PO_NO_TAX_INVOICE',
+            evidence.live === '0'
+              ? "A purchase order closes only against the vendor's tax invoice, and none has been recorded against this order."
+              : evidence.live === '1'
+                ? "A purchase order closes only against the vendor's tax invoice, and the one recorded against this order carries no uploaded invoice document."
+                : `A purchase order closes only against the vendor's tax invoice, and none of the ${evidence.live} recorded against this order carries an uploaded invoice document.`,
           );
         }
 

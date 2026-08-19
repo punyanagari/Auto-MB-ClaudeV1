@@ -1307,6 +1307,44 @@ const WARRANTY_REGISTER = {
   nextCursor: null,
 };
 
+/* The purchase-order register (migration 0109), drawn with both series on
+   screen at once: the tab counts are the only place the register puts a
+   number in a control, and the Against column is the only cell whose two
+   shapes differ — a linked Work code, and the plain word for an order
+   raised outside any LOA. Four statuses, so every chip tone the register
+   can show is scanned in both themes. */
+export const PURCHASE_ORDER_REGISTER = {
+  purchaseOrders: (
+    [
+      ['issued', 'PL270-CRB-PO-01', '33333333-3333-4333-8333-333333333333'],
+      ['closed', 'PL270-CRB-PO-02', '33333333-3333-4333-8333-333333333333'],
+      ['draft', null, null],
+      ['cancelled', 'PO-01', null],
+    ] as const
+  ).map(([status, poNumber, workId], index) => ({
+    id: `4444444${String(index)}-4444-4444-8444-444444444444`,
+    workId,
+    workCode: workId === null ? null : 'PL270-CRB',
+    vendorContactId: '55555555-5555-4555-8555-555555555555',
+    vendorDesignation: 'Bharat Cables Pvt Ltd',
+    status,
+    poNumber,
+    sequenceNumber: poNumber === null ? null : index + 1,
+    poDate: '2026-08-01',
+    expectedOn: '2026-08-20',
+    terms: null,
+    totalAmount: poNumber === null ? null : '184000.00',
+    cancellationNote:
+      status === 'cancelled' ? 'Vendor withdrew the quoted rate.' : null,
+    lineCount: 3,
+    createdAt: '2026-08-01T05:00:00.000Z',
+    issuedAt: poNumber === null ? null : '2026-08-01T06:00:00.000Z',
+    closedAt: status === 'closed' ? '2026-08-14T06:00:00.000Z' : null,
+    cancelledAt: status === 'cancelled' ? '2026-08-15T06:00:00.000Z' : null,
+  })),
+  nextCursor: null,
+};
+
 /* The Work's own defect liability card, scanned inside the Instruments
    tab. Drawn with a guarantee that lapses BEFORE the warranty does, so
    the shortfall chip — the one warning tint this card carries — is on
@@ -2178,6 +2216,9 @@ export async function mockWorkspace(
   );
   await page.route(/\/api\/works\/[^/]+\/warranty(\?|$)/, (route) =>
     route.fulfill(json(WORK_WARRANTY)),
+  );
+  await page.route('**/api/purchase-orders*', (route) =>
+    route.fulfill(json(PURCHASE_ORDER_REGISTER)),
   );
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),

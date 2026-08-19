@@ -2204,10 +2204,42 @@ filter and the challan editor's over-receipt warning, so three readers cannot
 disagree about what has arrived.
 
 **A job card serving a private purchase order cannot raise one.** A purchase
-order belongs to a Work — its number is per Work, its authorization is per
-Work — and a private job card has none. The refusal says so; relaxing it is a
-numbering-and-authorization change to an issued-document surface and belongs
-in its own change.
+order belonged to a Work — its number was per Work, its authorization was per
+Work — and a private job card has none. That refusal stood until migration
+0109, which is the change 0087 said would need its own pack. It stays worded
+as a refusal here because the shortage-to-order conversion still needs a Work
+to convert INTO: the order it drafts buys for the contract the job card
+serves, and a job card with no contract has no such order to extend. What
+0109 added is the other direction — an order raised deliberately outside any
+LOA, from the register rather than from a shortage.
+
+**A purchase order may be raised outside any LOA (migration 0109, owner
+ruling of 2026-08-19).** `purchase_orders.work_id` is nullable. An order
+against an award is unchanged in every respect: same per-Work counter, same
+`<work_code>-PO-NN`, same work-scope wall, same R8 refusal on a completed
+Work. An order with no Work carries none of those, because there is no Work
+to carry them against — it is numbered `PO-NN` from a second, independent
+organisation-wide counter, it is visible to every member of the organisation
+(work-scope answers "which Works may this member see", and this order is in
+no Work's answer), its date has a future bound but no LOA letter to be
+after, and its lines cannot name a Work item. It is received onto the stock
+shelf, never onto a delivery challan, because a challan belongs to a Work.
+The two number series cannot collide: a work code is never empty, so
+`PO-01` is never `<code>-PO-01`.
+
+**Closing ANY purchase order requires the vendor's tax invoice (owner
+amendment of 2026-08-19).** Closing has always been derived — an order
+closes when its lines are received — and the ruling adds a second,
+independent condition: at least one live vendor invoice linked to the order,
+carrying its uploaded PDF. The two are separate refusals because the
+remedies are separate: material still owed is chased at the gate, a missing
+bill in the accounts inbox. A cancelled invoice does not count, and neither
+does one recorded without its paper — evidence nobody can produce is not
+evidence. `vendor_invoices` (§5.7's liability register) gained the optional
+order link and the document to carry it; the invoice rides the existing
+payments and TDS machinery unchanged. Both the route and a database trigger
+hold the rule, and both the link and the document freeze once written, so a
+closed order's evidence cannot be re-pointed afterwards.
 
 **Stock is organisation-level, and a Work is not.** One shelf serves every
 contract, so the register and the ledger are visible to every member. Every

@@ -56,6 +56,8 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'installations', workId: null } },
   { view: { name: 'installations', workId: WORK_ID } },
   { view: { name: 'upload', tenderId: TENDER_ID } },
+  { view: { name: 'purchase-orders', workId: null } },
+  { view: { name: 'purchase-orders', workId: WORK_ID } },
   { view: { name: 'stock' } },
   { view: { name: 'stock-shortages' } },
   { view: { name: 'employees' } },

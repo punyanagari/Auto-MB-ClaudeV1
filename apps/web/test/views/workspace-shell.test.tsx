@@ -292,6 +292,10 @@ describe('OperationsWorkspace mobile shell', () => {
       // its rail and this build had no route for it until the ledger
       // landed.
       'Inventory',
+      // Purchase orders (migration 0109). The mock draws it directly
+      // after Inventory under Operations and this build had no route for
+      // it until the work-less order landed.
+      'Purchase orders',
       // Maintenance (migration 0088). The mock draws it in its rail and
       // this build had no route for it until the site material request
       // landed.
@@ -346,6 +350,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Warranties', '#/warranties'],
       ['Inspection', '#/inspection'],
       ['Inventory', '#/inventory'],
+      ['Purchase orders', '#/purchase-orders'],
       ['Maintenance', '#/maintenance'],
       ['Global search', '#/search'],
       ['Employees', '#/employees'],

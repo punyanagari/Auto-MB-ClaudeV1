@@ -196,6 +196,11 @@ const Imports = lazy(() =>
 const Warranties = lazy(() =>
   import('./Warranties.js').then((module) => ({ default: module.Warranties })),
 );
+const PurchaseOrders = lazy(() =>
+  import('./PurchaseOrders.js').then((module) => ({
+    default: module.PurchaseOrders,
+  })),
+);
 const StockRegister = lazy(() =>
   import('./StockRegister.js').then((module) => ({ default: module.StockRegister })),
 );
@@ -1381,6 +1386,26 @@ export function OperationsWorkspace({
                 }}
                 onClearWorkFilter={() => {
                   navigate({ name: 'warranties', workId: null });
+                }}
+              />
+            )}
+
+            {view.name === 'purchase-orders' && (
+              <PurchaseOrders
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                canCreate={canModify}
+                canIssue={canIssue}
+                canCancel={canCancel}
+                onOpenWork={(openWorkId) => {
+                  navigate(
+                    { name: 'work', workId: openWorkId },
+                    { workTab: 'procurement' },
+                  );
+                }}
+                onClearWorkFilter={() => {
+                  navigate({ name: 'purchase-orders', workId: null });
                 }}
               />
             )}
