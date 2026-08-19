@@ -99,8 +99,6 @@ const NON_TIMELINE: Record<string, string> = {
   import_batches: 'The v1 import CLI’s own batch bookkeeping, org-level.',
   loa_documents:
     'KNOWN GAP (pre-timeline): contract-source uploads are Work-linked but never joined the timeline.',
-  extension_requests:
-    'KNOWN GAP (pre-timeline): completion extensions are Work-linked but never joined the timeline.',
   purchase_orders:
     'KNOWN GAP (pre-timeline): procurement is Work-linked but never joined the timeline.',
   budgetary_quotations:
@@ -135,6 +133,21 @@ const NON_TIMELINE: Record<string, string> = {
  * fails here and earns either a rewrite to a literal or an entry with a
  * reason.
  */
+/**
+ * Entity types the timeline still SHOWS, and deliberately keeps a scoping
+ * arm and a label for, that nothing writes any more.
+ *
+ * The `unwritten` assertion below exists to catch a RENAME that silently
+ * emptied part of the timeline. A writer retired on purpose is the other
+ * way that list can go quiet, and the two want opposite outcomes: a
+ * rename should fail loudly, a retirement should leave the history it
+ * already wrote readable. An entry here is the second case, stated.
+ */
+const RETIRED_WRITERS: Readonly<Record<string, string>> = {
+  mb_entries:
+    'The loose site-measurement register lost its writer on 2026-08-19 (owner-sanctioned): ADR-0006 decision 2 had already replaced its billing role with bills raised from a finalized Measurement Book. The rows recorded before then are part of what happened to those Works, so the scoping arm, the contract entry and the web label all stay — only new events stop arriving.',
+};
+
 const DYNAMIC_SITES: Record<
   string,
   { readonly sites: number; readonly reason: string }
@@ -264,9 +277,16 @@ describe('audit-events timeline census', () => {
     );
     expect(staleExceptions, 'stale NON_TIMELINE entries — prune them').toEqual([]);
     const unwritten = TIMELINE_ENTITY_TYPES.filter(
-      (entity) => !entityTypes.has(entity),
+      (entity) => !entityTypes.has(entity) && RETIRED_WRITERS[entity] === undefined,
     );
     expect(unwritten, 'whitelisted entity types nothing writes').toEqual([]);
+    const revivedWriters = Object.keys(RETIRED_WRITERS).filter((entity) =>
+      entityTypes.has(entity),
+    );
+    expect(
+      revivedWriters,
+      'a "retired" writer is writing again — prune RETIRED_WRITERS',
+    ).toEqual([]);
   });
 
   /**

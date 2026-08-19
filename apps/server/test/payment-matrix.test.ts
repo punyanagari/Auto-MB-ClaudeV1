@@ -45,8 +45,13 @@ describe('resolvePaymentPercentages', () => {
     });
   });
 
-  it('resolves an uncategorised item through the UNCATEGORISED row', () => {
-    const resolution = resolvePaymentPercentages([SUPPLY_ROW, UNCATEGORISED_ROW], null);
+  it('resolves an UNCATEGORISED item through the residual row', () => {
+    // UNCATEGORISED is a CHOICE since migration 0105 — an item carries
+    // it, and it resolves like any other category.
+    const resolution = resolvePaymentPercentages(
+      [SUPPLY_ROW, UNCATEGORISED_ROW],
+      'UNCATEGORISED',
+    );
     expect(resolution).toEqual({
       resolved: true,
       category: 'UNCATEGORISED',
@@ -74,12 +79,18 @@ describe('resolvePaymentPercentages', () => {
     });
   });
 
-  it('fails precisely when an uncategorised item has no UNCATEGORISED row', () => {
-    const resolution = resolvePaymentPercentages([SUPPLY_ROW], null);
-    expect(resolution).toEqual({
-      resolved: false,
-      missingCategory: 'UNCATEGORISED',
-    });
+  it('refuses an item with no category chosen, however full the matrix', () => {
+    // NULL means NOT SELECTED (migration 0105). It resolves through
+    // nothing — not even the residual row, which is what it used to fall
+    // through to — so a matrix carrying every row in the vocabulary
+    // still cannot price it. `missingCategory: null` says there is no
+    // row to add; the remedy is a decision on the item.
+    for (const matrix of [[SUPPLY_ROW], [SUPPLY_ROW, UNCATEGORISED_ROW], []]) {
+      expect(resolvePaymentPercentages(matrix, null)).toEqual({
+        resolved: false,
+        missingCategory: null,
+      });
+    }
   });
 
   it('resolves against an empty matrix as missing, not as zero percentages', () => {

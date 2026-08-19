@@ -9,7 +9,7 @@ import {
   DateOnlySchema,
   GST_STATE_NAMES,
   ProposeAmendmentRequestSchema,
-  RecordMbEntryRequestSchema,
+  PositiveDecimalStringSchema,
   RejectAmendmentRequestSchema,
   RoundOffStringSchema,
   SaveBudgetaryQuotationLinesRequestSchema,
@@ -232,26 +232,20 @@ describe('issue challan line quantities', () => {
   });
 });
 
-describe('measurement book entries', () => {
-  const entry = (measuredQuantity: string): unknown => ({
-    workItemId: UUID,
-    measuredQuantity,
-    measuredOn: '2026-01-15',
-  });
-
+describe('measured quantities', () => {
+  // Asserted over the primitive itself. These two cases used to run
+  // against `RecordMbEntryRequestSchema`, whose route was removed on
+  // 2026-08-19 — but the rule they pin is the primitive's, and it still
+  // guards every measured quantity on the wire.
   it('accepts a real site measurement', () => {
     for (const quantity of ['0.001', '12.500', '900']) {
-      expect(Value.Check(RecordMbEntryRequestSchema, entry(quantity)), quantity).toBe(
-        true,
-      );
+      expect(Value.Check(PositiveDecimalStringSchema, quantity), quantity).toBe(true);
     }
   });
 
   it('refuses a zero or negative measured quantity', () => {
     for (const quantity of ['0', '0.000', '-1', '-0.001']) {
-      expect(Value.Check(RecordMbEntryRequestSchema, entry(quantity)), quantity).toBe(
-        false,
-      );
+      expect(Value.Check(PositiveDecimalStringSchema, quantity), quantity).toBe(false);
     }
   });
 });

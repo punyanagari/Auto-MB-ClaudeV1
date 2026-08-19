@@ -346,6 +346,21 @@ export function resolveFinalBillBase(input: FinalBillBaseInput): FinalBillBaseRe
     case 'AMC':
       branch = 'certified';
       break;
+    // The residual category and "nothing chosen yet" take the same
+    // branch, and they take it for the same reason: neither says what
+    // the item MOVES on, so the description is the only evidence there
+    // is. Migration 0105 split them apart as billing STATES — an
+    // UNCATEGORISED item bills through the Work's residual row, a NULL
+    // one bills nothing until it is answered — but that split says
+    // nothing about which quantity a final bill is earned on, so the
+    // reading here is deliberately shared rather than duplicated.
+    //
+    // A NULL item never actually reaches this function today: it fails
+    // to resolve percentages first and the Measurement Book refuses to
+    // finalize. The arm stays because the draft PREVIEW computes before
+    // it refuses, and a preview that threw would answer a 500 where the
+    // operator should be reading the list of items to categorise.
+    case 'UNCATEGORISED':
     case null:
       branch = input.description.toLowerCase().includes('installation')
         ? 'installed'
