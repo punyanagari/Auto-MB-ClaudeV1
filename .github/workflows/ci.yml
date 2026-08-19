@@ -89,12 +89,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      # The browser download has been observed to hang indefinitely on a
-      # stalled connection (2026-08-19: three consecutive runs sat in this
-      # step until the job budget killed them, where the same step took
-      # ~40s that morning). Two defences: a cache so a populated runner
-      # never downloads at all, and a per-attempt timeout with retries so
-      # a stalled attempt dies in four minutes instead of eating the job.
+      # No --with-deps: it shells out to apt-get, which blocks forever
+      # when the runner image's own background apt process holds the lock
+      # (2026-08-19: three runs sat in this step until the job budget
+      # killed them; the bounded rerun surfaced "Unable to lock
+      # /var/lib/apt/lists/"). GitHub's Ubuntu images already carry every
+      # Chromium system dependency, so apt buys nothing here. The cache
+      # skips the download on a populated runner, and the per-attempt
+      # timeout kills a stalled download in four minutes, not a job.
       - name: Cache Playwright browsers
         # v4.3.0, pinned by commit like every other action here
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -105,7 +107,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             if timeout --kill-after=10 240 \
-              pnpm --filter @auto-mb/web exec playwright install --with-deps chromium; then
+              pnpm --filter @auto-mb/web exec playwright install chromium; then
               exit 0
             fi
             echo "playwright install attempt ${attempt} failed or stalled; retrying" >&2
