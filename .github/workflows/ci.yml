@@ -79,7 +79,11 @@ jobs:
   # integration tests prove that).
   accessibility:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 minutes lasted until the Wave D/E merge grew the suite to 34
+    # journeys including the deliberately-slow offline service-worker
+    # walk; the first post-merge dispatch timed out at 15:15. Sized to
+    # the measured need plus headroom, not doubled on reflex.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -256,7 +260,10 @@ jobs:
   restore-fresh-cluster:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 minutes lasted until the Wave D/E merge took the migration set
+    # from 91 files to 99 and widened the restored surface; the first
+    # post-merge dispatch timed out at 15:17.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17-alpine
