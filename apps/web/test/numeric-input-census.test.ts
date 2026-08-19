@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest';
  *
  * A shared control that half the fields use is a convention, not a rule,
  * and the fields that opt out are exactly the ones nobody notices: the
- * sweep that introduced the primitive converted 73 of them, and the
- * seventy-fourth is the one a later change adds by copying the input two
+ * sweep that introduced the primitive converted 72 of them, and the
+ * seventy-third is the one a later change adds by copying the input two
  * lines above it. So the source is counted here rather than reviewed by
  * eye. A new `type="number"`, or a new hand-rolled `inputMode="decimal"`
  * input, fails this file.

@@ -1729,14 +1729,97 @@ mock might put it in the topbar — and the staleness sentence, which the
 mock might make a chip. Neither is load-bearing; the caching rules and the
 write refusal are.
 
-### 24. Installation recording, and number-only fields — APPROVED
+### 24. Live-testing corrections, 2026-08-19 — APPROVED
+
+Six owner-ruled corrections from live testing. Every one of them is
+app-side: the mock draws no Work that can be configured, no payment
+matrix with data behind it, and no LOA review screen, so none of these
+has a mock counterpart to replicate and none is a departure from one.
+They are recorded here rather than round-tripped through v0, on the
+precedent of §§ 3 and 5.
+
+**Excess-delivery toggle moves to the Deliveries tab.** It sat in the
+Work header as the only control amid a strip of read-only figures, which
+made a per-Work setting look like a Work-wide one. The cap it lifts is
+the delivery cap and nothing else (migration 0046; installation has been
+outside it since 0077), so it now sits above the deliveries it governs.
+Same route, same owner-only gate, same toast copy, same quiet
+label-and-control row. Non-owners still read Allowed / Not allowed in
+the same place.
+
+**Item numbers sort naturally.** `item_number` is text, so
+`ORDER BY item_number` reads A1/1, A1/10, A1/11, A1/2 — an order no
+schedule is written in, and one an operator reconciling a printed letter
+has to hunt through past the ninth row. One comparator
+(`compareItemNumbers`, `@auto-mb/contracts`) now decides the reading for
+both sides of the wire. The LOA review screen's item editor is
+deliberately NOT re-sorted: its item numbers are editable text, and a
+table that re-ordered itself between keystrokes would be worse than the
+order it fixed. Its rows arrive in the letter's printed order already.
+
+**Bounded control columns.** A `wrapCell` description beside a `<select>`
+starved the select to nothing: auto table layout ignores a cell's
+`max-width` when it distributes columns, and `globals.css` gives every
+control `min-width: 0`, so the prose took the whole budget and ran on
+underneath. `controlCell` (`ui/table.tsx`) puts a MIN-width on the
+control's cell, which auto layout does honour. Applied everywhere a
+control shares a table row with free text: the payment matrix, the
+payment-setup dialog, the LOA review item editor, the challan editor,
+the inspection-clause table (whose description cell was not even
+`wrapCell` — it is now), and both selects on the Members matrix.
+
+**Completion date proposed from the letter.** The parser has always read
+the completion period and nothing consumed it. The review screen now
+proposes letter date + N months, states the derivation under the field,
+and leaves it overwritable or blank. It follows a CORRECTED letter date
+— the field is the derivation until the reviewer types a date of their
+own, and from that moment it is theirs and stops moving. Calendar months with month-end
+clamping — 31 January plus one month is 28 February — because liquidated
+damages are counted from this date.
+
+**Payment matrix stages autofill to zero.** A row saves only at an exact
+sum of 100, so once the typed stages reach 100 every remaining stage can
+only be 0. The form fills them rather than holding the row refused while
+the operator types three zeros to agree with it. Ordinary editable
+values: typing over one takes the sum off 100 and stops any further
+filling.
+
+**Not selected, and a residual category with a name.** The item-category
+select's blank option was called "Uncategorised" and resolved, silently,
+through the Work's UNCATEGORISED matrix row — so an item nobody had
+looked at and an item deliberately parked in the residual bucket were
+the same choice, and the setup dialog's "still uncategorised" count
+never reached zero on a Work that was fully configured. The blank option
+is now **Not selected**: it saves, it demands no matrix row, and it
+bills nothing until it is answered — the Measurement Book names the item
+at finalisation, which is the refusal that was always the net.
+UNCATEGORISED is a choice of its own, and its matrix row carries a
+per-Work editable name, because railway schedules call their residual
+bucket "Other items", "Miscellaneous" or "Balance work" and the operator
+should read the schedule's own word. That name is what every surface
+shows — the matrix row header, the item-category select, the stage
+inputs' accessible labels, the setup dialog, the billing-readiness
+checklist and the Work's own configuration banner — because one screen
+calling it two things is worse than not renaming it at all. Display
+only; the key never moves.
+
+The Work's configuration banner and the billing-readiness checklist each
+grew a SECOND line for the same reason: "no matrix row for X" and "no
+category chosen" are different failures with different remedies, and
+readiness reported green on the second because it was reading it as the
+first.
+
+**The Remedy column leaves the unfinished-items worklist.** The
+quantities stay and say the same thing in less space.
+
+### 25. Installation recording, and number-only fields — APPROVED
 
 **Status: APPROVED, owner ruling of 2026-08-19**, items 10, 11 and 12 of the
 live-testing corrections ledger. Two unrelated surfaces in one section
 because they landed in one pack and the second one touches the first: the
 installation table's quantity cells are the shared numeric control.
 
-#### 24a. The installation capture flow becomes a table
+#### 25a. The installation capture flow becomes a table
 
 The mock draws `components/installation-capture-flow.tsx` (at `a8e1fde`) as a
 numbered, one-item-at-a-time form: pick the Work, pick the item, type a
@@ -1754,11 +1837,11 @@ delivery, and a mock cannot express "the same visit wrote six records".
 
 | #   | What the application does                                                                                                                 | What the mock draws                                          | Why                                                                                                                                                                                                                                                                                                                                           |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 24a | Date, location and remark stated ONCE above a table of items; each filled row becomes its own installation record, all in one transaction | Five numbered fields, one item, one record                   | They are facts about the VISIT, not about the item. Stating them once removes the only way six records of one visit could carry five different dates. All-or-nothing because half a visit recorded is worse than none: the operator cannot tell which half from a screen that has already reset.                                              |
-| 24b | The table lists only items with an INSTALLABLE BALANCE, with a search box over them                                                       | A `Select` over every item                                   | Ledger item 10. The picker offered the whole schedule, including items with nothing standing on site, so the operator had to remember which had material and which did not. Remaining is the DELIVERED balance for a serial-tracked supply item (R5 caps installation at issued challans) and the LOA balance for an item with no supply leg. |
-| 24c | Serials are TYPED as numbers, per row, with the delivered pool offered as a `<datalist>`                                                  | A tap-select checklist of literal serials                    | Ledger item 12. The field has to accept a number that is in no pool — see 24d — and a control that only offered the pool would say the opposite of what the flow does. The pool is still one tap away, as suggestions, which is the assist the checklist was.                                                                                 |
-| 24d | A serial the Delivery Challan missed is ACCEPTED, recorded against the installation, and marked `added here` on the record                | Nothing — the mock's serials are literals with no provenance | The owner's rule, verbatim: "if missing serial in DC is added in IC then accept it and record it." A challan is typed from a despatch note; the nameplate is read by the person in front of the equipment. Migration 0108 carries the origin, and the tenant-wide serial trace renders it as a third origin beside Delivered and Production.  |
-| 24e | The item balances get a failure state of their own, with its own Retry                                                                    | No loading or failure states at all                          | The balances used to be a courtesy line under the quantity field, and a failed read hid one sentence. They now decide the table's CONTENTS, and a silent failure would read as "nothing left to install" — a different fact entirely. § Shared states: one failure state per independent read.                                                |
+| 25a | Date, location and remark stated ONCE above a table of items; each filled row becomes its own installation record, all in one transaction | Five numbered fields, one item, one record                   | They are facts about the VISIT, not about the item. Stating them once removes the only way six records of one visit could carry five different dates. All-or-nothing because half a visit recorded is worse than none: the operator cannot tell which half from a screen that has already reset.                                              |
+| 25b | The table lists only items with an INSTALLABLE BALANCE, with a search box over them                                                       | A `Select` over every item                                   | Ledger item 10. The picker offered the whole schedule, including items with nothing standing on site, so the operator had to remember which had material and which did not. Remaining is the DELIVERED balance for a serial-tracked supply item (R5 caps installation at issued challans) and the LOA balance for an item with no supply leg. |
+| 25c | Serials are TYPED as numbers, per row, with the delivered pool offered as a `<datalist>`                                                  | A tap-select checklist of literal serials                    | Ledger item 12. The field has to accept a number that is in no pool — see 24d — and a control that only offered the pool would say the opposite of what the flow does. The pool is still one tap away, as suggestions, which is the assist the checklist was.                                                                                 |
+| 25d | A serial the Delivery Challan missed is ACCEPTED, recorded against the installation, and marked `added here` on the record                | Nothing — the mock's serials are literals with no provenance | The owner's rule, verbatim: "if missing serial in DC is added in IC then accept it and record it." A challan is typed from a despatch note; the nameplate is read by the person in front of the equipment. Migration 0108 carries the origin, and the tenant-wide serial trace renders it as a third origin beside Delivered and Production.  |
+| 25e | The item balances get a failure state of their own, with its own Retry                                                                    | No loading or failure states at all                          | The balances used to be a courtesy line under the quantity field, and a failed read hid one sentence. They now decide the table's CONTENTS, and a silent failure would read as "nothing left to install" — a different fact entirely. § Shared states: one failure state per independent read.                                                |
 
 The record list, the per-item installed summary, the variation chip and
 the cancel-with-note form are untouched, and so is every server rule the
@@ -1766,7 +1849,7 @@ old form met: R5's delivery floor, R6's one-serial-per-unit, R11's date
 window, the AMC refusal, and the sanctioned-quantity variation flag (§
 Business-rule note: installation above sanctioned quantity).
 
-#### 24b. Every number-only field filters on the way in
+#### 25b. Every number-only field filters on the way in
 
 Ledger item 11. Numeric fields were one of two hand-rolled shapes:
 `<input type="number">`, which brings spinner arrows and a scroll wheel
@@ -1777,7 +1860,7 @@ pasted `1,250` reach a form that submitted it, and the refusal came back
 from the server after the operator had moved on.
 
 `apps/web/src/ui/numeric-input.tsx` is now the only number-only input, and
-all 73 of them use it. It filters on the browser's `input` event — the one
+all 72 of them use it. It filters on the browser's `input` event — the one
 place every keystroke, paste, drag-drop and autofill passes through — so a
 non-numeric character never appears rather than appearing and vanishing.
 
@@ -2079,7 +2162,14 @@ against the same measurement; after the IRP's 24-hour cancellation window a
 Section 34 credit note is the lawful instrument instead.
 
 The older site `mb_entries` surface is labelled **Measurement evidence** rather
-than presented as the formal Measurement Book itself. External statutory
+than presented as the formal Measurement Book itself, and since 2026-08-19 it is
+**read-only**: its manual quantity form is gone and its write route was removed
+outright (owner-sanctioned). ADR-0006 decision 2 had already replaced its billing
+role with bills raised from a finalised Measurement Book, so leaving a writer
+open meant a Work could be measured two ways that never met, only one of which
+reaches a bill. The rows recorded before then stay — they still gate Delivery
+Challan cancellation, still export, and still appear on the Work timeline — and
+the tab points the operator at the Measurement Books below it for anything new. External statutory
 registration status is shown separately from local invoice status: a locally
 issued invoice is never represented as IRP-registered without verified provider
 evidence.

@@ -17,6 +17,7 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Actions, Field, FormError, FormNotice, Hint } from '../ui/form.js';
+import { controlCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { NumericInput } from '../ui/numeric-input.js';
 
@@ -188,13 +189,13 @@ export function WorkInspectionClause({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.workItemId}>
-                  <td>
+                  <td className={wrapCell}>
                     <span className="font-mono text-xs text-muted-foreground">
                       {row.itemNumber}
                     </span>
                     <span className="block font-medium">{row.description}</span>
                   </td>
-                  <td>
+                  <td className={controlCell}>
                     <select
                       aria-label={`Inspection agency for ${row.itemNumber}`}
                       disabled={!canModify || pending}

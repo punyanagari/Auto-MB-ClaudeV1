@@ -639,7 +639,7 @@ export function Installations({
           >
             {/* One site visit: the date, the place and the note are facts
                 about the VISIT, so they are stated once above the items
-                rather than re-typed per item. `docs/UX.md` § 24 records
+                rather than re-typed per item. `docs/UX.md` § 25 records
                 the divergence from the mock's one-item capture flow. */}
             <div className="grid gap-x-6 sm:grid-cols-2">
               <Field>

@@ -1,4 +1,5 @@
 import {
+  byItemNumber,
   type MbSourceConflictDetails,
   type MbSourceRef,
   type MbSourceType,
@@ -508,33 +509,44 @@ export async function readStoredLines(
     where measurement_book_id = ${bookId}
     order by item_number
   `;
-  return rows.map((row) => ({
-    workItemId: row.work_item_id,
-    itemNumber: row.item_number,
-    description: row.description,
-    unitCode: row.unit_code,
-    paymentCategory: row.payment_category as WorkItemPaymentCategory | null,
-    resolvedCategory: row.resolved_category,
-    pctSupply: row.pct_supply,
-    pctInstallation: row.pct_installation,
-    pctPac: row.pct_pac,
-    pctFinalBill: row.pct_final_bill,
-    effectiveRate: canonicalRateText(row.effective_rate),
-    deltaSupplied: row.delta_supplied,
-    deltaInstalled: row.delta_installed,
-    deltaPac: row.delta_pac,
-    deltaFinalBill: row.delta_final_bill,
-    priorSupplied: row.prior_supplied,
-    priorInstalled: row.prior_installed,
-    priorPac: row.prior_pac,
-    priorFinalBill: row.prior_final_bill,
-    amountSupply: row.amount_supply,
-    amountInstallation: row.amount_installation,
-    amountPac: row.amount_pac,
-    amountFinalBill: row.amount_final_bill,
-    lineTotal: row.line_total,
-    remark: row.remark,
-  }));
+  // Natural order, decided here rather than in the ORDER BY above:
+  // `item_number` is text, so SQL reads A1/1, A1/10, A1/11, A1/2. This is
+  // the read the finalised MB's detail, its PDF and a NEW bill's
+  // lines_snapshot are all built from, so sorting it is what puts a
+  // printed document into the order its schedule is written in.
+  //
+  // It moves no persisted bytes. The stored rows keep their own order,
+  // and a lines_snapshot already written to a bill is frozen JSON — only
+  // documents produced from here on read naturally.
+  return byItemNumber(
+    rows.map((row) => ({
+      workItemId: row.work_item_id,
+      itemNumber: row.item_number,
+      description: row.description,
+      unitCode: row.unit_code,
+      paymentCategory: row.payment_category as WorkItemPaymentCategory | null,
+      resolvedCategory: row.resolved_category,
+      pctSupply: row.pct_supply,
+      pctInstallation: row.pct_installation,
+      pctPac: row.pct_pac,
+      pctFinalBill: row.pct_final_bill,
+      effectiveRate: canonicalRateText(row.effective_rate),
+      deltaSupplied: row.delta_supplied,
+      deltaInstalled: row.delta_installed,
+      deltaPac: row.delta_pac,
+      deltaFinalBill: row.delta_final_bill,
+      priorSupplied: row.prior_supplied,
+      priorInstalled: row.prior_installed,
+      priorPac: row.prior_pac,
+      priorFinalBill: row.prior_final_bill,
+      amountSupply: row.amount_supply,
+      amountInstallation: row.amount_installation,
+      amountPac: row.amount_pac,
+      amountFinalBill: row.amount_final_bill,
+      lineTotal: row.line_total,
+      remark: row.remark,
+    })),
+  );
 }
 
 /** Detail assembly: drafts COMPUTE the preview from live state;
