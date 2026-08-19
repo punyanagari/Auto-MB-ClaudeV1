@@ -222,6 +222,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
         instrumentExpiresOn: null,
         shortfallDays: null,
       },
+      finalBillDate: null,
       candidates: [],
       candidatesTruncated: false,
       warranties: [],

@@ -228,6 +228,7 @@ function card(overrides: Partial<WorkWarrantyResponse> = {}): WorkWarrantyRespon
       instrumentExpiresOn: '2027-12-19',
       shortfallDays: 45,
     },
+    finalBillDate: null,
     candidates: [],
     candidatesTruncated: false,
     warranties: [warranty()],

@@ -160,6 +160,12 @@ function startsAtLabelColumn(line: string): boolean {
   return line.length > 0 && !/^\s/.test(line);
 }
 
+/** How far a line is indented, which on a `-layout` page IS the column its
+ * text sits in. */
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
 /**
  * A labelled row of the four-column NIT HEADER table, read as the FIRST
  * value column only.
@@ -203,9 +209,18 @@ function irepsRowValue(lines: readonly string[], label: RegExp): TenderField | n
  *                          MABA, ASKN, RTA and SHRN for a period of 5 years.
  *
  * Reading downward alone would lose the first half of the work's name,
- * which is the half naming what the contract is for. Both runs stop at
- * the first line that is blank or begins in the label column, which is
- * where the cell ends in both directions.
+ * which is the half naming what the contract is for.
+ *
+ * A CONTINUATION IS PINNED TO ITS CELL'S OWN COLUMN, not merely indented.
+ * "Indented" alone is not enough to say a line belongs to this cell: the
+ * table has a SECOND label/value pair to the right of every row, and when
+ * one of those wraps its continuation is also indented — just at a
+ * different column. Accepting it would prepend somebody else's label to
+ * the name of the work and report the result confidently. So the column
+ * is taken from the nearest continuation (below first, which is the
+ * canonical direction), and every other line has to start at exactly that
+ * column to join. Both runs still stop at a blank line or the label
+ * column, which is where the cell ends in both directions.
  */
 function irepsWrappedCell(lines: readonly string[], label: RegExp): TenderField | null {
   for (let index = 0; index < lines.length; index += 1) {
@@ -215,16 +230,34 @@ function irepsWrappedCell(lines: readonly string[], label: RegExp): TenderField 
     const first = cells[0];
     if (first === undefined || !label.test(first)) continue;
 
+    /** A line that could continue this cell: present, non-blank, and not
+     * starting a new row in the label column. */
+    const continues = (cursor: number): string | null => {
+      const candidate = lines[cursor];
+      if (candidate === undefined) return null;
+      if (candidate.trim().length === 0 || startsAtLabelColumn(candidate)) return null;
+      return candidate;
+    };
+
+    // The cell's column. An inline value on the label's own line settles
+    // it outright; otherwise the nearest continuation does, looking down
+    // before up because a cell's text runs downward from its top edge.
+    const inlineValue = cells[1];
+    const valueColumn =
+      inlineValue !== undefined
+        ? line.indexOf(inlineValue, first.length)
+        : indentOf(continues(index + 1) ?? continues(index - 1) ?? '');
+
     const above: string[] = [];
     for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-      const candidate = lines[cursor] ?? '';
-      if (candidate.trim().length === 0 || startsAtLabelColumn(candidate)) break;
+      const candidate = continues(cursor);
+      if (candidate === null || indentOf(candidate) !== valueColumn) break;
       above.unshift(candidate.trim());
     }
     const below: string[] = [];
     for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
-      const candidate = lines[cursor] ?? '';
-      if (candidate.trim().length === 0 || startsAtLabelColumn(candidate)) break;
+      const candidate = continues(cursor);
+      if (candidate === null || indentOf(candidate) !== valueColumn) break;
       below.push(candidate.trim());
     }
 
@@ -241,9 +274,14 @@ function irepsWrappedCell(lines: readonly string[], label: RegExp): TenderField 
 }
 
 /** The four fields the columnar header and the NIT HEADER table state,
- * plus the masthead. Null everywhere the layout is absent or the field is
- * not on the page, which hands the reading back to the label readers. */
+ * plus the masthead. A field is null where the page does not carry it —
+ * but see `matched`: on an IREPS page a null field is a FLAG, never an
+ * invitation to go and ask the label readers. */
 interface IrepsNoticeFields {
+  /** Whether the page is an IREPS tender document at all. False hands
+   * every field back to the label readers; true means this reader owns
+   * the six, resolved or not. */
+  readonly matched: boolean;
   readonly tenderNumber: TenderField | null;
   readonly authority: TenderField | null;
   readonly title: TenderField | null;
@@ -253,6 +291,7 @@ interface IrepsNoticeFields {
 }
 
 const NO_IREPS_FIELDS: IrepsNoticeFields = {
+  matched: false,
   tenderNumber: null,
   authority: null,
   title: null,
@@ -263,6 +302,24 @@ const NO_IREPS_FIELDS: IrepsNoticeFields = {
 
 const IREPS_TENDER_NUMBER_CELL = /^tender\s+no\.?\s*[:-]\s*(?<value>\S.*)$/i;
 const IREPS_CLOSING_CELL = /^closing\s+date\s*\/\s*time\s*[:-]\s*(?<value>\S.*)$/i;
+
+/**
+ * What an IREPS tender number is allowed to look like: letters, digits,
+ * and the separators a railway reference uses. No spaces.
+ *
+ * This is a TRIPWIRE, not a parser. A number that fails it is still
+ * returned — a reviewer confirming a real oddity is cheap — but it is
+ * returned flagged, because every way this capture can go wrong produces
+ * a value with something else in it: a bled neighbouring column, a
+ * swallowed label, a date. The value being plausible is the whole danger.
+ */
+const IREPS_TENDER_NUMBER_SHAPE = /^[A-Za-z0-9./_-]+$/;
+
+/** The tokens an IREPS masthead uses to name the office inviting the
+ * tender. Matching one is what turns a POSITIONAL read — "the line above
+ * the banner" — into an anchored one. */
+const IREPS_MASTHEAD_SHAPE =
+  /\b(?:RLY|RAILWAY|RAILWAYS|DIVISION|DIVN|RDSO|METRO|KONKAN|WORKSHOP|DEPOT)\b/i;
 const IREPS_ADVERTISED_VALUE_ROW = /^advertised\s+value$/i;
 const IREPS_EARNEST_MONEY_ROW = /^earnest\s+money(?:\s*\(\s*rs\.?\s*\))?$/i;
 const IREPS_NAME_OF_WORK_ROW = /^name\s+of\s+work$/i;
@@ -278,24 +335,49 @@ function readIrepsNotice(rawText: string): IrepsNoticeFields {
   // IREPS page names the division and the zone inviting the tender —
   // "BHOPAL DIVISION-S AND T/WEST CENTRAL RLY". There is no labelled
   // inviting-authority field anywhere on the document.
+  //
+  // POSITION IS NOT AN ANCHOR. "The line above the banner" is true of
+  // every page this reader has been shown and of nothing it has been
+  // promised: a print header, a page rule, a continuation marker or a
+  // letterhead address can all sit there, and each would be reported as
+  // the inviting authority with full confidence. So the position finds
+  // the candidate and the WORDING decides whether it is believed — a line
+  // naming a railway, a division or a workshop is anchored; anything else
+  // is the right guess to show a reviewer, flagged.
   let authority: TenderField | null = null;
   for (let cursor = markerAt - 1; cursor >= 0; cursor -= 1) {
     const text = (lines[cursor] ?? '').trim();
     if (text.length === 0) continue;
-    authority = { value: text, raw: text, needsReview: false };
+    authority = {
+      value: text,
+      raw: text,
+      needsReview: !IREPS_MASTHEAD_SHAPE.test(text),
+    };
     break;
   }
 
   let tenderNumber: TenderField | null = null;
   let closing: TenderField | null = null;
-  for (const line of lines) {
-    for (const cell of gapCells(line)) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    const cells = gapCells(line);
+    for (const cell of cells) {
       const number = IREPS_TENDER_NUMBER_CELL.exec(cell);
       if (number !== null && tenderNumber === null) {
+        const value = (number.groups?.value ?? '').trim();
+        // A number printed as the last cell of its line may have WRAPPED,
+        // in which case what was captured is its first half and reads as
+        // a perfectly ordinary reference. There is no way to tell a
+        // wrapped number from a complete one, so the possibility itself
+        // is the flag.
+        const couldHaveWrapped =
+          cell === cells[cells.length - 1] &&
+          (lines[index + 1] ?? '').trim().length > 0 &&
+          !startsAtLabelColumn(lines[index + 1] ?? '');
         tenderNumber = {
-          value: (number.groups?.value ?? '').trim(),
+          value,
           raw: cell,
-          needsReview: false,
+          needsReview: !IREPS_TENDER_NUMBER_SHAPE.test(value) || couldHaveWrapped,
         };
       }
       const closes = IREPS_CLOSING_CELL.exec(cell);
@@ -311,6 +393,7 @@ function readIrepsNotice(rawText: string): IrepsNoticeFields {
   }
 
   return {
+    matched: true,
     tenderNumber,
     authority,
     title: irepsWrappedCell(lines, IREPS_NAME_OF_WORK_ROW),
@@ -449,29 +532,53 @@ function rupeeAmount(field: TenderField): TenderField {
  * estimated cost yields one resolved field and one flagged one, and the
  * reviewer fills the hole. Nothing is inferred from anything else.
  *
- * TWO READERS, IN ONE ORDER. The IREPS columnar reader runs first and
- * wins every field it resolves, because it is the SPECIFIC shape: it
- * knows the page it is reading and which column each figure sits in. The
- * label readers are the general fallback for every other notice, and on
- * an IREPS page they are wrong rather than merely blind — see the block
- * above `IREPS_MARKER`. On any notice without the marker line the first
- * reader returns nothing at all and the behaviour is exactly what it was.
+ * TWO READERS, AND THE SECOND IS NOT A SAFETY NET. The IREPS columnar
+ * reader runs first, because it is the SPECIFIC shape: it knows the page
+ * it is reading and which column each figure sits in. The label readers
+ * are the general reader for every other notice.
+ *
+ * ONCE THE IREPS MARKER IS PRESENT THE COLUMNAR READER OWNS ALL SIX
+ * FIELDS, resolved or not. Falling back per-field would undo the entire
+ * point of this module: on an IREPS page the label readers do not fail
+ * quietly, they MATCH THE COLLAPSED LINE AND SUCCEED WRONGLY — that is
+ * the defect this pack exists to close, and a `??` would have reopened it
+ * for every page whose spacing differs by one character from the fixture.
+ * A field the columnar reader could not read is therefore null and
+ * flagged, which sends it to a human, rather than filled in confidently
+ * by a reader that cannot see columns.
+ *
+ * On any notice WITHOUT the marker line the columnar reader reports
+ * nothing at all, and the labelled behaviour is exactly what it was.
  */
 export function reviewTenderNotice(rawText: string): TenderNoticeReview {
   const lines = normalizeLines(rawText);
   const ireps = readIrepsNotice(rawText);
+  /** What the columnar reader returns for a field of an IREPS page it
+   * could not read: an answer for a human, never a guess. */
+  const unread: TenderField = { value: null, raw: null, needsReview: true };
+  const columnar = (field: TenderField | null, labelled: () => TenderField) =>
+    ireps.matched ? (field ?? unread) : labelled();
 
-  const tenderNumber =
-    ireps.tenderNumber ?? firstLabelValue(lines, TENDER_NUMBER_LABELS);
-  const authority = ireps.authority ?? firstLabelValue(lines, AUTHORITY_LABELS);
-  const title = ireps.title ?? firstWrappedLabelValue(lines, TITLE_LABELS);
+  const tenderNumber = columnar(ireps.tenderNumber, () =>
+    firstLabelValue(lines, TENDER_NUMBER_LABELS),
+  );
+  const authority = columnar(ireps.authority, () =>
+    firstLabelValue(lines, AUTHORITY_LABELS),
+  );
+  const title = columnar(ireps.title, () =>
+    firstWrappedLabelValue(lines, TITLE_LABELS),
+  );
   const bidClosesAtLocal = closingMoment(
-    ireps.closing ?? firstLabelValue(lines, CLOSING_LABELS),
+    columnar(ireps.closing, () => firstLabelValue(lines, CLOSING_LABELS)),
   );
   const estimatedValue = rupeeAmount(
-    ireps.estimatedValue ?? firstLabelValue(lines, ESTIMATED_VALUE_LABELS),
+    columnar(ireps.estimatedValue, () =>
+      firstLabelValue(lines, ESTIMATED_VALUE_LABELS),
+    ),
   );
-  const emdAmount = rupeeAmount(ireps.emdAmount ?? firstLabelValue(lines, EMD_LABELS));
+  const emdAmount = rupeeAmount(
+    columnar(ireps.emdAmount, () => firstLabelValue(lines, EMD_LABELS)),
+  );
   const eligibility = firstWrappedLabelValue(lines, ELIGIBILITY_LABELS);
 
   const fields = [

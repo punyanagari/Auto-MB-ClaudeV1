@@ -141,7 +141,7 @@ export function WorkWarranty({
     );
   }
 
-  const { terms, pbgCover } = data;
+  const { terms, pbgCover, finalBillDate } = data;
 
   return (
     <>
@@ -337,6 +337,7 @@ export function WorkWarranty({
                   key={candidate.installationId}
                   candidate={candidate}
                   basis={terms.startBasis}
+                  finalBillDate={finalBillDate}
                   pending={pending}
                   onStart={(pacCertificateId) =>
                     void act(async () => {
@@ -597,6 +598,7 @@ export function WorkWarranty({
 interface StartWarrantyRowProps {
   readonly candidate: WorkWarrantyResponse['candidates'][number];
   readonly basis: WarrantyStartBasis;
+  readonly finalBillDate: string | null;
   readonly pending: boolean;
   readonly onStart: (pacCertificateId: string | null) => void;
 }
@@ -604,15 +606,25 @@ interface StartWarrantyRowProps {
 /** One un-started installation. On the PAC basis it carries the picker for
  * the certificate the clock starts from, and the action is disabled while
  * no certificate exists to pick — a period cannot start from a certificate
- * the railway has not issued. */
+ * the railway has not issued.
+ *
+ * The final-bill basis is blocked the same way and for the same reason:
+ * the date a period would start on does not exist until the bill does, so
+ * the row says which act creates it rather than offering a button the
+ * server answers with a refusal. The refusal still stands behind this —
+ * the screen is the courtesy, not the rule. */
 function StartWarrantyRow({
   candidate,
   basis,
+  finalBillDate,
   pending,
   onStart,
 }: StartWarrantyRowProps) {
   const [certificateId, setCertificateId] = useState(candidate.pacOptions[0]?.id ?? '');
-  const blocked = basis === 'pac' && candidate.pacOptions.length === 0;
+  const blocked =
+    basis === 'pac'
+      ? candidate.pacOptions.length === 0
+      : basis === 'final_bill' && finalBillDate === null;
   return (
     <tr>
       <th scope="row">{candidate.itemNumber}</th>
@@ -651,15 +663,21 @@ function StartWarrantyRow({
         </td>
       )}
       <td>
-        <Button
-          variant="outline"
-          disabled={pending || blocked}
-          onClick={() => {
-            onStart(basis === 'pac' ? certificateId : null);
-          }}
-        >
-          Start period
-        </Button>
+        {blocked && basis === 'final_bill' ? (
+          <span className="text-muted-foreground">
+            Not until this Work&rsquo;s final bill is raised
+          </span>
+        ) : (
+          <Button
+            variant="outline"
+            disabled={pending || blocked}
+            onClick={() => {
+              onStart(basis === 'pac' ? certificateId : null);
+            }}
+          >
+            Start period
+          </Button>
+        )}
       </td>
     </tr>
   );

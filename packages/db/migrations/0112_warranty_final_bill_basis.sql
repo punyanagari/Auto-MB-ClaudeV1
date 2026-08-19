@@ -5,11 +5,13 @@ SET statement_timeout = '5min';
 -- Migration 0112: a defect liability period may start from the Work's
 -- FINAL BILL.
 --
--- Numbering: 0105 to 0111 are claimed by packs that have not merged yet,
--- so this corrections pack takes 0112. The runner sorts file names and
--- requires only that ids be unique
--- (`packages/db/src/migration-runner.ts`), so the gap costs nothing and
--- the merge-down that brings the others in needs no renumbering here.
+-- Numbering: 0105 has since landed on main (the uncategorised-item
+-- category, PR #154) and 0106 to 0111 stay reserved by packs that have
+-- not merged yet, so this corrections pack takes 0112. The runner sorts
+-- file names and requires only that ids be unique
+-- (`packages/db/src/migration-runner.ts`), so the gap costs nothing —
+-- and the merge that brought 0105 in needed no renumbering here, which
+-- is the property the reserved block was chosen for.
 --
 -- ## The rule
 --
@@ -48,16 +50,20 @@ SET statement_timeout = '5min';
 --   * `measurement_books_one_live_final_per_work` (0024) admits one
 --     non-cancelled final Book per Work;
 --   * `bills_one_per_mb` (0024) admits one bill per Book;
---   * a billed Book cannot be cancelled at all — the finalize module
---     refuses it ("billed Measurement Books cannot be cancelled —
---     correct with compensating entries on the next MB"), which is why
---     the `status = 'finalized'` arm below is a belt rather than a
---     filter that ever changes the answer.
+--   * a billed Book cannot be cancelled at all — and NOT merely because
+--     the finalize module refuses it. Migration 0027 holds the same
+--     refusal in the database ("Measurement Book % has a prepared bill
+--     and is permanently locked"), so a writer that never went near the
+--     route is refused too.
 --
--- The lookup is written with that `finalized` requirement anyway, for
--- the reason 0099's own guards give for stating a rule twice: a guard
--- that assumes another module's refusal is a guard that stops working
--- when that module changes.
+-- That third point makes the `status = 'finalized'` arm of the lookup
+-- DEAD BY INVARIANT: no billed Book can reach any other status, so the
+-- filter can never change the answer. It is written anyway, for the
+-- reason 0099's own guards give for stating a rule twice — a query that
+-- assumes another migration's refusal is a query that stops being
+-- correct the day that refusal is relaxed — and
+-- `warranty-dlp.integration.test.ts` pins the invariant it rests on, so
+-- the day it stops being dead, a test says so.
 --
 -- ## What is NOT changed
 --
@@ -88,13 +94,25 @@ SET statement_timeout = '5min';
 -- `mb_date` — both are only bounded by today — so a final bill can still
 -- predate the units, and that period is still refused.
 --
--- ## SQLSTATE
+-- ## SQLSTATEs
 --
--- One new code, 23Q11, the next free one in the block 0099 opened. It is
--- mapped in `apps/server/src/routes/warranty.ts` to a named refusal and
--- a remedy sentence, exactly as the ten before it are, so a guard that
--- fires because the route's own check lost a race reaches the operator
--- as a sentence rather than as a 500.
+-- TWO new codes, the next free ones in the block 0099 opened, because
+-- this arm makes two genuinely different refusals and one code could
+-- only name one of them:
+--
+--   23Q11  there is no final bill on this Work at all. The remedy is an
+--          act — finalise the final Measurement Book and prepare its
+--          bill — and the operator has not lost a race with anybody.
+--   23Q12  there IS a final bill and this period is not seated on its
+--          date. Reaching this from the route means the bill moved
+--          under a request already in flight, so the remedy is to
+--          reload and read the date the period now runs from.
+--
+-- Both are mapped in `apps/server/src/routes/warranty.ts`. Splitting
+-- them is what lets each message be true: a single code would have had
+-- to carry one sentence for both, and the sentence naming a race is
+-- simply false for the first case, which is the ordinary state of every
+-- Work that has not been billed yet.
 -- ---------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------
@@ -127,6 +145,25 @@ ALTER TABLE installation_warranties
 -- gets NULL — which the guard turns into a refusal rather than into a
 -- period seated on a bill nobody proved exists. That is the 0099 posture
 -- for the installation lookup, applied to this one.
+--
+-- THE JOIN MATCHES THE WORK AS WELL AS THE TENANT, and that is the same
+-- argument the 'pac' arm below makes for itself. `bills.mb_id` has no
+-- composite foreign key carrying `work_id`, so nothing in the schema
+-- states that a bill's Measurement Book belongs to the bill's own Work.
+-- Without the predicate a mis-stitched row — an import, a correction, a
+-- future writer — could date this Work's warranty from another Work's
+-- final Book, silently and plausibly. Matching the Work makes that row
+-- return no date at all, which is a refusal the operator can read.
+--
+-- ORDER BY is DEAD BY INVARIANT and kept as a belt: the partial unique
+-- index `measurement_books_one_live_final_per_work` admits one
+-- non-cancelled final Book per Work and `bills_one_per_mb` admits one
+-- bill per Book, so the filtered set holds at most one row and the sort
+-- can never choose between two. It stays because a LIMIT 1 whose
+-- ordering is unstated is a query that silently picks a row the day an
+-- invariant is relaxed; stated, it picks the earliest date, which is the
+-- conservative end for a liability the railway is holding a guarantee
+-- against.
 -- ---------------------------------------------------------------------
 CREATE FUNCTION app_private.work_final_bill_date(
   p_organisation_id uuid, p_work_id uuid
@@ -139,7 +176,9 @@ AS $$
   SELECT mb.mb_date
   FROM bills b
   JOIN measurement_books mb
-    ON mb.organisation_id = b.organisation_id AND mb.id = b.mb_id
+    ON mb.organisation_id = b.organisation_id
+   AND mb.id = b.mb_id
+   AND mb.work_id = b.work_id
   WHERE b.organisation_id = p_organisation_id
     AND b.work_id = p_work_id
     AND mb.is_final
@@ -291,7 +330,7 @@ BEGIN
         RAISE EXCEPTION
           'a final-bill defect liability period starts on the final bill date %, not %',
           v_final_bill_date, NEW.dlp_start_on
-          USING ERRCODE = '23Q11';
+          USING ERRCODE = '23Q12';
       END IF;
     END IF;
 

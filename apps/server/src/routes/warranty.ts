@@ -135,8 +135,16 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'WARRANTY_STATE',
     'A warranty term belongs to the Work it was recorded against; record the term on the right Work.',
   ],
+  // Two codes because the guard makes two different refusals, and one
+  // sentence could not have been true of both: the first is the ordinary
+  // state of an unbilled Work and names an act, the second is a race and
+  // names a reload.
   '23Q11': [
     'WARRANTY_FINAL_BILL_MISSING',
+    'This Work has no final bill, so a defect liability period that runs from one has no date to start from. Finalise the final Measurement Book and prepare its bill first.',
+  ],
+  '23Q12': [
+    'WARRANTY_START_OUT_OF_RANGE',
     "The Work's final bill changed while the defect liability period was being started; reload the Work and read the date the period now runs from.",
   ],
   // A second live period against one installation loses the race to the
@@ -306,7 +314,7 @@ export function registerWarrantyRoutes(
         response: { 200: WorkWarrantyResponseSchema, ...errorResponses },
       },
     },
-    async ({ request, user, tenant }) => {
+    async ({ request, user, organisationId, tenant }) => {
       const { id: workId } = request.params;
       const query = request.query;
       return tenant(async (tx) => {
@@ -345,9 +353,18 @@ export function registerWarrantyRoutes(
         )) as unknown as WarrantyRow[];
         const paged = keysetPage(rows, query.limit, (row) => row.id);
 
+        // Only asked for on the basis it means something on, and asked
+        // of the same function the write path uses, so the screen cannot
+        // name a different day from the one a period would carry.
+        const finalBillDate =
+          terms?.startBasis === 'final_bill'
+            ? await readFinalBillDate(tx, organisationId, workId)
+            : null;
+
         return {
           terms,
           pbgCover: await readPbgCover(tx, workId, work.pbg_required),
+          finalBillDate,
           ...(await readCandidates(tx, workId, terms?.startBasis ?? null)),
           warranties: paged.rows.map(toWarranty),
           nextCursor: paged.nextCursor,
@@ -587,12 +604,11 @@ export function registerWarrantyRoutes(
           // function migration 0112's guard enforces with, called rather
           // than reimplemented as a join here, so the two layers cannot
           // disagree about which day a Work's liability began.
-          const [row] = await tx<{ final_bill_date: string | null }[]>`
-            select app_private.work_final_bill_date(
-              ${organisationId}, ${installation.work_id}
-            )::text as final_bill_date
-          `;
-          const finalBillDate = row?.final_bill_date ?? null;
+          const finalBillDate = await readFinalBillDate(
+            tx,
+            organisationId,
+            installation.work_id,
+          );
           if (finalBillDate === null) {
             throw httpError(
               409,
@@ -924,6 +940,29 @@ function toPacOptions(value: unknown): PacOption[] {
       typeof (entry as PacOption).reference === 'string' &&
       typeof (entry as PacOption).issueDate === 'string',
   );
+}
+
+/**
+ * The date the Work's final bill carries, or null where it has none.
+ *
+ * `bills` has no date column: the legal date behind a bill is the
+ * `mb_date` of the finalized final Measurement Book it was prepared from,
+ * and `app_private.work_final_bill_date` is the ONE place that says so.
+ * Called rather than re-joined here, because migration 0112's guard
+ * enforces with that function and a second definition in this file is the
+ * one way the two layers could disagree about when a liability began.
+ */
+async function readFinalBillDate(
+  tx: TransactionSql,
+  organisationId: string,
+  workId: string,
+): Promise<string | null> {
+  const [row] = await tx<{ final_bill_date: string | null }[]>`
+    select app_private.work_final_bill_date(
+      ${organisationId}, ${workId}
+    )::text as final_bill_date
+  `;
+  return row?.final_bill_date ?? null;
 }
 
 /** The Work's contract term, or null where none has been recorded. */

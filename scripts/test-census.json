@@ -1,6 +1,6 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 3298,
+  "totalDeclarations": 3304,
   "fileCount": 214,
   "files": {
     "apps/server/test/amc-schedule.integration.test.ts": 20,
@@ -202,7 +202,7 @@
     "packages/db/test/stock-ledger.integration.test.ts": 17,
     "packages/db/test/tax-money-backstops.integration.test.ts": 19,
     "packages/db/test/tenancy.integration.test.ts": 25,
-    "packages/db/test/warranty-dlp.integration.test.ts": 21,
+    "packages/db/test/warranty-dlp.integration.test.ts": 22,
     "packages/db/test/work-supersession.integration.test.ts": 19,
     "packages/db/test/worker-queue.integration.test.ts": 23,
     "packages/documents/test/loa-extract-roundtrip.test.ts": 5,
@@ -216,6 +216,6 @@
     "packages/loa-parser/test/pricing-shape.test.ts": 27,
     "packages/loa-parser/test/raw-item-descriptions.test.ts": 4,
     "packages/loa-parser/test/tender-document.test.ts": 19,
-    "packages/loa-parser/test/tender-notice.test.ts": 16
+    "packages/loa-parser/test/tender-notice.test.ts": 21
   }
 }

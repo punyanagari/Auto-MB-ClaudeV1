@@ -571,14 +571,18 @@ describe('the final-bill start basis', () => {
     const [row] = await database.pool<{ day: string }[]>`
       select app_private.organisation_today(${tenant.organisationId})::text as day
     `;
+    // 23Q12, not 23Q11: there IS a final bill, and this period is simply
+    // not seated on its date. The two refusals this arm makes carry two
+    // codes precisely so an operator is not told to raise a bill that
+    // already exists.
     const drifted = await refused(startOnFinalWork(row?.day ?? billDate));
-    expect(drifted.code).toBe('23Q11');
+    expect(drifted.code).toBe('23Q12');
     expect(drifted.message).toContain('starts on the final bill date');
 
     // And the installation's own date, which is what the other basis
     // would have used, is refused for the same reason.
     const onInstallDate = await refused(startOnFinalWork(installedOn));
-    expect(onInstallDate.code).toBe('23Q11');
+    expect(onInstallDate.code).toBe('23Q12');
 
     await expect(startOnFinalWork(billDate)).resolves.toBeTypeOf('string');
   });
@@ -628,6 +632,46 @@ describe('the final-bill start basis', () => {
         `,
     );
     expect(row?.day).toBe(billDate);
+  });
+
+  it('cannot have its final bill withdrawn from under it, which is why the date is stable', async () => {
+    // Written to attack `work_final_bill_date`'s `status = 'finalized'`
+    // filter, and it found the opposite of what it went looking for.
+    //
+    // The premise was that a billed Measurement Book could be cancelled
+    // by a writer that did not come through the route — `finalize.ts`
+    // refuses it, and a route-only rule is one import away from being no
+    // rule. It cannot: migration 0027 holds the same refusal in the
+    // DATABASE, so the raw UPDATE below is rejected exactly as the route
+    // would reject it.
+    //
+    // That makes the `status = 'finalized'` filter DEAD BY INVARIANT
+    // rather than merely improbable, which is worth a test of its own:
+    // it is the reason a Work's final-bill date cannot move under a
+    // period once it has been started, and it is the reason the filter
+    // is a belt rather than a live rule. If this test ever fails, the
+    // filter has become load-bearing and the warranty pack needs to know.
+    const locked = await refused(
+      database.pool`
+        update measurement_books
+        set status = 'cancelled', cancellation_note = 'withdraw the final bill',
+            cancelled_by_user_id = ${tenant.userId}, cancelled_at = now()
+        where work_id = ${finalWorkId} and is_final
+      `,
+    );
+    expect(locked.message).toContain('permanently locked');
+
+    // The date is therefore exactly what it was, and the period started
+    // above still stands on a bill nobody can withdraw.
+    const [unchanged] = await asTenant(
+      async (tx) =>
+        await tx<{ day: string | null }[]>`
+          select app_private.work_final_bill_date(
+            ${tenant.organisationId}, ${finalWorkId}
+          )::text as day
+        `,
+    );
+    expect(unchanged?.day).toBe(billDate);
   });
 });
 

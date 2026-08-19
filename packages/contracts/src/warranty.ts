@@ -243,6 +243,16 @@ export const WorkWarrantyResponseSchema = Type.Object(
   {
     terms: Type.Union([WarrantyTermsSchema, Type.Null()]),
     pbgCover: WarrantyPbgCoverSchema,
+    /** The date every period on the `final_bill` basis starts on, or null
+     * where the Work has no final bill yet — which is what the card needs
+     * to say "not until that bill exists" BEFORE the operator presses a
+     * button the server would refuse. Read from the same
+     * `app_private.work_final_bill_date` the route writes with and the
+     * guard enforces with, so the screen cannot promise a different day
+     * from the one the period will carry. Null on the other two bases
+     * too: it is not the date they start from and showing it would
+     * invite the reader to think it was. */
+    finalBillDate: Type.Union([DateOnlySchema, Type.Null()]),
     candidates: Type.Array(WarrantyCandidateSchema),
     /** True when more installations are waiting than the cap returns.
      * Start a period on the ones offered and the next ones appear. */

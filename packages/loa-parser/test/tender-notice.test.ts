@@ -249,3 +249,149 @@ describe('reviewTenderNotice — the IREPS tender document layout', () => {
     expect(review.needsReview.total).toBe(0);
   });
 });
+
+/**
+ * Failing CLOSED on the IREPS shape.
+ *
+ * Every case below is a page that carries the banner and then differs
+ * from the fixture — a label padded into its own column, a table whose
+ * pairs are reordered, a wrapped number, a masthead that is not one. The
+ * property they share is the only one that matters here: a field this
+ * reader cannot read comes back NULL AND FLAGGED. It never comes back
+ * plausible.
+ *
+ * The reason that property is worth four suites is that the defect this
+ * pack fixed was not a field going unread. It was a field read WRONGLY
+ * and reported with confidence, which a reviewer confirms instead of
+ * correcting — and every fallback, every unvalidated capture and every
+ * positional guess is another way to reproduce exactly that.
+ */
+describe('reviewTenderNotice — the IREPS shape fails closed', () => {
+  const banner = [
+    '        BHOPAL DIVISION-S AND T/WEST CENTRAL RLY',
+    '        TENDER DOCUMENT',
+  ];
+
+  it('does not let the label readers answer for a header line it could not split', () => {
+    // The same header, printed with the label padded so that "Tender No:"
+    // and its value fall into SEPARATE columns — which the cell regex,
+    // anchored on "label: value" inside one cell, does not match.
+    //
+    // This is the case that matters most in the whole file. The COLLAPSED
+    // form of this line is "Tender No: BPL-2026-1 Closing Date/Time:
+    // 15/06/2026 15:00", which TENDER_NUMBER_LABELS matches happily and
+    // returns whole, unflagged — the exact defect the owner reported. A
+    // per-field fallback would therefore have turned an unreadable line
+    // back into a confidently wrong one.
+    const review = reviewTenderNotice(
+      [
+        ...banner,
+        'Tender No:        BPL-2026-1        Closing Date/Time:        15/06/2026 15:00',
+      ].join('\n'),
+    );
+
+    expect(review.tenderNumber.value).toBeNull();
+    expect(review.tenderNumber.needsReview).toBe(true);
+    expect(review.bidClosesAtLocal.value).toBeNull();
+    expect(review.bidClosesAtLocal.needsReview).toBe(true);
+    expect(review.needsReview.identityUnresolved).toBe(true);
+  });
+
+  it('flags a masthead that does not name a railway rather than trusting its position', () => {
+    // A print header sits where the masthead usually is. The line is
+    // still the best candidate on the page and is still offered — but
+    // position alone earns no confidence, so it arrives flagged.
+    const review = reviewTenderNotice(
+      [
+        '        Printed by IREPS on 22/05/2026 — page 1',
+        '        TENDER DOCUMENT',
+        'Tender No: BPL-2026-1        Closing Date/Time: 15/06/2026 15:00',
+      ].join('\n'),
+    );
+
+    expect(review.authority.value).toBe('Printed by IREPS on 22/05/2026 — page 1');
+    expect(review.authority.needsReview).toBe(true);
+    // The anchored masthead in the same position is believed.
+    expect(reviewTenderNotice([...banner, 'x'].join('\n')).authority.needsReview).toBe(
+      false,
+    );
+  });
+
+  it('never pulls the right-hand column of a reordered table into the name of work', () => {
+    // The NIT HEADER prints two label/value pairs per row. Here the row
+    // above Name of Work has a wrapped SECOND label, whose continuation
+    // is indented — just at the right-hand column, not this cell's.
+    // Accepting "indented" as the test would have prepended "Member
+    // Allowed" to the name of the work and reported it confidently.
+    const review = reviewTenderNotice(
+      [
+        ...banner,
+        'Tender No: BPL-2026-1        Closing Date/Time: 15/06/2026 15:00',
+        '',
+        '1. NIT HEADER',
+        '',
+        'Are Consortium allowed                             Number of Consortium',
+        '                       No                                                          0',
+        'to bid                                             Member Allowed',
+        '                       Comprehensive AMC of platform display boards installed at',
+        'Name of Work',
+        '                       MABA and ASKN for a period of 5 years.',
+        'Bidding type           Normal Tender',
+      ].join('\n'),
+    );
+
+    expect(review.title.value).toBe(
+      'Comprehensive AMC of platform display boards installed at ' +
+        'MABA and ASKN for a period of 5 years.',
+    );
+    expect(review.title.value).not.toContain('Member Allowed');
+    expect(review.title.value).not.toContain('Consortium');
+  });
+
+  it('flags a tender number that may have wrapped, and one that is not number-shaped', () => {
+    // Last cell on its line, with an indented line under it: the capture
+    // is "BPLNWKS2026-" and reads as an ordinary reference. Nothing can
+    // prove it wrapped, which is exactly why the possibility is the flag.
+    const wrapped = reviewTenderNotice(
+      [...banner, 'Tender No: BPLNWKS2026-', '           27TELEAMC02'].join('\n'),
+    );
+    expect(wrapped.tenderNumber.value).toBe('BPLNWKS2026-');
+    expect(wrapped.tenderNumber.needsReview).toBe(true);
+
+    // A capture carrying spaces has swallowed something that is not the
+    // number. Returned for a reviewer to correct, never as an answer.
+    const bled = reviewTenderNotice(
+      [...banner, 'Tender No: BPL 2026 1 Closing Date/Time 15/06/2026'].join('\n'),
+    );
+    expect(bled.tenderNumber.needsReview).toBe(true);
+
+    // And the fixture's own number, which is genuinely well-formed and a
+    // single cell on a two-cell line, stays confident — the tripwire has
+    // to be silent on the real thing or it is just noise.
+    expect(
+      reviewTenderNotice(
+        [
+          ...banner,
+          'Tender No: BPLNWKS2026-27TELEAMC02        Closing Date/Time: 15/06/2026 15:00',
+        ].join('\n'),
+      ).tenderNumber,
+    ).toEqual({
+      value: 'BPLNWKS2026-27TELEAMC02',
+      raw: 'Tender No: BPLNWKS2026-27TELEAMC02',
+      needsReview: false,
+    });
+  });
+
+  it('flags every unread field of a page that is an IREPS notice and nothing else', () => {
+    // The banner and nothing under it. Six flagged fields, no values, and
+    // identity unresolved — the shape of an honest "I could not read
+    // this" rather than of a page half-invented.
+    const review = reviewTenderNotice(banner.join('\n'));
+    expect(review.tenderNumber.value).toBeNull();
+    expect(review.title.value).toBeNull();
+    expect(review.bidClosesAtLocal.value).toBeNull();
+    expect(review.estimatedValue.value).toBeNull();
+    expect(review.emdAmount.value).toBeNull();
+    expect(review.needsReview.identityUnresolved).toBe(true);
+  });
+});
