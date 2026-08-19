@@ -30,6 +30,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The stock register (migration 0087).
@@ -725,9 +726,8 @@ function MovementDialog({
         </Field>
         <Field>
           <label htmlFor="movement-quantity">Quantity ({item.unit})</label>
-          <input
+          <NumericInput
             id="movement-quantity"
-            inputMode="decimal"
             required
             value={quantity}
             onChange={(event) => {
@@ -775,9 +775,8 @@ function MovementDialog({
           <label htmlFor="reorder-level">
             Reorder level ({item.unit}) — blank means no level is set
           </label>
-          <input
+          <NumericInput
             id="reorder-level"
-            inputMode="decimal"
             value={reorderLevel}
             onChange={(event) => {
               setReorderLevel(event.currentTarget.value);

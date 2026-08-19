@@ -32,17 +32,34 @@ export const SerialSearchQuerySchema = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * Where a serial number ENTERED the record, as the column of the same name
+ * on `challan_item_serials` holds it (migration 0108).
+ *
+ * `delivery` is the original: the number was captured on a Delivery
+ * Challan line. `installation` is the number the challan missed — typed at
+ * site by the person in front of the equipment, recorded against the
+ * installation instead of against a challan that has already been issued
+ * and is not going to be edited.
+ *
+ * This is a fact about the unit's paperwork, and traceability is the
+ * reason it is carried rather than smoothed over: a unit whose nameplate
+ * reached the record late is exactly the unit whose provenance somebody
+ * will one day ask about.
+ */
+export const SerialOriginSchema = Type.Union([
+  Type.Literal('delivery'),
+  Type.Literal('installation'),
+]);
+export type SerialOrigin = Static<typeof SerialOriginSchema>;
+
 /** Where a matched serial came from.
  *
- * `delivery` is the original: a serial captured on a Delivery Challan
- * line, which is always attached to a Work. `production` is a unit the
- * factory built (migration 0084), which may have no Work at all — a job
- * card raised against a private purchase order is the ordinary case —
- * and has not been despatched under any challan yet. */
-const SerialSourceSchema = Type.Union([
-  Type.Literal('delivery'),
-  Type.Literal('production'),
-]);
+ * The two origins above, plus `production`: a unit the factory built
+ * (migration 0084), which lives in its own table, may have no Work at all
+ * — a job card raised against a private purchase order is the ordinary
+ * case — and has not been despatched under any challan yet. */
+const SerialSourceSchema = Type.Union([SerialOriginSchema, Type.Literal('production')]);
 
 const SerialSearchMatchSchema = Type.Object(
   {

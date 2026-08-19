@@ -2004,6 +2004,128 @@ letter-level review flag.
 no maintenance schedule and no acceptance certificates. Both are built
 from the mock's existing table, field and action components.
 
+### 27. Installation recording, and number-only fields — APPROVED
+
+**Status: APPROVED, owner ruling of 2026-08-19**, items 10, 11 and 12 of the
+live-testing corrections ledger. Two unrelated surfaces in one section
+because they landed in one pack and the second one touches the first: the
+installation table's quantity cells are the shared numeric control.
+
+#### 27a. The installation capture flow becomes a table
+
+The mock draws `components/installation-capture-flow.tsx` (at `a8e1fde`) as a
+numbered, one-item-at-a-time form: pick the Work, pick the item, type a
+quantity, a date, a station, tick serials. The port replicated it, and
+live testing found what the fiction could not show — a crew installs six
+items at one station on one day. Recording that meant walking the form six
+times and picking the same date and the same station on each pass, with
+six chances for it to disagree with itself, from a phone, at night, in a
+traffic block.
+
+So the flow is now one table, and the divergence is recorded here rather
+than iterated in v0 first because it is not a visual preference: it is the
+shape of the transaction. The mock's Work is a fiction with one item and no
+delivery, and a mock cannot express "the same visit wrote six records".
+
+| #   | What the application does                                                                                                                                                                                                                                                                                                | What the mock draws                                          | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 27a | Date, location and remark stated ONCE above a table of items; each filled row becomes its own installation record, all in one transaction                                                                                                                                                                                | Five numbered fields, one item, one record                   | They are facts about the VISIT, not about the item. Stating them once removes the only way six records of one visit could carry five different dates. All-or-nothing because half a visit recorded is worse than none: the operator cannot tell which half from a screen that has already reset.                                                                                                                                                                                                                                         |
+| 27b | The table LEADS with the items that have an installable balance, with a search box over them; the items already installed to their sanctioned quantity are folded away under "Installed to sanction — recording more flags a variation", and the ones whose DELIVERED quantity is fully installed are not offered at all | A `Select` over every item                                   | Ledger item 10. The picker offered the whole schedule, including items with nothing standing on site, so the operator had to remember which had material and which did not. The three outcomes are three different rules, not one: R5 caps a serial-tracked item at what issued challans delivered and refuses more, so a row for it could not succeed; an item with no supply leg has no such floor and the 2026-08-17 ruling says more MAY be recorded, so it keeps a surface rather than losing one; AMC is never installable (0068). |
+| 27c | Serials are TYPED as numbers, per row, with the delivered pool as one button per serial beneath the field                                                                                                                                                                                                                | A tap-select checklist of literal serials                    | Ledger item 12. The field has to accept a number that is in no pool — see 27d — so the pool is an assist and never a whitelist. It was a `<datalist>` for one revision and that was wrong: the browser matches a datalist against the WHOLE field value, so it helped with the first of six nameplates and went dead the moment the field held "SN-001, ". Buttons append to the field instead and disable once their serial is in it, which is the tap-select the mock drew, per unit rather than per row.                              |
+| 27d | A serial the Delivery Challan missed is ACCEPTED, recorded against the installation, and marked `added here` on the record                                                                                                                                                                                               | Nothing — the mock's serials are literals with no provenance | The owner's rule, verbatim: "if missing serial in DC is added in IC then accept it and record it." A challan is typed from a despatch note; the nameplate is read by the person in front of the equipment. Migration 0108 carries the origin, and the tenant-wide serial trace renders it as a third origin beside Delivered and Production.                                                                                                                                                                                             |
+| 27e | The item balances get a failure state of their own, with its own Retry, and it says recording is paused                                                                                                                                                                                                                  | No loading or failure states at all                          | The balances used to be a courtesy line under the quantity field, and a failed read hid one sentence. They now decide the table's CONTENTS, and a silent failure would read as "nothing left to install" — a different fact entirely. Recording is gated on the read rather than degraded, because without balances the only honest table is the whole schedule, which is what 27b removed; the panel says so rather than leaving an empty table to be read as an answer. § Shared states: one failure state per independent read.       |
+
+The record list, the per-item installed summary, the variation chip and
+the cancel-with-note form are untouched, and so is every server rule the
+old form met: R5's delivery floor, R6's one-serial-per-unit, R11's date
+window, the AMC refusal, and the sanctioned-quantity variation flag (§
+Business-rule note: installation above sanctioned quantity).
+
+**A typed row is never taken off the screen.** The table recomputes as
+balances reload and narrows as the operator searches, and either could
+have removed a row the operator had already typed a quantity into —
+dropping it from the request as well as from the view, silently, from a
+screen that no longer showed what was lost. A row with a quantity in it is
+part of the visit and stays rendered and submittable whatever the
+arithmetic and the search box say next; the server remains the referee.
+
+**One thing this surface deliberately cannot do**, recorded so its absence
+is a decision. A serial that entered at an installation keeps that origin.
+When the office later tidies the Delivery Challan and records the same
+number against its line, that recording is refused — the number is already
+traced under this Work — and the lawful move is to record the line without
+it. Adoption, moving a serial from `installation` origin to `delivery` so
+the challan can claim it, would rewrite what an issued document was proven
+complete against, and is a future decision rather than a gap. The refusal's
+remedy says all of this in one sentence
+(`apps/server/src/remedies.ts`, `DUPLICATE_SERIAL`).
+
+#### 27b. Every number-only field filters on the way in
+
+Ledger item 11. Numeric fields were one of two hand-rolled shapes:
+`<input type="number">`, which brings spinner arrows and a scroll wheel
+that edits a quantity when the page scrolls under the cursor; or
+`<input type="text" inputMode="decimal">`, which asks a phone for the
+right keypad and then accepts anything from a desk keyboard. Both let a
+pasted `1,250` reach a form that submitted it, and the refusal came back
+from the server after the operator had moved on.
+
+`apps/web/src/ui/numeric-input.tsx` is now the only number-only input, and
+all 72 of them use it. It checks on the browser's `input` event — the one
+place every keystroke, paste, drag-drop and autofill passes through — so a
+non-numeric character never appears rather than appearing and vanishing.
+
+**It refuses; it does not repair.** Anything that is not already a number
+is rejected whole and the field keeps the value it had. The first revision
+deleted the offending characters and kept the rest, which on exactly the
+inputs this control exists for produced a plausible WRONG number instead
+of a refused one: `1.2.3` became `1.23`, `12e5` became `125`, `12.345,678`
+became `12.345678`, and `1,250` became `1250`. A refusal is visible —
+nothing happens, and the operator looks at what they pasted.
+
+The one exception is the integer variant, which **truncates at the decimal
+point**: `2.5` becomes `2`, never `25`. Deleting the point on a
+months-or-days field multiplies the value by ten and reads as a successful
+edit, which is the worst outcome a filter can produce. `2.5.3` is not a
+number at all and is refused rather than truncated, so the two rules cannot
+be played against each other.
+
+Two more behaviours worth stating. An `input` event raised mid-IME
+composition is **left alone** — rewriting the field while an operator is
+still composing rearranges what they are typing — and the event that ends
+the composition is checked like any other. Non-ASCII digits (Devanagari
+`१२`, full-width `１２`) are **refused rather than transliterated**: mapping
+them to ASCII is a decision about every numeric string in the product,
+including whether a serial or a GSTIN typed the same way should follow, and
+not one a shared control may take on its own.
+
+**This is not a mock divergence.** The mock draws bordered text inputs and
+so does this: the element, the classes and the rendered appearance are
+unchanged everywhere except the fourteen fields that were `type="number"`,
+which lose their spinner arrows. That is a visual change, it is stated
+here, and it is the point — the arrows were a control nobody used on a
+quantity that is a decimal string.
+
+Two things the control deliberately does NOT do, both because a shared
+control that guessed would be worse than the refusal it replaced:
+
+- **It does not enforce scale.** `DecimalString` allows three decimal
+  places, `RateString` six, money two, percentages four. Silently
+  truncating a legal six-decimal rate to three would be a wrong number
+  rather than a refused one. The contract schemas judge precision, on the
+  server, exactly as before.
+- **It does not enforce sign.** A leading `-` is a numeric character;
+  whether a negative value is legal belongs to the field's own schema, and
+  a control that refused the minus would make the signed money fields
+  untypable.
+
+Digit-STRING fields keep their plain inputs and their `inputMode="numeric"`:
+HSN and SAC codes, GST state codes, pincodes, IFSC, phone numbers, and
+two-factor codes are not numbers — a leading zero and a fixed length carry
+meaning there. `apps/web/test/numeric-input-census.test.ts` counts the
+source so the distinction cannot rot: a new `type="number"`, or a new bare
+input carrying `inputMode="decimal"`, fails the suite.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

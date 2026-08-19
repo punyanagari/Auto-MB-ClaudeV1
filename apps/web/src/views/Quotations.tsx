@@ -19,6 +19,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface QuotationsProps {
   readonly api: ApiClient;
@@ -789,9 +790,8 @@ export function Quotations({
                               />
                             </td>
                             <td>
-                              <input
+                              <NumericInput
                                 aria-label={`Line ${String(lineNumber)} quantity`}
-                                inputMode="decimal"
                                 value={line.quantity}
                                 onChange={(event) => {
                                   set({ quantity: event.target.value });
@@ -800,9 +800,8 @@ export function Quotations({
                               />
                             </td>
                             <td>
-                              <input
+                              <NumericInput
                                 aria-label={`Line ${String(lineNumber)} rate`}
-                                inputMode="decimal"
                                 value={line.rate}
                                 onChange={(event) => {
                                   set({ rate: event.target.value });
@@ -830,9 +829,8 @@ export function Quotations({
                                   ))}
                                 </select>
                               ) : (
-                                <input
+                                <NumericInput
                                   aria-label={`Line ${String(lineNumber)} GST rate (optional)`}
-                                  inputMode="decimal"
                                   value={line.gstRate}
                                   onChange={(event) => {
                                     set({ gstRate: event.target.value });

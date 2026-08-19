@@ -36,6 +36,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError, Hint } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { RailwayBillPanel } from './RailwayBillPanel.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface MeasurementBooksProps {
   readonly api: ApiClient;
@@ -167,9 +168,7 @@ function MeasuredCell({
   const hintId = `mb-measured-${stage}-${itemNumber}`;
   return (
     <td className={numericCell}>
-      <input
-        type="text"
-        inputMode="decimal"
+      <NumericInput
         className="w-20 text-right font-mono tabular-nums"
         value={entered}
         aria-label={`${stage === 'supplied' ? 'Supplied' : 'Installed'} quantity measured for item ${itemNumber}`}

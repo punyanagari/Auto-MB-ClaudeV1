@@ -16,6 +16,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, Hint } from '../ui/form.js';
 import { LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface WorkPurchaseOrdersProps {
   readonly api: ApiClient;
@@ -446,9 +447,8 @@ export function WorkPurchaseOrders({
                           />
                         </td>
                         <td>
-                          <input
+                          <NumericInput
                             aria-label={`${lineLabel} quantity`}
-                            inputMode="decimal"
                             value={line.quantity}
                             required
                             onChange={(event) => {
@@ -464,9 +464,8 @@ export function WorkPurchaseOrders({
                           />
                         </td>
                         <td>
-                          <input
+                          <NumericInput
                             aria-label={`${lineLabel} rate`}
-                            inputMode="decimal"
                             value={line.rate}
                             required
                             onChange={(event) => {

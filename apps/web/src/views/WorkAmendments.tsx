@@ -12,6 +12,7 @@ import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
 import { Field, Actions } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface WorkAmendmentsProps {
   readonly api: ApiClient;
@@ -386,10 +387,9 @@ function AmendmentForm({
             <label htmlFor="amendment-quantity">
               {kind === 'add' ? 'Quantity' : 'New quantity (optional)'}
             </label>
-            <input
+            <NumericInput
               id="amendment-quantity"
               name="amendment-quantity"
-              inputMode="decimal"
               required={kind === 'add'}
             />
           </Field>
@@ -397,10 +397,9 @@ function AmendmentForm({
             <label htmlFor="amendment-rate">
               {kind === 'add' ? 'Rate (₹)' : 'New rate (₹, optional)'}
             </label>
-            <input
+            <NumericInput
               id="amendment-rate"
               name="amendment-rate"
-              inputMode="decimal"
               required={kind === 'add'}
             />
           </Field>

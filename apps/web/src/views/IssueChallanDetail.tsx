@@ -11,6 +11,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Field, Actions, FormError, FormNotice } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /** True when the Work's approval list carries a pending cancel-and-replace
  * request for THIS Issue Challan — surfaced instead of the correction form
@@ -520,12 +521,11 @@ export function IssueChallanDetail({
                     <label htmlFor={`ic-correction-qty-${line.id}`}>
                       Quantity — {line.description}
                     </label>
-                    <input
+                    <NumericInput
                       id={`ic-correction-qty-${line.id}`}
                       name={`ic-correction-qty-${line.id}`}
                       defaultValue={line.quantity}
                       required
-                      inputMode="decimal"
                     />
                   </Field>
                 ))}

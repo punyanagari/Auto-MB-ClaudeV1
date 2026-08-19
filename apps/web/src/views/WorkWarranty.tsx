@@ -17,6 +17,7 @@ import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The Work's defect liability card, rendered inside its Instruments tab.
@@ -217,12 +218,10 @@ export function WorkWarranty({
           >
             <Field>
               <label htmlFor="dlp-months">Warranty period (months)</label>
-              <input
+              <NumericInput
+                integer
                 id="dlp-months"
                 name="dlp-months"
-                type="number"
-                min={1}
-                max={120}
                 required
                 defaultValue={terms?.dlpMonths ?? 24}
               />

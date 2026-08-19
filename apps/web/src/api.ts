@@ -218,6 +218,8 @@ import type {
   Installation,
   InstallationListResponse,
   InstallationRegisterResponse,
+  RecordInstallationBatchRequest,
+  RecordInstallationBatchResponse,
   RecordInstallationRequest,
   PaymentMatrixCategory,
   PaymentMatrixRow,
@@ -1074,6 +1076,13 @@ export interface ApiClient {
     workId: string,
     body: RecordInstallationRequest,
   ) => Promise<Installation>;
+  /** One site visit: a shared date and location, one record per filled
+   * row. All or nothing — half a visit recorded is worse than none. */
+  readonly recordWorkInstallations: (
+    organisationId: string,
+    workId: string,
+    body: RecordInstallationBatchRequest,
+  ) => Promise<RecordInstallationBatchResponse>;
   readonly cancelWorkInstallation: (
     organisationId: string,
     installationId: string,
@@ -3927,6 +3936,12 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async recordWorkInstallations(organisationId, workId, body) {
+      return request<RecordInstallationBatchResponse>(
+        `/api/works/${workId}/installations/batch`,
+        { method: 'POST', body, organisationId },
+      );
     },
     async challanCorrectionEligibility(organisationId, challanId) {
       return request<CorrectionEligibilityResponse>(

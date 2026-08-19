@@ -191,12 +191,15 @@ describe('ChallanEditor', () => {
     await screen.findByText('2.000');
     fillConsignee();
     // Both are shapes the server rejects: a two-character phone and a
-    // quantity that is not a decimal at all.
+    // quantity carrying a fourth decimal place. The quantity used to be
+    // the word "two"; the field is a `NumericInput` now, which filters
+    // letters out on the way in, so what is left to refuse is a number of
+    // the wrong scale rather than a non-number.
     fireEvent.change(screen.getByLabelText('Consignee phone (optional)'), {
       target: { value: '12' },
     });
     fireEvent.change(screen.getByLabelText('Quantity of A/1 on this challan'), {
-      target: { value: 'two' },
+      target: { value: '2.0001' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
 
