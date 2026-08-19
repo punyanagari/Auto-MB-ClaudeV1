@@ -2,7 +2,6 @@ import type {
   Instrument,
   InstrumentStatus,
   WorkDetailResponse,
-  WorkItem,
 } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { useState } from 'react';
