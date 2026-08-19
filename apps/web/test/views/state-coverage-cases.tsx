@@ -7,6 +7,8 @@ import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { AccountSecurity } from '../../src/views/AccountSecurity.js';
 import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
 import { Approvals } from '../../src/views/Approvals.js';
+import { AuditTrail } from '../../src/views/AuditTrail.js';
+import { Mis } from '../../src/views/Mis.js';
 import { CompanyDocuments } from '../../src/views/CompanyDocuments.js';
 import { Inspection } from '../../src/views/Inspection.js';
 import { WorkInspectionClause } from '../../src/views/WorkInspectionClause.js';
@@ -15,6 +17,8 @@ import { DeliveryChallans } from '../../src/views/DeliveryChallans.js';
 import { IssueChallans } from '../../src/views/IssueChallans.js';
 import { Installations } from '../../src/views/Installations.js';
 import { InstallationsRegister } from '../../src/views/InstallationsRegister.js';
+import { Warranties } from '../../src/views/Warranties.js';
+import { WorkWarranty } from '../../src/views/WorkWarranty.js';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
@@ -39,8 +43,12 @@ import { Maintenance } from '../../src/views/Maintenance.js';
 import { MaintenanceJobCard } from '../../src/views/MaintenanceJobCard.js';
 import { MaintenanceRequestForm } from '../../src/views/MaintenanceRequestForm.js';
 import { ProductionJobCard } from '../../src/views/ProductionJobCard.js';
+import { OrganisationExportSettings } from '../../src/views/OrganisationExportSettings.js';
+import { PlatformSettings } from '../../src/views/PlatformSettings.js';
 import { SigningKioskSettings } from '../../src/views/SigningKioskSettings.js';
+import { Imports } from '../../src/views/Imports.js';
 import { SigningQueue } from '../../src/views/SigningQueue.js';
+import { Notifications } from '../../src/views/Notifications.js';
 import { Employees } from '../../src/views/Employees.js';
 import { PayrollRun } from '../../src/views/PayrollRun.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
@@ -50,6 +58,7 @@ import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
 import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
+import { WorkRetention } from '../../src/views/WorkRetention.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
 import { WorkPaymentSetup } from '../../src/views/WorkPaymentSetup.js';
@@ -282,6 +291,33 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry installations/,
     empty: { text: /No installations recorded yet/ },
+  },
+  {
+    view: 'Warranties.tsx',
+    name: 'the warranty register',
+    loads: ['listWarranties'],
+    render: (api) => (
+      <Warranties
+        api={api}
+        organisationId={ORG_ID}
+        workId={null}
+        onOpenWork={noop}
+        onOpenWorks={noop}
+        onClearWorkFilter={noop}
+      />
+    ),
+    retry: /Retry warranties/,
+    empty: { text: /No defect liability period has been started yet/ },
+  },
+  {
+    view: 'WorkWarranty.tsx',
+    name: "the Work's defect liability card",
+    loads: ['getWorkWarranty'],
+    render: (api) => (
+      <WorkWarranty api={api} organisationId={ORG_ID} workId={WORK_ID} canModify />
+    ),
+    retry: /Retry defect liability/,
+    empty: { text: /No defect liability period has been started on this Work/ },
   },
   {
     view: 'InvoicesRegister.tsx',
@@ -610,12 +646,122 @@ export const STATE_CASES: readonly StateCase[] = [
     empty: { text: /No kiosk is registered/ },
   },
   {
+    view: 'PlatformSettings.tsx',
+    name: 'the platform settings',
+    // Two reads in one Promise.all: the flags and the schedules with
+    // their run history. Either failing puts the whole panel in its
+    // error state, because a screen that showed modules but not the
+    // checks that depend on them would be half a truth.
+    loads: ['listEntitlements', 'listJobSchedules'],
+    render: (api) => (
+      <PlatformSettings
+        api={api}
+        organisationId={ORG_ID}
+        isOwner
+        canManageEntitlements
+        currentUserId="user-a"
+      />
+    ),
+    retry: /Retry the platform settings/,
+    empty: {
+      notApplicable:
+        'The modules list is driven by the product declaration, not by rows, so it is never empty. The schedules and the run history below it have their own empty states inside a panel that has already rendered.',
+    },
+  },
+  {
+    view: 'OrganisationExportSettings.tsx',
+    name: 'the organisation export panel',
+    loads: ['listOrganisationExports'],
+    render: (api) => (
+      <OrganisationExportSettings
+        api={api}
+        organisationId={ORG_ID}
+        canExportOrg
+        currentUserId="user-a"
+      />
+    ),
+    retry: /Retry the export history/,
+    empty: { text: /No export has been taken of this organisation/ },
+  },
+  {
     view: 'SigningQueue.tsx',
     name: 'the signing queue',
     loads: ['listSigningRequests'],
     render: (api) => <SigningQueue api={api} organisationId={ORG_ID} canModify />,
     retry: /Retry the signing queue/,
     empty: { text: /No document has been sent for signature yet/ },
+  },
+  // Four cases, because the screen makes four INDEPENDENT loads: a
+  // delivery log that cannot be reached must not blank the channel
+  // configuration an operator came here to fix.
+  {
+    view: 'Notifications.tsx',
+    name: 'the notification channels',
+    loads: ['listNotificationChannels'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the notification channels/,
+    empty: {
+      notApplicable:
+        'Both channels are always drawn, configured or not: an unconfigured channel is the state an operator came here to change, so it is visible rather than absent.',
+    },
+  },
+  {
+    view: 'Notifications.tsx',
+    name: 'the message templates',
+    loads: ['listNotificationTemplates'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the message templates/,
+    empty: { text: /No message template has been written yet/ },
+  },
+  {
+    view: 'Notifications.tsx',
+    name: 'the consent register',
+    loads: ['listNotificationConsents'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the consent register/,
+    empty: { text: /Nobody has been recorded as consenting yet/ },
+  },
+  {
+    view: 'Notifications.tsx',
+    name: 'the delivery log',
+    loads: ['listNotifications'],
+    render: (api) => <Notifications api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the delivery log/,
+    empty: { text: /Nothing has been sent yet/ },
+  },
+  {
+    view: 'Imports.tsx',
+    name: 'the imports register',
+    // One read on mount, and it carries the registers that accept a
+    // sheet alongside the batches — the screen needs those on an
+    // organisation's first day, when there is nothing else to show.
+    loads: ['listImportBatches'],
+    render: (api) => <Imports api={api} organisationId={ORG_ID} canImport />,
+    retry: /Retry the imports/,
+    empty: { text: /No spreadsheet has been imported yet/ },
+  },
+  {
+    view: 'AuditTrail.tsx',
+    name: 'the audit register',
+    // Two mount reads. Only the register's own is listed: the facet read
+    // beside it degrades to empty pickers on purpose, because a register
+    // that still lists its events is more useful than one that refuses to
+    // render because its filters could not be built.
+    loads: ['auditRegister'],
+    render: (api) => <AuditTrail api={api} organisationId={ORG_ID} />,
+    retry: /Retry the audit register/,
+    empty: { text: /Nothing has been recorded yet/ },
+  },
+  {
+    view: 'Mis.tsx',
+    name: 'the management summary',
+    loads: ['misSummary'],
+    render: (api) => <Mis api={api} organisationId={ORG_ID} isOwner />,
+    retry: /Retry the summary/,
+    empty: {
+      notApplicable:
+        'the summary always renders: the ageing table carries all five buckets whatever the data, so there is no whole-page empty state. Its output-tax and payroll sections carry their own EmptyStates.',
+    },
   },
   {
     view: 'Employees.tsx',
@@ -918,6 +1064,24 @@ export const STATE_CASES: readonly StateCase[] = [
     empty: { text: /nothing is outstanding with the railway yet/ },
   },
   {
+    view: 'WorkRetention.tsx',
+    name: 'retention and liquidated damages',
+    loads: ['getWorkRetention'],
+    render: (api) => (
+      <WorkRetention
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canManageRetention
+      />
+    ),
+    retry: /Retry retention and damages/,
+    // A Work that has never been billed has had nothing withheld, which
+    // is the ordinary state of most of a Work's life and reads as an
+    // empty terms panel rather than as a zero balance.
+    empty: { text: /No retention or liquidated-damages terms are recorded/ },
+  },
+  {
     view: 'WorkBillingReadiness.tsx',
     name: 'the billing prerequisites',
     loads: ['getPaymentMatrix'],
@@ -960,6 +1124,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canCancel
         canApprove
         canManageStatutory
+        canManageRetention
         isOwner
         onNewChallan={noop}
         onOpenChallan={noop}
@@ -988,6 +1153,7 @@ export const STATE_CASES: readonly StateCase[] = [
         canCancel
         canApprove
         canManageStatutory
+        canManageRetention
         isOwner
         onNewChallan={noop}
         onOpenChallan={noop}

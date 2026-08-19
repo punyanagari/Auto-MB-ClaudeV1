@@ -65,6 +65,15 @@ export type WorkspaceView =
    * at fdfe5ef): present, the register reads one Work and says so with a
    * dismissible chip; absent, it reads across every Work in reach. */
   | { name: 'installations'; workId: string | null }
+  /** The warranty register (migration 0099): every defect liability
+   * period across the Works the caller may see, soonest expiry first.
+   * Reading only — a period is started, extended and discharged on its
+   * Work's Instruments tab, which is what holds the contract term it runs
+   * under.
+   *
+   * `workId` is the mock's `?work=` deep link, taken the way every other
+   * cross-Work register takes it. */
+  | { name: 'warranties'; workId: string | null }
   /** The tax-invoice module's own register: every invoice the caller may
    * see, work-backed and direct alike. A DIRECT invoice — raised against
    * a private customer, so belonging to no Work — has no Work to open
@@ -131,6 +140,19 @@ export type WorkspaceView =
    * the kiosk is one machine and the person watching it watches one
    * list. No mock screen — see docs/UX.md § 16. */
   | { name: 'signing' }
+  /** Notifications (migration 0092). Organisation-level: which channels
+   * the agency speaks through, what it may say, who agreed to be spoken
+   * to, and what became of every message. Not per Work — nothing this
+   * pack sends is about one. */
+  | { name: 'notifications' }
+  /** Bringing a register in from a spreadsheet (migration 0094).
+   * Organisation-level, because the registers it fills are: a party
+   * master and an item catalogue belong to the agency, not to a
+   * contract. One address, and the batch it is looking at is state
+   * inside the screen rather than a route — an import is a conversation
+   * that lasts one sitting, not a record anybody links to. No mock
+   * screen — see docs/UX.md § 18. */
+  | { name: 'imports' }
   /** The employee master and the monthly payroll run (0089, 0090).
    * Organisation-level, and deliberately: a salary is paid by the agency
    * and not by a contract, so neither carries a Work.
@@ -145,6 +167,16 @@ export type WorkspaceView =
   | { name: 'employees' }
   | { name: 'payroll' }
   | { name: 'members' }
+  /** The organisation-wide audit register (0095). Not the per-Work
+   * timeline, which stays a Work workspace section: this one is filtered
+   * by actor and action across every module, and is gated on the audit
+   * authority AND full work scope. */
+  | { name: 'audit' }
+  /** The management summary (0095): output tax by month, receivables
+   * ageing, payroll cost. Separate from the landing dashboard on purpose
+   * — see `packages/contracts/src/mis.ts` — because these are month-end
+   * roll-ups nobody needs on every sign-in. */
+  | { name: 'mis' }
   | { name: 'settings' };
 
 /** A parsed location: the view plus the tab state some views carry
@@ -273,6 +305,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return view.workId === null
         ? '#/installations'
         : `#/installations/${view.workId}`;
+    case 'warranties':
+      return view.workId === null ? '#/warranties' : `#/warranties/${view.workId}`;
     case 'invoices':
       return '#/invoices';
     case 'invoice':
@@ -290,6 +324,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/inspection';
     case 'signing':
       return '#/signing';
+    case 'notifications':
+      return '#/notifications';
+    case 'imports':
+      return '#/imports';
     case 'stock':
       return '#/inventory';
     case 'stock-shortages':
@@ -326,6 +364,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/correspondence/new/inward';
     case 'members':
       return '#/members';
+    case 'audit':
+      return '#/audit';
+    case 'mis':
+      return '#/reports';
     case 'settings':
       return '#/settings';
   }
@@ -554,6 +596,14 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (!isRecordId(workId) || extra.length > 0) return null;
       return { view: { name: 'installations', workId } };
     }
+    case 'warranties': {
+      const [workId, ...extra] = rest;
+      if (workId === undefined) {
+        return { view: { name: 'warranties', workId: null } };
+      }
+      if (!isRecordId(workId) || extra.length > 0) return null;
+      return { view: { name: 'warranties', workId } };
+    }
     case 'inventory': {
       const [first, ...extra] = rest;
       if (extra.length > 0) return null;
@@ -620,9 +670,17 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'inspection':
     case 'receivables':
     case 'signing':
+    case 'notifications':
+    case 'imports':
     case 'members':
+    case 'audit':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;
+    // The management summary answers to `#/reports`, which is what an
+    // operator would type and what the rail calls it. `mis` is the
+    // internal name and never appears in an address.
+    case 'reports':
+      return rest.length === 0 ? { view: { name: 'mis' } } : null;
     default:
       return null;
   }

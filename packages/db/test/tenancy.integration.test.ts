@@ -194,6 +194,17 @@ const TENANT_TABLES = [
   // request is authorised against one.
   'signing_agents',
   'signing_requests',
+  // Notifications (0092): the channel and the template before the
+  // messages that name them, and the consent before it too — a message
+  // cannot be inserted without an opted-in consent for its address.
+  'notification_channels',
+  'notification_templates',
+  'notification_consents',
+  'notification_messages',
+  // The spreadsheet importer's staging area (0094). The batch precedes
+  // its rows, which name it with a composite tenant reference.
+  'spreadsheet_import_batches',
+  'spreadsheet_import_rows',
   // Payroll (0089, 0090). The schedules first because the runs read
   // them, the employee before the lines that snapshot them, and the
   // counter before the runs it numbers.
@@ -215,6 +226,21 @@ const TENANT_TABLES = [
   'maintenance_dispatches',
   'maintenance_dispatch_lines',
   'maintenance_returns',
+  // The platform controls (0096). No order matters between them: none
+  // references another, and each hangs only off `organisations`.
+  'organisation_entitlements',
+  'statutory_job_schedules',
+  'organisation_export_requests',
+  // Retention, security deposit and liquidated damages (0098). The
+  // contract's terms first, because an assessment is refused without
+  // them; the release and the assessment hang off the Work.
+  'work_retention_terms',
+  'retention_releases',
+  'ld_assessments',
+  // The defect liability period (0099): the Work's contract term first,
+  // because a period freezes the term it was started under.
+  'work_warranty_terms',
+  'installation_warranties',
 ] as const;
 
 type TenantTable = (typeof TENANT_TABLES)[number];
@@ -409,6 +435,28 @@ const DELETE_REVOKED_TABLES = [
   // raised in error cancels with a reason, and an agent revokes (0091).
   'signing_requests',
   'signing_agents',
+  // Notifications (0092). "We never had their consent" and "we had it
+  // and deleted the record" are the same row absent, and only one of
+  // them is a defence; the delivery log is the answer to "did you tell
+  // us"; and both the channel and the template are what a logged message
+  // was actually sent through and rendered from. Nothing here deletes.
+  'notification_channels',
+  'notification_templates',
+  'notification_consents',
+  'notification_messages',
+  // An import batch records where hundreds of live records came from, so
+  // an abandoned one is cancelled with a reason rather than removed; its
+  // staged rows are the only surviving copy of what the uploaded file
+  // said, because the workbook itself is never stored (0094).
+  'spreadsheet_import_batches',
+  'spreadsheet_import_rows',
+  // A recorded retention release and a liquidated-damages assessment are
+  // both money records: the first is WITHDRAWN with a reason and the
+  // second is CANCELLED with one, so the mistake and its correction stay
+  // on the record together. Only the contract's terms delete, and they
+  // are in DELETE_ALLOWED_TABLES below (0098).
+  'retention_releases',
+  'ld_assessments',
   // A maintenance request carries a number from the moment it is raised
   // and closes rather than disappearing; its lines are cancelled with a
   // reason rather than removed; the challan, its lines and the defective
@@ -421,11 +469,30 @@ const DELETE_REVOKED_TABLES = [
   'maintenance_dispatches',
   'maintenance_dispatch_lines',
   'maintenance_returns',
+  // The platform controls (0096). Deleting an entitlement row would
+  // silently restore the shipped default and erase who decided
+  // otherwise; a schedule is switched off rather than forgotten, so a
+  // check somebody expected is visibly not running; and an export is a
+  // disclosure of the whole organisation, which is not a record that may
+  // be removed. Expiry empties the storage, never the row.
+  'organisation_entitlements',
+  'statutory_job_schedules',
+  'organisation_export_requests',
+  // A defect liability period is the record that a warranty ran, and the
+  // term is the clause it ran under: the period is voided with a note and
+  // both stay (0099).
+  'work_warranty_terms',
+  'installation_warranties',
 ] as const satisfies readonly TenantTable[];
 
 /** Tables the application role may still DELETE (drafts, lines,
  * memberships, schedules): cross-tenant deletes match zero rows. */
 const DELETE_ALLOWED_TABLES = [
+  // A Work's retention and liquidated-damages terms are configuration
+  // read off its letter, not a record of an act: a Work that turns out to
+  // state none goes back to having none. Every assessment already made
+  // keeps its own frozen snapshot and is unaffected (0098).
+  'work_retention_terms',
   // A payslip is cleared and rewritten every time a DRAFT run is
   // recalculated, which is the only reason DELETE exists on the table at
   // all; the 0090 guard refuses every delete once the run is finalised
@@ -889,6 +956,27 @@ async function seedTenantGraph(
       where s.work_id = ${work.id} and s.serial_number = ${`SN-${workCode}`}
     `;
 
+    // Wave E defect liability (0099): the Work's term, and a period
+    // running on the installation seeded above. The expiry is NOT sent —
+    // the 0099 insert guard derives it — so this fixture proves the
+    // derivation as well as the isolation.
+    await tx`
+      insert into work_warranty_terms (
+        organisation_id, work_id, dlp_months, start_basis, recorded_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 24, 'installation', ${userId})
+    `;
+    await tx`
+      insert into installation_warranties (
+        organisation_id, work_id, installation_id, dlp_months, start_basis,
+        dlp_start_on, original_expires_on, dlp_expires_on, started_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${installation.id}, 24, 'installation',
+        '2026-02-03', '2026-02-03', '2026-02-03', ${userId}
+      )
+    `;
+
     // Milestone 8 payment matrix: one row.
     await tx`
       insert into payment_matrices (
@@ -1050,6 +1138,47 @@ async function seedTenantGraph(
       values
         (${organisationId}, ${billPayment.id}, 'GST_TDS', '1.00', null),
         (${organisationId}, ${billPayment.id}, 'SECURITY_DEPOSIT', '1.00', null)
+    `;
+
+    /* Retention and liquidated damages (0098). The security-deposit
+       deduction above is the ₹1 the railway withheld, so the ₹1 release
+       here is exactly what the ledger permits — the guard refuses a
+       release beyond what was ever held, and a seed that could not be
+       written would say nothing about tenancy.
+
+       The release date is two days back rather than a literal, because
+       the guard compares it against today in the ORGANISATION'S timezone
+       and a hard-coded date makes the suite depend on the wall clock. */
+    await tx`
+      insert into work_retention_terms (
+        organisation_id, work_id, retention_percent, retention_limit_percent,
+        defect_liability_months, ld_rate_percent, ld_period_days,
+        ld_cap_percent, recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, '10', '5', 24, '0.5', 7, '10', ${userId}
+      )
+    `;
+    await tx`
+      insert into retention_releases (
+        organisation_id, work_id, released_on, amount, basis, reference,
+        recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, (now() - interval '2 days')::date, '1.00',
+        'pac', ${`REL-${workCode}`}, ${userId}
+      )
+    `;
+    await tx`
+      insert into ld_assessments (
+        organisation_id, work_id, assessed_on, basis_amount, basis_label,
+        scheduled_completion_date, assessed_to_date, ld_rate_percent,
+        ld_period_days, ld_cap_percent, assessed_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, '2026-02-15', '1000.00', 'Contract value',
+        '2026-01-01', '2026-02-01', '0.5', 7, '10', ${userId}
+      )
     `;
 
     /* The outbound half of the cash position (0080). The beneficiary is
@@ -1740,6 +1869,103 @@ async function seedTenantGraph(
       )
     `;
 
+    // Notifications (0092). Both channels, because the tenancy sweep
+    // needs a row per table and the message guard needs an ENABLED
+    // channel, an approved template and an opted-in consent before it
+    // will admit anything into the log.
+    //
+    // The phone number id is GLOBALLY unique, because Meta's webhook
+    // resolves a tenant by it before any tenant is bound — so the two
+    // organisations this sweep creates must not share one.
+    const notificationPhoneNumberId =
+      `1${String(randomBytes(6).readUIntBE(0, 6)).padStart(14, '0')}`.slice(0, 15);
+    await tx`
+      insert into notification_channels (
+        organisation_id, channel, enabled, waba_phone_number_id,
+        waba_business_account_id, display_phone_number, configured_by_user_id
+      )
+      values (
+        ${organisationId}, 'whatsapp', true, ${notificationPhoneNumberId},
+        '109876543210987', '+919876543210', ${userId}
+      )
+    `;
+    const [notificationTemplate] = await tx<{ id: string }[]>`
+      insert into notification_templates (
+        organisation_id, name, language, category, body_text, parameter_count,
+        email_subject, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'tenancy_fixture', 'en', 'utility',
+        'Challan {{1}} has been issued.', 1, 'Challan issued', ${userId}
+      )
+      returning id
+    `;
+    if (!notificationTemplate) throw new Error('seed template insert returned no row');
+    // Straight to approved through the lifecycle the guard admits: a
+    // draft template cannot carry a WhatsApp message.
+    await tx`
+      update notification_templates set status = 'pending'
+      where id = ${notificationTemplate.id}
+    `;
+    await tx`
+      update notification_templates set status = 'approved'
+      where id = ${notificationTemplate.id}
+    `;
+    const [notificationContact] = await tx<{ id: string }[]>`
+      insert into contacts (organisation_id, designation, created_by_user_id)
+      values (${organisationId}, 'Notification fixture office', ${userId})
+      returning id
+    `;
+    if (!notificationContact) throw new Error('seed contact insert returned no row');
+    await tx`
+      insert into notification_consents (
+        organisation_id, contact_id, channel, address, state, evidence,
+        recorded_by_user_id
+      )
+      values (
+        ${organisationId}, ${notificationContact.id}, 'whatsapp', '+919812345678',
+        'opted_in', 'tenancy fixture', ${userId}
+      )
+    `;
+    await tx`
+      insert into notification_messages (
+        organisation_id, channel, template_id, contact_id, to_address,
+        parameters, provider, requested_by_user_id
+      )
+      values (
+        ${organisationId}, 'whatsapp', ${notificationTemplate.id},
+        ${notificationContact.id}, '+919812345678',
+        ${tx.json(['DC/2026/0001'] as never)}, 'meta_cloud', ${userId}
+      )
+    `;
+
+    // The spreadsheet importer (0094). A batch that has been judged and
+    // one staged row beneath it, which is enough for both sweeps: the
+    // row names its batch with a composite tenant reference, so a
+    // cross-tenant read that leaked either would leak both.
+    const [batch] = await tx<{ id: string }[]>`
+      insert into spreadsheet_import_batches (
+        organisation_id, target, status, original_filename, source_sha256,
+        row_count, valid_row_count, error_row_count, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'contacts', 'validated', 'seed-contacts.xlsx',
+        ${'e'.repeat(64)}, 1, 1, 0, ${userId}
+      )
+      returning id
+    `;
+    if (!batch) throw new Error('seed import batch insert returned no row');
+
+    await tx`
+      insert into spreadsheet_import_rows (
+        organisation_id, batch_id, row_number, cells, status
+      )
+      values (
+        ${organisationId}, ${batch.id}, 2,
+        ${tx.json({ designation: 'Seed consignee' })}, 'valid'
+      )
+    `;
+
     // Payroll (0089, 0090). A whole chain rather than seven bare rows:
     // the schedules a run reads, an employee hanging off a contact, and
     // a draft run calculated by the real function — which is what seeds
@@ -1931,6 +2157,54 @@ async function seedTenantGraph(
         'Store clerk', ${userId}
       )
       returning id
+    `;
+
+    // The platform controls (0096). Three flat rows: none references
+    // another and each hangs only off the organisation, so the sweeps
+    // above have something to hide from the other tenant. The export is
+    // seeded READY, because a queued one carries none of the columns —
+    // key, digest, expiry — the cross-tenant proofs are worth running
+    // against.
+    await tx`
+      insert into organisation_entitlements (
+        organisation_id, flag_key, enabled, note, set_by_user_id
+      )
+      values (
+        ${organisationId}, 'eway_bill', false,
+        'waiting on NIC re-certification', ${userId}
+      )
+    `;
+    await tx`
+      insert into statutory_job_schedules (
+        organisation_id, kind, cadence, authority_user_id
+      )
+      values (
+        ${organisationId}, 'instrument_expiry_review', 'weekly', ${userId}
+      )
+    `;
+    const [exportRequest] = await tx<{ id: string }[]>`
+      insert into organisation_export_requests (
+        organisation_id, requested_by_user_id
+      )
+      values (${organisationId}, ${userId})
+      returning id
+    `;
+    if (!exportRequest) throw new Error('seed export request returned no row');
+    await tx`
+      update organisation_export_requests
+         set state = 'running', started_at = now()
+       where id = ${exportRequest.id}
+    `;
+    await tx`
+      update organisation_export_requests
+         set state = 'ready',
+             completed_at = now(),
+             object_key = ${`${organisationId}/exports/${exportRequest.id}.json`},
+             byte_size = 4096,
+             sha256 = ${'e'.repeat(64)},
+             format_version = 'export-v28',
+             expires_at = now() + interval '7 days'
+       where id = ${exportRequest.id}
     `;
 
     return {

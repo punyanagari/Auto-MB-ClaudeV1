@@ -15,6 +15,11 @@ export interface WorkerConfig {
   readonly leaseSeconds: number;
   /** How long to wait before asking again when the queue was empty. */
   readonly idlePollMs: number;
+  /** How rarely the scheduler tick may run (migration 0096). Not the poll
+   * interval: an idle worker polls every second, and running two
+   * cross-tenant sweeps that often would be a steady background load for
+   * checks whose useful resolution is hours. */
+  readonly tickIntervalMs: number;
   readonly objectStorageDir: string;
   readonly pdfTrustAnchorsPath: string | undefined;
 }
@@ -68,6 +73,16 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
       120,
     ),
     idlePollMs: positiveInteger('WORKER_IDLE_POLL_MS', env.WORKER_IDLE_POLL_MS, 1_000),
+    // One minute. A daily or monthly statutory check does not care about
+    // the difference between running at 09:00 and 09:01, and an expired
+    // export artefact is already unreachable through the download route
+    // before the sweep reaches it — so this interval governs how promptly
+    // its BYTES are reclaimed, not how promptly it stops being served.
+    tickIntervalMs: positiveInteger(
+      'WORKER_TICK_INTERVAL_MS',
+      env.WORKER_TICK_INTERVAL_MS,
+      60_000,
+    ),
     objectStorageDir,
     pdfTrustAnchorsPath: env.AUTO_MB_PDF_TRUST_ANCHORS,
   };

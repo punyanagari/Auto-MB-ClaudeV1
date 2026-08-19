@@ -348,6 +348,44 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // itself is frozen by the guard, so only the key is outside it.
   installation_serials: ['id'],
 
+  // The defect liability period (0099). What is frozen is what the
+  // railway's guarantee is measured against: the installation it runs
+  // on, the term it was started under, the day it started, and the day
+  // it ORIGINALLY ran to.
+  //
+  // `dlp_expires_on` reads as FROZEN here and is absent from this list on
+  // purpose. It is the one business date that moves — a defect rectified
+  // inside the period extends it — but it moves only through the guard's
+  // own arm, which compares it against OLD and admits exactly one shape
+  // of change: forward, never past ten years from the start, and never in
+  // the same write that ends the period. That comparison is what this
+  // census reads, and it is the honest answer: the column does not change
+  // without the guard's say-so.
+  //
+  // What is left is the lifecycle group — the status, and the two
+  // complete-or-absent evidence sets written once at discharge and once
+  // at void.
+  installation_warranties: [
+    'id',
+    'updated_at',
+    'status',
+    'closed_on',
+    'closure_note',
+    'closed_by_user_id',
+    'closed_at',
+    'void_note',
+    'voided_by_user_id',
+    'voided_at',
+  ],
+
+  // The Work's warranty term (0099). Its guard is narrow on purpose: a
+  // term is a CLAUSE somebody read off a contract, and reading it wrong
+  // is exactly the mistake an operator has to be able to correct. What it
+  // freezes is the tenant, the Work and the provenance. Correcting the
+  // term never reaches a period already running, because each period
+  // froze its own copy.
+  work_warranty_terms: ['id', 'updated_at', 'dlp_months', 'start_basis', 'notes'],
+
   // Same created_at note as delivery_challans.
   issue_challans: [
     'id',
@@ -560,6 +598,203 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
   // of which changes what the credential IS, which is the property every
   // signature already made depends on.
   signing_agents: ['last_seen_at', 'revoked_at', 'revoked_by_user_id'],
+
+  // Notifications (0092). A channel's identity is which organisation and
+  // which channel; everything else about it is configuration an operator
+  // revises as Meta onboarding progresses, which is the whole reason the
+  // row exists before it is complete.
+  notification_channels: [
+    'enabled',
+    'waba_phone_number_id',
+    'waba_business_account_id',
+    'display_phone_number',
+    'api_base_url',
+    'from_address',
+    'reply_to_address',
+    'configured_by_user_id',
+    'updated_at',
+  ],
+  // A template's identity is the name and language Meta knows it by, and
+  // its body freezes at submission because the WABA then holds the
+  // reviewed text and it is that text which is sent.
+  //
+  // `body_text`, `parameter_count` and `category` are absent from this
+  // list and therefore counted as FROZEN, which is the conservative half
+  // of a truth the census's binary model cannot state: the guard's second
+  // arm refuses them only once the status has left `draft`, so they are
+  // editable exactly while nobody outside this system has seen them. The
+  // reader sees the ROW comparison and reads it as a freeze; listing them
+  // as mutable instead would claim they are editable after submission,
+  // which is the direction that would matter if it were wrong.
+  notification_templates: ['status', 'status_reason', 'email_subject', 'updated_at'],
+  // Which contact and which channel a consent is about are written once.
+  // The address, the state and the evidence are revised: an agreement
+  // given for a new number is a new agreement on the same row, with its
+  // own evidence sentence.
+  notification_consents: [
+    'address',
+    'state',
+    'evidence',
+    'recorded_by_user_id',
+    'updated_at',
+  ],
+  // What was sent, to whom, through what, is frozen. What moves is the
+  // delivery ledger — forwards only, and its own guard arm proves that
+  // separately.
+  //
+  // `provider_message_id` is absent for the same reason the template's
+  // body is: the guard freezes it with a scalar comparison the moment it
+  // stops being NULL, which the reader sees as a freeze. It is written
+  // once, by the transaction that records what the provider answered, and
+  // never again — rewriting it would re-point every future receipt at a
+  // row it is not about.
+  notification_messages: [
+    'status',
+    'failure_code',
+    'failure_detail',
+    'sent_at',
+    'delivered_at',
+    'read_at',
+    'failed_at',
+    'updated_at',
+  ],
+  // An import batch's identity — the file it was, its digest, and the
+  // register it aims at — is written once, because the rows beneath it
+  // were judged against that answer. What moves is where it has got to
+  // and the census of what happened there.
+  spreadsheet_import_batches: [
+    'status',
+    'row_count',
+    'valid_row_count',
+    'error_row_count',
+    'imported_row_count',
+    'completed_at',
+    'completed_by_user_id',
+    'cancelled_at',
+    'cancelled_by_user_id',
+    'cancelled_reason',
+    'updated_at',
+  ],
+  // A staged row's CELLS are evidence: they are what the sheet
+  // contained, and a row whose content could be corrected in place is one
+  // where nobody can tell what was uploaded from what was fixed
+  // afterwards. The verdict written over them is the outcome.
+  //
+  // `cells` and `imported_record_id` are deliberately NOT here, and the
+  // reason is worth stating because it looks like an omission.
+  //
+  // `cells` may be EMPTIED and may never be changed — the route forgets
+  // a sheet's own text as its batch turns terminal, because a contacts
+  // sheet carries account numbers the direct path never logs. Destroying
+  // evidence is not restating it, so the freeze the scan below reads is
+  // the right reading of the rule.
+  //
+  // `imported_record_id` is WRITE-ONCE
+  // rather than mutable: null until the row reaches the register, and
+  // frozen from that moment, because re-pointing it at a second record
+  // would leave the first orphaned from the row that explains it. The
+  // scan above reads that rule as a freeze — it sees `NEW.x IS DISTINCT
+  // FROM OLD.x` and cannot see the `OLD.x IS NOT NULL` in front of it —
+  // and for this census's purpose that reading is the correct one.
+  spreadsheet_import_rows: ['status', 'errors'],
+
+  // A recurring check's identity is its organisation and its kind (0096),
+  // and both are frozen: letting either move would silently repoint a run
+  // history at a different check. Everything else on the row is a setting
+  // an owner is meant to change or state the scheduler maintains — which
+  // is exactly the split this census exists to make explicit.
+  statutory_job_schedules: [
+    'enabled',
+    'cadence',
+    'horizon_days',
+    'next_run_at',
+    'last_run_at',
+    'last_job_id',
+    'authority_user_id',
+    'disabled_reason',
+    'updated_at',
+  ],
+
+  // An export request (0096). Who asked and when is frozen outright, and
+  // the six artefact facts — key, size, digest, format, expiry,
+  // completion — are frozen from the moment the artefact exists, which is
+  // why none of them appears below: the build writes them on the
+  // `running -> ready` transition and nothing may touch them afterwards.
+  // (The one carve-out is in the guard itself: the expiry sweep clears
+  // `object_key` to NULL as it deletes the bytes.)
+  //
+  // What is genuinely mutable is the state walk, the build's own
+  // timestamps, the failure reason and the download counters.
+  organisation_export_requests: [
+    'state',
+    'started_at',
+    'failure_reason',
+    'download_count',
+    'last_downloaded_at',
+    'updated_at',
+  ],
+
+  // A recorded retention release (0098), on exactly the terms
+  // `bill_payments` sits on above: every fact of it is frozen the moment
+  // it is written — there is no edit path at all — and the only later act
+  // is the withdrawal, which is the three columns below plus the
+  // maintained timestamp.
+  retention_releases: [
+    'id',
+    'updated_at',
+    'voided_at',
+    'voided_by_user_id',
+    'void_reason',
+  ],
+
+  // A liquidated-damages assessment (0098). Everything the arithmetic was
+  // computed FROM is frozen — the basis, the window and the three terms —
+  // and so are the generated figures, which cannot be written at all.
+  // What moves is the decision: the status walks draft -> levied ->
+  // waived/cancelled and never back, the levy is written once (the guard
+  // refuses a second value), and the reason and the decider are the
+  // record of who decided what.
+  //
+  // `notes` is genuinely free and is the only ordinary column here that
+  // is: it is the operator's own working note about a computation, not
+  // part of it.
+  //
+  // `id` and `levied_amount` are absent deliberately, and for two
+  // different reasons. `id` is in the frozen snapshot's own comparison,
+  // like every other identity column this census reads as covered.
+  // `levied_amount` IS written — that is the levy — but only once: the
+  // guard refuses any change to a value already set, which the freeze
+  // detector reads as frozen and which is the honest reading. Correcting
+  // what the railway took is a waiver of this assessment and a new one,
+  // so the trail says what was claimed and what replaced it.
+  //
+  // THE FIVE GENERATED COLUMNS ARE LISTED HERE AND ARE NOT MUTABLE, and
+  // the mismatch is worth naming rather than leaving to be discovered.
+  // `delay_days`, `chargeable_periods`, `uncapped_amount`, `cap_amount`
+  // and `assessed_amount` are STORED GENERATED: PostgreSQL refuses the
+  // assignment outright, before any trigger runs, so they are not merely
+  // frozen but unwritable, and each is a pure function of the snapshot
+  // columns the guard does freeze. This census reads its catalog straight
+  // from `pg_attribute` and has no notion of a generated column, so the
+  // only two ways to satisfy it are to list them here or to write a
+  // comparison into the guard for a value that can never differ. Listing
+  // them is what `measurement_books.is_final` already does, for the same
+  // reason, so the shape follows the precedent rather than inventing a
+  // third answer.
+  ld_assessments: [
+    'updated_at',
+    'status',
+    'levy_reference',
+    'outcome_reason',
+    'notes',
+    'decided_by_user_id',
+    'decided_at',
+    'delay_days',
+    'chargeable_periods',
+    'uncapped_amount',
+    'cap_amount',
+    'assessed_amount',
+  ],
 };
 
 /**

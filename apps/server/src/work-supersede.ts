@@ -164,6 +164,26 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   challan_item_serials: 'serials on a delivery challan line, which blocks',
   issue_challan_lines: 'lines of an issue challan, which blocks',
   installation_serials: 'serials on an installation record, which blocks',
+  // The defect liability period (0099). It reaches `works` directly AND
+  // through the installation it runs on, and the second route is what
+  // makes it exempt: a period cannot exist without a recorded
+  // installation, `installations` is a blocker above, and the 0099 guard
+  // additionally refuses to cancel an installation carrying one. There is
+  // no arrangement of rows in which a Work carries a warranty period and
+  // is eligible — it is refused by `installations` before this question
+  // is asked.
+  installation_warranties:
+    'the defect liability period of an installation record, which blocks — and which cannot be cancelled while the period stands',
+  // The Work's warranty TERM is a clause read off the contract, not a
+  // record of anything that happened, and it is the one table here that a
+  // Work can carry with nothing else populated. It is exempt anyway, and
+  // deliberately: superseding a Work is what happens when its letter was
+  // misread, and the term is exactly the kind of thing that was misread.
+  // Blocking on it would trap the correction behind the mistake. The row
+  // survives the soft delete, harmless — nothing reads a superseded
+  // Work's term, and the successor records its own.
+  work_warranty_terms:
+    'a contract clause recorded against the Work, not a document — and the misreading a supersede exists to correct',
   pac_certificate_items: 'lines of a PAC certificate, which blocks',
   measurement_book_lines: 'lines of a Measurement Book, which blocks',
   mb_sources: 'the measurements a Measurement Book claims, which blocks',
@@ -335,6 +355,51 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
     'a defective unit received back for repair, which does not block',
   maintenance_request_counters: 'numbering state, not a document',
   maintenance_dispatch_counters: 'numbering state, not a document',
+  // Retention, security deposit and liquidated damages (0098). Three
+  // exemptions with three different arguments, because they are three
+  // different kinds of row and borrowing one reason for all of them
+  // would hide the one that is actually load-bearing.
+  //
+  // The TERMS are the Work's own configuration, on exactly the footing
+  // `payment_matrices` and `inspection_clauses` sit on above: they say
+  // what this organisation read in the letter, and superseding is the act
+  // of admitting the letter was read wrongly. A successor confirmed from
+  // the re-read letter records its own terms.
+  work_retention_terms:
+    "the Work's own reading of its contract terms — superseding is the admission that the letter was misread, so the reading goes with it",
+  // The RELEASE is money, and it is exempt for the `bill_payments`
+  // reason, structurally rather than by preference. A release cannot
+  // exist unless retention was withheld, retention is withheld by a
+  // `bill_payment_deductions` row, that row needs a `bill_payments` row,
+  // and that needs `bills` — which is in the blocking list above, twice
+  // over, because a bill needs a finalized Measurement Book and that is
+  // in the list too. There is no arrangement of rows in which a Work
+  // carries a retention release and is eligible: it is refused by `bills`
+  // before this question is asked.
+  retention_releases:
+    'a release of retention withheld on a bill, and `bills` blocks first — a Work carrying one is refused before this question is asked',
+  // The ASSESSMENT is the entry worth pausing on, because unlike the
+  // release it CAN exist on a Work with no bills at all: it is computed
+  // from the Work's own contract value and completion date, and needs
+  // nothing downstream.
+  //
+  // It is exempt anyway, and the argument is the strongest of the three
+  // rather than the weakest. An assessment is a function of the two facts
+  // a supersede exists to correct — the contract value and the
+  // contractual completion date, both read off the misread letter — so an
+  // assessment surviving a supersede is an assessment computed from
+  // inputs this organisation has just declared wrong. Blocking on it
+  // would trap the correction of a misread letter behind a computation
+  // that the correction invalidates. The row keeps its frozen snapshot
+  // and keeps naming the withdrawn Work, which is the truth of what was
+  // assessed and when; the successor Work is assessed again from the
+  // letter as re-read.
+  //
+  // What it can never do is hide a recovery. Money the railway actually
+  // took under the head is a `bill_payment_deductions` row, and that is
+  // covered by `bills` exactly as the release above is.
+  ld_assessments:
+    'a computation from the very contract value and completion date a supersede exists to correct; the recovery it describes is a bill deduction, and `bills` blocks that',
 };
 
 /** `approval_requests` blocks only while a request is live: a pending one

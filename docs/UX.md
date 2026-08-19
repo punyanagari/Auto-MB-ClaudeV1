@@ -695,12 +695,769 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
+### 17. Notifications — a screen the mock does not draw
+
+**Status: PROPOSED. Application-first, owner ruling not yet taken.**
+Numbered 17 by coordinator allocation; 14, 15 and 16 belong to the packs
+that landed ahead of it.
+
+**There is no mock citation for this screen, and this entry exists so
+that absence is a recorded decision rather than an omission a reviewer
+has to guess at.** `app/settings/page.tsx` at
+`punyanagari/Auto-MB-Vercel-du@fdfd610` has five tabs — Company,
+Documents, Digital signatures, Appearance, Account & organisations — and
+none of them is this. `components/app-topbar.tsx` draws a bell with a
+"2 notifications" tooltip, but that is an in-app alert badge and not the
+outbound messaging this pack is about; nothing in the mock models a
+channel, a template, a consent or a delivery.
+
+That puts the screen under § Design contract 4 — "behaviour the mock
+cannot express is built inside the mock's visual grammar using its
+existing components, without inventing new visual language" — and
+§ Approved divergences 4, "screens the mock does not cover", whose list
+this extends. Concretely, every element on it is one the mock already
+ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Section panels          | `Card` + `CardHeader`, one per section, as `app/settings/page.tsx` stacks its own   |
+| Templates, consent, log | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Collapsed forms         | `Disclosure`, the same anatomy the Settings number-series editor uses               |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+**Four chip words join the shared vocabulary** rather than being styled
+locally, because each means the same thing wherever it appears:
+`delivered` and `read` join the success family beside `paid` and
+`signed` — a message that reached the handset and one the recipient
+opened are both the proceed state of a delivery; `queued` joins the
+notice family beside `pending` and `sent`, because a message waiting on
+a provider is a queue and not a caution; and `paused` joins the warning
+family beside `in-production`, because a template Meta throttled for
+quality is work to do rather than something that failed. Unmapped, all
+four rendered neutral — identical to a draft, which is the one reading
+they must not have.
+
+**Three pairs are toned LOCALLY instead**, per `ui/chip.tsx`'s own rule
+that a word whose meaning is screen-specific must not enter the shared
+map: `enabled`/`disabled` for a channel, and `opted in`/`opted out` for a
+consent. "Enabled" is not a lifecycle stage anywhere else in the product,
+and an opted-out contact is a deliberate, correct state rather than a
+cancellation — so it is neutral, not destructive.
+
+**One thing on this screen has no precedent in the mock, and it is
+deliberate: a channel can show two lamps at once.** A channel that the
+organisation has switched on, on a deployment that has no access token or
+no mail relay, draws its green `enabled` chip AND an amber `no transport`
+chip beside it, with a sentence naming who to ask. The two facts belong
+to two different people — Meta's onboarding is the agency's, the server's
+environment is the administrator's — and they genuinely come true months
+apart. A single lamp would have to lie about one of them, and a green one
+over a server that cannot send is the worse lie.
+
+**Every control the feature needs is on this screen, and the first draft
+of it shipped without three of them.** That is recorded here rather than
+quietly fixed, because the shape of the mistake is one this document
+exists to catch: four read-only registers whose empty states instructed
+an operator to record a Meta status, record a consent and send a
+message — none of which the screen could do. Nothing could leave `draft`,
+so WhatsApp refused everything; no consent row could be created, so both
+channels refused everything. The feature was unreachable from the product
+it was in while every one of its API routes worked perfectly.
+
+The three controls are:
+
+| Control               | Where                          | Why there                                                                                 |
+| --------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
+| Record what Meta said | A cell on each template row    | The status belongs to one template, and a separate form would need to name which          |
+| Record a consent      | A `Disclosure` in the register | Consent is per channel AND per address; a checkbox on a contact row could express neither |
+| Send a message        | A `Disclosure` in the log      | It is the only send in the product today, so without it the log can never hold a row      |
+
+The status control offers exactly the moves migration 0092's guard
+admits, so anything it draws is something the server accepts, and the
+reason box appears only for the three statuses Meta actually explains.
+The send form has no address field, and that absence is the consent rule
+made visible: the address comes from the consent record, and a caller who
+could pass one could send somewhere nobody agreed to.
+
+**What the screen still deliberately does not do:**
+
+- **Send from a document.** Sending a _document_ belongs on the document
+  being sent, and that is the next pack's outcome. The send form here is
+  the operator's own — proving a channel works, and messaging a
+  counterparty about something with no document behind it. When document
+  delivery lands, it adds a button to the challan, not a second picker
+  here.
+- **Poll Meta for template status.** The status is recorded by a member
+  reading the Meta console. There is no WABA to poll yet, and a screen
+  that pretended to poll one would be drawing a mechanism that does not
+  exist.
+- **Page any of the four registers.** Each reads the first fifty rows and
+  says so when there are more. A paging control on a register nobody has
+  filled is furniture; the honest upgrade when an organisation reaches
+  fifty templates is a cursor button, not a redesign.
+- **Read inbound replies.** The webhook ignores them. What a reply of
+  "STOP" does to a consent record is an owner's rule to state, and until
+  it is stated the register shows only what a member recorded.
+
+**Where it sits.** Administration, between Members and Settings, with the
+`MessageSquare` lamp — the one icon on that rail not already spoken for.
+Administration rather than Documents because it configures how the
+organisation speaks, in the same family as who belongs to it and how it
+is set up. It is NOT a sixth tab inside Settings: the delivery log and
+the consent register are registers people go looking for, and a register
+behind a tab behind a settings page is a register nobody finds.
+
+**Gated at the screen, not at a control.** Every read this view makes
+needs the notifications authority — the consent register is a list of
+counterparties' personal telephone numbers and the delivery log says who
+was messaged — so a member without it gets a refusal panel rather than
+four failed loads. The rail door stays visible, unlike Employees': that
+door leaks that a salary register exists, and this one leaks nothing an
+ordinary member should not know the product has.
+
+**When the mock grows a notifications screen, the mock wins.** This entry
+retires the moment there is something to cite, on the § 4 iteration
+pipeline: change it in v0, merge it, diff, port the delta.
+
+### 18. Import screens — a screen the mock does not draw at all
+
+**Status: application-first, owner ruling not yet taken.** Numbered 18 by
+coordinator allocation; 17 belongs to the notifications pack of this wave.
+
+**There is no mock citation for this screen, and this entry exists so that
+absence is a recorded decision rather than an omission a reviewer has to
+guess at.** `AGENTS.md` § Design contract says a pull request touching a
+visible surface must cite the mock screen it replicates. So: there is
+nothing at `punyanagari/Auto-MB-Vercel-du@fdfd610` to cite. The mock has no
+importer, no upload panel and no staging concept — it draws the registers
+an import fills, and nothing about filling them from a file.
+
+That puts the screen under § Design contract 4 and § Approved divergences
+4, "screens the mock does not cover", whose list this extends. Every
+element on it is one the mock already ships:
+
+| Element                 | Taken from                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it              |
+| Upload panel            | `Card` + `CardHeader`, the mock's `data-surface` panel                              |
+| Register picker         | The `field`/`select` pair every form on the product uses                            |
+| Both tables             | `DataTable`, with the sr-only caption `test/a11y-invariants` requires               |
+| Status                  | The shared dot-plus-label `StatusChip`, in the product's own tone families          |
+| Withdrawal              | `ConfirmDialog`, destructive tone, the same anatomy every cancel flow uses          |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares |
+
+**Two chip words join the shared vocabulary** rather than being styled
+locally. `validated` takes the warning family beside `claimed` and
+`awaiting-approval`: a batch whose rows have all been judged is waiting on
+a person, which is exactly what that family means. `error` takes the
+destructive family beside `cancelled` and `rejected` — and the distinction
+from `low-stock`, which is deliberately warning, is the one worth stating:
+a part that needs reordering is a thing to do, and a row that cannot be
+written is a thing that failed. `pending`, `completed`, `cancelled` and
+`superseded` were already mapped and keep their readings — `superseded`
+arrived with the tax-invoice replacement (0051) and reads the same way
+here: not a failure, and no longer the live document either.
+
+**One icon is new to the rail: `Upload`**, for the Imports entry, checked
+against every icon already on it. The screen sits directly beneath Masters
+in Administration, because the two registers it fills are the two Masters
+owns and an operator who has just found the Contacts screen should be one
+row from the way to fill it eight hundred at a time.
+
+**The screen is a conversation rather than a button, and the layout says
+so.** An import is never "did it work"; it is "which eleven rows are wrong
+and why". The batch list is the history, the open batch beneath it is the
+argument, and the register is untouched until one button is pressed — which
+is why that button counts the rows it will write ("Import 2 rows") and the
+paragraph above it says, in words, that nothing has been written yet.
+Errors sort to the top of the row table whatever their line number, because
+burying eleven refusals under four hundred passes is how an operator
+concludes an import simply failed.
+
+**Three things the Imports screen does not do**, each because the
+alternative would be a second place to do something, or a worse answer:
+
+- **Edit a cell.** A staged row is what the sheet contained, and migration
+  0094 refuses to rewrite it. An operator who could patch row 412 here
+  would produce a register nobody can reconcile against the file it came
+  from — and the file is what their colleague sends again next quarter.
+  They fix the workbook, which is the only fix that survives.
+- **Poll for progress.** Parsing is synchronous, so a batch is judged by
+  the time the upload answers. There is nothing to wait for, and inventing
+  a spinner for it would be inventing the wait as well.
+- **Undo a committed import.** The rows are ordinary register records once
+  they are written, and they are retired the way every other record of that
+  register is. A bulk undo would be a second, weaker delete path around
+  rules the registers already have.
+- **Update an existing record.** An importer CREATES; a row whose natural
+  key already exists is reported as a duplicate, in the register's own
+  words, and never overwrites what is there. Match-and-update is a
+  different feature with a different failure mode — a mistyped key
+  silently rewriting the wrong party's bank details — and it needs a
+  column to match on that the operator chooses deliberately.
+- **Accept a sheet of unlimited size.** Five thousand rows, eight
+  megabytes, and a ceiling on the text the cells expand to. Past any of
+  them the refusal says to split the file, because a synchronous parse is
+  what buys the immediate verdict this screen is built around; the job
+  queue is there when a register arrives that genuinely cannot be split.
+
+**One divergence from the product's own habit, stated so it is not
+mistaken for an oversight:** the row table renders the sheet's raw cells
+beside the errors, unformatted and untruncated. Every other register in
+this product formats what it shows. These are not the product's values —
+they are what somebody typed into Excel, shown so it can be compared with
+the workbook still open on the other monitor.
+
+**Those cells do not outlive the decision.** The moment a batch is
+committed or withdrawn its staged cells are emptied, and they are not in
+the organisation export at all. A contacts sheet is a column of bank
+account numbers and IFSCs, and the single-record path is deliberately
+discreet about both — `contact-fields.ts` says of them that they are
+"never audited and never logged". Keeping a second unredacted copy in a
+staging table, echoed on every read and published in a recovery package,
+would be the one place that discretion did not reach. What survives is
+what happened: the row number, the verdict, the error in the register's
+own words, and the record the row became.
+
+That is also why the two reads are gated differently. The batch LIST is
+ordinary register history and every writer sees it — which files were
+imported, when, and how many rows each refused. Opening a batch shows the
+cells, so the batch DETAIL carries the import authority, and the screen
+draws the "Open" control only for a member who holds it. Nobody is
+offered a door that answers 403.
+
+**Uploading a sheet for a register retires the open ones aimed at it**,
+and the batch says `superseded`. The alternative was leaving a validated
+batch committable indefinitely, which turns the ordinary correction loop
+into a trap: upload, read the eleven errors, fix the workbook, upload
+again — and now two batches are committable, the corrected one and the
+one with the typo still in it. Committing the wrong one writes a
+known-bad row and reports success.
+
+**An imported record gets the register's own creation event**, the same
+one the form writes, with the batch id in its payload. A contact brought
+in by a sheet therefore has the history panel a contact typed into the
+form has, and "who added this vendor" is answerable from the vendor
+rather than only from this screen. The batch keeps an event of its own
+beside them, as the provenance those records point back at.
+
+**The row table pages, and the paging is real.** The screen asks for the
+error rows first and the valid ones on request, and both are requests
+against the server's own cursor — not a slice of a response that already
+carried five thousand rows. A batch's rows are never sent in full.
+
+**When the mock grows an import screen, the mock wins.** This entry retires
+the moment there is something to cite, on the § 4 iteration pipeline:
+change it in v0, merge it, diff, port the delta.
+
+### 19. Audit trail, Reports, and an export on every register — PROPOSED
+
+**Status: application-first, owner ruling not yet taken.** Numbered 19 by
+coordinator allocation; 17 and 18 belong to the two packs of this wave that
+land beside it.
+
+**There is no mock citation for either screen.** `punyanagari/Auto-MB-Vercel-du@fdfd610`
+draws no audit register and no reports page: `components/app-sidebar.tsx` at
+that commit ends its Administration group at Settings. Both screens are
+therefore § Design contract 4 — behaviour the mock cannot express, built
+inside the mock's visual grammar with its existing components — and they
+extend § Approved divergences 4's list of screens the mock does not cover.
+This entry exists so the absence is a recorded decision rather than an
+omission a reviewer has to guess at, exactly as § 16 does for the signing
+queue.
+
+#### What is on them, and what each element is taken from
+
+| Element                 | Taken from                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it                  |
+| Filter row              | The `Receivables` filter bar: `sr-only` labels over bare selects, and `DateField` pairs |
+| The register            | `DataTable`, with the `sr-only` caption `test/a11y-invariants` requires                 |
+| Event detail            | `Sheet`, side `right` — the same anatomy the receivables bill sheet uses                |
+| Before / after          | The Timeline's own diff list, shared verbatim through `lib/audit-text.ts`               |
+| Tiles                   | The dashboard's `data-surface` hairline grid of `Stat`s                                 |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares     |
+
+**No chip words are added.** Neither screen has a status vocabulary: an
+audit event is a fact that already happened, and a month's output tax is a
+number. Nothing on either page carries a lamp.
+
+**Two rail lamps are added**, both under Administration and both new to
+this rail: `History` for Audit trail and `ChartColumn` for Reports. Neither
+collides with an icon already on it. The mock's own rail gives `Users` to
+both Employees and Members (§ 15 records that), so a collision here would
+have been tolerable; there is none.
+
+#### Three decisions a reviewer should be able to disagree with
+
+**Reports is a separate screen, not more panels on the Dashboard.** The
+landing dashboard is the screen every session opens with, it already
+pre-aggregates four evidence tables, and `routes/dashboard.ts` records the
+881 ms it once cost to get that wrong. Month-by-month roll-ups over the
+whole invoice and payroll history are read at month end by one or two
+people. They do not belong on the loader every sign-in waits for.
+
+**Both doors stay on the rail, and the refusal is at the screen.**
+Employees is the only module in this build whose rail entry is hidden by
+authority (§ 15), and the reason there is specific: a register of salaries
+is not something to advertise a way into. It does not transfer. That an
+audit trail EXISTS is not a secret — every member should know their actions
+are recorded — so the door stays and the screen says which authority opens
+it. The management summary is the same: the figures are private, the
+existence of a reports page is not.
+
+**The audit register refuses an assigned-scope member rather than
+narrowing.** Every other cross-Work register in the product narrows to the
+member's assignments. This one cannot do so honestly: `audit_events` carries
+no `work_id`, the entity-to-Work mapping `routes/timeline.ts` maintains
+covers only the entity types a Work has, and the organisation-level events —
+a member added, a rate changed, the profile edited — are much of what the
+register exists to show. A narrowed register would look complete and be a
+slice, with nothing on it saying so. The refusal names the Work's own
+Timeline tab, which serves that member completely.
+
+#### The retention window is worded as a window, everywhere it appears
+
+The Settings card is headed "Audit register", its field is "Window
+(months)", and both its hint and its read-only line say that nothing older
+is deleted. The register itself repeats the sentence under its filters, with
+the date it actually reached back to.
+
+That wording is load-bearing rather than cautious. "Retention policy"
+normally implies a purge, and this one has none — migration 0095 argues why
+at length, and the short version is that Rule 3(1) of the Companies
+(Accounts) Rules requires the trail to be KEPT for the section 128 period.
+A screen that let an owner believe they had configured a deletion would be
+worse than no setting at all.
+
+#### Export on a register is one control with one meaning
+
+`ui/download-button.tsx` is on Works, Challans (the delivery tab only — the
+issue-challan register has no workbook, and one button serving two
+registers handed an operator the wrong file), Invoices, Inventory, Payments
+and Employees, and on the audit register itself. It is always the same
+control in the same place: the page header's action slot.
+
+**A register export is the WHOLE register under the caller's own scope, not
+the screen's current filter state.** The filters do not travel, and the
+control says so — a register with an active search, status or date filter
+renders a line under its button naming what the file will actually contain.
+That is a recorded decision rather than a limitation nobody noticed: wiring
+six different filter shapes into the export is one querystring schema and
+one WHERE fragment per register, and it will be done when an operator asks
+for a filtered workbook rather than pre-emptively.
+
+**The audit register is the one export whose filters travel**, and it is not
+an inconsistency. Its window is clamped by the organisation's retention
+policy, so a trail exported without its window would claim to reach further
+back than the register may look. There, the filters are part of what the
+document IS.
+
+Both kinds say what they are in the filename: an audit workbook carries its
+applied window, a Tally file carries its period. A workbook cut short by the
+row cap says so in its own last row, not only in a response header.
+
+The control prints its own refusal beside itself rather than staying silent,
+and that is the case worth reviewing: a work-scoped register narrows for an
+assigned-scope member, but an organisation-wide one (vendor payments,
+employees) refuses them outright, and a button that quietly did nothing
+would read as broken rather than as a wall.
+
+The Tally card states, on the screen, that the integration is ONE WAY:
+nothing is read back, and re-exporting a period offers the same vouchers
+again. An export that looked like a sync would invite somebody to expect
+their Tally edits to return.
+
+**When the mock grows either screen, the mock wins.** This entry retires the
+moment there is something to cite, on the § 4 iteration pipeline: change it
+in v0, merge it, diff, port the delta.
+
+### 20. Platform controls — three surfaces the mock does not draw
+
+**Status: application-first, owner ruling not yet taken.** Numbered 20 by
+coordinator allocation; 17, 18 and 19 belong to the three sibling packs of
+this wave.
+
+**There is no mock citation for these panels, and this entry exists so that
+absence is a recorded decision rather than an omission a reviewer has to
+guess at.** There is nothing at `punyanagari/Auto-MB-Vercel-du@fdfd610` to
+cite: the mock has no module switch, no job scheduler and no export
+request. It could not — an entitlement exists because a government
+certification has not landed, a schedule exists because a bank guarantee
+lapses whether or not anybody is looking, and an export exists because a
+contractor is entitled to their own data. None of those is a screen a
+designer would draw unprompted.
+
+That puts all three under § Design contract 4 — "behaviour the mock cannot
+express is built inside the mock's visual grammar using its existing
+components, without inventing new visual language" — and § Approved
+divergences 4, "screens the mock does not cover", whose list this extends.
+Every element is one the mock already ships:
+
+| Element                 | Taken from                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| The two panels          | `Card` + `CardHeader`, the mock's `data-surface` panel, sitting in Settings           |
+| Module and check rows   | The bordered list rows `components/company-document-library.tsx` uses for credentials |
+| On / off                | The shared dot-plus-label `StatusChip`, in the product's own tone families            |
+| Run history             | `DataTable`, with the sr-only caption `test/a11y-invariants` requires                 |
+| Export register         | `DataTable`, right-aligned mono numerics, one action column                           |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares   |
+
+**No chip word is added.** Every state here is spelled with a word the
+vocabulary already carries, and each is chosen for the tone `ui/chip.tsx`
+already gives it: a module reads `active` or `disabled`, an export walks
+`pending` → `processing` → `active` / `failed` / `expired`, and a run reads
+`pending` / `claimed` / `completed` / `failed`.
+
+**A switched-off check has two readings and they must not look the same.**
+One the SCHEDULER stopped — because the member it ran as has left — is work
+to do, and reads `paused`, which is the warning tone § 17 gave a throttled
+template for exactly that reason. One an OPERATOR stopped is inert, and
+reads `disabled`: unmapped and therefore neutral, which `ui/chip.tsx`
+records as a decision beside `paused` rather than leaving it to accident.
+
+**A refused run reads `review`, in the WARNING family and not the
+destructive one.** It is not a run that broke: it is a run the database
+declined to start because the member behind it has gone, and it has a
+one-click remedy on the row above. `docs/DESIGN.md` § Status badge
+semantics gives the destructive family to cancelled/rejected/declined; a
+to-do with a remedy belongs to warning.
+
+**Timestamps on these two tables are mono and tabular but LEFT-aligned**,
+where every other register right-aligns its numerics. The rule the
+registers follow is about quantities and money, where the decimal point
+carrying down a column is what makes two figures comparable at a glance.
+Nothing on these screens is compared that way — an operator reads one run's
+instant, not a column of them — and a right-aligned instant beside a
+left-aligned check name reads as a mis-set column rather than a number.
+Amounts on this screen (the export's size) keep the right-aligned numeric
+treatment.
+
+#### Where they live, and why not in the rail
+
+**Settings, beside the signing kiosk, and deliberately not a top-level
+module.** The rail is the operator's working day — Works, challans, bills,
+payments. These three are the organisation's posture: what it may use, what
+it checks on a clock, and whether it has taken a copy of itself. An
+operator visits them when something changes, not when something is due, and
+a rail entry for a screen visited twice a year costs every other screen a
+row of attention. `docs/UX.md` § Settled information architecture already
+puts organisation administration here.
+
+#### The one thing an operator has to be able to read
+
+**A recurring check runs under the authority of the member who last saved
+it, and the screen says so on the row.** ADR-0011 gives the queue no
+service identity, so a schedule borrows a real membership; when that member
+leaves, the queue parks the run in `refused_bind` rather than running on a
+departed person's authority.
+
+That state is not a failure and must not read as one. The run-history row
+carries a sentence rather than an error — "the member this check runs as is
+no longer in the organisation; save the check again to run it as yourself"
+— because the remedy is a different act from every other failure's, and a
+red chip alone would send an operator looking for a bug.
+
+#### The remedy is a control, never a sentence pointing at one
+
+The row for a paused check carries **Run as me** beside its on/off switch.
+An earlier draft said "save the check again" in prose while the only button
+on the row switched it off — which would have made an operator disable a
+statutory check in order to fix its custody. A remedy the screen names is a
+remedy the screen has to offer.
+
+The scheduler pauses the check on the FIRST refusal rather than after a
+count. A monthly check that re-refused every cadence would otherwise turn
+into an unbounded stream of terminal rows nobody reads, and the queue's own
+`refused_bind` count would stop meaning anything.
+
+#### What a cadence promises, and what it does not
+
+Stated here because it is a choice rather than an accident, and because the
+screen shows both numbers:
+
+- **The next run is `now + one cadence`, measured from when the run was
+  enqueued.** So a run drifts by however long the tick took to notice it,
+  and a monthly check saved on the 31st lands on the 28th in February and
+  stays there. Neither matters for a check that answers "what lapses in the
+  next N days" — N is the horizon, which the operator sets, not the
+  cadence. Anchoring to a calendar day would need a day-of-month column and
+  a catch-up rule, which is a schedule engine and not this.
+- **A missed window is not recorded.** A worker that was down for a week
+  produces one run on its return, not seven, and the run history shows one
+  row rather than a gap. The alternative — a marker row per skipped
+  occurrence — would put rows on the operator's screen describing work that
+  never happened, to answer a question the queue's own health already
+  answers (`docs/RUNBOOK.md` § 7b).
+- **A check switched back on runs once straight away**, then on its
+  cadence. The screen's copy says so, because a schedule resuming after a
+  long pause would otherwise look like it had fired for no reason.
+
+#### Two divergences from the product's own habits, stated so they are not mistaken for oversights
+
+**The export digest is printed in full, 64 characters, monospaced and
+wrapped**, where every other register truncates a long identifier. It is
+the only way a recipient can check that the file they were handed is the
+file this organisation built, and half a digest checks nothing. § 16 prints
+its SHA-256 the same way and for the same reason.
+
+**A module nobody has configured says so in words** — "never configured —
+using the shipped default (on)" — rather than rendering as though somebody
+chose. The distinction between "we decided this" and "nobody has ever
+touched it" is the whole value of the panel to the person auditing it six
+months later. The same reasoning puts the operator's NOTE on the row: "off"
+without "waiting on NIC re-certification" is a fact nobody can act on, and
+the note survives a plain on/off toggle because the screen sends only the
+new state and the contract treats an absent note as "leave what is there".
+
+#### What these screens deliberately do not do
+
+- **Grant an authority.** That is the Members screen, and a second place to
+  change a permission is a second place for the two to disagree.
+- **Show the queue.** The run history is this organisation's own scheduled
+  checks and nothing else. A queue browser would be a cross-tenant surface
+  the product does not have and should not grow.
+- **Offer a shareable download link.** The export is fetched with the
+  session, like every other file here. A link that works without one is a
+  copy of the whole business with a longer half-life than the decision to
+  make it.
+
+**When the mock grows these screens, the mock wins.** This entry retires
+the moment there is something to cite, on the § 4 iteration pipeline:
+change it in v0, merge it, diff, port the delta.
+
+### 21. Retention, security deposit and liquidated damages — PROPOSED
+
+**Status: PROPOSED, owner ruling pending.** Numbered 21 by coordinator
+allocation; 17 to 20 belong to the packs of this wave and the one before it
+that land ahead of it.
+
+Unlike § 16, this entry DOES have a mock citation, and the divergence is
+about what the mock's drawing turns out to mean rather than about it being
+absent.
+
+#### Where it lives, and the citation
+
+`components/work-registers.tsx` at `fdfd610` describes the Work's
+Instruments section as the place to "track bank guarantees, EMD and
+**security deposits** held against this work", and the mock's own seed data
+(`lib/data.ts`, instrument `in-3`) carries a security-deposit instrument
+whose **bank reads "Deducted from bills"**, valid till a date two years
+out, for ₹14,75,359.
+
+So the mock already says where retention money is read. The application
+puts it exactly there — a `data-surface` panel on the Instruments tab,
+under the guarantees and the PAC certificates — and adds no tab, no rail
+lamp and no address of its own. Every element is one the mock already
+ships: `Stat` tiles for the position, `DataTable` for the two registers,
+`Disclosure` for each form, `ConfirmDialog` for the two irreversible acts,
+and the shared dot-plus-label `StatusChip`.
+
+#### The four divergences, each because the mock's fiction cannot be true
+
+**1. The security deposit is not an instrument row, and cannot be.** The
+mock models it as one more card beside the PBG and the EMD, typed in with
+an amount and a validity date. In the real product that figure is not
+typed by anybody: it is the sum of the `SECURITY_DEPOSIT` deductions the
+railway actually made across the Work's bills (migration 0067), less what
+it has released. An operator who typed it would be asserting a number the
+payment register already knows and can contradict.
+
+So the panel shows the LEDGER — held, released, still held, and the
+contractual ceiling — instead of a card. The mock's card grammar is kept
+for the instruments that genuinely are documents; retention gets the
+register grammar because it genuinely is a running total. A guarantee
+lodged in substitution for cash retention is still an instrument, still
+drawn as the mock's card, and is named by the release that returned the
+cash.
+
+**2. There are two liquidated-damages figures on screen and never a
+third.** "Assessed" is this organisation's own reading of its contract;
+"deducted" is what the railway took under that head on a payment advice.
+They are two claims about the same event and their difference is a
+conversation to have with the railway, not a balance. Every instinct of a
+dashboard is to subtract them and print the remainder; the panel
+deliberately does not, and `work-retention.test.tsx` asserts the
+difference never appears. The mock has no drawing of either figure, so
+there is nothing to diverge FROM here — the entry records the decision so
+a later "tidy-up" does not quietly make it one number.
+
+**3. The chargeable period is a number of DAYS, not a calendar unit.**
+Railway conditions of contract read "0.5% per week or part thereof" and
+"2% per month". A calendar month is not a fixed quantity, so "per month"
+over a delay measured in days has two defensible readings that give
+different money. The form offers "Per week (7 days)" and "Per month (30
+days)" and stores the number, so the record says exactly what was charged
+and the product never asserts a contract term nobody told it. Migration
+0098 § 1 argues it in full. A contract that really does say "calendar
+month" is a case for the operator to type the figure their clause states,
+not for this product to guess.
+
+**4. Two chip words join the shared vocabulary** rather than being styled
+locally: `levied` in the primary family beside `issued` and `sent` — an
+act that happened and is on the record — and `waived` in the success
+family beside `paid` and `approved`, because damages the railway did not
+take are money the agency keeps. `levied` is deliberately NOT destructive:
+that family is cancelled / rejected / declined, and a levy the contract
+provides for is a fact rather than a failure. `draft` and `cancelled` were
+already mapped and keep their readings.
+
+#### One open ruling: what the liquidated-damages cap is a percent OF
+
+**Status: PROPOSED, owner ruling not yet taken. The arithmetic is not
+changed pending it.**
+
+A railway clause reads "liquidated damages at 0.5% per week, subject to a
+maximum of 10%". Of what is the open question, and the two readings give
+different money whenever an assessment is made against less than the whole
+contract:
+
+- **Percent of the assessment basis** — what migration 0098 computes.
+  `cap_amount` is `basis_amount × ld_cap_percent ÷ 100`, and `basis_amount`
+  is a snapshot the form defaults from the contract value but which an
+  operator may set lower (the late portion of a contract, say).
+- **Percent of the contract value** — a fixed ceiling regardless of what
+  any one assessment is charged on.
+
+They agree whenever the basis is the whole contract value. Where they
+diverge the product caps at the smaller figure, which has a visible
+consequence an operator will meet: **a railway that levied 10% of the
+contract value against a partial basis cannot be recorded as levied here**,
+because the levy exceeds the assessment it is levied against and the
+database refuses it. That refusal is the product declining to record what
+actually happened, which is why this is an owner ruling rather than a
+preference.
+
+Recorded here rather than settled in a merge. The migration's generation
+comment previously described the second reading while the column computed
+the first; the comment has been corrected to describe the code, and the
+code waits.
+
+#### Two things this panel does not do
+
+- **Record a deduction.** That belongs on the Bills tab, where the payment
+  advice is entered, and a second place to type a security-deposit figure
+  would be a second figure that can be wrong.
+- **Compute anything in the browser.** The whole liquidated-damages
+  arithmetic — the delay, the chargeable periods, the uncapped figure, the
+  cap and the assessment — is a set of generated columns on the table
+  itself, so there is one computation of it in the product and this screen
+  renders decimal strings.
+
+**When the mock draws a retention ledger, the mock wins.** This entry
+retires on the § 4 iteration pipeline: change it in v0, merge it, diff,
+port the delta.
+
+### 22. Defect liability periods — a module the mock does not draw
+
+**Status: PROPOSED, owner ruling not yet taken.** Numbered 22 by
+coordinator allocation; 17 to 21 belong to the packs of this wave and the
+one before it that landed ahead of it.
+
+**There is no mock citation for either surface, and this entry exists so
+that absence is a recorded decision rather than an omission a reviewer has
+to guess at.** `AGENTS.md` § Design contract says a pull request touching
+a visible surface must cite the mock screen it replicates, and that
+reviewers who cannot find the citation should treat the change as
+unapproved visual invention. So: there is nothing at
+`punyanagari/Auto-MB-Vercel-du@fdfd610` to cite. The mock draws
+installations, and it draws a read-only "PAC / BG certificates" list
+inside the Work's Instruments section (`components/work-registers.tsx`);
+it has never been asked to express the period between the two — the
+warranty that runs on an installed quantity and keeps the Performance Bank
+Guarantee with the railway.
+
+That puts both surfaces under § Design contract 4 — "behaviour the mock
+cannot express is built inside the mock's visual grammar using its
+existing components" — and § Approved divergences 4, "screens the mock
+does not cover", whose list this extends. Concretely, every element is one
+the mock already ships:
+
+| Element                 | Taken from                                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it                                     |
+| The term and the cover  | `data-surface` panels with the mock's labelled `dl` pairs, exactly as the PBG-requirement tile beside them |
+| The register            | `DataTable`, with the sr-only caption `test/a11y-invariants` requires                                      |
+| Standing                | The shared dot-plus-label `StatusChip`                                                                     |
+| Each act                | `Disclosure` over `Field` + `Actions`, the shape the PAC card's own cancel flow uses                       |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares                        |
+
+**Two chip words join the shared vocabulary** rather than being styled
+locally, and both are tone decisions rather than colour choices:
+
+- `elapsed` — a period whose last covered day has passed and which nobody
+  has discharged yet — joins the WARNING family beside `expiring`. The
+  period ending is the good news; what is outstanding is the paperwork
+  that releases the bank guarantee, which is a thing to do.
+- `voided` — a period struck out because it should never have been started
+  — joins the DESTRUCTIVE family beside `cancelled`. It is a record
+  withdrawn, not a record finished. Its sibling `closed` is already
+  neutral, because a period that ran its course IS finished.
+
+**The word `expired` is deliberately NOT used for a warranty**, and the
+avoidance is the point rather than an accident of naming. `expired` is
+already mapped destructive for a lapsed company credential (§ 8), and a
+credential lapsing is a problem while a defect liability period ending is
+the outcome the whole contract is aimed at. Reusing the word would have
+put a red lamp on every warranty that completed successfully.
+
+| #   | The application ships                                                                       | Why, with nothing in the mock to weigh it against                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 22a | The Work's card lives INSIDE the Instruments tab, not on a tab of its own                   | The period is the reason the Performance Bank Guarantee above it is still with the railway. The two facts an office compares — when cover ends and when the guarantee lapses — are useless a tab apart, and a `WORK_TABS` entry for one card would put them there.                                                                                                                                                                                             |
+| 22b | A rail entry under Operations, beside Installations, with `ShieldCheck`                     | The register answers a question that crosses contracts — what comes out of warranty this quarter — which is a rail question. `ShieldCheck` is not on the rail anywhere else; every other Operations lamp is taken.                                                                                                                                                                                                                                             |
+| 22c | The register READS; every act stays on the Work                                             | Starting a period is decided against that Work's contract term and its installations, so an act with no Work in front of it would be a form that has to ask which Work first — which is the Work page. The installation register took the same shape for the same reason (§ Approved divergences 4).                                                                                                                                                           |
+| 22d | A countdown column in words — "45 days left", "78 days over" — not a progress bar           | A warranty is not progress towards anything; it is time an obligation still has to run. The figure is the SERVER's, measured against the organisation's own calendar day, and the screen prints it rather than computing it — the browser's midnight is not the one that decides a legal date.                                                                                                                                                                 |
+| 22e | No warranty CERTIFICATE, no number, no counter                                              | Migration 0018 already freezes the guarantee text on the Delivery Challan as an issued page. A second warranty document would be a second place to look for one statement, and a numbered series nobody asked for. This pack tracks a PERIOD; it issues nothing.                                                                                                                                                                                               |
+| 22f | The guarantee shortfall is REPORTED, never enforced                                         | The railway holds the guarantee, and the agency cannot refuse reality by refusing a write. The card names the gap in days and says what clears it; nothing here blocks an act because a bank guarantee is short.                                                                                                                                                                                                                                               |
+| 22g | The start picker is capped at fifty with a flag, not paged                                  | It is a picker, and a picker cannot page. The same posture the correspondence composer's thread options already record. Start a period on the ones offered and the next ones appear.                                                                                                                                                                                                                                                                           |
+| 22h | An installation carrying a period that is not voided cannot be cancelled                    | Cancelling it would remove the ground the period stands on while the railway still holds a guarantee measured against its expiry. The refusal points at voiding the period first — the shape the PAC-coverage refusal on the same button already has.                                                                                                                                                                                                          |
+| 22i | An installation whose period was DISCHARGED can never be cancelled, and the message says so | This is a deliberate terminal, not a dead end: a discharged period is a completed legal cycle, and the record it rests on is permanent from that point exactly as an issued document is. Stated here because a refusal that pointed at a void the guard would itself refuse would be worse than the terminal.                                                                                                                                                  |
+| 22j | Voiding is the only way out of a live period                                                | It is what makes a mistyped extension recoverable — void and start again, the cancel-and-re-record path an installation already has — and it is the one thing standing between a fat-fingered ten-year expiry and a record nobody can correct.                                                                                                                                                                                                                 |
+| 22k | Discharge is confirmed in a dialog that restates the item and the day the period runs to    | Closure is terminal (22i) and it freezes the installation record for good, and its button is one of three identically shaped disclosures repeated once per live period — the only thing telling one stack from the next is a heading that has scrolled away by the time the submit button is reached. The identity belongs inside the submit path, not only above it. Closure stays terminal by design; this adds a sentence, not a state.                     |
+| 22l | The dashboard's PBG countdown carries the DLP cover date it is measured against             | Two surfaces read the same guarantee: this alert counts it down to its own expiry, the Work's card measures it against the warranty it secures. Unjoined they contradict in both directions — a mild "expires in 40 days" beside a 911-day shortfall, or a renewal nag on a guarantee whose every period is discharged and which is therefore releasable. One date makes the countdown answerable. Null where no live period measures it, which is not a zero. |
+
+**Two additions on surfaces this pack did not create**, both recorded so
+they are not mistaken for drive-by edits: the installation cancel button
+gains a refusal it did not have (22h/22i), and the Work's Timeline gains
+two entity types — the period and the term. The Timeline is where the
+REASON for an extension lives, and it lives nowhere else: the pack keeps
+no extension table precisely because the trail already answers "why does
+this run to 2029".
+
+**One question is OPEN and is deliberately not decided here.** An elapsed
+period — one whose last covered day has passed and which nobody has
+discharged — can still be extended, and the extension may be dated across
+the gap, retroactively resurrecting cover for days on which every screen
+in the product said the Work was out of warranty.
+
+That may be exactly right. An office that agrees a rectification in March
+for a period that lapsed in January is usually describing ONE continuous
+liability rather than two, and the railway holding the guarantee reads it
+that way. But nothing in the product, the migration or this document
+states it, and an operator extending an elapsed period is not told that
+this is what they are doing. The pack ships the behaviour unchanged and
+records the fact instead: every extension's audit payload now carries
+`elapsedAtExtension`, so an extension that crossed a lapsed gap is
+distinguishable in the trail from one that did not, whichever way the
+ruling goes.
+
+**Owner ruling wanted**: is a retroactive extension across a lapsed gap
+legitimate, and if it is, should the screen say so before the operator
+commits it? Neither answer changes what is stored; both change what the
+extension form is allowed to leave unsaid.
+
+**When the mock grows a warranty screen, the mock wins.** This entry
+retires the moment there is something to cite, on the § 4 iteration
+pipeline: change it in v0, merge it, diff, port the delta.
+
 ### 23. Offline behaviour — PROPOSED
 
 **Status: PROPOSED, owner ruling pending.** Numbered 23 by coordinator
-allocation; the numbers between this and § 16 belong to the packs of this
-wave and the one before it, and a gap here is not a defect for the reason
-§ 15 already gives — two sections sharing a number would be.
+allocation, ahead of the packs holding § 17 to § 22, all of which have
+since landed above it. The allocation is what kept two sections from
+sharing a number across a parallel wave, which is the defect § 15 names.
 
 **There is no mock citation for anything in this section, and that is the
 first fact about it.** `punyanagari/Auto-MB-Vercel-du@fdfd610` has no
@@ -1270,7 +2027,8 @@ matrix dialog · PAC certificate issuance · Completion extensions · Measuremen
 Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invoice
 IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
 recovery · Password recovery · Account security · Organisation access settings ·
-Appearance settings · Monthly payroll
+Appearance settings · Monthly payroll · Spreadsheet imports · Signing queue ·
+Warranties register and the Work's defect liability card
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.

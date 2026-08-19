@@ -45,6 +45,14 @@ function canonicalOrigin(value: string): string {
 const ORIGIN_EXEMPT_ROUTES: ReadonlySet<string> = new Set([
   'POST /api/signing/agent/claim',
   'POST /api/signing/agent/requests/:id/result',
+  // Meta's WhatsApp delivery-receipt webhook (0092). The same argument
+  // exactly: it carries no session cookie, so there is no ambient
+  // authority for a hostile page to ride, and Meta sends no `Origin`
+  // header at all. What stands in place of the guard is the HMAC — the
+  // receiver verifies `X-Hub-Signature-256` over the raw body before it
+  // reads a field, which is a strictly stronger check than an origin
+  // string a browser volunteered.
+  'POST /api/notifications/webhook',
 ]);
 
 export function isOriginExemptRoute(method: string, routePattern: string): boolean {

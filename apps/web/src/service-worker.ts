@@ -153,6 +153,15 @@
     try {
       return await fetch(request);
     } catch (unreachable) {
+      /* The GLOBAL `caches.match`, across every bucket, and it must stay
+       * that way: narrowing it to CACHE_NAME breaks the handoff window.
+       * A new worker installs its cache and then WAITS (see 4 above) —
+       * during that wait the pages still being served are the old
+       * build's, and after the sweep in `activate` the only shell left is
+       * the new one. Either way the copy that answers may live under a
+       * revision other than the one this closure names. The cross-cache
+       * lookup is what makes both ends of that window serve a document
+       * instead of the browser's error page. */
       const cached = await caches.match(SHELL_URL);
       if (cached !== undefined) return cached;
       throw unreachable;
@@ -160,6 +169,11 @@
   }
 
   async function assetResponse(request: Request): Promise<Response> {
+    /* Global again, for the same handoff reason as above, and it costs
+     * nothing here: asset names carry a content hash, so a hit found in
+     * an older build's cache is byte-identical to what this one would
+     * have stored. Writes below still go to CACHE_NAME, which is what
+     * lets `activate` sweep a whole build at once. */
     const cached = await caches.match(request);
     if (cached !== undefined) return cached;
     const response = await fetch(request);

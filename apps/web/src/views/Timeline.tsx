@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { TimelineEvent, TimelineResponse } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { formatTimestampDate } from '../format.js';
+import { contextFacts, diffRows, humaniseAction } from '../lib/audit-text.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
@@ -20,94 +21,6 @@ interface TimelineProps {
   readonly organisationId: string;
   readonly scope: TimelineScope;
 }
-
-const ACTION_LABELS: Record<string, string> = {
-  'work.created': 'Work created',
-  'challan.created': 'Challan drafted',
-  'challan.updated': 'Challan draft updated',
-  'challan.deleted': 'Challan draft deleted',
-  'challan.issued': 'Challan issued',
-  'challan.cancelled': 'Challan cancelled',
-  'challan.rendered': 'Challan PDF generated',
-  'challan.signed_copy_uploaded': 'Signed copy uploaded',
-  'challan.received': 'Delivery receipt recorded',
-  'correspondence_letter.dispatched': 'Outward letter dispatched',
-  'correspondence_letter.received': 'Inward letter registered',
-  'correspondence_letter.cancelled': 'Letter cancelled',
-  'serials.recorded': 'Serial numbers recorded',
-  'serial.installed': 'Installation recorded',
-  'instrument.created': 'Instrument recorded',
-  'instrument.updated': 'Instrument updated',
-  'mb.recorded': 'Measurement recorded',
-  'bill.prepared': 'Bill prepared',
-  'bill.submitted': 'Bill submitted',
-  'bill.paid': 'Bill paid',
-  'received_railway_bill.recorded': 'Railway bill recorded',
-  'received_railway_bill.discarded': 'Railway bill discarded',
-  'measurement_book.closed': 'Measurement closed by railway bill',
-  // The inspection lifecycle (0082). `inspection.clauses_saved` and
-  // `inspection.checklist_saved` are filed against the WORK, not the call
-  // — they are configuration of the contract, and there is no call yet to
-  // hang them on — so the Timeline's own filter lists them under Works
-  // while the six call events list under Inspection calls.
-  'inspection.clauses_saved': 'Inspection clause mapping saved',
-  'inspection.checklist_saved': 'Inspection checklist saved',
-  'inspection_call.raised': 'Inspection call raised',
-  'inspection_call.letter_received': 'Inward call letter received',
-  'inspection_call.document_attached': 'Inspection document attached',
-  'inspection_call.certificate_recorded': 'Inspection certificate recorded',
-  'inspection_call.closed': 'Inspection call closed',
-  'inspection_call.cancelled': 'Inspection certificate withdrawn',
-  'bill_payment.recorded': 'Payment received',
-  'bill_payment.voided': 'Payment withdrawn',
-  // The production job card (0084). Only the card reaches the timeline;
-  // its units and their releases would flood a Work with one row each.
-  'production_job_card.raised': 'Job card raised',
-  'production_job_card.revised': 'Job card revised',
-  'production_job_card.completed': 'Job card completed',
-  'production_job_card.cancelled': 'Job card cancelled',
-};
-
-const FIELD_LABELS: Record<string, string> = {
-  challanDate: 'Challan date',
-  prefix: 'Number prefix',
-  consignee: 'Consignee',
-  items: 'Line items',
-  challanNumber: 'Challan number',
-  totalAmount: 'Total amount',
-  itemCount: 'Line count',
-  // Job-card audit details (0084).
-  number: 'Number',
-  quantity: 'Quantity',
-  dueDate: 'Due date',
-  units: 'Units',
-  sequence: 'Sequence',
-  note: 'Note',
-  status: 'Status',
-  expiresOn: 'Expires on',
-  notes: 'Notes',
-  installedOn: 'Installed on',
-  installationRemarks: 'Installation remarks',
-  receivedOn: 'Received on',
-  measuredQuantity: 'Measured quantity',
-  billNumber: 'Bill number',
-  entryCount: 'Measurements',
-  kind: 'Kind',
-  reference: 'Reference',
-  count: 'Count',
-  role: 'Role',
-  workScope: 'Work scope',
-  canIssueDocuments: 'Issue authority',
-  canCancelDocuments: 'Cancel authority',
-  canApproveAmendments: 'Amendment approval authority',
-  canManageStatutoryReporting: 'Statutory reporting authority',
-  workIds: 'Assigned Works',
-  name: 'Name',
-  address: 'Address',
-  gstin: 'GSTIN',
-  contactPhone: 'Contact phone',
-  contactEmail: 'Contact email',
-};
 
 const ENTITY_FILTERS = [
   { value: '', label: 'All activity' },
@@ -132,83 +45,6 @@ const ENTITY_FILTERS = [
   { value: 'payment_matrices', label: 'Payment matrix' },
   { value: 'pac_certificates', label: 'PAC certificates' },
 ] as const;
-
-function humaniseAction(action: string): string {
-  return ACTION_LABELS[action] ?? action.replaceAll('.', ' ').replaceAll('_', ' ');
-}
-
-function humaniseField(field: string): string {
-  return (
-    FIELD_LABELS[field] ??
-    field
-      .replaceAll(/([a-z])([A-Z])/g, '$1 $2')
-      .replaceAll('_', ' ')
-      .toLowerCase()
-  );
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/** Compact human text for a diff side: scalars verbatim, objects as
- * "key: value" pairs, arrays summarised per element — never raw JSON. */
-function displayValue(value: unknown): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'string') return value.length > 0 ? value : '—';
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) {
-    if (value.length === 0) return 'none';
-    return value.map(displayValue).join('; ');
-  }
-  if (isPlainObject(value)) {
-    return Object.entries(value)
-      .map(([key, entry]) => `${humaniseField(key)}: ${displayValue(entry)}`)
-      .join(', ');
-  }
-  return '—';
-}
-
-interface DiffRow {
-  readonly field: string;
-  readonly label: string;
-  readonly before: string;
-  readonly after: string;
-}
-
-/** Update events carry { before: {field: old}, after: {field: new} } for
- * the changed fields only; anything else renders no diff. */
-function diffRows(details: unknown): readonly DiffRow[] {
-  if (!isPlainObject(details)) return [];
-  const { before, after } = details;
-  if (!isPlainObject(before) || !isPlainObject(after)) return [];
-  const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])];
-  return fields.map((field) => ({
-    field,
-    label: humaniseField(field),
-    before: displayValue(before[field]),
-    after: displayValue(after[field]),
-  }));
-}
-
-/** Scalar context facts (challan number, note, quantity…) shown under the
- * action label; structured diffs and identifiers are handled elsewhere. */
-function contextFacts(details: unknown): readonly string[] {
-  if (!isPlainObject(details)) return [];
-  return Object.entries(details)
-    .filter(
-      ([key, value]) =>
-        key !== 'before' &&
-        key !== 'after' &&
-        !key.endsWith('Id') &&
-        (typeof value === 'string' ||
-          typeof value === 'number' ||
-          typeof value === 'boolean') &&
-        !(typeof value === 'string' && /^[0-9a-f-]{36}$/.test(value)) &&
-        !(typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)),
-    )
-    .map(([key, value]) => `${humaniseField(key)}: ${String(value)}`);
-}
 
 export function Timeline({ api, organisationId, scope }: TimelineProps) {
   const [events, setEvents] = useState<readonly TimelineEvent[] | null>(null);

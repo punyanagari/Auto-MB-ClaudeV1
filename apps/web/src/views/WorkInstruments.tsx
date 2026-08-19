@@ -15,6 +15,8 @@ import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { PacCertificates } from './PacCertificates.js';
+import { WorkRetention } from './WorkRetention.js';
+import { WorkWarranty } from './WorkWarranty.js';
 
 interface WorkInstrumentsProps {
   readonly api: ApiClient;
@@ -26,6 +28,11 @@ interface WorkInstrumentsProps {
   readonly setInstruments: Dispatch<SetStateAction<readonly Instrument[]>>;
   readonly canModify: boolean;
   readonly canCreateDocuments: boolean;
+  /** Holds can_manage_retention (migration 0098). Gates the retention
+   * ledger and the liquidated-damages assessments below, which are their
+   * own authority: stating what the railway is holding back is not the
+   * same act as recording a guarantee. */
+  readonly canManageRetention: boolean;
   readonly pending: boolean;
   /** The page's shared action runner: reports, refreshes, and clears. */
   readonly act: (run: () => Promise<void>, message: string) => Promise<void>;
@@ -44,6 +51,7 @@ export function WorkInstruments({
   setInstruments,
   canModify,
   canCreateDocuments,
+  canManageRetention,
   pending,
   act,
 }: WorkInstrumentsProps) {
@@ -238,6 +246,31 @@ export function WorkInstruments({
         workId={workId}
         canModify={canCreateDocuments}
         workItems={workItems}
+      />
+      {/* Retention, security deposit and liquidated damages (0098). It
+          sits here because this is where the mock puts it: its own
+          Instruments section is described as tracking "bank guarantees,
+          EMD and security deposits held against this work"
+          (components/work-registers.tsx at fdfd610), and its seed data
+          carries a security-deposit instrument whose bank reads "Deducted
+          from bills". docs/UX.md § 21 records what changed when that
+          fiction was made true. */}
+      <WorkRetention
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canManageRetention={canManageRetention}
+      />
+      {/* The defect liability period sits with the instruments because it
+          is the reason the Performance Bank Guarantee above is still with
+          the railway (migration 0099). Its own authority is `canModify` —
+          owner or office — rather than the document authority the PAC
+          card takes: no document is issued here. */}
+      <WorkWarranty
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canModify={canModify}
       />
     </>
   );

@@ -286,4 +286,77 @@ describe('runWorkerLoop', () => {
     });
     expect(delays).toEqual([10_000, 20_000, 40_000]);
   });
+  it('ticks the scheduler at its own interval, not at the poll interval', async () => {
+    // The two sweeps are cross-tenant queries. An idle worker polls every
+    // second, and running them that often would be a steady background
+    // load for checks whose useful resolution is hours — so the tick has
+    // its own clock, and this is the assertion that keeps the two apart.
+    const controller = new AbortController();
+    claimNextJob.mockResolvedValue(undefined);
+    const ticks: number[] = [];
+    let clock = 0;
+    const tick = (): Promise<void> => {
+      ticks.push(clock);
+      return Promise.resolve();
+    };
+    let waits = 0;
+    const sleep = (): Promise<void> => {
+      waits += 1;
+      // Ten seconds of wall clock per idle poll, so the sixty-second tick
+      // interval falls due on every sixth iteration.
+      clock += 10_000;
+      if (waits === 12) controller.abort();
+      return Promise.resolve();
+    };
+
+    await runWorkerLoop(sql, {
+      claimedBy: 'test',
+      leaseSeconds: 60,
+      idlePollMs: 25,
+      signal: controller.signal,
+      handlers: {} as never,
+      log: silent,
+      sleep,
+      tick,
+      tickIntervalMs: 60_000,
+      now: () => clock,
+    });
+
+    // First iteration (the worker has just started, and a due schedule is
+    // most likely to be waiting), then every sixty seconds — not on each
+    // of the twelve idle polls in between.
+    expect(ticks).toEqual([0, 60_000]);
+  });
+
+  it('carries on when the tick throws', async () => {
+    // A scheduler that killed the worker would take the job queue down
+    // with it — a recurring statutory check failing must not stop letters
+    // being read.
+    const controller = new AbortController();
+    claimNextJob.mockResolvedValue(undefined);
+    const errors: Record<string, unknown>[] = [];
+    let waits = 0;
+    const sleep = (): Promise<void> => {
+      waits += 1;
+      if (waits === 3) controller.abort();
+      return Promise.resolve();
+    };
+
+    await runWorkerLoop(sql, {
+      claimedBy: 'test',
+      leaseSeconds: 60,
+      idlePollMs: 25,
+      signal: controller.signal,
+      handlers: {} as never,
+      log: { info: () => {}, error: (fields) => errors.push(fields) },
+      sleep,
+      tick: () => Promise.reject(new Error('the sweep exploded')),
+      tickIntervalMs: 0,
+      now: () => 0,
+    });
+
+    expect(waits).toBe(3);
+    expect(errors.length).toBeGreaterThanOrEqual(3);
+    expect(errors[0]?.message).toContain('scheduler tick failed');
+  });
 });

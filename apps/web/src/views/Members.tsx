@@ -211,12 +211,114 @@ const FEATURES = [
     authority: 'Payroll authority',
     change: 'Payroll authority',
   },
-] as const satisfies readonly {
+  {
+    /* The audit authority (migration 0095): who may open the
+       organisation-wide audit register and export it. Not covered by any
+       role, because the register answers "what did this person do" across
+       every Work and every module and prints the before/after of each
+       change — a surveillance surface over colleagues, on the same
+       footing as the payroll register's salaries. A Work's own timeline
+       stays open to everyone assigned to it. Full work scope is required
+       on top: the register cannot narrow honestly, so an assigned-scope
+       member is refused rather than shown a silent slice. */
+    key: 'canViewAuditTrail',
+    heading: 'Can read audit',
+    authority: 'Audit authority',
+    change: 'Audit authority',
+  },
+  {
+    /* The notifications authority (migration 0092): who may configure the
+       WhatsApp and email channels, maintain the message templates, record
+       a recipient's consent and send a message. Separate from the issue
+       authority because choosing the number the organisation speaks from,
+       and deciding who else may be messaged, is not the same decision as
+       committing the words of a document. */
+    key: 'canManageNotifications',
+    heading: 'Can message',
+    authority: 'Notifications authority',
+    change: 'Notifications authority',
+  },
+  {
+    /* The import authority (migration 0094): who may point a spreadsheet
+       at a register and commit the rows it stages. Separate from the
+       writer role the registers themselves require, because adding one
+       contact is a considered act with a form in front of it and
+       committing a batch writes eight hundred rows from a forwarded
+       file. */
+    key: 'canImportData',
+    heading: 'Can import',
+    authority: 'Import authority',
+    change: 'Import authority',
+  },
+  {
+    /* The entitlements authority (migration 0096). OWNER-ONLY IN EFFECT:
+       every route carrying it also requires the owner role, so granting
+       it to a non-owner is not an error and confers nothing — it is the
+       column the finding-36 MFA census classifies, and an operator
+       control that never appears in that census is one nobody can see. */
+    key: 'canManageEntitlements',
+    heading: 'Can set modules',
+    authority: 'Entitlements authority (owners only)',
+    change: 'Entitlements authority',
+  },
+  {
+    /* The organisation-export authority (migration 0096): who may take a
+       complete copy of the organisation away. Separate from the owner
+       role deliberately, so an owner can hand the annual package to an
+       accountant without handing over the organisation. Full Work access
+       is required on top — the package is not Work-scoped, so a member
+       who sees only their own Works cannot take one. */
+    key: 'canExportOrg',
+    heading: 'Can export',
+    authority: 'Organisation export authority',
+    change: 'Organisation export authority',
+  },
+  {
+    /* The retention authority (migration 0098): who may record a
+       contract's retention and liquidated-damages terms, record and
+       withdraw a retention release, and assess, levy or waive damages.
+       Separate from the payments authority because that one sends the
+       agency's money out and this one states what the railway is holding
+       back — the clerk who chases a security-deposit release at the end
+       of a maintenance period is not whoever approves a travel claim. */
+    key: 'canManageRetention',
+    heading: 'Can manage retention',
+    authority: 'Retention authority',
+    change: 'Retention authority',
+  },
+] as const satisfies readonly GrantDescriptor[];
+
+interface GrantDescriptor {
   key: keyof Membership & `can${string}`;
   heading: string;
   authority: string;
   change: string;
-}[];
+}
+
+/**
+ * EVERY GRANT THE WIRE CARRIES HAS A COLUMN ON THIS SCREEN, checked at
+ * compile time rather than by whoever adds the next one.
+ *
+ * `satisfies` above proves each entry is well formed; it cannot prove the
+ * list is complete, and that gap shipped: migration 0091's
+ * `canSignDocuments` reached the matrix, but 0094's `canImportData` did
+ * not, which made a per-member authority grantable by nobody — a founding
+ * owner held it implicitly and no owner could hand it to anyone else. The
+ * feature's own integration test had to grant it with raw SQL, which was
+ * the tell.
+ *
+ * This assignment is the check, and it has to be a TYPE-level one: an
+ * `Object.fromEntries` census with a cast is what the first attempt used,
+ * and a cast is precisely the thing that stops a compiler noticing.
+ * `Exclude` narrows the wire's grant keys by the ones this list carries;
+ * complete, that is `never` and `Record<never, never>` is `{}`. Leave one
+ * out and the empty object is missing a required property. The ninth
+ * authority cannot repeat this.
+ */
+type GrantKey = keyof Membership & `can${string}`;
+type ListedGrantKey = (typeof FEATURES)[number]['key'];
+const _EVERY_GRANT_HAS_A_COLUMN: Record<Exclude<GrantKey, ListedGrantKey>, never> = {};
+void _EVERY_GRANT_HAS_A_COLUMN;
 
 export function Members({ api, organisationId, currentUserId }: MembersProps) {
   const [members, setMembers] = useState<readonly Membership[] | null>(null);

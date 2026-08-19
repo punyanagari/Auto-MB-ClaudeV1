@@ -6,6 +6,7 @@ import {
   ORG,
   PICKER_ME,
   SECOND_ORG,
+  WORK_WARRANTY,
   expectNoAxeViolations,
   json,
   mockWorkspace,
@@ -597,6 +598,13 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await page.route(`**/api/works/${WORK_ID}/challans`, (route) =>
     route.fulfill(json({ challans: [CHALLAN] })),
   );
+  /* The defect liability card reads its own endpoint on the Instruments
+     tab (0099). This journey builds its route table from scratch rather
+     than through `mockWorkspace`, so the handler is registered here as
+     well as there. */
+  await page.route(`**/api/works/${WORK_ID}/warranty*`, (route) =>
+    route.fulfill(json(WORK_WARRANTY)),
+  );
   await page.route(`**/api/works/${WORK_ID}/instruments`, (route) =>
     route.fulfill(
       json({
@@ -612,6 +620,116 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             status: 'active',
             notes: null,
             createdAt: '2026-01-10T00:00:00.000Z',
+          },
+        ],
+      }),
+    ),
+  );
+  /* Retention and liquidated damages (0098), populated on purpose: the
+     scan has to see the tinted words, and this panel carries three of
+     them at once — a `draft` assessment reading neutral, a `levied` one
+     in the primary family and a `waived` one in the success family. An
+     empty position would scan a heading and prove nothing about the
+     contrast of the chips it is here to check. */
+  await page.route(`**/api/works/${WORK_ID}/retention`, (route) =>
+    route.fulfill(
+      json({
+        position: {
+          workId: WORK_ID,
+          contractValue: '10000000.00',
+          retentionCeilingAmount: '500000.00',
+          retentionHeldTotal: '150000.00',
+          retentionReleasedTotal: '50000.00',
+          retentionBalance: '100000.00',
+          ldLeviedTotal: '500000.00',
+          ldDeductedTotal: '400000.00',
+          ldOpenAssessments: 1,
+        },
+        terms: {
+          retentionPercent: '10.000',
+          retentionLimitPercent: '5.000',
+          defectLiabilityMonths: 24,
+          ldRatePercent: '0.500',
+          ldPeriodDays: 7,
+          ldCapPercent: '10.000',
+          sourceClause: 'GCC 17B',
+          notes: null,
+          updatedAt: '2026-06-01T00:00:00.000Z',
+        },
+        releases: [
+          {
+            id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+            workId: WORK_ID,
+            releasedOn: '2026-06-10',
+            amount: '50000.00',
+            basis: 'pac',
+            workInstrumentId: null,
+            workInstrumentReference: null,
+            reference: 'REL/2026/1',
+            description: null,
+            remarks: null,
+            voidedAt: null,
+            voidReason: null,
+            createdAt: '2026-06-10T00:00:00.000Z',
+          },
+        ],
+        assessments: [
+          {
+            id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2',
+            workId: WORK_ID,
+            assessedOn: '2026-05-01',
+            status: 'levied',
+            basisAmount: '10000000.00',
+            basisLabel: 'Contract value',
+            scheduledCompletionDate: '2026-01-01',
+            assessedToDate: '2026-04-15',
+            ldRatePercent: '0.500',
+            ldPeriodDays: 7,
+            ldCapPercent: '10.000',
+            delayDays: 104,
+            chargeablePeriods: 15,
+            uncappedAmount: '750000.00',
+            capAmount: '1000000.00',
+            assessedAmount: '750000.00',
+            leviedAmount: '500000.00',
+            levyReference: 'LD/2026/07',
+            outcomeReason: null,
+            notes: null,
+            decidedAt: '2026-05-02T00:00:00.000Z',
+            createdAt: '2026-05-01T00:00:00.000Z',
+          },
+          {
+            id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3',
+            workId: WORK_ID,
+            assessedOn: '2026-03-01',
+            status: 'waived',
+            basisAmount: '10000000.00',
+            basisLabel: 'Contract value',
+            scheduledCompletionDate: '2026-01-01',
+            assessedToDate: '2026-02-01',
+            ldRatePercent: '0.500',
+            ldPeriodDays: 7,
+            ldCapPercent: '10.000',
+            delayDays: 31,
+            chargeablePeriods: 5,
+            uncappedAmount: '250000.00',
+            capAmount: '1000000.00',
+            assessedAmount: '250000.00',
+            leviedAmount: null,
+            levyReference: null,
+            outcomeReason: 'Delay attributable to the railway’s own site handover',
+            notes: null,
+            decidedAt: '2026-03-02T00:00:00.000Z',
+            createdAt: '2026-03-01T00:00:00.000Z',
+          },
+        ],
+        currentCompletionDate: '2026-01-01',
+        instruments: [
+          {
+            id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            kind: 'pbg',
+            reference: 'BG/22',
+            amount: '45000.00',
           },
         ],
       }),
@@ -1112,6 +1230,31 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Contract instruments' }),
   ).toBeVisible();
+  // The retention ledger (0098) shares this tab, and the scan below is
+  // the one that covers it. Waiting on a rupee figure rather than on the
+  // heading is what makes the scan run against the LOADED panel — the
+  // heading is rendered beside a skeleton while the position is in
+  // flight, and a scan of a skeleton proves nothing about the chips.
+  await expect(
+    page.getByRole('heading', { name: 'Retention and liquidated damages' }),
+  ).toBeVisible();
+  await expect(page.getByText('₹1,00,000.00')).toBeVisible();
+  await expect(page.getByText('levied', { exact: true })).toBeVisible();
+  await expect(page.getByText('waived', { exact: true })).toBeVisible();
+  /* The defect liability card (0099) sits on this tab, beside the
+     Performance Bank Guarantee it explains, so it is scanned here rather
+     than in a test of its own — re-mounting this forty-route fixture for
+     one card costs more than it proves. What the scan needs on screen is
+     the shortfall chip, which is the one warning tint the card carries,
+     and the start table's own controls, which the register behind it
+     never draws. */
+  await expect(page.getByRole('heading', { name: 'Defect liability' })).toBeVisible();
+  await expect(page.getByText(/24 months from the installation date/)).toBeVisible();
+  await expect(page.getByText(/Short by 45 days/)).toBeVisible();
+  await page
+    .getByRole('button', { name: /Start a defect liability period/, expanded: false })
+    .click();
+  await expect(page.getByRole('button', { name: 'Start period' })).toBeVisible();
   await expectNoAxeViolations(page, 'work detail');
 
   // The challan list lives under Deliveries.
@@ -1517,6 +1660,194 @@ test('the signing queue passes the axe scan', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open signed PDF' })).toBeVisible();
 });
 
+test('the notifications screen passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  // The shared contact master answers empty, which is the state the stock
+  // shortage scan needs. Both write forms here pick a contact from it, so
+  // a later, more specific handler gives this screen one to pick — a
+  // disabled submit is a different contrast state from an enabled one,
+  // and the enabled one is what an operator actually meets.
+  await page.route('**/api/masters/contacts*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        contacts: [
+          {
+            id: '44444444-0092-4000-8000-000000000000',
+            designation: 'Sr. DEE (G) CR Nagpur',
+            contactPerson: null,
+            address: null,
+            phone: null,
+            email: null,
+            gstin: null,
+            pincode: null,
+            stateCode: null,
+            isConsignee: true,
+            isVendor: false,
+            isClient: false,
+            isEmployee: false,
+            active: true,
+          },
+        ],
+      }),
+    }),
+  );
+  await page.goto('/#/notifications');
+
+  /* Notifications (0092). Its own top-level test rather than a leg of an
+     existing journey, for the reason the signing queue took its own: the
+     big picker journey is already budgeted with test.slow().
+
+     Scanned with every tint on screen at once. Four sections, and the
+     colour is entirely in their chips: an ENABLED channel whose
+     deployment has no transport draws a success lamp and a warning lamp
+     side by side — the one state on this screen with no precedent in the
+     mock — and the template list and the delivery log carry every status
+     word that tints, including the two that deliberately read neutral. */
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  await expect(page.getByText('+919000000001')).toBeVisible();
+  await expect(page.getByText('no transport')).toBeVisible();
+  for (const label of ['approved', 'pending', 'rejected', 'paused', 'draft']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  for (const label of ['queued', 'sent', 'delivered', 'read', 'failed']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByText('opted in').first()).toBeVisible();
+  await expect(page.getByText('opted out').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'notifications registers');
+
+  /* Every form on the screen, opened together. A form is where label
+     association and focus order actually fail, and these four are
+     different shapes: a field row plus a checkbox, a select with a
+     textarea, a three-select row, and a two-select row. The per-row
+     status control is drawn already — its select and its conditional
+     reason box are the only controls on this screen that appear INSIDE a
+     table cell, which is where a label that is only visually adjacent
+     stops being a label at all. */
+  await page.getByRole('button', { name: 'Change WhatsApp settings' }).click();
+  await page.getByRole('button', { name: 'Write a template' }).click();
+  await page.getByRole('button', { name: 'Record a consent' }).click();
+  await page.getByRole('button', { name: 'Send a message' }).click();
+  await expect(page.getByLabel('Phone number id')).toBeVisible();
+  await expect(page.getByLabel('Body')).toBeVisible();
+  await expect(page.getByLabel('How it was obtained')).toBeVisible();
+  await expect(page.getByLabel('Parameters')).toBeVisible();
+  // The reason box only exists for the three statuses Meta explains, so
+  // it is opened deliberately rather than left to chance.
+  await page.getByLabel('New status for payment_due').selectOption('disabled');
+  await expect(page.getByLabel('What Meta said about payment_due')).toBeVisible();
+  await expectNoAxeViolations(page, 'notifications forms');
+});
+
+test('the imports register passes the axe scan', async ({ page }) => {
+  // Four scans, so eight axe runs — the heaviest single test in this
+  // file. The same budget the picker journey takes, for the same reason:
+  // a lazily-loaded view whose chunk is fetched while the preview server
+  // is still serving the previous test's scans has to be waited for, not
+  // raced.
+  test.slow();
+  await mockWorkspace(page);
+  await page.goto('/#/imports');
+
+  /* Spreadsheet imports (0094). Its own top-level test rather than a leg
+     of an existing journey, for the reason the signing queue took one:
+     the big picker journey is already budgeted with test.slow().
+
+     Scanned with all three batch statuses on screen at once, because the
+     chip is the only colour this screen puts on a word. The row errors
+     are the other pairing worth measuring — 11px prose in the muted ink,
+     inside a wrapping cell, which is the combination most likely to miss
+     AA in one theme and pass in the other. */
+  await expect(
+    page.getByRole('heading', { name: 'Imports', exact: true }),
+  ).toBeVisible();
+  for (const label of ['validated', 'completed', 'cancelled']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'imports register');
+
+  // The open batch: the row-level error table, its `error` and `valid`
+  // chips, and the button that says how many rows it will write. None of
+  // those states is reachable from the register scan above.
+  await page.getByRole('button', { name: 'Open' }).first().click();
+  await expect(page.getByRole('button', { name: /Import 2 rows/ })).toBeVisible();
+  await expect(page.getByText('rule R16', { exact: false })).toBeVisible();
+  for (const label of ['error', 'valid']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'imports batch detail');
+
+  // The column guide, which is a disclosure the register scan leaves
+  // closed — and the only place a `required` marker is drawn.
+  await page.getByRole('combobox', { name: 'Register' }).selectOption('contacts');
+  await page.getByText(/Columns this register reads/).click();
+  await expect(page.getByText('required').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'imports column guide');
+
+  // The withdrawal dialog: a destructive confirm whose primary action is
+  // disabled until a reason is typed.
+  await page.getByRole('button', { name: 'Withdraw' }).first().click();
+  await expect(
+    page.getByRole('heading', { name: 'Withdraw this import' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'imports withdrawal dialog');
+});
+
+test('the audit register and the management summary pass the axe scan', async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+  await page.goto('/#/audit');
+
+  /* The two screens migration 0095 adds, scanned together because they
+     are one pack's grammar and neither is on an existing journey.
+
+     The audit register is the harder of the two and the reason this is
+     its own test: it is five filter controls with `sr-only` labels over a
+     dense table, and every one of those labels is a place label
+     association fails silently. The DIFF is the other reason — the
+     before/after in the detail sheet renders the old value with a
+     line-through and the new one in bold, which is the one place on
+     either screen where meaning could rest on presentation alone. It does
+     not: an `sr-only` "changed to" carries the relationship, and the scan
+     is what keeps that true. */
+  await expect(page.getByRole('heading', { name: 'Audit trail' })).toBeVisible();
+  // Matched inside the table rather than by text alone: the same sentence
+  // is also an <option> in the action picker, and an option in a closed
+  // select is hidden.
+  await expect(
+    page.getByRole('cell', { name: 'Challan issued', exact: true }),
+  ).toBeVisible();
+  // The retention sentence: the register says how far back it reached,
+  // because a window that showed less than the dates asked for would
+  // otherwise read as a quiet organisation.
+  await expect(page.getByText(/This register looks back to/)).toBeVisible();
+  await expectNoAxeViolations(page, 'audit register');
+
+  // The detail sheet, with the before/after list on screen.
+  await page.getByRole('button', { name: 'Detail' }).first().click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expectNoAxeViolations(page, 'audit event detail');
+  await page.keyboard.press('Escape');
+
+  /* The management summary: three dense numeric tables and a tile row.
+     Every figure is monospace and right-aligned, and the ageing table
+     always draws all five bands — including the zero ones, which is the
+     contrast state a table of only populated rows would never reach. */
+  await page.goto('/#/reports');
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Output tax by month' }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Receivables ageing' })).toBeVisible();
+  await expect(
+    page.getByRole('rowheader', { name: 'Over 90 days', exact: true }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'management summary');
+});
+
 test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/settings');
@@ -1537,4 +1868,68 @@ test('the signing kiosk settings pass the axe scan', async ({ page }) => {
     page.getByRole('heading', { name: 'Revoke this signing kiosk' }),
   ).toBeVisible();
   await expectNoAxeViolations(page, 'signing kiosk revoke dialog');
+});
+
+test('the platform settings pass the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/settings');
+
+  /* The owner-only operator controls (0096). Their own scan rather than a
+     leg of another journey, because between them they draw four things a
+     register never does: a chip whose meaning is "off" rather than
+     "cancelled", a dense run-history table with an outcome column, a
+     64-character digest printed in full and wrapped, and a primary action
+     that is DISABLED while a build is in flight — which is a contrast
+     state nothing else on the page reaches. */
+  await expect(page.getByRole('heading', { name: 'Platform' })).toBeVisible();
+  await expect(page.getByText('E-way bill', { exact: true })).toBeVisible();
+  await expect(page.getByText(/never configured/)).toBeVisible();
+  await expect(page.getByText('Guarantee and certificate expiry')).toBeVisible();
+  // The note that says WHY a module is off — the fact the column exists
+  // to carry, and one a panel could store and never show.
+  await expect(page.getByText(/waiting on NIC re-certification/)).toBeVisible();
+  // The refused-bind run's remedy, which is the one sentence on this
+  // screen an operator has to act on, and the CONTROL it names. A remedy
+  // whose only button switches the check off would make the operator
+  // disable a statutory check to fix its custody.
+  await expect(page.getByText(/no longer in the organisation/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Run as me' })).toBeVisible();
+  // The two settings the screen displays and used to have no way to
+  // change: a select and a bounded number input, both of which are
+  // label-association and focus-order surfaces a table never reaches.
+  await expect(page.getByLabel('How often')).toBeVisible();
+  await expect(page.getByLabel('Days ahead')).toBeVisible();
+  await expectNoAxeViolations(page, 'platform settings');
+
+  await expect(
+    page.getByRole('heading', { name: 'Organisation export' }),
+  ).toBeVisible();
+  await expect(page.getByText('f'.repeat(64))).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download' })).toBeVisible();
+  await expectNoAxeViolations(page, 'organisation export panel');
+});
+
+test('the warranty register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/warranties');
+
+  /* Defect liability periods (0099). Its own top-level test rather than a
+     leg of an existing journey, for the reason Receivables and the
+     signing queue took theirs: the big picker journey is already budgeted
+     with test.slow() and does not need another leg.
+
+     Scanned with all five standings on screen at once, because the chip
+     is the only colour this screen puts on a word — and two of the five
+     are new to the shared tone map (`elapsed` in the warning family,
+     `voided` in the destructive one), so this is the scan that proves
+     both read against their ground in each theme. The filter row is on
+     screen with them: a select and a date input beside a submit, which is
+     where label association and focus order actually fail. */
+  await expect(page.getByRole('heading', { name: 'Warranties' })).toBeVisible();
+  for (const label of ['active', 'expiring', 'elapsed', 'closed', 'voided']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByLabel('Standing', { exact: true })).toBeVisible();
+  await expect(page.getByLabel(/Runs out on or before/)).toBeVisible();
+  await expectNoAxeViolations(page, 'warranty register');
 });

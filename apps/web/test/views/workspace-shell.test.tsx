@@ -278,6 +278,12 @@ describe('OperationsWorkspace mobile shell', () => {
       // rather than drawn as a dead entry.
       'Production',
       'Installations',
+      // The defect liability register (migration 0099), beside
+      // Installations because a period IS an installation seen from the
+      // far end of the contract. The mock draws no cell for it at all —
+      // docs/UX.md § 22, on the same footing as the signing queue's own
+      // missing cell in § 16.
+      'Warranties',
       // The mock's own rail carries Inspection in its main list
       // (`components/app-sidebar.tsx` at fdfe5ef); it sits under
       // Operations here, beside the other shop-floor registers.
@@ -294,7 +300,13 @@ describe('OperationsWorkspace mobile shell', () => {
       'Employees',
       'Approvals',
       'Masters',
+      'Imports',
       'Members',
+      // The two screens 0095 adds, both under Administration and neither
+      // drawn by the mock at fdfd610 — recorded as docs/UX.md § 19.
+      'Audit trail',
+      'Reports',
+      'Notifications',
       'Settings',
     ]);
     // Serial Lookup is not a module: `#/serials` merged into Global search
@@ -331,6 +343,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Signing queue', '#/signing'],
       ['Production', '#/production'],
       ['Installations', '#/installations'],
+      ['Warranties', '#/warranties'],
       ['Inspection', '#/inspection'],
       ['Inventory', '#/inventory'],
       ['Maintenance', '#/maintenance'],
@@ -338,7 +351,13 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Employees', '#/employees'],
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],
+      ['Imports', '#/imports'],
       ['Members', '#/members'],
+      ['Audit trail', '#/audit'],
+      // The management summary answers to `#/reports`, which is what the
+      // rail calls it; `mis` is the internal view name.
+      ['Reports', '#/reports'],
+      ['Notifications', '#/notifications'],
       ['Settings', '#/settings'],
     ]);
   });

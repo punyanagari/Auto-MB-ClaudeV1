@@ -1,5 +1,6 @@
 import {
   Boxes,
+  ChartColumn,
   CircleCheckBig,
   Database,
   ClipboardCheck,
@@ -9,15 +10,19 @@ import {
   Gavel,
   Hammer,
   HandCoins,
+  History,
   Landmark,
   LayoutDashboard,
   Mails,
+  MessageSquare,
   PenTool,
   Receipt,
   ScanSearch,
+  ShieldCheck,
   Settings as SettingsIcon,
   Factory,
   Truck,
+  Upload,
   Users,
   Wrench,
 } from 'lucide-react';
@@ -40,13 +45,18 @@ export type ModuleKey =
   | 'approvals'
   | 'search'
   | 'installations'
+  | 'warranties'
   | 'production'
   | 'stock'
   | 'signing'
+  | 'notifications'
+  | 'imports'
   | 'employees'
   | 'maintenance'
   | 'masters'
   | 'members'
+  | 'audit'
+  | 'mis'
   | 'settings';
 
 type NavIcon = typeof LayoutDashboard;
@@ -140,6 +150,12 @@ export const NAVIGATION: readonly NavGroup[] = [
     items: [
       { key: 'production', label: 'Production', icon: Factory },
       { key: 'installations', label: 'Installations', icon: Wrench },
+      // The warranty register (0099). Next to Installations, because a
+      // defect liability period IS an installation seen from the far end
+      // of the contract, and the mock draws no cell for it at all —
+      // recorded in `docs/UX.md` § 22, on the same footing as the signing
+      // queue's own missing cell in § 16.
+      { key: 'warranties', label: 'Warranties', icon: ShieldCheck },
       { key: 'inspection', label: 'Inspection', icon: ClipboardCheck },
       { key: 'stock', label: 'Inventory', icon: Boxes },
       // The mock gives Maintenance `ClipboardCheck`, which is already
@@ -160,7 +176,26 @@ export const NAVIGATION: readonly NavGroup[] = [
       { key: 'employees', label: 'Employees', icon: Users },
       { key: 'approvals', label: 'Approvals', icon: CircleCheckBig },
       { key: 'masters', label: 'Masters', icon: Database },
+      // Imports (0094) sits directly beneath Masters, because the two
+      // registers it fills are the two Masters owns and an operator who
+      // has just found the Contacts screen is one row from the way to
+      // fill it eight hundred at a time. `Upload` is new to this rail —
+      // checked against every icon already on it (docs/UX.md § 18).
+      { key: 'imports', label: 'Imports', icon: Upload },
       { key: 'members', label: 'Members', icon: Users },
+      // The two screens migration 0095 adds. Both sit under
+      // Administration and neither is drawn by the mock at fdfd610 —
+      // recorded as docs/UX.md § 19, on the same footing as § 16's
+      // signing queue. `History` and `ChartColumn` are new lamps on this
+      // rail and collide with nothing already on it.
+      { key: 'audit', label: 'Audit trail', icon: History },
+      { key: 'mis', label: 'Reports', icon: ChartColumn },
+      // Notifications (0092). Administration rather than Documents: it
+      // configures how the organisation speaks, in the same family as who
+      // belongs to it and how it is set up. The mock has no cell for it
+      // at all (docs/UX.md § 17), and `MessageSquare` is the one lamp on
+      // this rail that is not already spoken for.
+      { key: 'notifications', label: 'Notifications', icon: MessageSquare },
       { key: 'settings', label: 'Settings', icon: SettingsIcon },
     ],
   },
@@ -204,18 +239,28 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'search', query: '' };
     case 'installations':
       return { name: 'installations', workId: null };
+    case 'warranties':
+      return { name: 'warranties', workId: null };
     case 'production':
       return { name: 'production', workId: null };
     case 'stock':
       return { name: 'stock' };
     case 'signing':
       return { name: 'signing' };
+    case 'notifications':
+      return { name: 'notifications' };
+    case 'imports':
+      return { name: 'imports' };
     case 'employees':
       return { name: 'employees' };
     case 'masters':
       return { name: 'masters' };
     case 'members':
       return { name: 'members' };
+    case 'audit':
+      return { name: 'audit' };
+    case 'mis':
+      return { name: 'mis' };
     case 'settings':
       return { name: 'settings' };
   }
@@ -282,13 +327,20 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'search':
     case 'maintenance':
     case 'installations':
+    case 'warranties':
     case 'production':
     case 'masters':
     case 'members':
+    case 'audit':
+    case 'mis':
     case 'settings':
       return view.name;
     case 'signing':
       return 'signing';
+    case 'notifications':
+      return 'notifications';
+    case 'imports':
+      return 'imports';
     // Everything the WORKS module owns: the register, one Work, and every
     // screen that is really a step inside one — LOA upload and review, the
     // challan and issue-challan editors, an opened challan.
@@ -387,12 +439,18 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Global search';
     case 'installations':
       return 'Installations';
+    case 'warranties':
+      return 'Warranties';
     case 'stock':
       return 'Inventory';
     case 'stock-shortages':
       return 'Shortage procurement';
     case 'signing':
       return 'Signing queue';
+    case 'notifications':
+      return 'Notifications';
+    case 'imports':
+      return 'Imports';
     case 'employees':
       return 'Employees';
     case 'payroll':
@@ -401,6 +459,10 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Masters';
     case 'members':
       return 'Members';
+    case 'audit':
+      return 'Audit trail';
+    case 'mis':
+      return 'Reports';
     case 'settings':
       return 'Settings';
   }

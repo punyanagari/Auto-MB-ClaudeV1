@@ -18,6 +18,17 @@ export default defineConfig({
   timeout: 30_000,
   use: {
     baseURL,
+    // NO SERVICE WORKER, except in the one project that is about the
+    // service worker. The suite mocks the API with `page.route`, which
+    // intercepts fetches the PAGE makes; a fetch issued by a worker is
+    // not one of those, and `src/service-worker.ts` registers itself on
+    // every production bundle — which is exactly what these tests serve.
+    // Leaving it on couples every spec here to whatever that worker
+    // decides to answer from its cache, including assets it installed
+    // during an earlier test. Blocked by default so the coupling is a
+    // choice one project makes rather than a condition all of them run
+    // under unknowingly.
+    serviceWorkers: 'block',
     ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
       ? {
           launchOptions: {
@@ -40,6 +51,15 @@ export default defineConfig({
     {
       name: 'desktop-1280',
       use: { viewport: { width: 1280, height: 800 } },
+      testIgnore: /offline\.spec\.ts/,
+    },
+    // The offline suite, at the desk width and with the worker allowed:
+    // it is the only file whose subject is the worker, and it drives the
+    // narrow width itself rather than being run three times.
+    {
+      name: 'offline',
+      use: { viewport: { width: 1280, height: 800 }, serviceWorkers: 'allow' },
+      testMatch: /offline\.spec\.ts/,
     },
     {
       name: 'tablet-768',

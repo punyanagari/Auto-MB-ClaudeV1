@@ -214,6 +214,26 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listInstallations: vi.fn().mockResolvedValue([]),
     recordWorkInstallation: vi.fn(),
     cancelWorkInstallation: vi.fn(),
+    getWorkWarranty: vi.fn().mockResolvedValue({
+      terms: null,
+      pbgCover: {
+        requiredByLetter: false,
+        dlpCoverUntil: null,
+        instrumentReference: null,
+        instrumentExpiresOn: null,
+        shortfallDays: null,
+      },
+      candidates: [],
+      candidatesTruncated: false,
+      warranties: [],
+      nextCursor: null,
+    }),
+    saveWarrantyTerms: vi.fn(),
+    startInstallationWarranty: vi.fn(),
+    extendWarranty: vi.fn(),
+    closeWarranty: vi.fn(),
+    voidWarranty: vi.fn(),
+    listWarranties: vi.fn().mockResolvedValue({ warranties: [], nextCursor: null }),
     challanCorrectionEligibility: vi.fn().mockResolvedValue({
       challanId: 'aaaa4444-4444-4444-8444-444444444444',
       status: 'issued',
@@ -265,6 +285,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     }),
     recordBillPayment: vi.fn(),
     voidBillPayment: vi.fn(),
+    getWorkRetention: vi.fn(),
+    saveWorkRetentionTerms: vi.fn(),
+    clearWorkRetentionTerms: vi.fn(),
+    recordRetentionRelease: vi.fn(),
+    voidRetentionRelease: vi.fn(),
+    assessLd: vi.fn(),
+    decideLdAssessment: vi.fn(),
     closeMeasurementBook: vi.fn(),
     renderMeasurementBook: vi.fn(),
     downloadMeasurementBookPdf: vi.fn(),
@@ -447,6 +474,38 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setPayrollLineLossOfPay: vi.fn(),
     finalizePayrollRun: vi.fn(),
     cancelPayrollRun: vi.fn(),
+    listNotificationChannels: vi.fn().mockResolvedValue({ channels: [] }),
+    saveNotificationChannel: vi.fn(),
+    listNotificationTemplates: vi
+      .fn()
+      .mockResolvedValue({ templates: [], nextCursor: null }),
+    createNotificationTemplate: vi.fn(),
+    setNotificationTemplateStatus: vi.fn(),
+    listNotificationConsents: vi
+      .fn()
+      .mockResolvedValue({ consents: [], nextCursor: null }),
+    recordNotificationConsent: vi.fn(),
+    listNotifications: vi.fn().mockResolvedValue({ messages: [], nextCursor: null }),
+    sendNotification: vi.fn(),
+    listImportBatches: vi.fn(),
+    readImportBatch: vi.fn(),
+    uploadImportWorkbook: vi.fn(),
+    commitImportBatch: vi.fn(),
+    cancelImportBatch: vi.fn(),
+    downloadImportTemplate: vi.fn(),
+    auditRegister: vi.fn(),
+    auditFacets: vi.fn(),
+    misSummary: vi.fn(),
+    downloadRegisterWorkbook: vi.fn(),
+    downloadAuditWorkbook: vi.fn(),
+    downloadTallyExport: vi.fn(),
+    listEntitlements: vi.fn(),
+    setEntitlement: vi.fn(),
+    listJobSchedules: vi.fn(),
+    setJobSchedule: vi.fn(),
+    listOrganisationExports: vi.fn(),
+    requestOrganisationExport: vi.fn(),
+    downloadOrganisationExport: vi.fn(),
     listMaintenanceRequests: vi.fn(),
     getMaintenanceRequest: vi.fn(),
     createMaintenanceRequest: vi.fn(),
@@ -1037,6 +1096,7 @@ describe('WorkDetail Issue Challans section', () => {
         canCancel
         canApprove={false}
         canManageStatutory={true}
+        canManageRetention={true}
         isOwner={false}
         onNewChallan={vi.fn()}
         onOpenChallan={vi.fn()}

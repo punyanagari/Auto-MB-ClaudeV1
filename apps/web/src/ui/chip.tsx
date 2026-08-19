@@ -69,6 +69,41 @@ const CHIP_TONES = {
   // `pending` is already mapped above and stays there — a request
   // waiting for a kiosk is a queue, not a caution.
   claimed: 'warning',
+  // A message the provider has accepted but nothing has acknowledged
+  // yet, and one written before the provider was even called (0092).
+  // Both are queues rather than cautions, which is the reading `pending`
+  // already carries; `sent` is mapped info above for the same reason.
+  queued: 'info',
+  // The two acknowledgements a WhatsApp receipt brings back (0092). A
+  // message that reached the handset, and one the recipient opened: both
+  // are the proceed state of a delivery, which is what `docs/DESIGN.md`
+  // § Status badge semantics gives the success family. Unmapped they
+  // rendered neutral — identical to a queued message, which is the one
+  // reading they must not have.
+  delivered: 'success',
+  read: 'success',
+  // A template Meta approved and then throttled for poor quality (0092).
+  // Work to do — the organisation has to fix the template or its
+  // engagement — which is the warning family, not the destructive one:
+  // nothing was refused and nothing failed. Its sibling `disabled` stays
+  // unmapped and reads neutral, because a withdrawn template is finished
+  // rather than bad.
+  paused: 'warning',
+  // An import batch whose every row has been judged and which is waiting
+  // for somebody to decide (0094). Warning is the family for "awaiting
+  // someone", and that is exactly what a validated batch is: the machine
+  // has finished and nothing will happen until a person acts. Its
+  // siblings are already mapped — `pending` above reads as a queue,
+  // `completed` as the closed step, `cancelled` as withdrawn.
+  validated: 'warning',
+  // A staged row the register refused (0094), and the one word this
+  // product uses for a thing that is simply wrong rather than cancelled
+  // or rejected by somebody. `docs/DESIGN.md` § Status badge semantics
+  // gives the destructive family cancelled/rejected/declined; a row that
+  // cannot be written belongs with them, because unlike `low-stock` it
+  // is not a thing to do — it is a thing that failed. Collision-checked
+  // against every status already in this map: the word is new.
+  error: 'destructive',
   // A maintenance request nobody has decided yet, and one part-way
   // through its dispatches (0088). `docs/DESIGN.md` § Status badge
   // semantics puts both in the warning family — the first is waiting on
@@ -80,6 +115,14 @@ const CHIP_TONES = {
   'awaiting-approval': 'warning',
   'partially-dispatched': 'warning',
   closed: 'neutral',
+
+  // A defect liability period whose last covered day has passed and
+  // which nobody has discharged yet (0099). Warning rather than
+  // destructive, and deliberately: the period ending is the good news —
+  // what is outstanding is the paperwork that releases the bank
+  // guarantee, which is a thing to do. Its sibling `expiring` is already
+  // mapped below and reads the same way a lapsing credential does.
+  elapsed: 'warning',
 
   review: 'warning',
   prepared: 'warning',
@@ -115,6 +158,17 @@ const CHIP_TONES = {
   // reading it must not have.
   finalized: 'success',
 
+  // Liquidated damages the railway actually imposed (0098). An act that
+  // happened and is on the record, which is the primary family's own
+  // reading — the same one `issued`, `submitted` and `sent` carry. NOT
+  // destructive: that family is cancelled/rejected/declined, and a levy
+  // the contract provides for is a fact rather than a failure. Its
+  // sibling `draft` is already mapped neutral above.
+  levied: 'info',
+  // Damages the railway did not take, or gave back (0098). Money the
+  // agency keeps: the success family, beside `paid` and `approved`.
+  waived: 'success',
+
   // A tender that was not won, or was not pursued (0083). Not a system
   // failure, but the end of that pipeline either way.
   lost: 'destructive',
@@ -123,6 +177,13 @@ const CHIP_TONES = {
   expired: 'destructive',
   rejected: 'destructive',
   omitted: 'destructive',
+  // A defect liability period struck out because it should never have
+  // been started — a wrong installation, a wrong certificate, a mistyped
+  // extension (0099). It belongs to the destructive family for the same
+  // reason `cancelled` does: it is a record withdrawn, not a record
+  // finished. Its sibling `closed` is neutral above, because a period
+  // that ran its course IS finished.
+  voided: 'destructive',
 } as const;
 
 /**

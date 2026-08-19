@@ -1,4 +1,28 @@
 import type {
+  AuditFacetsResponse,
+  AuditRegisterQuery,
+  AuditRegisterResponse,
+  ExportableRegister,
+  MisSummaryResponse,
+  EntitlementFlagKey,
+  EntitlementListResponse,
+  EntitlementResponse,
+  JobScheduleListResponse,
+  JobScheduleResponse,
+  OrganisationExportListResponse,
+  OrganisationExportResponse,
+  ScheduledJobKind,
+  SetEntitlementRequest,
+  UpdateJobScheduleRequest,
+  CloseWarrantyRequest,
+  ExtendWarrantyRequest,
+  SaveWarrantyTermsRequest,
+  StartWarrantyRequest,
+  Warranty,
+  WarrantyRegisterResponse,
+  WarrantyStanding,
+  WarrantyTerms,
+  WorkWarrantyResponse,
   ApproveMaintenanceRequest,
   CancelMaintenanceLine,
   CreateMaintenanceRequest,
@@ -31,7 +55,25 @@ import type {
   RegisterSigningAgent,
   RegisterSigningAgentResponse,
   SigningAgentResponse,
+  ImportBatchDetail,
+  ImportBatchList,
+  ImportRowStatus,
+  ImportTargetKey,
   SigningQueueResponse,
+  CreateNotificationTemplate,
+  NotificationChannelListResponse,
+  NotificationChannelName,
+  NotificationChannelResponse,
+  NotificationConsentListResponse,
+  NotificationConsentResponse,
+  NotificationMessageListResponse,
+  NotificationMessageResponse,
+  NotificationTemplateListResponse,
+  NotificationTemplateResponse,
+  RecordNotificationConsent,
+  SaveNotificationChannel,
+  SendNotification,
+  SetNotificationTemplateStatus,
   SigningRequestResponse,
   SigningRequestStatus,
   ApiError,
@@ -195,6 +237,14 @@ import type {
   BillSettlementResponse,
   ReceivablesRegisterResponse,
   RecordBillPaymentRequest,
+  AssessLdRequest,
+  DecideLdAssessmentRequest,
+  LdAssessment,
+  RecordRetentionReleaseRequest,
+  RetentionRelease,
+  SaveWorkRetentionTermsRequest,
+  WorkRetentionResponse,
+  WorkRetentionTerms,
   MeasurementBookListResponse,
   SetMbSourcesRequest,
   MergeMeasurementBooksRequest,
@@ -672,6 +722,42 @@ export interface ApiClient {
     entityId: string,
     options?: { readonly cursor?: string; readonly limit?: number },
   ) => Promise<TimelineResponse>;
+  /** The organisation-wide audit register (0095). Gated on the audit
+   * authority AND full work scope; a member without either gets a 403
+   * that names which wall, and the register view renders the sentence
+   * rather than a retry. */
+  readonly auditRegister: (
+    organisationId: string,
+    options?: AuditRegisterQuery,
+  ) => Promise<AuditRegisterResponse>;
+  /** The filter vocabularies, read from the trail itself rather than
+   * hand-maintained on the client — the action list grows every wave. */
+  readonly auditFacets: (organisationId: string) => Promise<AuditFacetsResponse>;
+  /** The management summary: three aggregates the landing dashboard does
+   * not carry. `payrollCost` is null for a caller without the payroll
+   * authority; the rest is still served. */
+  readonly misSummary: (
+    organisationId: string,
+    options?: { readonly months?: number },
+  ) => Promise<MisSummaryResponse>;
+  /** Any major register as an .xlsx workbook. Work-scoped registers
+   * narrow to the caller's assignments; organisation-wide ones refuse a
+   * caller who cannot see every Work. */
+  readonly downloadRegisterWorkbook: (
+    organisationId: string,
+    register: ExportableRegister,
+  ) => Promise<Blob>;
+  /** The audit register as a workbook, under the same filters the screen
+   * is showing. */
+  readonly downloadAuditWorkbook: (
+    organisationId: string,
+    options?: AuditRegisterQuery,
+  ) => Promise<Blob>;
+  /** The accountant's Tally import file for one window. Owner-only. */
+  readonly downloadTallyExport: (
+    organisationId: string,
+    window: { readonly from: string; readonly to: string },
+  ) => Promise<Blob>;
   /** Master data (pickers only): `save` with a null id creates, with an id
    * updates; `setActive` retires (false) or reactivates (true). */
   readonly listContacts: (
@@ -994,6 +1080,54 @@ export interface ApiClient {
     installationId: string,
     note: string,
   ) => Promise<Installation>;
+  /** Defect liability periods (migration 0099).
+   *
+   * The Work read carries the contract term, the Performance Bank
+   * Guarantee cover reading, the installations still waiting for a
+   * period, and the periods themselves — paged, like the Work's own
+   * installation list. */
+  readonly getWorkWarranty: (
+    organisationId: string,
+    workId: string,
+    options?: { readonly cursor?: string; readonly limit?: number },
+  ) => Promise<WorkWarrantyResponse>;
+  readonly saveWarrantyTerms: (
+    organisationId: string,
+    workId: string,
+    body: SaveWarrantyTermsRequest,
+  ) => Promise<WarrantyTerms>;
+  readonly startInstallationWarranty: (
+    organisationId: string,
+    installationId: string,
+    body: StartWarrantyRequest,
+  ) => Promise<Warranty>;
+  readonly extendWarranty: (
+    organisationId: string,
+    warrantyId: string,
+    body: ExtendWarrantyRequest,
+  ) => Promise<Warranty>;
+  readonly closeWarranty: (
+    organisationId: string,
+    warrantyId: string,
+    body: CloseWarrantyRequest,
+  ) => Promise<Warranty>;
+  readonly voidWarranty: (
+    organisationId: string,
+    warrantyId: string,
+    note: string,
+  ) => Promise<Warranty>;
+  /** The tenant-wide register: what comes out of warranty next, across
+   * every Work the caller may see. Paged, and narrowable by the derived
+   * standing or by an expiry horizon. */
+  readonly listWarranties: (
+    organisationId: string,
+    options?: {
+      readonly cursor?: string;
+      readonly limit?: number;
+      readonly standing?: WarrantyStanding;
+      readonly expiresBefore?: string;
+    },
+  ) => Promise<WarrantyRegisterResponse>;
   /** Correction flow for issued documents (Milestone 7). */
   readonly challanCorrectionEligibility: (
     organisationId: string,
@@ -1193,6 +1327,59 @@ export interface ApiClient {
     billPaymentId: string,
     reason: string,
   ) => Promise<BillPayment>;
+  /** One Work's retention and liquidated-damages position, its recorded
+   * terms, its releases and its assessments — one read, because the
+   * screen shows them as one story and four round-trips would let the
+   * tiles disagree with the rows beneath them (0098). */
+  readonly getWorkRetention: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkRetentionResponse>;
+  /** Saves the contract's retention and liquidated-damages terms. A whole
+   * record, not a patch: the coherence rules are about the record, and a
+   * term omitted is a term the contract does not state. */
+  readonly saveWorkRetentionTerms: (
+    organisationId: string,
+    workId: string,
+    body: SaveWorkRetentionTermsRequest,
+  ) => Promise<WorkRetentionTerms>;
+  /** Clears them. The one delete in the module: a terms row can never be
+   * edited down to nothing, so without it a Work whose letter was misread
+   * would carry the wrong rates forever. Every assessment already made
+   * keeps its own snapshot and is unaffected. */
+  readonly clearWorkRetentionTerms: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<void>;
+  /** Records retention the railway gave back. Refused beyond what it
+   * actually withheld. */
+  readonly recordRetentionRelease: (
+    organisationId: string,
+    workId: string,
+    body: RecordRetentionReleaseRequest,
+  ) => Promise<RetentionRelease>;
+  /** Withdraws a release. The row and its reason stay; the money goes
+   * back to being held. */
+  readonly voidRetentionRelease: (
+    organisationId: string,
+    releaseId: string,
+    reason: string,
+  ) => Promise<RetentionRelease>;
+  /** Assesses liquidated damages over a delay window. The rate, period
+   * and cap come from the Work's recorded terms and are never sent — an
+   * assessment computed at a rate the contract never stated would look
+   * exactly like one that was. */
+  readonly assessLd: (
+    organisationId: string,
+    workId: string,
+    body: AssessLdRequest,
+  ) => Promise<LdAssessment>;
+  /** Levies, waives or cancels an assessment. */
+  readonly decideLdAssessment: (
+    organisationId: string,
+    assessmentId: string,
+    body: DecideLdAssessmentRequest,
+  ) => Promise<LdAssessment>;
   /** Records that the railway settled this measurement. Refused unless a
    * recorded bill's signatures pass the gate. */
   readonly closeMeasurementBook: (
@@ -1999,10 +2186,128 @@ export interface ApiClient {
     organisationId: string,
     body: RegisterSigningAgent,
   ) => Promise<RegisterSigningAgentResponse>;
+  /** Bringing a register in from a spreadsheet (migration 0094). The
+   * listing carries the registers that accept one alongside the batches,
+   * because the screen needs them on an organisation's first day. */
+  readonly listImportBatches: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<ImportBatchList>;
+  readonly readImportBatch: (
+    organisationId: string,
+    batchId: string,
+    options?: {
+      readonly limit?: number;
+      /** The `rowNumber` of the last row of the previous page. */
+      readonly cursor?: number;
+      readonly status?: ImportRowStatus;
+    },
+  ) => Promise<ImportBatchDetail>;
+  /** Stages a workbook. Writes nothing to the register — that is
+   * `commitImportBatch`, and the separation is the whole feature. */
+  readonly uploadImportWorkbook: (
+    organisationId: string,
+    target: ImportTargetKey,
+    file: File,
+  ) => Promise<ImportBatchDetail>;
+  readonly commitImportBatch: (
+    organisationId: string,
+    batchId: string,
+  ) => Promise<ImportBatchDetail>;
+  readonly cancelImportBatch: (
+    organisationId: string,
+    batchId: string,
+    body: { readonly reason: string },
+  ) => Promise<ImportBatchDetail>;
+  readonly downloadImportTemplate: (
+    organisationId: string,
+    target: ImportTargetKey,
+  ) => Promise<Blob>;
   readonly revokeSigningAgent: (
     organisationId: string,
     agentId: string,
   ) => Promise<SigningAgentResponse>;
+
+  /** Notifications (migration 0092): the channels the organisation
+   * speaks through, the templates it may say, who has consented to be
+   * spoken to, and the log of what was actually sent.
+   *
+   * Every one of these needs the `notifications` authority, READS
+   * INCLUDED — a consent register is a list of counterparties' personal
+   * telephone numbers — so the screen that renders them is behind
+   * `canManageNotifications`. Saving a channel additionally needs the
+   * owner role, because it decides which number the organisation speaks
+   * from. */
+  readonly listNotificationChannels: (
+    organisationId: string,
+  ) => Promise<NotificationChannelListResponse>;
+  readonly saveNotificationChannel: (
+    organisationId: string,
+    channel: NotificationChannelName,
+    body: SaveNotificationChannel,
+  ) => Promise<NotificationChannelResponse>;
+  readonly listNotificationTemplates: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationTemplateListResponse>;
+  readonly createNotificationTemplate: (
+    organisationId: string,
+    body: CreateNotificationTemplate,
+  ) => Promise<NotificationTemplateResponse>;
+  readonly setNotificationTemplateStatus: (
+    organisationId: string,
+    templateId: string,
+    body: SetNotificationTemplateStatus,
+  ) => Promise<NotificationTemplateResponse>;
+  readonly listNotificationConsents: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationConsentListResponse>;
+  readonly recordNotificationConsent: (
+    organisationId: string,
+    body: RecordNotificationConsent,
+  ) => Promise<NotificationConsentResponse>;
+  readonly listNotifications: (
+    organisationId: string,
+    options?: { readonly limit?: number; readonly cursor?: string },
+  ) => Promise<NotificationMessageListResponse>;
+  readonly sendNotification: (
+    organisationId: string,
+    body: SendNotification,
+  ) => Promise<NotificationMessageResponse>;
+  /** The platform controls (migration 0096). Owner-only in effect: the
+   * two entitlement/schedule surfaces need `role: owner` AND the
+   * entitlements authority, and the screen simply does not render for
+   * anyone else. The export needs `canExportOrg` and full Work scope. */
+  readonly listEntitlements: (
+    organisationId: string,
+  ) => Promise<EntitlementListResponse>;
+  readonly setEntitlement: (
+    organisationId: string,
+    key: EntitlementFlagKey,
+    body: SetEntitlementRequest,
+  ) => Promise<EntitlementResponse>;
+  readonly listJobSchedules: (
+    organisationId: string,
+  ) => Promise<JobScheduleListResponse>;
+  readonly setJobSchedule: (
+    organisationId: string,
+    kind: ScheduledJobKind,
+    body: UpdateJobScheduleRequest,
+  ) => Promise<JobScheduleResponse>;
+  readonly listOrganisationExports: (
+    organisationId: string,
+  ) => Promise<OrganisationExportListResponse>;
+  readonly requestOrganisationExport: (
+    organisationId: string,
+  ) => Promise<OrganisationExportResponse>;
+  /** Fetched rather than linked, like every other stored file here: the
+   * tenant header travels on every scoped request and an `<a href>`
+   * cannot carry one. */
+  readonly downloadOrganisationExport: (
+    organisationId: string,
+    exportId: string,
+  ) => Promise<Blob>;
 
   /** The employee master and the monthly payroll run (migrations 0089
    * and 0090). Organisation-level, not per Work: a salary is paid by the
@@ -2283,6 +2588,19 @@ function uploadQuery(details: Record<string, string | undefined>): string {
   return query.toString();
 }
 
+/** The keyset pagination pair as a querystring suffix, or the empty
+ * string. Omitting both is what asks for the whole register, which is the
+ * compatibility rule `packages/contracts/src/pagination.ts` encodes. */
+function pageQuery(options?: {
+  readonly limit?: number;
+  readonly cursor?: string;
+}): string {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set('limit', String(options.limit));
+  if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+  return query.size === 0 ? '' : `?${query.toString()}`;
+}
+
 export function createApiClient(send: FetchLike = fetch): ApiClient {
   /**
    * Every request this client makes, with one rule in front of it: a
@@ -2402,6 +2720,18 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     });
     if (!response.ok) throw await parseError(response);
     return response.blob();
+  }
+
+  /** The audit register's filters, as a query string. ONE builder, two
+   * callers: the paged read and the workbook. A workbook produced under
+   * different filters from the screen that offered it would be a file the
+   * operator has to re-check by hand. */
+  function auditQuery(options: AuditRegisterQuery): string {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined && value !== '') query.set(key, String(value));
+    }
+    return query.size > 0 ? `?${query.toString()}` : '';
   }
 
   /** Both company-document uploads post the same thing and answer the same
@@ -3022,6 +3352,37 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         { organisationId },
       );
     },
+    async auditRegister(organisationId, options = {}) {
+      return request<AuditRegisterResponse>(`/api/audit-events${auditQuery(options)}`, {
+        organisationId,
+      });
+    },
+    async auditFacets(organisationId) {
+      return request<AuditFacetsResponse>('/api/audit-events/facets', {
+        organisationId,
+      });
+    },
+    async misSummary(organisationId, options = {}) {
+      const query = new URLSearchParams();
+      if (options.months !== undefined) query.set('months', String(options.months));
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      return request<MisSummaryResponse>(`/api/mis/summary${suffix}`, {
+        organisationId,
+      });
+    },
+    async downloadRegisterWorkbook(organisationId, register) {
+      return downloadBlob(`/api/registers/${register}/workbook.xlsx`, organisationId);
+    },
+    async downloadAuditWorkbook(organisationId, options = {}) {
+      return downloadBlob(
+        `/api/audit-events.xlsx${auditQuery(options)}`,
+        organisationId,
+      );
+    },
+    async downloadTallyExport(organisationId, window) {
+      const query = new URLSearchParams({ from: window.from, to: window.to });
+      return downloadBlob(`/api/exports/tally.xml?${query.toString()}`, organisationId);
+    },
     async listContacts(organisationId, options = {}) {
       const query = new URLSearchParams();
       if (options.includeRetired === true) query.set('includeRetired', 'true');
@@ -3481,6 +3842,63 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
+    async getWorkWarranty(organisationId, workId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) parameters.set('limit', String(options.limit));
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<WorkWarrantyResponse>(`/api/works/${workId}/warranty${suffix}`, {
+        organisationId,
+      });
+    },
+    async saveWarrantyTerms(organisationId, workId, body) {
+      return request<WarrantyTerms>(`/api/works/${workId}/warranty-terms`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async startInstallationWarranty(organisationId, installationId, body) {
+      return request<Warranty>(`/api/installations/${installationId}/warranty`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async extendWarranty(organisationId, warrantyId, body) {
+      return request<Warranty>(`/api/warranties/${warrantyId}/extend`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async closeWarranty(organisationId, warrantyId, body) {
+      return request<Warranty>(`/api/warranties/${warrantyId}/close`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async voidWarranty(organisationId, warrantyId, note) {
+      return request<Warranty>(`/api/warranties/${warrantyId}/void`, {
+        method: 'POST',
+        body: { note },
+        organisationId,
+      });
+    },
+    async listWarranties(organisationId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) parameters.set('limit', String(options.limit));
+      if (options.standing !== undefined) parameters.set('standing', options.standing);
+      if (options.expiresBefore !== undefined) {
+        parameters.set('expiresBefore', options.expiresBefore);
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<WarrantyRegisterResponse>(`/api/warranties${suffix}`, {
+        organisationId,
+      });
+    },
     async recordWorkInstallation(organisationId, workId, body) {
       return request<Installation>(`/api/works/${workId}/installations`, {
         method: 'POST',
@@ -3756,6 +4174,52 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       return request<BillPayment>(`/api/bill-payments/${billPaymentId}/void`, {
         method: 'POST',
         body: { reason },
+        organisationId,
+      });
+    },
+    async getWorkRetention(organisationId, workId) {
+      return request<WorkRetentionResponse>(`/api/works/${workId}/retention`, {
+        organisationId,
+      });
+    },
+    async saveWorkRetentionTerms(organisationId, workId, body) {
+      return request<WorkRetentionTerms>(`/api/works/${workId}/retention-terms`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async clearWorkRetentionTerms(organisationId, workId) {
+      await request<void>(`/api/works/${workId}/retention-terms`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async recordRetentionRelease(organisationId, workId, body) {
+      return request<RetentionRelease>(`/api/works/${workId}/retention-releases`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async voidRetentionRelease(organisationId, releaseId, reason) {
+      return request<RetentionRelease>(`/api/retention-releases/${releaseId}/void`, {
+        method: 'POST',
+        body: { reason },
+        organisationId,
+      });
+    },
+    async assessLd(organisationId, workId, body) {
+      return request<LdAssessment>(`/api/works/${workId}/ld-assessments`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async decideLdAssessment(organisationId, assessmentId, body) {
+      return request<LdAssessment>(`/api/ld-assessments/${assessmentId}/decision`, {
+        method: 'POST',
+        body,
         organisationId,
       });
     },
@@ -4742,6 +5206,57 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         { method: 'POST', body, organisationId },
       );
     },
+    async listImportBatches(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchList>(`/api/imports${suffix}`, { organisationId });
+    },
+    async readImportBatch(organisationId, batchId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', String(options.cursor));
+      if (options?.status !== undefined) query.set('status', options.status);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportBatchDetail>(`/api/imports/${batchId}${suffix}`, {
+        organisationId,
+      });
+    },
+    async uploadImportWorkbook(organisationId, target, file) {
+      // The raw Blob, exactly as `uploadPdf` sends a PDF — there is no
+      // FormData anywhere in this client. The file's own name rides the
+      // querystring because it is what the operator calls the import.
+      const query = uploadQuery({ target, filename: file.name });
+      const response = await fetchImpl(`/api/imports?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type':
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ImportBatchDetail;
+    },
+    async commitImportBatch(organisationId, batchId) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/import`, {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async cancelImportBatch(organisationId, batchId, body) {
+      return request<ImportBatchDetail>(`/api/imports/${batchId}/cancel`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async downloadImportTemplate(organisationId, target) {
+      return downloadBlob(`/api/imports/templates/${target}`, organisationId);
+    },
     async downloadSignedPdf(organisationId, requestId) {
       // Fetched rather than linked, like every other PDF here: the
       // tenant header travels on every scoped request and an <a href>
@@ -4765,6 +5280,107 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         method: 'POST',
         organisationId,
       });
+    },
+
+    async listNotificationChannels(organisationId) {
+      return request<NotificationChannelListResponse>('/api/notification-channels', {
+        organisationId,
+      });
+    },
+    async saveNotificationChannel(organisationId, channel, body) {
+      return request<NotificationChannelResponse>(
+        `/api/notification-channels/${channel}`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async listNotificationTemplates(organisationId, options) {
+      return request<NotificationTemplateListResponse>(
+        `/api/notification-templates${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async createNotificationTemplate(organisationId, body) {
+      return request<NotificationTemplateResponse>('/api/notification-templates', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async setNotificationTemplateStatus(organisationId, templateId, body) {
+      return request<NotificationTemplateResponse>(
+        `/api/notification-templates/${templateId}/status`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async listNotificationConsents(organisationId, options) {
+      return request<NotificationConsentListResponse>(
+        `/api/notification-consents${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async recordNotificationConsent(organisationId, body) {
+      return request<NotificationConsentResponse>('/api/notification-consents', {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listNotifications(organisationId, options) {
+      return request<NotificationMessageListResponse>(
+        `/api/notifications${pageQuery(options)}`,
+        { organisationId },
+      );
+    },
+    async sendNotification(organisationId, body) {
+      return request<NotificationMessageResponse>('/api/notifications', {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+
+    async listEntitlements(organisationId) {
+      return request<EntitlementListResponse>('/api/platform/entitlements', {
+        organisationId,
+      });
+    },
+    async setEntitlement(organisationId, key, body) {
+      return request<EntitlementResponse>(`/api/platform/entitlements/${key}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listJobSchedules(organisationId) {
+      return request<JobScheduleListResponse>('/api/platform/job-schedules', {
+        organisationId,
+      });
+    },
+    async setJobSchedule(organisationId, kind, body) {
+      return request<JobScheduleResponse>(`/api/platform/job-schedules/${kind}`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async listOrganisationExports(organisationId) {
+      return request<OrganisationExportListResponse>('/api/platform/exports', {
+        organisationId,
+      });
+    },
+    async requestOrganisationExport(organisationId) {
+      return request<OrganisationExportResponse>('/api/platform/exports', {
+        method: 'POST',
+        organisationId,
+      });
+    },
+    async downloadOrganisationExport(organisationId, exportId) {
+      const response = await fetchImpl(`/api/platform/exports/${exportId}/download`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
     },
 
     async listEmployees(organisationId, options) {

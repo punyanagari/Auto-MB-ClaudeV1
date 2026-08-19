@@ -97,6 +97,43 @@ export const MFA_REQUIRING_AUTHORITIES: Record<DocumentAuthority, true> = {
   // finalising a run authorises the salaries — worth stealing on both
   // counts, so it joins the wall beside payments.
   payroll: true,
+  // The organisation-wide audit register. This is the first grant on the
+  // wall that authorises no WRITE at all, and it belongs there anyway, on
+  // the payroll precedent: payroll is MFA-required half because reading
+  // the employee register is itself the secret. The audit register is a
+  // strictly wider read — every action every colleague took, with the
+  // before and after of each change — and a stolen session holding it can
+  // export the lot in one request. A read can be worth stealing an account
+  // for, and this one is.
+  audit: true,
+  // Whoever may configure a channel can point the organisation's outbound
+  // voice at a number they control, and whoever may record a consent can
+  // authorise a recipient nobody agreed to. A stolen session that can do
+  // either can impersonate the agency to its own customers.
+  notifications: true,
+  // Importing is the one authority whose damage is measured in rows. A
+  // stolen session holding it can commit a prepared workbook that rewrites
+  // a party master — every consignee address, every vendor's bank account
+  // — in a single call, and the payment advices generated afterwards would
+  // carry the attacker's account numbers while looking exactly like the
+  // organisation's own. Bulk is the reason it is on the wall, not an
+  // argument for leaving it off.
+  import: true,
+  // Entitlements decide which modules the organisation may use at all. A
+  // stolen owner session that can turn the e-way bill module on is a
+  // stolen session that can start speaking to a government portal in the
+  // organisation's name.
+  entitlements: true,
+  // The whole organisation in one file — every contract, price, payslip
+  // and bank detail it holds. This is the single highest-value read in
+  // the product, so it sits on the wall beside payments and payroll.
+  export: true,
+  // Retention states what the railway is holding and records that it
+  // came back. A stolen session that can write a release can make the
+  // agency's own record of an unpaid security deposit read as settled,
+  // which is a theft nobody would notice until the maintenance period
+  // ended — so it joins the wall beside payments.
+  retention: true,
 };
 
 /** The `organisation_memberships` column each document authority is
@@ -109,6 +146,12 @@ const AUTHORITY_GRANT_COLUMNS: Record<DocumentAuthority, string> = {
   payments: 'can_manage_payments',
   sign: 'can_sign_documents',
   payroll: 'can_manage_payroll',
+  notifications: 'can_manage_notifications',
+  import: 'can_import_data',
+  audit: 'can_view_audit_trail',
+  entitlements: 'can_manage_entitlements',
+  export: 'can_export_org',
+  retention: 'can_manage_retention',
 };
 
 /** Grants that are not `DocumentAuthority` values but still make the

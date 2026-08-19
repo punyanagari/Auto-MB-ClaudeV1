@@ -198,8 +198,15 @@ describe('the schema at head names all three shapes', () => {
     // nineteen, which is a payslip: four earnings heads and their gross,
     // the provident-fund wage and its three contributions and pension
     // ceiling, the insurance wage, two shares and ceiling, the profession
-    // tax, the two annual projections, the tax deducted, and the net.
-    expect(adopted.length).toBe(105);
+    // tax, the two annual projections, the tax deducted, and the net;
+    // and 0098 adds six — the retention release's amount, and the five
+    // money figures of a liquidated-damages assessment: the basis it is
+    // charged on, the uncapped figure, the cap, the assessment itself and
+    // what the railway actually levied. Four of those five are GENERATED
+    // columns, and adopting the domain on a generated column is what
+    // keeps the arithmetic at the scale money is stored rather than at
+    // whatever the expression happened to produce.
+    expect(adopted.length).toBe(111);
   });
 
   it('types every digest column as sha256_hex', () => {
@@ -222,8 +229,14 @@ describe('the schema at head names all three shapes', () => {
     // letter's scan; 33 after 0091 adds four — the signing queue's
     // source and signed digests, the digest the token is authorised to
     // sign, and the kiosk credential's own token hash, which is a
-    // password-equivalent stored only as its SHA-256.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(33);
+    // password-equivalent stored only as its SHA-256; 34 after 0094 adds
+    // the import batch's source_sha256, the digest of the uploaded
+    // workbook — which is what the bytes were kept for, since the file
+    // itself is not stored; 35 after 0096 adds
+    // organisation_export_requests.sha256, the digest of the stored
+    // whole-organisation package, which is what a recipient checks the
+    // file they were handed against.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(35);
   });
 
   it('refuses a value the digest domain does not admit', async () => {
