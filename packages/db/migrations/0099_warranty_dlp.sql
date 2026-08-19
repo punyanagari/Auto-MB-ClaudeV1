@@ -72,9 +72,12 @@ SET statement_timeout = '5min';
 --
 -- ## Extension, closure, and the way back out
 --
--- A defect rectified inside the period extends it for the unit that was
--- repaired, so `dlp_expires_on` may move FORWARD, never back, and never
--- past ten years from the start. `original_expires_on` keeps the figure
+-- A defect rectified inside the period extends the period, so
+-- `dlp_expires_on` may move FORWARD, never back, and never past ten years
+-- from the start. The extension is to the WHOLE installation record — the
+-- model has no row below it, so there is no per-unit granularity here and
+-- an office that repaired one unit of forty extends the record covering
+-- all forty. `original_expires_on` keeps the figure
 -- the period began with, so an extended record still says what it was.
 -- The reason for each extension is written to the audit trail rather than
 -- to a third table: the Work's Timeline is where this product answers
@@ -323,8 +326,32 @@ BEGIN
         'the defect liability period starts on %, before the installation date %',
         NEW.dlp_start_on, v_installed_on
         USING ERRCODE = '23Q02';
+    -- The PIN, not just the bracket. The header above says an
+    -- installation-based period starts on the installation's own
+    -- `installed_on`, and `routes/warranty.ts` writes exactly that — but
+    -- this guard used only to bracket the date into [installed_on,
+    -- today], which is a window months wide. A writer that did not come
+    -- through the route could seat a period weeks late and shorten the
+    -- cover the railway is holding a guarantee against, and the file's
+    -- own header would have said that could not happen. The 'pac' arm
+    -- below pins its date exactly; this is the same rule stated for the
+    -- other basis, so both layers now say the one thing.
+    ELSIF NEW.start_basis = 'installation' AND NEW.dlp_start_on <> v_installed_on THEN
+      RAISE EXCEPTION
+        'an installation-based defect liability period starts on the installation date %, not %',
+        v_installed_on, NEW.dlp_start_on
+        USING ERRCODE = '23Q02';
     END IF;
 
+    -- Kept as a backstop rather than removed, though it is now
+    -- unreachable on both bases: the pin above forces the 'installation'
+    -- basis onto `installed_on`, which 0017 already refuses in the
+    -- future, and the 'pac' pin below forces the other onto a
+    -- certificate issue date, which 0022 refuses in the future the same
+    -- way. It survives because it is the only arm that would still fire
+    -- if either of those upstream rules were ever relaxed, and a period
+    -- whose cover starts in the future is the one error here that reads
+    -- as valid on every screen.
     IF NEW.dlp_start_on > v_today THEN
       RAISE EXCEPTION
         'the defect liability period starts on %, which is in the future (today is % in the organisation timezone)',

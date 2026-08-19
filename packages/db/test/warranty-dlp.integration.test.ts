@@ -246,6 +246,32 @@ describe('starting a defect liability period', () => {
     expect(future.code).toBe('23Q02');
   });
 
+  it('pins an installation-based start to the installation date exactly', async () => {
+    /* The two arms above only BRACKET the date into [installed_on,
+       today], and on an installation recorded weeks ago that window is
+       weeks wide. The file's header says an installation-based period
+       starts on the installation's own date, and `routes/warranty.ts`
+       writes exactly that — so until the guard said it too, a writer
+       that did not come through the route could seat the period late and
+       silently shorten the cover the railway holds a guarantee against,
+       with the migration's own header asserting that could not happen.
+       The 'pac' basis has always been pinned; this is the other half. */
+    const [back] = await database.pool<{ day: string }[]>`
+      select (${today}::date - 40)::text as day
+    `;
+    const installedOn = back?.day ?? today;
+    const installation = await recordInstallation(installedOn);
+
+    const drifted = await refused(startPeriod(installation, { startOn: today }));
+    expect(drifted.code).toBe('23Q02');
+    expect(drifted.message).toContain('starts on the installation date');
+
+    // The pinned date is taken, so the refusal above is about the drift
+    // and not about the installation it was written against.
+    const pinned = await startPeriod(installation, { startOn: installedOn });
+    expect(typeof pinned).toBe('string');
+  });
+
   it('holds one live period per installation, and releases the slot on void', async () => {
     const installation = await recordInstallation(today);
     const first = await startPeriod(installation);

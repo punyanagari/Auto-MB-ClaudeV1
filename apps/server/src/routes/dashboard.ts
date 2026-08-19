@@ -58,6 +58,10 @@ interface InstrumentRow extends Record<string, unknown> {
   reference: string;
   expires_on: string;
   due_in_days: string;
+  /** The Work's furthest ACTIVE defect liability expiry, on a 'pbg' row
+   * and where the Work has one. Null everywhere else. See the alert
+   * below for why the two dates travel together. */
+  dlp_cover_until: string | null;
 }
 
 interface CompletionRow extends Record<string, unknown> {
@@ -271,7 +275,12 @@ export function registerDashboardRoutes(
             wi.kind,
             wi.reference,
             wi.expires_on::text as expires_on,
-            (wi.expires_on - current_date)::text as due_in_days
+            (wi.expires_on - current_date)::text as due_in_days,
+            case when wi.kind = 'pbg' then (
+              select max(iw.dlp_expires_on)::text
+              from installation_warranties iw
+              where iw.work_id = wi.work_id and iw.status = 'active'
+            ) end as dlp_cover_until
           from work_instruments wi
           join works w on w.id = wi.work_id and w.deleted_at is null
           where wi.status = 'active'
@@ -384,12 +393,34 @@ export function registerDashboardRoutes(
           const dueInDays = Number(instrument.due_in_days);
           const label = instrument.kind.toUpperCase();
           const overdue = dueInDays < 0;
+          /* TWO READINGS OF ONE GUARANTEE, said in one sentence.
+           *
+           * This alert counts a PBG down to its own expiry. The Work's
+           * defect liability card measures the SAME instrument against
+           * the warranty it secures and reports a shortfall. Nothing
+           * joined them, so the two could contradict in both directions
+           * on the same day: a mild "expires in 40 days" here beside a
+           * 911-day shortfall there, or — worse — this alert nagging an
+           * operator to renew a guarantee whose every period has been
+           * discharged and which is therefore releasable.
+           *
+           * The cover date is what makes the countdown answerable, so it
+           * travels with it. Null where the Work has no live period,
+           * which is the honest reading of "no warranty is measuring
+           * this guarantee" rather than a zero. Kept as one scalar
+           * subquery on the row this alert already reads; the shortfall
+           * itself stays where it is computed, because the dashboard is
+           * a list of things to look at, not a second calculator. */
+          const cover =
+            instrument.dlp_cover_until === null
+              ? ''
+              : ` Defect liability cover on this Work runs to ${instrument.dlp_cover_until}.`;
           alerts.push({
             kind: overdue ? 'instrument_expired' : 'instrument_expiring',
             severity: overdue || dueInDays <= 15 ? 'danger' : 'warning',
             message: overdue
-              ? `${label} ${instrument.reference} for ${instrument.work_code} expired on ${instrument.expires_on}.`
-              : `${label} ${instrument.reference} for ${instrument.work_code} expires on ${instrument.expires_on}.`,
+              ? `${label} ${instrument.reference} for ${instrument.work_code} expired on ${instrument.expires_on}.${cover}`
+              : `${label} ${instrument.reference} for ${instrument.work_code} expires on ${instrument.expires_on}.${cover}`,
             workId: instrument.work_id,
             workCode: instrument.work_code,
             dueInDays,

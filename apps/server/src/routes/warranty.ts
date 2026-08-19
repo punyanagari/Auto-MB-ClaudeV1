@@ -658,6 +658,18 @@ export function registerWarrantyRoutes(
         // history would be a second place to look for what the Work's
         // own Timeline already answers, and the timeline is where this
         // product records why a record changed.
+        //
+        // `elapsedAtExtension` is recorded because the product currently
+        // permits an extension of a period that has ALREADY run out —
+        // which retroactively resurrects cover across a gap during which
+        // the Work was, on every screen, out of warranty. That may well
+        // be right: an office that agrees a rectification in March for a
+        // period that lapsed in January is describing one continuous
+        // liability, not two. But it is unstated everywhere and no owner
+        // has ruled on it (docs/UX.md § 22 carries the open question), so
+        // the fact is at least on the record — an extension that crossed
+        // a lapsed gap is distinguishable in the trail from one that did
+        // not, whichever way the ruling goes. No behaviour changes here.
         await audit(
           tx,
           organisationId,
@@ -671,6 +683,7 @@ export function registerWarrantyRoutes(
             before: { dlpExpiresOn: existing.dlp_expires_on },
             after: { dlpExpiresOn: full.dlpExpiresOn },
             reason: body.reason.trim(),
+            elapsedAtExtension: existing.dlp_expires_on < existing.today,
           },
         );
         return full;
@@ -966,10 +979,19 @@ async function lockLiveWarranty(
 /**
  * Whether the Performance Bank Guarantee outlives the warranty it secures.
  *
- * Derived, never stored. The Work's latest last-covered-day over the
- * periods that were not voided, against the expiry of the live `pbg`
- * instrument it holds. Where either side is missing the shortfall is
- * null — an unanswerable question is not a shortfall of zero.
+ * Derived, never stored. The Work's latest last-covered-day over its
+ * ACTIVE periods, against the expiry of the live `pbg` instrument it
+ * holds. Where either side is missing the shortfall is null — an
+ * unanswerable question is not a shortfall of zero.
+ *
+ * ACTIVE, not "not voided". A closed period is one the operator has
+ * discharged: the liability was seen out and the cover it needed is no
+ * longer needed. Counting closed periods here made the shortfall
+ * PERMANENT — a Work whose every period had been discharged still
+ * reported "Short by 184 days" with no act left that could clear it,
+ * which told the operator to extend a guarantee that was in fact
+ * releasable. A voided period is excluded for the different reason that
+ * it records a period that should never have run at all.
  *
  * A Work may hold several PBG rows over its life (a renewal is a new
  * instrument). The one that counts is the ACTIVE one reaching furthest
@@ -1002,7 +1024,7 @@ async function readPbgCover(
     from (
       select max(dlp_expires_on) as until
       from installation_warranties
-      where work_id = ${workId} and status <> 'voided'
+      where work_id = ${workId} and status = 'active'
     ) cover
     left join lateral (
       select wi.reference, wi.expires_on

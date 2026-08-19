@@ -2165,11 +2165,18 @@ export async function mockWorkspace(
   );
   await page.route('**/api/mis/summary*', (route) => route.fulfill(json(MIS_SUMMARY)));
   /* The defect liability period (0099): the cross-Work register, and the
-     Work-scoped read the Instruments tab makes. */
+     Work-scoped read the Instruments tab makes.
+
+     The second is a RegExp rather than a glob, and deliberately. The
+     obvious glob — works, a wildcard segment, then `warranty` with a
+     trailing wildcard — also swallows the `warranty-terms` PUT beside
+     it and answers a term save with a card payload, which is a fixture
+     that makes a broken save look like a working one. The pattern below
+     ends at the path, or at its query string, and nowhere else. */
   await page.route('**/api/warranties*', (route) =>
     route.fulfill(json(WARRANTY_REGISTER)),
   );
-  await page.route('**/api/works/*/warranty*', (route) =>
+  await page.route(/\/api\/works\/[^/]+\/warranty(\?|$)/, (route) =>
     route.fulfill(json(WORK_WARRANTY)),
   );
   await page.route('**/api/stock/items*', (route) =>

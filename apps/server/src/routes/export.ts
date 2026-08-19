@@ -668,9 +668,13 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select * from installation_serials order by created_at, id`,
   },
   // The defect liability period that runs on an installation, and the
-  // Work term it was started under (0099). Ordered by the Work first so
-  // a restored package reads a contract's warranty position in one
-  // stretch.
+  // Work term it was started under (0099). `order by work_id` first is
+  // about ROW order inside each section — one contract's periods arrive
+  // contiguously — and not about where these two sections sit. The
+  // certificates a 'pac'-basis period was started from are several
+  // sections further down under `pacCertificates`, which is fine: a
+  // restore reads the whole package, and section adjacency buys nothing
+  // that the foreign keys do not already guarantee.
   {
     key: 'workWarrantyTerms',
     sql: `select * from work_warranty_terms order by work_id`,

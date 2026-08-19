@@ -245,10 +245,14 @@ function renderCard(overrides: Partial<WorkWarrantyResponse> = {}, canModify = t
     notes: null,
     updatedAt: '2026-08-18T00:00:00.000Z',
   });
+  const closeWarranty = vi
+    .fn()
+    .mockResolvedValue(warranty({ status: 'closed', standing: 'closed' }));
   const api = stubApi({
     getWorkWarranty,
     startInstallationWarranty,
     saveWarrantyTerms,
+    closeWarranty,
   });
   render(
     <WorkWarranty
@@ -258,7 +262,13 @@ function renderCard(overrides: Partial<WorkWarrantyResponse> = {}, canModify = t
       canModify={canModify}
     />,
   );
-  return { api, getWorkWarranty, startInstallationWarranty, saveWarrantyTerms };
+  return {
+    api,
+    getWorkWarranty,
+    startInstallationWarranty,
+    saveWarrantyTerms,
+    closeWarranty,
+  };
 }
 
 describe("the Work's defect liability card", () => {
@@ -349,6 +359,43 @@ describe("the Work's defect liability card", () => {
     });
 
     expect(await screen.findByText(/extended from 02 Feb 2028/)).toBeTruthy();
+  });
+
+  it('names the period in the discharge confirmation before anything is sent', async () => {
+    /* Discharge is terminal and it freezes the installation record for
+       good, and the button that does it sits in one of three
+       identically shaped disclosures repeated per period — with the only
+       thing telling them apart in a heading that has scrolled away. So
+       the confirmation restates the item and the day the period runs to,
+       inside the submit path. */
+    const { closeWarranty } = renderCard();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Discharge the period/ }),
+    );
+    fireEvent.change(screen.getByLabelText(/Discharged on, for A\/1/), {
+      target: { value: '2028-02-03' },
+    });
+    fireEvent.change(screen.getByLabelText(/What the discharge rests on/), {
+      target: { value: 'No defect reported in the period' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Discharge period' }));
+
+    expect(closeWarranty).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('A/1');
+    expect(dialog.textContent).toContain('02 Feb 2028');
+    expect(dialog.textContent).toContain('03 Feb 2028');
+
+    const confirm = screen.getAllByRole('button', { name: 'Discharge period' }).at(-1);
+    fireEvent.click(confirm as HTMLElement);
+    await waitFor(() => {
+      expect(closeWarranty).toHaveBeenCalledWith(
+        ORG_ID,
+        '7a1c9a52-0000-4000-8000-00000000a001',
+        { closedOn: '2028-02-03', note: 'No defect reported in the period' },
+      );
+    });
   });
 
   it('offers no acts at all to a member who may only read', async () => {

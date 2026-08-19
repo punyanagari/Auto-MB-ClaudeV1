@@ -776,6 +776,86 @@ describe("the Work's warranty card", () => {
     expect(renewedCover.pbgCover.shortfallDays).toBeNull();
     expect(renewedCover.pbgCover.instrumentReference).toBe(`BG/${runId}/R1`);
   });
+
+  it('clears the shortfall once every period has been discharged', async () => {
+    /* The cover reading counts ACTIVE periods, and this walk is why. It
+       used to count every period that was not voided — which includes the
+       discharged ones, and a discharged period always expired on or before
+       today. So a Work whose liability had been fully seen out reported a
+       shortfall against a guarantee it was by then free to release, and no
+       act left to the operator could ever clear it: the card said "extend
+       this guarantee" about a guarantee that should have been released.
+
+       The second Work is used because this one carries live periods from
+       the tests above, and the point of the walk is a Work with none. */
+    expect((await saveTerms(3, 'installation', otherWorkId)).statusCode).toBe(200);
+    const installation = await recordInstallation({
+      work: otherWorkId,
+      item: otherItemId,
+      installedOn: earliest,
+    });
+    const period = (await startPeriod(installation)).json<Warranty>();
+    expect(period.standing).toBe('elapsed');
+
+    // A guarantee that lapsed a month before the liability ran out: a
+    // real shortfall for as long as the period is still standing.
+    const lapsed = await shiftDays(period.dlpExpiresOn, -30);
+    const instrument = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${otherWorkId}/instruments`,
+      organisationId,
+      payload: {
+        kind: 'pbg',
+        reference: `BG/${runId}/DLP`,
+        amount: '50000.00',
+        issuedOn: earliest,
+        expiresOn: lapsed,
+      },
+    });
+    expect(instrument.statusCode, instrument.body).toBe(201);
+
+    const standing = await readWorkWarranty(otherWorkId);
+    expect(standing.pbgCover.dlpCoverUntil).toBe(period.dlpExpiresOn);
+    expect(standing.pbgCover.shortfallDays).toBe(30);
+
+    // The dashboard counts the SAME guarantee down on its own, and used
+    // to do it with no reference to the warranty measuring it — so the
+    // two instruments could contradict each other on the same day. The
+    // alert now carries the cover date it is measured against.
+    const dashboard = await authed(owner, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
+    const alert = dashboard
+      .json<{ alerts: { workId: string | null; message: string }[] }>()
+      .alerts.find(
+        (row) => row.workId === otherWorkId && row.message.includes(`BG/${runId}/DLP`),
+      );
+    expect(alert?.message).toContain(
+      `Defect liability cover on this Work runs to ${period.dlpExpiresOn}`,
+    );
+
+    const closed = await authed(owner, {
+      method: 'POST',
+      url: `/api/warranties/${period.id}/close`,
+      organisationId,
+      payload: { closedOn: today, note: 'No defect reported in the period' },
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    expect(closed.json<Warranty>().status).toBe('closed');
+
+    // Nothing is under warranty any more, so there is nothing left to
+    // cover: the reading goes back to unanswerable rather than staying
+    // stuck on a shortfall with no act behind it. The instrument is still
+    // reported, because "which guarantee was this measured against" stays
+    // a question the card can answer.
+    const discharged = await readWorkWarranty(otherWorkId);
+    expect(discharged.pbgCover.dlpCoverUntil).toBeNull();
+    expect(discharged.pbgCover.shortfallDays).toBeNull();
+    expect(discharged.pbgCover.instrumentReference).toBe(`BG/${runId}/DLP`);
+  });
 });
 
 describe('the warranty register', () => {

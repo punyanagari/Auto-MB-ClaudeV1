@@ -79,6 +79,10 @@ interface RegisterFilter {
   readonly expiresBefore: string;
 }
 
+/** No filter, as one stable object so clearing it does not change
+ * `fetchPage`'s identity and refire the read. */
+const NO_FILTER: RegisterFilter = { standing: '', expiresBefore: '' };
+
 export function Warranties({
   api,
   organisationId,
@@ -95,11 +99,22 @@ export function Warranties({
   /* What the operator has actually asked for, as opposed to what they are
      still typing: the controls are uncontrolled and applied on submit, so
      a half-typed year never fires a request. */
-  const [filter, setFilter] = useState<RegisterFilter>({
-    standing: '',
-    expiresBefore: '',
-  });
+  const [filter, setFilter] = useState<RegisterFilter>(NO_FILTER);
   const [loadVersion, retry] = useReload();
+
+  /* The filter belongs to the WHOLE register, and the Work-narrowed view
+     hides its form and does not apply it. So a filter left set from the
+     register is invisible state: it mislabels the narrowed empty state as
+     "no period matches these filters" when nothing was filtered, and it
+     comes back the moment the Work chip is cleared — with the controls,
+     which are uncontrolled, rendering blank beside a list that is
+     quietly narrowed by them. Dropped as the view changes, in render
+     rather than in an effect so the read below never fires twice. */
+  const [filterWorkId, setFilterWorkId] = useState(workId);
+  if (filterWorkId !== workId) {
+    setFilterWorkId(workId);
+    setFilter(NO_FILTER);
+  }
 
   /* One page, from whichever read the current view is a view OF. The
      narrowed reading pages through the Work's own endpoint rather than

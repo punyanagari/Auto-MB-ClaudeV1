@@ -11,6 +11,7 @@ import { useAction, useReload } from '../lib/view-state.js';
 import { WARRANTY_BASIS_LABELS, warrantyCountdown } from '../lib/warranty.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import { ConfirmDialog } from '../ui/confirm.js';
 import { DateField } from '../ui/date-field.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
@@ -70,6 +71,28 @@ export function WorkWarranty({
   const [loadError, setLoadError] = useState<string | null>(null);
   const { pending, notice, actionError, act, setActionError } = useAction();
   const [loadVersion, retry] = useReload();
+  /* The discharge the operator has asked for and not yet confirmed.
+   *
+   * Discharge is terminal — a closed period takes no further act, and it
+   * freezes its installation record permanently, because an installation
+   * carrying a discharged period can never be cancelled. It is also one
+   * button among three identically shaped disclosures repeated once per
+   * live period down the card, where the only thing distinguishing this
+   * period's stack from the next one's is a heading ABOVE the stack that
+   * has scrolled off by the time the submit button is reached.
+   *
+   * So the identity is restated inside the submit path rather than only
+   * above it: the dialog names the item and the day the period runs to,
+   * which are the two facts that tell the operator whether this is the
+   * period they meant. No state machine changes — this is the sentence
+   * the act was always missing. */
+  const [closing, setClosing] = useState<{
+    readonly id: string;
+    readonly itemNumber: string;
+    readonly dlpExpiresOn: string;
+    readonly closedOn: string;
+    readonly note: string;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -448,16 +471,13 @@ export function WorkWarranty({
                       onSubmit={(event) => {
                         event.preventDefault();
                         const formData = new FormData(event.currentTarget);
-                        void act(async () => {
-                          await api.closeWarranty(organisationId, warranty.id, {
-                            closedOn: formValue(formData, `close-on-${warranty.id}`),
-                            note: formValue(
-                              formData,
-                              `close-note-${warranty.id}`,
-                            ).trim(),
-                          });
-                          await refresh();
-                        }, `The period for ${warranty.itemNumber} is discharged.`);
+                        setClosing({
+                          id: warranty.id,
+                          itemNumber: warranty.itemNumber,
+                          dlpExpiresOn: warranty.dlpExpiresOn,
+                          closedOn: formValue(formData, `close-on-${warranty.id}`),
+                          note: formValue(formData, `close-note-${warranty.id}`).trim(),
+                        });
                       }}
                     >
                       <DateField
@@ -531,6 +551,41 @@ export function WorkWarranty({
         <p className="text-muted-foreground">
           No defect liability period has been started on this Work.
         </p>
+      )}
+      {closing !== null && (
+        <ConfirmDialog
+          title="Discharge this defect liability period?"
+          description={`Item ${closing.itemNumber}, running to ${formatDate(
+            closing.dlpExpiresOn,
+          )}, discharged on ${formatDate(closing.closedOn)}.`}
+          confirmLabel="Discharge period"
+          pending={pending}
+          onCancel={() => {
+            setClosing(null);
+          }}
+          onConfirm={() => {
+            const period = closing;
+            void act(async () => {
+              await api.closeWarranty(organisationId, period.id, {
+                closedOn: period.closedOn,
+                note: period.note,
+              });
+              setClosing(null);
+              await refresh();
+            }, `The period for ${period.itemNumber} is discharged.`);
+          }}
+        >
+          {/* The refusal from the attempt just made. The card renders it
+              too, but that copy is behind this dialog — and a discharge
+              the server refused leaves the dialog open, so the reason has
+              to be readable where the operator is. */}
+          {actionError !== null && <FormError>{actionError}</FormError>}
+          <p className="text-muted-foreground">
+            A discharged period is final: it takes no further act, and the installation
+            record it runs on can never be cancelled afterwards. Void the period instead
+            if it was started in error.
+          </p>
+        </ConfirmDialog>
       )}
     </>
   );
