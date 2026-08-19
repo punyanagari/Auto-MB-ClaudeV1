@@ -1086,19 +1086,28 @@ function VendorInvoiceDocumentCell({
   readonly onReload: () => Promise<void>;
 }) {
   const inputId = `vendor-invoice-file-${invoice.id}`;
-  if (invoice.document !== null) {
+  /* NULLISH, not `!== null`. The contract makes `document` required and
+     the server always sends it, but this cell renders inside a row that
+     renders inside the whole ledger: a payload that omits the field —
+     an older cached response, a stale fixture — would make
+     `invoice.document.filename` throw and take the entire vendor
+     register down to a blank panel. A missing document and an absent
+     field mean the same thing to an operator, and neither is worth a
+     white screen. */
+  const document = invoice.document ?? null;
+  if (document !== null) {
     // The serve route carries the `payments` authority; the ledger read
     // does not. A member who can read this register without that
     // authority is shown the file's name and no control, rather than a
     // download that answers 403.
     return canManagePayments ? (
       <DownloadButton
-        label={invoice.document.filename}
-        filename={invoice.document.filename}
+        label={document.filename}
+        filename={document.filename}
         fetchBlob={() => api.downloadVendorInvoiceDocument(organisationId, invoice.id)}
       />
     ) : (
-      <span className="text-xs text-muted-foreground">{invoice.document.filename}</span>
+      <span className="text-xs text-muted-foreground">{document.filename}</span>
     );
   }
   if (!canManagePayments || invoice.cancelledAt !== null) {

@@ -222,6 +222,11 @@ test('organisation picker and members workspace pass the axe scan', async ({
             dueOn: '2026-08-01',
             amount: '186400.00',
             workId: null,
+            // The two fields migration 0109 added to the read model. Both
+            // are required by the contract, so a fixture that omits them
+            // is a fixture the real server can never produce.
+            purchaseOrderId: null,
+            document: null,
             tdsSection: '194C',
             tdsPayeeClass: 'other',
             paidTotal: '0',
