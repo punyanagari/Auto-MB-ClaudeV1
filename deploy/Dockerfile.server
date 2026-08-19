@@ -69,7 +69,7 @@ RUN mkdir -p apps/server/dist \
   && esbuild apps/server/src/main.ts \
     --bundle --platform=node --format=esm --target=node22 \
     --outfile=apps/server/dist/server.mjs --log-level=warning $EXTERNALS \
-  && esbuild packages/db/src/bootstrap.ts \
+  && esbuild apps/server/src/bootstrap.ts \
     --bundle --platform=node --format=esm --target=node22 \
     --outfile=apps/server/dist/bootstrap.mjs --log-level=warning $EXTERNALS
 
