@@ -15,7 +15,7 @@ import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
-import { formatDate, formatInr } from '../format.js';
+import { formatDate, formatInr, todayIso } from '../format.js';
 import { NumericInput } from '../ui/numeric-input.js';
 
 /**
@@ -377,6 +377,7 @@ export function WorkBillSettlement({
                           name="receivedOn"
                           type="date"
                           required
+                          defaultValue={todayIso()}
                           disabled={pending}
                         />
                       </Field>

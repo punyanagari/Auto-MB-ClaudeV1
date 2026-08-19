@@ -534,7 +534,7 @@ export function WorkSchedules({
         api={api}
         organisationId={organisationId}
         workId={workId}
-        workItems={workItems}
+        schedules={schedules}
         canModify={canModify}
         onItemCategoryChanged={(workItemId, paymentCategory) => {
           patchItem(workItemId, { paymentCategory });

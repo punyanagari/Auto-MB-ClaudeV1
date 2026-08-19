@@ -1716,7 +1716,7 @@ export function WorkDetail({
             organisationId={organisationId}
             workId={workId}
             work={work}
-            workItems={workItems}
+            schedules={schedules}
             instruments={instruments}
             setInstruments={setInstruments}
             canModify={canModify}

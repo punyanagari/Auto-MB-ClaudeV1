@@ -1,18 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AmcCycleProposalResponse,
   Contact,
   PacCertificateListResponse,
   PacCertificationBasis,
   RecordPacCertificateRequest,
-  WorkItem,
+  WorkDetailResponse,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
-import { useAction, useReload } from '../lib/view-state.js';
+import { useAction, useReload, useReveal } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
+import {
+  ScheduleAccordionControls,
+  ScheduleSection,
+  useScheduleAccordion,
+} from '../ui/schedule-section.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
@@ -37,7 +42,9 @@ interface PacCertificatesProps {
   /** PACs are railway-issued certificates recorded by office staff:
    * record and cancel run under owner/office. */
   readonly canModify: boolean;
-  readonly workItems: readonly WorkItem[];
+  /** The awarded schedules, which the certified-quantity form both
+   * groups by and draws its flat item list from. */
+  readonly schedules: WorkDetailResponse['schedules'];
 }
 
 /**
@@ -53,8 +60,19 @@ export function PacCertificates({
   organisationId,
   workId,
   canModify,
-  workItems,
+  schedules,
 }: PacCertificatesProps) {
+  const workItems = useMemo(
+    () => schedules.flatMap((schedule) => schedule.items),
+    [schedules],
+  );
+  const accordion = useScheduleAccordion(schedules.map((schedule) => schedule.id));
+  /* The certified quantities are React state rather than form fields read
+   * back off the DOM at submit. A closed schedule section is UNMOUNTED —
+   * that is what keeps its rows out of the tab order — so a form built
+   * from `FormData` would silently drop everything typed into a section
+   * the operator then collapsed. */
+  const [quantities, setQuantities] = useState<Readonly<Record<string, string>>>({});
   const [data, setData] = useState<PacCertificateListResponse | null>(null);
   /** What each maintenance schedule's cadence proposes for its next
    * period (migration 0107). A convenience read: its failure hides the
@@ -67,6 +85,7 @@ export function PacCertificates({
   const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { pending, notice, actionError, act, setActionError } = useAction();
+  const { reveal, revealProps } = useReveal();
   const [loadVersion, retry] = useReload();
 
   useEffect(() => {
@@ -246,7 +265,7 @@ export function PacCertificates({
 
       {data.certificates.length > 0 ? (
         data.certificates.map((certificate) => (
-          <div key={certificate.id} className="my-3">
+          <div key={certificate.id} className="my-3" {...revealProps(certificate.id)}>
             <h3>
               PAC {certificate.reference} · {certificate.issueDate}
             </h3>
@@ -409,7 +428,7 @@ export function PacCertificates({
               const items = workItems
                 .map((item) => ({
                   workItemId: item.id,
-                  certifiedQuantity: formValue(formData, `pac-qty-${item.id}`).trim(),
+                  certifiedQuantity: (quantities[item.id] ?? '').trim(),
                 }))
                 .filter((line) => line.certifiedQuantity.length > 0);
               if (items.length === 0) {
@@ -423,9 +442,15 @@ export function PacCertificates({
                 items,
               };
               void act(async () => {
-                await api.recordWorkPacCertificate(organisationId, workId, body);
+                const recorded = await api.recordWorkPacCertificate(
+                  organisationId,
+                  workId,
+                  body,
+                );
+                reveal(recorded.id);
                 await refresh();
                 form.reset();
+                setQuantities({});
               }, 'PAC certificate recorded.');
             }}
           >
@@ -475,24 +500,59 @@ export function PacCertificates({
                 Certified quantities — leave an item blank to omit it; each entry is
                 capped at the supporting quantity minus what is already certified
               </legend>
-              {workItems.map((item) => {
-                const summary = summaryByItem.get(item.id);
-                return (
-                  <Field key={item.id}>
-                    <label htmlFor={`pac-qty-${item.id}`}>
-                      {item.itemNumber} —{' '}
-                      {item.effectiveDescription ?? item.description}
-                      {summary !== undefined
-                        ? ` (${BASIS_LABELS[summary.certificationBasis]} ${summary.supportingQuantity}, certified ${summary.pacCertifiedQuantity}, available ${summary.availableQuantity})`
-                        : ''}
-                    </label>
-                    <NumericInput
-                      id={`pac-qty-${item.id}`}
-                      name={`pac-qty-${item.id}`}
-                    />
-                  </Field>
-                );
-              })}
+              {/* One labelled field per awarded item, which on the largest
+                  work in the corpus is 129 of them in a single column: the
+                  reference, the date and the consignee are a screen and a
+                  half above the submit button before a quantity is typed.
+                  Sectioned by schedule, like the awarded-items editor,
+                  with the counts on each summary row so the operator can
+                  see which schedule they still have to certify without
+                  opening it. */}
+              <ScheduleAccordionControls
+                accordion={accordion}
+                scheduleCount={schedules.length}
+                itemCount={workItems.length}
+              />
+              {schedules.map((schedule) => (
+                <ScheduleSection
+                  key={schedule.id}
+                  code={schedule.scheduleCode}
+                  title={schedule.title}
+                  itemCount={schedule.items.length}
+                  headingLevel={3}
+                  expanded={accordion.isExpanded(schedule.id)}
+                  onToggle={() => {
+                    accordion.toggle(schedule.id);
+                  }}
+                >
+                  {schedule.items.map((item) => {
+                    const summary = summaryByItem.get(item.id);
+                    return (
+                      <Field key={item.id}>
+                        <label htmlFor={`pac-qty-${item.id}`}>
+                          {item.itemNumber} —{' '}
+                          {item.effectiveDescription ?? item.description}
+                          {summary !== undefined
+                            ? ` (${BASIS_LABELS[summary.certificationBasis]} ${summary.supportingQuantity}, certified ${summary.pacCertifiedQuantity}, available ${summary.availableQuantity})`
+                            : ''}
+                        </label>
+                        <NumericInput
+                          id={`pac-qty-${item.id}`}
+                          name={`pac-qty-${item.id}`}
+                          value={quantities[item.id] ?? ''}
+                          onChange={(event) => {
+                            const next = event.target.value;
+                            setQuantities((current) => ({
+                              ...current,
+                              [item.id]: next,
+                            }));
+                          }}
+                        />
+                      </Field>
+                    );
+                  })}
+                </ScheduleSection>
+              ))}
             </fieldset>
             <Actions>
               <Button type="submit" disabled={pending}>

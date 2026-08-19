@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Contact } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
 import { errorMessage } from '../lib/load-failure.js';
-import { useReload } from '../lib/view-state.js';
+import { useReload, useReveal } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, wrapCell } from '../ui/table.js';
@@ -45,6 +45,7 @@ export function WorkConsignees({
   /** True while the screen has nothing on it because the load failed —
    * distinct from an action that failed with the list still on screen. */
   const [loadFailed, setLoadFailed] = useState(false);
+  const { reveal, revealProps } = useReveal();
 
   const reload = useCallback(async () => {
     const [loadedLinked, loadedContacts] = await Promise.all([
@@ -129,7 +130,7 @@ export function WorkConsignees({
           </thead>
           <tbody>
             {linked.map((contact) => (
-              <tr key={contact.id}>
+              <tr key={contact.id} {...revealProps(contact.id)}>
                 <th scope="row">{contact.designation}</th>
                 <td className={wrapCell}>{contact.address ?? '—'}</td>
                 <td>
@@ -181,6 +182,7 @@ export function WorkConsignees({
               if (contactId.length === 0) return;
               void act(async () => {
                 await api.linkWorkConsignee(organisationId, workId, contactId);
+                reveal(contactId);
                 form.reset();
               }, 'Consignee linked to this Work.');
             }}

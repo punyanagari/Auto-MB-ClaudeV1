@@ -771,6 +771,18 @@ describe('PAC certificates', () => {
     },
   ];
 
+  const PAC_SCHEDULES = [
+    {
+      id: '77777777-7777-4777-8777-777777777777',
+      scheduleCode: 'A',
+      title: 'Supply and installation',
+      position: 1,
+      amcBillingPeriods: null,
+      amcCycleNoun: null,
+      items: PAC_WORK_ITEMS,
+    },
+  ];
+
   const CONSIGNEE = {
     id: CONSIGNEE_ID,
     designation: 'Sr. DEE (G) CR',
@@ -851,7 +863,7 @@ describe('PAC certificates', () => {
         organisationId={ORG_ID}
         workId={WORK_ID}
         canModify={options.canModify ?? true}
-        workItems={PAC_WORK_ITEMS}
+        schedules={PAC_SCHEDULES}
       />,
     );
   }
@@ -930,6 +942,53 @@ describe('PAC certificates', () => {
     await waitFor(() => {
       expect(recordWorkPacCertificate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
         reference: 'PAC/2026/02',
+        issueDate: '2026-08-05',
+        consigneeMasterId: CONSIGNEE_ID,
+        items: [{ workItemId: ITEM_TWO, certifiedQuantity: '1.000' }],
+      });
+    });
+  });
+
+  it('keeps a typed quantity while its schedule section is shut and reopened', async () => {
+    /* The certified quantities are grouped into schedule sections, and a
+       shut section is UNMOUNTED — that is what keeps its fields out of the
+       tab order. A form read back off the DOM at submit would therefore
+       lose everything typed into a section the operator then collapsed, so
+       the quantities are React state and this is the proof. */
+    const recordWorkPacCertificate = vi.fn().mockResolvedValue({
+      ...RECORDED_PAC,
+      id: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb',
+      reference: 'PAC/2026/04',
+    });
+    const api = pacApi({ recordWorkPacCertificate });
+    renderPac(api);
+
+    await openForm('New PAC certificate');
+    fireEvent.change(screen.getByLabelText('Certificate reference'), {
+      target: { value: 'PAC/2026/04' },
+    });
+    fireEvent.change(screen.getByLabelText('Issue date'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Issuing consignee'), {
+      target: { value: CONSIGNEE_ID },
+    });
+    fireEvent.change(screen.getByLabelText(/A\/2 — Main switchboard/), {
+      target: { value: '1.000' },
+    });
+
+    const section = screen.getByRole('button', { name: /Schedule A/ });
+    fireEvent.click(section);
+    expect(screen.queryByLabelText(/A\/2 — Main switchboard/)).toBeNull();
+    fireEvent.click(section);
+    expect(
+      screen.getByLabelText<HTMLInputElement>(/A\/2 — Main switchboard/).value,
+    ).toBe('1.000');
+
+    fireEvent.click(submitButton('Record PAC certificate'));
+    await waitFor(() => {
+      expect(recordWorkPacCertificate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        reference: 'PAC/2026/04',
         issueDate: '2026-08-05',
         consigneeMasterId: CONSIGNEE_ID,
         items: [{ workItemId: ITEM_TWO, certifiedQuantity: '1.000' }],

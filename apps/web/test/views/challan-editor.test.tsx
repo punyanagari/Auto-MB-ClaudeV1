@@ -895,7 +895,7 @@ describe('Retired consignees stop being offered', () => {
         organisationId={ORG_ID}
         workId={WORK_ID}
         canModify
-        workItems={challanWork().schedules[0]?.items ?? []}
+        schedules={challanWork().schedules}
       />,
     );
 
