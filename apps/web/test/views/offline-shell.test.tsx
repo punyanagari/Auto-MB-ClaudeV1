@@ -5,6 +5,7 @@ import type { ApiClient, MeResponse } from '../../src/api.js';
 import { App } from '../../src/App.js';
 import { OfflineBanner } from '../../src/ui/offline-banner.js';
 import { bindOfflineCache, withOfflineReads } from '../../src/lib/offline.js';
+import { ORG_ID, membership } from './helpers.js';
 
 /*
  * What the operator SEES when the connection goes (`docs/UX.md` § 23).
@@ -13,8 +14,6 @@ import { bindOfflineCache, withOfflineReads } from '../../src/lib/offline.js';
  * banner, and the staleness sentence the banner grows once a screen has
  * been answered from the cache.
  */
-
-const ORG_ID = '11111111-1111-4111-8111-111111111111';
 
 function setOnline(online: boolean): void {
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(online);
@@ -46,23 +45,10 @@ afterEach(() => {
 
 const ME: MeResponse = {
   user: { id: 'user-a', email: 'owner@example.test' },
-  memberships: [
-    {
-      organisationId: ORG_ID,
-      userId: 'user-a',
-      role: 'owner',
-      workScope: 'all',
-      canIssueDocuments: true,
-      canCancelDocuments: true,
-      canApproveAmendments: false,
-      canManageStatutoryReporting: false,
-      canManagePayments: false,
-      canSignDocuments: false,
-      canManagePayroll: true,
-      twoFactorEnabled: true,
-      status: 'active',
-    },
-  ],
+  // The shared fixture, so a new permission added to the contract does
+  // not have to be remembered here — this suite is about connectivity and
+  // has no opinion about any of them.
+  memberships: [membership({ twoFactorEnabled: true })],
   twoFactorEnabled: true,
   mfaRequired: false,
   mfaEnforced: false,
