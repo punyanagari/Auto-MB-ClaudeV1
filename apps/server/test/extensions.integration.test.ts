@@ -1387,6 +1387,58 @@ describe('manual back-fill of paper letters (§5.5 item e)', () => {
     `;
     expect(Number(deletions[0]?.count)).toBe(3);
   });
+
+  it('keeps a deleted letter and its whole trail on the Work timeline', async () => {
+    // The row HARD-deletes (both the draft path and the manual back-fill
+    // path), so a timeline arm joining the live primary key would take
+    // the deletion event — and every event that letter ever wrote — off
+    // the trail at the moment it matters most. This is the same lesson
+    // work_retention_terms already carries; the arm scopes on the
+    // `workId` every extension event puts in its details.
+    const events = await admin<{ action: string }[]>`
+      select action from audit_events
+      where organisation_id = ${organisationId}
+        and entity_type = 'extension_requests'
+        and details->>'workId' = ${backfillWorkId}
+    `;
+    const actions = events.map((event) => event.action);
+    // The three deletions above, and the back-fills they removed.
+    expect(
+      actions.filter((a) => a === 'extension.manual_backfill_deleted').length,
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      actions.filter((a) => a === 'extension.manual_backfilled').length,
+    ).toBeGreaterThanOrEqual(4);
+
+    const timeline = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${backfillWorkId}/timeline?limit=100`,
+      organisationId,
+    });
+    expect(timeline.statusCode, timeline.body).toBe(200);
+    const onTrail = timeline
+      .json<{ events: { action: string; entityType: string }[] }>()
+      .events.filter((event) => event.entityType === 'extension_requests')
+      .map((event) => event.action);
+    // Every deletion, AND the back-fills that no longer have a row.
+    expect(onTrail).toContain('extension.manual_backfill_deleted');
+    expect(onTrail).toContain('extension.manual_backfilled');
+    expect(onTrail).toContain('extension.finalised');
+    expect(
+      onTrail.filter((action) => action === 'extension.manual_backfill_deleted'),
+    ).toHaveLength(3);
+    // Nothing survives that belongs to another Work.
+    const foreign = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${dueSoonWorkId}/timeline?limit=100`,
+      organisationId,
+    });
+    expect(
+      foreign
+        .json<{ events: { action: string }[] }>()
+        .events.map((event) => event.action),
+    ).not.toContain('extension.manual_backfill_deleted');
+  });
 });
 
 describe('completion alerts follow the CURRENT effective date (item h)', () => {

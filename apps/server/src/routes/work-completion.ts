@@ -26,6 +26,7 @@
  */
 
 import {
+  byItemNumber,
   CompleteWorkRequestSchema,
   ReopenWorkRequestSchema,
   WorkCompletionReadinessSchema,
@@ -307,17 +308,20 @@ async function unfinishedItems(
     )
     order by measured.item_number
   `;
-  return rows.map((row) => ({
-    workItemId: row.id,
-    itemNumber: row.item_number,
-    category: row.payment_category,
-    requirement: row.requirement,
-    direction: row.direction,
-    requiredQuantity: row.required_quantity,
-    deliveredQuantity: row.delivered_quantity,
-    installedQuantity: row.installed_quantity,
-    certifiedQuantity: row.certified_quantity,
-  }));
+  // Natural order: this worklist is read beside the printed schedule.
+  return byItemNumber(
+    rows.map((row) => ({
+      workItemId: row.id,
+      itemNumber: row.item_number,
+      category: row.payment_category,
+      requirement: row.requirement,
+      direction: row.direction,
+      requiredQuantity: row.required_quantity,
+      deliveredQuantity: row.delivered_quantity,
+      installedQuantity: row.installed_quantity,
+      certifiedQuantity: row.certified_quantity,
+    })),
+  );
 }
 
 /** The 409's prose, split on the direction of the remedy. Telling the

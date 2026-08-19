@@ -2,10 +2,12 @@ import { Type, type Static } from '@sinclair/typebox';
 import { DecimalStringSchema, UuidSchema } from './primitives.js';
 
 /** The item payment categories (spec §8, rule R10) — the four legacy
- * ones plus AMC (migration 0068). An item with no category is
- * "uncategorised" (payment_category NULL) and resolves its stage
- * percentages through the Work's optional UNCATEGORISED matrix row
- * instead.
+ * ones plus AMC (migration 0068) and the residual UNCATEGORISED
+ * (migration 0105). An item with NO category (payment_category NULL) is
+ * NOT SELECTED YET: it resolves through no row at all, and a
+ * Measurement Book naming it refuses to finalize until somebody
+ * decides. Choosing UNCATEGORISED IS a decision — the item bills
+ * through the Work's residual row.
  *
  * AMC is the annual-maintenance category. Its items are quoted in `Year`
  * (or `Month`) and are never delivered and never installed: a period of
@@ -15,25 +17,34 @@ import { DecimalStringSchema, UuidSchema } from './primitives.js';
  * existed, an AMC schedule resolved to a delivery requirement and made
  * work completion unsatisfiable without a fabricated Delivery Challan —
  * see the migration header. */
-export const WORK_ITEM_PAYMENT_CATEGORIES = [
+export const PAYMENT_MATRIX_CATEGORIES = [
   'SUPPLY',
   'SUPPLY_AND_INSTALLATION',
   'PURE_INSTALLATION',
   'SPARE_SUPPLY',
   'AMC',
-] as const;
-
-export const WorkItemPaymentCategorySchema = Type.Union(
-  WORK_ITEM_PAYMENT_CATEGORIES.map((category) => Type.Literal(category)),
-);
-export type WorkItemPaymentCategory = Static<typeof WorkItemPaymentCategorySchema>;
-
-/** Matrix rows are keyed by the item categories plus UNCATEGORISED
- * (the row uncategorised items resolve through). */
-export const PAYMENT_MATRIX_CATEGORIES = [
-  ...WORK_ITEM_PAYMENT_CATEGORIES,
+  // The residual category (migration 0105). It was a matrix-row key
+  // only, which left NULL carrying two meanings the product could not
+  // tell apart: "nobody has decided yet" and "decided — bill this
+  // through the residual row". An item may now say the second out loud,
+  // and NULL means the first and only the first.
   'UNCATEGORISED',
 ] as const;
+
+/** ONE list, two names for what it describes.
+ *
+ * There used to be a second constant, `WORK_ITEM_PAYMENT_CATEGORIES`,
+ * differing by UNCATEGORISED — a matrix-row key an item could not carry.
+ * Migration 0105 let an item carry it, which made the two lists
+ * identical, and two exported names for one array is a pair that drifts.
+ * The item schema and the matrix schema are both built from this list;
+ * the day a matrix row exists that no item may claim, the second list
+ * comes back here with a reason attached.
+ */
+export const WorkItemPaymentCategorySchema = Type.Union(
+  PAYMENT_MATRIX_CATEGORIES.map((category) => Type.Literal(category)),
+);
+export type WorkItemPaymentCategory = Static<typeof WorkItemPaymentCategorySchema>;
 
 export const PaymentMatrixCategorySchema = Type.Union(
   PAYMENT_MATRIX_CATEGORIES.map((category) => Type.Literal(category)),
@@ -61,6 +72,10 @@ export const PaymentMatrixRowSchema = Type.Object(
     pctInstallation: DecimalStringSchema,
     pctPac: DecimalStringSchema,
     pctFinalBill: DecimalStringSchema,
+    /** The residual row's per-Work display name (migration 0105), or
+     * null for the product's own wording. Display only — nothing
+     * resolves through it, and it is null on every other row. */
+    categoryLabel: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: 'date-time' }),
     updatedAt: Type.String({ format: 'date-time' }),
   },
@@ -83,6 +98,13 @@ export const UpsertPaymentMatrixRowRequestSchema = Type.Object(
     pctInstallation: DecimalStringSchema,
     pctPac: DecimalStringSchema,
     pctFinalBill: DecimalStringSchema,
+    /** Only the residual row accepts one (migration 0105); the server
+     * refuses it on any other category, as the CHECK does. Omitted
+     * leaves whatever is stored; explicit null clears it back to the
+     * product's own wording. */
+    categoryLabel: Type.Optional(
+      Type.Union([Type.String({ minLength: 1, maxLength: 60 }), Type.Null()]),
+    ),
   },
   { additionalProperties: false },
 );

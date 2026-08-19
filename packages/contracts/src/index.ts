@@ -1,6 +1,7 @@
 import './formats.js';
 
 export * from './primitives.js';
+export * from './item-order.js';
 export * from './health.js';
 export * from './errors.js';
 export * from './pagination.js';
