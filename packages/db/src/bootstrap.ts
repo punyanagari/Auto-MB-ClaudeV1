@@ -298,6 +298,12 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   organisation_entitlements: 'SELECT, INSERT, UPDATE',
   statutory_job_schedules: 'SELECT, INSERT, UPDATE',
   organisation_export_requests: 'SELECT, INSERT, UPDATE',
+  // The defect liability period and the Work's warranty term (0099). The
+  // term is a clause read off a contract and is corrected in place; the
+  // period is the record that a warranty ran, so it is voided with a note
+  // and neither of them deletes.
+  work_warranty_terms: 'SELECT, INSERT, UPDATE',
+  installation_warranties: 'SELECT, INSERT, UPDATE',
   // Append-only trails (0002, 0005).
   audit_events: 'SELECT, INSERT',
   identity_audit_events: 'SELECT, INSERT',

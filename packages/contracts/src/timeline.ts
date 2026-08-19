@@ -93,6 +93,20 @@ export const TIMELINE_ENTITY_TYPES = [
   // decision about money on this contract, and the assessment is the one
   // record that explains a deduction the railway made.
   'ld_assessments',
+  // The defect liability period and the Work's warranty term (0099).
+  // Starting a period fixes the date the railway's Performance Bank
+  // Guarantee is measured against, and extending one is the only place
+  // the REASON for a moved expiry is recorded at all — the pack keeps no
+  // extension table, precisely because this trail is where this product
+  // answers "why does this run to 2029". A Work whose guarantee cannot
+  // be released, with no trail saying why, is the gap.
+  //
+  // The term is audited against the WORK's own id rather than the term
+  // row's: there is one term per Work, it has no screen of its own to
+  // open, and a reader asking what happened to this Work wants it in the
+  // same list.
+  'installation_warranties',
+  'work_warranty_terms',
 ] as const;
 export type TimelineEntityType = (typeof TIMELINE_ENTITY_TYPES)[number];
 

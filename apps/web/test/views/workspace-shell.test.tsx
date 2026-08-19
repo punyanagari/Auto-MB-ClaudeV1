@@ -278,6 +278,12 @@ describe('OperationsWorkspace mobile shell', () => {
       // rather than drawn as a dead entry.
       'Production',
       'Installations',
+      // The defect liability register (migration 0099), beside
+      // Installations because a period IS an installation seen from the
+      // far end of the contract. The mock draws no cell for it at all —
+      // docs/UX.md § 22, on the same footing as the signing queue's own
+      // missing cell in § 16.
+      'Warranties',
       // The mock's own rail carries Inspection in its main list
       // (`components/app-sidebar.tsx` at fdfe5ef); it sits under
       // Operations here, beside the other shop-floor registers.
@@ -337,6 +343,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Signing queue', '#/signing'],
       ['Production', '#/production'],
       ['Installations', '#/installations'],
+      ['Warranties', '#/warranties'],
       ['Inspection', '#/inspection'],
       ['Inventory', '#/inventory'],
       ['Maintenance', '#/maintenance'],

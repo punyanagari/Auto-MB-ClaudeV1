@@ -6,6 +6,7 @@ import {
   ORG,
   PICKER_ME,
   SECOND_ORG,
+  WORK_WARRANTY,
   expectNoAxeViolations,
   json,
   mockWorkspace,
@@ -596,6 +597,13 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   );
   await page.route(`**/api/works/${WORK_ID}/challans`, (route) =>
     route.fulfill(json({ challans: [CHALLAN] })),
+  );
+  /* The defect liability card reads its own endpoint on the Instruments
+     tab (0099). This journey builds its route table from scratch rather
+     than through `mockWorkspace`, so the handler is registered here as
+     well as there. */
+  await page.route(`**/api/works/${WORK_ID}/warranty*`, (route) =>
+    route.fulfill(json(WORK_WARRANTY)),
   );
   await page.route(`**/api/works/${WORK_ID}/instruments`, (route) =>
     route.fulfill(
@@ -1233,6 +1241,20 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByText('₹1,00,000.00')).toBeVisible();
   await expect(page.getByText('levied', { exact: true })).toBeVisible();
   await expect(page.getByText('waived', { exact: true })).toBeVisible();
+  /* The defect liability card (0099) sits on this tab, beside the
+     Performance Bank Guarantee it explains, so it is scanned here rather
+     than in a test of its own — re-mounting this forty-route fixture for
+     one card costs more than it proves. What the scan needs on screen is
+     the shortfall chip, which is the one warning tint the card carries,
+     and the start table's own controls, which the register behind it
+     never draws. */
+  await expect(page.getByRole('heading', { name: 'Defect liability' })).toBeVisible();
+  await expect(page.getByText(/24 months from the installation date/)).toBeVisible();
+  await expect(page.getByText(/Short by 45 days/)).toBeVisible();
+  await page
+    .getByRole('button', { name: /Start a defect liability period/, expanded: false })
+    .click();
+  await expect(page.getByRole('button', { name: 'Start period' })).toBeVisible();
   await expectNoAxeViolations(page, 'work detail');
 
   // The challan list lives under Deliveries.
@@ -1885,4 +1907,29 @@ test('the platform settings pass the axe scan', async ({ page }) => {
   await expect(page.getByText('f'.repeat(64))).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download' })).toBeVisible();
   await expectNoAxeViolations(page, 'organisation export panel');
+});
+
+test('the warranty register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/warranties');
+
+  /* Defect liability periods (0099). Its own top-level test rather than a
+     leg of an existing journey, for the reason Receivables and the
+     signing queue took theirs: the big picker journey is already budgeted
+     with test.slow() and does not need another leg.
+
+     Scanned with all five standings on screen at once, because the chip
+     is the only colour this screen puts on a word — and two of the five
+     are new to the shared tone map (`elapsed` in the warning family,
+     `voided` in the destructive one), so this is the scan that proves
+     both read against their ground in each theme. The filter row is on
+     screen with them: a select and a date input beside a submit, which is
+     where label association and focus order actually fail. */
+  await expect(page.getByRole('heading', { name: 'Warranties' })).toBeVisible();
+  for (const label of ['active', 'expiring', 'elapsed', 'closed', 'voided']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByLabel('Standing', { exact: true })).toBeVisible();
+  await expect(page.getByLabel(/Runs out on or before/)).toBeVisible();
+  await expectNoAxeViolations(page, 'warranty register');
 });

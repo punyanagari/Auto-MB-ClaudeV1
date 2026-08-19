@@ -116,6 +116,14 @@ const CHIP_TONES = {
   'partially-dispatched': 'warning',
   closed: 'neutral',
 
+  // A defect liability period whose last covered day has passed and
+  // which nobody has discharged yet (0099). Warning rather than
+  // destructive, and deliberately: the period ending is the good news —
+  // what is outstanding is the paperwork that releases the bank
+  // guarantee, which is a thing to do. Its sibling `expiring` is already
+  // mapped below and reads the same way a lapsing credential does.
+  elapsed: 'warning',
+
   review: 'warning',
   prepared: 'warning',
   // A company document whose newest version lapses inside the warning
@@ -169,6 +177,13 @@ const CHIP_TONES = {
   expired: 'destructive',
   rejected: 'destructive',
   omitted: 'destructive',
+  // A defect liability period struck out because it should never have
+  // been started — a wrong installation, a wrong certificate, a mistyped
+  // extension (0099). It belongs to the destructive family for the same
+  // reason `cancelled` does: it is a record withdrawn, not a record
+  // finished. Its sibling `closed` is neutral above, because a period
+  // that ran its course IS finished.
+  voided: 'destructive',
 } as const;
 
 /**

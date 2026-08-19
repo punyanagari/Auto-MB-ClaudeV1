@@ -41,6 +41,7 @@ export * from './inventory.js';
 export * from './signing.js';
 export * from './hr.js';
 export * from './maintenance.js';
+export * from './warranty.js';
 export * from './notifications.js';
 export * from './imports.js';
 export * from './audit.js';

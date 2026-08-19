@@ -14,6 +14,15 @@ import type {
   ScheduledJobKind,
   SetEntitlementRequest,
   UpdateJobScheduleRequest,
+  CloseWarrantyRequest,
+  ExtendWarrantyRequest,
+  SaveWarrantyTermsRequest,
+  StartWarrantyRequest,
+  Warranty,
+  WarrantyRegisterResponse,
+  WarrantyStanding,
+  WarrantyTerms,
+  WorkWarrantyResponse,
   ApproveMaintenanceRequest,
   CancelMaintenanceLine,
   CreateMaintenanceRequest,
@@ -1070,6 +1079,54 @@ export interface ApiClient {
     installationId: string,
     note: string,
   ) => Promise<Installation>;
+  /** Defect liability periods (migration 0099).
+   *
+   * The Work read carries the contract term, the Performance Bank
+   * Guarantee cover reading, the installations still waiting for a
+   * period, and the periods themselves — paged, like the Work's own
+   * installation list. */
+  readonly getWorkWarranty: (
+    organisationId: string,
+    workId: string,
+    options?: { readonly cursor?: string; readonly limit?: number },
+  ) => Promise<WorkWarrantyResponse>;
+  readonly saveWarrantyTerms: (
+    organisationId: string,
+    workId: string,
+    body: SaveWarrantyTermsRequest,
+  ) => Promise<WarrantyTerms>;
+  readonly startInstallationWarranty: (
+    organisationId: string,
+    installationId: string,
+    body: StartWarrantyRequest,
+  ) => Promise<Warranty>;
+  readonly extendWarranty: (
+    organisationId: string,
+    warrantyId: string,
+    body: ExtendWarrantyRequest,
+  ) => Promise<Warranty>;
+  readonly closeWarranty: (
+    organisationId: string,
+    warrantyId: string,
+    body: CloseWarrantyRequest,
+  ) => Promise<Warranty>;
+  readonly voidWarranty: (
+    organisationId: string,
+    warrantyId: string,
+    note: string,
+  ) => Promise<Warranty>;
+  /** The tenant-wide register: what comes out of warranty next, across
+   * every Work the caller may see. Paged, and narrowable by the derived
+   * standing or by an expiry horizon. */
+  readonly listWarranties: (
+    organisationId: string,
+    options?: {
+      readonly cursor?: string;
+      readonly limit?: number;
+      readonly standing?: WarrantyStanding;
+      readonly expiresBefore?: string;
+    },
+  ) => Promise<WarrantyRegisterResponse>;
   /** Correction flow for issued documents (Milestone 7). */
   readonly challanCorrectionEligibility: (
     organisationId: string,
@@ -3746,6 +3803,63 @@ export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
       }
       const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       return request<InstallationRegisterResponse>(`/api/installations${suffix}`, {
+        organisationId,
+      });
+    },
+    async getWorkWarranty(organisationId, workId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) parameters.set('limit', String(options.limit));
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<WorkWarrantyResponse>(`/api/works/${workId}/warranty${suffix}`, {
+        organisationId,
+      });
+    },
+    async saveWarrantyTerms(organisationId, workId, body) {
+      return request<WarrantyTerms>(`/api/works/${workId}/warranty-terms`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async startInstallationWarranty(organisationId, installationId, body) {
+      return request<Warranty>(`/api/installations/${installationId}/warranty`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async extendWarranty(organisationId, warrantyId, body) {
+      return request<Warranty>(`/api/warranties/${warrantyId}/extend`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async closeWarranty(organisationId, warrantyId, body) {
+      return request<Warranty>(`/api/warranties/${warrantyId}/close`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async voidWarranty(organisationId, warrantyId, note) {
+      return request<Warranty>(`/api/warranties/${warrantyId}/void`, {
+        method: 'POST',
+        body: { note },
+        organisationId,
+      });
+    },
+    async listWarranties(organisationId, options = {}) {
+      const parameters = new URLSearchParams();
+      if (options.cursor !== undefined) parameters.set('cursor', options.cursor);
+      if (options.limit !== undefined) parameters.set('limit', String(options.limit));
+      if (options.standing !== undefined) parameters.set('standing', options.standing);
+      if (options.expiresBefore !== undefined) {
+        parameters.set('expiresBefore', options.expiresBefore);
+      }
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+      return request<WarrantyRegisterResponse>(`/api/warranties${suffix}`, {
         organisationId,
       });
     },

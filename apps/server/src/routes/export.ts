@@ -17,6 +17,35 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v30: the defect liability periods (0099) join the package — the
+ * Work's warranty term, and one row per installation whose warranty
+ * clock has been started.
+ *
+ * Both tables travel, and the reason is the Performance Bank Guarantee.
+ * A restored organisation that could not say when each installation
+ * comes out of warranty could not say when its guarantees may be
+ * released either, and a guarantee left standing after the liability
+ * ended is money the agency's bank is holding for nothing. The expiry is
+ * a STORED legal date rather than a derivation from the term, which is
+ * what makes the export self-sufficient: a period extended after a
+ * defect, or started under a term the Work has since corrected, restores
+ * as the date the railway is actually holding cover against rather than
+ * as whatever the current term would recompute.
+ *
+ * The reason each extension was granted does NOT live in these tables —
+ * it lives in `audit_events`, which this package has exported since v1 —
+ * so an extended period restores with both its date and its explanation.
+ *
+ * No manifest bucket: the module stores no PDFs. It issues no document
+ * and mints no number, so there is nothing to render and no counter to
+ * carry.
+ *
+ * v25 through v29 belong to the other packs of this wave. The numbers
+ * were ALLOCATED by the coordinator rather than claimed on merge, for
+ * the reason the v15, v17 and v21 notes record at length: a version
+ * string identifies a format, two formats sharing one string is the
+ * failure that matters, and a gap is not.
+ *
  * export-v29: retention, security deposit and liquidated damages (0098)
  * join the package — the contract's own deduction terms, every retention
  * release, and every liquidated-damages assessment with the snapshot it
@@ -356,7 +385,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v29';
+export const EXPORT_FORMAT_VERSION = 'export-v30';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -664,6 +693,23 @@ const SECTIONS: readonly ExportSection[] = [
   {
     key: 'installationSerials',
     sql: `select * from installation_serials order by created_at, id`,
+  },
+  // The defect liability period that runs on an installation, and the
+  // Work term it was started under (0099). `order by work_id` first is
+  // about ROW order inside each section — one contract's periods arrive
+  // contiguously — and not about where these two sections sit. The
+  // certificates a 'pac'-basis period was started from are several
+  // sections further down under `pacCertificates`, which is fine: a
+  // restore reads the whole package, and section adjacency buys nothing
+  // that the foreign keys do not already guarantee.
+  {
+    key: 'workWarrantyTerms',
+    sql: `select * from work_warranty_terms order by work_id`,
+  },
+  {
+    key: 'installationWarranties',
+    sql: `select * from installation_warranties
+          order by work_id, dlp_expires_on, id`,
   },
   {
     key: 'approvalRequests',

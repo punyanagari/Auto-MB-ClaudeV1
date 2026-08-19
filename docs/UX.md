@@ -1350,6 +1350,108 @@ code waits.
 retires on the § 4 iteration pipeline: change it in v0, merge it, diff,
 port the delta.
 
+### 22. Defect liability periods — a module the mock does not draw
+
+**Status: PROPOSED, owner ruling not yet taken.** Numbered 22 by
+coordinator allocation; 17 to 21 belong to the packs of this wave and the
+one before it that landed ahead of it.
+
+**There is no mock citation for either surface, and this entry exists so
+that absence is a recorded decision rather than an omission a reviewer has
+to guess at.** `AGENTS.md` § Design contract says a pull request touching
+a visible surface must cite the mock screen it replicates, and that
+reviewers who cannot find the citation should treat the change as
+unapproved visual invention. So: there is nothing at
+`punyanagari/Auto-MB-Vercel-du@fdfd610` to cite. The mock draws
+installations, and it draws a read-only "PAC / BG certificates" list
+inside the Work's Instruments section (`components/work-registers.tsx`);
+it has never been asked to express the period between the two — the
+warranty that runs on an installed quantity and keeps the Performance Bank
+Guarantee with the railway.
+
+That puts both surfaces under § Design contract 4 — "behaviour the mock
+cannot express is built inside the mock's visual grammar using its
+existing components" — and § Approved divergences 4, "screens the mock
+does not cover", whose list this extends. Concretely, every element is one
+the mock already ships:
+
+| Element                 | Taken from                                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Page header             | `PageHeader`, eyebrow + title + description, as every register uses it                                     |
+| The term and the cover  | `data-surface` panels with the mock's labelled `dl` pairs, exactly as the PBG-requirement tile beside them |
+| The register            | `DataTable`, with the sr-only caption `test/a11y-invariants` requires                                      |
+| Standing                | The shared dot-plus-label `StatusChip`                                                                     |
+| Each act                | `Disclosure` over `Field` + `Actions`, the shape the PAC card's own cancel flow uses                       |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState` — the same three every register declares                        |
+
+**Two chip words join the shared vocabulary** rather than being styled
+locally, and both are tone decisions rather than colour choices:
+
+- `elapsed` — a period whose last covered day has passed and which nobody
+  has discharged yet — joins the WARNING family beside `expiring`. The
+  period ending is the good news; what is outstanding is the paperwork
+  that releases the bank guarantee, which is a thing to do.
+- `voided` — a period struck out because it should never have been started
+  — joins the DESTRUCTIVE family beside `cancelled`. It is a record
+  withdrawn, not a record finished. Its sibling `closed` is already
+  neutral, because a period that ran its course IS finished.
+
+**The word `expired` is deliberately NOT used for a warranty**, and the
+avoidance is the point rather than an accident of naming. `expired` is
+already mapped destructive for a lapsed company credential (§ 8), and a
+credential lapsing is a problem while a defect liability period ending is
+the outcome the whole contract is aimed at. Reusing the word would have
+put a red lamp on every warranty that completed successfully.
+
+| #   | The application ships                                                                       | Why, with nothing in the mock to weigh it against                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 22a | The Work's card lives INSIDE the Instruments tab, not on a tab of its own                   | The period is the reason the Performance Bank Guarantee above it is still with the railway. The two facts an office compares — when cover ends and when the guarantee lapses — are useless a tab apart, and a `WORK_TABS` entry for one card would put them there.                                                                                                                                                                                             |
+| 22b | A rail entry under Operations, beside Installations, with `ShieldCheck`                     | The register answers a question that crosses contracts — what comes out of warranty this quarter — which is a rail question. `ShieldCheck` is not on the rail anywhere else; every other Operations lamp is taken.                                                                                                                                                                                                                                             |
+| 22c | The register READS; every act stays on the Work                                             | Starting a period is decided against that Work's contract term and its installations, so an act with no Work in front of it would be a form that has to ask which Work first — which is the Work page. The installation register took the same shape for the same reason (§ Approved divergences 4).                                                                                                                                                           |
+| 22d | A countdown column in words — "45 days left", "78 days over" — not a progress bar           | A warranty is not progress towards anything; it is time an obligation still has to run. The figure is the SERVER's, measured against the organisation's own calendar day, and the screen prints it rather than computing it — the browser's midnight is not the one that decides a legal date.                                                                                                                                                                 |
+| 22e | No warranty CERTIFICATE, no number, no counter                                              | Migration 0018 already freezes the guarantee text on the Delivery Challan as an issued page. A second warranty document would be a second place to look for one statement, and a numbered series nobody asked for. This pack tracks a PERIOD; it issues nothing.                                                                                                                                                                                               |
+| 22f | The guarantee shortfall is REPORTED, never enforced                                         | The railway holds the guarantee, and the agency cannot refuse reality by refusing a write. The card names the gap in days and says what clears it; nothing here blocks an act because a bank guarantee is short.                                                                                                                                                                                                                                               |
+| 22g | The start picker is capped at fifty with a flag, not paged                                  | It is a picker, and a picker cannot page. The same posture the correspondence composer's thread options already record. Start a period on the ones offered and the next ones appear.                                                                                                                                                                                                                                                                           |
+| 22h | An installation carrying a period that is not voided cannot be cancelled                    | Cancelling it would remove the ground the period stands on while the railway still holds a guarantee measured against its expiry. The refusal points at voiding the period first — the shape the PAC-coverage refusal on the same button already has.                                                                                                                                                                                                          |
+| 22i | An installation whose period was DISCHARGED can never be cancelled, and the message says so | This is a deliberate terminal, not a dead end: a discharged period is a completed legal cycle, and the record it rests on is permanent from that point exactly as an issued document is. Stated here because a refusal that pointed at a void the guard would itself refuse would be worse than the terminal.                                                                                                                                                  |
+| 22j | Voiding is the only way out of a live period                                                | It is what makes a mistyped extension recoverable — void and start again, the cancel-and-re-record path an installation already has — and it is the one thing standing between a fat-fingered ten-year expiry and a record nobody can correct.                                                                                                                                                                                                                 |
+| 22k | Discharge is confirmed in a dialog that restates the item and the day the period runs to    | Closure is terminal (22i) and it freezes the installation record for good, and its button is one of three identically shaped disclosures repeated once per live period — the only thing telling one stack from the next is a heading that has scrolled away by the time the submit button is reached. The identity belongs inside the submit path, not only above it. Closure stays terminal by design; this adds a sentence, not a state.                     |
+| 22l | The dashboard's PBG countdown carries the DLP cover date it is measured against             | Two surfaces read the same guarantee: this alert counts it down to its own expiry, the Work's card measures it against the warranty it secures. Unjoined they contradict in both directions — a mild "expires in 40 days" beside a 911-day shortfall, or a renewal nag on a guarantee whose every period is discharged and which is therefore releasable. One date makes the countdown answerable. Null where no live period measures it, which is not a zero. |
+
+**Two additions on surfaces this pack did not create**, both recorded so
+they are not mistaken for drive-by edits: the installation cancel button
+gains a refusal it did not have (22h/22i), and the Work's Timeline gains
+two entity types — the period and the term. The Timeline is where the
+REASON for an extension lives, and it lives nowhere else: the pack keeps
+no extension table precisely because the trail already answers "why does
+this run to 2029".
+
+**One question is OPEN and is deliberately not decided here.** An elapsed
+period — one whose last covered day has passed and which nobody has
+discharged — can still be extended, and the extension may be dated across
+the gap, retroactively resurrecting cover for days on which every screen
+in the product said the Work was out of warranty.
+
+That may be exactly right. An office that agrees a rectification in March
+for a period that lapsed in January is usually describing ONE continuous
+liability rather than two, and the railway holding the guarantee reads it
+that way. But nothing in the product, the migration or this document
+states it, and an operator extending an elapsed period is not told that
+this is what they are doing. The pack ships the behaviour unchanged and
+records the fact instead: every extension's audit payload now carries
+`elapsedAtExtension`, so an extension that crossed a lapsed gap is
+distinguishable in the trail from one that did not, whichever way the
+ruling goes.
+
+**Owner ruling wanted**: is a retroactive extension across a lapsed gap
+legitimate, and if it is, should the screen say so before the operator
+commits it? Neither answer changes what is stored; both change what the
+extension form is allowed to leave unsaid.
+
+**When the mock grows a warranty screen, the mock wins.** This entry
+retires the moment there is something to cite, on the § 4 iteration
+pipeline: change it in v0, merge it, diff, port the delta.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
@@ -1790,7 +1892,8 @@ matrix dialog · PAC certificate issuance · Completion extensions · Measuremen
 Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invoice
 IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
 recovery · Password recovery · Account security · Organisation access settings ·
-Appearance settings · Monthly payroll · Spreadsheet imports
+Appearance settings · Monthly payroll · Spreadsheet imports · Signing queue ·
+Warranties register and the Work's defect liability card
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.

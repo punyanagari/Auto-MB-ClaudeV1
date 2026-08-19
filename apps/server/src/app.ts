@@ -74,6 +74,7 @@ import { registerInventoryRoutes } from './routes/inventory.js';
 import { registerImportRoutes } from './routes/imports.js';
 import { registerPlatformRoutes } from './routes/platform.js';
 import { registerSigningRoutes } from './routes/signing.js';
+import { registerWarrantyRoutes } from './routes/warranty.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
 import { registerHrRoutes } from './routes/hr.js';
 import { registerMaintenanceRoutes } from './routes/maintenance.js';
@@ -1019,6 +1020,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerSerialRoutes(app, authInstance, database);
     registerSearchRoutes(app, authInstance, database);
     registerInstallationRoutes(app, authInstance, database);
+    registerWarrantyRoutes(app, authInstance, database);
     registerPaymentRoutes(app, authInstance, database);
     registerBillPaymentRoutes(app, authInstance, database);
     // Retention, security deposit and liquidated damages (0098).

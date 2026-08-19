@@ -16,6 +16,7 @@ import { Actions, Field } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { PacCertificates } from './PacCertificates.js';
 import { WorkRetention } from './WorkRetention.js';
+import { WorkWarranty } from './WorkWarranty.js';
 
 interface WorkInstrumentsProps {
   readonly api: ApiClient;
@@ -259,6 +260,17 @@ export function WorkInstruments({
         organisationId={organisationId}
         workId={workId}
         canManageRetention={canManageRetention}
+      />
+      {/* The defect liability period sits with the instruments because it
+          is the reason the Performance Bank Guarantee above is still with
+          the railway (migration 0099). Its own authority is `canModify` —
+          owner or office — rather than the document authority the PAC
+          card takes: no document is issued here. */}
+      <WorkWarranty
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canModify={canModify}
       />
     </>
   );
