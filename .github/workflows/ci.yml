@@ -96,7 +96,8 @@ jobs:
       # never downloads at all, and a per-attempt timeout with retries so
       # a stalled attempt dies in four minutes instead of eating the job.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        # v4.3.0, pinned by commit like every other action here
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
