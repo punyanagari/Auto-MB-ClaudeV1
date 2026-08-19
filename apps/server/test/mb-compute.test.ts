@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  applyMeasuredOverride,
   clampToSanctioned,
   computeFinalBillDelta,
   computeMeasurementBook,
+  lineHasQuantity,
   subtractDecimalStrings,
   type MbItemInput,
 } from '../src/mb-compute.js';
@@ -84,6 +86,13 @@ function itemInput(overrides: Partial<MbItemInput>): MbItemInput {
     // clamp only speaks when an item is over-installed, and the cases
     // that mean to exercise it set this deliberately.
     sanctionedQuantity: '99999999',
+    // Nothing adjusted and no maintenance cadence: the workbook scenario
+    // is a supply item on a Work with neither, so every case written
+    // before migrations 0106/0107 keeps asking exactly what it asked.
+    measuredSupplied: null,
+    measuredInstalled: null,
+    amcBillingPeriods: null,
+    amcCycleNoun: null,
     ...overrides,
   };
 }
@@ -425,3 +434,305 @@ describe('computeMeasurementBook under an unprocessed variation', () => {
     expect(computation.totalAmount).toBe('0.00');
   });
 });
+
+/**
+ * The downward-only measured quantity (owner ruling of 2026-08-19;
+ * migration 0106). The cap is enforced twice — this is the half that
+ * decides what a book bills, and the half the draft preview, the draft
+ * PDF and the finalize snapshot all read.
+ */
+describe('applyMeasuredOverride (migration 0106, owner ruling 2026-08-19)', () => {
+  it('leaves the measurement alone when nothing was adjusted', () => {
+    expect(applyMeasuredOverride('10.000', null)).toBe('10.000');
+    expect(applyMeasuredOverride('0.000', null)).toBe('0.000');
+  });
+
+  it('reduces to the entered figure', () => {
+    expect(applyMeasuredOverride('10.000', '8')).toBe('8');
+    expect(applyMeasuredOverride('10.000', '0')).toBe('0');
+  });
+
+  it('takes the CAP BOUNDARY as the measurement, never as a raise', () => {
+    // Equal is legal and changes nothing.
+    expect(applyMeasuredOverride('10.000', '10.000')).toBe('10.000');
+    // One thousandth above is still not a raise; the smaller of the two
+    // wins, which is what makes a stale adjustment — one written before
+    // its source was deselected — incapable of billing evidence that has
+    // since gone.
+    expect(applyMeasuredOverride('10.000', '10.001')).toBe('10.000');
+    expect(applyMeasuredOverride('10.000', '999')).toBe('10.000');
+    // And when the sources have gone entirely, so has the room.
+    expect(applyMeasuredOverride('0.000', '8')).toBe('0.000');
+  });
+
+  it('compares across scales without a float in the middle', () => {
+    expect(applyMeasuredOverride('10', '9.9995')).toBe('9.9995');
+    expect(applyMeasuredOverride('9.9995', '10')).toBe('9.9995');
+  });
+});
+
+describe('computeMeasurementBook with an adjusted measured quantity', () => {
+  const matrixRow: PaymentMatrixRowData = {
+    category: 'UNCATEGORISED',
+    pctSupply: '80.00',
+    pctInstallation: '10.00',
+    pctPac: '0.00',
+    pctFinalBill: '10.00',
+  };
+
+  it('prices the adjusted quantity and reports the claimed one beside it', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          deltaSupplied: '10.000',
+          measuredSupplied: '8',
+        }),
+      ],
+    });
+    const [line] = computation.lines;
+    expect(line?.deltaSupplied).toBe('8');
+    expect(line?.sourceSupplied).toBe('10.000');
+    // 8 x 100 x 80% — the reduced quantity priced exactly as an
+    // unreduced one would be.
+    expect(line?.amountSupply).toBe('640.00');
+    expect(computation.totalAmount).toBe('640.00');
+  });
+
+  it('never lets an adjustment raise a quantity above the claimed sources', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          deltaSupplied: '10.000',
+          measuredSupplied: '25',
+        }),
+      ],
+    });
+    expect(computation.lines[0]?.deltaSupplied).toBe('10.000');
+    expect(computation.totalAmount).toBe('800.00');
+  });
+
+  it('adjusts installation UNDER the sanction clamp, never around it', () => {
+    // Installed 40 against a sanction of 30 with 25 already billed: the
+    // clamp leaves room for 5. An adjustment to 3 bills 3; an adjustment
+    // to 20 still bills only the 5 the sanction allows.
+    const over = {
+      effectiveRate: '100.00',
+      deltaInstalled: '40.000',
+      priorInstalled: '25',
+      sanctionedQuantity: '30',
+    };
+    const reduced = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [itemInput({ ...over, measuredInstalled: '3' })],
+    });
+    expect(reduced.lines[0]?.deltaInstalled).toBe('3');
+    const raised = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [itemInput({ ...over, measuredInstalled: '20' })],
+    });
+    expect(raised.lines[0]?.deltaInstalled).toBe('5');
+  });
+
+  it('keeps an adjusted-to-nothing line on the preview, so its own field is still there', () => {
+    // The hasDelta trap: without the adjusted flag, typing 0 removes the
+    // line and takes the input that would undo it with it.
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          deltaSupplied: '10.000',
+          measuredSupplied: '0',
+        }),
+      ],
+    });
+    expect(computation.lines).toHaveLength(1);
+    expect(computation.lines[0]?.deltaSupplied).toBe('0');
+    expect(computation.lines[0]?.sourceSupplied).toBe('10.000');
+    expect(computation.totalAmount).toBe('0.00');
+    // And it is the line finalize refuses to number, because it measures
+    // nothing — that guard asks the quantities, not the line count.
+    expect(computation.lines.some(lineHasQuantity)).toBe(false);
+  });
+
+  it('still drops an unadjusted item that measures nothing', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [itemInput({ deltaSupplied: '0', deltaInstalled: '0', deltaPac: '0' })],
+    });
+    expect(computation.lines).toEqual([]);
+  });
+
+  it('reports the stored adjustment beside the billed figure, and they differ under the clamp', () => {
+    // The two are NOT the same number, which is the whole reason the
+    // stored one travels: an adjustment of 20 against a sanction that
+    // leaves room for 5 bills 5, and a screen that inferred "unchanged"
+    // from the billed figure would rewrite the adjustment to 5 on the
+    // next save — capping the item at 5 for good once an amendment
+    // reopened the sanction.
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          deltaInstalled: '40.000',
+          priorInstalled: '25',
+          sanctionedQuantity: '30',
+          measuredInstalled: '20',
+        }),
+      ],
+    });
+    const [line] = computation.lines;
+    expect(line?.deltaInstalled).toBe('5');
+    expect(line?.overrideInstalled).toBe('20');
+    expect(line?.sourceInstalled).toBe('40.000');
+    // And an unadjusted stage reports no adjustment at all.
+    expect(line?.overrideSupplied).toBeNull();
+  });
+
+  it('prices what the adjustment left out, so the reduction is not invisible', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          deltaSupplied: '10.000',
+          measuredSupplied: '8',
+        }),
+      ],
+    });
+    // 2 x 100 x 80% — what the two unmeasured units would have billed.
+    expect(computation.adjustedAwayAmount).toBe('160.00');
+    expect(computation.totalAmount).toBe('640.00');
+  });
+
+  it('reports nothing left out when nothing was adjusted', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [itemInput({ effectiveRate: '100.00', deltaSupplied: '10.000' })],
+    });
+    expect(computation.adjustedAwayAmount).toBe('0.00');
+  });
+
+  it('counts only the adjustment, never the sanction clamp, as left out', () => {
+    // The clamp's own remainder is the Work's unbillable variation
+    // exposure and is reported there; double-counting it here would
+    // state the same rupees twice on one screen.
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          effectiveRate: '100.00',
+          deltaInstalled: '40.000',
+          priorInstalled: '25',
+          sanctionedQuantity: '30',
+          measuredInstalled: '3',
+        }),
+      ],
+    });
+    // The clamp allows 5; the adjustment takes it to 3. Only the 2 the
+    // operator declined is counted: 2 x 100 x 10%.
+    expect(computation.lines[0]?.deltaInstalled).toBe('3');
+    expect(computation.adjustedAwayAmount).toBe('20.00');
+  });
+
+  it('narrates the adjusted quantity in the remark, not the one it replaced', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          unitCode: 'mtr',
+          deltaSupplied: '10.000',
+          measuredSupplied: '8',
+        }),
+      ],
+    });
+    expect(computation.lines[0]?.remark).toBe('Now to pay 80% for 8 mtr.');
+  });
+});
+
+describe('computeMeasurementBook on an AMC billing cadence', () => {
+  const amcRow: PaymentMatrixRowData = {
+    category: 'AMC',
+    pctSupply: '0.00',
+    pctInstallation: '0.00',
+    pctPac: '95.00',
+    pctFinalBill: '5.00',
+  };
+
+  it("renders the schedule's period language in the remark", () => {
+    const computation = computeMeasurementBook({
+      matrix: [amcRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          paymentCategory: 'AMC',
+          unitCode: 'Nos',
+          sanctionedQuantity: '96',
+          deltaPac: '12',
+          priorPac: '24',
+          amcBillingPeriods: 8,
+          amcCycleNoun: 'quarter',
+        }),
+      ],
+    });
+    expect(computation.lines[0]?.remark).toBe(
+      'Prepaid 95% for 2 quarters. Now to pay 95% for 1 quarter.',
+    );
+  });
+
+  it('leaves a non-AMC item on the same schedule reading in its own unit', () => {
+    const computation = computeMeasurementBook({
+      matrix: [matrixRowForSupply],
+      isFinal: false,
+      items: [
+        itemInput({
+          unitCode: 'mtr',
+          sanctionedQuantity: '96',
+          deltaSupplied: '12',
+          amcBillingPeriods: 8,
+          amcCycleNoun: 'quarter',
+        }),
+      ],
+    });
+    expect(computation.lines[0]?.remark).toBe('Now to pay 80% for 12 mtr.');
+  });
+
+  it('leaves an AMC item on a schedule with no cadence reading in its own unit', () => {
+    const computation = computeMeasurementBook({
+      matrix: [amcRow],
+      isFinal: false,
+      items: [
+        itemInput({
+          paymentCategory: 'AMC',
+          unitCode: 'Nos',
+          sanctionedQuantity: '96',
+          deltaPac: '12',
+        }),
+      ],
+    });
+    expect(computation.lines[0]?.remark).toBe('Now to pay 95% for 12 Nos.');
+  });
+});
+
+const matrixRowForSupply: PaymentMatrixRowData = {
+  category: 'UNCATEGORISED',
+  pctSupply: '80.00',
+  pctInstallation: '10.00',
+  pctPac: '0.00',
+  pctFinalBill: '10.00',
+};

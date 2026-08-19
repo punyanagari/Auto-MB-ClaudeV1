@@ -19,6 +19,7 @@ import {
 import {
   ITEM_INPUTS_SQL,
   loadItemInputs,
+  loadMeasuredOverrides,
 } from '../src/routes/measurement-books/internal.js';
 import { DASHBOARD_PBG_SQL, DASHBOARD_PROGRESS_SQL } from '../src/routes/dashboard.js';
 import {
@@ -387,6 +388,38 @@ describe('the Measurement Book loader is one grouped statement', () => {
       },
     );
     expect(statements).toHaveLength(1);
+  });
+
+  it('adds ONE cheap statement for the measured-quantity adjustments, not a seventh CTE', async () => {
+    // Migration 0106's adjustments are read by their own statement
+    // rather than joined into ITEM_INPUTS_SQL, and this is the number
+    // that argument rests on: an index-only probe of
+    // mb_measured_overrides_book_idx's leading columns, against a table
+    // that is EMPTY on every draft nobody adjusted — which is almost all
+    // of them, including this fixture's.
+    //
+    // The ceiling is deliberately tiny. Anything that made this read
+    // grow with the Work's items would be the seventh-CTE cost the
+    // separate statement exists to avoid, and would fail here rather
+    // than quietly eat the loader's own budget above.
+    const { statements, blocks } = await withTenant(
+      appPool,
+      { organisationId: fixture.organisationId, userId: fixture.userId },
+      async (tx) => {
+        const { counted, statements: seen } = countingTransaction(tx);
+        const overrides = await loadMeasuredOverrides(counted, fixture.bookId);
+        expect(overrides.size).toBe(0);
+        const plan = await explain(
+          tx,
+          `select work_item_id, measured_supplied::text, measured_installed::text
+           from mb_measured_overrides where measurement_book_id = $1`,
+          [fixture.bookId],
+        );
+        return { statements: seen, blocks: sharedBlocks(plan) };
+      },
+    );
+    expect(statements).toHaveLength(1);
+    expect(blocks).toBeLessThan(200);
   });
 
   it('executes every aggregate once, not once per item', async () => {

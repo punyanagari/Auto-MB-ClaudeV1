@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
+  AmcCycleProposalResponse,
   Contact,
   PacCertificateListResponse,
   PacCertificationBasis,
@@ -54,6 +55,13 @@ export function PacCertificates({
   workItems,
 }: PacCertificatesProps) {
   const [data, setData] = useState<PacCertificateListResponse | null>(null);
+  /** What each maintenance schedule's cadence proposes for its next
+   * period (migration 0107). A convenience read: its failure hides the
+   * proposal and leaves the certificate flow itself untouched, so it is
+   * defaulted rather than surfaced — an absent cadence and an unreadable
+   * one both mean "no proposal to show", and the cadence is set on the
+   * Work's schedules screen, not here. */
+  const [proposal, setProposal] = useState<AmcCycleProposalResponse>({ schedules: [] });
   const [consignees, setConsignees] = useState<readonly Contact[]>([]);
   const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -70,12 +78,16 @@ export function PacCertificates({
       // R16: the Work's linked consignees are offered first; any active
       // consignee stays selectable below them.
       api.listWorkConsignees(organisationId, workId).catch(() => []),
+      api
+        .getAmcCycleProposal(organisationId, workId)
+        .catch(() => ({ schedules: [] as AmcCycleProposalResponse['schedules'] })),
     ])
-      .then(([loaded, loadedConsignees, loadedWorkConsignees]) => {
+      .then(([loaded, loadedConsignees, loadedWorkConsignees, loadedProposal]) => {
         if (cancelled) return;
         setData(loaded);
         setConsignees(loadedConsignees);
         setWorkConsignees(loadedWorkConsignees);
+        setProposal(loadedProposal);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -135,6 +147,65 @@ export function PacCertificates({
           {notice}
         </p>
       )}
+
+      {/* The next period each maintenance schedule proposes (owner ruling
+          of 2026-08-19). A PROPOSAL and nothing more: it writes nothing,
+          the cap below is unchanged, and an operator certifying a
+          different quantity is certifying what the railway accepted.
+          Where the sanctioned quantity does not divide evenly into the
+          cadence, the split wobbles in the third decimal and the row says
+          so rather than presenting an uneven split as an even one. */}
+      {proposal.schedules.map((schedule) => (
+        <div key={schedule.scheduleId} className="my-3">
+          <h3>
+            Next {schedule.cycleNoun} · schedule {schedule.scheduleCode}
+          </h3>
+          <p className="text-muted-foreground">
+            Maintenance billed in {schedule.billingPeriods} {schedule.cycleNoun}{' '}
+            periods. These are proposals for the next certificate, not limits.
+          </p>
+          <DataTable>
+            <caption className="sr-only">
+              Proposed certified quantity for the next {schedule.cycleNoun} of schedule{' '}
+              {schedule.scheduleCode}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Item</th>
+                <th scope="col">Period</th>
+                <th scope="col" className={numericCell}>
+                  Certified so far
+                </th>
+                <th scope="col" className={numericCell}>
+                  Propose
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {schedule.items.map((item) => (
+                <tr key={item.workItemId}>
+                  <th scope="row">{item.itemNumber}</th>
+                  <td>
+                    {item.nextPeriod === null
+                      ? `all ${String(schedule.billingPeriods)} certified`
+                      : `${String(item.nextPeriod)} of ${String(schedule.billingPeriods)}`}
+                    {!item.divides && (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · uneven split, periods differ in the third decimal
+                      </span>
+                    )}
+                  </td>
+                  <td className={numericCell}>
+                    {item.certifiedQuantity} of {item.totalQuantity}
+                  </td>
+                  <td className={numericCell}>{item.proposedQuantity ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        </div>
+      ))}
 
       <DataTable>
         <caption className="sr-only">

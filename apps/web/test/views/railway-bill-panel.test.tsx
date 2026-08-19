@@ -105,6 +105,7 @@ describe('the railway bill panel', () => {
         warnings: [],
         previewTotal: null,
         unbillableVariationExposure: '0.00',
+        measurementAdjustedAway: '0.00',
       });
     const api = stubApi({
       listReceivedRailwayBills: vi.fn().mockResolvedValue([bill()]),

@@ -328,6 +328,13 @@ const WorkScheduleSchema = Type.Object(
     scheduleCode: Type.String({ minLength: 1, maxLength: 50 }),
     title: Type.String({ minLength: 1, maxLength: 1000 }),
     position: Type.Integer({ minimum: 1 }),
+    /** The AMC billing cadence, when this schedule states one (migration
+     * 0107): M periods and the word the agency calls one of them. Both
+     * null on every schedule that is not maintenance, and on a
+     * maintenance schedule whose cadence nobody has confirmed yet — the
+     * import proposes a default, it is not assumed. */
+    amcBillingPeriods: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+    amcCycleNoun: Type.Union([Type.String(), Type.Null()]),
     items: Type.Array(WorkItemSchema),
   },
   { additionalProperties: false },

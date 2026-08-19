@@ -69,6 +69,7 @@ import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
 import { registerPaymentRoutes } from './routes/payment.js';
 import { registerPacRoutes } from './routes/pac.js';
+import { registerAmcCycleRoutes } from './routes/amc-cycles.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
 import { registerImportRoutes } from './routes/imports.js';
@@ -1088,6 +1089,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     );
     registerCorrectionRoutes(app, authInstance, database, storage, gotenbergUrl);
     registerPacRoutes(app, authInstance, database, storage, scanner);
+    registerAmcCycleRoutes(app, authInstance, database);
     registerMeasurementBookRoutes(app, authInstance, database, storage, gotenbergUrl);
     registerTaxInvoiceRoutes(
       app,

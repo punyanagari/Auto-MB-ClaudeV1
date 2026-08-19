@@ -227,6 +227,7 @@ import type {
   WorkItemPaymentCategory,
   WorkItemPaymentCategoryResponse,
   PacCertificate,
+  AmcCycleProposalResponse,
   PacCertificateListResponse,
   RecordPacCertificateRequest,
   CreateMeasurementBookRequest,
@@ -247,7 +248,9 @@ import type {
   WorkRetentionResponse,
   WorkRetentionTerms,
   MeasurementBookListResponse,
+  SetMbMeasuredQuantitiesRequest,
   SetMbSourcesRequest,
+  SetScheduleAmcCycleRequest,
   MergeMeasurementBooksRequest,
   PurchaseOrder,
   PurchaseOrderStatus,
@@ -1221,6 +1224,21 @@ export interface ApiClient {
     organisationId: string,
     certificateId: string,
   ) => Promise<Blob>;
+  /** What the next acceptance certificate should certify, per AMC item,
+   * on every schedule that states a billing cadence. A proposal only —
+   * it writes nothing and the certificate route is unchanged. */
+  readonly getAmcCycleProposal: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<AmcCycleProposalResponse>;
+  /** Sets or clears one schedule's AMC billing cadence. Both fields move
+   * together; two nulls remove it. */
+  readonly setScheduleAmcCycle: (
+    organisationId: string,
+    workId: string,
+    scheduleId: string,
+    body: SetScheduleAmcCycleRequest,
+  ) => Promise<void>;
   /** Stage-wise Measurement Books (Milestone 8 phase 2). Bill
    * preparation moved here: a bill is prepared FROM a finalized MB
    * (the Milestone 5 unbilled-measurements sweep endpoint is gone). */
@@ -1254,6 +1272,14 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
     body: SetMbSourcesRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  /** Replaces the draft's whole set of downward measured-quantity
+   * adjustments; an item absent from the body measures what its claimed
+   * sources deliver. */
+  readonly setMeasurementBookMeasuredQuantities: (
+    organisationId: string,
+    measurementBookId: string,
+    body: SetMbMeasuredQuantitiesRequest,
   ) => Promise<MeasurementBookDetailResponse>;
   readonly finalizeMeasurementBook: (
     organisationId: string,
@@ -4012,6 +4038,19 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         { organisationId },
       );
     },
+    async getAmcCycleProposal(organisationId, workId) {
+      return request<AmcCycleProposalResponse>(
+        `/api/works/${workId}/amc-cycle-proposal`,
+        { organisationId },
+      );
+    },
+    async setScheduleAmcCycle(organisationId, workId, scheduleId, body) {
+      await request<void>(`/api/works/${workId}/schedules/${scheduleId}/amc-cycle`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
     async recordWorkPacCertificate(organisationId, workId, body) {
       return request<PacCertificate>(`/api/works/${workId}/pac-certificates`, {
         method: 'POST',
@@ -4081,6 +4120,16 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       return request<MeasurementBookDetailResponse>(
         `/api/measurement-books/${measurementBookId}`,
         { organisationId },
+      );
+    },
+    async setMeasurementBookMeasuredQuantities(
+      organisationId,
+      measurementBookId,
+      body,
+    ) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/measured-quantities`,
+        { method: 'PUT', body, organisationId },
       );
     },
     async setMeasurementBookSources(organisationId, measurementBookId, body) {
