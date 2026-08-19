@@ -756,6 +756,8 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listNotificationConsents']>()
       .mockResolvedValue({ consents: [], nextCursor: null }),
     recordNotificationConsent: vi.fn<ApiClient['recordNotificationConsent']>(),
+    recordStaffNotificationConsents:
+      vi.fn<ApiClient['recordStaffNotificationConsents']>(),
     listNotifications: vi
       .fn<ApiClient['listNotifications']>()
       .mockResolvedValue({ messages: [], nextCursor: null }),
@@ -821,7 +823,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setJobSchedule: vi.fn<ApiClient['setJobSchedule']>(),
     listOrganisationExports: vi
       .fn<ApiClient['listOrganisationExports']>()
-      .mockResolvedValue({ exports: [], retentionHours: 168 }),
+      .mockResolvedValue({ exports: [], retentionHours: 720 }),
     requestOrganisationExport: vi.fn<ApiClient['requestOrganisationExport']>(),
     downloadOrganisationExport: vi.fn<ApiClient['downloadOrganisationExport']>(),
     // Maintenance (0088). The register answers empty by default, for the

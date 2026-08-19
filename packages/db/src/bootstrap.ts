@@ -398,6 +398,14 @@ const FUNCTION_GRANTS = [
   // `sent` forever. Neither failure raises anything.
   'app_private.resolve_signing_agent(text)',
   'app_private.record_notification_receipt(text, text, text, timestamptz, text, text)',
+  // The inbound opt-out writer (0104, owner ruling of 2026-08-19). Same
+  // restore hazard and a worse consequence than the receipt writer's: a
+  // restore that left it owned by the restoring role would read
+  // `notification_channels` through RLS, find nothing, and silently
+  // answer `unknown_channel` to every STOP — so the product would keep
+  // messaging people who had asked it to stop, with nothing raised
+  // anywhere.
+  'app_private.record_notification_opt_out(text, text)',
   // The two worker ticks (0096). Same restore hazard as the queue's own
   // five: they are the ONLY way a recurring check is enqueued or a lapsed
   // export artefact is reclaimed, and a restore that left them owned by
@@ -477,6 +485,14 @@ export async function applyGrants(admin: Sql): Promise<void> {
   await admin.unsafe(`GRANT SELECT ON notification_channels TO auto_mb_definer`);
   await admin.unsafe(
     `GRANT SELECT, UPDATE ON notification_messages TO auto_mb_definer`,
+  );
+  // Migration 0104: the inbound-STOP writer moves consents to opted_out
+  // across tenancy. SELECT and UPDATE only — it never creates a consent
+  // row, because an address nobody opted in is unknown rather than opted
+  // out, and it never deletes one, because 0092 grants no DELETE on this
+  // table to anybody.
+  await admin.unsafe(
+    `GRANT SELECT, UPDATE ON notification_consents TO auto_mb_definer`,
   );
   // Migration 0096: the two worker ticks read and advance these across
   // tenants, because a due schedule and a lapsed artefact both have to be

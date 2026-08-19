@@ -328,6 +328,50 @@ export type NotificationConsentResponse = Static<
   typeof NotificationConsentResponseSchema
 >;
 
+/**
+ * Recording the organisation's own staff, in one act.
+ *
+ * The owner ruling of 2026-08-19 splits consent in two: an employee's is
+ * recorded by policy at onboarding and an external contact's is an
+ * explicit opt-in. This is the employee half. It takes only a channel,
+ * because everything else is a fact about the staff contact already on
+ * file — who they are, and the address the organisation already holds for
+ * them.
+ */
+export const RecordStaffNotificationConsentSchema = Type.Object(
+  { channel: NotificationChannelNameSchema },
+  { additionalProperties: false },
+);
+export type RecordStaffNotificationConsent = Static<
+  typeof RecordStaffNotificationConsentSchema
+>;
+
+/**
+ * What the staff act did, in three counts that add up to the staff
+ * register.
+ *
+ * Three rather than one, because the three outcomes need different
+ * actions from the operator and a single "12 recorded" would hide two of
+ * them. `alreadyRecorded` includes anybody who has OPTED OUT — the act
+ * never overwrites an existing consent, so a member of staff who texted
+ * STOP stays opted out until somebody records consent for them
+ * deliberately.
+ */
+export const StaffNotificationConsentResponseSchema = Type.Object(
+  {
+    recorded: Type.Integer({ minimum: 0 }),
+    alreadyRecorded: Type.Integer({ minimum: 0 }),
+    /** Staff whose contact record carries no address this channel can
+     * use. A phone number that is not in international form is one of
+     * these, and it is the common case. */
+    withoutAddress: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type StaffNotificationConsentResponse = Static<
+  typeof StaffNotificationConsentResponseSchema
+>;
+
 /* --- The delivery log ----------------------------------------------------- */
 
 const NotificationMessageSchema = Type.Object(

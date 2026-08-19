@@ -300,7 +300,7 @@ export function WorkRetention({
               {ldTermsRecorded
                 ? `${terms.ldRatePercent ?? ''}% per ${String(
                     terms.ldPeriodDays ?? 0,
-                  )} days, capped at ${terms.ldCapPercent ?? ''}%`
+                  )} days, capped at ${terms.ldCapPercent ?? ''}% of contract value`
                 : '—'}
             </dd>
           </div>
@@ -409,7 +409,9 @@ export function WorkRetention({
                   defaultValue={terms?.ldRatePercent ?? ''}
                   className="font-mono tabular-nums"
                 />
-                <Hint>Per chargeable period, of the assessment basis.</Hint>
+                <Hint>
+                  Per chargeable period, of the basis the assessment is charged on.
+                </Hint>
               </Field>
               <Field>
                 <label htmlFor="ld-period-days">Chargeable period</label>
@@ -454,7 +456,10 @@ export function WorkRetention({
                   defaultValue={terms?.ldCapPercent ?? ''}
                   className="font-mono tabular-nums"
                 />
-                <Hint>The maximum, of the assessment basis. Usually 10%.</Hint>
+                <Hint>
+                  The maximum, of the whole contract value. Usually 5% &mdash; type what
+                  this tender states.
+                </Hint>
               </Field>
             </FieldRow>
 
@@ -767,7 +772,7 @@ export function WorkRetention({
                         inferred from two numbers that do not multiply
                         out. */}
                     {assessment.assessedAmount !== assessment.uncappedAmount &&
-                      ` · capped at ${assessment.ldCapPercent}%, from ${formatInr(
+                      ` · capped at ${assessment.ldCapPercent}% of contract value, from ${formatInr(
                         assessment.uncappedAmount,
                       )}`}
                   </span>

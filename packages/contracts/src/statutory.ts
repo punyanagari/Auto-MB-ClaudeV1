@@ -178,6 +178,19 @@ const PAN_ABSENT_PROVISION: StatutoryProvision = {
  * than replaced by it. They are not the same recovery — LD is the
  * pre-agreed sum for delay under the contract, a penalty is anything else
  * the railway imposes — and existing rows already carry `PENALTY`.
+ *
+ * THE OWNER RULING OF 2026-08-19 MADE THAT SEPARATION LOAD-BEARING
+ * rather than merely tidy: "penalty clauses for defective items not
+ * repaired within stipulated time or AMC penalties have NO capping and
+ * are calculated separately per tender clauses." Liquidated damages are
+ * capped at a percentage of the contract value and the cap is enforced by
+ * `ld_assessments` (migrations 0098 and 0104); a penalty under this head
+ * is capped by nothing, is assessed against no percentage, and reaches no
+ * part of that arithmetic. `work_retention_positions.ld_deducted_total`
+ * sums `LIQUIDATED_DAMAGES` alone, so a penalty is not folded into the LD
+ * position either. Recording an uncapped recovery here is therefore the
+ * supported path, and pushing one through the LD assessment would meet a
+ * cap the contract never imposed.
  */
 export const BILL_DEDUCTION_HEADS = [
   'GST_TDS',
@@ -271,8 +284,9 @@ export const BILL_DEDUCTION_HEAD_RULES: readonly BillDeductionHeadRule[] = [
   },
   {
     head: 'PENALTY',
-    label: 'Penalty',
-    reconciledThrough: 'Argued individually',
+    label: 'Penalty (uncapped)',
+    reconciledThrough:
+      'Tender clause — defective items or AMC. Not capped, and separate from liquidated damages',
     provision: null,
     contractValueThreshold: null,
   },

@@ -10,7 +10,7 @@
 # fixable vulnerability.
 
 # --- caddy:2.11.4-alpine, accepted 2026-08-19 (session with owner 43saps;
-# owner ratification pending — remove entries the next caddy release
+# owner ratified 2026-08-19 — remove entries the next caddy release
 # fixes). All twelve are Go-module/stdlib advisories COMPILED INTO the
 # upstream caddy binary: no image rebuild on our side can take the fix,
 # only a newer caddy release built against Go >= 1.26.6 can. 2.11.4 is

@@ -1049,10 +1049,12 @@ describe('the webhook', () => {
     expect(await statusOf(providerMessageId)).toBe('delivered');
   });
 
-  it('ignores inbound replies and anything it does not recognise', async () => {
-    // Meta packs replies into the same body. Reading them would mean
-    // deciding what "STOP" does to a consent record, which is an owner's
-    // rule to state rather than a keyword list to infer.
+  it('ignores an inbound reply that is not an opt-out, and anything it does not recognise', async () => {
+    // Meta packs replies into the same body. Only one of them has a
+    // meaning here — the opt-out of the owner ruling of 2026-08-19, which
+    // `describe('an inbound STOP')` below proves. Everything else is
+    // dropped: this product has no inbox, and a reply nobody can read is
+    // not a reply it should pretend to have received.
     const response = await webhook({
       object: 'whatsapp_business_account',
       entry: [
@@ -1061,7 +1063,11 @@ describe('the webhook', () => {
             {
               value: {
                 metadata: { phone_number_id: phoneNumberId },
-                messages: [{ from: '919812345678', text: { body: 'STOP' } }],
+                messages: [
+                  { from: '919812345678', text: { body: 'Received, thank you' } },
+                  { from: '919812345678', type: 'image', image: { id: 'media-1' } },
+                  { nothing: 'that this receiver models' },
+                ],
               },
             },
           ],
@@ -1069,7 +1075,10 @@ describe('the webhook', () => {
       ],
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json<{ applied: number }>().applied).toBe(0);
+    expect(response.json<{ applied: number; revoked: number }>()).toMatchObject({
+      applied: 0,
+      revoked: 0,
+    });
     const [consent] = await admin<{ state: string }[]>`
       select state from notification_consents
       where organisation_id = ${organisationId} and contact_id = ${contactId}
@@ -1101,6 +1110,305 @@ describe('the webhook', () => {
       });
       expect(response.statusCode, query).toBe(403);
     }
+  });
+});
+
+/**
+ * The owner ruling of 2026-08-19: "inbound STOP auto-revokes and audits".
+ *
+ * Migration 0092 left the `messages` array unread and said why — what a
+ * reply of STOP does to a consent row was an owner's rule to state.
+ * Migration 0104 states it, and these are the three properties that
+ * matter: a STOP revokes and leaves a trail, an ordinary reply changes
+ * nothing, and an address this organisation never opted in is a no-op
+ * rather than a retry.
+ */
+describe('an inbound STOP', () => {
+  function inboundPayload(
+    body: unknown,
+    options: { readonly from?: string; readonly phone?: string } = {},
+  ): unknown {
+    return {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: '109876543210987',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { phone_number_id: options.phone ?? phoneNumberId },
+                messages: [
+                  {
+                    // Meta sends the sender WITHOUT a leading plus, which
+                    // is the normalisation this path has to get right:
+                    // the consent row stores one.
+                    from: options.from ?? '919812345678',
+                    id: `wamid.inbound-${randomBytes(4).toString('hex')}`,
+                    timestamp: String(Math.floor(Date.now() / 1000)),
+                    type: 'text',
+                    text: { body },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  async function consentState(contact: string): Promise<string | undefined> {
+    const [row] = await admin<{ state: string }[]>`
+      select state from notification_consents
+      where organisation_id = ${organisationId}
+        and contact_id = ${contact} and channel = 'whatsapp'
+    `;
+    return row?.state;
+  }
+
+  async function reinstate(contact: string, address: string): Promise<void> {
+    const response = await authed(owner, {
+      method: 'PUT',
+      url: '/api/notification-consents',
+      organisationId,
+      payload: {
+        contactId: contact,
+        channel: 'whatsapp',
+        address,
+        state: 'opted_in',
+        evidence: 'Reinstated by the office after the automated revocation',
+      },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+  }
+
+  it('revokes the consent on that address and audits it with no actor', async () => {
+    expect(await consentState(contactId)).toBe('opted_in');
+
+    const response = await webhook(inboundPayload('STOP'));
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<{ revoked: number }>().revoked).toBe(1);
+
+    expect(await consentState(contactId)).toBe('opted_out');
+
+    // The trail. `actor_user_id` is NULL because no member did this — the
+    // recipient did, and the recipient is not a user of this product.
+    const [event] = await admin<
+      { actor_user_id: string | null; details: { reason?: string } }[]
+    >`
+      select actor_user_id, details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'notification_consent.revoked'
+      order by occurred_at desc limit 1
+    `;
+    expect(event?.actor_user_id).toBeNull();
+    expect(event?.details.reason).toBe('inbound stop');
+
+    // And the evidence on the row says how it happened, because that is
+    // the column the register prints.
+    const [consent] = await admin<{ evidence: string }[]>`
+      select evidence from notification_consents
+      where organisation_id = ${organisationId} and contact_id = ${contactId}
+        and channel = 'whatsapp'
+    `;
+    expect(consent?.evidence).toContain('Inbound STOP');
+
+    // The send path is the point of all of it.
+    const refused = await send({
+      contactId,
+      channel: 'whatsapp',
+      templateId: approvedTemplateId,
+      parameters: ['DC-2026-0001'],
+    });
+    expect(refused.statusCode, refused.body).toBe(409);
+
+    await reinstate(contactId, CONSENTED_PHONE);
+  });
+
+  it('honours UNSUBSCRIBE and a tapped opt-out button, and ignores an ordinary reply', async () => {
+    for (const body of ['unsubscribe', 'Stop.', ' STOP ']) {
+      const response = await webhook(inboundPayload(body));
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json<{ revoked: number }>().revoked, String(body)).toBe(1);
+      expect(await consentState(contactId)).toBe('opted_out');
+      await reinstate(contactId, CONSENTED_PHONE);
+    }
+
+    // The button Meta sends INSTEAD of a text message when the recipient
+    // taps a template's own opt-out control.
+    const tapped = await webhook({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: '109876543210987',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { phone_number_id: phoneNumberId },
+                messages: [
+                  {
+                    from: '919812345678',
+                    id: 'wamid.button-stop',
+                    timestamp: String(Math.floor(Date.now() / 1000)),
+                    type: 'button',
+                    button: { text: 'Stop promotions', payload: 'STOP' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(tapped.statusCode, tapped.body).toBe(200);
+    expect(tapped.json<{ revoked: number }>().revoked).toBe(1);
+    await reinstate(contactId, CONSENTED_PHONE);
+
+    // AND AN ORDINARY REPLY CHANGES NOTHING. Substring matching on a
+    // legal act is how a product opts somebody out for using a common
+    // English verb, so these are all no-ops.
+    for (const body of [
+      'please don’t stop sending these',
+      'STOPPED WORK ON SITE',
+      'thanks',
+      '',
+    ]) {
+      const response = await webhook(inboundPayload(body));
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json<{ revoked: number }>().revoked, String(body)).toBe(0);
+    }
+    expect(await consentState(contactId)).toBe('opted_in');
+  });
+
+  it('is a no-op and a 200 for an address nobody opted in', async () => {
+    // FAIL-SAFE. There is nothing to revoke, and a non-200 would make
+    // Meta redeliver a message it delivered correctly, forever.
+    const unknown = await webhook(inboundPayload('STOP', { from: '919000000009' }));
+    expect(unknown.statusCode, unknown.body).toBe(200);
+    expect(unknown.json<{ revoked: number }>().revoked).toBe(0);
+
+    // And a number belonging to another deployment sharing the Meta app
+    // resolves to no organisation at all.
+    const foreign = await webhook(
+      inboundPayload('STOP', { phone: 'phone-number-id-not-ours' }),
+    );
+    expect(foreign.statusCode, foreign.body).toBe(200);
+    expect(foreign.json<{ revoked: number }>().revoked).toBe(0);
+
+    expect(await consentState(contactId)).toBe('opted_in');
+  });
+});
+
+/**
+ * The employee half of the same ruling: "Employees: consent
+ * auto-recorded at onboarding (mandatory by policy, still a visible
+ * register row)."
+ */
+describe('recording consent for staff', () => {
+  async function addStaff(designation: string, phone: string): Promise<string> {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: { designation, isEmployee: true, phone },
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    return response.json<{ id: string }>().id;
+  }
+
+  it('records the staff who have a usable address and reports the rest', async () => {
+    const withNumber = await addStaff(`Fitter ${runId}`, '+919812340001');
+    // Not in international form, so the consent table's address CHECK
+    // would refuse it.
+    await addStaff(`Storekeeper ${runId}`, '9812340002');
+
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/notification-consents/staff',
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { channel: 'whatsapp' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const result = response.json<{
+      recorded: number;
+      alreadyRecorded: number;
+      withoutAddress: number;
+    }>();
+    expect(result.recorded).toBeGreaterThanOrEqual(1);
+    // The one whose number is not in international form is REPORTED, not
+    // skipped silently and not allowed to fail the whole act with a
+    // 23514 from the address CHECK.
+    expect(result.withoutAddress).toBeGreaterThanOrEqual(1);
+
+    const [recorded] = await admin<{ state: string; evidence: string }[]>`
+      select state, evidence from notification_consents
+      where organisation_id = ${organisationId}
+        and contact_id = ${withNumber} and channel = 'whatsapp'
+    `;
+    expect(recorded?.state).toBe('opted_in');
+    expect(recorded?.evidence).toContain('Employment onboarding');
+
+    const [event] = await admin<{ details: { source?: string } }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'notification_consent.recorded'
+        and details->>'source' = 'employment onboarding'
+      order by occurred_at desc limit 1
+    `;
+    expect(event?.details.source).toBe('employment onboarding');
+
+    // A SECOND RUN WRITES NOTHING. The act never overwrites an existing
+    // consent, which is what keeps somebody who texted STOP opted out.
+    const again = await authed(owner, {
+      method: 'POST',
+      url: '/api/notification-consents/staff',
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { channel: 'whatsapp' },
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json<{ recorded: number }>().recorded).toBe(0);
+    expect(again.json<{ alreadyRecorded: number }>().alreadyRecorded).toBe(
+      result.recorded + result.alreadyRecorded,
+    );
+  });
+
+  it('never re-opts in a member of staff who opted out', async () => {
+    const staff = await addStaff(`Welder ${runId}`, '+919812340003');
+    const optedOut = await authed(owner, {
+      method: 'PUT',
+      url: '/api/notification-consents',
+      organisationId,
+      payload: {
+        contactId: staff,
+        channel: 'whatsapp',
+        address: '+919812340003',
+        state: 'opted_out',
+        evidence: 'Asked not to be messaged at the depot gate',
+      },
+    });
+    expect(optedOut.statusCode, optedOut.body).toBe(200);
+
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/notification-consents/staff',
+      organisationId,
+      headers: { origin: 'http://127.0.0.1:3000' },
+      payload: { channel: 'whatsapp' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+
+    const [row] = await admin<{ state: string }[]>`
+      select state from notification_consents
+      where organisation_id = ${organisationId}
+        and contact_id = ${staff} and channel = 'whatsapp'
+    `;
+    expect(row?.state).toBe('opted_out');
   });
 });
 

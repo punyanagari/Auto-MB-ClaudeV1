@@ -485,6 +485,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn()
       .mockResolvedValue({ consents: [], nextCursor: null }),
     recordNotificationConsent: vi.fn(),
+    recordStaffNotificationConsents: vi.fn(),
     listNotifications: vi.fn().mockResolvedValue({ messages: [], nextCursor: null }),
     sendNotification: vi.fn(),
     listImportBatches: vi.fn(),

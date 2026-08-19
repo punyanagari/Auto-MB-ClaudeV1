@@ -821,7 +821,15 @@ railway withheld, and what is still owed. The distinction is the point:
   Workers' Welfare Cess Act 1996, reconciled against a cess return to the
   State welfare board;
 - **penalties and recoveries**, argued individually — kept distinct from
-  liquidated damages, which are the specific pre-agreed sum for delay;
+  liquidated damages, which are the specific pre-agreed sum for delay. The
+  distinction became load-bearing with the owner ruling of 2026-08-19:
+  liquidated damages are capped at a percentage of the contract value and
+  the product enforces that cap, while a penalty under a tender's own
+  clause — a defective item not repaired within the stipulated time, an
+  AMC penalty — is **uncapped** and is computed per that clause. An
+  uncapped recovery belongs on this head, and pushing one through a
+  liquidated-damages assessment would meet a ceiling the contract never
+  imposed;
 - **other**, which is the head that always turns up and is the only one that
   cannot be recorded without saying what it is.
 

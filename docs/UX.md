@@ -695,9 +695,10 @@ compares nothing.
 the moment there is something to cite, on the § 4 iteration pipeline: change
 it in v0, merge it, diff, port the delta.
 
-### 17. Notifications — a screen the mock does not draw
+### 17. Notifications — APPROVED
 
-**Status: PROPOSED. Application-first, owner ruling not yet taken.**
+**Status: APPROVED, owner ruling of 2026-08-19.** Application-first, and
+ratified as recorded except where the consent split below says otherwise.
 Numbered 17 by coordinator allocation; 14, 15 and 16 belong to the packs
 that landed ahead of it.
 
@@ -797,9 +798,68 @@ could pass one could send somewhere nobody agreed to.
   says so when there are more. A paging control on a register nobody has
   filled is furniture; the honest upgrade when an organisation reaches
   fifty templates is a cursor button, not a redesign.
-- **Read inbound replies.** The webhook ignores them. What a reply of
-  "STOP" does to a consent record is an owner's rule to state, and until
-  it is stated the register shows only what a member recorded.
+- **Read inbound replies, except the one that means "stop".** The
+  webhook now reads a STOP and nothing else — see the consent split
+  below. Everything else in the `messages` array is still dropped,
+  because this product has no inbox and a reply nobody can read is not a
+  reply it should pretend to have received.
+
+#### The consent split — APPROVED, owner ruling of 2026-08-19
+
+**"Employees: consent auto-recorded at onboarding (mandatory by policy,
+still a visible register row). External contacts: explicit opt-in
+required, inbound STOP auto-revokes and audits."** Migration 0092
+recorded the STOP question and deliberately left it unanswered; migration
+0104 answers it, and this is what the screen now says.
+
+**An inbound STOP revokes, and it revokes for everybody.** The ruling's
+own split is between how consent is OBTAINED; the revocation is not
+split, and the widening is deliberate. Meta requires an opt-out to be
+honoured whoever sends it, and a product that ignored STOP from a number
+because the number belonged to a member of staff would be risking the
+organisation's whole WhatsApp Business account to preserve a policy the
+organisation can re-record in one click. So anybody who replies STOP or
+UNSUBSCRIBE — typed, or tapped on a template's own opt-out button — is
+opted out, the consent row's evidence says so in the words the register
+prints, and an audit event records it with a NULL actor, because no
+member did it. The organisation records consent again at its own
+discretion, on the register, with evidence.
+
+The keyword list is two words and stays two words. A message is matched
+whole, trimmed and case-folded, never as a substring: "please don't stop
+sending these" is a reply, and substring matching on a legal act is how a
+product opts somebody out for using a common English verb.
+
+**An address nobody opted in is a no-op and a 200.** There is nothing to
+revoke, and a non-200 would make Meta redeliver a message it delivered
+correctly, forever. The only case that still earns a retry is the one
+0092 named: a receipt for a send that has not committed yet.
+
+**The employee half is a bulk act on the register, not a hook on the
+employee form**, and the choice is recorded here because the other one
+looks obvious and is wrong. `employees` (0089) carries no address at all
+— the phone and the email live on `contacts` — so an employee write never
+sees the moment an address is "gained"; `contacts.phone` is free text of
+three to thirty characters while a WhatsApp consent address must be
+E.164, so a hook would fail the address CHECK on ordinary data and take
+the employee write down with it; and `POST /api/employees` carries the
+PAYROLL authority, so writing a consent from there would let payroll
+create the rows the notifications authority exists to protect.
+
+So the register grows one control — "Record consent for staff", a
+`Disclosure` beside the existing one, taking only a channel — which
+records an opt-in for every active staff contact carrying a usable
+address, names the source in the evidence, and audits each row. It
+answers with three counts rather than one, because the three outcomes
+need different things from the operator: recorded, already on the
+register, and no usable address. Staff whose number is not in
+international form are in the third count and are REPORTED rather than
+skipped silently.
+
+It never overwrites an existing consent. Somebody who replied STOP stays
+opted out until a member records consent for them deliberately, on the
+form above — which is the whole point of an automatic act that cannot
+override a revocation.
 
 **Where it sits.** Administration, between Members and Settings, with the
 `MessageSquare` lamp — the one icon on that rail not already spoken for.
@@ -821,9 +881,10 @@ ordinary member should not know the product has.
 retires the moment there is something to cite, on the § 4 iteration
 pipeline: change it in v0, merge it, diff, port the delta.
 
-### 18. Import screens — a screen the mock does not draw at all
+### 18. Import screens — APPROVED
 
-**Status: application-first, owner ruling not yet taken.** Numbered 18 by
+**Status: APPROVED, owner ruling of 2026-08-19** (every row as recorded).
+Application-first. Numbered 18 by
 coordinator allocation; 17 belongs to the notifications pack of this wave.
 
 **There is no mock citation for this screen, and this entry exists so that
@@ -952,9 +1013,10 @@ carried five thousand rows. A batch's rows are never sent in full.
 the moment there is something to cite, on the § 4 iteration pipeline:
 change it in v0, merge it, diff, port the delta.
 
-### 19. Audit trail, Reports, and an export on every register — PROPOSED
+### 19. Audit trail, Reports, and an export on every register — APPROVED
 
-**Status: application-first, owner ruling not yet taken.** Numbered 19 by
+**Status: APPROVED, owner ruling of 2026-08-19** (every row as recorded).
+Application-first. Numbered 19 by
 coordinator allocation; 17 and 18 belong to the two packs of this wave that
 land beside it.
 
@@ -1018,7 +1080,10 @@ register exists to show. A narrowed register would look complete and be a
 slice, with nothing on it saying so. The refusal names the Work's own
 Timeline tab, which serves that member completely.
 
-#### The retention window is worded as a window, everywhere it appears
+#### The retention window is worded as a window, everywhere it appears — RATIFIED 2026-08-19
+
+**Owner ruling of 2026-08-19: approved as recorded.** The window narrows
+what the register SHOWS and purges nothing, and that stays the posture.
 
 The Settings card is headed "Audit register", its field is "Window
 (months)", and both its hint and its read-only line say that nothing older
@@ -1074,11 +1139,30 @@ their Tally edits to return.
 moment there is something to cite, on the § 4 iteration pipeline: change it
 in v0, merge it, diff, port the delta.
 
-### 20. Platform controls — three surfaces the mock does not draw
+### 20. Platform controls — APPROVED
 
-**Status: application-first, owner ruling not yet taken.** Numbered 20 by
-coordinator allocation; 17, 18 and 19 belong to the three sibling packs of
-this wave.
+**Status: APPROVED, owner ruling of 2026-08-19** (every row as recorded,
+with one figure changed — see the export window below). Application-first.
+Numbered 20 by coordinator allocation; 17, 18 and 19 belong to the three
+sibling packs of this wave.
+
+**THE EXPORT ARTEFACT LIVES FOR THIRTY DAYS, changed from seven by the
+same ruling.** The screen has never printed the number as prose — it
+renders whatever the server says the window is, and the server is the
+single definition of it — so this is a one-line change with no visual
+consequence beyond the sentence the card composes.
+
+The reasoning is worth recording because the first figure had its own.
+Seven days was chosen on the argument that an export is taken for an
+accountant, a lender or a due-diligence request and those move at the
+pace of a working week. The ruling is that they do not: the counterparty
+who asked for the copy is working to a month-end, an audit cycle or a
+bank's own queue, and an artefact that lapsed before they opened it meant
+the whole export was made a second time. It stays a fixed window the
+requester does not choose, and the bytes are still deleted when it
+passes; an artefact already built keeps the expiry it was given, because
+the guard freezes it and a window that moved under a row already handed
+to somebody would be this product rewriting a promise it had made.
 
 **There is no mock citation for these panels, and this entry exists so that
 absence is a recorded decision rather than an omission a reviewer has to
@@ -1228,11 +1312,13 @@ new state and the contract treats an absent note as "leave what is there".
 the moment there is something to cite, on the § 4 iteration pipeline:
 change it in v0, merge it, diff, port the delta.
 
-### 21. Retention, security deposit and liquidated damages — PROPOSED
+### 21. Retention, security deposit and liquidated damages — APPROVED
 
-**Status: PROPOSED, owner ruling pending.** Numbered 21 by coordinator
-allocation; 17 to 20 belong to the packs of this wave and the one before it
-that land ahead of it.
+**Status: APPROVED, owner ruling of 2026-08-19.** The four divergences
+below are approved as recorded; the open ruling that used to sit at the
+end of this entry is answered, and the arithmetic changed with it —
+migration 0104. Numbered 21 by coordinator allocation; 17 to 20 belong to
+the packs of this wave and the one before it that land ahead of it.
 
 Unlike § 16, this entry DOES have a mock citation, and the divergence is
 about what the mock's drawing turns out to mean rather than about it being
@@ -1304,36 +1390,83 @@ that family is cancelled / rejected / declined, and a levy the contract
 provides for is a fact rather than a failure. `draft` and `cancelled` were
 already mapped and keep their readings.
 
-#### One open ruling: what the liquidated-damages cap is a percent OF
+#### The cap is a percent of the CONTRACT VALUE — APPROVED, owner ruling of 2026-08-19
 
-**Status: PROPOSED, owner ruling not yet taken. The arithmetic is not
-changed pending it.**
+**Status: APPROVED. The arithmetic changed with the ruling — migration 0104.**
+
+The ruling, in the owner's own terms: **"LD is always calculated on total
+contract value and maximum LD is capped at 5%; penalty clauses for
+defective items not repaired within stipulated time or AMC penalties have
+NO capping and are calculated separately per tender clauses."**
 
 A railway clause reads "liquidated damages at 0.5% per week, subject to a
-maximum of 10%". Of what is the open question, and the two readings give
-different money whenever an assessment is made against less than the whole
-contract:
+maximum of 10%". Of WHAT was the open question, and the two readings gave
+different money whenever an assessment was made against less than the
+whole contract:
 
-- **Percent of the assessment basis** — what migration 0098 computes.
-  `cap_amount` is `basis_amount × ld_cap_percent ÷ 100`, and `basis_amount`
-  is a snapshot the form defaults from the contract value but which an
-  operator may set lower (the late portion of a contract, say).
+- **Percent of the assessment basis** — what migration 0098 computed.
 - **Percent of the contract value** — a fixed ceiling regardless of what
-  any one assessment is charged on.
+  any one assessment is charged on. **This is the ruling.**
 
-They agree whenever the basis is the whole contract value. Where they
-diverge the product caps at the smaller figure, which has a visible
-consequence an operator will meet: **a railway that levied 10% of the
-contract value against a partial basis cannot be recorded as levied here**,
-because the levy exceeds the assessment it is levied against and the
-database refuses it. That refusal is the product declining to record what
-actually happened, which is why this is an owner ruling rather than a
-preference.
+**What moved, and what did not.** Only the CEILING moved. The rate arm
+still charges `basis × rate × periods`, because the basis with its label
+beside it is the record of what an assessment was charged ON, and an
+assessment charged on the late portion of a contract is a real thing an
+agency records. What changed is the ceiling that arm is held under: the
+cap percentage of the whole contract, whatever the arm was computed on.
 
-Recorded here rather than settled in a merge. The migration's generation
-comment previously described the second reading while the column computed
-the first; the comment has been corrected to describe the code, and the
-code waits.
+The consequence the old arithmetic had is the reason this was a ruling
+rather than a preference, and it is now gone: **a railway that levied the
+full contractual maximum against a partial basis can be recorded.** Under
+0098 that levy exceeded the assessment it was levied against and the
+database refused it — the product declining to record what actually
+happened.
+
+**Two new things an operator meets.** The contract value is SNAPSHOTTED
+onto each assessment as it is written, because a generated column cannot
+reach another table and because a variation order that moves the contract
+value must not move a levy already claimed; it is frozen with the rest of
+the snapshot, and editing it is the same refusal as editing the rate. And
+a Work carrying no contract value can no longer be assessed at all: the
+cap is a percentage of it, a cap of nothing is zero, and `least(rate arm,
+0)` would make every assessment on that Work zero rupees without raising
+anything. Stating a basis no longer rescues it — the refusal names the
+contract value instead.
+
+**Assessments already made are untouched.** 0104 back-fills each existing
+row's snapshot from its own basis, so every cap and every assessment
+already put in front of a railway keeps the figure it had. A ruling
+governs what is assessed from here on, which is what a ruling can honestly
+govern.
+
+**Five per cent is the figure the form steers to**, as a schema default
+and a hint rather than a ceiling the product enforces. Tenders vary, and a
+cap this product refused to record would send the operator back to a
+spreadsheet on the one occasion the difference mattered — the same posture
+the whole module takes towards recording what the railway did rather than
+what the contract said it would.
+
+#### Uncapped penalties are the PENALTY head, and nothing was added for them
+
+The ruling's third clause — penalties for defective items not repaired in
+time, and AMC penalties, have no cap and are computed per the tender's own
+clauses — is honoured by what already exists, and the absence of a new
+mechanism is the recorded decision.
+
+`bill_payment_deductions.category` has carried `PENALTY` since migration
+0067 and kept it when 0080 added `LIQUIDATED_DAMAGES` beside it. A penalty
+is recorded on the payment advice where the railway imposed it, touches no
+cap, no percentage and no assessment, and is not summed into the LD
+position — `work_retention_positions.ld_deducted_total` filters
+liquidated damages alone. The refusal that a levy may not exceed its
+assessment is raised only on the LD assessment table and has never applied
+to a penalty.
+
+What changed is the WORDING, so an operator can find the right head: the
+deduction is labelled "Penalty (uncapped)" and its hint reads "Tender
+clause — defective items or AMC. Not capped, and separate from liquidated
+damages." A second uncapped category would have been a second place to
+record one fact, which is the defect this module exists to avoid.
 
 #### Two things this panel does not do
 
@@ -1350,11 +1483,12 @@ code waits.
 retires on the § 4 iteration pipeline: change it in v0, merge it, diff,
 port the delta.
 
-### 22. Defect liability periods — a module the mock does not draw
+### 22. Defect liability periods — APPROVED
 
-**Status: PROPOSED, owner ruling not yet taken.** Numbered 22 by
-coordinator allocation; 17 to 21 belong to the packs of this wave and the
-one before it that landed ahead of it.
+**Status: APPROVED, owner ruling of 2026-08-19** (all twelve rows as
+recorded, and the open question at the end of this entry approved as
+recorded too). Numbered 22 by coordinator allocation; 17 to 21 belong to
+the packs of this wave and the one before it that landed ahead of it.
 
 **There is no mock citation for either surface, and this entry exists so
 that absence is a recorded decision rather than an omission a reviewer has
@@ -1426,11 +1560,14 @@ REASON for an extension lives, and it lives nowhere else: the pack keeps
 no extension table precisely because the trail already answers "why does
 this run to 2029".
 
-**One question is OPEN and is deliberately not decided here.** An elapsed
-period — one whose last covered day has passed and which nobody has
-discharged — can still be extended, and the extension may be dated across
-the gap, retroactively resurrecting cover for days on which every screen
-in the product said the Work was out of warranty.
+**One question was open, and the owner ruling of 2026-08-19 approved it
+as recorded: the behaviour ships unchanged.** An elapsed period — one
+whose last covered day has passed and which nobody has discharged — can
+still be extended, and the extension may be dated across the gap,
+retroactively resurrecting cover for days on which every screen in the
+product said the Work was out of warranty. The reasoning below is what
+was approved, including the decision to say nothing extra on the form and
+to keep the fact in the trail instead.
 
 That may be exactly right. An office that agrees a rectification in March
 for a period that lapsed in January is usually describing ONE continuous
@@ -1443,18 +1580,23 @@ records the fact instead: every extension's audit payload now carries
 distinguishable in the trail from one that did not, whichever way the
 ruling goes.
 
-**Owner ruling wanted**: is a retroactive extension across a lapsed gap
-legitimate, and if it is, should the screen say so before the operator
-commits it? Neither answer changes what is stored; both change what the
-extension form is allowed to leave unsaid.
+**Owner ruling of 2026-08-19, settled**: a retroactive extension across a
+lapsed gap is legitimate, and the screen says nothing extra before the
+operator commits it. An office that agrees a rectification in March for a
+period that lapsed in January is describing one continuous liability, and
+the railway holding the guarantee reads it that way. The
+`elapsedAtExtension` flag on every extension's audit payload stays, so an
+extension that crossed a lapsed gap remains distinguishable in the trail
+from one that did not.
 
 **When the mock grows a warranty screen, the mock wins.** This entry
 retires the moment there is something to cite, on the § 4 iteration
 pipeline: change it in v0, merge it, diff, port the delta.
 
-### 23. Offline behaviour — PROPOSED
+### 23. Offline behaviour — APPROVED
 
-**Status: PROPOSED, owner ruling pending.** Numbered 23 by coordinator
+**Status: APPROVED, owner ruling of 2026-08-19** (every row as recorded).
+Numbered 23 by coordinator
 allocation, ahead of the packs holding § 17 to § 22, all of which have
 since landed above it. The allocation is what kept two sections from
 sharing a number across a parallel wave, which is the defect § 15 names.

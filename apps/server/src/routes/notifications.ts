@@ -9,9 +9,11 @@ import {
   NotificationTemplateListResponseSchema,
   NotificationTemplateResponseSchema,
   RecordNotificationConsentSchema,
+  RecordStaffNotificationConsentSchema,
   SaveNotificationChannelSchema,
   SendNotificationSchema,
   SetNotificationTemplateStatusSchema,
+  StaffNotificationConsentResponseSchema,
   withKeysetQuery,
   type NotificationChannel,
   type NotificationChannelName,
@@ -307,13 +309,11 @@ function record(value: unknown): Record<string, unknown> | null {
  *
  * Meta packs several unrelated things into `entry[].changes[].value`: the
  * `statuses` array this reads, a `messages` array carrying inbound
- * replies, and occasional account-level events. Only `statuses` is read.
- * Inbound replies are deliberately ignored rather than half-handled —
- * deciding what a reply of "STOP" does to a consent record is an owner's
- * rule to state, not a keyword list to infer — and anything unrecognised
- * is dropped without comment, because a webhook receiver that fails on a
- * field Meta added last week is a receiver that stops recording
- * deliveries.
+ * replies, and occasional account-level events. Only `statuses` is read
+ * here; `optOutsOf` below reads the one thing in `messages` the owner
+ * ruling of 2026-08-19 gave a meaning to. Anything else is dropped
+ * without comment, because a webhook receiver that fails on a field Meta
+ * added last week is a receiver that stops recording deliveries.
  *
  * Written as a total function over `unknown`: this input is attacker-
  * shaped even after the signature check, because the signature proves who
@@ -372,6 +372,117 @@ export function receiptsOf(payload: unknown): readonly Receipt[] {
     }
   }
   return receipts;
+}
+
+/**
+ * The words that revoke a consent.
+ *
+ * Deliberately short. Meta's own opt-out handling recognises a wider list
+ * in some locales, and every word added here is a word that silently
+ * stops an organisation messaging somebody who did not mean to be
+ * stopped. STOP and UNSUBSCRIBE are what the owner ruling of 2026-08-19
+ * names and what the template footers this product sends will say; a
+ * recipient who types anything else has written a reply, and a reply is
+ * a thing for a person to read.
+ */
+const OPT_OUT_WORDS = new Set(['STOP', 'UNSUBSCRIBE']);
+
+/**
+ * What a staff consent says it rests on.
+ *
+ * The `evidence` column is not decoration on this table: it is what the
+ * register prints beside every row and what an organisation would show if
+ * asked how it came to hold somebody's number. A consent recorded by
+ * policy has to say that it was, in the same field a signed
+ * acknowledgement would be described in, or the register cannot tell the
+ * two apart a year later.
+ */
+const STAFF_CONSENT_EVIDENCE =
+  'Employment onboarding: recorded by organisation policy for a member of staff.';
+
+/** One inbound message that means "stop messaging me". */
+interface InboundOptOut {
+  readonly phoneNumberId: string;
+  /** As Meta sends it: E.164 digits, ordinarily with no leading plus.
+   * Normalising is the database's job, so both spellings match one
+   * consent row. */
+  readonly from: string;
+}
+
+/**
+ * True when an inbound message body is an opt-out.
+ *
+ * Trimmed, upper-cased and stripped of trailing punctuation, because
+ * "Stop." and "STOP!" are the same instruction typed by a person. Nothing
+ * else is normalised: a message that merely CONTAINS the word — "please
+ * don't stop sending these" — is not an opt-out, and substring matching
+ * on a legal act is how a product opts somebody out for using a common
+ * English verb.
+ */
+function isOptOutText(value: unknown): boolean {
+  const text = readString(value);
+  if (text === null || text.length > 64) return false;
+  return OPT_OUT_WORDS.has(
+    text
+      .trim()
+      .replace(/[.!?\s]+$/u, '')
+      .toUpperCase(),
+  );
+}
+
+/**
+ * The inbound opt-outs inside one webhook body.
+ *
+ * THE OWNER RULING OF 2026-08-19: "inbound STOP auto-revokes and audits".
+ * Migration 0092 recorded the question and left the `messages` array
+ * unread until it was answered; this is the answer, and it reads exactly
+ * as much of that array as the answer needs.
+ *
+ * Two shapes carry an opt-out, and both are Meta's:
+ *
+ *   * a plain text reply — `type: "text"`, `text.body`;
+ *   * a tap on the opt-out button a marketing template carries —
+ *     `type: "button"`, with the label in `button.text` and the value in
+ *     `button.payload`. Meta sends this INSTEAD of a text message when
+ *     the recipient uses the button, so a receiver that read only
+ *     `text.body` would honour a typed STOP and ignore a tapped one.
+ *
+ * Everything else in `messages` is ignored, including the reply itself:
+ * this product has no inbox, and a reply nobody can read is not a reply
+ * this product should pretend to have received.
+ *
+ * Written as a total function over `unknown`, like `receiptsOf`, for the
+ * same reason: the signature proves who sent the bytes and not what is in
+ * them.
+ */
+export function optOutsOf(payload: unknown): readonly InboundOptOut[] {
+  const optOuts: InboundOptOut[] = [];
+  const entries = record(payload)?.entry;
+  if (!Array.isArray(entries)) return optOuts;
+  for (const entry of entries) {
+    const changes = record(entry)?.changes;
+    if (!Array.isArray(changes)) continue;
+    for (const change of changes) {
+      const value = record(record(change)?.value);
+      if (value === null) continue;
+      const phoneNumberId = readString(record(value.metadata)?.phone_number_id);
+      const messages = value.messages;
+      if (phoneNumberId === null || !Array.isArray(messages)) continue;
+      for (const raw of messages) {
+        const message = record(raw);
+        if (message === null) continue;
+        const from = readString(message.from);
+        if (from === null || from.length > 32) continue;
+        const button = record(message.button);
+        const stopped =
+          isOptOutText(record(message.text)?.body) ||
+          isOptOutText(button?.text) ||
+          isOptOutText(button?.payload);
+        if (stopped) optOuts.push({ phoneNumberId, from });
+      }
+    }
+  }
+  return optOuts;
 }
 
 /** Two secrets compared without leaking where they first differ.
@@ -797,6 +908,125 @@ export function registerNotificationRoutes(
     },
   );
 
+  /**
+   * The employee half of the owner ruling of 2026-08-19.
+   *
+   * "Employees: consent auto-recorded at onboarding (mandatory by policy,
+   * still a visible register row)." The register row is the point: the
+   * organisation's policy is what makes the consent, and this act is what
+   * makes the policy legible in the same place every other consent is
+   * read from — with the source in the evidence and an audit row behind
+   * it.
+   *
+   * IT LIVES HERE AND NOT ON THE EMPLOYEE WRITE PATH, which is the design
+   * decision migration 0104 § 2b argues at length. Three facts about this
+   * schema decide it: `employees` (0089) carries no address at all — the
+   * phone and the email are on `contacts` — so an employee write never
+   * sees one; `contacts.phone` is free text and this table's address must
+   * be E.164, so a hook would fail the CHECK on ordinary data and take
+   * the employee write down with it; and `POST /api/employees` carries
+   * the payroll authority, so writing a consent from there would let
+   * payroll create the rows the notifications authority exists to
+   * protect.
+   *
+   * IT NEVER OVERWRITES AN EXISTING CONSENT — `do nothing`, not
+   * `do update`. Somebody who texted STOP is opted out, and a bulk act
+   * that silently opted them back in would be this product overriding a
+   * revocation Meta requires it to honour. Re-recording theirs is a
+   * deliberate act on the row itself.
+   *
+   * ONE STATEMENT, not a loop: the consents and their audit rows are two
+   * data-modifying CTEs, so a hundred staff cost one round trip and the
+   * audit cannot drift from the writes it describes.
+   */
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/notification-consents/staff',
+      schema: {
+        body: RecordStaffNotificationConsentSchema,
+        response: { 200: StaffNotificationConsentResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+      authority: 'notifications',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { channel } = request.body;
+      return tenant(async (tx) => {
+        const whatsapp = channel === 'whatsapp';
+        const [counts] = await tx<
+          {
+            recorded: number;
+            already_recorded: number;
+            without_address: number;
+            audited: number;
+          }[]
+        >`
+          with staff as (
+            select c.id,
+                   case when ${whatsapp}
+                     then nullif(btrim(coalesce(c.phone, '')), '')
+                     else nullif(btrim(coalesce(c.email, '')), '')
+                   end as address
+            from contacts c
+            where c.organisation_id = ${organisationId}
+              and c.active and c.is_employee
+          ),
+          usable as (
+            -- The address shapes are the consent table's own CHECK,
+            -- restated as a filter so a contact whose phone reads
+            -- "9812345678" or "office landline" is SKIPPED and counted
+            -- rather than failing the whole act with a 23514.
+            select id, address from staff
+            where address is not null
+              and case when ${whatsapp}
+                    then address ~ '^\\+[1-9][0-9]{7,14}$'
+                    else position('@' in address) > 1
+                  end
+          ),
+          saved as (
+            insert into notification_consents (
+              organisation_id, contact_id, channel, address, state, evidence,
+              recorded_by_user_id
+            )
+            select ${organisationId}, usable.id, ${channel}::text, usable.address,
+                   'opted_in', ${STAFF_CONSENT_EVIDENCE}, ${user.id}
+            from usable
+            on conflict (organisation_id, contact_id, channel) do nothing
+            returning id, contact_id
+          ),
+          audited as (
+            insert into audit_events (
+              organisation_id, actor_user_id, action, entity_type, entity_id, details
+            )
+            select ${organisationId}, ${user.id}, 'notification_consent.recorded',
+                   'notification_consents', saved.id,
+                   jsonb_build_object(
+                     'channel', ${channel}::text,
+                     'state', 'opted_in',
+                     'source', 'employment onboarding',
+                     'contactId', saved.contact_id
+                   )
+            from saved
+            returning 1 as written
+          )
+          select (select count(*) from saved)::int as recorded,
+                 (select count(*) from usable)::int
+                   - (select count(*) from saved)::int as already_recorded,
+                 (select count(*) from staff)::int
+                   - (select count(*) from usable)::int as without_address,
+                 (select count(*) from audited)::int as audited
+        `.catch(rethrowNotificationWriteRefusal);
+        if (!counts) throw new Error('the staff consent act returned no counts');
+        return {
+          recorded: counts.recorded,
+          alreadyRecorded: counts.already_recorded,
+          withoutAddress: counts.without_address,
+        };
+      });
+    },
+  );
+
   /* --- The delivery log --------------------------------------------------- */
 
   tenantRoute(
@@ -1006,16 +1236,42 @@ export function registerNotificationRoutes(
         if (row?.record_notification_receipt === 'applied') applied += 1;
         else if (row?.record_notification_receipt === 'missing') missing += 1;
       }
+
+      // THE OWNER RULING OF 2026-08-19: an inbound STOP revokes consent
+      // and audits it. Run after the receipts and never instead of them —
+      // one body can carry both, and a recipient who read a message and
+      // then typed STOP has sent two facts that are both true.
+      //
+      // FAIL-SAFE BY CONSTRUCTION. An address this organisation never
+      // opted in is `unmatched`, which is a 200 and never a retry: there
+      // is nothing to revoke, and answering 503 would make Meta redeliver
+      // a message it delivered correctly, forever. `missing` above is the
+      // only case that earns a retry, and it stays the only one.
+      let revoked = 0;
+      for (const optOut of optOutsOf(request.body)) {
+        const [row] = await database<{ record_notification_opt_out: string }[]>`
+          select app_private.record_notification_opt_out(
+            ${optOut.phoneNumberId}, ${optOut.from}
+          )
+        `;
+        if (row?.record_notification_opt_out === 'revoked') revoked += 1;
+      }
+
       // Counts and nothing else. Never a message id, a telephone number
       // or a template body (AGENTS.md rule 11).
-      request.log.info({ applied, missing, message: 'notification receipts applied' });
+      request.log.info({
+        applied,
+        missing,
+        revoked,
+        message: 'notification receipts applied',
+      });
       if (missing > 0) {
         // Whatever else was in the batch has been applied already, and
         // re-applying it is a no-op, so redelivering the whole batch is
         // the cheapest way to land the part that arrived early.
-        return reply.status(503).send({ applied, missing });
+        return reply.status(503).send({ applied, missing, revoked });
       }
-      return reply.status(200).send({ applied });
+      return reply.status(200).send({ applied, revoked });
     });
     done();
   });

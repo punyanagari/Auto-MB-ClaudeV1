@@ -128,14 +128,28 @@ function rethrowWriteRefusal(error: unknown): never {
 /**
  * How long a built artefact stays downloadable.
  *
- * Seven days, and the number is operational rather than round: an export
- * is usually taken for an accountant, a lender or a due-diligence request,
- * and those move at the pace of a working week. Long enough that a
- * Friday-afternoon export is still there on Monday; short enough that a
- * complete copy of the business is not sitting in object storage a month
- * after anybody remembered making it.
+ * Thirty days, by the owner's ruling of 2026-08-19. The first reading of
+ * this number was a working week, on the argument that an export is taken
+ * for an accountant, a lender or a due-diligence request and those move at
+ * the pace of a week. The ruling is that they do not: the counterparty who
+ * asked for the copy is usually working to a month-end, an audit cycle or a
+ * bank's own queue, and an artefact that lapsed before they opened it meant
+ * the whole export was made twice.
+ *
+ * It stays a fixed window the requester does not choose, and the bytes are
+ * still deleted when it passes — a complete copy of the business is not a
+ * thing to leave lying around indefinitely, which is the reason there is a
+ * clock at all rather than a reason for any particular number on it.
+ *
+ * ONE PLACE, deliberately. The column carries no DEFAULT and the sweep
+ * compares against `now()` (migration 0096), so this constant is the whole
+ * definition of the window and changing it changes every artefact built
+ * afterwards. Artefacts already built keep the expiry they were given: the
+ * guard freezes `expires_at` on a built row, and a window that moved under
+ * a row already handed to somebody would be this product rewriting a
+ * promise it had made.
  */
-const EXPORT_RETENTION_HOURS = 24 * 7;
+const EXPORT_RETENTION_HOURS = 24 * 30;
 
 /** The declared recurring checks. Prose lives here rather than in the
  * database because it is copy, and copy that changes with the product

@@ -1210,12 +1210,12 @@ const PLATFORM_EXPORTS = {
       formatVersion: 'export-v28',
       byteSize: '4194304',
       sha256: 'f'.repeat(64),
-      expiresAt: '2026-08-25T10:04:00.000Z',
+      expiresAt: '2026-09-17T10:04:00.000Z',
       failureReason: null,
       downloadCount: 0,
     },
   ],
-  retentionHours: 168,
+  retentionHours: 720,
 };
 
 const SIGNING_QUEUE = {

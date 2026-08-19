@@ -165,9 +165,14 @@ describe('the retention and damages panel', () => {
       },
     });
     // Two numbers that do not multiply out are a screen an operator
-    // cannot check. The cap is stated, with the figure it reduced.
+    // cannot check. The cap is stated, with the figure it reduced — and
+    // with what it is a percentage OF, which the owner ruling of
+    // 2026-08-19 made the whole contract value rather than the basis the
+    // line above it names.
     expect(
-      await screen.findByText(/capped at 10.000%, from ₹38,00,000.00/),
+      await screen.findByText(
+        /capped at 10.000% of contract value, from ₹38,00,000.00/,
+      ),
     ).toBeTruthy();
   });
 

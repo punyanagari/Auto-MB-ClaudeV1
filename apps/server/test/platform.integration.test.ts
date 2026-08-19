@@ -525,6 +525,32 @@ describe('the organisation export', () => {
     const bundle = download.json<{ formatVersion: string; members: unknown[] }>();
     expect(bundle.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
     expect(Array.isArray(bundle.members)).toBe(true);
+
+    // THE WINDOW IS THIRTY DAYS, by the owner ruling of 2026-08-19. It
+    // was seven, on the argument that an export is taken for somebody who
+    // works to a week; the ruling is that the counterparty who asked for
+    // it is working to a month-end, an audit cycle or a bank's own queue,
+    // and an artefact that lapsed before they opened it meant the whole
+    // export was made twice.
+    //
+    // Asserted on the ROW rather than on the constant, because the
+    // constant is only a promise until the build writes it — the column
+    // carries no DEFAULT and the sweep compares against `now()`, so this
+    // one write is the whole definition of the window.
+    const [row] = await admin<{ days: string }[]>`
+      select round(extract(epoch from (expires_at - completed_at)) / 86400)::text
+               as days
+      from organisation_export_requests where id = ${exportId}
+    `;
+    expect(row?.days).toBe('30');
+    // And the number the screen renders it from agrees.
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/platform/exports',
+      headers: { cookie: ownerCookie, 'x-organisation-id': organisationId },
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    expect(listed.json<{ retentionHours: number }>().retentionHours).toBe(720);
   });
 
   it('refuses the DOWNLOAD to an assigned-scope member too, not only the request', async () => {
