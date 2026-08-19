@@ -206,7 +206,14 @@ describe('the schema at head names all three shapes', () => {
     // columns, and adopting the domain on a generated column is what
     // keeps the arithmetic at the scale money is stored rather than at
     // whatever the expression happened to produce.
-    expect(adopted.length).toBe(111);
+    //
+    // 0104 adds the twelfth and last of them: the Work's contract value
+    // as it stood when an assessment was made, snapshotted onto the row
+    // so the cap can be generated from it. The owner ruling of
+    // 2026-08-19 made the cap a percentage of the whole contract rather
+    // than of the assessment basis, and a generated column cannot reach
+    // another table for the figure.
+    expect(adopted.length).toBe(112);
   });
 
   it('types every digest column as sha256_hex', () => {

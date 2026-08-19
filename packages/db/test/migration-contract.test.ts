@@ -95,6 +95,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0096_platform_controls.sql': 5,
   '0098_retention_and_liquidated_damages.sql': 6,
   '0099_warranty_dlp.sql': 6,
+  '0104_owner_rulings_2026_08_19.sql': 1,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -2988,5 +2989,126 @@ describe('the statutory seed function (0103)', () => {
     // that would re-seed the whole cluster on every organisation created.
     expect(sql).not.toMatch(/FROM organisations\b/);
     expect(sql.match(/p_organisation_id/g)?.length).toBeGreaterThanOrEqual(6);
+  });
+});
+
+describe('the owner rulings of 2026-08-19 (0104)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0104_owner_rulings_2026_08_19.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that rewrites a column', () => {
+    // It drops and re-adds two STORED GENERATED money columns on a table
+    // that already holds rows, which takes an ACCESS EXCLUSIVE lock and
+    // rewrites the table. Unbounded, that is a production outage rather
+    // than a migration.
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('caps liquidated damages at a percentage of the contract value', () => {
+    // THE RULING, asserted rather than left to the comment that argues
+    // it. `cap_amount` must be generated from the snapshotted contract
+    // value and from nothing else; a later edit that reinstated
+    // `basis_amount` as the cap basis fails here.
+    expect(sql).toContain(
+      'ADD COLUMN cap_amount money_amount GENERATED ALWAYS AS (\n' +
+        '    round(contract_value_amount * ld_cap_percent / 100, 2)\n' +
+        '  ) STORED',
+    );
+    // And the assessment is still the lesser of the two arms, with the
+    // rate arm charging on the basis the assessment states.
+    expect(sql).toContain('least(');
+    expect(sql).toContain('round(contract_value_amount * ld_cap_percent / 100, 2)');
+  });
+
+  it('back-fills the snapshot from the basis, never from the Work', () => {
+    // Engineering rule 7 in one statement. Filling it from
+    // `works.contract_value` would move `cap_amount` — and through it
+    // `assessed_amount` — on assessments an agency has already put in
+    // front of a railway, silently, in a money column, including on rows
+    // in a terminal state.
+    expect(sql).toContain(
+      'UPDATE ld_assessments SET contract_value_amount = basis_amount;',
+    );
+    expect(sql).not.toMatch(/SET contract_value_amount = w\.contract_value/);
+  });
+
+  it('steers the contract terms to the ruled five per cent without refusing another figure', () => {
+    expect(sql).toContain('ALTER COLUMN ld_cap_percent SET DEFAULT 5;');
+    // A DEFAULT and not a CHECK: tenders vary, and a ceiling the product
+    // refused to record would send the operator back to a spreadsheet on
+    // the one occasion the difference mattered.
+    expect(sql).not.toMatch(/ld_cap_percent\s*<=\s*5/);
+  });
+
+  it('takes its SQLSTATE from the retention pack, at the next free code', () => {
+    expect(sql).toContain("ERRCODE = '23P10'");
+    expect(sql).toContain("CONSTRAINT = 'ld_cap_basis_missing'");
+    // The freeze reuses 0098's own code and constraint name, because for
+    // an operator it is the same rule: the facts an assessment was
+    // computed from are written once.
+    expect(sql).toContain("ERRCODE = '23P05'");
+    expect(sql).toContain("CONSTRAINT = 'ld_assessment_frozen'");
+  });
+
+  it('adds one trigger and declares it in the census', () => {
+    expect(sql.match(/^CREATE TRIGGER /gm)).toHaveLength(1);
+    expect(sql).toContain('CREATE TRIGGER ld_assessments_contract_value_snapshot');
+    expect(MIGRATION_TRIGGERS['0104_owner_rulings_2026_08_19.sql']).toBe(1);
+    // Alphabetically before `ld_assessments_write_guard`, which is what
+    // puts the snapshot on NEW before 0098's guard reads the row.
+    expect(
+      'ld_assessments_contract_value_snapshot' < 'ld_assessments_write_guard',
+    ).toBe(true);
+  });
+
+  it('creates the inbound opt-out writer as a narrow definer function', () => {
+    // The second write that crosses tenancy for the notifications lane,
+    // on exactly the terms 0092's receipt writer sits on: definer rights
+    // because Meta is not a member of anything, owned by the BYPASSRLS
+    // role, granted by name rather than to PUBLIC, and with its search
+    // path pinned.
+    expect(sql).toContain('CREATE FUNCTION app_private.record_notification_opt_out(');
+    expect(sql).toContain('SECURITY DEFINER');
+    expect(sql).toContain(
+      'ALTER FUNCTION app_private.record_notification_opt_out(text, text)\n  OWNER TO auto_mb_definer;',
+    );
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION app_private.record_notification_opt_out(text, text)',
+    );
+    expect(sql).toContain('SET search_path = pg_catalog, public, app_private, pg_temp');
+  });
+
+  it('lets the opt-out writer move a consent and never create one', () => {
+    // An address nobody opted in is unknown rather than opted out, and
+    // recording an opt-out against a contact that does not exist would be
+    // inventing a party. The grant is the enforcement: no INSERT and no
+    // DELETE on the consent table for the definer role.
+    expect(sql).toContain(
+      'GRANT SELECT, UPDATE ON notification_consents TO auto_mb_definer;',
+    );
+    expect(sql).not.toMatch(/INSERT INTO notification_consents/);
+    expect(sql).toContain("'notification_consent.revoked'");
+    expect(sql).toContain("'reason', 'inbound stop'");
+  });
+
+  it('creates exactly one SECURITY DEFINER function', () => {
+    // The LD snapshot trigger is invoker-rights: it reads `works` inside
+    // the transaction that already locked the Work, so definer rights
+    // would add authority for nothing.
+    const definers = sql
+      .split('CREATE FUNCTION ')
+      .slice(1)
+      .filter((source) =>
+        source.slice(0, source.indexOf('$$;')).includes('SECURITY DEFINER'),
+      );
+    expect(definers).toHaveLength(1);
+    expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(2);
   });
 });

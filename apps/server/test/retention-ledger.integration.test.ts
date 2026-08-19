@@ -981,7 +981,7 @@ describe('liquidated damages', () => {
     expect(position.contractValue).toBe(CONTRACT_VALUE);
   });
 
-  it('names the basis a Work with no contract value cannot default, rather than raising a CHECK', async () => {
+  it('refuses to assess a Work carrying no contract value, because the cap is a percentage of it', async () => {
     const { workId } = await seedWork('LDZERO');
     await admin`
       update works set contract_value = '0.00' where id = ${workId}
@@ -991,20 +991,92 @@ describe('liquidated damages', () => {
       assessedOn: '2023-05-01',
       assessedToDate: '2023-04-15',
     });
-    // Without the route check this is `basis_amount > 0` as a bare 23514,
-    // which reaches the operator as "The request could not be completed."
-    expect(response.statusCode, response.body).toBe(400);
-    expect(response.json<{ code: string }>().code).toBe('LD_ASSESSMENT_WINDOW_INVALID');
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('LD_CONTRACT_VALUE_MISSING');
 
-    // And the way out works: state the basis the contract charges on.
+    // AND STATING A BASIS NO LONGER RESCUES IT, which is the visible
+    // consequence of the owner ruling of 2026-08-19. Before it, the cap
+    // was a percentage of the basis, so a stated basis gave the
+    // assessment both its rate arm and its ceiling. Now the ceiling comes
+    // from the contract value, a cap of nothing is zero, and
+    // `least(rate arm, 0)` would make every assessment on this Work zero
+    // rupees without raising anything. Refused instead.
     const withBasis = await post(`/api/works/${workId}/ld-assessments`, {
       assessedOn: '2023-05-01',
       assessedToDate: '2023-04-15',
       basisAmount: '1000000.00',
       basisLabel: 'Value of the delayed portion',
     });
-    expect(withBasis.statusCode, withBasis.body).toBe(201);
-    expect(withBasis.json<LdAssessment>().assessedAmount).toBe('75000.00');
+    expect(withBasis.statusCode, withBasis.body).toBe(409);
+    expect(withBasis.json<{ code: string }>().code).toBe('LD_CONTRACT_VALUE_MISSING');
+  });
+
+  it('caps at the contract value, not at the basis the assessment was charged on', async () => {
+    // THE OWNER RULING OF 2026-08-19, at its boundary. The contract is
+    // one crore and the cap is 10%, so the ceiling is ₹10,00,000 whatever
+    // the basis. This assessment is charged on a quarter of the contract
+    // and is delayed long enough that the rate arm runs far past that
+    // ceiling, so the cap is what decides the figure.
+    //
+    // Under migration 0098's arithmetic the same row capped at 10% of the
+    // basis — ₹2,50,000 — and a railway that levied the full contractual
+    // maximum against it met 23P06. `docs/UX.md` § 21 recorded that as
+    // the reason the question was an owner ruling rather than a
+    // preference; this is the assertion that it was answered.
+    const { workId } = await seedWork('LDCAPCV');
+    await recordTerms(workId);
+    const created = await post(`/api/works/${workId}/ld-assessments`, {
+      assessedOn: '2026-01-01',
+      assessedToDate: '2025-12-31',
+      basisAmount: '2500000.00',
+      basisLabel: 'Value of the delayed portion',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const assessment = created.json<LdAssessment>();
+    expect(assessment.basisAmount).toBe('2500000.00');
+    // 10% of the CONTRACT value, not of the basis.
+    expect(assessment.capAmount).toBe('1000000.00');
+    expect(assessment.assessedAmount).toBe('1000000.00');
+    // The rate arm ran past the ceiling, which is what makes this the
+    // boundary rather than an arithmetic coincidence.
+    expect(Number(assessment.uncappedAmount)).toBeGreaterThan(1_000_000);
+
+    // And the levy the old arithmetic refused is now recordable: ten per
+    // cent of the whole contract, against a quarter-contract basis.
+    const levied = await post(`/api/ld-assessments/${assessment.id}/decision`, {
+      decision: 'levy',
+      leviedAmount: '1000000.00',
+    });
+    expect(levied.statusCode, levied.body).toBe(200);
+    expect(levied.json<LdAssessment>().leviedAmount).toBe('1000000.00');
+  });
+
+  it('freezes the contract value it capped against, so an amendment never moves a levy', async () => {
+    const { workId } = await seedWork('LDCAPFRZ');
+    await recordTerms(workId);
+    const created = await post(`/api/works/${workId}/ld-assessments`, {
+      assessedOn: '2026-01-01',
+      assessedToDate: '2025-12-31',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const assessmentId = created.json<LdAssessment>().id;
+
+    await admin`
+      update works set contract_value = '20000000.00' where id = ${workId}
+    `;
+    const [row] = await admin<{ cap_amount: string }[]>`
+      select cap_amount::text as cap_amount
+      from ld_assessments where id = ${assessmentId}
+    `;
+    expect(row?.cap_amount).toBe('1000000.00');
+
+    // And the snapshot cannot be edited to catch up with the Work.
+    await expect(
+      admin`
+        update ld_assessments set contract_value_amount = '20000000.00'
+        where id = ${assessmentId}
+      `,
+    ).rejects.toMatchObject({ code: '23P05' });
   });
 });
 

@@ -703,6 +703,13 @@ ORDER BY requested_at DESC;
   download route refuses it — and the next tick will mark it `expired` and
   delete the bytes. A row that stays `ready` past its expiry means the
   worker is down.
+- The window is **thirty days** from the moment the artefact was built
+  (owner ruling of 2026-08-19; it was seven before that). It is written
+  once, by the build, from `EXPORT_RETENTION_HOURS` in
+  `apps/server/src/routes/platform.ts` — the column carries no default —
+  and the guard freezes it afterwards, so artefacts built before a change
+  keep the expiry they were given. Rows with mixed windows are therefore
+  expected around any such change and are not a defect.
 - A `queued` or `running` row whose build died — the build runs in the API
   process, not the worker, and `routes/platform.ts` argues why — **is
   reconciled automatically**. The tick fails anything older than an hour

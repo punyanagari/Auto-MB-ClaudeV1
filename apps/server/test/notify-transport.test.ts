@@ -4,7 +4,11 @@ import {
   MetaCloudWhatsAppTransport,
   readWhatsAppConfig,
 } from '../src/notify/meta-cloud.js';
-import { parameterCountOf, receiptsOf } from '../src/routes/notifications.js';
+import {
+  optOutsOf,
+  parameterCountOf,
+  receiptsOf,
+} from '../src/routes/notifications.js';
 import { consentStillStands, fallbackMessageId } from '../src/notify/send.js';
 import {
   NotificationTransportError,
@@ -205,6 +209,106 @@ describe('receiptsOf', () => {
       ],
     });
     expect(receipt?.occurredAt.getTime()).toBeGreaterThanOrEqual(before);
+  });
+});
+
+describe('optOutsOf', () => {
+  function messages(entries: readonly unknown[]): unknown {
+    return {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: '123456789012345' },
+                messages: entries,
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('reads a typed opt-out and a tapped one, whatever the casing and punctuation', () => {
+    const optOuts = optOutsOf(
+      messages([
+        { from: '919812345678', type: 'text', text: { body: 'STOP' } },
+        { from: '919812345679', type: 'text', text: { body: ' unsubscribe ' } },
+        { from: '919812345680', type: 'text', text: { body: 'Stop.' } },
+        // Meta sends this INSTEAD of a text message when the recipient
+        // taps a template's own opt-out control, so a receiver reading
+        // only `text.body` would honour a typed STOP and ignore a tapped
+        // one.
+        {
+          from: '919812345681',
+          type: 'button',
+          button: { text: 'Stop promotions', payload: 'STOP' },
+        },
+      ]),
+    );
+    expect(optOuts.map((entry) => entry.from)).toEqual([
+      '919812345678',
+      '919812345679',
+      '919812345680',
+      '919812345681',
+    ]);
+    expect(optOuts[0]?.phoneNumberId).toBe('123456789012345');
+  });
+
+  it('matches the whole message and never a substring of it', () => {
+    // Substring matching on a legal act is how a product opts somebody
+    // out for using a common English verb.
+    const ignored = optOutsOf(
+      messages([
+        { from: '1', type: 'text', text: { body: 'please do not stop these' } },
+        { from: '2', type: 'text', text: { body: 'STOPPED WORK ON SITE' } },
+        { from: '3', type: 'text', text: { body: 'unsubscribed already?' } },
+        { from: '4', type: 'text', text: { body: '' } },
+        { from: '5', type: 'image', image: { id: 'media-1' } },
+        // A body long enough to be a letter is not a keyword, whatever it
+        // happens to contain.
+        { from: '6', type: 'text', text: { body: `STOP${' '.repeat(80)}` } },
+      ]),
+    );
+    expect(ignored).toEqual([]);
+  });
+
+  it('is total over anything at all, like the receipt parser beside it', () => {
+    const nonsense: readonly unknown[] = [
+      null,
+      undefined,
+      42,
+      'a string',
+      [],
+      {},
+      { entry: 'not an array' },
+      { entry: [null] },
+      { entry: [{ changes: [{ value: null }] }] },
+      // No phone number id, so no tenant could be resolved from it.
+      { entry: [{ changes: [{ value: { messages: [{ from: '1' }] } }] }] },
+      // A sender long enough to be an attack rather than a number.
+      messages([{ from: '9'.repeat(64), type: 'text', text: { body: 'STOP' } }]),
+      // Only statuses, which is somebody else's parser.
+      {
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  metadata: { phone_number_id: '1' },
+                  statuses: [{ id: 'x', status: 'read' }],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    for (const [index, input] of nonsense.entries()) {
+      expect(optOutsOf(input), `case ${String(index)}`).toEqual([]);
+    }
   });
 });
 

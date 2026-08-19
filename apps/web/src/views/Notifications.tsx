@@ -271,6 +271,34 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
     [api, organisationId, consentAction, reload],
   );
 
+  /**
+   * The staff act answers with counts rather than a row, so the notice is
+   * composed after the call rather than stated before it. `act` clears
+   * the notice on entry and sets the one it was handed on success — so it
+   * is handed null and the real sentence is set afterwards, and only when
+   * the call actually returned. A failure leaves the summary empty and
+   * the action's own error stands.
+   */
+  const recordStaffConsent = useCallback(
+    async (form: HTMLFormElement) => {
+      const data = new FormData(form);
+      const channel = formValue(data, 'channel') as NotificationChannelName;
+      let summary = '';
+      await consentAction.act(async () => {
+        const result = await api.recordStaffNotificationConsents(organisationId, {
+          channel,
+        });
+        summary =
+          `${String(result.recorded)} recorded, ` +
+          `${String(result.alreadyRecorded)} already on the register, ` +
+          `${String(result.withoutAddress)} with no usable address.`;
+        reload();
+      }, null);
+      if (summary !== '') consentAction.setNotice(summary);
+    },
+    [api, organisationId, consentAction, reload],
+  );
+
   const sendMessage = useCallback(
     async (form: HTMLFormElement) => {
       const data = new FormData(form);
@@ -358,6 +386,9 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
           onRetry={reload}
           onRecord={(form) => {
             void recordConsent(form);
+          }}
+          onRecordStaff={(form) => {
+            void recordStaffConsent(form);
           }}
           truncated={truncated.consents === true}
         />
@@ -801,6 +832,7 @@ function ConsentSection({
   actionError,
   onRetry,
   onRecord,
+  onRecordStaff,
   truncated,
 }: {
   readonly consents: readonly NotificationConsent[] | null;
@@ -812,6 +844,7 @@ function ConsentSection({
   readonly actionError: string | null;
   readonly onRetry: () => void;
   readonly onRecord: (form: HTMLFormElement) => void;
+  readonly onRecordStaff: (form: HTMLFormElement) => void;
 }) {
   return (
     <Card>
@@ -941,6 +974,41 @@ function ConsentSection({
           <Actions>
             <Button type="submit" disabled={pending || contacts.length === 0}>
               Record consent
+            </Button>
+          </Actions>
+        </form>
+      </Disclosure>
+
+      {/* The employee half of the consent split (owner ruling of
+          2026-08-19). Staff consent is the organisation's own policy, so
+          it is one act over the whole staff register rather than a form
+          per person — but it lands as ordinary rows in the table above,
+          which is what makes the policy readable. It never overwrites an
+          existing record, so somebody who replied STOP stays opted out
+          until they are recorded again deliberately, on the form above. */}
+      <Disclosure label="Record consent for staff">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onRecordStaff(event.currentTarget);
+          }}
+        >
+          <Field>
+            <label htmlFor="staff-consent-channel">Channel</label>
+            <select id="staff-consent-channel" name="channel" defaultValue="whatsapp">
+              <option value="whatsapp">WhatsApp</option>
+              <option value="email">Email</option>
+            </select>
+            <Hint>
+              Records an opt-in for every active member of staff whose contact record
+              carries an address this channel can use. A WhatsApp number has to be in
+              international form &mdash; +919812345678 &mdash; and staff whose number is
+              not are reported back rather than skipped silently.
+            </Hint>
+          </Field>
+          <Actions>
+            <Button type="submit" disabled={pending}>
+              Record staff consent
             </Button>
           </Actions>
         </form>

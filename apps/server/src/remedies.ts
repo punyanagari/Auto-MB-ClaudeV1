@@ -613,8 +613,10 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Check the years on the completion date and the date the delay is measured to; the window runs from the contractual completion date forwards and an assessment cannot be dated before the period it covers.',
   LD_DRAFT_EXISTS:
     'Levy, waive or cancel the draft assessment on this Work before making another, so there is one current answer rather than two.',
+  LD_CONTRACT_VALUE_MISSING:
+    "Record the Work's contract value before assessing damages, because the cap is a percentage of it and a cap of nothing would silently make every assessment zero.",
   LD_LEVY_EXCEEDS_ASSESSMENT:
-    'Assess again on the basis the railway used if it took more than the contract permits, rather than recording a levy above the assessment.',
+    'Check the cap on the contract terms if the railway took more than the assessment permits: the ceiling is that percentage of the whole contract value, and a levy above it is not one this contract authorises.',
   LD_ASSESSMENT_STATUS_CONFLICT:
     'Reload the assessment before deciding it; a levied one may still be waived or cancelled, and a waived or cancelled one is final.',
 };
