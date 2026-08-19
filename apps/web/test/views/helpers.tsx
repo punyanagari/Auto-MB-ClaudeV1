@@ -345,6 +345,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listInstallations']>()
       .mockResolvedValue({ installations: [], nextCursor: null }),
     recordWorkInstallation: vi.fn<ApiClient['recordWorkInstallation']>(),
+    recordWorkInstallations: vi.fn<ApiClient['recordWorkInstallations']>(),
     cancelWorkInstallation: vi.fn<ApiClient['cancelWorkInstallation']>(),
     getWorkWarranty: vi.fn<ApiClient['getWorkWarranty']>().mockResolvedValue({
       terms: null,

@@ -231,7 +231,31 @@ over non-cancelled records for the item — computed nowhere else.
 
 - Recording is a site action, not an office one: the location is picked
   from the master or created inline while standing at it, and serial-
-  flagged items attach exactly one delivered, uninstalled serial per unit.
+  flagged items attach exactly one serial per unit.
+- **One site visit writes several records** (owner ruling, 2026-08-19,
+  corrections ledger item 12). A crew installs several items at one
+  station on one day, so the date, the location and the remark are stated
+  once and each item with a quantity becomes its own installation record,
+  written in a single transaction. All or nothing: half a visit recorded
+  is worse than none, because the operator cannot tell which half. An item
+  appears once per visit — two rows naming it are refused rather than
+  summed, since two quantities for one item on one day is a typo far more
+  often than it is two crews.
+- **Only items with an installable balance are offered** (ledger item 10):
+  the delivered balance for a serial-tracked supply item, the sanctioned
+  balance for an item with no supply leg. The whole schedule is never
+  offered — an item with nothing standing on site is a form that cannot
+  succeed.
+- **A serial the Delivery Challan missed is accepted at installation**
+  (ledger item 12, owner's words: "if missing serial in DC is added in IC
+  then accept it and record it"). A challan is typed from a despatch note;
+  a nameplate is read by the person in front of the equipment. Such a
+  serial is recorded with `origin = 'installation'` (migration 0108),
+  still unique within its Work, still one per installed unit, and the
+  serial trace names its origin rather than presenting it as delivered.
+  It belongs to its installation and not to any challan, so cancelling a
+  Delivery Challan releases exactly its own serials as it always did, and
+  cancelling the INSTALLATION is what releases this one.
 - **Installation is measured as it happened, even past the sanction**
   (owner decision, 2026-08-17). Work goes in before the paperwork catches
   up: the railway asks for more at the site meeting, the gang installs it,

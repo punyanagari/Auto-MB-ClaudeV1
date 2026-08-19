@@ -1781,3 +1781,470 @@ describe('the tenant-wide installation register', () => {
     expect(own.json<InstallationRegisterResponse>().installations).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------
+// Corrections ledger items 10 and 12: one site visit, several items, and
+// a serial the Delivery Challan missed.
+//
+// A Work of its own. The fixture Work above is shared mutable state that
+// eight describes have already installed against, cancelled from and
+// counted; a batch that wrote into it would make every earlier suite
+// depend on the order they happen to run in.
+// ---------------------------------------------------------------------
+describe('recording one site visit across several items (ledger 10 and 12)', () => {
+  let workCId: string;
+  let itemPlainId: string; // no serials, awarded 10.000
+  let itemSerialId: string; // requires_serials, awarded 12.000, delivered 8.000
+  let itemDryId: string; // requires_serials, nothing delivered at all
+
+  async function batch(
+    jar: CookieJar,
+    payload: Record<string, unknown>,
+    work = workCId,
+    organisation = organisationId,
+  ) {
+    return authed(jar, {
+      method: 'POST',
+      url: `/api/works/${work}/installations/batch`,
+      organisationId: organisation,
+      payload,
+    });
+  }
+
+  async function listC(): Promise<InstallationListResponse> {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workCId}/installations`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json<InstallationListResponse>();
+  }
+
+  beforeAll(async () => {
+    workCId = randomUUID();
+    const scheduleCId = randomUUID();
+    itemPlainId = randomUUID();
+    itemSerialId = randomUUID();
+    itemDryId = randomUUID();
+    await admin`
+      insert into works (
+        id, organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${workCId}, ${organisationId}, ${`INSTD-${runId.toUpperCase()}`},
+        ${`inst-letter-d-${runId}`}, '2025-06-01', 'Installation fixture work D',
+        900.00, 850.00, 'per_schedule', ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into work_schedules (id, organisation_id, work_id, schedule_code, title, position)
+      values (${scheduleCId}, ${organisationId}, ${workCId}, 'C', 'Schedule C', 1)
+    `;
+    await admin`
+      insert into work_items (
+        id, organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, requires_serials
+      )
+      values
+        (${itemPlainId}, ${organisationId}, ${workCId}, ${scheduleCId}, 'C/1',
+         'Cable trench', 'Metre', 10.000, 40.00, false),
+        (${itemSerialId}, ${organisationId}, ${workCId}, ${scheduleCId}, 'C/2',
+         'Signal relay', 'Nos', 12.000, 700.00, true),
+        (${itemDryId}, ${organisationId}, ${workCId}, ${scheduleCId}, 'C/3',
+         'Axle counter', 'Nos', 4.000, 900.00, true)
+    `;
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workCId}/challans`,
+      organisationId,
+      payload: {
+        challanDate: '2026-08-01',
+        prefix: 'DCD',
+        consignee: { name: 'Sr. DEE (G) CR', address: 'Bhusawal Division' },
+        items: [{ workItemId: itemSerialId, quantity: '8' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const detail = draft.json<ChallanDetailResponse>();
+    const line = detail.items.find((item) => item.workItemId === itemSerialId);
+    if (!line) throw new Error('work D challan line missing');
+    const recorded = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${detail.challan.id}/serials`,
+      organisationId,
+      payload: {
+        challanItemId: line.id,
+        // Delivered headroom on purpose: the refusals this suite proves
+        // are the SERIAL ones, and a delivery floor reached first would
+        // answer every one of them with the same 409 about the challan.
+        serialNumbers: [
+          'SN-D1',
+          'SN-D2',
+          'SN-D3',
+          'SN-D4',
+          'SN-D5',
+          'SN-D6',
+          'SN-D7',
+          'SN-D8',
+        ],
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(201);
+    const issued = await authed(owner, {
+      method: 'POST',
+      url: `/api/challans/${detail.challan.id}/issue`,
+      organisationId,
+    });
+    expect(issued.statusCode, issued.body).toBe(201);
+  }, 60_000);
+
+  it('writes one record per row, sharing the visit date and location', async () => {
+    const response = await batch(site, {
+      installedOn: '2026-08-05',
+      locationId: stationLocationId,
+      remarks: 'Night block',
+      rows: [
+        { workItemId: itemPlainId, quantity: '2.500' },
+        { workItemId: itemSerialId, quantity: '1', serialNumbers: ['SN-D1'] },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const { installations } = response.json<{
+      installations: readonly Installation[];
+    }>();
+    expect(installations).toHaveLength(2);
+    // The answer keeps the caller's row order, not the internal lock order.
+    expect(installations.map((one) => one.workItemId)).toEqual([
+      itemPlainId,
+      itemSerialId,
+    ]);
+    for (const one of installations) {
+      expect(one.installedOn).toBe('2026-08-05');
+      expect(one.locationName).toBe('Nashik Road station');
+      expect(one.remarks).toBe('Night block');
+      expect(one.status).toBe('recorded');
+    }
+    const list = await listC();
+    expect(summaryOf(list, itemPlainId)).toBe('2.500');
+    expect(summaryOf(list, itemSerialId)).toBe('1.000');
+  });
+
+  it('refuses two rows naming the same item, and writes neither', async () => {
+    const before = await listC();
+    const response = await batch(site, {
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+      rows: [
+        { workItemId: itemPlainId, quantity: '1' },
+        { workItemId: itemPlainId, quantity: '2' },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('INSTALLATION_ROWS_DUPLICATED');
+    const after = await listC();
+    expect(after.installations).toHaveLength(before.installations.length);
+  });
+
+  it('rolls the whole visit back when one row is refused', async () => {
+    // Half a site visit recorded is worse than none: the operator would
+    // have no way to tell which half. C/3 has nothing delivered, so its
+    // row fails the R5 delivery floor and the good row above it must not
+    // survive.
+    const before = await listC();
+    const response = await batch(site, {
+      installedOn: '2026-08-06',
+      locationId: stationLocationId,
+      rows: [
+        { workItemId: itemPlainId, quantity: '1' },
+        { workItemId: itemDryId, quantity: '1', serialNumbers: ['SN-E1'] },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe(
+      'INSTALLATION_EXCEEDS_DELIVERY',
+    );
+    const after = await listC();
+    expect(after.installations).toHaveLength(before.installations.length);
+    expect(summaryOf(after, itemPlainId)).toBe(summaryOf(before, itemPlainId));
+    // …and the serial the refused row named was not minted either.
+    const [stray] = await admin<{ id: string }[]>`
+      select id from challan_item_serials
+      where organisation_id = ${organisationId} and serial_number = 'SN-E1'
+    `;
+    expect(stray).toBeUndefined();
+  });
+
+  it('links a pool serial by number and ACCEPTS one the challan missed', async () => {
+    // The owner's rule, verbatim: "if missing serial in DC is added in IC
+    // then accept it and record it."
+    const response = await batch(site, {
+      installedOn: '2026-08-07',
+      locationId: stationLocationId,
+      rows: [
+        { workItemId: itemSerialId, quantity: '2', serialNumbers: ['SN-D2', 'SN-D9'] },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const [installation] = response.json<{
+      installations: readonly Installation[];
+    }>().installations;
+    if (!installation) throw new Error('batch answered no installation');
+    const byNumber = new Map(
+      installation.serials.map((serial) => [serial.serialNumber, serial]),
+    );
+    expect(byNumber.get('SN-D2')?.origin).toBe('delivery');
+    expect(byNumber.get('SN-D2')?.challanNumber).toBeTruthy();
+    // The new one is recorded, flagged, and has no challan to name.
+    expect(byNumber.get('SN-D9')?.origin).toBe('installation');
+    expect(byNumber.get('SN-D9')?.challanNumber).toBeNull();
+
+    const [minted] = await admin<
+      {
+        origin: string;
+        delivery_challan_id: string | null;
+        delivery_challan_item_id: string | null;
+        work_item_id: string | null;
+        installed_on: string | null;
+      }[]
+    >`
+      select origin, delivery_challan_id, delivery_challan_item_id,
+             work_item_id, installed_on::text as installed_on
+      from challan_item_serials
+      where organisation_id = ${organisationId} and work_id = ${workCId}
+        and serial_number = 'SN-D9'
+    `;
+    expect(minted).toBeDefined();
+    expect(minted?.origin).toBe('installation');
+    // No challan lineage at all — which is precisely what keeps Delivery
+    // Challan cancellation, deletion and line rewriting (all of which
+    // filter on these two columns) from ever touching it.
+    expect(minted?.delivery_challan_id).toBeNull();
+    expect(minted?.delivery_challan_item_id).toBeNull();
+    expect(minted?.work_item_id).toBe(itemSerialId);
+    expect(minted?.installed_on).toBe('2026-08-07');
+  });
+
+  it('shows the origin honestly in the tenant-wide serial trace', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/serials/search?q=SN-D9',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const match = response
+      .json<SerialSearchResponse>()
+      .matches.find((candidate) => candidate.serialNumber === 'SN-D9');
+    expect(match).toBeDefined();
+    expect(match?.source).toBe('installation');
+    expect(match?.challanId).toBeNull();
+    expect(match?.challanNumber).toBeNull();
+    // It is still a unit of a Work and of an item, and still installed.
+    expect(match?.workId).toBe(workCId);
+    expect(match?.itemDescription).toBe('Signal relay');
+    expect(match?.installedOn).toBe('2026-08-07');
+    expect(match?.installationLocation).toBe('Nashik Road station');
+  });
+
+  it('records how many numbers were new on the audit trail', async () => {
+    const [event] = await admin<{ details: unknown }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'installation.recorded'
+        and entity_type = 'installations'
+      order by occurred_at desc, id desc
+      limit 1
+    `;
+    const details = event?.details as
+      { serialsAddedAtInstallation?: number } | undefined;
+    expect(details?.serialsAddedAtInstallation).toBe(1);
+  });
+
+  it('refuses to switch serial tracking off once a site-added serial exists', async () => {
+    // R7 protects traceability, and a serial captured at site is exactly
+    // the traceability it protects. Counting only challan-line serials
+    // would let the flag be switched off underneath it.
+    const response = await authed(owner, {
+      method: 'PATCH',
+      url: `/api/work-items/${itemSerialId}/requires-serials`,
+      organisationId,
+      payload: { requiresSerials: false },
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('SERIALS_EXIST_FOR_FLAG');
+  });
+
+  it('refuses a serial the site invents twice over', async () => {
+    const response = await batch(site, {
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+      rows: [
+        { workItemId: itemSerialId, quantity: '2', serialNumbers: ['SN-D9', 'SN-D9'] },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('SERIALS_DUPLICATED');
+  });
+
+  it('refuses a site-added serial already installed elsewhere', async () => {
+    const response = await batch(site, {
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+      rows: [{ workItemId: itemSerialId, quantity: '1', serialNumbers: ['SN-D9'] }],
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('SERIAL_ALREADY_INSTALLED');
+  });
+
+  it('refuses serials on an item that does not track them', async () => {
+    const response = await batch(site, {
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+      rows: [{ workItemId: itemPlainId, quantity: '1', serialNumbers: ['SN-D8'] }],
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('SERIALS_NOT_TRACKED');
+  });
+
+  it('still needs exactly one serial per unit (R6 is unchanged)', async () => {
+    const response = await batch(site, {
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+      rows: [
+        { workItemId: itemSerialId, quantity: '1', serialNumbers: ['SN-D3', 'SN-D7'] },
+      ],
+    });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('SERIAL_COUNT_MISMATCH');
+  });
+
+  it('holds the serial-per-unit ceiling against direct SQL too', async () => {
+    // The API says the stricter thing (exactly one per unit for a flagged
+    // item); the 0108 trigger says the weaker one — never MORE than the
+    // units — against every writer, which is the owner's "count <= qty".
+    const [installation] = await admin<{ id: string }[]>`
+      select id from installations
+      where organisation_id = ${organisationId} and work_id = ${workCId}
+        and work_item_id = ${itemSerialId} and quantity = 1.000
+        and status = 'recorded'
+      limit 1
+    `;
+    if (!installation) throw new Error('one-unit installation missing');
+    const [spare] = await admin<{ id: string }[]>`
+      select id from challan_item_serials
+      where organisation_id = ${organisationId} and work_id = ${workCId}
+        and serial_number = 'SN-D3'
+    `;
+    if (!spare) throw new Error('spare serial missing');
+    await expect(
+      admin`
+        insert into installation_serials (
+          organisation_id, installation_id, work_id, challan_item_serial_id
+        )
+        values (${organisationId}, ${installation.id}, ${workCId}, ${spare.id})
+      `,
+    ).rejects.toThrow(/one serial per installed unit/);
+  });
+
+  it('refuses to delete a site-added serial through the draft-correction route', async () => {
+    const [minted] = await admin<{ id: string }[]>`
+      select id from challan_item_serials
+      where organisation_id = ${organisationId} and work_id = ${workCId}
+        and serial_number = 'SN-D9'
+    `;
+    if (!minted) throw new Error('site-added serial missing');
+    // The route reaches serials through their challan; a serial with none
+    // is not a draft-stage correction and is answered as unknown.
+    const response = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/serials/${minted.id}`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(404);
+    // …and the database refuses it outright while the installation stands.
+    await expect(
+      admin`delete from challan_item_serials where id = ${minted.id}`,
+    ).rejects.toThrow(/cancel the installation record/);
+  });
+
+  it('releases a site-added serial with its own installation, and takes it back', async () => {
+    const list = await listC();
+    const carrying = list.installations.find((one) =>
+      one.serials.some((serial) => serial.serialNumber === 'SN-D9'),
+    );
+    if (!carrying) throw new Error('installation carrying SN-D9 missing');
+    const cancelled = await authed(site, {
+      method: 'POST',
+      url: `/api/installations/${carrying.id}/cancel`,
+      organisationId,
+      payload: { note: 'Wrong block' },
+    });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+
+    // The serial survives its record — the attachment history stays — and
+    // is free again, so the same visit can be re-recorded.
+    const [released] = await admin<{ origin: string; installed_on: string | null }[]>`
+      select origin, installed_on::text as installed_on
+      from challan_item_serials
+      where organisation_id = ${organisationId} and work_id = ${workCId}
+        and serial_number = 'SN-D9'
+    `;
+    expect(released?.origin).toBe('installation');
+    expect(released?.installed_on).toBeNull();
+
+    const again = await batch(site, {
+      installedOn: '2026-08-07',
+      locationId: stationLocationId,
+      rows: [
+        { workItemId: itemSerialId, quantity: '2', serialNumbers: ['SN-D2', 'SN-D9'] },
+      ],
+    });
+    expect(again.statusCode, again.body).toBe(201);
+    // Re-linked, not minted a second time.
+    const [count] = await admin<{ total: string }[]>`
+      select count(*)::text as total from challan_item_serials
+      where organisation_id = ${organisationId} and work_id = ${workCId}
+        and serial_number = 'SN-D9'
+    `;
+    expect(count?.total).toBe('1');
+  });
+
+  it('lets only one of two simultaneous visits claim the same new number', async () => {
+    const payload = {
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+      rows: [{ workItemId: itemSerialId, quantity: '1', serialNumbers: ['SN-D11'] }],
+    };
+    const [first, second] = await Promise.all([
+      batch(site, payload),
+      batch(site, payload),
+    ]);
+    const codes = [first.statusCode, second.statusCode].sort((a, b) => a - b);
+    expect(codes[0], `${first.body} / ${second.body}`).toBe(201);
+    expect(codes[1], `${first.body} / ${second.body}`).toBe(409);
+    // Exactly one row for the number, whichever transaction won.
+    const [count] = await admin<{ total: string }[]>`
+      select count(*)::text as total from challan_item_serials
+      where organisation_id = ${organisationId} and work_id = ${workCId}
+        and serial_number = 'SN-D11'
+    `;
+    expect(count?.total).toBe('1');
+  });
+
+  it('refuses the batch to a reader, and to a member of another organisation', async () => {
+    const readOnly = await batch(viewer, {
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+      rows: [{ workItemId: itemPlainId, quantity: '1' }],
+    });
+    expect(readOnly.statusCode, readOnly.body).toBe(403);
+
+    const crossTenant = await batch(outsider, {
+      installedOn: '2026-08-08',
+      locationId: stationLocationId,
+      rows: [{ workItemId: itemPlainId, quantity: '1' }],
+    });
+    expect(crossTenant.statusCode, crossTenant.body).toBe(403);
+  });
+});

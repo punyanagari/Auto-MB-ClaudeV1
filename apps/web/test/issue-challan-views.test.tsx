@@ -213,6 +213,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .mockResolvedValue({ installations: [], itemSummaries: [] }),
     listInstallations: vi.fn().mockResolvedValue([]),
     recordWorkInstallation: vi.fn(),
+    recordWorkInstallations: vi.fn(),
     cancelWorkInstallation: vi.fn(),
     getWorkWarranty: vi.fn().mockResolvedValue({
       terms: null,

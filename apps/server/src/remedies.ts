@@ -279,6 +279,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // workflow.
   INSTALLATION_EXCEEDS_DELIVERY:
     'Issue the Delivery Challan for the balance first; installation is only ever recorded against material already delivered.',
+  INSTALLATION_ROWS_DUPLICATED:
+    'Put the whole quantity for an item on its single row; one item appears once per site visit, and a second row for it is a typo far more often than it is a second delivery.',
   INSPECTION_DOCUMENT_NOT_FOUND:
     'Open the call on the Inspection screen and upload the paper against its checklist row; a row with nothing attached has no file to open.',
   INSPECTION_CALL_NOT_FOUND:

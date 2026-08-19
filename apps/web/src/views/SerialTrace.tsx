@@ -180,10 +180,22 @@ export function SerialTrace({
                       {/* A unit the factory built and has not despatched
                         matched nothing here before migration 0084's
                         union — which reads exactly like "no such
-                        serial", the worst answer a trace can give. */}
+                        serial", the worst answer a trace can give.
+
+                        Migration 0108 adds the third answer, and it is
+                        the one this column exists for: a number the
+                        Delivery Challan missed and the site recorded is
+                        traceable, but its paperwork does not start where
+                        a delivered unit's does, and a trace that called
+                        it "Delivered" would state the one thing about it
+                        that is untrue. */}
                       {match.source === 'production' ? (
                         <StatusChip status="in-production" tone="warning">
                           Production
+                        </StatusChip>
+                      ) : match.source === 'installation' ? (
+                        <StatusChip status="added-at-installation" tone="warning">
+                          Added at installation
                         </StatusChip>
                       ) : (
                         <StatusChip status="issued">Delivered</StatusChip>
@@ -224,7 +236,9 @@ export function SerialTrace({
                             ? match.releasedOn == null
                               ? 'in the factory'
                               : `released ${match.releasedOn}`
-                            : '—'}
+                            : match.source === 'installation'
+                              ? 'no challan — recorded at site'
+                              : '—'}
                         </span>
                       ) : (
                         <ChallanCell

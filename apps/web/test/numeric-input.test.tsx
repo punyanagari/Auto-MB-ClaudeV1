@@ -53,7 +53,7 @@ describe('the numeric filter', () => {
 describe('the numeric input', () => {
   it('never lets a typed non-numeric character reach an uncontrolled value', () => {
     render(<NumericInput aria-label="Quantity" defaultValue="" />);
-    const field = screen.getByLabelText('Quantity') as HTMLInputElement;
+    const field = screen.getByLabelText<HTMLInputElement>('Quantity');
     fireEvent.change(field, { target: { value: '1a2' } });
     expect(field.value).toBe('12');
   });
