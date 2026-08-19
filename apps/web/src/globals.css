@@ -475,6 +475,37 @@
   }
 }
 
+/* The transient highlight `useReveal` (src/lib/view-state.ts) puts on the
+ * row a mutation just wrote, so the success toast is joined by the record
+ * itself: the operator sees WHICH row changed, not only that something did.
+ *
+ * It fades to nothing on its own — there is no lit and unlit state to keep
+ * in step, and nothing to clean up — and it recolours only the background,
+ * so the row's own text contrast is never the thing that carries it.
+ *
+ * A table row paints behind its cells, which have no background of their
+ * own, so setting it on the `tr` is enough; the second rule is for the
+ * reveal targets that are not rows (a panel, a list item).
+ *
+ * `prefers-reduced-motion: reduce` is honoured by the global block below,
+ * which cuts every animation to 0.01ms — the same arrangement the loading
+ * skeletons rely on (see `ViewSkeleton` in views/OperationsWorkspace.tsx).
+ * The scroll half is gated separately, in JavaScript, because an explicit
+ * `behavior: 'smooth'` on `scrollIntoView` overrides the CSS property that
+ * block sets. */
+@keyframes reveal-flash {
+  from {
+    background-color: var(--accent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+[data-revealed] {
+  animation: reveal-flash 1.6s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -4,7 +4,7 @@ import type { Contact, Employee, EmployeeSummary } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
 import { errorMessage, describeLoadFailure } from '../lib/load-failure.js';
-import { useReload } from '../lib/view-state.js';
+import { useReload, useReveal } from '../lib/view-state.js';
 import { navigateOnClick, PAYROLL_HASH } from '../lib/workspace-routes.js';
 import { Button, buttonVariants } from '../ui/button.js';
 import { Card } from '../ui/card.js';
@@ -65,6 +65,7 @@ export function Employees({
   onOpenPayroll,
 }: EmployeesProps) {
   const [employees, setEmployees] = useState<readonly EmployeeSummary[] | null>(null);
+  const { reveal, revealProps } = useReveal();
   const [currentCount, setCurrentCount] = useState(0);
   /* Summed by PostgreSQL, not by this page. Adding a column of rupees
      up in JavaScript is exactly the float arithmetic AGENTS.md rule 5
@@ -284,7 +285,7 @@ export function Employees({
             </thead>
             <tbody>
               {shown.map((employee) => (
-                <tr key={employee.id}>
+                <tr key={employee.id} {...revealProps(employee.id)}>
                   <th scope="row" className={wrapCell}>
                     <span className="block font-medium">{employee.name}</span>
                     <span className="font-mono text-xs text-muted-foreground">
@@ -351,8 +352,9 @@ export function Employees({
           onClose={() => {
             setComposerOpen(false);
           }}
-          onCreated={() => {
+          onCreated={(employee) => {
             setComposerOpen(false);
+            reveal(employee.id);
             reload();
           }}
         />

@@ -8,7 +8,7 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
-import { formatInr, formatRate } from '../format.js';
+import { formatInr, formatRate, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
@@ -262,7 +262,13 @@ export function WorkPurchaseOrders({
               <FieldRow>
                 <Field>
                   <label htmlFor="po-date">PO date</label>
-                  <input id="po-date" name="po-date" type="date" required />
+                  <input
+                    id="po-date"
+                    name="po-date"
+                    type="date"
+                    required
+                    defaultValue={todayIso()}
+                  />
                 </Field>
                 <Field>
                   <label htmlFor="po-expected">Expected by (optional)</label>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CreditNote, TaxInvoice } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../../api.js';
-import { formatDate, formatInr, formatTimestamp } from '../../format.js';
+import { formatDate, formatInr, formatTimestamp, todayIso } from '../../format.js';
 import { openPdf } from '../../lib/openPdf.js';
 import { Button } from '../../ui/button.js';
 import { StatusChip } from '../../ui/chip.js';
@@ -146,7 +146,13 @@ export function CreditNotesPanel({
               <FieldRow>
                 <Field>
                   <label htmlFor="cn-date">Credit note date</label>
-                  <input id="cn-date" name="cn-date" type="date" required />
+                  <input
+                    id="cn-date"
+                    name="cn-date"
+                    type="date"
+                    required
+                    defaultValue={todayIso()}
+                  />
                   <Hint>Cannot precede the invoice date or be in the future.</Hint>
                 </Field>
                 <Field>

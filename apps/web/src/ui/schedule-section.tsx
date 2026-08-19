@@ -116,6 +116,7 @@ export function ScheduleSection({
   total,
   expanded,
   onToggle,
+  headingLevel,
   children,
 }: {
   readonly code: string;
@@ -125,20 +126,33 @@ export function ScheduleSection({
   readonly title?: string;
   readonly itemCount: number;
   /** Already formatted — the caller owns the exact-decimal arithmetic.
-   * Null while a row is half-typed and no honest total exists. */
-  readonly total: string | null;
+   * Null while a row is half-typed and no honest total exists, which
+   * prints an em-dash: the schedule HAS a value and it cannot be stated
+   * yet. Omitted entirely on a section that is not about money at all —
+   * a category assignment, a certified-quantity form — where a permanent
+   * em-dash would be a column of nothing pretending to be a figure. */
+  readonly total?: string | null;
   readonly expanded: boolean;
   readonly onToggle: () => void;
+  /** Which heading this summary row is, in the document that holds it.
+   * Level 2 is the default because the pattern was built for a screen
+   * whose schedules ARE its top-level sections. Where the schedules sit
+   * inside a section that already has a heading — the certified-quantity
+   * form under "PAC certificates" — they are that heading's children, and
+   * saying so keeps the outline honest for anyone reading the page by its
+   * headings. Style is unchanged; only the element differs. */
+  readonly headingLevel?: 2 | 3;
   readonly children: React.ReactNode;
 }) {
   const panelId = useId();
   const headingId = useId();
+  const Heading = headingLevel === 3 ? 'h3' : 'h2';
   return (
     <section aria-labelledby={headingId} className="my-4">
       {/* Sticky on the page's own scrollport, offset by the shell header
        * that shares it, and opaque in both themes so the rows scrolling
        * under it cannot be read through it. */}
-      <h2
+      <Heading
         id={headingId}
         className="sticky top-[var(--header-h)] z-2 my-0 rounded-lg border border-border bg-table-header text-base"
       >
@@ -163,11 +177,13 @@ export function ScheduleSection({
           <span className="shrink-0 text-xs text-muted-foreground tnum">
             {itemCount} item{itemCount === 1 ? '' : 's'}
           </span>
-          <span className="shrink-0 font-mono text-[13px] font-semibold tnum">
-            {total ?? '—'}
-          </span>
+          {total !== undefined && (
+            <span className="shrink-0 font-mono text-[13px] font-semibold tnum">
+              {total ?? '—'}
+            </span>
+          )}
         </button>
-      </h2>
+      </Heading>
       {/* Unmounted rather than hidden: a closed schedule's rows must not
        * be reachable by Tab, and on the review screen they hold the
        * editable cells the confirm request is built from — which are read

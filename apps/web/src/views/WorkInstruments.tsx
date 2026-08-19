@@ -2,11 +2,11 @@ import type {
   Instrument,
   InstrumentStatus,
   WorkDetailResponse,
-  WorkItem,
 } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { useState } from 'react';
 import { formValue, type ApiClient } from '../api.js';
+import { useReveal } from '../lib/view-state.js';
 import { formatInr } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
@@ -23,7 +23,7 @@ interface WorkInstrumentsProps {
   readonly organisationId: string;
   readonly workId: string;
   readonly work: WorkDetailResponse['work'];
-  readonly workItems: readonly WorkItem[];
+  readonly schedules: WorkDetailResponse['schedules'];
   readonly instruments: readonly Instrument[];
   readonly setInstruments: Dispatch<SetStateAction<readonly Instrument[]>>;
   readonly canModify: boolean;
@@ -46,7 +46,7 @@ export function WorkInstruments({
   organisationId,
   workId,
   work,
-  workItems,
+  schedules,
   instruments,
   setInstruments,
   canModify,
@@ -55,6 +55,7 @@ export function WorkInstruments({
   pending,
   act,
 }: WorkInstrumentsProps) {
+  const { reveal, revealProps } = useReveal();
   return (
     <>
       <h2>Contract instruments</h2>
@@ -117,7 +118,7 @@ export function WorkInstruments({
           </thead>
           <tbody>
             {instruments.map((instrument) => (
-              <tr key={instrument.id}>
+              <tr key={instrument.id} {...revealProps(instrument.id)}>
                 <td>{INSTRUMENT_LABELS[instrument.kind]}</td>
                 <th scope="row">{instrument.reference}</th>
                 <td className={numericCell}>
@@ -146,6 +147,7 @@ export function WorkInstruments({
                                 candidate.id === updated.id ? updated : candidate,
                               ),
                             );
+                            reveal(updated.id);
                           }, `${instrument.reference} marked ${status}.`)
                         }
                       />
@@ -186,6 +188,7 @@ export function WorkInstruments({
                   ...(notes.length > 0 ? { notes } : {}),
                 });
                 setInstruments((current) => [...current, created]);
+                reveal(created.id);
                 form.reset();
               }, `${reference} recorded.`);
             }}
@@ -245,7 +248,7 @@ export function WorkInstruments({
         organisationId={organisationId}
         workId={workId}
         canModify={canCreateDocuments}
-        workItems={workItems}
+        schedules={schedules}
       />
       {/* Retention, security deposit and liquidated damages (0098). It
           sits here because this is where the mock puts it: its own

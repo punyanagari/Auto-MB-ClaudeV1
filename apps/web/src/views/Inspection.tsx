@@ -7,7 +7,7 @@ import {
   type InspectionCallDocument,
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
-import { formatDate } from '../format.js';
+import { formatDate, todayIso } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
 import { useReload } from '../lib/view-state.js';
@@ -329,7 +329,7 @@ function CallCard({
   readonly act: (work: () => Promise<InspectionCall>, done: string) => Promise<void>;
 }) {
   const [agencyCallNumber, setAgencyCallNumber] = useState('');
-  const [receivedOn, setReceivedOn] = useState('');
+  const [receivedOn, setReceivedOn] = useState(todayIso);
   const [certificateNumber, setCertificateNumber] = useState('');
   const [certificateDate, setCertificateDate] = useState('');
   const [validUntil, setValidUntil] = useState('');
