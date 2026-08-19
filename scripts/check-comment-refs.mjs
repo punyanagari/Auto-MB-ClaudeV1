@@ -183,6 +183,10 @@ const FROZEN_STALE = new Map([
     'packages/db/migrations/0052_tax_money_backstops.sql apps/server/src/routes/tax-invoices.ts',
     'that route file was split into the tax-invoices/ directory after 0052 was applied; the rules it names now live in apps/server/src/routes/tax-invoices/submit.ts',
   ],
+  [
+    'packages/db/migrations/0089_employees.sql apps/server/src/payroll-rates.ts',
+    'that module held the payroll seed lists a second time and was deleted by migration 0103, which made app_private.seed_default_statutory_rows the single source; organisation creation and the v1 importer call the function instead',
+  ],
 ]);
 
 function listSourceFiles() {

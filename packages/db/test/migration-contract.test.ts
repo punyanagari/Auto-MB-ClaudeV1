@@ -2900,3 +2900,93 @@ describe('the audit register and its retention policy (0095)', () => {
     expect(sql).not.toContain('_counters');
   });
 });
+
+describe('the statutory seed function (0103)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0103_statutory_seed_function.sql'),
+      'utf8',
+    );
+  });
+
+  it('creates no table and no trigger', () => {
+    // Absent from MIGRATION_TRIGGERS rather than present with a zero, the
+    // treatment 0095 gets and for the same reason: the census refuses a
+    // key naming a migration that creates none. This migration adds one
+    // function and touches nothing else.
+    expect(sql).not.toContain('CREATE TABLE');
+    expect(sql).not.toContain('CREATE TRIGGER');
+    expect(MIGRATION_TRIGGERS['0103_statutory_seed_function.sql']).toBeUndefined();
+  });
+
+  it('is invoker-rights with a pinned search_path', () => {
+    // THE SECURITY DECISION OF THIS MIGRATION, asserted rather than
+    // trusted to the header comment that argues it. The function takes an
+    // organisation id, so SECURITY DEFINER owned by the BYPASSRLS role
+    // would hand `auto_mb_app` a primitive that writes statutory money
+    // rows into ANY organisation, named by argument, outside RLS. Invoker
+    // rights mean the four forced-RLS tables admit the writes only for the
+    // bound organisation — the function adds no authority at all.
+    //
+    // A later edit that "fixes" a permission error by adding SECURITY
+    // DEFINER fails here, which is the point.
+    //
+    // Read with the `--` comments stripped, because the migration's header
+    // argues the decision in prose and names the thing it refuses; the
+    // assertion is about the statements, not about what they are allowed
+    // to discuss.
+    const statements = sql.replaceAll(/^\s*--.*$/gm, '');
+    expect(statements).not.toContain('SECURITY DEFINER');
+    expect(statements).toContain('SECURITY INVOKER');
+    expect(statements).not.toContain('OWNER TO auto_mb_definer');
+    // Pinned regardless of definer rights: a function resolving its own
+    // identifiers through the caller's path is a rule a shadowing object
+    // in a writable schema can rewrite (0067, 0079, 0087, 0091, 0096).
+    expect(sql).toContain('SET search_path = pg_catalog, public');
+    // Named grant, not PUBLIC.
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION app_private.seed_default_statutory_rows(uuid)',
+    );
+    expect(sql).toContain(
+      'GRANT EXECUTE ON FUNCTION app_private.seed_default_statutory_rows(uuid)',
+    );
+  });
+
+  it('inserts idempotently into all four statutory registers', () => {
+    // The contract organisation creation depends on: a re-run converges
+    // and an owner's later corrections are never overwritten. One
+    // ON CONFLICT per INSERT, and five INSERTs — the two income-tax
+    // regimes are seeded separately because the new regime's single
+    // ladder is cross-joined onto three age categories and the old
+    // regime's three genuinely differ.
+    for (const table of [
+      'gst_rates',
+      'payroll_statutory_rates',
+      'professional_tax_slabs',
+      'income_tax_slabs',
+    ]) {
+      expect(sql, table).toContain(`INSERT INTO ${table} (`);
+    }
+    expect(sql.match(/INSERT INTO /g)).toHaveLength(5);
+    expect(sql.match(/ON CONFLICT \(/g)).toHaveLength(5);
+    expect(sql.match(/DO NOTHING;/g)).toHaveLength(5);
+    // Both counts are returned, because organisation creation writes one
+    // audit event per register and must be able to record a real change
+    // and stay silent on a no-op.
+    expect(sql).toContain(
+      'RETURNS TABLE (gst_rate_rows integer, payroll_rows integer)',
+    );
+    expect(sql.match(/GET DIAGNOSTICS /g)).toHaveLength(5);
+  });
+
+  it('seeds only the organisation it is given', () => {
+    // The seeds are per organisation, never global — 0048 § 2 and 0089 § 7
+    // both cross-joined `organisations` because they were back-filling
+    // every tenant that already existed, and a function that kept doing
+    // that would re-seed the whole cluster on every organisation created.
+    expect(sql).not.toMatch(/FROM organisations\b/);
+    expect(sql.match(/p_organisation_id/g)?.length).toBeGreaterThanOrEqual(6);
+  });
+});

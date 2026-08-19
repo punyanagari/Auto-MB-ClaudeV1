@@ -7,8 +7,6 @@ import { randomUUID } from 'node:crypto';
 class InspectionGateSkip extends Error {}
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { CHALLAN_TEMPLATE_VERSION, type ChallanSnapshot } from '../challan-html.js';
-import { seedDefaultGstRates } from '../gst-rates.js';
-import { seedDefaultPayrollSchedules } from '../payroll-rates.js';
 import { canonicalRateText } from '../rate-text.js';
 import { fingerprintOf } from './canonical.js';
 import { quantize } from './decimal.js';
@@ -470,14 +468,16 @@ async function importOrganisation(
               'organisations', ${organisationId},
               ${tx.json({ slug: sources.slug, sourceSystem: SOURCE_SYSTEM })})
     `;
-    // The notified GST rate history every organisation carries (0048):
-    // migration seeding only reached organisations that existed when it
-    // ran, and an imported organisation must be able to raise invoices
-    // the rate guard accepts. Idempotent, like the rest of the importer.
-    await seedDefaultGstRates(tx, organisationId);
-    // The payroll schedules (0089), for the same reason: an imported
-    // organisation must be able to run a payroll the arithmetic accepts.
-    await seedDefaultPayrollSchedules(tx, organisationId);
+    // The notified GST rate history and the payroll schedules every
+    // organisation carries (0048, 0089): migration seeding only reached
+    // organisations that existed when it ran, and an imported
+    // organisation must be able to raise invoices the rate guard accepts
+    // and run a payroll the arithmetic accepts. Idempotent, like the rest
+    // of the importer. The counts are discarded here — the import report
+    // records entities the operator recognises, and a seeded rate master
+    // is not one of them. Invoker-rights (0103), which this caller
+    // satisfies by running as the administrator role checked above.
+    await tx`select * from app_private.seed_default_statutory_rows(${organisationId})`;
   }
 
   // 2. Open the batch.

@@ -431,6 +431,17 @@ export async function applyGrants(admin: Sql): Promise<void> {
   for (const table of Object.keys(UNGRANTED_BY_DESIGN)) {
     await admin.unsafe(`REVOKE ALL ON ${table} FROM auto_mb_app`);
   }
+  // The statutory seeder (0103). Deliberately NOT in FUNCTION_GRANTS: that
+  // list also forces `auto_mb_definer` ownership, and this function is
+  // INVOKER-rights on purpose — it takes an organisation id, so definer
+  // rights would hand the application role a cross-tenant write into four
+  // statutory money registers. Only the EXECUTE grant needs repairing
+  // after a fresh-cluster restore drops the ACL; without it organisation
+  // creation fails with a bare permission-denied.
+  await admin.unsafe(
+    `GRANT EXECUTE ON FUNCTION app_private.seed_default_statutory_rows(uuid)
+     TO auto_mb_app`,
+  );
   // Definer posture (mirrors migration 0004): schema usage, the tables
   // the definer functions touch, and — critically after a fresh-cluster
   // restore — ownership of the SECURITY DEFINER functions themselves.
