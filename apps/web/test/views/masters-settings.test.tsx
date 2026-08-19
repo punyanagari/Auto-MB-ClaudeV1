@@ -756,6 +756,21 @@ describe('PaymentMatrix', () => {
     requiresSerials: false,
     paymentCategory: null,
   };
+  /** The schedule the matrix screen groups its item table by. Its items
+   * ARE the flat work-item list — the component derives one from the
+   * other, so a fixture only ever states it once. */
+  type MatrixSchedules = React.ComponentProps<typeof PaymentMatrix>['schedules'];
+  const matrixSchedules = (
+    items: MatrixSchedules[number]['items'],
+  ): MatrixSchedules => [
+    {
+      id: MATRIX_ITEM.scheduleId,
+      scheduleCode: 'A',
+      title: 'Supply of switchgear',
+      position: 1,
+      items,
+    },
+  ];
   const SUPPLY_ROW = {
     id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     workId: WORK_ID,
@@ -783,7 +798,7 @@ describe('PaymentMatrix', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[MATRIX_ITEM]}
+        schedules={matrixSchedules([MATRIX_ITEM])}
         canModify
         onItemCategoryChanged={vi.fn()}
       />,
@@ -826,7 +841,7 @@ describe('PaymentMatrix', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[]}
+        schedules={matrixSchedules([])}
         canModify
         onItemCategoryChanged={vi.fn()}
       />,
@@ -855,7 +870,7 @@ describe('PaymentMatrix', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[]}
+        schedules={matrixSchedules([])}
         canModify
         onItemCategoryChanged={vi.fn()}
       />,
@@ -883,7 +898,7 @@ describe('PaymentMatrix', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[MATRIX_ITEM]}
+        schedules={matrixSchedules([MATRIX_ITEM])}
         canModify
         onItemCategoryChanged={onItemCategoryChanged}
       />,
@@ -897,6 +912,33 @@ describe('PaymentMatrix', () => {
     expect(onItemCategoryChanged).toHaveBeenCalledWith(ITEM_A, 'SUPPLY');
   });
 
+  it('sections the item table by schedule, with one control for all of them', async () => {
+    /* The awarded-items editor directly above this table is already an
+       accordion; flat, this was a second run of up to 129 rows arriving
+       right after the reader had closed the first. */
+    const api = stubApi({ getPaymentMatrix: vi.fn().mockResolvedValue([SUPPLY_ROW]) });
+    render(
+      <PaymentMatrix
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        schedules={matrixSchedules([MATRIX_ITEM])}
+        canModify
+        onItemCategoryChanged={vi.fn()}
+      />,
+    );
+
+    const section = await screen.findByRole('button', { name: /Schedule A/ });
+    expect(section.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByLabelText('Payment category for A/1')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
+    expect(screen.queryByLabelText('Payment category for A/1')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+    expect(screen.getByLabelText('Payment category for A/1')).toBeTruthy();
+  });
+
   it('renders read-only percentages and categories for viewers', async () => {
     const api = stubApi({
       getPaymentMatrix: vi.fn().mockResolvedValue([SUPPLY_ROW]),
@@ -906,7 +948,9 @@ describe('PaymentMatrix', () => {
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[{ ...MATRIX_ITEM, paymentCategory: 'SUPPLY' as const }]}
+        schedules={matrixSchedules([
+          { ...MATRIX_ITEM, paymentCategory: 'SUPPLY' as const },
+        ])}
         canModify={false}
         onItemCategoryChanged={vi.fn()}
       />,

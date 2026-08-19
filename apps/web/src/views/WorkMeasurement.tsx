@@ -1,7 +1,7 @@
 import type { BillListResponse, Challan, MbEntry, WorkItem } from '@auto-mb/contracts';
 import type { Dispatch, SetStateAction } from 'react';
 import { formValue, type ApiClient } from '../api.js';
-import { formatDate } from '../format.js';
+import { formatDate, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { Field, Actions, FormError } from '../ui/form.js';
@@ -180,7 +180,13 @@ export function WorkMeasurement({
                 </Field>
                 <Field>
                   <label htmlFor="mb-date">Measured on</label>
-                  <input id="mb-date" name="mb-date" type="date" required />
+                  <input
+                    id="mb-date"
+                    name="mb-date"
+                    type="date"
+                    required
+                    defaultValue={todayIso()}
+                  />
                 </Field>
                 <Field>
                   <label htmlFor="mb-challan">Source challan (optional)</label>

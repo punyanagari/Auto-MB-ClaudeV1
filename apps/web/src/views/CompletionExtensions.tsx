@@ -5,10 +5,10 @@ import type {
   WorkCompletionResponse,
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, formValue, type ApiClient } from '../api.js';
-import { formatDate } from '../format.js';
+import { formatDate, todayIso } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
-import { useReload } from '../lib/view-state.js';
+import { useReload, useReveal } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { Stat } from '../ui/stat.js';
@@ -47,6 +47,7 @@ export function CompletionExtensions({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const { reveal, revealProps } = useReveal();
   const [loadVersion, retry] = useReload();
 
   useEffect(() => {
@@ -201,7 +202,7 @@ export function CompletionExtensions({
           </thead>
           <tbody>
             {extensions.map((extension) => (
-              <tr key={extension.id}>
+              <tr key={extension.id} {...revealProps(extension.id)}>
                 <th scope="row">{extension.requestNumber ?? 'Draft'}</th>
                 <td>
                   {extension.source === 'manual'
@@ -244,6 +245,7 @@ export function CompletionExtensions({
               onClick={() =>
                 void act(async () => {
                   await api.finaliseExtensionRequest(organisationId, draft.id);
+                  reveal(draft.id);
                   await reload();
                 }, 'Extension request finalised and numbered.')
               }
@@ -280,12 +282,17 @@ export function CompletionExtensions({
               const addressee = formValue(data, 'extension-addressee');
               const letterDate = formValue(data, 'extension-letter-date');
               void act(async () => {
-                await api.createExtensionRequest(organisationId, workId, {
-                  proposedCompletionDate,
-                  reason,
-                  addressee,
-                  ...(letterDate.length > 0 ? { letterDate } : {}),
-                });
+                const created = await api.createExtensionRequest(
+                  organisationId,
+                  workId,
+                  {
+                    proposedCompletionDate,
+                    reason,
+                    addressee,
+                    ...(letterDate.length > 0 ? { letterDate } : {}),
+                  },
+                );
+                reveal(created.extensionRequest.id);
                 await reload();
                 form.reset();
               }, 'Draft extension request created.');
@@ -316,6 +323,7 @@ export function CompletionExtensions({
                 name="extension-letter-date"
                 type="date"
                 required
+                defaultValue={todayIso()}
               />
             </Field>
             <Field>
@@ -357,6 +365,7 @@ export function CompletionExtensions({
                     addressee: formValue(data, 'backfill-addressee'),
                   },
                 );
+                reveal(result.extensionRequest.id);
                 await reload();
                 form.reset();
                 if (result.warnings.length > 0) {

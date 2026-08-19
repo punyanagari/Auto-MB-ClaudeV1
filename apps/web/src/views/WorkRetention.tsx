@@ -5,9 +5,9 @@ import type {
   WorkRetentionResponse,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
-import { useAction, useReload } from '../lib/view-state.js';
+import { useAction, useReload, useReveal } from '../lib/view-state.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
-import { formatDate, formatInr } from '../format.js';
+import { formatDate, formatInr, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { ConfirmDialog } from '../ui/confirm.js';
@@ -161,6 +161,8 @@ export function WorkRetention({
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
+
+  const { reveal, revealProps } = useReveal();
 
   /**
    * One mutation, then a re-read of the whole position.
@@ -536,7 +538,7 @@ export function WorkRetention({
           </thead>
           <tbody>
             {releases.map((release) => (
-              <tr key={release.id}>
+              <tr key={release.id} {...revealProps(release.id)}>
                 <th scope="row" className="tabular-nums">
                   {formatDate(release.releasedOn)}
                   {release.voidedAt !== null && (
@@ -600,7 +602,12 @@ export function WorkRetention({
                 ...maybe('description', fieldOrUndefined(form, 'description')),
               };
               void run(async () => {
-                await api.recordRetentionRelease(organisationId, workId, body);
+                const recorded = await api.recordRetentionRelease(
+                  organisationId,
+                  workId,
+                  body,
+                );
+                reveal(recorded.id);
                 form.reset();
                 setBasis('pac');
               }, 'Release recorded; the retention balance has moved.');
@@ -614,6 +621,7 @@ export function WorkRetention({
                   name="releasedOn"
                   type="date"
                   required
+                  defaultValue={todayIso()}
                   disabled={pending}
                 />
               </Field>
@@ -749,7 +757,7 @@ export function WorkRetention({
           </thead>
           <tbody>
             {assessments.map((assessment) => (
-              <tr key={assessment.id}>
+              <tr key={assessment.id} {...revealProps(assessment.id)}>
                 <th scope="row" className="tabular-nums">
                   {formatDate(assessment.assessedOn)}
                   {assessment.outcomeReason !== null && (
@@ -860,7 +868,8 @@ export function WorkRetention({
                 ...maybe('basisLabel', fieldOrUndefined(form, 'basisLabel')),
               };
               void run(async () => {
-                await api.assessLd(organisationId, workId, body);
+                const assessed = await api.assessLd(organisationId, workId, body);
+                reveal(assessed.id);
                 form.reset();
               }, 'Assessment made; the arithmetic is on the row.');
             }}
@@ -890,6 +899,7 @@ export function WorkRetention({
                   id="assessed-on"
                   name="assessedOn"
                   type="date"
+                  defaultValue={todayIso()}
                   required
                   disabled={pending}
                 />

@@ -3,7 +3,7 @@ import type {
   ContractSourceContext,
   PaymentMatrixCategory,
   PaymentMatrixRow,
-  WorkItem,
+  WorkDetailResponse,
   WorkItemPaymentCategory,
 } from '@auto-mb/contracts';
 import { PAYMENT_MATRIX_CATEGORIES } from '@auto-mb/contracts';
@@ -25,6 +25,11 @@ import {
 } from '../lib/payment-matrix.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
+import {
+  ScheduleAccordionControls,
+  ScheduleSection,
+  useScheduleAccordion,
+} from '../ui/schedule-section.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
@@ -98,7 +103,11 @@ interface PaymentMatrixProps {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly workId: string;
-  readonly workItems: readonly WorkItem[];
+  /** The awarded schedules, as the Work detail holds them. The flat item
+   * list this screen also needs is derived from them rather than passed
+   * beside them: two props carrying one fact are two props that can
+   * disagree. */
+  readonly schedules: WorkDetailResponse['schedules'];
   readonly canModify: boolean;
   /** Keeps the parent's Work detail state in step after a category
    * edit, so the items table and the matrix agree without a refetch. */
@@ -112,10 +121,15 @@ export function PaymentMatrix({
   api,
   organisationId,
   workId,
-  workItems,
+  schedules,
   canModify,
   onItemCategoryChanged,
 }: PaymentMatrixProps) {
+  const workItems = useMemo(
+    () => schedules.flatMap((schedule) => schedule.items),
+    [schedules],
+  );
+  const accordion = useScheduleAccordion(schedules.map((schedule) => schedule.id));
   const [rows, setRows] = useState<readonly PaymentMatrixRow[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [tenderContext, setTenderContext] = useState<ContractSourceContext | null>(
@@ -450,73 +464,103 @@ export function PaymentMatrix({
       {workItems.length === 0 ? (
         <p className="text-muted-foreground">This Work has no items.</p>
       ) : (
-        <DataTable>
-          <caption className="sr-only">Payment category per Work item</caption>
-          <thead>
-            <tr>
-              <th scope="col">Item number</th>
-              <th scope="col">Description</th>
-              <th scope="col">Payment category</th>
-            </tr>
-          </thead>
-          <tbody>
-            {workItems.map((item) => (
-              <tr key={item.id}>
-                <th scope="row">{item.itemNumber}</th>
-                {/* What an approved amendment left, or the awarded text
-                    when nothing amended it — the same reading
-                    Installations and PAC certificates take, and the text
-                    the setup dialog proposes against. Showing the stale
-                    awarded wording here would have the operator
-                    categorising an item by a description no longer in
-                    force. */}
-                <td className={wrapCell}>
-                  {item.effectiveDescription ?? item.description}
-                </td>
-                <td>
-                  {canModify ? (
-                    <select
-                      aria-label={`Payment category for ${item.itemNumber}`}
-                      value={item.paymentCategory ?? ''}
-                      disabled={pending}
-                      onChange={(event) => {
-                        const next =
-                          event.target.value === ''
-                            ? null
-                            : (event.target.value as WorkItemPaymentCategory);
-                        void act(async () => {
-                          const updated = await api.setWorkItemPaymentCategory(
-                            organisationId,
-                            item.id,
-                            next,
-                          );
-                          onItemCategoryChanged(item.id, updated.paymentCategory);
-                        }, `Payment category updated for ${item.itemNumber}.`);
-                      }}
-                    >
-                      {ITEM_CATEGORY_OPTIONS.map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span
-                      className={
-                        item.paymentCategory === null ? 'text-muted-foreground' : ''
-                      }
-                    >
-                      {item.paymentCategory === null ||
-                      item.paymentCategory === undefined
-                        ? 'Uncategorised'
-                        : CATEGORY_LABELS[item.paymentCategory]}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </DataTable>
+        <>
+          {/* Sectioned by schedule, like the awarded-items editor directly
+              above it. Flat, this is the second 129-row table on the same
+              screen, and it arrives after the reader has already closed
+              the first one — so the page answered "collapse this" with
+              another page of it. No total: category is configuration, and
+              a schedule's money is already stated by the editor above. */}
+          <ScheduleAccordionControls
+            accordion={accordion}
+            scheduleCount={schedules.length}
+            itemCount={workItems.length}
+          />
+          {schedules.map((schedule) => (
+            <ScheduleSection
+              key={schedule.id}
+              code={schedule.scheduleCode}
+              title={schedule.title}
+              itemCount={schedule.items.length}
+              expanded={accordion.isExpanded(schedule.id)}
+              onToggle={() => {
+                accordion.toggle(schedule.id);
+              }}
+            >
+              <DataTable>
+                <caption className="sr-only">
+                  Payment category per Work item in schedule {schedule.scheduleCode}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Item number</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Payment category</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedule.items.map((item) => (
+                    <tr key={item.id}>
+                      <th scope="row">{item.itemNumber}</th>
+                      {/* What an approved amendment left, or the awarded
+                          text when nothing amended it — the same reading
+                          Installations and PAC certificates take, and the
+                          text the setup dialog proposes against. Showing
+                          the stale awarded wording here would have the
+                          operator categorising an item by a description no
+                          longer in force. */}
+                      <td className={wrapCell}>
+                        {item.effectiveDescription ?? item.description}
+                      </td>
+                      <td>
+                        {canModify ? (
+                          <select
+                            aria-label={`Payment category for ${item.itemNumber}`}
+                            value={item.paymentCategory ?? ''}
+                            disabled={pending}
+                            onChange={(event) => {
+                              const next =
+                                event.target.value === ''
+                                  ? null
+                                  : (event.target.value as WorkItemPaymentCategory);
+                              void act(async () => {
+                                const updated = await api.setWorkItemPaymentCategory(
+                                  organisationId,
+                                  item.id,
+                                  next,
+                                );
+                                onItemCategoryChanged(item.id, updated.paymentCategory);
+                              }, `Payment category updated for ${item.itemNumber}.`);
+                            }}
+                          >
+                            {ITEM_CATEGORY_OPTIONS.map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span
+                            className={
+                              item.paymentCategory === null
+                                ? 'text-muted-foreground'
+                                : ''
+                            }
+                          >
+                            {item.paymentCategory === null ||
+                            item.paymentCategory === undefined
+                              ? 'Uncategorised'
+                              : CATEGORY_LABELS[item.paymentCategory]}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            </ScheduleSection>
+          ))}
+        </>
       )}
       {actionError !== null && <FormError>{actionError}</FormError>}
       {notice !== null && (

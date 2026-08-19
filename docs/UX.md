@@ -2070,6 +2070,93 @@ that throw it. It renders through the mock's `RemedyError`: a destructive-tinted
 `role="alert"` panel, the fact on the first line, the remedy beneath it as a link
 or button carrying a forward arrow.
 
+### Reveal the result — APPROVED, owner ruling of 2026-08-19
+
+A create form sits above the register it adds to. On any list longer than a
+screen the new row therefore lands below the fold, and the operator's report was
+exactly that: the toast said the save worked and the page looked identical, so
+there was no way to tell whether it had.
+
+So a successful create or update does two things, not one. The toast stays and
+says WHAT happened; the record itself is scrolled into view and flashed once, and
+says WHERE. `useReveal` (`apps/web/src/lib/view-state.ts`) is the one
+implementation — `reveal(id)` at the moment the mutation resolves, `revealProps(id)`
+spread on the element that IS that record. It is safe to call before the reload
+that renders the row: the target is reached through a ref, so a row that arrives
+late is still reached and a row that never arrives costs nothing.
+
+The highlight is `@keyframes reveal-flash` in `globals.css`, a background that
+fades to nothing in 1.6s, and it is disabled by the global
+`prefers-reduced-motion: reduce` block like every other animation in the product.
+The scroll reads that query itself, because an explicit `behavior: 'smooth'`
+argument outranks the CSS property that block sets.
+
+Where the result does NOT live on the page that made it — a created purchase
+order, a confirmed letter, an opened challan — the screen navigates to it instead,
+which it already did. The reveal is for the same-page case only.
+
+Two surfaces deliberately do not reveal. Editing an awarded item on the Schedules
+tab writes the row the operator is looking at, and the payment matrix's six
+category rows are a fixed short list that is never off screen; in both, a scroll
+would move the page away from where the operator already is.
+
+### Every event date starts at today — APPROVED, owner ruling of 2026-08-19
+
+A date input that records something that HAPPENED opens on today, through the
+shared `todayIso()` helper. Challan receipt, installation, movement, Measurement
+Book, payment, retention release, LD assessment, warranty discharge, PO date,
+quotation date, credit-note date, invoice date: the operator is recording it now,
+so today is right far more often than blank is, and the field is still editable.
+
+Three classes of date deliberately do NOT default, and each refusal is a rule
+rather than an omission:
+
+- **Contractual, derived or parsed dates** — the completion date, a granted
+  extension, a GST rate's effective-from, a DLP expiry, the letter date the parser
+  read. These come from a document or from arithmetic. A plausible wrong value is
+  worse than a blank, because nothing downstream can tell the two apart.
+- **Dates transcribed off somebody else's paper** — an inspection certificate, a
+  bank guarantee, a carrier's transport document, a PAC. The date is printed on a
+  document the operator is holding; defaulting it invites a value that was never
+  read off the page. The PAC's issue date matters twice over, because a defect
+  liability period can start from it.
+- **Dates the SERVER already fills in its own timezone** — the maintenance
+  despatch and return challans, and the stock movement date, whose fields say
+  "blank means today" and whose blank is answered by the organisation's clock. A
+  browser default here would make the viewer's laptop authoritative over a date
+  printed on paper, which is the defect that arrangement was built to avoid. The
+  challan and issue-challan editors take the same organisation `today` from their
+  own server read, which is better still.
+
+Filter and export ranges default to whatever bounds the report, never to today as
+a rule.
+
+### Long lists open as sections, not as a wall — APPROVED, owner ruling of 2026-08-19
+
+The awarded-items editor's arrangement — Expand all / Collapse all beside a plain
+count, and one collapsible section per schedule with a sticky summary row — is the
+product's answer to any list long enough that its shape cannot be seen. It is a
+shared primitive (`apps/web/src/ui/schedule-section.tsx`), not a per-screen habit,
+and it now carries the payment matrix's item-category table and the PAC
+certificate's certified-quantity form as well as the awarded-items editor and the
+LOA review screen.
+
+Short lists stay flat. A section around six fixed rows is a control that answers a
+question nobody asked.
+
+One thing a converting screen has to check first: a closed section is UNMOUNTED,
+which is what keeps its fields out of the tab order. A form that reads its values
+back off the DOM at submit would silently lose everything typed into a section the
+operator then collapsed, so its inputs have to be React state first. The PAC form
+was converted that way.
+
+The surfaces that stayed flat, and why, so the list is not read as an oversight:
+the challan and issue-challan item tables, the Measurement Book's lines and the
+inspection-clause table all render rows whose API shape carries no schedule, so
+grouping them needs a contract change rather than a screen change; the
+post-creation payment-setup dialog is a dialog, and the summary row sticks against
+a shell header that a dialog does not have.
+
 ## Focus, keyboard and navigation
 
 - Workspace navigation is serialised into `location.hash` (hand-rolled, no router

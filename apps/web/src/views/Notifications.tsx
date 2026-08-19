@@ -10,7 +10,7 @@ import type {
 import { formValue, type ApiClient } from '../api.js';
 import { formatTimestamp } from '../format.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
-import { useAction, useReload } from '../lib/view-state.js';
+import { useAction, useReload, useReveal, type Reveal } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
@@ -112,6 +112,10 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
   const statusAction = useAction('The template status could not be recorded.');
   const consentAction = useAction('The consent could not be recorded.');
   const sendAction = useAction('The message could not be sent.');
+  /* One reveal for the whole screen: templates, consents and the message
+   * log are three registers under three forms on one very long page, and
+   * whichever one a mutation just wrote is the one worth scrolling to. */
+  const { reveal, revealProps } = useReveal();
 
   useEffect(() => {
     let cancelled = false;
@@ -247,6 +251,7 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
           status,
           ...(reason.trim() === '' ? {} : { reason: reason.trim() }),
         });
+        reveal(template.id);
         reload();
       }, `${template.name} is now ${status}.`);
     },
@@ -257,13 +262,14 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
     async (form: HTMLFormElement) => {
       const data = new FormData(form);
       await consentAction.act(async () => {
-        await api.recordNotificationConsent(organisationId, {
+        const recorded = await api.recordNotificationConsent(organisationId, {
           contactId: formValue(data, 'contactId'),
           channel: formValue(data, 'channel') as NotificationChannelName,
           address: formValue(data, 'address').trim(),
           state: formValue(data, 'state') as NotificationConsent['state'],
           evidence: formValue(data, 'evidence').trim(),
         });
+        reveal(recorded.consent.id);
         form.reset();
         reload();
       }, 'Consent recorded.');
@@ -307,11 +313,12 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
         .map((value) => value.trim())
         .filter((value) => value !== '');
       await sendAction.act(async () => {
-        await api.sendNotification(organisationId, {
+        const sent = await api.sendNotification(organisationId, {
           templateId: formValue(data, 'templateId'),
           contactId: formValue(data, 'contactId'),
           ...(parameters.length === 0 ? {} : { parameters }),
         });
+        reveal(sent.message.id);
         reload();
       }, 'Message sent.');
     },
@@ -323,13 +330,14 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
       const data = new FormData(form);
       const subject = formValue(data, 'emailSubject').trim();
       await templateAction.act(async () => {
-        await api.createNotificationTemplate(organisationId, {
+        const created = await api.createNotificationTemplate(organisationId, {
           name: formValue(data, 'name').trim(),
           language: formValue(data, 'language').trim(),
           category: formValue(data, 'category') as NotificationTemplate['category'],
           bodyText: formValue(data, 'bodyText').trim(),
           ...(subject === '' ? {} : { emailSubject: subject }),
         });
+        reveal(created.template.id);
         form.reset();
         reload();
       }, 'Template saved as a draft.');
@@ -373,6 +381,7 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
           onRecordStatus={(template, status, reason) => {
             void recordStatus(template, status, reason);
           }}
+          revealProps={revealProps}
           truncated={truncated.templates === true}
         />
 
@@ -387,6 +396,7 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
           onRecord={(form) => {
             void recordConsent(form);
           }}
+          revealProps={revealProps}
           onRecordStaff={(form) => {
             void recordStaffConsent(form);
           }}
@@ -405,6 +415,7 @@ export function Notifications({ api, organisationId, isOwner }: NotificationsPro
           onSend={(form) => {
             void sendMessage(form);
           }}
+          revealProps={revealProps}
           truncated={truncated.messages === true}
         />
       </div>
@@ -666,6 +677,7 @@ function TemplatesSection({
   onCreate,
   onRecordStatus,
   truncated,
+  revealProps,
 }: {
   readonly templates: readonly NotificationTemplate[] | null;
   readonly truncated: boolean;
@@ -680,6 +692,7 @@ function TemplatesSection({
     status: TemplateMove,
     reason: string,
   ) => void;
+  readonly revealProps: Reveal['revealProps'];
 }) {
   return (
     <Card>
@@ -719,7 +732,7 @@ function TemplatesSection({
           </thead>
           <tbody>
             {templates.map((template) => (
-              <tr key={template.id}>
+              <tr key={template.id} {...revealProps(template.id)}>
                 <td>
                   <span className="font-medium">{template.name}</span>
                   <span className="block text-xs text-muted-foreground">
@@ -834,6 +847,7 @@ function ConsentSection({
   onRecord,
   onRecordStaff,
   truncated,
+  revealProps,
 }: {
   readonly consents: readonly NotificationConsent[] | null;
   readonly truncated: boolean;
@@ -845,6 +859,7 @@ function ConsentSection({
   readonly onRetry: () => void;
   readonly onRecord: (form: HTMLFormElement) => void;
   readonly onRecordStaff: (form: HTMLFormElement) => void;
+  readonly revealProps: Reveal['revealProps'];
 }) {
   return (
     <Card>
@@ -884,7 +899,7 @@ function ConsentSection({
           </thead>
           <tbody>
             {consents.map((consent) => (
-              <tr key={consent.id}>
+              <tr key={consent.id} {...revealProps(consent.id)}>
                 <td>{consent.contactDesignation}</td>
                 <td>{CHANNEL_LABELS[consent.channel]}</td>
                 <td className="font-mono text-[13px] tabular-nums">
@@ -1118,6 +1133,7 @@ function DeliveryLogSection({
   onRetry,
   onSend,
   truncated,
+  revealProps,
 }: {
   readonly messages: readonly NotificationMessage[] | null;
   readonly truncated: boolean;
@@ -1129,6 +1145,7 @@ function DeliveryLogSection({
   readonly actionError: string | null;
   readonly onRetry: () => void;
   readonly onSend: (form: HTMLFormElement) => void;
+  readonly revealProps: Reveal['revealProps'];
 }) {
   return (
     <Card>
@@ -1167,7 +1184,7 @@ function DeliveryLogSection({
           </thead>
           <tbody>
             {messages.map((message) => (
-              <tr key={message.id}>
+              <tr key={message.id} {...revealProps(message.id)}>
                 <td>
                   <span className="font-medium">{message.contactDesignation}</span>
                   <span className="block font-mono text-xs tabular-nums text-muted-foreground">
