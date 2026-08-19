@@ -473,8 +473,20 @@ export function registerInstallationRoutes(
         // Deterministic lock order across concurrent batches; the answer
         // is put back in the caller's row order below, because a row that
         // was refused has to be findable by the position it was sent in.
+        //
+        // BYTE ORDER, not `localeCompare`. The ordering only has to be the
+        // SAME in every transaction for the deadlock argument to hold, and
+        // `localeCompare` is locale- and ICU-version-dependent: two server
+        // processes on different builds could sort two uuids differently
+        // and take the item locks in opposite orders, which is the exact
+        // deadlock this sort exists to prevent. It also matches how the
+        // database itself orders ids everywhere else in this file.
         const ordered = [...body.rows].sort((left, right) =>
-          left.workItemId.localeCompare(right.workItemId),
+          left.workItemId < right.workItemId
+            ? -1
+            : left.workItemId > right.workItemId
+              ? 1
+              : 0,
         );
         const written = new Map<string, Installation>();
         for (const row of ordered) {

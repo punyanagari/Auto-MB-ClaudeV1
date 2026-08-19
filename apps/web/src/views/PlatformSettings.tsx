@@ -352,9 +352,14 @@ export function PlatformSettings({
                     ))}
                   </select>
                 </label>
-                <label className="field">
+                {/* Explicitly associated rather than wrapping: the implicit
+                    form needs a native control as a DESCENDANT, and this one
+                    is behind `NumericInput`. The sibling label above still
+                    wraps its `<select>`, which is a native control. */}
+                <label className="field" htmlFor={`horizon-${schedule.kind}`}>
                   <span>Days ahead</span>
                   <NumericInput
+                    id={`horizon-${schedule.kind}`}
                     integer
                     defaultValue={schedule.horizonDays}
                     disabled={pending}

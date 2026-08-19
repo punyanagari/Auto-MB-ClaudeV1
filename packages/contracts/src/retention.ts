@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { NextCursorSchema } from './pagination.js';
+import { SerialOriginSchema } from './serials.js';
 import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
 
 // --- Delivery receipt -----------------------------------------------------
@@ -53,8 +54,16 @@ export type InstallSerialRequest = Static<typeof InstallSerialRequestSchema>;
 const SerialSchema = Type.Object(
   {
     id: UuidSchema,
-    deliveryChallanId: UuidSchema,
-    challanItemId: UuidSchema,
+    /* THE CHALLAN BLOCK IS NULLABLE since migration 0108, and that is what
+       accepting a site-recorded serial costs. A serial the Delivery Challan
+       missed has no challan and no challan line: it entered the record at
+       an installation, against a Work item, and inventing a challan for it
+       would be the lie the `origin` exists to prevent. Widening these is
+       the honest shape, and it is additive — every delivery serial still
+       carries both, and the fields are only null where `origin` says
+       `installation`. */
+    deliveryChallanId: Type.Union([UuidSchema, Type.Null()]),
+    challanItemId: Type.Union([UuidSchema, Type.Null()]),
     challanNumber: Type.Union([Type.String(), Type.Null()]),
     itemDescription: Type.String(),
     serialNumber: Type.String(),
@@ -63,11 +72,16 @@ const SerialSchema = Type.Object(
     /** The delivered-but-uninstalled pool and quantity-level installation
      * links (Milestone 7). Optional so older fixtures stay valid. */
     workItemId: Type.Optional(UuidSchema),
+    /** Where the number entered the record (migration 0108). Optional so
+     * older fixtures stay valid; the server always serves it. */
+    origin: Type.Optional(SerialOriginSchema),
     challanStatus: Type.Optional(
       Type.Union([
         Type.Literal('draft'),
         Type.Literal('issued'),
         Type.Literal('cancelled'),
+        /** Null for a serial with no challan to have a status. */
+        Type.Null(),
       ]),
     ),
     /** Set when a live quantity-level installation record covers this

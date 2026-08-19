@@ -115,6 +115,12 @@ function serialsByLine(
 ): ReadonlyMap<string, readonly Serial[]> {
   const grouped = new Map<string, Serial[]>();
   for (const serial of serials ?? []) {
+    // A serial recorded at an installation names no challan line (0108).
+    // The caller has already filtered to one challan's serials, so this
+    // cannot fire in practice — but grouping a null under a key would put
+    // it on a line that does not exist, and a challan is not the place a
+    // site-captured serial is read anyway.
+    if (serial.challanItemId === null) continue;
     const group = grouped.get(serial.challanItemId);
     if (group === undefined) grouped.set(serial.challanItemId, [serial]);
     else group.push(serial);

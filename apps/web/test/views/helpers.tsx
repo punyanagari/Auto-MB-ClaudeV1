@@ -32,7 +32,7 @@ afterEach(() => {
  * verb on its own submit button, so a detail page reads as records first
  * and asks a question only when the operator asks. Open the panel before
  * touching the fields — they are unmounted until then. */
-export async function openForm(label: string) {
+export async function openForm(label: string | RegExp) {
   fireEvent.click(await screen.findByRole('button', { name: label, expanded: false }));
 }
 

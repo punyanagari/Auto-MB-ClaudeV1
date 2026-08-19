@@ -2,7 +2,12 @@ import { Type, type Static } from '@sinclair/typebox';
 import { NextCursorSchema, withKeysetQuery } from './pagination.js';
 import { LocationKindSchema } from './masters.js';
 import { SerialOriginSchema } from './serials.js';
-import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js';
+import {
+  DateOnlySchema,
+  DecimalStringSchema,
+  PositiveDecimalStringSchema,
+  UuidSchema,
+} from './primitives.js';
 
 // --- Quantity-level installation records (Milestone 7, legacy §5.4) --------
 //
@@ -58,12 +63,23 @@ const SerialNumberSchema = Type.String({ minLength: 1, maxLength: 100 });
 const RecordInstallationRowSchema = Type.Object(
   {
     workItemId: UuidSchema,
-    quantity: DecimalStringSchema,
+    /** STRICTLY POSITIVE, not the unbounded `DecimalString` the
+     * single-record route still takes. `installations.quantity` carries
+     * `CHECK (quantity > 0)`, so a typed `0` or `-5` used to travel the
+     * whole way to the database and come back as a 500 that rolled the
+     * entire visit back without naming the cell that did it. Refused at
+     * the door instead, where the validator names the row and its index. */
+    quantity: PositiveDecimalStringSchema,
     /** Required (one per unit) for serial-flagged items; forbidden
      * otherwise — the same rule the single-record route holds, said about
-     * numbers instead of ids. */
+     * numbers instead of ids.
+     *
+     * 200 is the cap because a row is one item at one location on one day,
+     * and this whole batch runs inside a single transaction holding the
+     * Work row lock that MB finalize contends for; see the envelope note
+     * on `rows` below. */
     serialNumbers: Type.Optional(
-      Type.Array(SerialNumberSchema, { minItems: 1, maxItems: 500 }),
+      Type.Array(SerialNumberSchema, { minItems: 1, maxItems: 200 }),
     ),
   },
   { additionalProperties: false },
@@ -94,7 +110,20 @@ export const RecordInstallationBatchRequestSchema = Type.Object(
     newLocation: Type.Optional(NewInstallationLocationSchema),
     /** Carried onto every record the batch writes: one visit, one note. */
     remarks: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
-    rows: Type.Array(RecordInstallationRowSchema, { minItems: 1, maxItems: 200 }),
+    /**
+     * THE ENVELOPE IS A LOCK BUDGET, not a guess at how much a crew can
+     * install. The whole batch is one transaction and it holds the Work row
+     * lock from its first row to its last — the same lock a Measurement
+     * Book finalize takes, and the reason recording and finalizing cannot
+     * interleave. 100 rows of up to 200 serials each is 20,000 attachment
+     * rows, which is already far past any real site visit and is where the
+     * wait a concurrent finalize would sit through stops being reasonable.
+     *
+     * A visit larger than this is two visits, and the operator records it
+     * as two. Raising the cap means measuring what the lock hold does to a
+     * finalize first.
+     */
+    rows: Type.Array(RecordInstallationRowSchema, { minItems: 1, maxItems: 100 }),
   },
   { additionalProperties: false },
 );

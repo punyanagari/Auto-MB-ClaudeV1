@@ -241,11 +241,19 @@ over non-cancelled records for the item — computed nowhere else.
   appears once per visit — two rows naming it are refused rather than
   summed, since two quantities for one item on one day is a typo far more
   often than it is two crews.
-- **Only items with an installable balance are offered** (ledger item 10):
-  the delivered balance for a serial-tracked supply item, the sanctioned
-  balance for an item with no supply leg. The whole schedule is never
-  offered — an item with nothing standing on site is a form that cannot
-  succeed.
+- **The recording surface leads with the items that have a balance**
+  (ledger item 10): the delivered balance for a serial-tracked supply item,
+  the sanctioned balance for an item with no supply leg. The whole schedule
+  is never offered at once.
+  - An item whose **delivered** quantity is fully installed is not offered
+    at all. R5's delivery floor refuses more, so a row for it would be a
+    form that cannot succeed.
+  - An item installed to its **sanctioned** quantity, with no delivery
+    floor beneath it, is **folded away rather than dropped**, under
+    "Installed to sanction — recording more flags a variation". More may
+    still be recorded, per the ruling above, and a surface that hid it
+    would be a surface on which that ruling could not be exercised.
+  - AMC items are never offered (migration 0068).
 - **A serial the Delivery Challan missed is accepted at installation**
   (ledger item 12, owner's words: "if missing serial in DC is added in IC
   then accept it and record it"). A challan is typed from a despatch note;
@@ -256,6 +264,26 @@ over non-cancelled records for the item — computed nowhere else.
   It belongs to its installation and not to any challan, so cancelling a
   Delivery Challan releases exactly its own serials as it always did, and
   cancelling the INSTALLATION is what releases this one.
+- **A serial keeps the origin it entered with. There is no adoption.**
+  When the office later tidies the Delivery Challan and tries to record
+  the same number against its line, the recording is refused
+  (`DUPLICATE_SERIAL`): the number is already traced under this Work, and
+  a serial identifies one physical unit. The lawful move is to record the
+  challan line **without** that serial and leave the number where the site
+  put it — the unit is traceable either way, and the trace says honestly
+  where the paperwork started. Moving a serial from `installation` to
+  `delivery` origin, so the challan could claim it, is a recorded FUTURE
+  decision and deliberately not built: it would rewrite what an issued
+  document was proven complete against, which is the one thing issued
+  documents do not do.
+- **Known degradation: a mistyped challan serial is not corrected by
+  this flow.** If the challan captured `SN-0O1` where the nameplate reads
+  `SN-001`, the site records the real number as an installation-origin
+  serial and the typo stays in the delivered pool, uninstalled, forever.
+  The Work then holds more traced serials for that item than it delivered
+  units, which is visible but not flagged. Correcting the typo means the
+  existing challan-correction path (a correction notice against the issued
+  document), not this one; nothing here edits an issued challan.
 - **Installation is measured as it happened, even past the sanction**
   (owner decision, 2026-08-17). Work goes in before the paperwork catches
   up: the railway asks for more at the site meeting, the gang installs it,

@@ -27,9 +27,25 @@ SET LOCAL statement_timeout = '5min';
 -- Work, and cross-table uniqueness is a trigger racing two concurrent
 -- inserts, where one table is a unique index that cannot lose. Every read
 -- that joins a challan keeps working unchanged and simply does not see the
--- new rows, which is the failure that is safe; the reads that MUST see
--- them (the tenant-wide serial trace, the installation record's own serial
--- list, the requires_serials toggle) are widened in the same pull request.
+-- new rows, which is the failure that is safe; the four reads that MUST
+-- see them are widened in the same pull request, and they are:
+--
+--   1. `GET /api/serials/search` — the tenant-wide serial trace, which
+--      renders the origin as a third answer beside Delivered and
+--      Production (`routes/serials.ts`);
+--   2. the installation record's own serial list, so a record says which
+--      of its serials entered with it (`INSTALLATION_COLUMNS` below in
+--      `routes/installations.ts`);
+--   3. `PATCH /api/work-items/:id/requires-serials` — the R7 off-toggle
+--      count, which would otherwise let serial tracking be switched off
+--      underneath a serial the site captured (`routes/serials.ts`);
+--   4. `GET /api/works/:id/serials` — the Work's own serial register
+--      (`listSerials` in `routes/retention.ts`), whose consumers are the
+--      Work page's traced-serial count and the Installations panel.
+--
+-- Everything else keeps the inner join on purpose. The Delivery Challan
+-- screens ask challan questions, and a serial with no challan is not an
+-- answer to any of them.
 --
 -- WHAT DOES NOT MOVE. Delivery Challan cancellation, deletion and line
 -- rewriting all filter on `delivery_challan_id` / `delivery_challan_item_id`,
@@ -87,10 +103,22 @@ ALTER TABLE challan_item_serials
 -- transactions could pass at once. Nothing to add here; said out loud
 -- because its absence is the first thing a reader looks for.
 
--- The installation-added rows are found by item, never by challan.
+-- The installation-added rows are found by item, never by challan — and
+-- the new foreign key above needs the same columns for its own referential
+-- checks against `work_items` (the 0046 index sweep's reasoning: a foreign
+-- key whose referencing side has no usable index turns a parent update into
+-- a sequential scan).
+--
+-- The predicate is `work_item_id IS NOT NULL` and NOT `origin =
+-- 'installation'`, which selects exactly the same rows (the CHECK above
+-- makes the two equivalent) and is the only one of the two the planner can
+-- PROVE from a referential query. That query is `… WHERE work_item_id = $1`
+-- with $1 non-null, which implies `IS NOT NULL` and implies nothing at all
+-- about `origin`. One index, both jobs, and it stays the size of the
+-- installation-added rows rather than of the whole table.
 CREATE INDEX challan_item_serials_work_item_idx
-  ON challan_item_serials (organisation_id, work_item_id)
-  WHERE origin = 'installation';
+  ON challan_item_serials (organisation_id, work_item_id, work_id)
+  WHERE work_item_id IS NOT NULL;
 
 -- 2. Line lineage: the 0056 guard, restated with its full body and one
 -- new first branch.
@@ -160,8 +188,15 @@ BEGIN
     ) INTO attached;
 
     IF attached THEN
+      -- SQLSTATE stated even though no application path reaches this
+      -- branch: the DELETE route resolves serials through their challan
+      -- and answers 404 for one that has none, so this fires only against
+      -- direct SQL. A guard that is only ever met by a human at a psql
+      -- prompt is exactly the one that should not raise the ambiguous
+      -- P0001 every unqualified RAISE produces (0056's own convention).
       RAISE EXCEPTION
-        'a serial recorded at installation is evidence of that installation; cancel the installation record instead';
+        'a serial recorded at installation is evidence of that installation; cancel the installation record instead'
+        USING ERRCODE = '23514';
     END IF;
 
     RETURN OLD;
@@ -204,8 +239,23 @@ $$;
 --   (b) An installation never carries more serials than units — the
 --       owner's "count <= installed qty". The API says the stricter thing
 --       for serial-flagged items (exactly one serial per unit) and this
---       says the weaker one against every writer, which is the division of
---       labour the 0017 comments already describe for the date rule.
+--       says the weaker one, which is the division of labour the 0017
+--       comments already describe for the date rule.
+--
+--       WHAT THIS COUNT DOES AND DOES NOT HOLD, said plainly because a
+--       count inside a BEFORE trigger invites the wrong reading. It holds
+--       against a single writer: the attachment rows for one installation
+--       are always written by the transaction that created that
+--       installation, and PL/pgSQL bumps the command counter before each
+--       of its own queries, so the count sees the earlier rows of a
+--       multi-row INSERT. It is NOT a defence against two transactions
+--       attaching to the same installation at once, because there is no
+--       such pair — an installation id is invisible outside the
+--       transaction that inserts it until that transaction commits, and by
+--       then the record is complete. The invariant that genuinely survives
+--       a race is the partial unique index from 0017
+--       (`installation_serials_one_live_per_serial`), which is what stops
+--       two installations claiming the same physical unit.
 CREATE OR REPLACE FUNCTION app_private.guard_installation_serial_mutation()
 RETURNS trigger
 LANGUAGE plpgsql

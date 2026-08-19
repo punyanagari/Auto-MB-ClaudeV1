@@ -13,6 +13,7 @@ describe('Installations', () => {
   const ITEM_SERIAL = '55555555-5555-4555-8555-555555555555';
   const ITEM_DONE = '44444444-3333-4333-8333-444444444444';
   const ITEM_AMC = '44444444-2222-4222-8222-444444444444';
+  const ITEM_AT_SANCTION = '44444444-1111-4111-8111-444444444444';
   const LOCATION_ID = '66666666-6666-4666-8666-666666666666';
   const INSTALLATION_ID = '99999999-9999-4999-8999-999999999999';
   const SERIAL_ONE = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
@@ -248,11 +249,14 @@ describe('Installations', () => {
     ).toBeTruthy();
   });
 
-  it('offers only items with an installable balance, and searches within them', async () => {
-    // Corrections ledger item 10. A/1 has 10 sanctioned and 0 installed;
-    // A/2 has 3 delivered and 1 installed, so both stand. A/3 is fully
-    // installed against its delivery and must not be offered at all, and
-    // the AMC item never is.
+  /** The scope fixture: the four cases the recording table has to tell
+   * apart. A/1 (10 sanctioned, 0 installed) and A/2 (3 delivered, 1
+   * installed) lead the table; A/3 is serial-tracked with everything
+   * delivered already installed, which R5's delivery floor makes genuinely
+   * un-recordable; A/5 is installed to its sanctioned quantity with no
+   * delivery floor beneath it, which the 2026-08-17 ruling says may still
+   * be recorded; A/4 is AMC and is never installable at all. */
+  function scopeFixture() {
     const workItems: readonly WorkItem[] = [
       ...WORK_ITEMS,
       {
@@ -276,6 +280,16 @@ describe('Installations', () => {
         requiresSerials: false,
         paymentCategory: 'AMC',
       },
+      {
+        id: ITEM_AT_SANCTION,
+        scheduleId: '77777777-7777-4777-8777-777777777777',
+        itemNumber: 'A/5',
+        description: 'Earthing strip',
+        unitCode: 'Metre',
+        awardedQuantity: '3.000',
+        effectiveRate: '20.00',
+        requiresSerials: false,
+      },
     ];
     const api = installationsApi({
       listWorkInstallations: vi.fn().mockResolvedValue({
@@ -284,6 +298,11 @@ describe('Installations', () => {
           ...LIST.itemSummaries,
           { workItemId: ITEM_DONE, itemNumber: 'A/3', installedQuantity: '2.000' },
           { workItemId: ITEM_AMC, itemNumber: 'A/4', installedQuantity: '0.000' },
+          {
+            workItemId: ITEM_AT_SANCTION,
+            itemNumber: 'A/5',
+            installedQuantity: '3.000',
+          },
         ],
       }),
       workBalance: vi.fn().mockResolvedValue({
@@ -296,7 +315,8 @@ describe('Installations', () => {
             description: 'Relay panel',
             unitCode: 'Nos',
             awardedQuantity: '4.000',
-            // Two delivered, two installed: nothing left standing on site.
+            // Two delivered, two installed: nothing standing on site, and
+            // the delivery floor refuses more.
             deliveredQuantity: '2.000',
             remainingQuantity: '2.000',
             effectiveRate: '80.00',
@@ -311,16 +331,39 @@ describe('Installations', () => {
             remainingQuantity: '3.000',
             effectiveRate: '5000.00',
           },
+          {
+            workItemId: ITEM_AT_SANCTION,
+            itemNumber: 'A/5',
+            description: 'Earthing strip',
+            unitCode: 'Metre',
+            // Three sanctioned, three installed. No supply leg, so no
+            // delivery floor: more MAY be recorded and raises a variation.
+            awardedQuantity: '3.000',
+            deliveredQuantity: '0.000',
+            remainingQuantity: '3.000',
+            effectiveRate: '20.00',
+          },
         ],
       }),
     });
+    return { api, workItems };
+  }
+
+  it('leads with the items that have a balance, and searches within them', async () => {
+    // Corrections ledger item 10.
+    const { api, workItems } = scopeFixture();
     renderInstallations(api, { workItems });
 
     await openForm('Record installations');
     expect(screen.getByLabelText('Quantity of A/1 installed now')).toBeTruthy();
     expect(screen.getByLabelText('Quantity of A/2 installed now')).toBeTruthy();
+    // Serial-tracked with nothing left standing on site: R5's delivery
+    // floor refuses it, so it is not offered anywhere.
     expect(screen.queryByLabelText('Quantity of A/3 installed now')).toBeNull();
+    // AMC is never installable.
     expect(screen.queryByLabelText('Quantity of A/4 installed now')).toBeNull();
+    // …and the item installed to its sanction is not in the lead table.
+    expect(screen.queryByLabelText('Quantity of A/5 installed now')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Find an item'), {
       target: { value: 'switchboard' },
@@ -332,6 +375,71 @@ describe('Installations', () => {
       target: { value: 'nothing here' },
     });
     expect(screen.getByText(/No item matches/)).toBeTruthy();
+  });
+
+  it('keeps an item installed to its sanction recordable, folded away', async () => {
+    // The owner's ruling of 2026-08-17: installation is measured as it
+    // happened even past the sanction, and the server accepts it and flags
+    // the item pending variation. Hiding A/5 would have left that ruling
+    // with no surface at all.
+    const { api, workItems } = scopeFixture();
+    const recordWorkInstallations = vi
+      .fn()
+      .mockResolvedValue({ installations: [RECORDED] });
+    renderInstallations(installationsApi({ ...api, recordWorkInstallations }), {
+      workItems: workItems.map((item) =>
+        item.id === ITEM_AT_SANCTION ? { ...item, pendingVariation: true } : item,
+      ),
+    });
+
+    await openForm('Record installations');
+    await openForm(/Installed to sanction/);
+    const quantity = screen.getByLabelText('Quantity of A/5 installed now');
+    expect(quantity).toBeTruthy();
+    // The row carries the chip that says what recording more will mean.
+    expect(screen.getAllByText('Above LOA — variation pending').length).toBeGreaterThan(
+      0,
+    );
+
+    fireEvent.change(quantity, { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Location'), {
+      target: { value: LOCATION_ID },
+    });
+    fireEvent.click(submitButton('Record installation'));
+
+    await waitFor(() => {
+      expect(recordWorkInstallations).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        installedOn: '2026-08-05',
+        locationId: LOCATION_ID,
+        rows: [{ workItemId: ITEM_AT_SANCTION, quantity: '1' }],
+      });
+    });
+  });
+
+  it('keeps a typed row on screen when the search or the balance moves past it', async () => {
+    // A balance reloads while the operator is filling the table, and a row
+    // that vanished mid-visit would take a typed quantity out of the
+    // request with it — silently, from a screen that no longer shows what
+    // was lost. Searching past it must not lose it either.
+    const { api, workItems } = scopeFixture();
+    renderInstallations(api, { workItems });
+
+    await openForm('Record installations');
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 installed now'), {
+      target: { value: '2' },
+    });
+    fireEvent.change(screen.getByLabelText('Find an item'), {
+      target: { value: 'switchboard' },
+    });
+    // A/1 is not a switchboard, but it is part of the visit now.
+    const kept = screen.getByLabelText<HTMLInputElement>(
+      'Quantity of A/1 installed now',
+    );
+    expect(kept.value).toBe('2');
+    expect(submitButton('Record installation')).toBeTruthy();
   });
 
   it('records one site visit as one record per filled row', async () => {
@@ -448,22 +556,36 @@ describe('Installations', () => {
     expect(screen.queryByText(/nothing was changed/i)).toBeNull();
   });
 
-  it('offers the delivered pool as suggestions without refusing anything else', async () => {
+  it('taps the delivered pool in one serial at a time, and still takes any other', async () => {
+    // This was a `<datalist>`, which the browser matches against the WHOLE
+    // field value: it helped with the first of six nameplates and went dead
+    // the moment the field held "SN-001, ". Buttons append instead.
     renderInstallations(installationsApi());
 
     await openForm('Record installations');
-    const field = screen.getByLabelText('Serials of A/2 installed now');
-    const list = field.getAttribute('list');
-    expect(list).toBeTruthy();
-    const options = [
-      ...(document.getElementById(String(list))?.querySelectorAll('option') ?? []),
-    ].map((option) => option.getAttribute('value'));
+    const field = screen.getByLabelText<HTMLInputElement>(
+      'Serials of A/2 installed now',
+    );
     // Delivered and uninstalled only; SN-003 is already in.
-    expect(options).toEqual(['SN-001', 'SN-002']);
-    // A suggestion list, not a whitelist: the field takes a number that is
-    // in no pool at all, which is the entire point of the flow.
+    expect(screen.getByRole('button', { name: 'SN-001' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'SN-002' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'SN-003' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'SN-001' }));
+    expect(field.value).toBe('SN-001');
+    // …and the assist still works for the SECOND unit, which is the whole
+    // reason it is not a datalist.
+    fireEvent.click(screen.getByRole('button', { name: 'SN-002' }));
+    expect(field.value).toBe('SN-001, SN-002');
+    // One tap per unit: a serial already in the field cannot be added twice.
+    expect(
+      screen.getByRole('button', { name: 'SN-001' }).hasAttribute('disabled'),
+    ).toBe(true);
+
+    // An assist, not a whitelist: the field takes a number that is in no
+    // pool at all, which is the entire point of the flow.
     fireEvent.change(field, { target: { value: 'SN-404' } });
-    expect((field as HTMLInputElement).value).toBe('SN-404');
+    expect(field.value).toBe('SN-404');
   });
 
   it('marks a serial that entered at the installation, on the record', async () => {

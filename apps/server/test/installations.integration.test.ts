@@ -1931,6 +1931,31 @@ describe('recording one site visit across several items (ledger 10 and 12)', () 
     expect(summaryOf(list, itemSerialId)).toBe('1.000');
   });
 
+  it('names the offending row when a quantity is not a positive number', async () => {
+    // `installations.quantity` carries CHECK (quantity > 0). A typed `0`
+    // used to travel the whole way there and come back as a 500 that
+    // rolled the entire visit back without naming the cell that did it.
+    for (const quantity of ['0', '-5', '0.000']) {
+      const before = await listC();
+      const response = await batch(site, {
+        installedOn: '2026-08-06',
+        locationId: stationLocationId,
+        rows: [
+          { workItemId: itemPlainId, quantity: '1' },
+          { workItemId: itemSerialId, quantity, serialNumbers: ['SN-D4'] },
+        ],
+      });
+      expect(response.statusCode, `${quantity}: ${response.body}`).toBe(400);
+      // The refusal names the row and its index, which is what makes it
+      // actionable on a table of a hundred of them.
+      expect(response.body, `${quantity}: ${response.body}`).toMatch(
+        /rows\/1\/quantity/,
+      );
+      const after = await listC();
+      expect(after.installations).toHaveLength(before.installations.length);
+    }
+  });
+
   it('refuses two rows naming the same item, and writes neither', async () => {
     const before = await listC();
     const response = await batch(site, {

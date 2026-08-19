@@ -71,6 +71,20 @@ const LOCATION_KINDS: readonly { value: LocationKind; label: string }[] = [
 
 const NEW_LOCATION = '__new__';
 
+/**
+ * Where a row sits on the recording surface.
+ *
+ * `open` is an item with balance left and is what the table shows.
+ * `at-sanction` is an item already installed to (or past) its sanctioned
+ * quantity, which is NOT the same as an item that cannot be recorded: the
+ * owner's ruling of 2026-08-17 is that installation is measured as it
+ * happened even past the sanction, and the server accepts exactly that and
+ * flags the item pending variation. Hiding those items would leave the
+ * ruling with no surface at all, so they keep one — folded away, because
+ * decluttering the picker was the other half of the same brief.
+ */
+type RowScope = 'open' | 'at-sanction';
+
 /** One item the crew could put in today, with the balance that says so. */
 interface InstallableItem {
   readonly item: WorkItem;
@@ -78,11 +92,13 @@ interface InstallableItem {
   /** What is still installable: for a serial-tracked (supply-type) item
    * the DELIVERED balance, because R5 caps installation at what issued
    * challans delivered; for every other item the LOA balance, which is
-   * the only ceiling such an item has. */
+   * the only ceiling such an item has. Zero or negative on an
+   * `at-sanction` row — the figure is still the honest one to show. */
   readonly remaining: string;
   /** Which of the two the figure is, so the column can say so rather than
    * leaving one number standing for two different rules. */
   readonly basis: 'delivered' | 'sanctioned';
+  readonly scope: RowScope;
 }
 
 /** What the operator has typed into one row of the recording table. */
@@ -103,6 +119,12 @@ function parseSerials(text: string): string[] {
     .filter((one) => one.length > 0);
 }
 
+/** Add one tapped serial to whatever the field already holds. */
+function appendSerial(text: string, serialNumber: string): string {
+  const kept = text.replace(/[\s,]+$/, '');
+  return kept === '' ? serialNumber : `${kept}, ${serialNumber}`;
+}
+
 /**
  * Quantity-level installation records (Milestone 7, legacy §5.4), recorded
  * the way a site visit happens.
@@ -111,14 +133,21 @@ function parseSerials(text: string): string[] {
  * recorded one of them at a time, so a crew that installed six items at one
  * station on one day picked the date and the station six times, and had to
  * know from memory which items had material standing on site at all.
- * Corrections ledger items 10 and 12 settled both: the table lists ONLY
- * items with an installable balance, with a search box over them, and the
- * date and location are stated once above it. One Record action writes one
- * installation record per filled row, in a single transaction.
+ * Corrections ledger items 10 and 12 settled both: the table leads with the
+ * items that have an installable balance, with a search box over them, and
+ * the date and location are stated once above it. One Record action writes
+ * one installation record per filled row, in a single transaction.
+ *
+ * Items already installed to their sanctioned quantity are FOLDED AWAY
+ * rather than dropped. The owner's other standing ruling (2026-08-17) is
+ * that installation is measured as it happened even past the sanction: the
+ * record route accepts it and the database flags the item as owing a
+ * variation order. A picker that hid them would have left that ruling with
+ * no surface at all.
  *
  * Serials are typed as NUMBERS here rather than tapped out of a pool. A
  * number already in the delivered-but-uninstalled pool links exactly as it
- * always did — the pool is offered as suggestions on the field — and a
+ * always did — the pool is one tap per serial beneath the field — and a
  * number the Delivery Challan missed is accepted and recorded as entering
  * at the installation (migration 0108), because the person in front of the
  * equipment is the one who can read the nameplate.
@@ -283,6 +312,12 @@ export function Installations({
     const balanceBy = new Map(balances.map((one) => [one.workItemId, one]));
     return workItems.flatMap((item) => {
       if (item.paymentCategory === 'AMC') return [];
+      // A quantity already typed against this item keeps its row on screen
+      // whatever the arithmetic below now says. A balance reloads while
+      // the operator is filling the table, and a row that vanished mid-visit
+      // would take a typed quantity out of the request with it — silently,
+      // and from a screen that no longer shows what was lost.
+      const typed = (entries[item.id]?.quantity ?? '').trim() !== '';
       const installed = installedBy.get(item.id) ?? item.installedQuantity ?? '0.000';
       const balance = balanceBy.get(item.id);
       const sanctioned =
@@ -294,9 +329,29 @@ export function Installations({
       // No balance row means the Work read and the balance read disagree
       // about the schedule; the row is left out rather than guessed at,
       // and the balance failure state above says why the table may be short.
-      if (ceiling === undefined) return [];
+      if (ceiling === undefined) {
+        return typed
+          ? [
+              {
+                item,
+                description: item.effectiveDescription ?? item.description,
+                remaining: '—',
+                basis: item.requiresSerials
+                  ? ('delivered' as const)
+                  : ('sanctioned' as const),
+                scope: 'open' as const,
+              },
+            ]
+          : [];
+      }
       const remaining = subtractDecimalStrings(ceiling, installed);
-      if (!isPositive(remaining)) return [];
+      const open = isPositive(remaining);
+      // A serial-tracked item with nothing delivered-but-uninstalled is the
+      // ONE case that is genuinely un-recordable: R5's delivery floor
+      // refuses it at the route and the operator cannot argue with it. Not
+      // offered — unless a quantity is already typed against it, which is
+      // the operator's business and the server's to refuse.
+      if (!open && item.requiresSerials && !typed) return [];
       return [
         {
           item,
@@ -305,20 +360,31 @@ export function Installations({
           basis: item.requiresSerials
             ? ('delivered' as const)
             : ('sanctioned' as const),
+          // Installed to sanction, and no delivery floor beneath it: the
+          // 2026-08-17 ruling says more may still be recorded, so the row
+          // is folded away rather than dropped.
+          scope:
+            open || item.requiresSerials ? ('open' as const) : ('at-sanction' as const),
         },
       ];
     });
-  }, [data, balances, workItems]);
+  }, [data, balances, workItems, entries]);
 
   const shown = useMemo(() => {
     const needle = itemSearch.trim().toLowerCase();
     if (needle === '') return installable;
     return installable.filter(
       (row) =>
+        // A typed row survives the search for the same reason it survives a
+        // recompute: it is part of the visit, and the button counts it.
+        (entries[row.item.id]?.quantity ?? '').trim() !== '' ||
         row.item.itemNumber.toLowerCase().includes(needle) ||
         row.description.toLowerCase().includes(needle),
     );
-  }, [installable, itemSearch]);
+  }, [installable, itemSearch, entries]);
+
+  const openRows = shown.filter((row) => row.scope === 'open');
+  const atSanctionRows = shown.filter((row) => row.scope === 'at-sanction');
 
   if (loadError !== null) {
     return (
@@ -359,12 +425,20 @@ export function Installations({
     }));
   };
 
-  /** The delivered-but-uninstalled pool of one item: serials whose challan
-   * is issued and whose unit is not currently installed anywhere. Offered
-   * as suggestions on the serials field rather than as a checklist — the
-   * field has to accept a number that is NOT in the pool, which is the
-   * whole point of the flow, and a control that only offered the pool
-   * would say the opposite. */
+  /**
+   * The delivered-but-uninstalled pool of one item: serials whose challan
+   * is ISSUED and whose unit is not currently installed anywhere.
+   *
+   * Deliberately delivery-only, and it stays that way now that the Work's
+   * serial register also carries serials recorded at installation
+   * (migration 0108). The pool answers "what is standing on site, unfitted"
+   * — a question about delivered stock — and a serial that entered at an
+   * installation has, by definition, already gone in. The one that was
+   * released by a cancellation is not "standing on site" either; it is a
+   * number the operator can retype, which the field accepts. So the assist
+   * is an assist and never a whitelist: the field takes a number that is in
+   * no pool at all, which is the whole point of the flow.
+   */
   const poolFor = (workItemId: string): readonly Serial[] =>
     serials.filter(
       (serial) =>
@@ -373,14 +447,95 @@ export function Installations({
         serial.installedOn === null,
     );
 
-  /** The rows that will be recorded — read off EVERY installable item, not
-   * off the filtered view. The search box narrows what is on screen; a
-   * quantity typed against one item and then searched past is still part
-   * of the visit, and dropping it silently would be the worst possible
-   * reading of a filter. */
+  /** The rows that will be recorded — read off EVERY offered item, not off
+   * the filtered view, and including the folded-away at-sanction ones. */
   const filled = installable.filter(
     (row) => entryOf(row.item.id).quantity.trim() !== '',
   );
+
+  /** One row of the recording table. Written once and used by both tables,
+   * because the folded-away at-sanction rows are the SAME row — they carry
+   * the same fields, submit through the same request, and meet the same
+   * rules; only the ceiling behind them differs. */
+  const recordingRow = (row: InstallableItem) => {
+    const entry = entryOf(row.item.id);
+    const pool = poolFor(row.item.id);
+    const chosen = parseSerials(entry.serials);
+    return (
+      <tr key={row.item.id}>
+        <th scope="row">
+          {row.item.itemNumber}
+          {variationPending(row.item.id) && (
+            <>
+              {' '}
+              <VariationChip />
+            </>
+          )}
+        </th>
+        <td className={wrapCell}>{row.description}</td>
+        <td className={numericCell}>
+          {row.remaining}{' '}
+          <span className="text-xs text-muted-foreground">
+            {row.basis === 'delivered' ? 'delivered' : 'of LOA'}
+          </span>
+        </td>
+        <td className={numericCell}>
+          <NumericInput
+            aria-label={`Quantity of ${row.item.itemNumber} installed now`}
+            className="w-24 text-right font-mono tabular-nums"
+            value={entry.quantity}
+            onChange={(event) => {
+              setEntry(row.item.id, { quantity: event.currentTarget.value });
+            }}
+          />
+        </td>
+        <td>
+          {row.item.requiresSerials ? (
+            <>
+              <input
+                aria-label={`Serials of ${row.item.itemNumber} installed now`}
+                className="w-56 font-mono"
+                value={entry.serials}
+                onChange={(event) => {
+                  setEntry(row.item.id, { serials: event.currentTarget.value });
+                }}
+              />
+              {/* The delivered pool, one tap each. This was a `<datalist>`,
+                  which the browser matches against the WHOLE field value —
+                  so it went dead the moment the field held "SN-001, " and
+                  helped with exactly the first of six nameplates. Buttons
+                  append instead, which is the tap-select the mock's
+                  checklist was, without becoming a whitelist: the field
+                  still takes a number that is in no pool. */}
+              {pool.length > 0 && (
+                <div className="mt-1 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                  {pool.map((serial) => (
+                    <Button
+                      key={serial.id}
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      className="font-mono"
+                      disabled={chosen.includes(serial.serialNumber)}
+                      onClick={() => {
+                        setEntry(row.item.id, {
+                          serials: appendSerial(entry.serials, serial.serialNumber),
+                        });
+                      }}
+                    >
+                      {serial.serialNumber}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <span className="text-muted-foreground">not serial-tracked</span>
+          )}
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <>
@@ -421,7 +576,9 @@ export function Installations({
           }}
         >
           The item balances could not be loaded, so the recording table cannot say what
-          is still installable. Existing installation records remain available.
+          is still installable. Recording is paused until this read succeeds; the
+          existing installation records below remain available and can still be
+          cancelled.
         </ErrorState>
       )}
 
@@ -528,7 +685,12 @@ export function Installations({
                               [cancelled.workItemId]: cancelled.pendingVariation,
                             }));
                             await refresh();
-                          }, 'Installation record cancelled; its serials are back in the pool.');
+                            // "Released", not "back in the pool": the pool
+                            // is delivered stock, and a serial this record
+                            // captured at site was never in it. Both kinds
+                            // are free to be recorded again, which is what
+                            // the release actually means.
+                          }, 'Installation record cancelled; its serials are released and can be recorded again.');
                         }}
                       >
                         <Field>
@@ -714,101 +876,83 @@ export function Installations({
 
             {installable.length === 0 ? (
               <EmptyState>
-                Nothing is standing on site to install: every item is either fully
-                installed or still waiting on its Delivery Challan.
+                No item on this Work can take an installation record: every
+                serial-tracked item is installed up to what its Delivery Challans
+                delivered, and there are no other items on the schedule.
               </EmptyState>
             ) : shown.length === 0 ? (
               <EmptyState>No item matches “{itemSearch}”.</EmptyState>
             ) : (
               <>
-                <DataTable>
-                  <caption className="sr-only">
-                    Items with an installable balance, with the quantity and serials
-                    going in on this visit
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Item</th>
-                      <th scope="col">Description</th>
-                      <th scope="col" className={numericCell}>
-                        Remaining
-                      </th>
-                      <th scope="col" className={numericCell}>
-                        Installed now
-                      </th>
-                      <th scope="col">Serials</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.map((row) => {
-                      const pool = poolFor(row.item.id);
-                      const listId = `inst-pool-${row.item.id}`;
-                      return (
-                        <tr key={row.item.id}>
-                          <th scope="row">
-                            {row.item.itemNumber}
-                            {variationPending(row.item.id) && (
-                              <>
-                                {' '}
-                                <VariationChip />
-                              </>
-                            )}
+                {openRows.length > 0 && (
+                  <DataTable>
+                    <caption className="sr-only">
+                      Items with an installable balance, with the quantity and serials
+                      going in on this visit
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Item</th>
+                        <th scope="col">Description</th>
+                        <th scope="col" className={numericCell}>
+                          Remaining
+                        </th>
+                        <th scope="col" className={numericCell}>
+                          Installed now
+                        </th>
+                        <th scope="col">Serials</th>
+                      </tr>
+                    </thead>
+                    <tbody>{openRows.map(recordingRow)}</tbody>
+                  </DataTable>
+                )}
+
+                {/* The items already installed to their sanctioned quantity.
+                    They are NOT un-recordable: the owner's ruling of
+                    2026-08-17 is that installation is measured as it
+                    happened even past the sanction, the record route
+                    accepts it, and the item is flagged as owing a variation
+                    order. Dropping them would have left that ruling with no
+                    surface at all — and the empty state above claiming
+                    nothing was left to install would have been false.
+                    Folded away, because decluttering the picker was the
+                    other half of the same brief, and opened on its own when
+                    a quantity is already typed into one. */}
+                {atSanctionRows.length > 0 && (
+                  <Disclosure
+                    label={`Installed to sanction (${String(atSanctionRows.length)}) — recording more flags a variation`}
+                    startOpen={atSanctionRows.some(
+                      (row) => entryOf(row.item.id).quantity.trim() !== '',
+                    )}
+                  >
+                    <DataTable>
+                      <caption className="sr-only">
+                        Items installed to their sanctioned quantity; recording more is
+                        accepted and raises a pending variation
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Item</th>
+                          <th scope="col">Description</th>
+                          <th scope="col" className={numericCell}>
+                            Remaining
                           </th>
-                          <td className={wrapCell}>{row.description}</td>
-                          <td className={numericCell}>
-                            {row.remaining}{' '}
-                            <span className="text-xs text-muted-foreground">
-                              {row.basis === 'delivered' ? 'delivered' : 'of LOA'}
-                            </span>
-                          </td>
-                          <td className={numericCell}>
-                            <NumericInput
-                              aria-label={`Quantity of ${row.item.itemNumber} installed now`}
-                              className="w-24 text-right font-mono tabular-nums"
-                              value={entryOf(row.item.id).quantity}
-                              onChange={(event) => {
-                                setEntry(row.item.id, {
-                                  quantity: event.currentTarget.value,
-                                });
-                              }}
-                            />
-                          </td>
-                          <td>
-                            {row.item.requiresSerials ? (
-                              <>
-                                <input
-                                  aria-label={`Serials of ${row.item.itemNumber} installed now`}
-                                  className="w-56 font-mono"
-                                  list={pool.length > 0 ? listId : undefined}
-                                  value={entryOf(row.item.id).serials}
-                                  onChange={(event) => {
-                                    setEntry(row.item.id, {
-                                      serials: event.currentTarget.value,
-                                    });
-                                  }}
-                                />
-                                {pool.length > 0 && (
-                                  <datalist id={listId}>
-                                    {pool.map((serial) => (
-                                      <option
-                                        key={serial.id}
-                                        value={serial.serialNumber}
-                                      />
-                                    ))}
-                                  </datalist>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-muted-foreground">
-                                not serial-tracked
-                              </span>
-                            )}
-                          </td>
+                          <th scope="col" className={numericCell}>
+                            Installed now
+                          </th>
+                          <th scope="col">Serials</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </DataTable>
+                      </thead>
+                      <tbody>{atSanctionRows.map(recordingRow)}</tbody>
+                    </DataTable>
+                    <Hint>
+                      Work goes in before the variation order that sanctions it arrives.
+                      What is recorded here is measured and reported, and stays out of
+                      billing until the variation is approved.
+                    </Hint>
+                  </Disclosure>
+                )}
+
                 <Hint>
                   Remaining is the DELIVERED balance for a serial-tracked supply item —
                   installation never runs ahead of an issued Delivery Challan — and the

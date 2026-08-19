@@ -166,7 +166,7 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   SERIAL_NOT_FOUND:
     'Find the serial with Serial Lookup; it names the challan that delivered it and where it now stands.',
   DUPLICATE_SERIAL:
-    'Find the number with Serial Lookup and correct whichever record misread the nameplate; a serial identifies one physical unit, so the same number cannot stand twice in one Work.',
+    'Look the number up in Global Search: if the unit is already traced under this Work — including from an installation that captured it — record the challan line without it and leave the number where it is; otherwise correct whichever of the two misread the nameplate.',
   NOT_FOUND:
     'Choose the organisation again from the organisation picker; the one addressed is not one this account can open.',
 
