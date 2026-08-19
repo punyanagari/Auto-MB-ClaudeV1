@@ -28,6 +28,7 @@ import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { errorMessage, describeLoadFailure } from '../lib/load-failure.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * Money going out: employee advances and reimbursements, and the vendor
@@ -693,10 +694,9 @@ function NewRequestForm({
       </Field>
       <Field>
         <label htmlFor="request-amount">Amount</label>
-        <input
+        <NumericInput
           id="request-amount"
           className="input"
-          inputMode="decimal"
           value={amount}
           onChange={(event) => {
             setAmount(event.target.value);
@@ -1260,12 +1260,10 @@ function NewVendorInvoiceForm({
       </Field>
       <Field>
         <label htmlFor="invoice-credit-days">Credit period (days)</label>
-        <input
+        <NumericInput
+          integer
           id="invoice-credit-days"
           className="input"
-          type="number"
-          min={0}
-          max={365}
           value={creditDays}
           onChange={(event) => {
             setCreditDays(event.target.value);
@@ -1274,10 +1272,9 @@ function NewVendorInvoiceForm({
       </Field>
       <Field>
         <label htmlFor="invoice-amount">Amount</label>
-        <input
+        <NumericInput
           id="invoice-amount"
           className="input"
-          inputMode="decimal"
           value={amount}
           onChange={(event) => {
             setAmount(event.target.value);
@@ -1459,10 +1456,9 @@ function VendorPaymentForm({
       </p>
       <Field>
         <label htmlFor="vendor-payment-gross">Gross amount</label>
-        <input
+        <NumericInput
           id="vendor-payment-gross"
           className="input"
-          inputMode="decimal"
           value={gross}
           onChange={(event) => {
             setGross(event.target.value);

@@ -15,6 +15,7 @@ import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * Platform: which modules this organisation may use, and which recurring
@@ -351,12 +352,15 @@ export function PlatformSettings({
                     ))}
                   </select>
                 </label>
-                <label className="field">
+                {/* Explicitly associated rather than wrapping: the implicit
+                    form needs a native control as a DESCENDANT, and this one
+                    is behind `NumericInput`. The sibling label above still
+                    wraps its `<select>`, which is a native control. */}
+                <label className="field" htmlFor={`horizon-${schedule.kind}`}>
                   <span>Days ahead</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
+                  <NumericInput
+                    id={`horizon-${schedule.kind}`}
+                    integer
                     defaultValue={schedule.horizonDays}
                     disabled={pending}
                     className="tabular-nums"

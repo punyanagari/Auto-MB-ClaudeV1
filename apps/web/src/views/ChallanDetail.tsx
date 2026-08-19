@@ -21,6 +21,7 @@ import { Disclosure } from '../ui/disclosure.js';
 import { Field, Actions, FormError, FormNotice, Hint } from '../ui/form.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Timeline } from './Timeline.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface ChallanDetailProps {
   readonly api: ApiClient;
@@ -114,6 +115,12 @@ function serialsByLine(
 ): ReadonlyMap<string, readonly Serial[]> {
   const grouped = new Map<string, Serial[]>();
   for (const serial of serials ?? []) {
+    // A serial recorded at an installation names no challan line (0108).
+    // The caller has already filtered to one challan's serials, so this
+    // cannot fire in practice — but grouping a null under a key would put
+    // it on a line that does not exist, and a challan is not the place a
+    // site-captured serial is read anyway.
+    if (serial.challanItemId === null) continue;
     const group = grouped.get(serial.challanItemId);
     if (group === undefined) grouped.set(serial.challanItemId, [serial]);
     else group.push(serial);
@@ -1113,12 +1120,11 @@ export function ChallanDetail({
                     <label htmlFor={`correction-qty-${item.workItemId}`}>
                       Quantity — {item.description}
                     </label>
-                    <input
+                    <NumericInput
                       id={`correction-qty-${item.workItemId}`}
                       name={`correction-qty-${item.workItemId}`}
                       defaultValue={item.quantity}
                       required
-                      inputMode="decimal"
                     />
                   </Field>
                 ))}

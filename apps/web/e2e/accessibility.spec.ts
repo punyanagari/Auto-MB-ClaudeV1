@@ -441,6 +441,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   test.slow();
   const WORK_ID = '33333333-3333-4333-8333-333333333333';
   const ITEM_ID = '55555555-5555-4555-8555-555555555555';
+  const SERIAL_ITEM_ID = '55555555-4444-4444-8444-555555555555';
   const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
   const CHALLAN_ITEM_ID = '66666666-6666-4666-8666-666666666666';
   // The open DRAFT Measurement Book, whose preview carries the editable
@@ -574,6 +575,19 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
                 awardedQuantity: '5.000',
                 effectiveRate: '100.00',
                 requiresSerials: false,
+              },
+              {
+                // Serial-tracked, so the recording table draws its serials
+                // field and the delivered pool beneath it — the two
+                // controls the axe scan would otherwise never reach.
+                id: SERIAL_ITEM_ID,
+                scheduleId: '77777777-7777-4777-8777-777777777777',
+                itemNumber: 'A/2',
+                description: 'Point machine',
+                unitCode: 'Nos',
+                awardedQuantity: '4.000',
+                effectiveRate: '300.00',
+                requiresSerials: true,
               },
             ],
           },
@@ -806,6 +820,22 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             serialNumber: 'SN-001',
             installedOn: null,
             installationRemarks: null,
+            origin: 'delivery',
+          },
+          {
+            // Delivered and uninstalled: this is what the recording
+            // table's pool assist draws one button for.
+            id: '88888888-7777-4777-8777-888888888888',
+            deliveryChallanId: CHALLAN_ID,
+            challanItemId: CHALLAN_ITEM_ID,
+            challanNumber: 'DC/1',
+            itemDescription: 'Point machine',
+            serialNumber: 'SN-101',
+            installedOn: null,
+            installationRemarks: null,
+            workItemId: SERIAL_ITEM_ID,
+            challanStatus: 'issued',
+            origin: 'delivery',
           },
         ],
       }),
@@ -832,6 +862,16 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
                 serialId: '88888888-8888-4888-8888-888888888888',
                 serialNumber: 'SN-001',
                 challanNumber: 'DC/1',
+                origin: 'delivery',
+              },
+              {
+                // Migration 0108: a nameplate the challan missed, typed at
+                // site. It carries the one warning tint this record row can
+                // draw, so both theme passes measure it.
+                serialId: '88888888-8888-4888-8888-888888888889',
+                serialNumber: 'SN-009',
+                challanNumber: null,
+                origin: 'installation',
               },
             ],
             createdAt: '2026-08-03T00:00:00.000Z',
@@ -840,6 +880,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
         ],
         itemSummaries: [
           { workItemId: ITEM_ID, itemNumber: 'A/1', installedQuantity: '1.000' },
+          { workItemId: SERIAL_ITEM_ID, itemNumber: 'A/2', installedQuantity: '0.000' },
         ],
       }),
     ),
@@ -1073,6 +1114,16 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             remainingQuantity: '2.000',
             effectiveRate: '100.00',
           },
+          {
+            workItemId: SERIAL_ITEM_ID,
+            itemNumber: 'A/2',
+            description: 'Point machine',
+            unitCode: 'Nos',
+            awardedQuantity: '4.000',
+            deliveredQuantity: '2.000',
+            remainingQuantity: '2.000',
+            effectiveRate: '300.00',
+          },
         ],
       }),
     ),
@@ -1301,9 +1352,31 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Installations', exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'New installation' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Record installations' }),
+  ).toBeVisible();
+  // The site-added serial's chip (migration 0108) is on the record row, so
+  // its warning tint is measured in both themes rather than only asserted.
+  await expect(page.getByText('added here')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Serial trace' })).toBeVisible();
   await expectNoAxeViolations(page, 'work detail — installations');
+
+  /* The tabular recording flow (corrections ledger items 10 and 12). It
+     is behind the verb that names it, and everything new about this
+     screen is inside — the item table with its per-row number and serial
+     fields, the shared date and location above it, and the search box
+     over the items. Scanned open, in both themes, because a closed
+     disclosure proves nothing about the controls it hides. */
+  await page
+    .getByRole('button', { name: 'Record installations', expanded: false })
+    .click();
+  await expect(page.getByLabel('Find an item')).toBeVisible();
+  await expect(page.getByLabel('Quantity of A/1 installed now')).toBeVisible();
+  // The serials field and the delivered pool's tap-in buttons, which only a
+  // serial-tracked row draws.
+  await expect(page.getByLabel('Serials of A/2 installed now')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'SN-101' })).toBeVisible();
+  await expectNoAxeViolations(page, 'work detail — installation recording table');
 
   await openTab('Measurement');
   await expect(

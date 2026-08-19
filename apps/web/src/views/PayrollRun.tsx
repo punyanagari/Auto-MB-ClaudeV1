@@ -22,6 +22,7 @@ import { Actions, Field, FormError } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The monthly payroll run (migration 0090).
@@ -827,10 +828,9 @@ function LineBreakdown({
           <div className="rounded-lg border p-3">
             <Field>
               <label htmlFor={`lop-${line.id}`}>Loss-of-pay days</label>
-              <input
+              <NumericInput
                 id={`lop-${line.id}`}
                 className="input w-32 font-mono tabular-nums"
-                inputMode="decimal"
                 value={lop}
                 onChange={(event) => {
                   setLop(event.target.value);

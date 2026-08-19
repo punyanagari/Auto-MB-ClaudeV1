@@ -217,8 +217,12 @@ describe('the retention and damages panel', () => {
   it('refuses to send a levy that is not a rupee figure', async () => {
     const api = renderPanel();
     fireEvent.click(await screen.findByRole('button', { name: 'Levy' }));
+    // A third decimal place, not a lakh separator: the field is a
+    // `NumericInput` now, so the separator can no longer be typed at all
+    // and the shape left for the client check to refuse is a rupee figure
+    // with too fine a scale.
     fireEvent.change(screen.getByLabelText('What the railway levied'), {
-      target: { value: '5,00,000' },
+      target: { value: '500000.005' },
     });
     const confirm = screen.getByRole('button', { name: 'Record levy' });
     expect(confirm.hasAttribute('disabled')).toBe(true);

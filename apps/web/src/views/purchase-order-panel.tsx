@@ -12,6 +12,10 @@ import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, Hint } from '../ui/form.js';
+// The numeric-input sweep of #155: every number-only field in the product
+// filters keystrokes AND paste, so a quantity cannot be typed wrong in the
+// first place. Server validation is unchanged behind it.
+import { NumericInput } from '../ui/numeric-input.js';
 import { Disclosure } from '../ui/disclosure.js';
 
 /**
@@ -316,9 +320,8 @@ export function PurchaseOrderPanel({
                       />
                     </td>
                     <td>
-                      <input
+                      <NumericInput
                         aria-label={`${lineLabel} quantity`}
-                        inputMode="decimal"
                         value={line.quantity}
                         required
                         onChange={(event) => {
@@ -334,9 +337,8 @@ export function PurchaseOrderPanel({
                       />
                     </td>
                     <td>
-                      <input
+                      <NumericInput
                         aria-label={`${lineLabel} rate`}
-                        inputMode="decimal"
                         value={line.rate}
                         required
                         onChange={(event) => {

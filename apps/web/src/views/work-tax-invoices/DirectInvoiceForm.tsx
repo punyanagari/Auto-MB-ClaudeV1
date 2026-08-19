@@ -16,6 +16,7 @@ import {
 } from './InvoiceFactFields.js';
 import { emptyDraftLine, toLineInputs, type DraftLine } from './InvoiceLineEditor.js';
 import { type ActRunner } from './shared.js';
+import { NumericInput } from '../../ui/numeric-input.js';
 
 interface DirectInvoiceFormProps {
   readonly api: ApiClient;
@@ -100,10 +101,9 @@ export function DirectInvoiceForm({
         {!itemised && (
           <Field>
             <label htmlFor="direct-invoice-taxable-value">Taxable value</label>
-            <input
+            <NumericInput
               id="direct-invoice-taxable-value"
               name="direct-invoice-taxable-value"
-              inputMode="decimal"
               required
               placeholder="125000.00"
             />

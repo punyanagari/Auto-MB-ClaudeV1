@@ -10,6 +10,7 @@ import { Field, FieldRow, Actions, FormError } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { openPdf } from '../lib/openPdf.js';
 import type { ActRunner } from './work-tax-invoices/shared.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 const TRANSPORT_MODE_LABELS: Record<TransportMode, string> = {
   road: 'Road',
@@ -161,12 +162,10 @@ export function EwayBillsPanel({
                 </Field>
                 <Field>
                   <label htmlFor="eway-new-distance">Distance (km)</label>
-                  <input
+                  <NumericInput
+                    integer
                     id="eway-new-distance"
                     name="eway-new-distance"
-                    type="number"
-                    min={0}
-                    max={4000}
                     required
                   />
                 </Field>

@@ -32,7 +32,7 @@ afterEach(() => {
  * verb on its own submit button, so a detail page reads as records first
  * and asks a question only when the operator asks. Open the panel before
  * touching the fields — they are unmounted until then. */
-export async function openForm(label: string) {
+export async function openForm(label: string | RegExp) {
   fireEvent.click(await screen.findByRole('button', { name: label, expanded: false }));
 }
 
@@ -346,6 +346,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listInstallations']>()
       .mockResolvedValue({ installations: [], nextCursor: null }),
     recordWorkInstallation: vi.fn<ApiClient['recordWorkInstallation']>(),
+    recordWorkInstallations: vi.fn<ApiClient['recordWorkInstallations']>(),
     cancelWorkInstallation: vi.fn<ApiClient['cancelWorkInstallation']>(),
     getWorkWarranty: vi.fn<ApiClient['getWorkWarranty']>().mockResolvedValue({
       terms: null,

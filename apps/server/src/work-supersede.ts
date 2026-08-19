@@ -161,7 +161,8 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
     'a payslip, which reaches a Work only through the salary payment request it raised — payroll is organisation-scoped and a supersede cannot unpay a month',
   delivery_challan_items: 'lines of a delivery challan, which blocks',
   challan_receipts: 'receipts against a delivery challan, which blocks',
-  challan_item_serials: 'serials on a delivery challan line, which blocks',
+  challan_item_serials:
+    'a traced physical unit — captured on a delivery challan line, or at the installation that found the nameplate the challan missed (0108); both reach the Work, and both blockers above catch it first',
   issue_challan_lines: 'lines of an issue challan, which blocks',
   installation_serials: 'serials on an installation record, which blocks',
   // The defect liability period (0099). It reaches `works` directly AND

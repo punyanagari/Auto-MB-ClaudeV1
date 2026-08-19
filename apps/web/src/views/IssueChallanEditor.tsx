@@ -22,6 +22,7 @@ import {
   Hint,
 } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface IssueChallanEditorProps {
   readonly api: ApiClient;
@@ -561,9 +562,8 @@ export function IssueChallanEditor({
                   <td>{item.unitCode}</td>
                   <td className={numericCell}>{item.awardedQuantity}</td>
                   <td>
-                    <input
+                    <NumericInput
                       aria-label={`Quantity of ${item.itemNumber} on this Issue Challan`}
-                      inputMode="decimal"
                       ref={(node) => {
                         registerField(quantityField, node);
                       }}
@@ -665,12 +665,11 @@ export function IssueChallanEditor({
                 <label htmlFor={quantityField}>
                   Quantity for manual line {position}
                 </label>
-                <input
+                <NumericInput
                   id={quantityField}
                   ref={(node) => {
                     registerField(quantityField, node);
                   }}
-                  inputMode="decimal"
                   value={line.quantity}
                   aria-invalid={fieldErrors[quantityField] !== undefined}
                   aria-describedby={

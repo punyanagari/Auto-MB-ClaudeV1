@@ -17,6 +17,7 @@ import { Disclosure } from '../ui/disclosure.js';
 import { PacCertificates } from './PacCertificates.js';
 import { WorkRetention } from './WorkRetention.js';
 import { WorkWarranty } from './WorkWarranty.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface WorkInstrumentsProps {
   readonly api: ApiClient;
@@ -212,11 +213,7 @@ export function WorkInstruments({
             </Field>
             <Field>
               <label htmlFor="instrument-amount">Amount (₹, optional)</label>
-              <input
-                id="instrument-amount"
-                name="instrument-amount"
-                inputMode="decimal"
-              />
+              <NumericInput id="instrument-amount" name="instrument-amount" />
             </Field>
             <Field>
               <label htmlFor="instrument-issued">Issued on</label>

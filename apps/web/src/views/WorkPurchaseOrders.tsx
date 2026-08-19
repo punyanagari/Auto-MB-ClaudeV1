@@ -17,6 +17,8 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, Hint } from '../ui/form.js';
 import { LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+// `NumericInput` (#155) left with the line editor it wraps when that half
+// of this view became the shared `PurchaseOrderPanel`.
 import { PurchaseOrderPanel } from './purchase-order-panel.js';
 
 interface WorkPurchaseOrdersProps {

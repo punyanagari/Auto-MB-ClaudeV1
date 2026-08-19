@@ -35,6 +35,7 @@ import {
 import { DataTable, controlCell, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * Milestone 8 phase 1: the per-Work payment matrix editor and item
@@ -399,10 +400,9 @@ export function PaymentMatrix({
                   const locked = category === 'AMC' && LOCKED_AMC_STAGES.has(field);
                   return (
                     <td key={field}>
-                      <input
+                      <NumericInput
                         aria-label={`${label} for ${categoryLabelOf(category, rows)}`}
                         value={locked ? '0' : draft[field]}
-                        inputMode="decimal"
                         disabled={locked}
                         title={
                           locked

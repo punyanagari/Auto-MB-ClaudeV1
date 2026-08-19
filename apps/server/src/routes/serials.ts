@@ -76,11 +76,16 @@ export function registerSerialRoutes(
           // toggle is refused while any serial is recorded against the
           // item. (Enabling remains legitimate at any time; the 0030
           // trigger holds this same direction against direct SQL.)
+          // The item is reached through the challan line for a delivered
+          // serial and through the serial itself for one recorded at
+          // installation (migration 0108). Counting only the first would
+          // let tracking be switched off underneath the serials the site
+          // captured — which is precisely the traceability R7 protects.
           const [recorded] = await tx<{ total: string }[]>`
             select count(*)::text as total
             from challan_item_serials s
-            join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
-            where dci.work_item_id = ${workItemId}
+            left join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+            where coalesce(dci.work_item_id, s.work_item_id) = ${workItemId}
           `;
           if (Number(recorded?.total ?? '0') > 0) {
             throw httpError(
@@ -181,23 +186,30 @@ export function registerSerialRoutes(
           {
             id: string;
             serial_number: string;
+            origin: 'delivery' | 'installation';
             installed_on: string | null;
             work_id: string;
             work_code: string;
             work_title: string;
             description_snapshot: string;
-            challan_id: string;
+            challan_id: string | null;
             challan_number: string | null;
-            challan_date: string;
+            challan_date: string | null;
             challan_status: SerialSearchMatch['challanStatus'];
             receipt_recorded: boolean;
             installation_id: string | null;
             installation_location: string | null;
           }[]
         >`
-          select s.id, s.serial_number, s.installed_on::text as installed_on,
+          select s.id, s.serial_number, s.origin,
+                 s.installed_on::text as installed_on,
                  w.id as work_id, w.work_code, w.title as work_title,
-                 dci.description_snapshot,
+                 -- The description comes off the challan line for a
+                 -- delivered serial (a snapshot, deliberately frozen at
+                 -- despatch) and off the Work item for one recorded at
+                 -- installation, which never had a line to snapshot.
+                 coalesce(dci.description_snapshot, wi.effective_description,
+                          wi.description) as description_snapshot,
                  dc.id as challan_id, dc.challan_number,
                  dc.challan_date::text as challan_date,
                  dc.status as challan_status,
@@ -209,8 +221,13 @@ export function registerSerialRoutes(
                  inst.location_name as installation_location
           from challan_item_serials s
           join works w on w.id = s.work_id
-          join delivery_challans dc on dc.id = s.delivery_challan_id
-          join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+          -- LEFT since migration 0108: a serial the Delivery Challan
+          -- missed and the site recorded has no challan and no line, and
+          -- an inner join would answer "no such serial" for exactly the
+          -- unit whose provenance somebody is asking about.
+          left join delivery_challans dc on dc.id = s.delivery_challan_id
+          left join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+          left join work_items wi on wi.id = s.work_item_id
           -- Milestone 7: surface the live quantity-level installation
           -- record (id + snapshot location) in the tenant-wide trace.
           left join installation_serials att
@@ -291,7 +308,11 @@ export function registerSerialRoutes(
           .map((row): SerialSearchMatch => ({
             id: row.id,
             serialNumber: row.serial_number,
-            source: 'delivery',
+            // The origin the row carries, not the table it came out of:
+            // both live in `challan_item_serials`, and a trace that called
+            // an installation-added serial "delivered" would state the one
+            // thing about it that is untrue.
+            source: row.origin,
             workId: row.work_id,
             workCode: row.work_code,
             workTitle: row.work_title,

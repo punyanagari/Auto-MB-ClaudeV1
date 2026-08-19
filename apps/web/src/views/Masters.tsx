@@ -27,6 +27,7 @@ import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FieldRow, FormError, FormNotice, Hint } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface MastersProps {
   readonly api: ApiClient;
@@ -1737,10 +1738,9 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
             <FieldRow>
               <Field>
                 <label htmlFor="gst-rate-rate">Rate (%)</label>
-                <input
+                <NumericInput
                   id="gst-rate-rate"
                   name="rate"
-                  inputMode="decimal"
                   required
                   placeholder="18"
                 />
