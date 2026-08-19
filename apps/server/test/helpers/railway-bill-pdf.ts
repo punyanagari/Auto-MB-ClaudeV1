@@ -153,3 +153,72 @@ export function railwayBillText(options: RailwayBillTextOptions = {}): string[] 
     row([0, 'Bill Amount (Rs.) (Including Tax (GST))'], [73, billAmount]),
   ];
 }
+
+/** One item block of a railway measurement sheet, as the route reads it. */
+export interface RailwayMeasurementItemOptions {
+  readonly schedule: string;
+  readonly itemNumber: string;
+  /** The `Total` figure: the TRUE CUMULATIVE quantity weighted by the
+   * stage percentage, which is what IWRCMS prints. */
+  readonly quantity: string;
+  readonly remark: string;
+}
+
+export interface RailwayMeasurementTextOptions {
+  readonly measurementNumber?: string;
+  readonly items?: readonly RailwayMeasurementItemOptions[];
+}
+
+/**
+ * The railway's own Measurement Book, in the geometry of the real thing.
+ *
+ * The parser's regression bar is the committed corpus
+ * (`railway-measurement-parse.test.ts` reads `MB-{1,2,3}.raw.txt`
+ * verbatim). What the ROUTE needs is bytes that survive `consumeUpload`,
+ * the scan and `pdftotext -layout`, carrying a measurement this test can
+ * choose — so this reproduces the block shape those files established
+ * and nothing else: the measurement heading, a schedule heading, and per
+ * item a heading, a `Total` row at the right of the grid, and a `Reason
+ * for Reduction` line with its own trailing percentage column.
+ */
+export function railwayMeasurementText(
+  options: RailwayMeasurementTextOptions = {},
+): string[] {
+  const { measurementNumber = '00341490147964/CSTM/1139316/OAM/L2/01', items = [] } =
+    options;
+
+  const lines = [
+    row([10, `On Account Measurement No. ${measurementNumber}`]),
+    '',
+    row([3, 'Particulars'], [22, 'Unit'], [31, 'Numbers'], [47, 'Coeff.']),
+  ];
+  let schedule: string | null = null;
+  for (const item of items) {
+    if (item.schedule !== schedule) {
+      schedule = item.schedule;
+      lines.push('', `SCHEDULE ${schedule}`);
+    }
+    lines.push(
+      row([0, 'Group : Not Applicable']),
+      row([0, `Item No. : ${item.itemNumber}      Supply of something measured`]),
+      // The grid line the coefficient and the contents live on. Present
+      // because a real sheet has one and the parser must not mistake its
+      // `= 2.1` for the total below it.
+      row(
+        [0, 'Supply of'],
+        [22, 'Number'],
+        [31, '1.0 x 1.0 x 1.0'],
+        [88, `= ${item.quantity}`],
+        [102, 'Yes'],
+      ),
+      row([88, 'Total'], [100, item.quantity]),
+      row(
+        [0, `Reason for Reduction : ${item.remark}`],
+        [90, 'Now to pay'],
+        [110, '100.0%'],
+      ),
+      '',
+    );
+  }
+  return lines;
+}

@@ -96,6 +96,12 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   '0098_retention_and_liquidated_damages.sql': 6,
   '0099_warranty_dlp.sql': 6,
   '0104_owner_rulings_2026_08_19.sql': 1,
+  // 0110 creates no trigger at all: the Issue Challan's signing arm is a
+  // column, two constraints, two indexes and a CREATE OR REPLACE of
+  // 0091's existing guard. A migration with no trigger is absent from
+  // this census by construction, and its own `it` block below asserts
+  // that it replaced the guard rather than adding a second one.
+  '0111_railway_measurements.sql': 4,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -3110,5 +3116,234 @@ describe('the owner rulings of 2026-08-19 (0104)', () => {
       );
     expect(definers).toHaveLength(1);
     expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(2);
+  });
+});
+
+describe('the Issue Challan joins the signing lane (0110)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0110_issue_challan_signing.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that rewrites a constraint', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('adds the third document arm as a real composite foreign key', () => {
+    // The whole argument of 0091's document model: a foreign key that
+    // only exists when a type column happens to say the right thing is
+    // not a foreign key. The third arm gets the same three-column
+    // reference its siblings have, against a key `issue_challans` has
+    // published since 0014 — so unlike `tax_invoices`, which had to gain
+    // that key in 0091, this arm costs the referenced register nothing.
+    expect(sql).toContain('ADD COLUMN issue_challan_id uuid;');
+    expect(sql).toContain(
+      'FOREIGN KEY (organisation_id, issue_challan_id, work_id)\n  REFERENCES issue_challans (organisation_id, id, work_id);',
+    );
+    expect(sql).not.toMatch(/ALTER TABLE issue_challans\s+ADD CONSTRAINT/);
+  });
+
+  it('restates the shape CHECK with all three arms rather than loosening it', () => {
+    // A CASE-shaped constraint must enumerate every arm: one left out is
+    // silently permitted rather than loudly missing. Both the vocabulary
+    // and the shape are dropped and re-added whole, so there is exactly
+    // one authority on each and a reader does not have to intersect two.
+    expect(sql).toContain('DROP CONSTRAINT signing_requests_document_type_check;');
+    expect(sql).toContain(
+      "document_type IN ('delivery_challan', 'issue_challan', 'tax_invoice')",
+    );
+    expect(sql).toContain('DROP CONSTRAINT signing_requests_document_shape;');
+    for (const arm of ['delivery_challan', 'issue_challan', 'tax_invoice']) {
+      expect(sql, arm).toContain(`WHEN '${arm}' THEN`);
+    }
+    // Every arm still excludes the other two explicitly. A shape that
+    // only asserted the named column is not null would admit a row
+    // naming three documents at once.
+    expect(sql).toContain(
+      'issue_challan_id IS NOT NULL\n        AND delivery_challan_id IS NULL AND tax_invoice_id IS NULL',
+    );
+  });
+
+  it('carries one open request per Issue Challan, and an index a foreign key can use', () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX signing_requests_one_open_per_issue_challan\s+ON signing_requests \(organisation_id, issue_challan_id\)\s+WHERE issue_challan_id IS NOT NULL AND status IN \('pending', 'claimed'\);/,
+    );
+    // NON-partial, beside the partial unique one: referential integrity
+    // cannot use a partial index, which is what the FK-index census
+    // measures.
+    expect(sql).toContain(
+      'CREATE INDEX signing_requests_issue_challan_idx\n  ON signing_requests (organisation_id, issue_challan_id);',
+    );
+  });
+
+  it('replaces 0091 guard rather than adding a second one, and freezes the new column', () => {
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.guard_signing_request()',
+    );
+    // No new trigger: a second BEFORE trigger on one table is two rules
+    // whose order nobody stated. The trigger census above counts this
+    // migration at zero for exactly this reason.
+    expect(sql).not.toMatch(/CREATE TRIGGER/);
+    // The frozen ROW is a denylist, so a column left out of it is
+    // silently editable — and a signing request that could be re-pointed
+    // at another document after its digest was authorised is the one edit
+    // this table must never admit.
+    expect(sql).toContain('NEW.issue_challan_id, NEW.tax_invoice_id, NEW.work_id,');
+    expect(sql).toContain('OLD.issue_challan_id, OLD.tax_invoice_id, OLD.work_id,');
+    // The INSERT branch reads the Issue Challan's OWN register. An `ELSE`
+    // would have sent it to the tax-invoice arm against a NULL id, found
+    // no row, and refused every Issue Challan with "missing".
+    expect(sql).toContain('ELSIF NEW.issue_challan_id IS NOT NULL THEN');
+    expect(sql).toContain('FROM issue_challans t');
+  });
+
+  it('adds no SQLSTATE of its own', () => {
+    // The migration adds an ARM to existing rules, not a rule. A third
+    // arm raising a new code would mean routes/signing.ts mapping two
+    // SQLSTATEs to one message.
+    const codes = new Set(
+      [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map((match) => match[1]),
+    );
+    expect([...codes].sort()).toEqual(['23J01', '23J02', '23J03', '23J04']);
+  });
+});
+
+describe('the railway measurement and its gate (0111)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0111_railway_measurements.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that adds a trigger to a live table', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('holds both new tables in the ADR-0010 policy shape with no DELETE', () => {
+    for (const table of ['railway_measurements', 'railway_measurement_confirmations']) {
+      expect(sql, table).toContain(`CREATE POLICY ${table}_tenant_policy`);
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+    expect(
+      sql.match(
+        /USING \(organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)\)/g,
+      ),
+    ).toHaveLength(2);
+    // Evidence never leaves; discard is the only exit for the document,
+    // and a confirmation somebody made is not editable at all.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON railway_measurements TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT ON railway_measurement_confirmations TO auto_mb_app;',
+    );
+    expect(sql).not.toContain(
+      'UPDATE ON railway_measurement_confirmations TO auto_mb_app',
+    );
+  });
+
+  it('binds the object key to the tenant prefix, as every stored document does', () => {
+    expect(sql).toContain("CHECK (object_key LIKE organisation_id::text || '/%')");
+    expect(sql).toContain(
+      "media_type text NOT NULL CHECK (media_type = 'application/pdf')",
+    );
+    expect(sql).toContain('sha256 sha256_hex NOT NULL');
+  });
+
+  it('cannot hold a reading and its absence at the same time', () => {
+    // An unreadable document has nothing extracted and nothing compared;
+    // a read one has both. Without this a row could claim `matched` with
+    // an empty verdict list, and the gate would open on nothing.
+    expect(sql).toContain('railway_measurements_reading_shape_check');
+    expect(sql).toMatch(
+      /match_status = 'unreadable'\s+AND extraction_payload IS NULL\s+AND line_verdicts = '\[\]'::jsonb/,
+    );
+    expect(sql).toMatch(
+      /match_status <> 'unreadable'\s+AND extraction_payload IS NOT NULL\s+AND jsonb_array_length\(line_verdicts\) > 0/,
+    );
+  });
+
+  it('keeps one live measurement per book, with a foreign key index beside it', () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX railway_measurements_one_live_per_book\s+ON railway_measurements \(organisation_id, measurement_book_id\)\s+WHERE discarded_at IS NULL;/,
+    );
+    expect(sql).toContain(
+      'CREATE INDEX railway_measurements_book_idx\n  ON railway_measurements (organisation_id, measurement_book_id);',
+    );
+  });
+
+  it('refuses a confirmation that would turn the fallback into a bypass', () => {
+    // Three ways past the gate, all closed in the database rather than in
+    // the route alone: confirming a document that WAS read (a mismatch is
+    // a disagreement about quantities, not a reading problem), confirming
+    // a discarded one, and confirming an item the Measurement Book does
+    // not have — which would let the count be reached without every real
+    // line being looked at.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_railway_measurement_confirmation()',
+    );
+    expect(sql).toContain("IF measurement.match_status <> 'unreadable' THEN");
+    expect(sql).toContain('IF measurement.discarded_at IS NOT NULL THEN');
+    expect(sql).toContain('FROM measurement_book_lines l');
+    expect(sql).toContain(
+      'CREATE TRIGGER railway_measurement_confirmations_guard\nBEFORE INSERT ON railway_measurement_confirmations',
+    );
+  });
+
+  it('gates the received railway bill on the measurement, counting confirmations', () => {
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_railway_bill_needs_measurement()',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER received_railway_bills_needs_measurement_guard\nBEFORE INSERT ON received_railway_bills',
+    );
+    // The unreadable arm counts rows rather than trusting a flag, which
+    // is the whole reason the confirmations are a table.
+    expect(sql).toContain('FROM railway_measurement_confirmations c');
+    expect(sql).toContain('AND c.item_number = l.item_number');
+    // INSERT only, and deliberately: 0066 froze
+    // `received_railway_bills.measurement_book_id`, so no UPDATE can move
+    // a bill onto an ungated measurement. An UPDATE arm would watch a
+    // door that is welded shut.
+    expect(sql).not.toMatch(/BEFORE INSERT OR UPDATE ON received_railway_bills/);
+  });
+
+  it('takes the next free SQLSTATE block and stays inside it', () => {
+    // 23R, which this migration is the first to use. `I` and `O` are
+    // skipped in this schema's allocation because they read as digits,
+    // and the one thing an operator does with a SQLSTATE is read it
+    // aloud.
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    expect(codes.length).toBeGreaterThanOrEqual(7);
+    expect(codes.every((code) => code?.startsWith('23R'))).toBe(true);
+    expect([...new Set(codes)].sort()).toEqual([
+      '23R01',
+      '23R02',
+      '23R03',
+      '23R04',
+      '23R05',
+      '23R06',
+    ]);
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    // Every table these guards touch is one the caller may already read
+    // under RLS, so definer rights would add authority for nothing — and
+    // a definer here would read across tenants.
+    expect(sql).not.toContain('SECURITY DEFINER');
+    expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(3);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(3);
   });
 });

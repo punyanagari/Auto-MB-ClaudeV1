@@ -37,6 +37,11 @@ interface IssueChallanDetailProps {
   readonly canModify: boolean;
   readonly canIssue: boolean;
   readonly canCancel: boolean;
+  /** The signing authority (0091, extended to this register by 0110).
+   * Draws the one action that queues this Issue Challan for the
+   * organisation's own certificate; the server checks the same authority,
+   * which is where it is enforced. */
+  readonly canSign: boolean;
   /** R8: false closes the two mutating surfaces (cancel, correction) on a
    * completed Work, which the server refuses anyway — assertWorkOperable
    * for the cancel, requireActiveWork for the correction. Omitted means
@@ -61,6 +66,7 @@ export function IssueChallanDetail({
   canModify,
   canIssue,
   canCancel,
+  canSign,
   workActive = true,
   onEdit,
   onDeleted,
@@ -314,6 +320,33 @@ export function IssueChallanDetail({
             Open PDF
           </Button>
         )}
+        {/* SEND FOR SIGNING (0091 via 0110, ADR-0012). The Delivery
+            Challan's affordance, on its sibling document and on the same
+            terms: only an issued challan that has a render — the
+            signature covers stored bytes, so there is nothing to sign
+            before one exists — and only for a member holding the signing
+            authority. The queue at #/signing is where it goes next; this
+            is the only place it is raised, because raising it is a thing
+            you do TO a document. */}
+        {issueChallan.status === 'issued' &&
+          issueChallan.renderedAvailable &&
+          canSign && (
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                void act(async () => {
+                  await api.createSigningRequest(organisationId, {
+                    documentType: 'issue_challan',
+                    documentId: issueChallan.id,
+                  });
+                  return null;
+                }, 'Sent to the signing queue.')
+              }
+            >
+              Send for signing
+            </Button>
+          )}
         {issueChallan.signedCopyAvailable && (
           <Button
             variant="outline"

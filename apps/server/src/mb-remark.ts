@@ -179,6 +179,24 @@ export function addDecimalStrings(a: string, b: string): string {
 }
 
 /**
+ * Multiplies two plain decimal strings exactly; the result carries the SUM of
+ * the two scales, which is the exact scale of the product and never a rounded
+ * one. No trailing-zero trimming — that is renderQuantity's job.
+ *
+ * Exported for the railway-measurement matcher (0111), which has to derive the
+ * quantity IWRCMS prints on its measurement sheet: the railway states one
+ * "Total" per item, and that figure is the stage quantity multiplied by the
+ * stage percentage rather than the quantity itself. Deriving it in floating
+ * point would put an authoritative comparison a rounding error away from
+ * refusing a document that agrees, which is AGENTS.md rule 5 exactly.
+ */
+export function multiplyDecimalStrings(a: string, b: string): string {
+  const pa = parseDecimal(a);
+  const pb = parseDecimal(b);
+  return formatScaled({ units: pa.units * pb.units, scale: pa.scale + pb.scale });
+}
+
+/**
  * Rounds to exactly 2 fractional digits, half away from zero ("commercial"
  * rounding: 0.005 -> 0.01). This is the round2 of the stage-amount rule; the
  * snapshotted amounts make this choice permanent per MB.

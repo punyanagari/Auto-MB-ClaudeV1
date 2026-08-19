@@ -34,6 +34,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, Actions, FormError, Hint } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { RailwayBillPanel } from './RailwayBillPanel.js';
+import { RailwayMeasurementPanel } from './RailwayMeasurementPanel.js';
 
 interface MeasurementBooksProps {
   readonly api: ApiClient;
@@ -1245,10 +1246,27 @@ export function MeasurementBooks({
               corrections happen as compensating entries on the next MB.
             </p>
           )}
-          {/* The other side of the contract. A finalized measurement is
-              this agency's statement; the railway's own On-Account Bill is
-              its answer, and until that answer arrives and verifies the
-              measurement is outstanding with the railway. */}
+          {/* The other side of the contract, in the order the railway
+              produces it. The measurement comes first — IWRCMS raises the
+              bill FROM it — and no bill may be recorded against a book
+              whose measurement is not on record and either matched or
+              confirmed (migration 0111). */}
+          {book.status === 'finalized' && (
+            <RailwayMeasurementPanel
+              api={api}
+              organisationId={organisationId}
+              book={book}
+              canIssue={canIssue}
+              canCancel={canCancel}
+              onChanged={() => {
+                void refreshList();
+              }}
+            />
+          )}
+          {/* A finalized measurement is this agency's statement; the
+              railway's own On-Account Bill is its answer, and until that
+              answer arrives and verifies the measurement is outstanding
+              with the railway. */}
           {book.status === 'finalized' && (
             <RailwayBillPanel
               api={api}

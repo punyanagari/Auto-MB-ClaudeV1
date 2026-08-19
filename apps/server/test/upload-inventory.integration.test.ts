@@ -82,6 +82,16 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
+    // The document that bill is raised from (0111): the railway's own
+    // copy of a finalized Measurement Book. Same gate, same throttle,
+    // same 25 MB ceiling as its sibling above it.
+    key: 'POST /api/measurement-books/:id/railway-measurement',
+    sourceFile: 'routes/railway-measurements.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=inventory.pdf',
+  },
+  {
     // The company document library (0079): a credential and its first
     // version arrive together, and a renewal appends to the credential
     // it renews. Two addresses, one handler, the same gate as every

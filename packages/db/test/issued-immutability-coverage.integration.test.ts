@@ -463,6 +463,18 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'discard_reason',
   ],
 
+  // The railway's own measurement (0111), on exactly the same terms as
+  // the bill above it: its bytes, its extraction and its per-line
+  // verdicts are frozen by `guard_railway_measurement_update`, and what
+  // is left is the discard evidence, made terminal by the same guard.
+  railway_measurements: [
+    'id',
+    'updated_at',
+    'discarded_at',
+    'discarded_by_user_id',
+    'discard_reason',
+  ],
+
   // The provider attempt ledger (0041): the request is frozen at start,
   // and the outcome is the append that closes it.
   statutory_provider_operations: [

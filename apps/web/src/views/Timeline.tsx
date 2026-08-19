@@ -38,6 +38,7 @@ const ENTITY_FILTERS = [
   { value: 'correction_notices', label: 'Correction notices' },
   { value: 'measurement_books', label: 'Measurement books' },
   { value: 'received_railway_bills', label: 'Railway bills' },
+  { value: 'railway_measurements', label: 'Railway measurements' },
   { value: 'inspection_calls', label: 'Inspection calls' },
   { value: 'correspondence_letters', label: 'Correspondence' },
   { value: 'production_job_cards', label: 'Job cards' },

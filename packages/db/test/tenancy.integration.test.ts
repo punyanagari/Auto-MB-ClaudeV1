@@ -119,8 +119,11 @@ const TENANT_TABLES = [
   'measurement_book_counters',
   'import_batches',
   'import_records',
-  // The railway's own received On-Account Bill (0066).
+  // The railway's own received On-Account Bill (0066), and the
+  // measurement it is raised from (0111).
   'received_railway_bills',
+  'railway_measurements',
+  'railway_measurement_confirmations',
   // The procurement wave and the tax facts that ride with it (0033).
   'purchase_orders',
   'purchase_order_lines',
@@ -278,6 +281,10 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // A company document version is evidence: append-only for the
     // application role and refused by trigger anyway (0079).
     table !== 'company_document_versions' &&
+    // A manual confirmation is a statement one named person made about
+    // one line (0111). The application role holds no UPDATE, so a
+    // cross-tenant one raises 42501 rather than matching zero rows.
+    table !== 'railway_measurement_confirmations' &&
     // Coverage of an inspection call is settled before the agency comes;
     // the 0082 guard refuses an UPDATE-shaped change to it, and the
     // application role holds no UPDATE on the table at all.
@@ -317,8 +324,12 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
 const DELETE_REVOKED_TABLES = [
   'organisations',
   // A settlement document does not leave; a bill attached to the wrong
-  // measurement discards in place (0066).
+  // measurement discards in place (0066), and so does the measurement it
+  // was raised from (0111). A confirmation somebody made about a line
+  // does not leave either.
   'received_railway_bills',
+  'railway_measurements',
+  'railway_measurement_confirmations',
   'works',
   'work_items',
   'loa_documents',
@@ -1058,6 +1069,40 @@ async function seedTenantGraph(
     await tx`
       insert into measurement_book_counters (organisation_id, work_id, next_value)
       values (${organisationId}, ${work.id}, 1)
+    `;
+
+    // The railway's own measurement of that finalized book (0111), which
+    // the On-Account Bill below cannot be recorded without.
+    //
+    // Seeded as `unreadable` with a confirmation for its single line, and
+    // the choice is what gets one row into BOTH new tables from one
+    // fixture: a matched measurement opens the gate on its own and would
+    // leave `railway_measurement_confirmations` empty, which the
+    // completeness census counts as a table nobody proved isolation for.
+    // The confirmation path opens the same gate and exercises the guard
+    // that decides which lines may be confirmed at all.
+    const [railwayMeasurement] = await tx<{ id: string }[]>`
+      insert into railway_measurements (
+        organisation_id, work_id, measurement_book_id, object_key,
+        original_filename, sha256, media_type, size_bytes, match_status,
+        line_verdicts, uploaded_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id}, ${measurementBook.id},
+        ${`${organisationId}/railwaymeasurement/${measurementBook.id}.pdf`},
+        'measurement.pdf', ${'c'.repeat(64)}, 'application/pdf', 1024,
+        'unreadable', '[]'::jsonb, ${userId}
+      )
+      returning id
+    `;
+    if (!railwayMeasurement)
+      throw new Error('seed railway measurement insert returned no row');
+    await tx`
+      insert into railway_measurement_confirmations (
+        organisation_id, railway_measurement_id, item_number,
+        confirmed_by_user_id
+      )
+      values (${organisationId}, ${railwayMeasurement.id}, '1', ${userId})
     `;
 
     // The railway's own On-Account Bill against that finalized book

@@ -427,6 +427,12 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn<ApiClient['listReceivedRailwayBills']>()
       .mockResolvedValue([]),
     discardReceivedRailwayBill: vi.fn<ApiClient['discardReceivedRailwayBill']>(),
+    uploadRailwayMeasurement: vi.fn<ApiClient['uploadRailwayMeasurement']>(),
+    getRailwayMeasurement: vi
+      .fn<ApiClient['getRailwayMeasurement']>()
+      .mockResolvedValue(null),
+    confirmRailwayMeasurementLine: vi.fn<ApiClient['confirmRailwayMeasurementLine']>(),
+    discardRailwayMeasurement: vi.fn<ApiClient['discardRailwayMeasurement']>(),
     listBillSettlement: vi.fn<ApiClient['listBillSettlement']>().mockResolvedValue([]),
     listReceivables: vi.fn<ApiClient['listReceivables']>().mockResolvedValue({
       entries: [],

@@ -628,6 +628,79 @@ carrying a maintenance schedule unless somebody issued a Delivery Challan
 claiming the years had moved as goods. The rule "100% executed value" is
 unchanged; what changed is that an AMC schedule can now reach it.
 
+### 5.4a The railway's own measurement, and the gate it holds
+
+Owner ruling of 2026-08-19 (live-testing corrections item 17; migration
+0111). Between "we finalized our measurement" and "the railway billed us"
+there was nothing at all, and everything downstream — the bill, the
+closure in § 5.5, the `paid` flag that rests on the closure — was resting
+on that gap. IWRCMS does not raise an On-Account Bill out of nothing: it
+raises one from a **measurement** its own system holds, and the agency's
+finalized Measurement Book is only a claim until that measurement is on
+record here and agrees with it.
+
+**The operator uploads the railway's measurement sheet and asserts
+nothing.** The measurement number, the per-item quantities and the
+contractual remarks are read from the PDF's own text layer through the
+same Poppler-only path everything else inbound uses, and compared with the
+Measurement Book's own stored lines. The sheet is refused outright if it
+is taken under a different LOA or records a different measurement.
+
+**What is compared, per item, is the quantity and the remark.** Two
+properties of the real documents decide the arithmetic, and both were
+established from the committed settlement corpus rather than assumed:
+
+- The railway prints **one figure per item, weighted by the stage
+  percentage** — three units claimed at 70% appears as `2.1`, not `3`.
+- That figure is the **true cumulative**, not this measurement's own
+  delta. An item with ten units already billed and one more this time
+  reads `7.04` at 64%, and an item with nothing new this time still
+  prints its running total. A matcher built on a first measurement alone
+  would refuse every second and third measurement of every Work.
+
+Remarks are compared after normalisation, because IWRCMS re-typesets the
+same sentence the agency's own engine generates — different case, zero-
+padded numbers, no full stops, an occasional missing space, `Nil` for
+`nill`, and a `Prepaid Nil` clause the agency's engine omits on an item's
+first billing. Every one of those foldings is forced by a line in the
+corpus, and none of them can turn one claim into a different one: what
+survives the normalisation is the percentages, the quantities and the
+words.
+
+**Descriptions and units are deliberately not compared.** IWRCMS
+re-renders them in its own house style, truncated at about eighty
+characters on every item in the corpus. Refusing on them would refuse
+every real document while saying nothing about the measurement.
+
+**Extraction can fail, and the exit is an act rather than a waiver.** A
+scanned measurement is a real thing an agency holds, so a sheet this
+product cannot read is recorded as `unreadable` rather than refused, and
+its only exit is a **line-by-line manual confirmation**: for every line of
+the Measurement Book, a named member states that the railway's document
+says the same thing. One row per line, each naming who and when, all of it
+on the audit trail and on the Work's timeline. There is no single control
+that confirms a document.
+
+**A mismatch is not confirmable.** A measurement the parser read and found
+to disagree is a disagreement about quantities, not a reading problem; the
+remedy is to settle it with the railway and upload the corrected sheet.
+The screen draws no control for it and the database refuses one.
+
+**The gate.** A received railway bill records against a Measurement Book
+only when that book's railway measurement is on file and either matched by
+the reading or confirmed line by line. Enforced twice, and the split is
+the same one § 5.5 draws: the database holds the **structural** half — the
+measurement exists, belongs to this organisation and this book, is not
+discarded, and either matched or carries a confirmation for every line the
+book has — while the **matching rule** itself lives once, in
+`apps/server/src/railway-measurement-match.ts`, because it is a reading of
+two documents rather than a fact about the schema.
+
+The chain now reads: finalized Measurement Book → railway measurement
+matched or confirmed → received railway bill → measurement closed by that
+bill → prepared bill may be marked paid. Each arrow is enforced in the
+route and in the database.
+
 ### 5.5 The received railway bill
 
 Every other document in the chain is one the agency **writes**. The railway's
@@ -2237,7 +2310,13 @@ eSign) is designed, gated on ESP onboarding, and not built.
 **The lifecycle**, one row in the signing queue from end to end:
 
 1. **Raise.** A member holding the **signing authority** opens an issued
-   delivery challan or a submitted tax invoice and sends it for signing.
+   Delivery Challan, an issued Issue Challan or a submitted tax invoice and
+   sends it for signing. (The Issue Challan joined on the owner's ruling of
+   2026-08-19, migration 0110: it is material leaving the agency's custody
+   under the agency's own name, it renders a PDF already, and every
+   mechanism below applies to it unchanged — one open request per document,
+   the same digest binding, the same kiosk, the same authority. An operator
+   should not have to learn a second story for the sibling document.)
    The server prepares the entire signature there and then — it appends the
    PDF revision, computes the ByteRange, builds the CMS signed attributes —
    and stores the one value the token will be asked for: the SHA-256 of

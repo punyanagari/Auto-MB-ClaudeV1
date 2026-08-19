@@ -273,6 +273,10 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     uploadReceivedRailwayBill: vi.fn(),
     listReceivedRailwayBills: vi.fn(),
     discardReceivedRailwayBill: vi.fn(),
+    uploadRailwayMeasurement: vi.fn(),
+    getRailwayMeasurement: vi.fn(),
+    confirmRailwayMeasurementLine: vi.fn(),
+    discardRailwayMeasurement: vi.fn(),
     listBillSettlement: vi.fn().mockResolvedValue([]),
     listReceivables: vi.fn().mockResolvedValue({
       entries: [],
@@ -943,6 +947,7 @@ describe('IssueChallanDetail', () => {
     });
     render(
       <IssueChallanDetail
+        canSign={false}
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
@@ -994,6 +999,7 @@ describe('IssueChallanDetail', () => {
     });
     render(
       <IssueChallanDetail
+        canSign={false}
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
@@ -1163,6 +1169,7 @@ describe('Issue Challan correction flow', () => {
     });
     render(
       <IssueChallanDetail
+        canSign={false}
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
@@ -1242,6 +1249,7 @@ describe('Issue Challan correction flow', () => {
     });
     render(
       <IssueChallanDetail
+        canSign={false}
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
@@ -1279,6 +1287,7 @@ describe('Issue Challan correction flow', () => {
     });
     render(
       <IssueChallanDetail
+        canSign={false}
         api={api}
         organisationId={ORG_ID}
         challanId={CHALLAN_ID}
@@ -1292,5 +1301,89 @@ describe('Issue Challan correction flow', () => {
     );
     await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
     expect(screen.queryByRole('heading', { name: 'Request correction' })).toBeNull();
+  });
+
+  /**
+   * Sending an Issue Challan for signing (migration 0110).
+   *
+   * The affordance lives on the document rather than on the queue, which
+   * is the Delivery Challan's rule and the reason there is no picker at
+   * `#/signing`: raising a signing request is a thing you do TO a
+   * document. Three conditions gate it and each is proved, because each
+   * one drawn wrong puts a control in front of somebody it will refuse.
+   */
+  describe('sending it for signing', () => {
+    function issuedWithRender(renderedAvailable: boolean) {
+      return issueChallanDetail({
+        status: 'issued',
+        challanNumber: 'DCW-1-IC/1',
+        sequenceNumber: 1,
+        issuedAt: '2026-01-15T10:00:00.000Z',
+        renderedAvailable,
+      });
+    }
+
+    function renderDetail(
+      api: ReturnType<typeof stubApi>,
+      props: { readonly canSign: boolean },
+    ) {
+      return render(
+        <IssueChallanDetail
+          canSign={props.canSign}
+          api={api}
+          organisationId={ORG_ID}
+          challanId={CHALLAN_ID}
+          canModify
+          canIssue={false}
+          canCancel={false}
+          onEdit={vi.fn()}
+          onDeleted={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+    }
+
+    it('queues the challan with its own document type', async () => {
+      const createSigningRequest = vi
+        .fn<ReturnType<typeof stubApi>['createSigningRequest']>()
+        .mockResolvedValue({
+          request: {} as Awaited<
+            ReturnType<ReturnType<typeof stubApi>['createSigningRequest']>
+          >['request'],
+        });
+      const api = stubApi({
+        getIssueChallan: vi.fn().mockResolvedValue(issuedWithRender(true)),
+        createSigningRequest,
+      });
+      renderDetail(api, { canSign: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Send for signing' }));
+      await waitFor(() => {
+        expect(createSigningRequest).toHaveBeenCalledWith(ORG_ID, {
+          documentType: 'issue_challan',
+          documentId: CHALLAN_ID,
+        });
+      });
+    });
+
+    it('is absent without the signing authority', async () => {
+      const api = stubApi({
+        getIssueChallan: vi.fn().mockResolvedValue(issuedWithRender(true)),
+      });
+      renderDetail(api, { canSign: false });
+      await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
+      expect(screen.queryByRole('button', { name: 'Send for signing' })).toBeNull();
+    });
+
+    it('is absent before there is a render to sign', async () => {
+      // A signature covers stored bytes. Offering to sign a challan with
+      // no PDF is offering to sign nothing.
+      const api = stubApi({
+        getIssueChallan: vi.fn().mockResolvedValue(issuedWithRender(false)),
+      });
+      renderDetail(api, { canSign: true });
+      await screen.findByRole('heading', { name: 'Issue Challan DCW-1-IC/1' });
+      expect(screen.queryByRole('button', { name: 'Send for signing' })).toBeNull();
+    });
   });
 });

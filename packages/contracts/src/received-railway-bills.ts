@@ -129,3 +129,136 @@ export const MeasurementBookClosureRefusalDetailsSchema = Type.Object(
 export type MeasurementBookClosureRefusalDetails = Static<
   typeof MeasurementBookClosureRefusalDetailsSchema
 >;
+
+/* --- The railway's measurement (migration 0111) ---------------------------- */
+
+/**
+ * The document BEFORE the bill.
+ *
+ * IWRCMS raises an On-Account Bill from a measurement its own system
+ * holds, and the agency's finalized Measurement Book is only a claim
+ * until that measurement is on record and agrees with it. This is that
+ * record — uploaded, read, and compared line by line — and no bill may be
+ * recorded against a Measurement Book without it.
+ *
+ * Nothing is asserted over the wire here either. The upload carries a
+ * file and a filename; the quantities, the remarks and the verdict are
+ * all read on the server.
+ */
+export const RailwayMeasurementUploadQuerySchema = Type.Object(
+  { filename: Type.String({ minLength: 1, maxLength: 300 }) },
+  { additionalProperties: false },
+);
+
+/**
+ * How the reading went.
+ *
+ *   matched     every line agrees, and neither document carries a line
+ *               the other does not.
+ *   mismatched  the document was read and disagrees. Named per line.
+ *   unreadable  no line table could be extracted; the recorded
+ *               line-by-line confirmation is this state's only exit.
+ */
+const RAILWAY_MEASUREMENT_MATCH_STATUSES = [
+  'matched',
+  'mismatched',
+  'unreadable',
+] as const;
+const RailwayMeasurementMatchStatusSchema = Type.Union(
+  RAILWAY_MEASUREMENT_MATCH_STATUSES.map((status) => Type.Literal(status)),
+);
+export type RailwayMeasurementMatchStatus = Static<
+  typeof RailwayMeasurementMatchStatusSchema
+>;
+
+/** Why one line does not match. Distinct values in the same spirit as the
+ * bill's settlement refusals: they say different things to an operator,
+ * and a single boolean would flatten a disagreement about quantities into
+ * a missing row. */
+const RAILWAY_MEASUREMENT_LINE_REFUSALS = [
+  'quantity',
+  'remark',
+  'missing_from_measurement',
+  'absent_from_measurement_book',
+] as const;
+const RailwayMeasurementLineRefusalSchema = Type.Union(
+  RAILWAY_MEASUREMENT_LINE_REFUSALS.map((refusal) => Type.Literal(refusal)),
+);
+
+const RailwayMeasurementLineSchema = Type.Object(
+  {
+    itemNumber: Type.String(),
+    matched: Type.Boolean(),
+    refusal: Type.Union([RailwayMeasurementLineRefusalSchema, Type.Null()]),
+    /** One sentence naming what differs on this line. Never a remedy —
+     * the remedy catalog owns those. */
+    detail: Type.Union([Type.String(), Type.Null()]),
+    /** Who confirmed this line by hand, and when, on an unreadable
+     * document. Null on every line of a document the parser read: a
+     * matched line needs no confirmation and a mismatched one may not
+     * have any. */
+    confirmedByUserId: Type.Union([Type.String(), Type.Null()]),
+    confirmedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type RailwayMeasurementLine = Static<typeof RailwayMeasurementLineSchema>;
+
+export const RailwayMeasurementSchema = Type.Object(
+  {
+    id: UuidSchema,
+    workId: UuidSchema,
+    measurementBookId: UuidSchema,
+    originalFilename: Type.String(),
+    sha256: Type.String({ pattern: '^[0-9a-f]{64}$' }),
+    sizeBytes: Type.Integer({ minimum: 1 }),
+    matchStatus: RailwayMeasurementMatchStatusSchema,
+    /** One entry per line, in the Measurement Book's own order, with the
+     * railway's extra items appended. On an unreadable document this is
+     * the BOOK's lines with no verdict, so the screen has something to
+     * ask an operator to confirm. */
+    lines: Type.Array(RailwayMeasurementLineSchema),
+    /** Whether a received railway bill may now be recorded against this
+     * measurement: matched by the reading, or confirmed line by line.
+     * Derived on the server so the screen and the gate cannot disagree. */
+    settles: Type.Boolean(),
+    discardedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+    createdAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+export type RailwayMeasurement = Static<typeof RailwayMeasurementSchema>;
+
+export const RailwayMeasurementResponseSchema = Type.Object(
+  { measurement: Type.Union([RailwayMeasurementSchema, Type.Null()]) },
+  { additionalProperties: false },
+);
+export type RailwayMeasurementResponse = Static<
+  typeof RailwayMeasurementResponseSchema
+>;
+
+/** One line, confirmed by one member. Deliberately singular: the fallback
+ * is an act per line, and a request that took a list would be the single
+ * click migration 0111 refuses to model. */
+export const ConfirmRailwayMeasurementLineSchema = Type.Object(
+  {
+    // NOT `nonBlankString`: its pattern is built as `{minLength - 2,}`
+    // and a one-character minimum makes that an invalid quantifier, which
+    // Fastify reports at boot. A schedule item number really can be one
+    // character, so the untrimmed-text rule is written directly. It is
+    // the same rule migration 0111's `btrim(item_number) = item_number`
+    // holds on the column.
+    itemNumber: Type.String({
+      minLength: 1,
+      maxLength: 100,
+      pattern: '^\\S(?:[\\s\\S]*\\S)?$',
+      description: 'A Measurement Book item number, with no surrounding spaces.',
+    }),
+  },
+  { additionalProperties: false },
+);
+
+export const DiscardRailwayMeasurementRequestSchema = Type.Object(
+  { reason: Type.Optional(nonBlankString({ minLength: 3, maxLength: 500 })) },
+  { additionalProperties: false },
+);

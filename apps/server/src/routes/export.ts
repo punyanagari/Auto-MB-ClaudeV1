@@ -17,6 +17,25 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v31: the railway's own measurement (0111) joins the package —
+ * the document IWRCMS raises its On-Account Bill from, its per-line
+ * verdicts, and the manual confirmations that stood in for a reading
+ * when the PDF could not be extracted.
+ *
+ * The bill has travelled since export-v1 and the measurement behind it
+ * did not exist until now, so this is the first version in which a
+ * restored organisation can answer the question the gate asks: not "was
+ * this bill received", which the bill's own row already said, but "was
+ * it ever allowed to be". Both halves of the answer travel — the stored
+ * verdicts for a document that was read, and the named confirmations for
+ * one that was not — because on an unreadable measurement the gate rests
+ * on a person, and a package that dropped their statement would restore
+ * a settlement with no account of why it was accepted.
+ *
+ * The bytes ride in the archive beside the bill's. A verdict without the
+ * document it was computed over is a claim, which is the same reason
+ * every other inbound PDF in this package carries its file.
+ *
  * export-v30: the defect liability periods (0099) join the package — the
  * Work's warranty term, and one row per installation whose warranty
  * clock has been started.
@@ -385,7 +404,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v30';
+export const EXPORT_FORMAT_VERSION = 'export-v31';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -407,6 +426,7 @@ type ManifestBucket =
   | 'organisation-logo'
   | 'loa-document'
   | 'received-railway-bill'
+  | 'railway-measurement'
   | 'challan'
   | 'correction-notice'
   | 'pac-certificate'
@@ -426,6 +446,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'organisation-logo',
   'loa-document',
   'received-railway-bill',
+  'railway-measurement',
   'challan',
   'correction-notice',
   'pac-certificate',
@@ -546,6 +567,37 @@ const SECTIONS: readonly ExportSection[] = [
         },
       ],
     },
+  },
+  {
+    // The railway's own measurement (0111), the document the bill above
+    // was raised from. Its bytes travel for the bill's reason and one
+    // more: this document is what ADMITTED the bill, so a package
+    // carrying the bill without it hands back a settlement whose gate
+    // cannot be re-examined. The per-line verdicts ride as stored jsonb
+    // rather than being recomputed on restore, because a re-read by a
+    // later matcher is a different statement from the one the
+    // organisation relied on.
+    key: 'railwayMeasurements',
+    sql: `select * from railway_measurements order by created_at`,
+    jsonbColumns: ['line_verdicts', 'extraction_payload'],
+    manifest: {
+      bucket: 'railway-measurement',
+      entries: (row) => [
+        {
+          kind: 'railway-measurement',
+          objectKey: row.object_key,
+          sha256: row.sha256,
+        },
+      ],
+    },
+  },
+  {
+    // And who confirmed which line, when the document could not be read.
+    // Without these rows a restored organisation could not answer why a
+    // bill was accepted against an unreadable measurement — which is the
+    // one case where the gate rests on a person rather than on a parse.
+    key: 'railwayMeasurementConfirmations',
+    sql: `select * from railway_measurement_confirmations order by confirmed_at, id`,
   },
   {
     key: 'deliveryChallans',

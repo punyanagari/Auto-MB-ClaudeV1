@@ -124,6 +124,14 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // attached to the wrong Measurement Book, and there is no DELETE
   // because a settlement document does not leave.
   received_railway_bills: 'SELECT, INSERT, UPDATE',
+  // The railway's own measurement, the document the bill above is raised
+  // from (0111). Same posture for the same reason: UPDATE exists only for
+  // the discard, and no DELETE because the gate it opened has to stay
+  // explicable. Its confirmations are append-only — a statement a named
+  // person made about one line is not editable, and withdrawing it is
+  // discarding the measurement and uploading another.
+  railway_measurements: 'SELECT, INSERT, UPDATE',
+  railway_measurement_confirmations: 'SELECT, INSERT',
   // The company document library (0079). The credential takes UPDATE for
   // archiving and renaming and no DELETE, because a bid that cited it has
   // to stay explicable; its versions are stored evidence, so they are

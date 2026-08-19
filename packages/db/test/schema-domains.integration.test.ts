@@ -242,8 +242,11 @@ describe('the schema at head names all three shapes', () => {
     // itself is not stored; 35 after 0096 adds
     // organisation_export_requests.sha256, the digest of the stored
     // whole-organisation package, which is what a recipient checks the
-    // file they were handed against.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(35);
+    // file they were handed against; 36 after 0111 adds
+    // railway_measurements.sha256, the digest of the railway's own
+    // measurement sheet — the document the gate on a received bill reads,
+    // so the bytes a verdict was computed over stay identifiable.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(36);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

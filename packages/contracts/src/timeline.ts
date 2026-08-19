@@ -30,6 +30,12 @@ export const TIMELINE_ENTITY_TYPES = [
   // Book rests on it — a trail that omitted the bill would show a
   // measurement closing with no sign of what closed it.
   'received_railway_bills',
+  // The railway's own measurement (0111), the document the bill above is
+  // raised from. Recording it, and confirming its lines by hand when the
+  // parser could not read it, are acts on the Work's paper trail — and a
+  // trail that showed a bill arriving with no sign of the measurement
+  // that admitted it would omit the gate, which is the interesting half.
+  'railway_measurements',
   // The RDSO/RITES inspection call (0082). Raising it, receiving the
   // agency's letter, certifying and withdrawing are acts on the Work's
   // paper trail — and a despatch this Work could not make without the

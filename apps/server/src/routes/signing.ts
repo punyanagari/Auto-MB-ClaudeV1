@@ -201,9 +201,13 @@ async function readSigningDocumentWork(
       ? await tx<{ work_id: string }[]>`
           select work_id from delivery_challans where id = ${documentId}
         `
-      : await tx<{ work_id: string }[]>`
-          select work_id from tax_invoices where id = ${documentId}
-        `;
+      : documentType === 'issue_challan'
+        ? await tx<{ work_id: string }[]>`
+            select work_id from issue_challans where id = ${documentId}
+          `
+        : await tx<{ work_id: string }[]>`
+            select work_id from tax_invoices where id = ${documentId}
+          `;
   if (!row) throw documentNotFound();
   return row.work_id;
 }
@@ -232,6 +236,41 @@ async function readSigningSource(
         409,
         'SIGNING_DOCUMENT_NOT_RENDERED',
         'Only an issued challan can be signed; issue it first.',
+      );
+    }
+    if (row.rendered_object_key === null || row.rendered_sha256 === null) {
+      throw notRendered();
+    }
+    return {
+      workId: row.work_id,
+      documentNumber: row.challan_number,
+      objectKey: row.rendered_object_key,
+      sha256: row.rendered_sha256,
+    };
+  }
+
+  if (documentType === 'issue_challan') {
+    // The Issue Challan's render lives on its own row, exactly as the
+    // Delivery Challan's does (migration 0014), so this arm is the
+    // challan arm with one register substituted and no new mechanism.
+    const [row] = await tx<
+      {
+        work_id: string;
+        challan_number: string | null;
+        status: string;
+        rendered_object_key: string | null;
+        rendered_sha256: string | null;
+      }[]
+    >`
+      select work_id, challan_number, status, rendered_object_key, rendered_sha256
+      from issue_challans where id = ${documentId}
+    `;
+    if (!row) throw documentNotFound();
+    if (row.status !== 'issued') {
+      throw httpError(
+        409,
+        'SIGNING_DOCUMENT_NOT_RENDERED',
+        'Only an issued Issue Challan can be signed; issue it first.',
       );
     }
     if (row.rendered_object_key === null || row.rendered_sha256 === null) {
@@ -376,6 +415,7 @@ interface RequestRow {
   id: string;
   document_type: SigningDocumentType;
   delivery_challan_id: string | null;
+  issue_challan_id: string | null;
   tax_invoice_id: string | null;
   work_id: string;
   channel: 'kiosk_dsc' | 'esign';
@@ -403,17 +443,18 @@ interface RequestRow {
 }
 
 const REQUEST_COLUMNS = `
-  r.id, r.document_type, r.delivery_challan_id, r.tax_invoice_id, r.work_id,
+  r.id, r.document_type, r.delivery_challan_id, r.issue_challan_id,
+  r.tax_invoice_id, r.work_id,
   r.channel, r.status, r.source_object_key, r.source_sha256,
   r.authorised_digest, r.claimed_signing_time, r.signer_name, r.signing_reason,
   r.signing_location, r.expires_at, r.signing_agent_id, r.certificate_thumbprint,
   r.signed_object_key, r.signed_sha256, r.signature_verdict, r.failure_reason,
   r.requested_by_user_id, r.requested_at, r.claimed_at, r.completed_at,
-  coalesce(c.challan_number, i.invoice_number) as document_number,
+  coalesce(c.challan_number, t.challan_number, i.invoice_number) as document_number,
   w.work_code
 `;
 
-/** The joins `REQUEST_COLUMNS` reads its display names from. Both
+/** The joins `REQUEST_COLUMNS` reads its display names from. All three
  * registers, left-joined, because a row names exactly one of them. */
 function requestSource(tx: TransactionSql) {
   return tx`
@@ -421,6 +462,8 @@ function requestSource(tx: TransactionSql) {
     join works w on w.organisation_id = r.organisation_id and w.id = r.work_id
     left join delivery_challans c
       on c.organisation_id = r.organisation_id and c.id = r.delivery_challan_id
+    left join issue_challans t
+      on t.organisation_id = r.organisation_id and t.id = r.issue_challan_id
     left join tax_invoices i
       on i.organisation_id = r.organisation_id and i.id = r.tax_invoice_id
   `;
@@ -430,7 +473,8 @@ function toRequest(row: RequestRow): SigningRequest {
   return {
     id: row.id,
     documentType: row.document_type,
-    documentId: row.delivery_challan_id ?? row.tax_invoice_id ?? row.id,
+    documentId:
+      row.delivery_challan_id ?? row.issue_challan_id ?? row.tax_invoice_id ?? row.id,
     documentNumber: row.document_number,
     workCode: row.work_code,
     channel: row.channel,
@@ -724,7 +768,8 @@ export function registerSigningRoutes(
       const created = await tenant(async (tx) => {
         const [row] = await tx<{ id: string }[]>`
           insert into signing_requests (
-            organisation_id, document_type, delivery_challan_id, tax_invoice_id,
+            organisation_id, document_type, delivery_challan_id, issue_challan_id,
+            tax_invoice_id,
             work_id, source_object_key, source_sha256, authorised_digest,
             claimed_signing_time, signer_name, signing_reason, signing_location,
             expires_at, signing_agent_id, certificate_thumbprint,
@@ -732,6 +777,7 @@ export function registerSigningRoutes(
           ) values (
             ${organisationId}, ${body.documentType},
             ${body.documentType === 'delivery_challan' ? body.documentId : null},
+            ${body.documentType === 'issue_challan' ? body.documentId : null},
             ${body.documentType === 'tax_invoice' ? body.documentId : null},
             ${context.source.workId}, ${context.source.objectKey}, ${sourceSha256},
             ${preparation.digest.toString('hex')}, ${claimedSigningTime},
@@ -1446,6 +1492,12 @@ async function documentStillSignable(
   if (row.delivery_challan_id !== null) {
     const [challan] = await tx<{ status: string }[]>`
       select status from delivery_challans where id = ${row.delivery_challan_id}
+    `;
+    return challan?.status === 'issued';
+  }
+  if (row.issue_challan_id !== null) {
+    const [challan] = await tx<{ status: string }[]>`
+      select status from issue_challans where id = ${row.issue_challan_id}
     `;
     return challan?.status === 'issued';
   }
