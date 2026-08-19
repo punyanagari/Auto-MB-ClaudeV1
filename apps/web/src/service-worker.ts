@@ -161,8 +161,10 @@
        * the new one. Either way the copy that answers may live under a
        * revision other than the one this closure names. The cross-cache
        * lookup is what makes both ends of that window serve a document
-       * instead of the browser's error page. */
-      const cached = await caches.match(SHELL_URL);
+       * instead of the browser's error page.
+       *
+       * `ignoreVary` for the reason `assetResponse` sets out below. */
+      const cached = await caches.match(SHELL_URL, { ignoreVary: true });
       if (cached !== undefined) return cached;
       throw unreachable;
     }
@@ -173,8 +175,27 @@
      * nothing here: asset names carry a content hash, so a hit found in
      * an older build's cache is byte-identical to what this one would
      * have stored. Writes below still go to CACHE_NAME, which is what
-     * lets `activate` sweep a whole build at once. */
-    const cached = await caches.match(request);
+     * lets `activate` sweep a whole build at once.
+     *
+     * `ignoreVary` IS LOAD-BEARING, and without it the cold start does
+     * not work at all. The precache is filled by `cache.addAll(url)`,
+     * whose requests the WORKER issues; the same files are then asked for
+     * by the PAGE, from `<script type="module" crossorigin>` tags Vite
+     * writes, which are CORS-mode and therefore carry an `Origin` header
+     * the worker's own fetch never sent. Any `Vary` on the response then
+     * turns the second request into a miss against the first — and both
+     * servers in play send one: `vite preview` answers `Vary: Origin`,
+     * and `deploy/Caddyfile`'s `encode zstd gzip` answers `Vary:
+     * Accept-Encoding`. The miss falls through to the network, which
+     * offline is the browser's error page, which is the entire failure
+     * this file exists to prevent.
+     *
+     * Ignoring it is not a shortcut around a real negotiation. Every name
+     * here carries a content hash, so the URL determines the bytes; and
+     * Cache Storage holds DECODED bodies, so a stored copy is not the
+     * gzip or the zstd of anything. There is nothing for a Vary to
+     * choose between. */
+    const cached = await caches.match(request, { ignoreVary: true });
     if (cached !== undefined) return cached;
     const response = await fetch(request);
     /* `basic` is a same-origin response the worker may actually read. An

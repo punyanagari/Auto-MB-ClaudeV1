@@ -38,6 +38,32 @@ async function cutTheServer(page: Page): Promise<void> {
   await page.route('**/api/**', (route) => route.abort('internetdisconnected'));
 }
 
+/**
+ * `navigator.onLine` for a document created WHILE the emulation is on.
+ *
+ * `context.setOffline(true)` flips the property on a document that is
+ * already open, which is what the first half of the journey below reads.
+ * It is not applied to a document created afterwards: a page reloaded
+ * under the emulation comes up reading `navigator.onLine === true`, and
+ * the shell then cannot tell a dead connection from a dead server — the
+ * one distinction the cold-start card exists to make. A browser that is
+ * really offline reports it correctly, and the product has nothing else
+ * to read, so the value is pinned here for the reload only.
+ *
+ * Kept in `sessionStorage` because it has to survive the reload itself,
+ * and released by writing to the same key when the connection comes back.
+ */
+const ONLINE_KEY = 'e2e-forced-online';
+
+async function pinOnLineAcrossReload(page: Page): Promise<void> {
+  await page.addInitScript((key: string) => {
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      get: () => sessionStorage.getItem(key) === 'yes',
+    });
+  }, ONLINE_KEY);
+}
+
 /* Each test registers a worker against the same origin, and a worker
  * outlives the page that installed it. Serial, so one test's worker
  * cannot be mid-install while the next is asserting what a fresh load
@@ -137,6 +163,7 @@ test('the shell opens with no connection, serves the register it last read, and 
   // A cold start with nothing reachable at all. The service worker
   // serves the document and the bundle, so what appears is Auto-MB
   // saying it is offline — not the browser's error page.
+  await pinOnLineAcrossReload(page);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'You are offline' })).toBeVisible();
   await expect(page.getByText('Auto-MB opened from the copy saved')).toBeVisible();
@@ -153,6 +180,13 @@ test('the shell opens with no connection, serves the register it last read, and 
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   await mockWorkspace(page);
   await context.setOffline(false);
+  // The emulation was never applied to THIS document (that is the whole
+  // reason for the pin), so lifting it announces nothing here either.
+  // Released and announced together, which is the pair a browser sends.
+  await page.evaluate((key: string) => {
+    sessionStorage.setItem(key, 'yes');
+    window.dispatchEvent(new Event('online'));
+  }, ONLINE_KEY);
   // The rail is the workspace itself, and the reload left the address on
   // Settings, so this is the first thing to appear.
   await expect(page.getByRole('navigation', { name: 'Modules' })).toBeVisible();
