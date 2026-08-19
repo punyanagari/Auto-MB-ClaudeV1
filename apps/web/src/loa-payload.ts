@@ -59,12 +59,24 @@ interface PerformanceGuaranteeView {
   readonly needsReview: boolean;
 }
 
+/** The parser's completion-period header field: "24 months", "18 (Eighteen)
+ * Months". `unit` is normalised to `'month'` by the parser; anything else is
+ * a unit this screen will not do arithmetic on. Optional for the same reason
+ * as `performanceGuarantee` — older stored payloads travel untyped. */
+interface CompletionPeriodView {
+  readonly value: number | null;
+  readonly unit: string | null;
+  readonly raw: string | null;
+  readonly needsReview: boolean;
+}
+
 interface ReviewPayloadView {
   readonly header: {
     readonly letterNumber: FieldView;
     readonly letterDate: FieldView;
     readonly workDescription: FieldView;
     readonly performanceGuarantee?: PerformanceGuaranteeView;
+    readonly completionPeriod?: CompletionPeriodView;
   };
   readonly pricingShape: {
     readonly advertised_value: number | null;
@@ -82,6 +94,52 @@ interface ReviewPayloadView {
 export interface ExtractionPayloadView {
   readonly sourceText: string;
   readonly review: ReviewPayloadView;
+}
+
+/**
+ * The completion date a letter implies: its own date plus the completion
+ * period it prints.
+ *
+ * The period is a count of MONTHS, so this is calendar arithmetic, not a
+ * day count: "12 months from 15/03/2026" is 15/03/2027, whatever the
+ * intervening months are worth. A day-based approximation would land a
+ * day or two out on most letters and be wrong in a way nobody would
+ * notice until a liquidated-damages calculation ran off it.
+ *
+ * Month-end is CLAMPED to the last day of the target month — 31/01 plus
+ * one month is 28/02, not 03/03. Rolling forward would put the deadline
+ * in the month after the one the letter names.
+ *
+ * Null unless the parser read a positive whole number of months: a
+ * period in weeks or days, a fraction, or a field it could not read is
+ * left for the reviewer to type. This is a PREFILL, never an authority —
+ * the operator can overwrite whatever it proposes.
+ */
+export function completionDateFrom(
+  letterDate: string,
+  period: { readonly value: number | null; readonly unit: string | null } | undefined,
+): string | null {
+  if (period === undefined || period.unit !== 'month') return null;
+  const months = period.value;
+  if (months === null || !Number.isInteger(months) || months <= 0) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(letterDate);
+  if (match === null) return null;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const zeroBased = month - 1 + months;
+  const targetYear = year + Math.floor(zeroBased / 12);
+  const targetMonth = (zeroBased % 12) + 1;
+  // Day 0 of the following month is the last day of this one.
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const targetDay = Math.min(day, lastDay);
+  return [
+    String(targetYear).padStart(4, '0'),
+    String(targetMonth).padStart(2, '0'),
+    String(targetDay).padStart(2, '0'),
+  ].join('-');
 }
 
 /** Narrows the transported payload; null for failed/absent extractions. */

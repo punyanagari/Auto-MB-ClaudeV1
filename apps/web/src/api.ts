@@ -162,7 +162,6 @@ import type {
   ProposeRemoveItemRequest,
   OrganisationProfile,
   Receipt,
-  RecordMbEntryRequest,
   RecordReceiptRequest,
   RecordSerialsRequest,
   RespondExtensionRequest,
@@ -689,11 +688,6 @@ export interface ApiClient {
     organisationId: string,
     workId: string,
   ) => Promise<readonly MbEntry[]>;
-  readonly recordMbEntry: (
-    organisationId: string,
-    workId: string,
-    body: RecordMbEntryRequest,
-  ) => Promise<MbEntry>;
   /** The Work's bills AND its billing position. The summary is served
    * beside the list rather than derived from it: measured, billed and
    * unbilled are money, and money is summed in SQL numeric, never in the
@@ -3306,13 +3300,6 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         { organisationId },
       );
       return payload.entries;
-    },
-    async recordMbEntry(organisationId, workId, body) {
-      return request<MbEntry>(`/api/works/${workId}/mb-entries`, {
-        method: 'POST',
-        body,
-        organisationId,
-      });
     },
     async listBills(organisationId, workId) {
       return request<BillListResponse>(`/api/works/${workId}/bills`, {

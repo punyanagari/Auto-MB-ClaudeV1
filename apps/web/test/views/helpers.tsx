@@ -237,7 +237,6 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createInstrument: vi.fn<ApiClient['createInstrument']>(),
     updateInstrument: vi.fn<ApiClient['updateInstrument']>(),
     listMbEntries: vi.fn<ApiClient['listMbEntries']>().mockResolvedValue([]),
-    recordMbEntry: vi.fn<ApiClient['recordMbEntry']>(),
     listBills: vi
       .fn<ApiClient['listBills']>()
       .mockResolvedValue({ bills: [], summary: NO_BILLING }),

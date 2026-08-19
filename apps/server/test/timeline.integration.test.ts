@@ -438,19 +438,6 @@ describe('per-Work timeline read API', () => {
     });
     expect(serials.statusCode, serials.body).toBe(201);
 
-    const measured = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workAId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemA1Id,
-        deliveryChallanId: challanId,
-        measuredQuantity: '1.000',
-        measuredOn: '2026-08-04',
-      },
-    });
-    expect(measured.statusCode, measured.body).toBe(201);
-
     // Stage-wise billing (Milestone 8 phase 2): matrix row seeded
     // directly (no audit event), then draft MB → claim the issued
     // challan → finalize → prepare the bill FROM the finalized MB.
@@ -524,7 +511,6 @@ describe('per-Work timeline read API', () => {
       'measurement_book.finalized',
       'measurement_book.sources_updated',
       'measurement_book.created',
-      'mb.recorded',
       'serials.recorded',
       'challan.received',
       'challan.issued',

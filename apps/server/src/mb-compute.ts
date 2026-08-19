@@ -22,7 +22,7 @@
  * shown before finalizing is what finalizing writes.
  */
 
-import type { WorkItemPaymentCategory } from '@auto-mb/contracts';
+import { byItemNumber, type WorkItemPaymentCategory } from '@auto-mb/contracts';
 import {
   addDecimalStrings,
   computeMbRemark,
@@ -234,9 +234,12 @@ export function computeMeasurementBook(input: {
   const unresolved: MbUnresolvedItem[] = [];
   let totalAmount = '0.00';
 
-  const ordered = [...input.items].sort((a, b) =>
-    a.itemNumber.localeCompare(b.itemNumber, 'en'),
-  );
+  // Natural order (`compareItemNumbers`), which is the order the letter's
+  // schedule is written in: A1/2 before A1/10, not after it. A finalized
+  // MB's line order is snapshotted from this sort and printed, so a
+  // character-by-character sort put every item past the ninth in a place
+  // the reader has to hunt for.
+  const ordered = byItemNumber(input.items);
 
   for (const item of ordered) {
     // The two stages measured on work physically done are clamped at the

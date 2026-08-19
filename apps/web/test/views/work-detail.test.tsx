@@ -491,40 +491,20 @@ describe('WorkDetail retention', () => {
     expect(screen.getByText('not rendered')).toBeTruthy();
   });
 
-  it('records a measurement with challan provenance', async () => {
-    const recordMbEntry = vi.fn().mockResolvedValue({
-      ...MB_ENTRY,
-      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-      measuredQuantity: '1.000',
-      measuredOn: '2026-08-07',
-      mbBookRef: null,
-    });
-    const api = retentionApi({ recordMbEntry });
+  it('shows the measurement register read-only and points at the books', async () => {
+    // The manual write path is gone (2026-08-19, owner-sanctioned): the
+    // register still lists what was recorded, and the only route to a new
+    // measurement is the Measurement Book below it.
+    const api = retentionApi();
     renderWorkDetail(api);
     await openWorkTab('Measurement');
 
-    await openForm('New measurement');
-    fireEvent.change(screen.getByLabelText('Measured quantity'), {
-      target: { value: '1.000' },
-    });
-    fireEvent.change(screen.getByLabelText('Measured on'), {
-      target: { value: '2026-08-07' },
-    });
-    fireEvent.change(screen.getByLabelText('Source challan (optional)'), {
-      target: { value: CHALLAN_ID },
-    });
-    fireEvent.click(submitButton('Record measurement'));
-
-    await waitFor(() => {
-      expect(recordMbEntry).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
-        workItemId: ITEM_A,
-        measuredQuantity: '1.000',
-        measuredOn: '2026-08-07',
-        deliveryChallanId: CHALLAN_ID,
-      });
-    });
-    // Both the pre-existing and the new entry are listed.
-    expect(screen.getAllByText('A/1').length).toBeGreaterThan(1);
+    expect(await screen.findByText('A/1')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'New measurement' })).toBeNull();
+    expect(screen.queryByLabelText('Measured quantity')).toBeNull();
+    expect(
+      screen.getByText(/New measurement is recorded in a Measurement Book/),
+    ).toBeTruthy();
   });
 
   it('draws the billing position from the server summary, never from the list', async () => {

@@ -389,48 +389,31 @@ describe('contract instruments', () => {
 });
 
 describe('Measurement Book and the first partial-billing cycle', () => {
-  it('caps cumulative measurement at the delivered quantity', async () => {
-    const first = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemAId,
-        deliveryChallanId: challanId,
-        measuredQuantity: '2',
-        // Inside the measurement window: on or after the LOA letter date
-        // and not in the future (the challan issued on this date proves
-        // it is not).
-        measuredOn: '2026-08-08',
-        mbBookRef: 'MB-1/p3',
-      },
-    });
-    expect(first.statusCode, first.body).toBe(201);
+  it('no longer accepts a measurement against the delivered quantity', async () => {
+    // This case used to prove the loose register's own delivered-quantity
+    // ceiling (MEASUREMENT_EXCEEDS_DELIVERY). That ceiling was a second
+    // copy of a rule the Measurement Book engine already enforces on the
+    // quantities it sweeps, and the writer carrying it was removed on
+    // 2026-08-19 (owner-sanctioned). One writer, one ceiling.
+    for (const measuredQuantity of ['2', '1.5']) {
+      const attempt = await authed(owner, {
+        method: 'POST',
+        url: `/api/works/${workId}/mb-entries`,
+        organisationId,
+        payload: {
+          workItemId: itemAId,
+          deliveryChallanId: challanId,
+          measuredQuantity,
+          measuredOn: '2026-08-08',
+        },
+      });
+      expect(attempt.statusCode, attempt.body).toBe(404);
+    }
 
-    const over = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemAId,
-        measuredQuantity: '1.5',
-        measuredOn: '2026-08-08',
-      },
-    });
-    expect(over.statusCode).toBe(409);
-    expect(over.json()).toMatchObject({ code: 'MEASUREMENT_EXCEEDS_DELIVERY' });
-
-    const second = await authed(owner, {
-      method: 'POST',
-      url: `/api/works/${workId}/mb-entries`,
-      organisationId,
-      payload: {
-        workItemId: itemAId,
-        measuredQuantity: '1',
-        measuredOn: '2026-08-08',
-      },
-    });
-    expect(second.statusCode, second.body).toBe(201);
+    const [stored] = await admin<{ count: string }[]>`
+      select count(*)::text as count from mb_entries where work_id = ${workId}
+    `;
+    expect(stored?.count).toBe('0');
   });
 
   it('prepares a bill from a finalized Measurement Book under issue authority', async () => {

@@ -225,3 +225,25 @@ export const numericCell =
  * line to clamp — must carry this class. */
 export const wrapCell =
   'max-w-[28rem] align-top leading-snug whitespace-normal [overflow-wrap:anywhere]';
+
+/**
+ * A cell holding a CONTROL — a select, a picker — in a row that also
+ * holds prose.
+ *
+ * The auto table-layout algorithm hands each column something between
+ * its min-content and its max-content width. `globals.css` gives every
+ * form control `min-width: 0` and a select `width: 100%`, so a select's
+ * min-content contribution is ZERO, while a `wrapCell` description's
+ * max-content is the whole sentence. The description therefore takes the
+ * budget and the select is squeezed towards nothing — which is what the
+ * payment-category columns were doing on live data: the description ran
+ * on underneath a select collapsed to a few pixels.
+ *
+ * `max-width` on the prose cell does not fix it. Auto layout ignores a
+ * cell's max-width when distributing columns (only `table-fixed` honours
+ * it), which is why `wrapCell`'s own cap has never bounded anything. A
+ * MIN-width does count: it raises the column's minimum, so the control
+ * keeps a floor the prose cannot take. Stated once here rather than as a
+ * width guessed per screen.
+ */
+export const controlCell = 'min-w-44 align-top';

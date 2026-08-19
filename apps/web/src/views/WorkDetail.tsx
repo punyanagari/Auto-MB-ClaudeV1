@@ -266,26 +266,6 @@ const REQUIREMENT_LABELS: Record<UnfinishedWorkItem['requirement'], string> = {
   service: 'full certification',
 };
 
-/** The remedy is opposite for the two directions, so the worklist says
- * which one each row needs rather than leaving the operator to compare
- * the numbers.
- *
- * A short AMC item gets its own sentence. Amending its quantity down is
- * a legal short closure of the maintenance contract, but it is not the
- * ordinary answer — the ordinary answer is that another period has been
- * served and its certificate has not been recorded yet — so the row
- * names the certificate first and the amendment second. */
-function directionRemedy(item: UnfinishedWorkItem): string {
-  // 'excess' has two dimensions since migration 0077 — an over-delivered
-  // item and an over-installed one both land here — so the row names the
-  // comparison rather than the movement.
-  if (item.direction === 'excess')
-    return 'above the sanctioned quantity — amend the quantity up';
-  return item.requirement === 'service'
-    ? 'not yet certified — record the acceptance certificate, or amend the quantity down'
-    : 'short — amend the quantity down';
-}
-
 const DIRECTION_LABELS = {
   below: 'below advertised',
   at_par: 'at par',
@@ -352,7 +332,6 @@ function CompletionShortfall({
               <th scope="col">Item number</th>
               <th scope="col">Payment category</th>
               <th scope="col">Requires</th>
-              <th scope="col">Remedy</th>
               <th scope="col">Required</th>
               <th scope="col">Delivered</th>
               <th scope="col">Installed</th>
@@ -365,7 +344,6 @@ function CompletionShortfall({
                 <th scope="row">{item.itemNumber}</th>
                 <td>{item.category ?? 'uncategorised'}</td>
                 <td>{REQUIREMENT_LABELS[item.requirement]}</td>
-                <td>{directionRemedy(item)}</td>
                 <td className={numericCell}>{item.requiredQuantity}</td>
                 <td className={numericCell}>{item.deliveredQuantity}</td>
                 <td className={numericCell}>{item.installedQuantity}</td>
@@ -1130,56 +1108,6 @@ export function WorkDetail({
         />
       </dl>
 
-      {/* Not a figure: the only control in this block, and the strip above
-          is read-only. The mock has no counterpart — its Work cannot be
-          configured — so this keeps the mock's quiet label-and-control
-          row rather than inventing a panel for one checkbox. */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        <span className="section-label">Excess delivery</span>
-        <span>
-          {isOwner ? (
-            <label>
-              <input
-                type="checkbox"
-                checked={work.allowExcessDelivery ?? false}
-                disabled={pending}
-                onChange={(event) => {
-                  const next = event.currentTarget.checked;
-                  void act(
-                    async () => {
-                      const updated = await api.setWorkSettings(
-                        organisationId,
-                        workId,
-                        next,
-                      );
-                      setDetail((current) =>
-                        current === null
-                          ? current
-                          : {
-                              ...current,
-                              work: {
-                                ...current.work,
-                                allowExcessDelivery: updated.allowExcessDelivery,
-                              },
-                            },
-                      );
-                    },
-                    next
-                      ? 'Excess delivery allowed — issues may now exceed the sanctioned quantities.'
-                      : 'Excess delivery disallowed again.',
-                  );
-                }}
-              />{' '}
-              Allow issuing beyond sanctioned quantities
-            </label>
-          ) : (
-            <span>
-              {(work.allowExcessDelivery ?? false) ? 'Allowed' : 'Not allowed'}
-            </span>
-          )}
-        </span>
-      </div>
-
       {/* Eleven sections used to stack on one scroll. Each area now answers
           for itself, and the counts show what is inside before it is opened.
           The rail is the mock's work-section nav (Auto-MB-Vercel-du,
@@ -1465,25 +1393,80 @@ export function WorkDetail({
       )}
 
       {tab === 'deliveries' && (
-        <WorkDeliveries
-          api={api}
-          organisationId={organisationId}
-          workId={workId}
-          work={work}
-          challans={challans}
-          challansState={relatedStateFor([RELATED.challans])}
-          correctionNotices={correctionNotices}
-          correctionNoticesState={relatedStateFor([RELATED.correctionNotices])}
-          setCorrectionNotices={setCorrectionNotices}
-          canCreateDocuments={canCreateDocuments}
-          onNewChallan={onNewChallan}
-          onOpenChallan={onOpenChallan}
-          onOpenInstallations={() => {
-            setTab('installations');
-          }}
-          pending={pending}
-          act={act}
-        />
+        <>
+          {/* The cap this toggle lifts is the DELIVERY cap and nothing
+              else, so it belongs above the deliveries it governs rather
+              than in the Work header, where it was the one control amid
+              read-only figures and read as a Work-wide setting. Same
+              route, same owner-only gate, same copy — placement only.
+              The mock has no counterpart — its Work cannot be configured
+              — so this keeps the mock's quiet label-and-control row
+              rather than inventing a panel for one checkbox. */}
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <span className="section-label">Excess delivery</span>
+            <span>
+              {isOwner ? (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={work.allowExcessDelivery ?? false}
+                    disabled={pending}
+                    onChange={(event) => {
+                      const next = event.currentTarget.checked;
+                      void act(
+                        async () => {
+                          const updated = await api.setWorkSettings(
+                            organisationId,
+                            workId,
+                            next,
+                          );
+                          setDetail((current) =>
+                            current === null
+                              ? current
+                              : {
+                                  ...current,
+                                  work: {
+                                    ...current.work,
+                                    allowExcessDelivery: updated.allowExcessDelivery,
+                                  },
+                                },
+                          );
+                        },
+                        next
+                          ? 'Excess delivery allowed — issues may now exceed the sanctioned quantities.'
+                          : 'Excess delivery disallowed again.',
+                      );
+                    }}
+                  />{' '}
+                  Allow issuing beyond sanctioned quantities
+                </label>
+              ) : (
+                <span>
+                  {(work.allowExcessDelivery ?? false) ? 'Allowed' : 'Not allowed'}
+                </span>
+              )}
+            </span>
+          </div>
+          <WorkDeliveries
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+            work={work}
+            challans={challans}
+            challansState={relatedStateFor([RELATED.challans])}
+            correctionNotices={correctionNotices}
+            correctionNoticesState={relatedStateFor([RELATED.correctionNotices])}
+            setCorrectionNotices={setCorrectionNotices}
+            canCreateDocuments={canCreateDocuments}
+            onNewChallan={onNewChallan}
+            onOpenChallan={onOpenChallan}
+            onOpenInstallations={() => {
+              setTab('installations');
+            }}
+            pending={pending}
+            act={act}
+          />
+        </>
       )}
 
       {tab === 'installations' && (
@@ -1546,21 +1529,16 @@ export function WorkDetail({
           api={api}
           organisationId={organisationId}
           workId={workId}
-          workItems={workItems}
           mbEntries={mbEntries}
           mbEntriesState={relatedStateFor([RELATED.measurements])}
-          setMbEntries={setMbEntries}
-          issuedChallans={issuedChallans}
           challanNumberById={challanNumberById}
           challansState={relatedStateFor([RELATED.challans])}
           setBills={applyBills}
           billsState={relatedStateFor([RELATED.bills])}
-          canRecordSiteEvidence={canRecordSiteEvidence}
           canCreateDocuments={canCreateDocuments}
           canIssue={canIssue}
           canCancel={canCancel}
           onBooksKnown={setMeasurementBookCount}
-          pending={pending}
           act={act}
         />
       )}

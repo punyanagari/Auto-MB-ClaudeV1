@@ -119,6 +119,47 @@ export function submittedDraft(category: string, draft: RowDraft): RowDraft {
   return { ...draft, pctSupply: '0', pctInstallation: '0' };
 }
 
+/**
+ * The stages the operator left empty, filled with 0 once the ones they
+ * DID type already sum to exactly 100.
+ *
+ * A row is saveable only at an exact sum of 100 across all four stages,
+ * so once the typed stages reach 100 every remaining stage can only ever
+ * be 0. Making the operator type three zeros to prove that is three
+ * keystrokes to restate a conclusion the form has already drawn — and
+ * the row sits refused ("must sum to exactly 100") in the meantime,
+ * which reads as a rejection of the number they just typed.
+ *
+ * Autofill only. The zeros are ordinary editable values: typing over one
+ * takes the sum off 100, which stops any further filling until the row
+ * balances again, so this can never fight an operator mid-edit.
+ *
+ * Judged on the SUBMITTED draft so an AMC row's two locked stages count
+ * as the zeros they are sent as, rather than as blanks waiting to be
+ * filled — otherwise an AMC row typed as 95/5 would never look balanced.
+ */
+export function autoZeroStages(category: string, draft: RowDraft): RowDraft {
+  const submitted = submittedDraft(category, draft);
+  const blanks: StageField[] = [];
+  let total = 0n;
+  for (const [field] of STAGE_FIELDS) {
+    const raw = submitted[field];
+    if (raw === '') {
+      blanks.push(field);
+      continue;
+    }
+    const value = percentHundredths(raw);
+    // A stage that is not a number yet says nothing about the total, so
+    // the row is left exactly as typed.
+    if (value === null) return draft;
+    total += value;
+  }
+  if (blanks.length === 0 || total !== 10000n) return draft;
+  const filled = { ...draft };
+  for (const field of blanks) filled[field] = '0';
+  return filled;
+}
+
 /** Inline validation message for a draft, or null when it is saveable. */
 export function draftProblem(draft: RowDraft): string | null {
   let total = 0n;

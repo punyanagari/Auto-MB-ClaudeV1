@@ -15,6 +15,7 @@ import {
   ITEM_CATEGORY_OPTIONS,
   LOCKED_AMC_STAGES,
   STAGE_FIELDS,
+  autoZeroStages,
   draftFrom,
   draftProblem,
   draftTouched,
@@ -25,7 +26,7 @@ import {
 } from '../lib/payment-matrix.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { DataTable, controlCell, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 
@@ -184,7 +185,10 @@ export function PaymentMatrix({
   ) {
     setDrafts((current) => ({
       ...current,
-      [category]: { ...(current[category] ?? draftFrom(undefined)), [field]: value },
+      [category]: autoZeroStages(category, {
+        ...(current[category] ?? draftFrom(undefined)),
+        [field]: value,
+      }),
     }));
   }
 
@@ -473,7 +477,7 @@ export function PaymentMatrix({
                 <td className={wrapCell}>
                   {item.effectiveDescription ?? item.description}
                 </td>
-                <td>
+                <td className={controlCell}>
                   {canModify ? (
                     <select
                       aria-label={`Payment category for ${item.itemNumber}`}

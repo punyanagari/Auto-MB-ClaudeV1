@@ -8,7 +8,6 @@ import {
   MbEntryListResponseSchema,
   MbEntrySchema,
   ReceiptSchema,
-  RecordMbEntryRequestSchema,
   RecordReceiptRequestSchema,
   RecordSerialsRequestSchema,
   SaveInstrumentRequestSchema,
@@ -797,139 +796,23 @@ export function registerRetentionRoutes(
     },
   );
 
-  tenantRoute(
-    {
-      method: 'POST',
-      url: '/api/works/:id/mb-entries',
-      schema: {
-        params: IdParamsSchema,
-        body: RecordMbEntryRequestSchema,
-        response: { 201: MbEntrySchema, ...errorResponses },
-      },
-      role: 'evidence',
-    },
-    async ({ request, reply, user, organisationId, tenant }) => {
-      const { id: workId } = request.params;
-      const body = request.body;
-      const entry = await tenant(async (tx) => {
-        await assertWorkAccess(tx, user.id, workId);
-        // Lock the item: cumulative measurement must not exceed delivered
-        // (issued challans), and this check must not race.
-        const [item] = await tx<
-          {
-            id: string;
-            item_number: string;
-            letter_date: string;
-            today: string;
-          }[]
-        >`
-            select wi.id, wi.item_number, w.letter_date::text as letter_date,
-                   (now() at time zone o.timezone)::date::text as today
-            from work_items wi
-            join works w on w.id = wi.work_id
-            join organisations o on o.id = w.organisation_id
-            where wi.id = ${body.workItemId} and wi.work_id = ${workId}
-              and wi.deleted_at is null
-            for update of wi
-          `;
-        if (!item) {
-          throw httpError(404, 'WORK_ITEM_NOT_FOUND', 'No such Work item.');
-        }
-        // The same window every other dated operational record obeys
-        // (challans 0010, installations 0017, PACs 0022, Measurement
-        // Books 0024): not in the future in the organisation's own
-        // timezone, not before the LOA letter date. Nothing downstream
-        // ever revisits a measurement date, so a mistyped year would
-        // silently corrupt the site-measurement evidence. Back-dating
-        // inside the window stays fully supported — paper site
-        // measurements are typed up weeks late.
-        if (body.measuredOn > item.today) {
-          throw httpError(
-            400,
-            'MB_ENTRY_DATE_FUTURE',
-            `The measurement date cannot be in the future (today is ${item.today}).`,
-          );
-        }
-        if (body.measuredOn < item.letter_date) {
-          throw httpError(
-            400,
-            'MB_ENTRY_DATE_BEFORE_LOA',
-            `The measurement date cannot precede the LOA letter date ${item.letter_date}.`,
-          );
-        }
-        if (body.deliveryChallanId !== undefined) {
-          // The claimed provenance must be a real, issued challan of this
-          // Work; the row lock serialises against cancellation, and the
-          // composite foreign key backs this check in the database.
-          const [source] = await tx<{ status: string }[]>`
-              select status from delivery_challans
-              where id = ${body.deliveryChallanId} and work_id = ${workId}
-              for update
-            `;
-          if (!source) {
-            throw httpError(
-              404,
-              'CHALLAN_NOT_FOUND',
-              'The referenced challan does not belong to this Work.',
-            );
-          }
-          if (source.status !== 'issued') {
-            throw httpError(
-              409,
-              'CHALLAN_STATUS_CONFLICT',
-              'Measurements reference issued challans.',
-            );
-          }
-        }
-        const [exceeds] = await tx<{ exceeded: boolean }[]>`
-            select (
-              coalesce((
-                select sum(measured_quantity) from mb_entries
-                where work_item_id = ${body.workItemId}
-              ), 0) + ${body.measuredQuantity}::numeric(18,3)
-            ) > coalesce((
-              select sum(dci.quantity)
-              from delivery_challan_items dci
-              join delivery_challans dc on dc.id = dci.delivery_challan_id
-              where dci.work_item_id = ${body.workItemId}
-                and dc.status = 'issued'
-            ), 0) as exceeded
-          `;
-        if (exceeds?.exceeded === true) {
-          throw httpError(
-            409,
-            'MEASUREMENT_EXCEEDS_DELIVERY',
-            `Cumulative measurement for ${item.item_number} would exceed the delivered quantity.`,
-          );
-        }
-        const [row] = await tx<MbEntryRow[]>`
-            insert into mb_entries (
-              organisation_id, work_id, work_item_id, delivery_challan_id,
-              measured_quantity, measured_on, mb_book_ref, remarks,
-              recorded_by_user_id
-            )
-            values (
-              ${organisationId}, ${workId}, ${body.workItemId},
-              ${body.deliveryChallanId ?? null}, ${body.measuredQuantity},
-              ${body.measuredOn}, ${body.mbBookRef ?? null},
-              ${body.remarks ?? null}, ${user.id}
-            )
-            returning id, work_item_id, ${item.item_number} as item_number,
-                      delivery_challan_id,
-                      measured_quantity::text as measured_quantity,
-                      measured_on::text as measured_on, mb_book_ref, remarks,
-                      bill_id, created_at
-          `;
-        if (!row) throw new Error('mb entry insert returned no row');
-        await audit(tx, organisationId, user.id, 'mb.recorded', 'mb_entries', row.id, {
-          workItemId: body.workItemId,
-          measuredQuantity: body.measuredQuantity,
-        });
-        return toMbEntry(row);
-      });
-      return reply.status(201).send(entry);
-    },
-  );
+  /*
+   * There is deliberately NO POST here.
+   *
+   * `mb_entries` is the Milestone-5 loose site-measurement register, and
+   * ADR-0006 decision 2 already replaced its billing role: a bill is
+   * raised from a FINALIZED Measurement Book, which sweeps the delivered
+   * and installed quantities itself. Leaving a manual write open meant a
+   * Work could be measured two ways that never met, only one of which
+   * reaches a bill — and the manual one carried its own delivered-
+   * quantity ceiling, a second copy of a rule the Measurement Book
+   * engine already enforces.
+   *
+   * The route was REMOVED rather than deprecated (owner-sanctioned,
+   * 2026-08-19). The rows already recorded keep their GET above, still
+   * gate Delivery Challan cancellation, and still export — retiring a
+   * writer is not deleting a record.
+   */
 
   // --- Bills ----------------------------------------------------------------
   tenantRoute(

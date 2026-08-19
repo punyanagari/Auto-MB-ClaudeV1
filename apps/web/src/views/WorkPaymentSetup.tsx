@@ -16,6 +16,7 @@ import {
   ITEM_CATEGORY_OPTIONS,
   LOCKED_AMC_STAGES,
   STAGE_FIELDS,
+  autoZeroStages,
   draftFrom,
   draftProblem,
   draftTouched,
@@ -29,7 +30,7 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Modal } from '../ui/dialog.js';
 import { FormError } from '../ui/form.js';
-import { DataTable, wrapCell } from '../ui/table.js';
+import { DataTable, controlCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 /**
@@ -327,7 +328,10 @@ export function WorkPaymentSetup({
   ): void {
     setDrafts((current) => ({
       ...current,
-      [category]: { ...(current[category] ?? draftFrom(undefined)), [field]: value },
+      [category]: autoZeroStages(category, {
+        ...(current[category] ?? draftFrom(undefined)),
+        [field]: value,
+      }),
     }));
   }
 
@@ -488,7 +492,7 @@ export function WorkPaymentSetup({
                       <tr key={item.id}>
                         <th scope="row">{item.itemNumber}</th>
                         <td className={wrapCell}>{effectiveDescriptionOf(item)}</td>
-                        <td>
+                        <td className={controlCell}>
                           <span className="flex flex-wrap items-center gap-2">
                             <select
                               aria-label={`Payment category for ${item.itemNumber}`}
