@@ -5,8 +5,9 @@ import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js
 // --- Defect liability periods (migration 0099) ------------------------------
 //
 // A DLP is the warranty that runs on a recorded installation: it starts on
-// the installation date, or on the issue date of the PAC certificate that
-// provisionally accepted the item, and it ends N months later — where
+// the installation date, on the issue date of the PAC certificate that
+// provisionally accepted the item, or on the date of the Work's final bill
+// (migration 0112), and it ends N months later — where
 // `dlp_expires_on` is THE LAST DAY THE LIABILITY STANDS, not the first day
 // after it. The Performance Bank Guarantee the letter demands has to
 // outlive it, and reporting that is what the module is for.
@@ -19,9 +20,20 @@ import { DateOnlySchema, DecimalStringSchema, UuidSchema } from './primitives.js
 // never stored, because a stored answer to a question about today is wrong
 // by the next morning.
 
+/**
+ * What starts the clock, as the contract states it.
+ *
+ * `final_bill` (migration 0112) is the third shape, and its date is the
+ * one the Work's final bill carries: `bills` has no date column, so the
+ * legal date behind a bill is the `mb_date` of the finalized final
+ * Measurement Book it was prepared from. The period is pinned to that
+ * date exactly — the server refuses any other, and refuses the basis
+ * outright while the Work has no final bill.
+ */
 export const WarrantyStartBasisSchema = Type.Union([
   Type.Literal('installation'),
   Type.Literal('pac'),
+  Type.Literal('final_bill'),
 ]);
 export type WarrantyStartBasis = Static<typeof WarrantyStartBasisSchema>;
 
@@ -231,6 +243,16 @@ export const WorkWarrantyResponseSchema = Type.Object(
   {
     terms: Type.Union([WarrantyTermsSchema, Type.Null()]),
     pbgCover: WarrantyPbgCoverSchema,
+    /** The date every period on the `final_bill` basis starts on, or null
+     * where the Work has no final bill yet — which is what the card needs
+     * to say "not until that bill exists" BEFORE the operator presses a
+     * button the server would refuse. Read from the same
+     * `app_private.work_final_bill_date` the route writes with and the
+     * guard enforces with, so the screen cannot promise a different day
+     * from the one the period will carry. Null on the other two bases
+     * too: it is not the date they start from and showing it would
+     * invite the reader to think it was. */
+    finalBillDate: Type.Union([DateOnlySchema, Type.Null()]),
     candidates: Type.Array(WarrantyCandidateSchema),
     /** True when more installations are waiting than the cap returns.
      * Start a period on the ones offered and the next ones appear. */

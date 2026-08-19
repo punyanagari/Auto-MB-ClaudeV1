@@ -1,0 +1,385 @@
+                             BHOPAL DIVISION-S AND T/WEST CENTRAL RLY
+                                        TENDER DOCUMENT
+Tender No: BPLNWKS2026-27TELEAMC02                                         Closing Date/Time: 15/06/2026 15:00
+
+
+
+
+SR. DSTE/CO/BHOPAL acting for and on behalf of The President of India invites E-Tenders against Tender No
+BPLNWKS2026-27TELEAMC02 Closing Date/Time 15/06/2026 15:00 Hrs. Bidders will be able to submit their
+original/revised bids upto closing date and time only. Manual oﬀers are not allowed against this tender, and any such
+manual offer received shall be ignored.
+
+1. NIT HEADER
+
+                       Comprehensive Annual Maintenance Contract of Partronics make Central Data
+                       Controller unit, Coach Guidance System, Platform Data Communication Hub, At a
+Name of Work
+                       Glace Display Board, Single Line Display Board, and GPS based Clock installed at
+                       MABA, ASKN, RTA and SHRN for a period of 5 years.
+Bidding type           Normal Tender
+Tender Type            Single                      Bidding System                  Single Packet System
+Tender Closing Date                                Date Time Of Uploading
+                       15/06/2026 15:00                                            22/05/2026 11:27
+Time                                               Tender
+Pre-Bid Conference                                 Pre-Bid Conference Date
+                       No                                                          Not Applicable
+Required                                           Time
+Advertised Value       11503728.60                 Tendering Section               SNT TELE
+Bidding Style          Single Rate for Tender      Bidding Unit                    Above/Below/Par
+Earnest Money (Rs.)    230100.00                   Validity of Offer ( Days)       60
+Tender Doc. Cost (Rs.) 0.00                        Period of Completion            60 Months
+Contract Type          Works - General             Contract Category               Expenditure
+Bidding Start Date     01/06/2026
+                                                   Number of JV Member
+Are JV allowed to bid  No                                                          0
+                                                   Allowed
+Are Consortium allowed                             Number of Consortium
+                       No                                                          0
+to bid                                             Member Allowed
+Ranking Order For Bids Lowest to Highest           Expenditure Type                Revenue
+
+2. SCHEDULE
+
+    S.No.     Item      Item Qty     Qty Unit Unit Rate      Basic Value        Escl.(%)      Amount       Bidding
+              Code                                                                                           Unit
+Schedule () 01-AMC Schedule                                                                  11503728.60
+            Please see Item Breakup for details.             11503728.60            AT Par   11503728.60
+01
+            Description:- Schedule
+
+
+3. ITEM BREAKUP
+
+Schedule Schedule 01-AMC Schedule
+ Item- 01 Schedule
+    S No.    Item                Description of Item                     Unit       Qty      Rate       Amount
+              No
+1            01     AMC of Central Data Controller unit as per RDSO Numbers         240.00 2371.79       569229.60
+                    Spec. RDSO/SPN/TC/108/2019 REV.1.0 or latest
+                    with all the accessories.(Unit is per item per
+                    month)
+2            02     Comprehensive AMC of LED based Coach Numbers 15840.00                    467.90    7411536.00
+                    Guidance Display boards (double face) as per
+                    RDSO      spcn     No.    RDSO/SPN/TC/108/2019
+                    (Rev.1.0) or latest (Unit is per item per month)
+                    (Unit is per item per month)
+3            03     AMC    of Platform data communication hub Numbers               600.00   527.69      316614.00
+                    (PDCH) and other interface equipment as per
+                    RDSO spcn No. RDSO/SPN/TC/61/2015 Rev 4.0
+                    Amd.1 or latest (Unit is per item per month)
+4            04     Comprehensive AMC of three line single side At Numbers          180.00 2864.28       515570.40
+                    a Glance Display boards as per RDSO spcn No.
+                    RDSO/SPN/TC/108/2019 Rev.1.0 or latest or
+                    latest (Unit is per item per month)
+
+
+
+                                                    Page 1 of 5                   Run Date/Time: 22/05/2026 11:28:33
+                             BHOPAL DIVISION-S AND T/WEST CENTRAL RLY
+                                        TENDER DOCUMENT
+Tender No: BPLNWKS2026-27TELEAMC02                                             Closing Date/Time: 15/06/2026 15:00
+
+
+
+5          05     Comprehensive AMC of Single line Double face Numbers                 540.00 3857.43        2083012.20
+                  platform display board RDSO speciﬁcation No-
+                  RDSO/SPN/TC/108/2019 Rev.1.0 or latest (Unit is
+                  per item per month)
+6          06     Comprehensive AMC of 4 digit double sided Numbers                    960.00    633.09       607766.40
+                  platforms clock with GPS receiver as per RDSO
+                  speciﬁcation No. RDSO/SPN/TC 62 2008 or latest
+                  (Unit is per item per month)
+                                                                                                Total     11503728.60
+
+4. ELIGIBILITY CONDITIONS
+
+Standard Financial Criteria
+
+S.No. Description                                                                 Confirmation Remarks Documents
+                                                                                  Required     Allowed Uploading
+      IR GCC 2022 ACS 1 CLAUSE 10.2 Financial Eligibility Criteria: The
+      tenderer must have minimum average annual contractual turnover of
+      V/N or 'V' whichever is less; where: V= Advertised value of the tender in
+      Crores of Rupees, N= Number of years prescribed for completion of work
+      for which bids have been invited. The average annual contractual
+      turnover shall be calculated as an average of "total contractual
+      payments" in the previous three ﬁnancial years, as per the audited                                     Allowed
+1                                                                               No                No
+      balance sheet. However, in case balance sheet of the previous year is                                  (Mandatory)
+      yet to be prepared/audited, the audited balance sheet of the fourth
+      previous year shall be considered for calculating average annual
+      contractual turnover. The Tenderers shall submit requisite information as
+      per Annexure-VIB, along with copies of Audited Balance Sheets duly
+      certiﬁed by the Chartered Accountant/ Certiﬁcate from Chartered
+      Accountant duly supported by Audited Balance Sheet.
+
+Bidders shall confirm and certify on the behalf of the tenderer including its constituents as under:
+
+S.No. Description
+1     I/we the tenderer (s) am/are signing this document after carefully reading the contents.
+      I/We the tenderer(s) also accept all the conditions of the tender and have signed all the pages in confirmation
+2
+      thereof.
+      I/we hereby declare that I/we have downloaded the tender documents from Indian Railway website
+      www.ireps.gov.in . I/we have verified the content of the document from the website and there is no addition, no
+3     deletion or no alteration to the content of the tender document. In case of any discrepancy noticed at any stage
+      i.e. evaluation of tenders, execution of work or final payment of the contract, the master copy available with the
+      railway Administration shall be final and binding upon me/us.
+      I/we declare and certify that I/we have not made any misleading or false representation in the forms,
+4
+      statements and attachments in proof of the qualification requirements.
+      I/We also understand that my/our offer will be evaluated based on the documents/credentials submitted along
+5
+      with the offer and same shall be binding upon me/us.
+      I/We declare that the information and documents submitted along with the tender by me/us are correct and I/we
+6
+      are fully responsible for the correctness of the information and documents, submitted by us.
+      I/we certify that I/we the tenderer(s) is/are not blacklisted or debarred by Railways or any other Ministry /
+7     Department of Govt. of India from participation in tender on the date of submission of bids, either in individual
+      capacity or as a HUF/ member of the partnership firm/LLP/JV/Society/Trust.
+      I/we understand that if the contents of the certificate submitted by us are found to be forged/false at any time
+      during process for evaluation of tenders, it shall lead to forfeiture of the Bid Security and may also lead to any
+8
+      other action provided in the contract including banning of business for a period of upto two year. Further, I/we
+      and all my/our constituents understand that my/our offer shall be summarily rejected.
+      I/we also understand that if the contents of the certificate submitted by us are found to be false/forged at any
+      time after the award of the contract, it will lead to termination of the contract, along with forfeiture of Bid
+9
+      Security/Security Deposit and Performance guarantee and may also lead to any other action provided in the
+      contract including banning of business for a period of upto two year.
+      I/We have read the clause regarding restriction on procurement from a bidder of a country which shares a land
+      border with India and certify that I am/We are not from such a country or, if from such a country, have been
+10
+      registered with the competent Authority. I/We hereby certify that I/we fulfil all the requirements in this regard
+      and am/are eligible to be considered (evidence of valid registration by the competent authority is enclosed)
+
+Partnership firm/Joint Venture (JV) / Hindu Undivided Family (HUF) / Limited Liability Partnership
+(LLP) etc.
+
+S.No. Description
+
+
+                                                      Page 2 of 5                   Run Date/Time: 22/05/2026 11:28:33
+                            BHOPAL DIVISION-S AND T/WEST CENTRAL RLY
+                                       TENDER DOCUMENT
+Tender No: BPLNWKS2026-27TELEAMC02                                             Closing Date/Time: 15/06/2026 15:00
+
+
+
+     Partnership firm/Joint Venture (JV) / Hindu Undivided Family (HUF) / Limited Liability Partnership
+     (LLP) etc. Please submit a certificate in the prescribed format (please download the format from the link given
+1    below). Non submission of the certificate, or submission of certificate either not properly filled in, or in a format
+     other than the prescribed format shall lead to summary rejection of your offer.
+     ( Click here to download the Format of Self Certification)
+
+5. COMPLIANCE
+
+Commercial-Compliance
+
+S.No. Description                                                              Confirmation Remarks Documents
+                                                                               Required     Allowed Uploading
+      The local content requirement for this work is minimum 50% for
+      Make in India compliance. The oﬀer submitted by the ﬁrm
+      against this tender shall be in compliance of Order No. P-
+      45021/2/2017-PP (BE-II)-Part(4)Vol.II dated 19.07.2024 of
+      Department of Promotion of Industry and Internal Trade, Minstry
+1                                                                       No                       No          Not Allowed
+      of Commerce and Industry attached with this tender as PDF.
+      Non-compliance of this Make in India order in the offer submitted
+      by the ﬁrm shall lead to summarily rejection of the oﬀer. The
+      tenderer shall enter local content percentage under Sl. No. 2 of
+      Commercial-Compliance with their offer.
+      Please enter the percentage of local content in the material
+      being oﬀered. Please enter 0 for fully imported items, and 100
+                                                                                                             Allowed
+2     for fully indigenous items. The deﬁnition and calculation of local No                      Yes
+                                                                                                             (Optional)
+      content shall be in accordance with the Make in India policy as
+      incorporated in the tender conditions.
+      The said suppliers of goods and/or services would be subject to
+      GST Act and rules as applicable from time to time. Tenderers are
+3     requested to submit their oﬀers as per GST Tax regime. All the No                          No          Not Allowed
+      bidders/tenderers should ensure that they are GST compliant
+      and their quoted tax structure/rates are as per GST Law.
+      In case of sole proprietorship Firm: A copy of notarized aﬃdavit
+      on Stamp Paper declaring that his Concern is a proprietary
+      Concern and he is sole proprietor of the Concern OR HUF: A
+      copy of notarized affidavit on Stamp Paper declaring that he who
+      is submitting the tender on behalf of HUF is in the position of
+      'Karta' of Hindu Undivided Family (HUF) and he has the
+      authority, power and consent given by other members to act on
+      behalf of HUF. OR for Partnership Firms: (i) A notarized copy of
+      the Partnership Deed or a copy of the Partnership deed
+      registered with the Registrar. (ii) A notarized or registered copy
+      of Power of Attorney in favour of the individual to tender for the
+      work, sign the agreement etc. and create liability against the
+      ﬁrm. OR For Company registered under the Company's Act: (i)
+      The copies of MOA (Memorandum of Association) / AOA (Articles
+      of Association) of the company. (ii) A copy of Certiﬁcate of
+      Incorporation. (iii) A copy of Authorization /Power of Attorney
+      issued by the Company (backed by the resolution of Board of
+                                                                                                             Allowed
+4     Directors) in favour of the individual to sign the tender on behalf No                     No
+                                                                                                             (Mandatory)
+      of the company and create liability against the company. OR For
+      Registered Society and Registered Trust: (i) A copy of Certiﬁcate
+      of Registration. (ii) A copy of Memorandum of Association of
+      Society/Trust Deed. (iii) A copy of Power of Attorney in favour of
+      the individual to sign the tender documents and create liability
+      against the Society/Trust. (iv) A copy of Rules & Regulations of
+      the Society. OR For Limited Liability Partnership (LLP) Firms: (i) A
+      copy of LLP Agreement. (ii) A copy of Certificate of Incorporation.
+      (iii) A copy of Power of Attorney /Authorization issued by the LLP
+      in favour of the individual to sign the tender on behalf of the LLP
+      and create liability against the LLP. Concealment / wrong
+      information in regard to above shall make the contract liable for
+      determination under Clause 62 of the Standard General
+      Conditions of Contract. In Absence of these documents, oﬀer of
+      the ﬁrm will be summarily rejected. For more clariﬁcation
+      regarding this, pls refer GCC April 2022 with latest ACS available
+      on railway official website.
+
+General Instructions
+
+
+
+
+                                                      Page 3 of 5                    Run Date/Time: 22/05/2026 11:28:33
+                          BHOPAL DIVISION-S AND T/WEST CENTRAL RLY
+                                     TENDER DOCUMENT
+Tender No: BPLNWKS2026-27TELEAMC02                                      Closing Date/Time: 15/06/2026 15:00
+
+
+
+S.No. Description                                                        Confirmation Remarks Documents
+                                                                         Required     Allowed Uploading
+      I/We agree to carry out all works with use of modern equipments
+      of required capacity for the work without extra payment. The
+1                                                                     No                 No        Not Allowed
+      decision of railway engineer shall be ﬁnal and binding in this
+      regard.
+      It is the responsibility of contractor to arrange the payment of
+2     the labour employed for the work through bank and to deduct PF No                  No        Not Allowed
+      as per the provisions of Minimum Wages Act.
+      The quantities shown above are approximate and to give a
+3     general guideline. Railway reserves a right to increase, decrease No               No        Not Allowed
+      or to delete any of the items mentioned in schedule.
+      Special Conditions of Contract for Mandatory Updating of Labor
+      Data or Railway's Shramikkalyan Portal by Contractor as per
+      Railway Board's letter No2018/CE-I /CT/4 dated 17.10.2018: In
+      order to increase in payment of contract labour wages and other
+      payments aweb-based e- application has been developed and
+      hosted on website www.shramikkalyan.indianrailways.gov.in All
+      contractors are required to upload details of their LOAs,
+      engaged workmen, wage payment details,|PF/ESI details, bonus
+      details etc., on monthly basis. The details so uploaded shall be
+      available in public domain.. In order to ensure the compliance
+      and fulﬁllment of these instructions, following action is required
+      to be completed by contractors: A) Contractor is to abide by the
+      provisions of Payment of Wages Act and Minimum wages Act in
+      terms of Clause 54 and 55 or Indian Railways General Conditions
+      of Contract. In order to ensure the same, an application has been
+      developed            and         hosted         on         website
+      www.shramikkalyan.indianrailways.gov.in . Contractor shall
+      register his ﬁrm/company etc. and upload requisite details of
+      labor and their payment in this portal. These details shall be
+      available in public domain. The Registration/updating of Portal
+      shall be done as under:-a )contractor shall apply for one time
+      registration of his company/ﬁrm etc. in the Shramikkalyan portal
+      with requisite details subsequent to issue of Letter of
+      Acceptance Engineer shall approve the contractor's registration
+4                                                                         No             No        Not Allowed
+      on the portal within 7 days of receipt of such request.
+      b)Contractor once approved by any Engineer, can create
+      password with login 1D (PAN No.) for subsequent use of portal
+      for all LoAs issued in his favor. c)The contractor once registered
+      on the portal, shall provide details of his letter of Acceptance
+      (LOA)/Contract Agreements on Shramikkalyan portal within 15
+      days of issue of any LoA for approval of concerned Engineer.
+      Engineer shall update (if required) and approve the details of
+      LoA ﬁlled by contractor within 7 days of receipt of such
+      requested) After approval of LoA by Engineer, contractor shall fill
+      the salient details of contract labours engaged in the contract
+      and ensure updating of each wage payment to them on
+      Shramikkalyan portal on monthly basis. e)lt shall be mandatory
+      upon the contractor to ensure correct and prompt uploading of
+      all salient details of engaged contractual labour and payments
+      made thereof after each wage period. B)While processing
+      payment of any On Account bill or Final bill or release of
+      Advances      or    Performance     Guarantee/Security    Deposit,
+      Contractor shall submit a certiﬁcate to the Engineer or
+      Engineer's representatives that I have uploaded the correct
+      details of contract labours engaged in connection with this
+      contract and payments made to them during the wage period in
+      Railway's                    Shramikkalyan                   portal
+      atwww.shramikkalyan.indianralways.gov.in till..Month... Year......
+      GCC April 2022 with latest ACS has been introduced and
+      published/available on railways website. The provisions of GCC
+      2022 or latest amendments released till the time of date of
+5     publishing of tender will be applicable on this tender. Tenderers No               No        Not Allowed
+      are requested to download the same from the railways website
+      and ensure the implementation of the latest provisions made in
+      GCC while execution of work.
+
+Undertakings
+
+
+
+                                                  Page 4 of 5                  Run Date/Time: 22/05/2026 11:28:33
+                           BHOPAL DIVISION-S AND T/WEST CENTRAL RLY
+                                      TENDER DOCUMENT
+Tender No: BPLNWKS2026-27TELEAMC02                                    Closing Date/Time: 15/06/2026 15:00
+
+
+
+S.No. Description                                                     Confirmation Remarks Documents
+                                                                      Required     Allowed Uploading
+        I/we have carefully gone through the IR GCC 2022 with latest
+1       ACS, tender documents, speciﬁcations, special conditions, No                  No        Not Allowed
+        Annexures etc. attached with the tender documents.
+        I/We undertake to keep this oﬀer valid for a period indicated in
+2       tender documents from the date of opening of tender and No                    No        Not Allowed
+        further not to revoke the same before the expiry of such period.
+        I/We have Visited the works site and I We am/ are aware of the
+3                                                                      No             No        Not Allowed
+        site Conditions.
+
+Custom
+
+S.No. Description                                                     Confirmation Remarks Documents
+                                                                      Required     Allowed Uploading
+        Maintenance period for this work will be Nil months after the
+1                                                                     No              No        Not Allowed
+        date of successful completion of AMC work.
+
+6. Documents attached with tender
+
+S.No.           Document Name                                  Document Description
+1       262702partronics.pdf                Tender Booklet
+2       GCCApril2022.pdf                    GCC 2022
+3       GCCAPRIL2022ACS1toACS11.pdf         ACS GCC 2022
+4       AnnexureVI-B.pdf                    annexure
+5       MII_Revision_Order_19July2024.pdf makeinindia
+
+
+This tender complies with Public Procurement Policy (Make in India) Order 2017, dated 15/06/2017,
+issued by Department of Industrial Promotion and Policy, Ministry of Commerce, circulated vide Railway
+Board letter no. 2015/RS(G)/779/5 dated 03/08/2017 and 27/12/2017 and amendments/ revisions
+thereof.
+
+As a Tender Inviting Authority, the undersigned has ensured that the issue of this tender does not
+violate provisions of GFR regarding procurement through GeM.
+
+
+
+
+                                                                      Signed By: PRIYANKA CHOUDHARY
+
+                                                                                 Designation : Sr.DSTECO
+
+
+
+
+                                                 Page 5 of 5                Run Date/Time: 22/05/2026 11:28:33
+
