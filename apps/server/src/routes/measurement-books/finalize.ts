@@ -1,4 +1,5 @@
 import {
+  MB_NOT_SELECTED_CATEGORY,
   BillSchema,
   CancelMeasurementBookRequestSchema,
   MeasurementBookDetailResponseSchema,
@@ -241,7 +242,7 @@ export function registerMeasurementBookFinalizeRoutes(
           // that cannot exist.
           const names = computation.unresolved
             .map((item) =>
-              item.missingCategory === 'NOT_SELECTED'
+              item.missingCategory === MB_NOT_SELECTED_CATEGORY
                 ? `${item.itemNumber} (no payment category chosen)`
                 : `${item.itemNumber} (missing ${item.missingCategory} row)`,
             )

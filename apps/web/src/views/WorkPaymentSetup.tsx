@@ -12,8 +12,8 @@ import { type ApiClient } from '../api.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { proposePaymentCategory } from '../lib/payment-category-proposal.js';
 import {
-  CATEGORY_LABELS,
-  ITEM_CATEGORY_OPTIONS,
+  categoryLabelOf,
+  itemCategoryOptions,
   LOCKED_AMC_STAGES,
   STAGE_FIELDS,
   autoZeroStages,
@@ -286,7 +286,7 @@ export function WorkPaymentSetup({
       const many = missingCoverage.length > 1;
       setSaveError(
         `Enter the stage percentages for ${missingCoverage
-          .map((category) => CATEGORY_LABELS[category])
+          .map((category) => categoryLabelOf(category, rows))
           .join(', ')} first. Items on this Work bill through ${
           many ? 'those rows' : 'that row'
         }, and a Measurement Book cannot be finalized while ${
@@ -336,10 +336,11 @@ export function WorkPaymentSetup({
   ): void {
     setDrafts((current) => ({
       ...current,
-      [category]: autoZeroStages(category, {
-        ...(current[category] ?? draftFrom(undefined)),
-        [field]: value,
-      }),
+      [category]: autoZeroStages(
+        category,
+        { ...(current[category] ?? draftFrom(undefined)), [field]: value },
+        field,
+      ),
     }));
   }
 
@@ -395,7 +396,7 @@ export function WorkPaymentSetup({
               {rowStates.map(({ category, draft, saved, touched, problem }) => (
                 <tr key={category}>
                   <th scope="row">
-                    {CATEGORY_LABELS[category]}
+                    {categoryLabelOf(category, rows)}
                     {touched && problem !== null && (
                       <span
                         className="block text-[13px] font-medium text-destructive"
@@ -428,7 +429,7 @@ export function WorkPaymentSetup({
                     return (
                       <td key={field}>
                         <input
-                          aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
+                          aria-label={`${label} for ${categoryLabelOf(category, rows)}`}
                           className="w-24"
                           value={locked ? '0' : draft[field]}
                           inputMode="decimal"
@@ -519,7 +520,7 @@ export function WorkPaymentSetup({
                                 }));
                               }}
                             >
-                              {ITEM_CATEGORY_OPTIONS.map(([value, label]) => (
+                              {itemCategoryOptions(rows).map(([value, label]) => (
                                 <option key={value} value={value}>
                                   {label}
                                 </option>

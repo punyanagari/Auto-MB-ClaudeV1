@@ -9,11 +9,14 @@ import type { TransactionSql } from '@auto-mb/db';
  * rule R10; ADR-0006 decision 5).
  *
  * An item resolves its four stage percentages through its payment
- * category's matrix row; an uncategorised item (payment_category NULL)
- * resolves through the Work's optional UNCATEGORISED row. Per the
- * settled decision R10 there is deliberately NO per-item percentage
- * entry — percentages live only in the per-Work matrix, keyed by
- * category (do not re-add a per-item interface).
+ * category's matrix row. An item with NO category (payment_category
+ * NULL) resolves through nothing at all since migration 0105 — it used
+ * to fall through to the UNCATEGORISED row, which billed items nobody
+ * had looked at. UNCATEGORISED is now a category an item CARRIES, and
+ * carrying it is a decision. Per the settled decision R10 there is
+ * deliberately NO per-item percentage entry — percentages live only in
+ * the per-Work matrix, keyed by category (do not re-add a per-item
+ * interface).
  *
  * Everything here is exact decimal strings, verbatim from
  * numeric(5,2)::text — callers must never convert through JavaScript

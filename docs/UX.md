@@ -1762,15 +1762,18 @@ starved the select to nothing: auto table layout ignores a cell's
 `max-width` when it distributes columns, and `globals.css` gives every
 control `min-width: 0`, so the prose took the whole budget and ran on
 underneath. `controlCell` (`ui/table.tsx`) puts a MIN-width on the
-control's cell, which auto layout does honour. Applied to the four
-places where a payment-category or purchase-order select shares a row
-with a description: the payment matrix, the payment-setup dialog, the
-LOA review item editor, and the challan editor.
+control's cell, which auto layout does honour. Applied everywhere a
+control shares a table row with free text: the payment matrix, the
+payment-setup dialog, the LOA review item editor, the challan editor,
+the inspection-clause table (whose description cell was not even
+`wrapCell` — it is now), and both selects on the Members matrix.
 
 **Completion date proposed from the letter.** The parser has always read
 the completion period and nothing consumed it. The review screen now
 proposes letter date + N months, states the derivation under the field,
-and leaves it overwritable or blank. Calendar months with month-end
+and leaves it overwritable or blank. It follows a CORRECTED letter date
+— the field is the derivation until the reviewer types a date of their
+own, and from that moment it is theirs and stops moving. Calendar months with month-end
 clamping — 31 January plus one month is 28 February — because liquidated
 damages are counted from this date.
 
@@ -1793,7 +1796,18 @@ at finalisation, which is the refusal that was always the net.
 UNCATEGORISED is a choice of its own, and its matrix row carries a
 per-Work editable name, because railway schedules call their residual
 bucket "Other items", "Miscellaneous" or "Balance work" and the operator
-should read the schedule's own word. Display only; the key never moves.
+should read the schedule's own word. That name is what every surface
+shows — the matrix row header, the item-category select, the stage
+inputs' accessible labels, the setup dialog, the billing-readiness
+checklist and the Work's own configuration banner — because one screen
+calling it two things is worse than not renaming it at all. Display
+only; the key never moves.
+
+The Work's configuration banner and the billing-readiness checklist each
+grew a SECOND line for the same reason: "no matrix row for X" and "no
+category chosen" are different failures with different remedies, and
+readiness reported green on the second because it was reading it as the
+first.
 
 **The Remedy column leaves the unfinished-items worklist.** The
 quantities stay and say the same thing in less space.

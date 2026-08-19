@@ -233,9 +233,16 @@ describe('the payment setup prompt after a Work is created', () => {
     // The dialog is spent, but the Work is still unconfigured — so the
     // page keeps saying so, quietly and in place, rather than by
     // re-opening a modal the operator already dismissed.
+    // Three of the four items on this fixture have no category chosen and
+    // one is SPARE_SUPPLY, so the banner has BOTH things to say — and
+    // says them apart. Before migration 0105 a NULL category fell through
+    // to UNCATEGORISED, so the banner demanded a residual matrix row that
+    // would not have made those items billable.
     expect(
       await screen.findByText(/This Work has no payment matrix row for/),
     ).toBeTruthy();
+    expect(screen.getByText(/no payment category chosen/)).toBeTruthy();
+    expect(screen.queryByText(/row for Uncategorised items/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Open payment setup' })).toBeTruthy();
   }, 20_000);
 });

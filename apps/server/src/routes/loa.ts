@@ -1856,8 +1856,9 @@ export function registerLoaRoutes(
                 requiresSerials: item.requires_serials,
                 installedQuantity: item.installed_quantity,
                 pendingVariation: item.pending_variation,
-                // Milestone 8: null = uncategorised (resolves through the
-                // Work's UNCATEGORISED matrix row).
+                // Migration 0105: null = NOT SELECTED — it resolves
+                // through no matrix row at all. UNCATEGORISED is a
+                // value of its own now, and it is a choice.
                 paymentCategory: item.payment_category,
                 pacCertifiedQuantity: item.pac_certified_quantity,
               })),

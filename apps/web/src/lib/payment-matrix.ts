@@ -63,6 +63,20 @@ export const ITEM_CATEGORY_OPTIONS: readonly (readonly [string, string])[] = [
   ),
 ];
 
+/** The same options, with the residual row wearing THIS Work's name for
+ * it (migration 0105). A select that still said "Uncategorised items"
+ * while the matrix row above it said "Balance work" would be two names
+ * for one choice on one screen. */
+export function itemCategoryOptions(
+  rows: readonly PaymentMatrixRow[] | null | undefined,
+): readonly (readonly [string, string])[] {
+  return ITEM_CATEGORY_OPTIONS.map(([value, label]) =>
+    value === 'UNCATEGORISED'
+      ? ([value, categoryLabelOf('UNCATEGORISED', rows)] as const)
+      : ([value, label] as const),
+  );
+}
+
 export const STAGE_FIELDS = [
   ['pctSupply', 'Supply %'],
   ['pctInstallation', 'Installation %'],
@@ -159,7 +173,11 @@ export function submittedDraft(category: string, draft: RowDraft): RowDraft {
  * as the zeros they are sent as, rather than as blanks waiting to be
  * filled — otherwise an AMC row typed as 95/5 would never look balanced.
  */
-export function autoZeroStages(category: string, draft: RowDraft): RowDraft {
+export function autoZeroStages(
+  category: string,
+  draft: RowDraft,
+  justEdited?: StageField,
+): RowDraft {
   const submitted = submittedDraft(category, draft);
   const blanks: StageField[] = [];
   let total = 0n;
@@ -175,9 +193,14 @@ export function autoZeroStages(category: string, draft: RowDraft): RowDraft {
     if (value === null) return draft;
     total += value;
   }
-  if (blanks.length === 0 || total !== 10000n) return draft;
+  // NEVER refill the field the operator just emptied. On a balanced row
+  // every other stage is 0, so clearing one leaves the rest summing to
+  // 100 — and an unconditional fill put the 0 straight back, making it
+  // the one input on the screen that cannot be emptied.
+  const fillable = blanks.filter((field) => field !== justEdited);
+  if (fillable.length === 0 || total !== 10000n) return draft;
   const filled = { ...draft };
-  for (const field of blanks) filled[field] = '0';
+  for (const field of fillable) filled[field] = '0';
   return filled;
 }
 

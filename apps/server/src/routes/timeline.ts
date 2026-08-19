@@ -140,6 +140,12 @@ async function resolveEntityCursor(
  * that register is one row per Work and its row DELETES when the terms are
  * cleared — joining its live primary key would take the clearing event and
  * every prior save off the trail at the moment they matter most.
+ * extension_requests has the same shape of problem and takes BOTH halves:
+ * a draft and a manual back-fill are both HARD-deleted (routes/extensions.ts),
+ * so the live primary key cannot answer for a letter that is gone. Every
+ * event this module writes about an extension now carries `workId` in its
+ * details, which is what the second half joins on; the primary-key half
+ * stays because events written before that was true have no such detail.
  */
 function workEventPredicate(tx: TransactionSql, workId: string) {
   return tx`(
@@ -164,8 +170,9 @@ function workEventPredicate(tx: TransactionSql, workId: string) {
     -- recorded anywhere near it. The approval letter is the evidence the
     -- new date rests on; it belongs beside the grant on the Work's own
     -- history, not only inside the Extensions panel.
-    or (ae.entity_type = 'extension_requests' and ae.entity_id in (
-      select id from extension_requests where work_id = ${workId}))
+    or (ae.entity_type = 'extension_requests' and (
+      ae.entity_id in (select id from extension_requests where work_id = ${workId})
+      or ae.details->>'workId' = ${workId}))
     or (ae.entity_type = 'mb_entries' and ae.entity_id in (
       select id from mb_entries where work_id = ${workId}))
     or (ae.entity_type = 'bills' and ae.entity_id in (

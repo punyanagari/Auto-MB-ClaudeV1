@@ -129,11 +129,22 @@ export function completionDateFrom(
   const month = Number(monthText);
   const day = Number(dayText);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  // A four-digit year the arithmetic can answer for. Below 1000 the
+  // letter date is a typo, and above 9999 the result would not fit the
+  // wire's own `YYYY-MM-DD` shape.
+  if (year < 1000 || year + Math.ceil(months / 12) > 9999) return null;
   const zeroBased = month - 1 + months;
   const targetYear = year + Math.floor(zeroBased / 12);
   const targetMonth = (zeroBased % 12) + 1;
   // Day 0 of the following month is the last day of this one.
-  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  //
+  // `Date.UTC` maps years 0-99 to 1900-1999, so a letter dated 0099-… (a
+  // typo, but one this money path must not silently mis-answer) would
+  // read the wrong century's February. `setUTCFullYear` writes the year
+  // literally. Belt and braces with the year bound above.
+  const monthEnd = new Date(Date.UTC(2000, targetMonth, 0));
+  monthEnd.setUTCFullYear(targetYear, targetMonth, 0);
+  const lastDay = monthEnd.getUTCDate();
   const targetDay = Math.min(day, lastDay);
   return [
     String(targetYear).padStart(4, '0'),

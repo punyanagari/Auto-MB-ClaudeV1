@@ -12,7 +12,7 @@ import { type ApiClient } from '../api.js';
 import { errorMessage } from '../lib/load-failure.js';
 import {
   CATEGORY_LABELS,
-  ITEM_CATEGORY_OPTIONS,
+  itemCategoryOptions,
   LOCKED_AMC_STAGES,
   STAGE_FIELDS,
   autoZeroStages,
@@ -193,10 +193,11 @@ export function PaymentMatrix({
   ) {
     setDrafts((current) => ({
       ...current,
-      [category]: autoZeroStages(category, {
-        ...(current[category] ?? draftFrom(undefined)),
-        [field]: value,
-      }),
+      [category]: autoZeroStages(
+        category,
+        { ...(current[category] ?? draftFrom(undefined)), [field]: value },
+        field,
+      ),
     }));
   }
 
@@ -385,7 +386,7 @@ export function PaymentMatrix({
                   return (
                     <td key={field}>
                       <input
-                        aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
+                        aria-label={`${label} for ${categoryLabelOf(category, rows)}`}
                         value={locked ? '0' : draft[field]}
                         inputMode="decimal"
                         disabled={locked}
@@ -406,37 +407,40 @@ export function PaymentMatrix({
                     <Button
                       disabled={pending || problem !== null}
                       onClick={() =>
-                        void act(async () => {
-                          const row = await api.upsertPaymentMatrixRow(
-                            organisationId,
-                            workId,
-                            category,
-                            {
-                              pctSupply: submitted.pctSupply,
-                              pctInstallation: submitted.pctInstallation,
-                              pctPac: submitted.pctPac,
-                              pctFinalBill: submitted.pctFinalBill,
-                              ...(category === 'UNCATEGORISED'
-                                ? {
-                                    categoryLabel:
-                                      residualLabel.trim().length > 0
-                                        ? residualLabel.trim()
-                                        : null,
-                                  }
-                                : {}),
-                            },
-                          );
-                          setRows((current) => [
-                            ...(current ?? []).filter(
-                              (candidate) => candidate.category !== category,
-                            ),
-                            row,
-                          ]);
-                          setDrafts((current) => ({
-                            ...current,
-                            [category]: draftFrom(row),
-                          }));
-                        }, `Percentages saved for ${CATEGORY_LABELS[category]}.`)
+                        void act(
+                          async () => {
+                            const row = await api.upsertPaymentMatrixRow(
+                              organisationId,
+                              workId,
+                              category,
+                              {
+                                pctSupply: submitted.pctSupply,
+                                pctInstallation: submitted.pctInstallation,
+                                pctPac: submitted.pctPac,
+                                pctFinalBill: submitted.pctFinalBill,
+                                ...(category === 'UNCATEGORISED'
+                                  ? {
+                                      categoryLabel:
+                                        residualLabel.trim().length > 0
+                                          ? residualLabel.trim()
+                                          : null,
+                                    }
+                                  : {}),
+                              },
+                            );
+                            setRows((current) => [
+                              ...(current ?? []).filter(
+                                (candidate) => candidate.category !== category,
+                              ),
+                              row,
+                            ]);
+                            setDrafts((current) => ({
+                              ...current,
+                              [category]: draftFrom(row),
+                            }));
+                          },
+                          `Percentages saved for ${categoryLabelOf(category, rows)}.`,
+                        )
                       }
                     >
                       Save
@@ -446,22 +450,30 @@ export function PaymentMatrix({
                         variant="outline"
                         disabled={pending}
                         onClick={() =>
-                          void act(async () => {
-                            await api.deletePaymentMatrixRow(
-                              organisationId,
-                              workId,
-                              category,
-                            );
-                            setRows((current) =>
-                              (current ?? []).filter(
-                                (candidate) => candidate.category !== category,
-                              ),
-                            );
-                            setDrafts((current) => ({
-                              ...current,
-                              [category]: draftFrom(undefined),
-                            }));
-                          }, `${CATEGORY_LABELS[category]} row removed.`)
+                          void act(
+                            async () => {
+                              await api.deletePaymentMatrixRow(
+                                organisationId,
+                                workId,
+                                category,
+                              );
+                              setRows((current) =>
+                                (current ?? []).filter(
+                                  (candidate) => candidate.category !== category,
+                                ),
+                              );
+                              setDrafts((current) => ({
+                                ...current,
+                                [category]: draftFrom(undefined),
+                              }));
+                              // The row's per-Work name goes with the row.
+                              // Left behind, it would sit in the input
+                              // under a placeholder that says otherwise and
+                              // come back on the next save.
+                              if (category === 'UNCATEGORISED') setResidualLabel('');
+                            },
+                            `${categoryLabelOf(category, rows)} row removed.`,
+                          )
                         }
                       >
                         Remove
@@ -537,7 +549,7 @@ export function PaymentMatrix({
                         }, `Payment category updated for ${item.itemNumber}.`);
                       }}
                     >
-                      {ITEM_CATEGORY_OPTIONS.map(([value, label]) => (
+                      {itemCategoryOptions(rows).map(([value, label]) => (
                         <option key={value} value={value}>
                           {label}
                         </option>
@@ -551,8 +563,8 @@ export function PaymentMatrix({
                     >
                       {item.paymentCategory === null ||
                       item.paymentCategory === undefined
-                        ? 'Uncategorised'
-                        : CATEGORY_LABELS[item.paymentCategory]}
+                        ? 'Not selected'
+                        : categoryLabelOf(item.paymentCategory, rows)}
                     </span>
                   )}
                 </td>

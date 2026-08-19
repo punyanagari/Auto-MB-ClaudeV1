@@ -904,8 +904,10 @@ export function registerRetentionRoutes(
   // decision 4): bills are now prepared from a finalized Measurement
   // Book (POST /api/measurement-books/:id/bill in
   // measurement-books.ts), whose snapshot prices each stage through the
-  // payment matrix. mb_entries stay recordable site measurement
-  // evidence; they are no longer a billing input.
+  // payment matrix. mb_entries are site measurement HISTORY: their own
+  // write route was removed on 2026-08-19 (owner-sanctioned), so they
+  // are neither a billing input nor recordable — see the note where the
+  // POST used to live, above.
 
   tenantRoute(
     {

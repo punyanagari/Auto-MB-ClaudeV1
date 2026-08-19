@@ -38,7 +38,7 @@ import {
 } from '../format.js';
 import { cn } from '../lib/cn.js';
 import { errorMessage } from '../lib/load-failure.js';
-import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
+import { categoryLabelOf } from '../lib/payment-matrix.js';
 import { useReload } from '../lib/view-state.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
 import { Button } from '../ui/button.js';
@@ -828,10 +828,15 @@ export function WorkDetail({
   );
 
   /**
-   * The categories items on this Work bill through that have no matrix
-   * row — the same resolution the server's `resolvePaymentPercentages`
-   * performs, with a NULL category falling back to the UNCATEGORISED
-   * row.
+   * Why this Work is not ready to bill, in the two ways it can fail:
+   * a category in use with no matrix row, and an item whose category
+   * nobody has chosen. The same resolution the server's
+   * `resolvePaymentPercentages` performs.
+   *
+   * They are counted apart because the remedies are different, and the
+   * banner used to conflate them: NULL fell through to UNCATEGORISED, so
+   * an item nobody had looked at made the banner demand a matrix row
+   * that would not have helped, while the item stayed unbillable.
    *
    * This is the durable half of the payment setup prompt. The dialog is
    * offered once by the navigation that created the Work; this is
@@ -841,10 +846,19 @@ export function WorkDetail({
   const uncoveredCategories = useMemo<readonly PaymentMatrixCategory[]>(() => {
     const configured = new Set(paymentMatrixRows.map((row) => row.category));
     const used = new Set<PaymentMatrixCategory>(
-      workItems.map((item) => item.paymentCategory ?? 'UNCATEGORISED'),
+      workItems
+        .map((item) => item.paymentCategory ?? null)
+        .filter((category): category is PaymentMatrixCategory => category !== null),
     );
     return [...used].filter((category) => !configured.has(category)).sort();
   }, [workItems, paymentMatrixRows]);
+
+  /** Items with no payment category chosen at all (migration 0105).
+   * They bill nothing and no matrix row can change that. */
+  const unselectedItemCount = useMemo(
+    () => workItems.filter((item) => (item.paymentCategory ?? null) === null).length,
+    [workItems],
+  );
 
   if (loadError !== null) {
     return (
@@ -1222,19 +1236,33 @@ export function WorkDetail({
               Read-only members see nothing — the remedy is not theirs. */}
           {canModify &&
             relatedStateFor([RELATED.paymentMatrix]) === 'ready' &&
-            uncoveredCategories.length > 0 && (
+            (uncoveredCategories.length > 0 || unselectedItemCount > 0) && (
               <p className="mb-4 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
                 <CircleAlert
                   className="mt-0.5 size-4 shrink-0 self-center text-warning-foreground"
                   aria-hidden="true"
                 />
                 <span>
-                  This Work has no payment matrix row for{' '}
-                  {uncoveredCategories
-                    .map((category) => CATEGORY_LABELS[category])
-                    .join(', ')}
-                  , so a Measurement Book cannot be finalized for the items that bill
-                  through {uncoveredCategories.length === 1 ? 'it' : 'them'}.
+                  {uncoveredCategories.length > 0 && (
+                    <>
+                      This Work has no payment matrix row for{' '}
+                      {uncoveredCategories
+                        .map((category) => categoryLabelOf(category, paymentMatrixRows))
+                        .join(', ')}
+                      , so a Measurement Book cannot be finalized for the items that
+                      bill through {uncoveredCategories.length === 1 ? 'it' : 'them'}.
+                    </>
+                  )}
+                  {unselectedItemCount > 0 && (
+                    <>
+                      {uncoveredCategories.length > 0 ? ' ' : ''}
+                      {unselectedItemCount} item
+                      {unselectedItemCount === 1 ? ' has' : 's have'} no payment
+                      category chosen, so{' '}
+                      {unselectedItemCount === 1 ? 'it bills' : 'they bill'} nothing
+                      until answered — no matrix row changes that.
+                    </>
+                  )}
                 </span>
                 <Button
                   variant="link"

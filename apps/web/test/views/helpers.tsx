@@ -1067,6 +1067,11 @@ export function challanWork(requiresSerials = false): WorkDetailResponse {
             unitCode: 'Nos',
             awardedQuantity: '5.000',
             effectiveRate: '100.00',
+            // The residual category, matching the UNCATEGORISED matrix
+            // row the readiness tests configure. Since migration 0105 an
+            // absent category means NOT SELECTED, which is its own
+            // unmet prerequisite.
+            paymentCategory: 'UNCATEGORISED',
             requiresSerials,
           },
         ],

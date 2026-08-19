@@ -53,6 +53,12 @@ describe('completionDateFrom', () => {
     expect(completionDateFrom('2026-03-15', undefined)).toBeNull();
     expect(completionDateFrom('', { value: 12, unit: 'month' })).toBeNull();
     expect(completionDateFrom('15/03/2026', { value: 12, unit: 'month' })).toBeNull();
+    // `Date.UTC` maps years 0-99 to 1900-1999, so a two-digit year would
+    // read the wrong century's February. Refused outright — this is the
+    // date liquidated damages are counted from.
+    expect(completionDateFrom('0099-01-31', { value: 1, unit: 'month' })).toBeNull();
+    expect(completionDateFrom('0001-01-01', { value: 1, unit: 'month' })).toBeNull();
+    expect(completionDateFrom('9999-01-01', { value: 24, unit: 'month' })).toBeNull();
   });
 
   it('never proposes a date before the letter, which the server refuses', () => {

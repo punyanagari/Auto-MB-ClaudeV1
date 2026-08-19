@@ -210,11 +210,10 @@ function buildHeaderDraft(payload: ExtractionPayloadView): HeaderDraft {
     // ordinary Indian works contract, and the control below makes the
     // rarer answer a deliberate act rather than a discovery.
     gstBasis: 'inclusive',
-    // Derived once, from the letter's own two facts. Not re-derived when
-    // the reviewer edits the letter date: a prefill that moved under a
-    // date the operator had already answered for would be the screen
-    // arguing with them. The hint below names both inputs, so a changed
-    // letter date makes the stale proposal visible rather than silent.
+    // Derived from the letter's own two facts, and re-derived while the
+    // reviewer corrects the letter date — see `updateHeader`. A prefill
+    // that stayed put under a corrected date would quietly disagree with
+    // the hint that explains it.
     completionDate:
       completionDateFrom(
         letterDate !== null && /^\d{4}-\d{2}-\d{2}$/.test(letterDate) ? letterDate : '',
@@ -463,6 +462,9 @@ export function ReviewLoa({
    * only a fresh upload brings it back. */
   const [discardAsked, setDiscardAsked] = useState(false);
   const [discardPending, setDiscardPending] = useState(false);
+  /** Whether the reviewer has typed a completion date of their own. While
+   * false the field follows the letter date; once true it is theirs. */
+  const [completionDateTouched, setCompletionDateTouched] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
   /** The drafts exactly as the extraction produced them. Everything that
    * differs from this is the reviewer's work, and losing it is what the
@@ -757,7 +759,23 @@ export function ReviewLoa({
   }
 
   function updateHeader<K extends keyof HeaderDraft>(key: K, value: HeaderDraft[K]) {
-    setHeader((current) => (current === null ? null : { ...current, [key]: value }));
+    // The completion date is a DERIVED prefill until the reviewer touches
+    // it. Correcting the letter date has to move it — the whole field is
+    // "letter date plus the period the letter prints", and one that
+    // stayed behind would contradict the hint under it. The moment the
+    // reviewer types a date of their own, the derivation stops: an answer
+    // they gave is not a proposal to be overwritten.
+    if (key === 'completionDate') setCompletionDateTouched(true);
+    setHeader((current) => {
+      if (current === null) return null;
+      const next = { ...current, [key]: value };
+      if (key === 'letterDate' && !completionDateTouched) {
+        next.completionDate =
+          completionDateFrom(String(value), payload?.review.header.completionPeriod) ??
+          '';
+      }
+      return next;
+    });
   }
 
   function updatePbg<K extends keyof PbgDraft>(key: K, value: PbgDraft[K]) {

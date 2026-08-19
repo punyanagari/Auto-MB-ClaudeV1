@@ -162,6 +162,31 @@ describe('autoZeroStages', () => {
     ).toBeNull();
   });
 
+  it('never refills the field the operator just cleared', () => {
+    // A balanced row is 100 plus three zeros, so clearing one of the
+    // zeros leaves the rest summing to 100 — and an unconditional fill
+    // put it straight back, making it the one input on the screen that
+    // could not be emptied.
+    const balanced = draft({
+      pctSupply: '100',
+      pctInstallation: '0',
+      pctPac: '0',
+      pctFinalBill: '0',
+    });
+    const cleared = { ...balanced, pctPac: '' };
+    expect(autoZeroStages('SUPPLY', cleared, 'pctPac')).toEqual(cleared);
+    // Any OTHER blank still fills, so clearing one field does not switch
+    // the behaviour off for the rest of the row.
+    const twoBlank = { ...balanced, pctPac: '', pctFinalBill: '' };
+    expect(autoZeroStages('SUPPLY', twoBlank, 'pctPac')).toEqual({
+      ...twoBlank,
+      pctFinalBill: '0',
+    });
+    // Without the hint — the caller that does not know which field moved
+    // — the old behaviour stands.
+    expect(autoZeroStages('SUPPLY', cleared)).toEqual(balanced);
+  });
+
   it('leaves a row alone until it balances, and never fights an edit', () => {
     // Short of 100, over 100, mid-typing garbage, text the wire refuses,
     // and a row already full: in every one the draft comes back as typed.

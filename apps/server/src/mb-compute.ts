@@ -22,7 +22,12 @@
  * shown before finalizing is what finalizing writes.
  */
 
-import { byItemNumber, type WorkItemPaymentCategory } from '@auto-mb/contracts';
+import {
+  MB_NOT_SELECTED_CATEGORY,
+  byItemNumber,
+  type PaymentMatrixCategory,
+  type WorkItemPaymentCategory,
+} from '@auto-mb/contracts';
 import {
   addDecimalStrings,
   computeMbRemark,
@@ -118,7 +123,11 @@ export interface MbComputedLine {
 interface MbUnresolvedItem {
   readonly workItemId: string;
   readonly itemNumber: string;
-  readonly missingCategory: string;
+  /** The matrix row that has to be created, or `NOT_SELECTED` when the
+   * item has no category at all and no row would help. A closed union on
+   * the wire too (`MeasurementBookWarningSchema`), so the sentinel cannot
+   * be rendered as if it named a category. */
+  readonly missingCategory: PaymentMatrixCategory | typeof MB_NOT_SELECTED_CATEGORY;
 }
 
 export interface MbComputation {
@@ -277,7 +286,7 @@ export function computeMeasurementBook(input: {
         // there is no row to name. `NOT_SELECTED` is that state on the
         // wire — a token the finalize route turns into the sentence
         // that says the remedy is a decision, not a matrix row.
-        missingCategory: resolution.missingCategory ?? 'NOT_SELECTED',
+        missingCategory: resolution.missingCategory ?? MB_NOT_SELECTED_CATEGORY,
       });
       continue;
     }
