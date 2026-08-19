@@ -78,7 +78,7 @@ async function startPeriod(
   options?: {
     readonly months?: number;
     readonly startOn?: string;
-    readonly basis?: 'installation' | 'pac';
+    readonly basis?: 'installation' | 'pac' | 'final_bill';
     readonly pacCertificateId?: string;
     readonly installedOn?: string;
   },
@@ -394,6 +394,284 @@ describe('starting a defect liability period', () => {
       }),
     );
     expect(failure.code).toBe('23Q03');
+  });
+});
+
+/**
+ * The third start basis (migration 0112): the Work's FINAL BILL.
+ *
+ * The rule these cases hold is that the date is the contract's and not
+ * the writer's. `bills` carries no date column, so the legal date behind
+ * a bill is the `mb_date` of the finalized final Measurement Book it was
+ * prepared from — and a period on this basis starts on THAT day, exactly,
+ * or it does not start.
+ *
+ * ON ITS OWN WORK, and the reason is a rule this basis inherits: a Work
+ * carrying a live final Measurement Book refuses new installations
+ * outright (0027, restated by 0031 — "recording this installation would
+ * create a source that can never be billed"). Raising the fixture bill on
+ * the Work the rest of this file shares would therefore stop every later
+ * case in the file from recording anything. It also states the operator's
+ * real sequence: installations first, then the final Book, then its bill,
+ * then the periods.
+ */
+describe('the final-bill start basis', () => {
+  let finalWorkId: string;
+  let finalWorkItemId: string;
+  /** Recorded BEFORE the final bill exists, because after it nothing can
+   * be. Dated well back, so the bill date below is comfortably after it. */
+  let installedOn: string;
+  let installationId: string;
+  /** The final bill's date, which is the only day a period on this Work
+   * may start on. Deliberately NOT today and not the installation date:
+   * the two wrong answers this basis could give are different days. */
+  let billDate: string;
+
+  async function startOnFinalWork(startOn: string): Promise<string> {
+    return withTenant(
+      database.appPool,
+      { organisationId: tenant.organisationId, userId: tenant.userId },
+      async (tx) => {
+        const [row] = await tx<{ id: string }[]>`
+          insert into installation_warranties (
+            organisation_id, work_id, installation_id, dlp_months, start_basis,
+            pac_certificate_id, dlp_start_on, original_expires_on,
+            dlp_expires_on, started_by_user_id
+          )
+          values (
+            ${tenant.organisationId}, ${finalWorkId}, ${installationId}, 24,
+            'final_bill', null, ${startOn}, ${startOn}, ${startOn},
+            ${tenant.userId}
+          )
+          returning id
+        `;
+        if (!row) throw new Error('warranty insert returned no row');
+        return row.id;
+      },
+    );
+  }
+
+  beforeAll(async () => {
+    const [work] = await database.pool<{ id: string }[]>`
+      insert into works (
+        organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id
+      )
+      values (
+        ${tenant.organisationId}, 'WARR-FINALBILL', 'WARR-FINALBILL-LETTER',
+        '2025-06-01', 'A Work billed to its end', 1000.00, 900.00,
+        'per_schedule', ${tenant.userId}
+      )
+      returning id
+    `;
+    if (!work) throw new Error('final-bill work seed failed');
+    finalWorkId = work.id;
+
+    const [schedule] = await database.pool<{ id: string }[]>`
+      insert into work_schedules (
+        organisation_id, work_id, schedule_code, title, position
+      )
+      values (${tenant.organisationId}, ${finalWorkId}, 'A', 'Schedule A', 1)
+      returning id
+    `;
+    if (!schedule) throw new Error('final-bill schedule seed failed');
+    const [item] = await database.pool<{ id: string }[]>`
+      insert into work_items (
+        organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate
+      )
+      values (
+        ${tenant.organisationId}, ${finalWorkId}, ${schedule.id}, '1',
+        'Final-bill fixture item', 'Nos', 10.000, 100.00
+      )
+      returning id
+    `;
+    if (!item) throw new Error('final-bill item seed failed');
+    finalWorkItemId = item.id;
+
+    const [dates] = await database.pool<{ installed: string; bill: string }[]>`
+      select least(
+               app_private.organisation_today(${tenant.organisationId}) - 2,
+               '2025-06-02'::date
+             )::text as installed,
+             (app_private.organisation_today(${tenant.organisationId}) - 1)::text
+               as bill
+    `;
+    installedOn = dates?.installed ?? '';
+    billDate = dates?.bill ?? '';
+
+    const [installation] = await database.pool<{ id: string }[]>`
+      insert into installations (
+        organisation_id, work_id, work_item_id, quantity, installed_on,
+        location_id, location_name, recorded_by_user_id
+      )
+      values (
+        ${tenant.organisationId}, ${finalWorkId}, ${finalWorkItemId}, '1.000',
+        ${installedOn}, ${locationId}, 'Final-bill station', ${tenant.userId}
+      )
+      returning id
+    `;
+    if (!installation) throw new Error('final-bill installation seed failed');
+    installationId = installation.id;
+  }, SETUP_TIMEOUT_MS);
+
+  it('refuses a period on this basis while the Work has no final bill', async () => {
+    // Nothing to pin to, so there is no date this period could honestly
+    // carry. Refused rather than seated on the installation date, which
+    // would be a warranty on a basis the contract does not state.
+    const failure = await refused(startOnFinalWork(billDate));
+    expect(failure.code).toBe('23Q11');
+    expect(failure.message).toContain('no final bill');
+
+    const [seen] = await database.pool<{ count: string }[]>`
+      select count(*)::text as count from installation_warranties
+      where installation_id = ${installationId}
+    `;
+    expect(seen?.count).toBe('0');
+  });
+
+  it('pins the start to the final bill date and refuses every other day', async () => {
+    // The final bill, raised the way one really is: a final Measurement
+    // Book inserted as a draft and then finalised (the shape CHECK on
+    // `measurement_books` refuses a row born finalised without its full
+    // number, total and stamps), and the bill prepared from it.
+    const [book] = await database.pool<{ id: string }[]>`
+      insert into measurement_books (
+        organisation_id, work_id, status, kind, mb_date, created_by_user_id
+      )
+      values (
+        ${tenant.organisationId}, ${finalWorkId}, 'draft', 'final',
+        ${billDate}, ${tenant.userId}
+      )
+      returning id
+    `;
+    if (!book) throw new Error('final MB seed failed');
+    await database.pool`
+      update measurement_books
+      set status = 'finalized', mb_number = 'WARR-FINALBILL-MB-01',
+          sequence_number = 1, total_amount = 1000.00,
+          remark_template_version = 'mb-remark-v1', finalized_at = now(),
+          finalized_by_user_id = ${tenant.userId}
+      where id = ${book.id}
+    `;
+    await database.pool`
+      insert into bills (
+        organisation_id, work_id, bill_number, lines_snapshot, total_amount,
+        prepared_by_user_id, mb_id
+      )
+      values (
+        ${tenant.organisationId}, ${finalWorkId}, 1, '[]'::jsonb, 1000.00,
+        ${tenant.userId}, ${book.id}
+      )
+    `;
+
+    // The organisation's own today: inside the [installed_on, today]
+    // window the 0099 bracket allows, and still refused. The bracket is
+    // months wide; the pin is one day.
+    const [row] = await database.pool<{ day: string }[]>`
+      select app_private.organisation_today(${tenant.organisationId})::text as day
+    `;
+    // 23Q12, not 23Q11: there IS a final bill, and this period is simply
+    // not seated on its date. The two refusals this arm makes carry two
+    // codes precisely so an operator is not told to raise a bill that
+    // already exists.
+    const drifted = await refused(startOnFinalWork(row?.day ?? billDate));
+    expect(drifted.code).toBe('23Q12');
+    expect(drifted.message).toContain('starts on the final bill date');
+
+    // And the installation's own date, which is what the other basis
+    // would have used, is refused for the same reason.
+    const onInstallDate = await refused(startOnFinalWork(installedOn));
+    expect(onInstallDate.code).toBe('23Q12');
+
+    await expect(startOnFinalWork(billDate)).resolves.toBeTypeOf('string');
+  });
+
+  it('derives the expiry from the final bill date, not from the installation', async () => {
+    // The whole reason the basis exists: on a Work whose units went in
+    // before the final bill, the cover runs from the bill and is therefore
+    // longer at the far end. A period that silently used `installed_on`
+    // would end early, and the railway holds a guarantee against the
+    // later date.
+    const [row] = await database.pool<
+      {
+        dlp_start_on: string;
+        dlp_expires_on: string;
+        start_basis: string;
+        pac_certificate_id: string | null;
+      }[]
+    >`
+      select dlp_start_on::text as dlp_start_on,
+             dlp_expires_on::text as dlp_expires_on, start_basis,
+             pac_certificate_id
+      from installation_warranties
+      where installation_id = ${installationId} and status = 'active'
+    `;
+    const [expected] = await database.pool<{ expiry: string }[]>`
+      select app_private.warranty_expiry(${billDate}::date, 24)::text as expiry
+    `;
+    expect(row?.start_basis).toBe('final_bill');
+    expect(row?.dlp_start_on).toBe(billDate);
+    expect(row?.dlp_expires_on).toBe(expected?.expiry);
+    // No certificate is involved on this basis, and the 0099 shape CHECK
+    // is what refuses one.
+    expect(row?.pac_certificate_id).toBeNull();
+  });
+
+  it('states the same date to the route as it enforces with', async () => {
+    // One function, two layers. `routes/warranty.ts` calls this to decide
+    // what to write; the guard calls it to decide whether to accept the
+    // write. A second definition of "the final bill's date" is the one
+    // way the two layers could disagree about when a liability began.
+    const [row] = await asTenant(
+      async (tx) =>
+        await tx<{ day: string | null }[]>`
+          select app_private.work_final_bill_date(
+            ${tenant.organisationId}, ${finalWorkId}
+          )::text as day
+        `,
+    );
+    expect(row?.day).toBe(billDate);
+  });
+
+  it('cannot have its final bill withdrawn from under it, which is why the date is stable', async () => {
+    // Written to attack `work_final_bill_date`'s `status = 'finalized'`
+    // filter, and it found the opposite of what it went looking for.
+    //
+    // The premise was that a billed Measurement Book could be cancelled
+    // by a writer that did not come through the route — `finalize.ts`
+    // refuses it, and a route-only rule is one import away from being no
+    // rule. It cannot: migration 0027 holds the same refusal in the
+    // DATABASE, so the raw UPDATE below is rejected exactly as the route
+    // would reject it.
+    //
+    // That makes the `status = 'finalized'` filter DEAD BY INVARIANT
+    // rather than merely improbable, which is worth a test of its own:
+    // it is the reason a Work's final-bill date cannot move under a
+    // period once it has been started, and it is the reason the filter
+    // is a belt rather than a live rule. If this test ever fails, the
+    // filter has become load-bearing and the warranty pack needs to know.
+    const locked = await refused(
+      database.pool`
+        update measurement_books
+        set status = 'cancelled', cancellation_note = 'withdraw the final bill',
+            cancelled_by_user_id = ${tenant.userId}, cancelled_at = now()
+        where work_id = ${finalWorkId} and is_final
+      `,
+    );
+    expect(locked.message).toContain('permanently locked');
+
+    // The date is therefore exactly what it was, and the period started
+    // above still stands on a bill nobody can withdraw.
+    const [unchanged] = await asTenant(
+      async (tx) =>
+        await tx<{ day: string | null }[]>`
+          select app_private.work_final_bill_date(
+            ${tenant.organisationId}, ${finalWorkId}
+          )::text as day
+        `,
+    );
+    expect(unchanged?.day).toBe(billDate);
   });
 });
 
