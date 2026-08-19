@@ -165,6 +165,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Upload the letter again if it was discarded by mistake; a discarded intake package keeps its record but accepts no further work.',
   SERIAL_NOT_FOUND:
     'Find the serial with Serial Lookup; it names the challan that delivered it and where it now stands.',
+  DUPLICATE_SERIAL:
+    'Find the number with Serial Lookup and correct whichever record misread the nameplate; a serial identifies one physical unit, so the same number cannot stand twice in one Work.',
   NOT_FOUND:
     'Choose the organisation again from the organisation picker; the one addressed is not one this account can open.',
 
