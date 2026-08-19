@@ -443,7 +443,7 @@ beforeAll(async () => {
         unit: 'mtr',
         quantity: '10000.000',
         rate: '1.00',
-        paymentCategory: null,
+        paymentCategory: 'UNCATEGORISED',
       },
     ],
   });
@@ -486,7 +486,7 @@ beforeAll(async () => {
         unit: 'RMT',
         quantity: '1000.000',
         rate: '5.00',
-        paymentCategory: null,
+        paymentCategory: 'UNCATEGORISED',
       },
     ],
   });
@@ -541,6 +541,74 @@ async function storedObjects(): Promise<string[]> {
     )
     .sort();
 }
+
+describe('an item with no payment category chosen (migration 0105)', () => {
+  it('refuses the finalize by ITEM, naming a remedy that is not a matrix row', async () => {
+    // Work 1 has a full UNCATEGORISED matrix row. Before 0105 a NULL
+    // category fell through to it, so an item nobody had categorised
+    // billed silently. It now resolves through nothing, and the refusal
+    // has to say so without inventing a category to add a row for.
+    const itemId = randomUUID();
+    const workId = await seedWork({
+      code: `NS${runId.slice(0, 6).toUpperCase()}`,
+      items: [
+        {
+          id: itemId,
+          itemNumber: '1',
+          description: 'Uncategorised cable',
+          unit: 'mtr',
+          quantity: '100.000',
+          rate: '10.00',
+          paymentCategory: null,
+        },
+      ],
+    });
+    // Every row in the vocabulary, so nothing here is a MISSING row.
+    for (const category of [
+      'SUPPLY',
+      'SUPPLY_AND_INSTALLATION',
+      'PURE_INSTALLATION',
+      'SPARE_SUPPLY',
+      'UNCATEGORISED',
+    ]) {
+      await insertMatrixRow(workId, category, ['80.00', '10.00', '0.00', '10.00']);
+    }
+    const challanId = await issueChallan(
+      workId,
+      `NS${runId.slice(0, 4).toUpperCase()}DC`,
+      [{ workItemId: itemId, quantity: '10.000' }],
+    );
+    const draft = await createDraft(workId, { mbDate: '2026-08-05' });
+    const claimed = await setSources(draft.book.id, [
+      { sourceType: 'delivery_challan', sourceId: challanId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    // The DRAFT preview says it too, and says it with the sentinel the
+    // contract closes over — never a category name.
+    const preview = claimed.json<MeasurementBookDetailResponse>();
+    expect(preview.warnings).toMatchObject([
+      { itemNumber: '1', missingCategory: 'NOT_SELECTED' },
+    ]);
+
+    const finalized = await finalize(draft.book.id);
+    expect(finalized.statusCode, finalized.body).toBe(409);
+    const refusal = finalized.json<{ code: string; message: string }>();
+    expect(refusal.code).toBe('MB_PERCENTAGES_UNRESOLVED');
+    expect(refusal.message).toContain('1 (no payment category chosen)');
+    // The remedy is a decision on the item, not a row to add — the
+    // message must not send the operator after a NOT_SELECTED row.
+    expect(refusal.message).not.toContain('NOT_SELECTED');
+    expect(refusal.message).toContain('Choose a payment category');
+
+    // Choosing the residual category — a decision — makes it billable.
+    await admin`
+      update work_items set payment_category = 'UNCATEGORISED' where id = ${itemId}
+    `;
+    const second = await finalize(draft.book.id);
+    expect(second.statusCode, second.body).toBe(200);
+  });
+});
 
 describe('draft lifecycle (Work 1, the workbook scenario)', () => {
   it('creates one draft per Work, validates the date, and names the existing draft', async () => {
@@ -1781,7 +1849,7 @@ describe('review hardening: cancel work-lock and DB cancel backstops', () => {
           unit: 'mtr',
           quantity: '10000.000',
           rate: '1.00',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });
@@ -2174,7 +2242,7 @@ describe('review hardening: draft-claim remedies, selection write-skew, dead cla
           unit: 'mtr',
           quantity: '10000.000',
           rate: '1.00',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });
@@ -2342,7 +2410,7 @@ describe('review hardening: 6dp rates carry exactly into amounts and snapshots',
           unit: 'mtr',
           quantity: '10000.000',
           rate: '0.8517',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });
@@ -2463,7 +2531,7 @@ describe('the three kinds (0034): record MBs, merge, and un-merge', () => {
           unit: 'mtr',
           quantity: '10000.000',
           rate: '2.00',
-          paymentCategory: null,
+          paymentCategory: 'UNCATEGORISED',
         },
       ],
     });

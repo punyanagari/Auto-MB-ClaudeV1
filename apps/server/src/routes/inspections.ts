@@ -1,4 +1,5 @@
 import {
+  byItemNumber,
   CancelInspectionCallRequestSchema,
   CreateInspectionCallRequestSchema,
   InspectionCallListResponseSchema,
@@ -249,12 +250,16 @@ function toCall(
       itemNumber: challan.item_number,
       quantity: challan.quantity,
     })),
-    items: items.map((item): InspectionCallItem => ({
-      workItemId: item.work_item_id,
-      itemNumber: item.item_number,
-      description: item.description,
-      quantity: item.quantity,
-    })),
+    // Natural order: `item_number` is text, so the SQL sorts A1/10 before
+    // A1/2 — not the order the schedule this call cites is written in.
+    items: byItemNumber(
+      items.map((item): InspectionCallItem => ({
+        workItemId: item.work_item_id,
+        itemNumber: item.item_number,
+        description: item.description,
+        quantity: item.quantity,
+      })),
+    ),
     documents: documents.map((document): InspectionCallDocument => ({
       id: document.id,
       kind: document.kind,
@@ -1617,18 +1622,20 @@ async function readWorkConfig(tx: TransactionSql, workId: string) {
     RITES: checklistFor(fields, 'RITES'),
   };
   return {
-    items: items.map((row) => ({
-      workItemId: row.work_item_id,
-      itemNumber: row.item_number,
-      description: row.description,
-      unitCode: row.unit_code,
-      awardedQuantity: row.awarded_quantity,
-      manufacturedQuantity: row.manufactured_quantity,
-      agency: row.agency,
-      inspectionQuantity: row.inspection_quantity,
-      vendorPremises: row.vendor_premises,
-      gatesDispatch: row.gates_dispatch,
-    })),
+    items: byItemNumber(
+      items.map((row) => ({
+        workItemId: row.work_item_id,
+        itemNumber: row.item_number,
+        description: row.description,
+        unitCode: row.unit_code,
+        awardedQuantity: row.awarded_quantity,
+        manufacturedQuantity: row.manufactured_quantity,
+        agency: row.agency,
+        inspectionQuantity: row.inspection_quantity,
+        vendorPremises: row.vendor_premises,
+        gatesDispatch: row.gates_dispatch,
+      })),
+    ),
     checklists,
   };
 }

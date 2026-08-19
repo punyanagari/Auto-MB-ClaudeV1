@@ -12,6 +12,13 @@ export const TIMELINE_ENTITY_TYPES = [
   'challan_receipts',
   'challan_item_serials',
   'work_instruments',
+  // The completion-extension trail (0011). Applying, finalising, the
+  // railway's approval letter arriving, and the outcome being recorded
+  // are the four acts that move a Work's contractual deadline — and
+  // only the move itself used to reach this timeline, audited against
+  // the Work. A deadline that changes with no letter beside it is the
+  // one fact on a Work's history nobody can check.
+  'extension_requests',
   'mb_entries',
   'bills',
   // The payment register (0067). Money received is the one part of the

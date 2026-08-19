@@ -5,7 +5,7 @@ import { errorMessage } from '../lib/load-failure.js';
 import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
-import { DataTable, wrapCell } from '../ui/table.js';
+import { DataTable, controlCell, wrapCell } from '../ui/table.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { Field, FieldRow, Actions, FormError, FormNotice } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
@@ -501,7 +501,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                       />
                     </details>
                   </th>
-                  <td>
+                  <td className={controlCell}>
                     <select
                       aria-label={`Role of ${label}`}
                       value={member.role}
@@ -520,7 +520,7 @@ export function Members({ api, organisationId, currentUserId }: MembersProps) {
                       <option value="viewer">Viewer</option>
                     </select>
                   </td>
-                  <td>
+                  <td className={controlCell}>
                     <select
                       aria-label={`Work scope of ${label}`}
                       value={member.workScope}

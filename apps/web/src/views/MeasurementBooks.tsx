@@ -11,6 +11,8 @@ import type {
   MeasurementBookLine,
   PacCertificate,
 } from '@auto-mb/contracts';
+import { MB_NOT_SELECTED_CATEGORY } from '@auto-mb/contracts';
+import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
 import {
   existingRecordIdOf,
   formValue,
@@ -899,14 +901,29 @@ export function MeasurementBooks({
             <div role="status">
               <p className="my-2 text-[13px] font-medium text-destructive">
                 The payment matrix cannot price every selected item — finalizing will be
-                refused until the missing category rows exist:
+                refused until each of these is answered:
               </p>
               <ul>
                 {detail.warnings.map((warning) => (
                   <li key={warning.workItemId}>
-                    {warning.itemNumber}: no{' '}
-                    <a href={workHash(workId, 'schedules')}>payment matrix</a> row for{' '}
-                    {warning.missingCategory}
+                    {/* Two failures, two remedies — the same distinction
+                        the finalize refusal draws. An item with no
+                        category chosen (migration 0105) needs a decision,
+                        not a row, and printing the sentinel here used to
+                        send the operator to create a "NOT_SELECTED" row
+                        that must never exist. */}
+                    {warning.missingCategory === MB_NOT_SELECTED_CATEGORY ? (
+                      <>
+                        {warning.itemNumber}: no payment category chosen — set one on
+                        the <a href={workHash(workId, 'schedules')}>payment setup</a>
+                      </>
+                    ) : (
+                      <>
+                        {warning.itemNumber}: no{' '}
+                        <a href={workHash(workId, 'schedules')}>payment matrix</a> row
+                        for {CATEGORY_LABELS[warning.missingCategory]}
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>

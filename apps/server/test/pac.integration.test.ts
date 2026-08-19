@@ -260,13 +260,14 @@ beforeAll(async () => {
   await admin`
     insert into work_items (
       id, organisation_id, work_id, schedule_id, item_number, description,
-      unit_code, awarded_quantity, effective_rate, requires_serials
+      unit_code, awarded_quantity, effective_rate, requires_serials,
+      payment_category
     )
     values
       (${itemAId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/1',
-       'Cable set', 'Set', 10.000, 250.00, false),
+       'Cable set', 'Set', 10.000, 250.00, false, 'UNCATEGORISED'),
       (${itemBId}, ${organisationId}, ${workId}, ${scheduleId}, 'A/2',
-       'Junction box', 'Nos', 2.000, 120.00, false)
+       'Junction box', 'Nos', 2.000, 120.00, false, 'UNCATEGORISED')
   `;
 
   // Installed quantities the caps certify against: A 3.000, B 2.000 —
