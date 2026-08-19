@@ -66,8 +66,8 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * RATHER THAN RAISING THE LINE. Its connectivity hooks, read cache and
  * offline banner are shell furniture and have to be in the initial
  * payload, because the screen they explain is the one shown when nothing
- * else can load; they cost 1,483 bytes gzip, measured at 117,776 here
- * against 116,293 on `main` at 243e558. That is 224 bytes under the
+ * else can load; they cost 1,461 bytes gzip, measured at 117,783 here
+ * against 116,322 on `main` at 243e558. That is 217 bytes under the
  * ratchet — tight, and deliberately not answered by moving the line. The
  * service worker itself is a separate file the browser never blocks on.
  * The 36 kB the first cut of this pack cost — the shell reaching into
