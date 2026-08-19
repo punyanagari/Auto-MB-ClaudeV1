@@ -530,21 +530,38 @@ export async function verifyApplicationConnection(appUrl: string): Promise<void>
   }
 }
 
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-
-if (invokedDirectly) {
+/**
+ * The whole idempotent sequence described at the top of this file, as a
+ * function so an entry point can run it and then do more.
+ *
+ * The shipped image's entry point is `apps/server/src/bootstrap.ts`, which
+ * deploy/Dockerfile.server bundles into the image's compiled bootstrap
+ * entry point: it calls this and then the optional test-user seeder,
+ * which needs Better
+ * Auth and therefore cannot live in this package. Running this module
+ * directly — `pnpm --filter @auto-mb/db bootstrap` — is the same sequence
+ * without that step.
+ *
+ * `migrationsDirectory` is resolved from THIS module's own URL, which is
+ * what makes both callers correct: under tsx it is
+ * `packages/db/migrations`, and inside the esbuild bundle every
+ * `import.meta.url` is the bundle's own path, so it is
+ * `apps/server/migrations` — exactly where the Dockerfile copies them.
+ */
+export async function runDatabaseBootstrap(options: {
+  /**
+   * Restore sequencing (docs/RUNBOOK.md): a dump's ACLs reference the
+   * cluster-level roles, which never travel with it, so on a FRESH cluster
+   * the roles must exist BEFORE pg_restore runs. This creates them and
+   * stops — migrations would otherwise create a schema the restore is
+   * about to bring back.
+   */
+  readonly rolesOnly: boolean;
+}): Promise<void> {
   const adminUrl = process.env.DATABASE_ADMIN_URL;
   const appPassword = process.env.AUTO_MB_APP_DB_PASSWORD;
   if (!adminUrl) throw new Error('DATABASE_ADMIN_URL is required');
   if (!appPassword) throw new Error('AUTO_MB_APP_DB_PASSWORD is required');
-  // Restore sequencing (docs/RUNBOOK.md): a dump's ACLs reference the
-  // cluster-level roles, which never travel with it, so on a FRESH
-  // cluster the roles must exist BEFORE pg_restore runs. --roles-only
-  // creates them and stops — migrations would otherwise create a schema
-  // the restore is about to bring back.
-  const rolesOnly = process.argv.includes('--roles-only');
 
   const here = path.dirname(fileURLToPath(import.meta.url));
   const migrationsDirectory = path.resolve(here, '..', 'migrations');
@@ -557,7 +574,7 @@ if (invokedDirectly) {
     await ensureApplicationRole(admin, appPassword);
     await ensureDefinerRole(admin);
     console.log('application and definer roles ensured');
-    if (!rolesOnly) {
+    if (!options.rolesOnly) {
       await runMigrations(admin, migrationsDirectory);
       await applyGrants(admin);
       console.log('privilege matrix applied');
@@ -570,5 +587,13 @@ if (invokedDirectly) {
   } finally {
     await admin.end();
   }
-  console.log(rolesOnly ? 'roles bootstrap complete' : 'bootstrap complete');
+  console.log(options.rolesOnly ? 'roles bootstrap complete' : 'bootstrap complete');
+}
+
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  await runDatabaseBootstrap({ rolesOnly: process.argv.includes('--roles-only') });
 }

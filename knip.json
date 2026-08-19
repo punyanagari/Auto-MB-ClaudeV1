@@ -34,7 +34,14 @@
     },
 
     "apps/server": {
-      "entry": ["src/main.ts", "src/import/cli.ts", "test/**/*.test.ts"],
+      // `src/bootstrap.ts` is the deployment's database entry point, run as
+      // `node apps/server/dist/bootstrap.mjs` and imported by nothing.
+      "entry": [
+        "src/main.ts",
+        "src/bootstrap.ts",
+        "src/import/cli.ts",
+        "test/**/*.test.ts"
+      ],
       "project": ["src/**/*.ts", "test/**/*.ts"],
       // Frozen 2026-08-13 — unused exports and types on rate-limit.ts, which
       // exports type aliases describing its public surface. Which of those to

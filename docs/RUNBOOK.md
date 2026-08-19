@@ -142,6 +142,67 @@ blocked for every invoice, cumulative or itemised, until the applicability
 decision follows from the document's own goods lines and a dispatch model
 exists to carry it.
 
+## 2b. Test user (optional)
+
+A deployment onto an empty database has nobody to sign in as. The
+bootstrap can provision one fully-privileged account for that, gated on
+the environment alone: with **both** `TEST_USER_EMAIL` and
+`TEST_USER_PASSWORD` set it ensures the account exists; with either absent
+it prints `test user: skipped …` and does nothing.
+
+Add to `deploy/.env.production` — and read the warning below first:
+
+```sh
+TEST_USER_EMAIL=you@example.com
+TEST_USER_PASSWORD=<a long random password>
+TEST_USER_ORG=Test Organisation   # optional; this is the default
+```
+
+The next deployment picks it up. The Deploy workflow passes these three
+into the one-off bootstrap container only, so the password is never in the
+environment of the long-running `server` container. Running the bootstrap
+by hand (§2, §3) needs them added to that command the same way:
+`-e TEST_USER_EMAIL=… -e TEST_USER_PASSWORD=… -e TEST_USER_ORG=…`.
+
+What it does, exactly:
+
+- creates the account through the application's own sign-up path, so the
+  credential is hashed and stored exactly as a real sign-up stores it;
+- creates the organisation through
+  `app_private.create_organisation_with_owner` and seeds its statutory
+  rows, so it is indistinguishable from one created in the app;
+- raises **every** `can_%` column on the membership to true — including
+  the ones the product deliberately withholds from a founder — plus the
+  owner role and all-works scope.
+
+**This is a standing production account holding every authority the
+system can grant.** Give it a long random password, and treat it as a
+credential of the same weight as `AUTH_SECRET`.
+
+It is idempotent and it never overwrites: if the account already exists it
+keeps its current password, and only the membership and grants are
+re-raised. **Removing the variables does not remove the account.** To
+retire it, do so explicitly on the host:
+
+```sql
+UPDATE organisation_memberships SET status = 'disabled'
+  WHERE user_id = (SELECT "id" FROM auth_users WHERE "email" = '<email>');
+DELETE FROM auth_sessions
+  WHERE "userId" = (SELECT "id" FROM auth_users WHERE "email" = '<email>');
+```
+
+Two-factor authentication is **not** enrolled by the bootstrap. The
+account holds the owner role, so while `MFA_ENFORCE=true` it can sign in
+and reach the identity endpoints but is walled out of all organisation
+data until TOTP enrolment is completed interactively at first sign-in
+(§7a describes the same wall from the recovery side).
+
+Locally, the same step runs from the checkout:
+
+```bash
+TEST_USER_EMAIL=… TEST_USER_PASSWORD=… pnpm --filter @auto-mb/server bootstrap
+```
+
 ## 3. Upgrades
 
 The supported path is the **Deploy** workflow (Actions → Deploy → Run
