@@ -79,14 +79,41 @@ jobs:
   # integration tests prove that).
   accessibility:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 minutes lasted until the Wave D/E merge grew the suite to 34
+    # journeys including the deliberately-slow offline service-worker
+    # walk; the first post-merge dispatch timed out at 15:15. Sized to
+    # the measured need plus headroom, not doubled on reflex.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      # No --with-deps: it shells out to apt-get, which blocks forever
+      # when the runner image's own background apt process holds the lock
+      # (2026-08-19: three runs sat in this step until the job budget
+      # killed them; the bounded rerun surfaced "Unable to lock
+      # /var/lib/apt/lists/"). GitHub's Ubuntu images already carry every
+      # Chromium system dependency, so apt buys nothing here. The cache
+      # skips the download on a populated runner, and the per-attempt
+      # timeout kills a stalled download in four minutes, not a job.
+      - name: Cache Playwright browsers
+        # v4.3.0, pinned by commit like every other action here
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
       - name: Install Playwright Chromium
-        run: pnpm --filter @auto-mb/web exec playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            if timeout --kill-after=10 240 \
+              pnpm --filter @auto-mb/web exec playwright install chromium; then
+              exit 0
+            fi
+            echo "playwright install attempt ${attempt} failed or stalled; retrying" >&2
+          done
+          echo "playwright install failed after 3 bounded attempts" >&2
+          exit 1
       - name: Build web bundle
         run: pnpm --filter @auto-mb/web build
       - name: Accessibility smoke
@@ -256,7 +283,10 @@ jobs:
   restore-fresh-cluster:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 minutes lasted until the Wave D/E merge took the migration set
+    # from 91 files to 99 and widened the restored surface; the first
+    # post-merge dispatch timed out at 15:17.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17-alpine
