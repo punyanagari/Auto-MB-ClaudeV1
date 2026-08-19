@@ -488,6 +488,15 @@ export function registerInstallationRoutes(
               ? 1
               : 0,
         );
+        // One round trip set per row, inside the transaction holding the
+        // Work lock — the shape `test/query-write-loop-census.test.ts`
+        // exists to police. It does not catch this one (the writes are
+        // inside `recordOneInstallation`, not literally in the loop), so
+        // it is said here instead: the per-row cost is INHERENT, because
+        // each row takes its own item lock, revalidates R5/R6/R11 against
+        // committed sums under it, reads its record back and audits it.
+        // There is no set-based form of that. What bounds it is the
+        // 100-row envelope on the request schema.
         const written = new Map<string, Installation>();
         for (const row of ordered) {
           written.set(
