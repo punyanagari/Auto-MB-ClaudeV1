@@ -21,6 +21,17 @@
  * rules in this module — punctuation, ordering, phrasing, rendering of
  * numbers — must bump this constant. Historical MBs are never re-rendered:
  * they keep the snapshotted text and the version they were rendered with.
+ *
+ * THE AMC PERIOD CLAUSE (owner ruling Q3, 2026-08-19) DOES NOT BUMP IT,
+ * and the argument is the rule's own: what the version protects is that
+ * no already-finalised MB's string could have been rendered differently.
+ * The clause fires only when a line's schedule carries
+ * `amc_billing_periods`, a column migration 0107 creates — so on every MB
+ * finalised before it, the input is absent and this module's output is
+ * character-for-character what v1 produced. The regression workbook
+ * (`apps/server/test/fixtures/mb-remark-workbook.v1.json`) carries no
+ * cadence and stays byte-green, which is the check that says so rather
+ * than the claim.
  */
 export const MB_REMARK_TEMPLATE_VERSION = 'mb-remark-v1';
 
@@ -42,6 +53,21 @@ export interface MbRemarkStageInput {
   readonly deltaQuantity: string;
 }
 
+/**
+ * An AMC item's billing cadence, when its schedule states one (migration
+ * 0107). Present ONLY for AMC items on a schedule carrying
+ * `amc_billing_periods`; absent everywhere else, which is every line the
+ * template version below was authored against.
+ */
+export interface MbRemarkAmcCycle {
+  /** Q — the sanctioned quantity the cadence divides. */
+  readonly totalQuantity: string;
+  /** M — how many billing periods it divides into. */
+  readonly billingPeriods: number;
+  /** The word the agency calls one period: 'quarter', 'month', 'visit'. */
+  readonly cycleNoun: string;
+}
+
 interface MbRemarkInput {
   /** The item's unit string, rendered verbatim (e.g. 'mtr', 'Set', 'RMT'). */
   readonly unit: string;
@@ -50,6 +76,14 @@ interface MbRemarkInput {
    * MB_STAGE_ORDER. A stage may be omitted entirely (treated as absent).
    */
   readonly stages: ReadonlyArray<MbRemarkStageInput>;
+  /**
+   * When present, every fragment counts PERIODS instead of quantity: the
+   * owner's Q3 ruling of 2026-08-19 keeps this engine's grammar and has
+   * the AMC branch render period language INSIDE it — "Now to pay 95% for
+   * 1 quarter." See `stageFragment` for the arithmetic and
+   * MB_REMARK_TEMPLATE_VERSION for why this is not a version bump.
+   */
+  readonly amcCycle?: MbRemarkAmcCycle;
 }
 
 interface StageAmountInput {
@@ -249,8 +283,56 @@ function stagesInRenderOrder(
   return ordered;
 }
 
-/** '<pct>% for <qty> <unit>' — the shared per-stage fragment of both clauses. */
-function stageFragment(percent: string, quantity: string, unit: string): string {
+/**
+ * How many whole billing periods a quantity is, on a cadence that splits
+ * Q into M periods: `round(quantity * M / Q)`, exact over scaled BigInt.
+ *
+ * The inverse of the running-total split the cadence proposes with
+ * (`q(n) = round3(Q*n/M) - round3(Q*(n-1)/M)`), and it is exact for the
+ * quantities that split produces because the owner's Q4 ruling settles
+ * that a Measurement Book always certifies the FULL period quantity —
+ * so the cumulative certified quantity is always `round3(Q*k/M)` for
+ * some whole k, and rounding `k ± 0.0005·M/Q` to the nearest integer
+ * recovers k. Anything else on the line is a quantity this cadence did
+ * not produce, and the nearest whole period is the honest reading of it
+ * for a sentence.
+ */
+function periodsOf(quantity: string, cycle: MbRemarkAmcCycle): bigint | null {
+  const q = parseDecimal(quantity);
+  const total = parseDecimal(cycle.totalQuantity);
+  if (total.units <= 0n) {
+    return null;
+  }
+  // quantity * M / Q, with both quantities rescaled to a common scale so
+  // the ratio is scale-free before the division rounds it.
+  const scale = Math.max(q.scale, total.scale);
+  const numerator = rescale(q, scale).units * BigInt(cycle.billingPeriods);
+  const denominator = rescale(total, scale).units;
+  const periods = (numerator * 2n + denominator) / (denominator * 2n);
+  return periods > 0n ? periods : null;
+}
+
+/** '<pct>% for <qty> <unit>' — the shared per-stage fragment of both
+ * clauses. On an AMC cadence the quantity and unit become a period count
+ * and the schedule's own word for a period ("95% for 1 quarter"), which
+ * is the owner's Q3 ruling rendered inside this grammar rather than
+ * beside it. A quantity the cadence cannot express as a whole period —
+ * a zero total, or a fraction that rounds to no period at all — falls
+ * back to the quantity, because a sentence saying "for 0 quarters" would
+ * be worse than the number it replaced. */
+function stageFragment(
+  percent: string,
+  quantity: string,
+  unit: string,
+  cycle: MbRemarkAmcCycle | undefined,
+): string {
+  if (cycle !== undefined) {
+    const periods = periodsOf(quantity, cycle);
+    if (periods !== null) {
+      const noun = periods === 1n ? cycle.cycleNoun : `${cycle.cycleNoun}s`;
+      return `${renderPercent(percent)}% for ${periods.toString()} ${noun}`;
+    }
+  }
   return `${renderPercent(percent)}% for ${renderQuantity(quantity)} ${unit}`;
 }
 
@@ -270,11 +352,13 @@ export function computeMbRemark(input: MbRemarkInput): string {
 
   const prepaid = ordered
     .filter((s) => isPositive(s.percent) && isPositive(s.priorCumulativeQuantity))
-    .map((s) => stageFragment(s.percent, s.priorCumulativeQuantity, input.unit));
+    .map((s) =>
+      stageFragment(s.percent, s.priorCumulativeQuantity, input.unit, input.amcCycle),
+    );
 
   const nowToPay = ordered
     .filter((s) => isPositive(s.deltaQuantity))
-    .map((s) => stageFragment(s.percent, s.deltaQuantity, input.unit));
+    .map((s) => stageFragment(s.percent, s.deltaQuantity, input.unit, input.amcCycle));
 
   const clauses: string[] = [];
   if (prepaid.length > 0) {

@@ -61,6 +61,86 @@ function taxFactsSummary(item: WorkItem): string | null {
   return parts.length === 0 ? null : parts.join(' · ');
 }
 
+/**
+ * One schedule's AMC billing cadence (owner ruling of 2026-08-19;
+ * migration 0107): how many periods its maintenance is billed in, and the
+ * word the agency calls one of them.
+ *
+ * On the schedule and not on the Work, because a real letter carries two
+ * — PL-218 prices a quarterly maintenance schedule beside a visit
+ * schedule billed per trip. Clearing both fields removes the cadence, and
+ * a schedule that states none simply proposes nothing: nothing here
+ * changes what a certificate may certify.
+ */
+function AmcCycleEditor({
+  schedule,
+  canModify,
+  pending,
+  onSave,
+}: {
+  readonly schedule: WorkDetailResponse['schedules'][number];
+  readonly canModify: boolean;
+  readonly pending: boolean;
+  readonly onSave: (billingPeriods: number | null, cycleNoun: string | null) => void;
+}) {
+  const [periods, setPeriods] = useState(
+    schedule.amcBillingPeriods === null ? '' : String(schedule.amcBillingPeriods),
+  );
+  const [noun, setNoun] = useState(schedule.amcCycleNoun ?? '');
+  if (!canModify) {
+    return (
+      <p className="text-muted-foreground">
+        {schedule.amcBillingPeriods === null
+          ? 'No maintenance billing cycle set.'
+          : `Maintenance billed in ${String(schedule.amcBillingPeriods)} ${schedule.amcCycleNoun ?? ''} periods.`}
+      </p>
+    );
+  }
+  return (
+    <form
+      className="flex flex-wrap items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const trimmedPeriods = periods.trim();
+        const trimmedNoun = noun.trim();
+        onSave(
+          trimmedPeriods === '' ? null : Number.parseInt(trimmedPeriods, 10),
+          trimmedNoun === '' ? null : trimmedNoun,
+        );
+      }}
+    >
+      <label htmlFor={`amc-periods-${schedule.id}`}>
+        Maintenance billing periods in schedule {schedule.scheduleCode}
+      </label>
+      <input
+        id={`amc-periods-${schedule.id}`}
+        className="w-20"
+        inputMode="numeric"
+        maxLength={3}
+        placeholder="e.g. 12"
+        value={periods}
+        onChange={(event) => {
+          setPeriods(event.currentTarget.value);
+        }}
+      />
+      <label htmlFor={`amc-noun-${schedule.id}`}>each called a</label>
+      <input
+        id={`amc-noun-${schedule.id}`}
+        className="w-32"
+        maxLength={30}
+        placeholder="quarter"
+        value={noun}
+        onChange={(event) => {
+          setNoun(event.currentTarget.value);
+        }}
+      />
+      <Button type="submit" variant="outline" size="sm" disabled={pending}>
+        Save cycle
+      </Button>
+    </form>
+  );
+}
+
 /** Compact in-cell editor for one item's tax facts. All three fields
  * travel on save: a blank code or rate is an explicit null (the PATCH
  * clears it), matching what the boxes show. */
@@ -199,6 +279,25 @@ export function WorkSchedules({
     return totals;
   }, [schedules]);
 
+  /** The cadence route answers 204 — two columns moved and nothing else
+   * did — so the loaded detail is patched in place rather than refetched
+   * for a pair of values the browser already has. */
+  const patchSchedule = (
+    scheduleId: string,
+    patch: Partial<WorkDetailResponse['schedules'][number]>,
+  ) => {
+    setDetail((current) =>
+      current === null
+        ? current
+        : {
+            ...current,
+            schedules: current.schedules.map((candidate) =>
+              candidate.id === scheduleId ? { ...candidate, ...patch } : candidate,
+            ),
+          },
+    );
+  };
+
   /** The edits here change fields of one item in place; the loaded
    * detail is otherwise left exactly as the server sent it. */
   const patchItem = (workItemId: string, patch: Partial<WorkItem>) => {
@@ -240,6 +339,23 @@ export function WorkSchedules({
             accordion.toggle(schedule.id);
           }}
         >
+          <AmcCycleEditor
+            schedule={schedule}
+            canModify={canModify}
+            pending={pending}
+            onSave={(billingPeriods, cycleNoun) => {
+              void act(async () => {
+                await api.setScheduleAmcCycle(organisationId, workId, schedule.id, {
+                  billingPeriods,
+                  cycleNoun,
+                });
+                patchSchedule(schedule.id, {
+                  amcBillingPeriods: billingPeriods,
+                  amcCycleNoun: cycleNoun,
+                });
+              }, `Maintenance billing cycle saved for schedule ${schedule.scheduleCode}.`);
+            }}
+          />
           <DataTable>
             <caption className="sr-only">
               Awarded items in schedule {schedule.scheduleCode}; amended values show the

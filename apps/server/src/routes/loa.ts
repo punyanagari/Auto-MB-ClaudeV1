@@ -1402,6 +1402,10 @@ export function registerLoaRoutes(
           scheduleCode: schedule.scheduleCode,
           title: schedule.title,
           position: schedule.position,
+          // A cadence is confirmed on the schedules screen after the
+          // Work exists, never guessed at confirm time (migration 0107).
+          amcBillingPeriods: null,
+          amcCycleNoun: null,
           items: schedule.items.map((entry) => ({
             id: itemIdOf(entry.item.itemNumber),
             scheduleId: scheduleIdOf(schedule.position),
@@ -1734,9 +1738,17 @@ export function registerLoaRoutes(
         if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
 
         const scheduleRows = await tx<
-          { id: string; schedule_code: string; title: string; position: number }[]
+          {
+            id: string;
+            schedule_code: string;
+            title: string;
+            position: number;
+            amc_billing_periods: number | null;
+            amc_cycle_noun: string | null;
+          }[]
         >`
-          select id, schedule_code, title, position
+          select id, schedule_code, title, position,
+                 amc_billing_periods, amc_cycle_noun
           from work_schedules
           where work_id = ${id}
           order by position
@@ -1800,6 +1812,8 @@ export function registerLoaRoutes(
           scheduleCode: schedule.schedule_code,
           title: schedule.title,
           position: schedule.position,
+          amcBillingPeriods: schedule.amc_billing_periods,
+          amcCycleNoun: schedule.amc_cycle_noun,
           items: itemRows
             .filter((item) => item.schedule_id === schedule.id)
             .map((item) => ({

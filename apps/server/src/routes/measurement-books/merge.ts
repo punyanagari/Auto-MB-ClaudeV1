@@ -492,6 +492,11 @@ export function registerMeasurementBookMergeRoutes(
         // still-billable subset with its own audit trail, not in a
         // loosened check here.
         await validateSources(tx, book.work_id, restored, true);
+        // The target draft's own measured-quantity adjustments go with it
+        // (migration 0106) — they were written against a source selection
+        // that is being taken apart, and nothing in the restored records
+        // could inherit them honestly.
+        await tx`delete from mb_measured_overrides where measurement_book_id = ${id}`;
         await tx`delete from mb_sources where measurement_book_id = ${id}`;
         // Every restored claim in ONE statement: the record each source
         // returns to travels in the array beside it, so the number of

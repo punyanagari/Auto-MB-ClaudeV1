@@ -79,29 +79,130 @@ interface SourceCandidate {
   readonly label: string;
 }
 
+/** The measured-quantity fields as the preview leaves them: the adjusted
+ * figure, which equals the claimed one on every line nobody adjusted.
+ * Empty for a finalized or cancelled book — its lines are a snapshot and
+ * nothing on them is editable. */
+function seedMeasured(
+  detail: MeasurementBookDetailResponse,
+): ReadonlyMap<string, { supplied: string; installed: string }> {
+  if (detail.book.status !== 'draft') return new Map();
+  return new Map(
+    detail.lines.map((line) => [
+      line.workItemId,
+      { supplied: line.deltaSupplied, installed: line.deltaInstalled },
+    ]),
+  );
+}
+
 const KIND_LABELS: Record<MeasurementBookKind, string> = {
   on_account: 'on-account',
   record: 'record',
   final: 'final',
 };
 
+/** One editable stage cell on a draft line.
+ *
+ * The claimed figure stays on screen beside the field rather than being
+ * replaced by it: the operator is stating that the site accepted less
+ * than the challan says, and the challan's own number is what makes that
+ * a deliberate act instead of a typo. It is also the field's description,
+ * so a screen reader reaches the same pair.
+ */
+function MeasuredCell({
+  itemNumber,
+  stage,
+  measured,
+  entered,
+  onChange,
+}: {
+  readonly itemNumber: string;
+  readonly stage: 'supplied' | 'installed';
+  /** What the claimed sources measure; null on a finalized book. */
+  readonly measured: string | null;
+  readonly entered: string;
+  readonly onChange: (value: string) => void;
+}) {
+  const editable = measured !== null && compareDecimalStrings(measured, '0') > 0;
+  if (!editable) {
+    return <td className={numericCell}>{entered}</td>;
+  }
+  const hintId = `mb-measured-${stage}-${itemNumber}`;
+  return (
+    <td className={numericCell}>
+      <input
+        type="text"
+        inputMode="decimal"
+        className="w-20 text-right font-mono tabular-nums"
+        value={entered}
+        aria-label={`${stage === 'supplied' ? 'Supplied' : 'Installed'} quantity measured for item ${itemNumber}`}
+        aria-describedby={hintId}
+        onChange={(event) => {
+          onChange(event.currentTarget.value);
+        }}
+      />{' '}
+      <span id={hintId} className="text-muted-foreground">
+        of {measured}
+      </span>
+    </td>
+  );
+}
+
 /** One preview/snapshot line. Memoised because an MB carries a line per
  * priced Work item — 129 on the flagship corpus Work — and this panel
  * re-renders on every pending flag, notice and confirmation step around
  * it. The line objects come straight off the loaded detail, so their
- * identity only changes when the MB is reloaded. */
+ * identity only changes when the MB is reloaded; the entered figures are
+ * a separate prop for the same reason — a keystroke re-renders the one
+ * row it landed in. */
 const MeasurementLineRow = memo(function MeasurementLineRow({
   line,
+  entered,
+  onMeasuredChange,
 }: {
   readonly line: MeasurementBookLine;
+  /** The operator's in-flight figures for this line, or undefined where
+   * the book is not a draft. */
+  readonly entered:
+    { readonly supplied: string; readonly installed: string } | undefined;
+  readonly onMeasuredChange: (
+    workItemId: string,
+    stage: 'supplied' | 'installed',
+    value: string,
+  ) => void;
 }) {
   return (
     <tr>
       <th scope="row">{line.itemNumber}</th>
       <td className={wrapCell}>{line.description}</td>
       <td>{line.unitCode}</td>
-      <td className={numericCell}>{line.deltaSupplied}</td>
-      <td className={numericCell}>{line.deltaInstalled}</td>
+      {entered === undefined ? (
+        <>
+          <td className={numericCell}>{line.deltaSupplied}</td>
+          <td className={numericCell}>{line.deltaInstalled}</td>
+        </>
+      ) : (
+        <>
+          <MeasuredCell
+            itemNumber={line.itemNumber}
+            stage="supplied"
+            measured={line.sourceSupplied}
+            entered={entered.supplied}
+            onChange={(value) => {
+              onMeasuredChange(line.workItemId, 'supplied', value);
+            }}
+          />
+          <MeasuredCell
+            itemNumber={line.itemNumber}
+            stage="installed"
+            measured={line.sourceInstalled}
+            entered={entered.installed}
+            onChange={(value) => {
+              onMeasuredChange(line.workItemId, 'installed', value);
+            }}
+          />
+        </>
+      )}
       <td className={numericCell}>{line.deltaPac}</td>
       <td className={numericCell}>{formatInr(line.lineTotal)}</td>
       <td className={wrapCell}>{line.remark}</td>
@@ -136,6 +237,12 @@ export function MeasurementBooks({
   const [claimedElsewhere, setClaimedElsewhere] = useState<ReadonlyMap<string, string>>(
     new Map(),
   );
+  /** The measured quantities as typed, per Work item, for the open draft.
+   * Seeded from the preview, so an untouched field already reads what the
+   * claimed sources deliver and saving changes nothing. */
+  const [measured, setMeasured] = useState<
+    ReadonlyMap<string, { readonly supplied: string; readonly installed: string }>
+  >(new Map());
   /** The Work's consignees: the pick list for a record MB's author, and
    * the names the record-draft rows carry. */
   const [consignees, setConsignees] = useState<readonly Contact[]>([]);
@@ -232,6 +339,19 @@ export function MeasurementBooks({
     [act],
   );
 
+  const onMeasuredChange = useCallback(
+    (workItemId: string, stage: 'supplied' | 'installed', value: string) => {
+      setMeasured((current) => {
+        const line = current.get(workItemId);
+        if (line === undefined) return current;
+        const next = new Map(current);
+        next.set(workItemId, { ...line, [stage]: value });
+        return next;
+      });
+    },
+    [],
+  );
+
   const refreshList = useCallback(async () => {
     const fresh = (await api.listWorkMeasurementBooks(organisationId, workId)).books;
     setBooks(fresh);
@@ -274,6 +394,7 @@ export function MeasurementBooks({
     async (measurementBookId: string) => {
       const loaded = await api.getMeasurementBook(organisationId, measurementBookId);
       setDetail(loaded);
+      setMeasured(seedMeasured(loaded));
       setConfirmingFinalize(false);
       setConfirmingDelete(false);
       setConfirmingUnmerge(false);
@@ -307,6 +428,13 @@ export function MeasurementBooks({
   const consigneeNameById = useMemo(
     () => new Map(consignees.map((consignee) => [consignee.id, consignee.designation])),
     [consignees],
+  );
+  /** The open book's lines by item, so the save below can tell an
+   * adjusted figure from one that merely equals what the sources
+   * deliver without a scan per row. */
+  const lineByItem = useMemo(
+    () => new Map((detail?.lines ?? []).map((line) => [line.workItemId, line])),
+    [detail],
   );
 
   if (loadError !== null) {
@@ -942,7 +1070,16 @@ export function MeasurementBooks({
               </thead>
               <tbody>
                 {detail.lines.map((line) => (
-                  <MeasurementLineRow key={line.workItemId} line={line} />
+                  <MeasurementLineRow
+                    key={line.workItemId}
+                    line={line}
+                    entered={
+                      book.status === 'draft' && canModify
+                        ? measured.get(line.workItemId)
+                        : undefined
+                    }
+                    onMeasuredChange={onMeasuredChange}
+                  />
                 ))}
               </tbody>
               {/* The total belongs in the foot so it is announced as the
@@ -970,6 +1107,54 @@ export function MeasurementBooks({
             <p className="text-muted-foreground">
               Nothing to bill yet — select sources with unbilled quantities.
             </p>
+          )}
+
+          {/* The measured quantities are saved from here rather than on
+              each keystroke: one PUT replaces the draft's whole set, and
+              the server recomputes the preview it answers with — so the
+              amounts, the total and the remarks above only ever move
+              together, and never against a figure still being typed. */}
+          {book.status === 'draft' && canModify && detail.lines.length > 0 && (
+            <Actions>
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  tryAct(async () => {
+                    const fresh = await api.setMeasurementBookMeasuredQuantities(
+                      organisationId,
+                      book.id,
+                      {
+                        overrides: [...measured.entries()].map(
+                          ([workItemId, entry]) => {
+                            const line = lineByItem.get(workItemId);
+                            // Equal to what the sources deliver is not an
+                            // adjustment, so it is sent as null and no row
+                            // is written. That keeps a draft nobody touched
+                            // free of adjustment rows entirely.
+                            return {
+                              workItemId,
+                              measuredSupplied:
+                                line?.sourceSupplied === entry.supplied
+                                  ? null
+                                  : entry.supplied,
+                              measuredInstalled:
+                                line?.sourceInstalled === entry.installed
+                                  ? null
+                                  : entry.installed,
+                            };
+                          },
+                        ),
+                      },
+                    );
+                    setDetail(fresh);
+                    setMeasured(seedMeasured(fresh));
+                  }, 'Measured quantities saved; the preview below is recomputed.');
+                }}
+              >
+                Save measured quantities
+              </Button>
+            </Actions>
           )}
 
           <Actions>

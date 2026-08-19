@@ -16,6 +16,7 @@ import type { Auth } from '../../auth.js';
 import { assertWorkAccess } from '../../authz.js';
 import { httpError } from '../../http.js';
 import { parseJsonbColumn } from '../../jsonb-column.js';
+import { lineHasQuantity } from '../../mb-compute.js';
 import { MB_REMARK_TEMPLATE_VERSION } from '../../mb-remark.js';
 import { assertWorkOperable } from '../../work-status.js';
 import { audit, errorResponses, IdParamsSchema } from '../shared.js';
@@ -267,7 +268,15 @@ export function registerMeasurementBookFinalizeRoutes(
         // clamps to nothing, and the book has a line. Only a Work that
         // measured nothing whatsoever reaches this refusal, which is what
         // it always meant.
-        if (computation.lines.length === 0) {
+        //
+        // A LINE MAY NOW BE PRESENT AND MEASURE NOTHING (migration 0106):
+        // an operator who adjusts an item's measured quantity down to
+        // zero keeps its line in the preview, so the field they typed
+        // into is still there to undo. That is a draft affordance, not a
+        // book — so the refusal asks the question it always asked, "is
+        // there anything to bill", of the quantities rather than of the
+        // line count.
+        if (!computation.lines.some(lineHasQuantity)) {
           throw httpError(
             409,
             'MB_EMPTY',

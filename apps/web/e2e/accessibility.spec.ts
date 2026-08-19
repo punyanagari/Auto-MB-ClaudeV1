@@ -443,6 +443,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   const ITEM_ID = '55555555-5555-4555-8555-555555555555';
   const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
   const CHALLAN_ITEM_ID = '66666666-6666-4666-8666-666666666666';
+  // The open DRAFT Measurement Book, whose preview carries the editable
+  // measured-quantity fields (docs/UX.md section 24).
+  const MB_DRAFT_ID = 'eeeeeeee-9999-4999-8999-eeeeeeeeeeee';
   // The register row the scan opens, and the document behind it.
   const INVOICE_ID = '88888888-8888-4888-8888-888888888888';
   const OPENED_INVOICE = {
@@ -1144,7 +1147,93 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             finalizedAt: '2026-08-05T10:00:00.000Z',
             cancelledAt: null,
           },
+          {
+            id: MB_DRAFT_ID,
+            workId: WORK_ID,
+            status: 'draft',
+            isFinal: false,
+            mbDate: '2026-08-09',
+            mbNumber: null,
+            sequenceNumber: null,
+            totalAmount: null,
+            remarkTemplateVersion: null,
+            templateVersion: null,
+            renderedAvailable: false,
+            cancellationNote: null,
+            billId: null,
+            createdAt: '2026-08-09T00:00:00.000Z',
+            finalizedAt: null,
+            cancelledAt: null,
+          },
         ],
+      }),
+    ),
+  );
+  // The draft's preview, so the measurement leg can scan the editable
+  // measured-quantity fields (docs/UX.md § 24) where colour actually
+  // lands on them: a field, its claimed-quantity description beside it,
+  // and the amount the pair prices.
+  await page.route(`**/api/measurement-books/${MB_DRAFT_ID}`, (route) =>
+    route.fulfill(
+      json({
+        book: {
+          id: MB_DRAFT_ID,
+          workId: WORK_ID,
+          status: 'draft',
+          kind: 'on_account',
+          isFinal: false,
+          consigneeContactId: null,
+          mergedIntoId: null,
+          mbDate: '2026-08-09',
+          mbNumber: null,
+          sequenceNumber: null,
+          totalAmount: null,
+          remarkTemplateVersion: null,
+          templateVersion: null,
+          renderedAvailable: false,
+          cancellationNote: null,
+          billId: null,
+          createdAt: '2026-08-09T00:00:00.000Z',
+          finalizedAt: null,
+          cancelledAt: null,
+          closedAt: null,
+          closedByReceivedBillId: null,
+        },
+        sources: [],
+        lines: [
+          {
+            workItemId: ITEM_ID,
+            itemNumber: 'A/1',
+            description: 'Signalling cable',
+            unitCode: 'mtr',
+            paymentCategory: 'SUPPLY',
+            resolvedCategory: 'SUPPLY',
+            pctSupply: '80.00',
+            pctInstallation: '0.00',
+            pctPac: '0.00',
+            pctFinalBill: '20.00',
+            effectiveRate: '100.000000',
+            deltaSupplied: '8.000',
+            deltaInstalled: '0.000',
+            sourceSupplied: '10.000',
+            sourceInstalled: '0.000',
+            deltaPac: '0.000',
+            deltaFinalBill: '0',
+            priorSupplied: '0.000',
+            priorInstalled: '0.000',
+            priorPac: '0.000',
+            priorFinalBill: '0.000',
+            amountSupply: '640.00',
+            amountInstallation: '0.00',
+            amountPac: '0.00',
+            amountFinalBill: '0.00',
+            lineTotal: '640.00',
+            remark: 'Now to pay 80% for 8 mtr.',
+          },
+        ],
+        warnings: [],
+        previewTotal: '640.00',
+        unbillableVariationExposure: '0',
       }),
     ),
   );
@@ -1221,6 +1310,20 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'DCW-1-MB-01' })).toBeVisible();
   await expect(page.getByText('FINAL BILL', { exact: true })).toBeVisible();
   await expectNoAxeViolations(page, 'work detail — measurement');
+
+  // The DRAFT's preview, scanned separately because that is where the
+  // editable measured quantity lives (docs/UX.md section 24): a field,
+  // the claimed figure beside it as its own description, and the amount
+  // the pair prices. The register above carries none of them.
+  await page.getByRole('button', { name: 'Draft', exact: true }).click();
+  await expect(page.getByLabel('Supplied quantity measured for item A/1')).toHaveValue(
+    '8.000',
+  );
+  await expect(page.getByText('of 10.000')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Save measured quantities' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'work detail — measurement book draft');
 
   await openTab('Bills');
   await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();

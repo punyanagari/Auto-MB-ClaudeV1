@@ -1729,6 +1729,124 @@ mock might put it in the topbar — and the staleness sentence, which the
 mock might make a chip. Neither is load-bearing; the caching rules and the
 write refusal are.
 
+### 24. Editable measured quantity on Measurement Book drafts — APPROVED
+
+Owner ruling of 2026-08-19 (live-testing ledger item 2(a), verbatim): "MB
+books drafts: per-line measured quantity becomes EDITABLE DOWNWARD ONLY,
+capped at the claimed source's quantity — partial measurement of a claimed
+challan/installation."
+
+**The operator's situation.** A delivery challan says ten were delivered.
+Eight were accepted at site this month and two are still lying uninspected
+at the station. The challan is the evidence and does not change; what
+changes is what this Measurement Book measures.
+
+**What the screen offers.** On a DRAFT book's preview table, the Supplied Δ
+and Installed Δ cells become fields. Each shows what the operator may
+enter and, beside it, what the claimed sources actually deliver — "8 of
+10". The claimed figure is also the field's accessible description, so the
+pair reads as a pair to a screen reader rather than as a loose number. A
+stage the draft claims nothing for shows no field: there is nothing there
+to reduce. One **Save measured quantities** action replaces the draft's
+whole set, and the answer is the server's recomputed preview — the
+amounts, the total and the remarks move together, never against a figure
+still being typed.
+
+**Downward only, floored at zero.** A figure above what the sources
+deliver is refused, naming every offending line with both numbers
+(`MB_MEASURED_ABOVE_SOURCE`); a negative one is refused before the request
+opens a transaction. Zero is legal and means "measure none of it from
+these sources".
+
+**A line adjusted to nothing STAYS on the preview.** Without that it would
+vanish the moment an operator typed 0, taking the field that would undo it
+with it. It is still not a book: finalize asks the quantities rather than
+the line count, and refuses a book whose every line measures nothing with
+the `MB_EMPTY` sentence it always used.
+
+**Where the unmeasured quantity goes.** Nowhere, this book. It stays
+outside it exactly as an over-installed quantity stays outside every book
+under the sanction clamp (see _Business-rule note: installation above
+sanctioned quantity_), and the FINAL Measurement Book's final-bill stage —
+whose base is the item's lifetime delivered or installed quantity, not a
+delta over selected sources — sweeps it up wherever the payment matrix
+gives that stage a share. On a matrix that gives the final-bill stage
+nothing, an unmeasured quantity is not billed at all; that is the same
+arithmetic the clamp has always had, and the screen states the two figures
+so the choice is a deliberate one.
+
+**Lifetime.** The adjustments belong to the draft. Deleting the draft
+deletes them; finalizing freezes them and the finalized line carries the
+reduced quantity as the snapshot it always carried. A finalized book shows
+one figure and no field.
+
+**App-side divergence.** The mock has no counterpart: its Measurement Book
+is a static table with no draft lifecycle to edit. Built inside the mock's
+grammar with its own table, field and action components; no new visual
+language.
+
+### 25. AMC billing cycles — APPROVED
+
+Owner ruling of 2026-08-19 (live-testing ledger item 6, LOCKED), derived
+from six real annual-maintenance letters.
+
+**The unit is the SCHEDULE, not the Work and not the item.** PL-218
+(Nagpur) prices a quarterly maintenance schedule beside a visit schedule
+billed per trip — twelve periods and eighteen over the same three years.
+One Work-level cadence could not describe the letter, and a per-item one
+would ask the operator to type the same number against every item and let
+them disagree.
+
+**What the schedules screen offers.** Each schedule carries two fields:
+how many billing periods its maintenance is measured in, and the word the
+agency calls one of them ("quarter", "month", "year", "half-year",
+"visit"). Both move together — two values set the cycle, two blanks remove
+it, and a half-stated pair is refused (`AMC_CYCLE_INCOMPLETE`). The word
+is the word alone: "quarter", never "quarterly bill" or "1 quarter".
+
+**No default is guessed.** A schedule with no cycle stated proposes
+nothing and bills exactly as it bills today. The owner's rulings default a
+no-cycle letter to one period (final bill for the total) and a
+monthly-priced letter to quarterly — and both are defaults the IMPORT
+PROPOSES and the operator confirms, never values the product writes on its
+own.
+
+**What the cycle proposes.** On the acceptance-certificate screen, each
+schedule that states a cycle shows what the NEXT period should certify per
+AMC item: the period number, what is certified so far, and the proposed
+quantity
+
+    q(n) = round3(Q x n / M) - round3(Q x (n-1) / M)
+
+a running total rather than Q/M repeated, so the periods sum to exactly Q
+and the last certificate closes the sanction cap with no remainder nobody
+can bill. Where Q does not divide evenly the periods differ in the third
+decimal, and the row says so rather than presenting an uneven split as an
+even one.
+
+**It is a proposal and only a proposal.** Nothing about it writes
+anything, the certification cap is unchanged, and an operator certifying a
+different quantity is certifying what the railway actually accepted. A
+Measurement Book always certifies the FULL period quantity: downtime is a
+bill-time PENALTY deduction, never a short certificate.
+
+**What the Measurement Book says.** On a Work whose schedule states a
+cycle, an AMC line's remark counts PERIODS instead of quantity, inside the
+existing remark grammar and with the existing spellings — "Prepaid 95% for
+2 quarters. Now to pay 95% for 1 quarter." The prepaid clause is still
+omitted on a first book. The clause can only appear on a Work carrying a
+cycle, which no already-finalised Measurement Book does, so the remark
+template version does not move.
+
+**What does not change.** No payment-matrix change, no per-item axis, and
+the rate is still the ACCEPTED rate the server derives — which for a
+letter printing per-item negotiated bid rates is that rate less the
+rebate on the total value, and is never the rate the letter advertises.
+
+**App-side divergence.** The mock draws neither surface: its Work carries
+no maintenance schedule and no acceptance certificates. Both are built
+from the mock's existing table, field and action components.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

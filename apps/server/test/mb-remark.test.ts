@@ -397,6 +397,142 @@ describe('resolveFinalBillBase', () => {
   });
 });
 
+/**
+ * The AMC period clause (owner ruling Q3, 2026-08-19). It renders INSIDE
+ * the v1 grammar — same 'Prepaid ... Now to pay ...' shape, same
+ * spellings, prepaid still omitted on the first book — and replaces only
+ * what a fragment counts: periods instead of quantity, the schedule's own
+ * word instead of the item's unit.
+ */
+describe('the AMC billing-cycle period clause', () => {
+  // 8 quarters over the contract, 96 units in total: one quarter is 12.
+  const cycle = { totalQuantity: '96', billingPeriods: 8, cycleNoun: 'quarter' };
+
+  it("renders the ledger's own example verbatim on a first book", () => {
+    expect(
+      computeMbRemark({
+        unit: 'Nos',
+        amcCycle: cycle,
+        stages: [
+          {
+            stage: 'pac',
+            percent: '95',
+            priorCumulativeQuantity: '0',
+            deltaQuantity: '12',
+          },
+        ],
+      }),
+    ).toBe('Now to pay 95% for 1 quarter.');
+  });
+
+  it('pluralises the schedule’s own word, and counts prepaid periods the same way', () => {
+    expect(
+      computeMbRemark({
+        unit: 'Nos',
+        amcCycle: cycle,
+        stages: [
+          {
+            stage: 'pac',
+            percent: '95',
+            priorCumulativeQuantity: '24',
+            deltaQuantity: '12',
+          },
+        ],
+      }),
+    ).toBe('Prepaid 95% for 2 quarters. Now to pay 95% for 1 quarter.');
+  });
+
+  it('reads any noun the letter uses, because the set is open', () => {
+    const visits = { totalQuantity: '18', billingPeriods: 18, cycleNoun: 'visit' };
+    expect(
+      computeMbRemark({
+        unit: 'Per Trip',
+        amcCycle: visits,
+        stages: [
+          {
+            stage: 'pac',
+            percent: '100',
+            priorCumulativeQuantity: '5',
+            deltaQuantity: '1',
+          },
+        ],
+      }),
+    ).toBe('Prepaid 100% for 5 visits. Now to pay 100% for 1 visit.');
+  });
+
+  it('survives a split that does not divide evenly, third decimal and all', () => {
+    // 10 over 3 periods: round3 running totals are 3.333, 6.667, 10.000,
+    // so the periods are 3.333 / 3.334 / 3.333 and the cumulative after
+    // two is 6.667. Each still reads back as the whole period it is.
+    const uneven = { totalQuantity: '10', billingPeriods: 3, cycleNoun: 'year' };
+    expect(
+      computeMbRemark({
+        unit: 'Set',
+        amcCycle: uneven,
+        stages: [
+          {
+            stage: 'pac',
+            percent: '90',
+            priorCumulativeQuantity: '6.667',
+            deltaQuantity: '3.333',
+          },
+        ],
+      }),
+    ).toBe('Prepaid 90% for 2 years. Now to pay 90% for 1 year.');
+  });
+
+  it('falls back to the quantity rather than saying "for 0 quarters"', () => {
+    // A quantity smaller than half a period is not a period, and a
+    // sentence claiming none would be worse than the number it replaced.
+    expect(
+      computeMbRemark({
+        unit: 'Nos',
+        amcCycle: cycle,
+        stages: [
+          {
+            stage: 'pac',
+            percent: '95',
+            priorCumulativeQuantity: '0',
+            deltaQuantity: '1',
+          },
+        ],
+      }),
+    ).toBe('Now to pay 95% for 1 Nos.');
+  });
+
+  it('falls back when the cadence divides nothing at all', () => {
+    expect(
+      computeMbRemark({
+        unit: 'Nos',
+        amcCycle: { totalQuantity: '0', billingPeriods: 4, cycleNoun: 'quarter' },
+        stages: [
+          {
+            stage: 'pac',
+            percent: '95',
+            priorCumulativeQuantity: '0',
+            deltaQuantity: '5',
+          },
+        ],
+      }),
+    ).toBe('Now to pay 95% for 5 Nos.');
+  });
+
+  it('leaves the v1 string untouched when no cadence is given — the reason this is not a version bump', () => {
+    const stages: MbRemarkStageInput[] = [
+      {
+        stage: 'supply',
+        percent: '80',
+        priorCumulativeQuantity: '1000',
+        deltaQuantity: '2000',
+      },
+    ];
+    expect(computeMbRemark({ unit: 'mtr', stages })).toBe(
+      'Prepaid 80% for 1000 mtr. Now to pay 80% for 2000 mtr.',
+    );
+    expect(MB_REMARK_TEMPLATE_VERSION).toBe('mb-remark-v1');
+  });
+});
+
 describe('addDecimalStrings', () => {
   it('adds exactly across mixed scales', () => {
     expect(addDecimalStrings('1.25', '2.755')).toBe('4.005');

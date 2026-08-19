@@ -305,7 +305,10 @@ describe('loa corpus manifest (DC-22)', () => {
   it('fixtures/ contains no binary PDFs, text files only', () => {
     const entries = readdirSync(FIXTURES_DIR);
     for (const name of entries) {
-      if (name === 'corpus.json') {
+      // Two manifests live here: the six-letter research corpus and the
+      // additive AMC evidence set (`test/amc-corpus.test.ts`). Everything
+      // else in this directory is pdftotext output.
+      if (name === 'corpus.json' || name === 'amc-corpus.json') {
         continue;
       }
       expect(

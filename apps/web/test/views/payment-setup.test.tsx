@@ -67,6 +67,8 @@ function freshWork(): WorkDetailResponse {
         scheduleCode: 'A',
         title: 'Schedule A',
         position: 1,
+        amcBillingPeriods: null,
+        amcCycleNoun: null,
         items: [
           {
             id: SUPPLY_ITEM,

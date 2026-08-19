@@ -785,22 +785,30 @@ describe('Banned-items block: both spellings recognised against the real corpus 
 // ---------------------------------------------------------------------------
 
 describe('needsReview roll-up: total, counts by code, any-letter-level', () => {
-  it('PL280: 8 total flags (1 letter-level corrigendum + 7 item-level unit corrections), anyLetterLevel true', () => {
+  it('PL280: 9 total flags (1 letter-level corrigendum, 7 item-level unit corrections, and its one maintenance schedule), anyLetterLevel true', () => {
     const payload = reviewLoaLetter(loadLetter('PL280-ADI').text);
     expect(payload.needsReview.total).toBe(payload.flags.length);
-    expect(payload.needsReview.total).toBe(8);
+    expect(payload.needsReview.total).toBe(9);
     expect(payload.needsReview.byCode).toEqual({
       prose_corrigendum: 1,
       prose_unit_correction: 7,
+      amc_schedule: 1,
     });
     expect(payload.needsReview.anyLetterLevel).toBe(true);
   });
 
-  it("PL270: zero flags, anyLetterLevel false -- the corpus's one entirely clean letter under this trigger set", () => {
+  it("PL270: two flags, both its maintenance schedules, anyLetterLevel false -- the corpus's one letter with nothing else to review", () => {
+    // Schedules B and D, arrived at from the item descriptions alone.
+    // They are the same two the Measurement Book engine's own AMC
+    // integration test names as PL270's maintenance schedules
+    // (`apps/server/test/amc-schedule.integration.test.ts`), which is
+    // what makes the 100% threshold in `detectAmcSchedules` a
+    // measurement rather than a preference.
     const payload = reviewLoaLetter(loadLetter('PL270-CRB').text);
-    expect(payload.needsReview.total).toBe(0);
-    expect(payload.needsReview.byCode).toEqual({});
+    expect(payload.needsReview.total).toBe(2);
+    expect(payload.needsReview.byCode).toEqual({ amc_schedule: 2 });
     expect(payload.needsReview.anyLetterLevel).toBe(false);
+    expect(payload.flags.map((flag) => flag.targetId).sort()).toEqual(['B', 'D']);
   });
 
   it('PL276: exactly 1 flag (the RKM unresolved-unit item), anyLetterLevel false (an item-level-only flag)', () => {
@@ -851,6 +859,8 @@ describe('flags are additive -- parsed data is never replaced or dropped', () =>
       'unexpected_rebate',
       'unexpected_above_par',
       'banned_items_block',
+      'amc_schedule',
+      'amc_recurrence_prose',
     ]);
     for (const { text } of loadCorpus()) {
       const payload = reviewLoaLetter(text);
@@ -992,12 +1002,12 @@ describe('reviewLoaLetter over the whole corpus', () => {
     const expected: Record<string, { total: number; byCode: Record<string, number> }> =
       {
         'PL273-JHS': {
-          total: 5,
-          byCode: { prose_corrigendum: 1, prose_qty_decomposition: 4 },
+          total: 6,
+          byCode: { prose_corrigendum: 1, prose_qty_decomposition: 4, amc_schedule: 1 },
         },
         'PL280-ADI': {
-          total: 8,
-          byCode: { prose_corrigendum: 1, prose_unit_correction: 7 },
+          total: 9,
+          byCode: { prose_corrigendum: 1, prose_unit_correction: 7, amc_schedule: 1 },
         },
         'PL275-BKN': {
           total: 44,
@@ -1008,7 +1018,7 @@ describe('reviewLoaLetter over the whole corpus', () => {
           },
         },
         'PL276-GTL': { total: 1, byCode: { unresolved_unit: 1 } },
-        'PL270-CRB': { total: 0, byCode: {} },
+        'PL270-CRB': { total: 2, byCode: { amc_schedule: 2 } },
         'PL281-BB': { total: 1, byCode: { banned_items_block: 1 } },
       };
 
