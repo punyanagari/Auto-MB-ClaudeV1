@@ -284,6 +284,7 @@ import type {
   CancelStatutoryDocumentRequest,
   RecordManualStatutoryCancellationRequest,
 } from '@auto-mb/contracts';
+import { isOffline } from './lib/offline.js';
 
 export interface MeResponse {
   readonly user: { readonly id: string; readonly email: string };
@@ -2600,7 +2601,42 @@ function pageQuery(options?: {
   return query.size === 0 ? '' : `?${query.toString()}`;
 }
 
-export function createApiClient(fetchImpl: FetchLike = fetch): ApiClient {
+export function createApiClient(send: FetchLike = fetch): ApiClient {
+  /**
+   * Every request this client makes, with one rule in front of it: a
+   * write is refused while the browser is offline, before any of it
+   * leaves the machine.
+   *
+   * It is the one choke point, so the whole policy is nine lines and no
+   * screen has to remember it. The refusal is a `RequestFailedError`
+   * exactly like a server refusal, which means every action handler in
+   * the product — `useAction`, and the hand-written ones beside it —
+   * renders it through the persistent inline error it already had, with
+   * the fact and the remedy in the order an operator reads them.
+   *
+   * Nothing is queued for replay. `lib/offline.ts` records why: this
+   * product's outward documents take gap-free numbers from per-Work
+   * counters under lifecycle locks, and a challan replayed an hour later
+   * would be claiming a number in an order nobody chose.
+   *
+   * GETs are NOT refused. A read that fails changes nothing, and letting
+   * it fail is what lets the offline read cache answer in its place.
+   */
+  const fetchImpl: FetchLike = async (input, init) => {
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && isOffline()) {
+      throw new RequestFailedError(
+        0,
+        'OFFLINE',
+        'This device is offline, so nothing was sent and nothing was changed.',
+        undefined,
+        undefined,
+        'Reconnect and try again; the record is exactly as it was.',
+      );
+    }
+    return send(input, init);
+  };
+
   async function request<T>(
     path: string,
     options: {

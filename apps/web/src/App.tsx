@@ -7,9 +7,15 @@ import {
   type ReactNode,
 } from 'react';
 import type { Organisation } from '@auto-mb/contracts';
-import { AlertTriangle, FileCheck2 } from 'lucide-react';
+import { AlertTriangle, FileCheck2, WifiOff } from 'lucide-react';
 import { createApiClient, type ApiClient, type MeResponse } from './api.js';
 import { useDocumentTitle } from './lib/document-title.js';
+import {
+  bindOfflineCache,
+  isOffline,
+  useOnline,
+  withOfflineReads,
+} from './lib/offline.js';
 import { cn } from './lib/cn.js';
 import { Button } from './ui/button.js';
 import { Card, CardHeader } from './ui/card.js';
@@ -28,6 +34,13 @@ const ORGANISATION_SESSION_KEY = 'auto-mb.organisation-id';
 type Phase =
   | { name: 'loading' }
   | { name: 'session-error'; message: string }
+  /** No network at all, before any workspace exists. Its own phase and
+   * not a `session-error`, because the two need opposite words: an
+   * outage is the product's problem and this one is the operator's
+   * connection, and the way out of it is to reconnect rather than to
+   * retry into the same silence. `docs/UX.md` § 23 records why a cold
+   * start offline stops here instead of restoring a workspace. */
+  | { name: 'offline' }
   | { name: 'signed-out' }
   | { name: 'mfa-enrolment'; me: MeResponse }
   | { name: 'no-organisation'; me: MeResponse }
@@ -92,6 +105,8 @@ function phaseTitle(phase: Phase): string | null {
       return 'Opening your workspace';
     case 'session-error':
       return 'Workspace unavailable';
+    case 'offline':
+      return 'Offline';
     case 'signed-out':
       return 'Sign in';
     case 'mfa-enrolment':
@@ -157,8 +172,16 @@ interface RefreshSessionOptions {
 }
 
 export function App({ api: providedApi }: AppProps) {
-  const api = useMemo(() => providedApi ?? createApiClient(), [providedApi]);
+  /* The offline read cache wraps whatever client is in play, including
+   * the one a test supplies: it is a property of how this application
+   * reads, not of how the client fetches. It is inert until bound below,
+   * and inert while the browser has a connection. */
+  const api = useMemo(
+    () => withOfflineReads(providedApi ?? createApiClient()),
+    [providedApi],
+  );
   const [phase, setPhase] = useState<Phase>({ name: 'loading' });
+  const online = useOnline();
   const mainRef = useRef<HTMLElement>(null);
   const sessionRefreshIdRef = useRef(0);
 
@@ -219,6 +242,13 @@ export function App({ api: providedApi }: AppProps) {
         setPhase(nextPhase);
       } catch (cause: unknown) {
         if (refreshId !== sessionRefreshIdRef.current) return;
+        // No network is not an outage, and saying "temporarily
+        // unavailable" about the operator's own connection sends them
+        // to support for something a signal bar would explain.
+        if (isOffline()) {
+          setPhase({ name: 'offline' });
+          return;
+        }
         setPhase({
           name: 'session-error',
           message:
@@ -234,6 +264,33 @@ export function App({ api: providedApi }: AppProps) {
   useEffect(() => {
     void refreshSession();
   }, [refreshSession]);
+
+  /* The connection coming back is the answer to the offline phase, so the
+   * session is checked again the moment it does rather than waiting for
+   * the operator to find the button. Only from that phase: a workspace
+   * already open re-reads through its own screens. */
+  useEffect(() => {
+    if (online && phase.name === 'offline') void refreshSession();
+  }, [online, phase.name, refreshSession]);
+
+  /**
+   * Binds the offline read cache to the account and organisation whose
+   * records it is allowed to hold, and clears it whenever that changes.
+   *
+   * This is the whole eviction story, and it is one effect because every
+   * departure ends here: signing out, switching organisation, being sent
+   * back to the chooser, losing the session. Each of them leaves the
+   * workspace phase, which binds null, which empties the cache.
+   * `bindOfflineCache` ignores a repeat of the same binding, so this may
+   * sit on a phase object that is replaced on every state change.
+   */
+  useEffect(() => {
+    bindOfflineCache(
+      phase.name === 'workspace'
+        ? { userId: phase.me.user.id, organisationId: phase.organisation.id }
+        : null,
+    );
+  }, [phase]);
 
   useEffect(() => {
     mainRef.current?.querySelector('h1')?.focus();
@@ -261,6 +318,16 @@ export function App({ api: providedApi }: AppProps) {
     sessionRefreshIdRef.current += 1;
     try {
       await api.signOut();
+    } catch {
+      /* Swallowed on purpose, and it is not a formality: offline, this
+       * call is REFUSED before it is sent (`src/api.ts`), so signing out
+       * with no connection would otherwise reject on every attempt. The
+       * local half has to happen either way — this browser throws away
+       * the workspace it was showing and the records it had cached — and
+       * leaving an operator looking at somebody else's screen because
+       * the server could not be told is the worse failure. The server
+       * session outlives it and ends on its own; nothing here could
+       * shorten that without reaching the server. */
     } finally {
       forgetOrganisation();
       setPhase({ name: 'signed-out' });
@@ -363,6 +430,36 @@ export function App({ api: providedApi }: AppProps) {
               >
                 Return to sign in
               </Button>
+            </div>
+          </Card>
+        </AuthPage>
+      )}
+
+      {phase.name === 'offline' && (
+        <AuthPage
+          width="max-w-lg"
+          description="This device has no connection just now."
+        >
+          <Card>
+            <CardHeader>
+              <h1 tabIndex={-1} className="text-base font-semibold">
+                You are offline
+              </h1>
+              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning-foreground">
+                <WifiOff className="size-4" aria-hidden="true" />
+              </span>
+            </CardHeader>
+            {/* Two facts and no false promise. The application itself
+                opened from the cached shell, which is why there is a page
+                here at all; what it cannot do is check who is signed in,
+                and it will not guess. `docs/UX.md` § 23. */}
+            <p className="m-0 text-sm text-muted-foreground text-pretty">
+              Auto-MB opened from the copy saved on this device, but it cannot check
+              your session or read any records without a connection. Your work is on the
+              server and nothing has been lost.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => void refreshSession()}>Try again</Button>
             </div>
           </Card>
         </AuthPage>

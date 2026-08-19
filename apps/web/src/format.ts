@@ -100,14 +100,6 @@ const viewerDayFormat = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric',
 });
 
-const viewerInstantFormat = new Intl.DateTimeFormat('en-GB', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-});
-
 const isoDayFormat = new Intl.DateTimeFormat('en-CA');
 
 /** "2026-08-08" → "08 Aug 2026"; anything unparseable passes through. */
@@ -129,14 +121,12 @@ export function formatTimestampDate(iso: string): string {
   return viewerDayFormat.format(parsed);
 }
 
-/** Instant with wall-clock time in the viewer's zone — used where a
- * deadline is a moment, not a day (NIC's 24-hour IRN cancellation
- * window). Anything unparseable passes through. */
-export function formatTimestamp(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return iso;
-  return viewerInstantFormat.format(parsed);
-}
+/* Re-exported rather than defined here: the offline banner needs this
+ * one helper from the application shell, and the shell importing this
+ * module costs 36 kB gzip on the initial payload.
+ * `src/format-instant.ts` carries the reasoning. Callers keep importing
+ * `formatTimestamp` from `format.ts` as they always have. */
+export { formatTimestamp } from './format-instant.js';
 
 /** An organisation-local wall clock ("2026-09-18T15:00") → "18 Sep 2026,
  * 15:00".

@@ -1,7 +1,7 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 3224,
-  "fileCount": 209,
+  "totalDeclarations": 3247,
+  "fileCount": 212,
   "files": {
     "apps/server/test/amc-schedule.integration.test.ts": 20,
     "apps/server/test/amendments.integration.test.ts": 50,
@@ -120,6 +120,7 @@
     "apps/server/test/work-supersede.integration.test.ts": 23,
     "apps/server/test/xlsx.test.ts": 29,
     "apps/web/e2e/accessibility.spec.ts": 24,
+    "apps/web/e2e/offline.spec.ts": 4,
     "apps/web/e2e/responsive.spec.ts": 4,
     "apps/web/e2e/table-perf.spec.ts": 2,
     "apps/web/test/App.test.tsx": 5,
@@ -129,6 +130,7 @@
     "apps/web/test/format.test.ts": 7,
     "apps/web/test/issue-challan-views.test.tsx": 15,
     "apps/web/test/mis-financial-year.test.ts": 3,
+    "apps/web/test/offline.test.ts": 12,
     "apps/web/test/payment-category-proposal.test.ts": 10,
     "apps/web/test/payment-matrix-form.test.ts": 6,
     "apps/web/test/theme.test.tsx": 9,
@@ -150,6 +152,7 @@
     "apps/web/test/views/masters-settings.test.tsx": 26,
     "apps/web/test/views/members.test.tsx": 4,
     "apps/web/test/views/notifications.test.tsx": 13,
+    "apps/web/test/views/offline-shell.test.tsx": 7,
     "apps/web/test/views/password-recovery.test.tsx": 5,
     "apps/web/test/views/payment-setup.test.tsx": 13,
     "apps/web/test/views/platform-settings.test.tsx": 15,

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { ApiClient, MeResponse } from '../api.js';
 import { useDocumentTitle } from '../lib/document-title.js';
+import { clearCachedReadNotice } from '../lib/offline.js';
 import {
   mastersHash,
   navigateOnClick,
@@ -48,6 +49,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { Modal } from '../ui/dialog.js';
+import { OfflineBanner } from '../ui/offline-banner.js';
 import { Sheet } from '../ui/sheet.js';
 import type { MastersTab } from './Masters.js';
 import type { WorkTab } from './WorkDetail.js';
@@ -806,6 +808,24 @@ export function OperationsWorkspace({
     hashSyncedRef.current = true;
   }, [currentHash]);
 
+  /* The offline banner's staleness sentence is a claim about the screen
+   * in front of the operator — "records on THIS screen were read at
+   * 14:32" — so it is forgotten whenever the screen changes and rebuilt
+   * from whatever the new one is answered with. Without this it would
+   * keep naming the oldest copy served anywhere since the connection
+   * went, which is a screen the operator may have left ten minutes ago.
+   *
+   * Keyed on the address rather than on the view object, so a re-render
+   * that produces an identical screen does not clear it.
+   *
+   * The order is safe and worth stating: a view starts its read in its
+   * own effect, effects run children-first, and a read only resolves on
+   * a later microtask — so this clear always lands before the answer it
+   * must not throw away. */
+  useEffect(() => {
+    clearCachedReadNotice();
+  }, [currentHash]);
+
   // Address bar → state: browser Back/Forward, a middle-clicked register
   // link, or a hand-edited fragment. The listener is mounted once and
   // reads the live values through refs. A dirty editor gets the same
@@ -1029,6 +1049,13 @@ export function OperationsWorkspace({
              into this column and rely on it to space them. */
           className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-6 pb-24 outline-none sm:px-6 md:px-8 md:py-8 lg:px-10 lg:pb-8 [&>*]:min-w-0"
         >
+          {/* Above the view and outside the Suspense boundary, because
+              it is a fact about the whole workspace rather than about
+              the screen: it must be on the page while a code-split view
+              is still arriving, which is exactly when the network has
+              just failed. Renders nothing while there is a connection.
+              `docs/UX.md` § 23. */}
+          <OfflineBanner />
           <Suspense fallback={<ViewSkeleton />}>
             {/* Restores the heading focus the outer effect cannot take
                 while a chunk is still loading: it runs inside the
