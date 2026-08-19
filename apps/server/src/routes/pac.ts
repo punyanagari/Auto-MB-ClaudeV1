@@ -244,7 +244,7 @@ async function readCertificate(
  * Contains no interpolated values; it is a constant fragment, and every
  * value around it stays parameterised.
  */
-const CERTIFICATION_BASIS_SQL = `
+export const CERTIFICATION_BASIS_SQL = `
   case when wi.payment_category = 'AMC'
     then coalesce(wi.effective_quantity, wi.awarded_quantity)
     else coalesce((

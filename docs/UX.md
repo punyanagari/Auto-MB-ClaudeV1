@@ -1812,14 +1812,198 @@ first.
 **The Remedy column leaves the unfinished-items worklist.** The
 quantities stay and say the same thing in less space.
 
-### 25. Installation recording, and number-only fields — APPROVED
+### 25. Editable measured quantity on Measurement Book drafts — APPROVED
+
+Owner ruling of 2026-08-19 (live-testing ledger item 2(a), verbatim): "MB
+books drafts: per-line measured quantity becomes EDITABLE DOWNWARD ONLY,
+capped at the claimed source's quantity — partial measurement of a claimed
+challan/installation."
+
+**The operator's situation.** A delivery challan says ten were delivered.
+Eight were accepted at site this month and two are still lying uninspected
+at the station. The challan is the evidence and does not change; what
+changes is what this Measurement Book measures.
+
+**What the screen offers.** On a DRAFT book's preview table, the Supplied Δ
+and Installed Δ cells become fields. Each shows what the operator may
+enter and, beside it, what the claimed sources actually deliver — "8 of
+10". The claimed figure is also the field's accessible description, so the
+pair reads as a pair to a screen reader rather than as a loose number. A
+stage the draft claims nothing for shows no field: there is nothing there
+to reduce. One **Save measured quantities** action replaces the draft's
+whole set, and the answer is the server's recomputed preview — the
+amounts, the total and the remarks move together, never against a figure
+still being typed.
+
+**Downward only, floored at zero.** A figure above what the sources
+deliver is refused, naming every offending line with both numbers
+(`MB_MEASURED_ABOVE_SOURCE`); a negative one is refused before the request
+opens a transaction. Zero is legal and means "measure none of it from
+these sources".
+
+**Only a field a keystroke landed in becomes an adjustment.** Every other
+field carries back the adjustment already stored. This matters because a
+field is seeded with the figure that will be BILLED, and on a line the
+sanction clamp has already reduced that is lower than what the sources
+claim — so a screen that inferred "the operator changed this" from the
+number would write an adjustment on every clamped line, and that
+adjustment would cap the item there for good once an amendment reopened
+the sanction. Emptying a field clears the adjustment.
+
+**A line adjusted to nothing STAYS on the preview, and out of the book.**
+Without the first half it would vanish the moment an operator typed 0,
+taking the field that would undo it with it. Without the second, a zero
+line would print on a Measurement Book and ride into a bill. So finalize
+asks the QUANTITIES rather than the line count: it refuses a book whose
+every line measures nothing with the `MB_EMPTY` sentence it always used,
+and leaves the zero lines out of the snapshot, the document and the bill.
+
+**An item this book claims nothing of cannot be adjusted at all**
+(`MB_MEASURED_ITEM_NOT_CLAIMED`). Its cap is zero, and an adjustment is
+what would put its line on the book — blocking finalize on an item nobody
+selected a source for.
+
+**Adjustments travel through a merge.** A consignee who measured eight of
+a claimed ten on their own record sheet has stated a fact about the site,
+so the merged book's adjustment for that item is the sum of what the
+records EFFECTIVELY measure — each sheet's own figure where it made one,
+its full claim where it did not. The records' own adjustment rows go in
+the same transaction. Un-merge restores the records and their claims but
+not their individual figures: the merge folded several into one sum, and
+the operator re-enters what they measured.
+
+**Where the unmeasured quantity goes.** Nowhere, this book. It stays
+outside it exactly as an over-installed quantity stays outside every book
+under the sanction clamp (see _Business-rule note: installation above
+sanctioned quantity_), and the FINAL Measurement Book's final-bill stage —
+whose base is the item's lifetime delivered or installed quantity, not a
+delta over selected sources — sweeps it up wherever the payment matrix
+gives that stage a share. On a matrix that gives the final-bill stage
+nothing, an unmeasured quantity is not billed at all; that is the same
+arithmetic the clamp has always had, and the screen states the two figures
+so the choice is a deliberate one.
+
+**And it is stated in rupees.** Above the register, on the same warning
+surface the unbillable variation exposure uses and for the same reason:
+without it the reduction appears in no number on the screen at all — the
+lines show what will be billed, the total sums them, and what the operator
+declined to measure is nowhere. It counts the adjustment only, never the
+sanction clamp's own remainder, which the exposure beside it already
+states.
+
+**Lifetime.** The adjustments belong to the draft. Deleting the draft
+deletes them; finalizing freezes them and the finalized line carries the
+reduced quantity as the snapshot it always carried. A finalized book shows
+one figure and no field.
+
+**App-side divergence.** The mock has no counterpart: its Measurement Book
+is a static table with no draft lifecycle to edit. Built inside the mock's
+grammar with its own table, field and action components; no new visual
+language.
+
+### 26. AMC billing cycles — APPROVED
+
+Owner ruling of 2026-08-19 (live-testing ledger item 6, LOCKED), derived
+from six real annual-maintenance letters.
+
+**The unit is the SCHEDULE, not the Work and not the item.** PL-218
+(Nagpur) prices a quarterly maintenance schedule beside a visit schedule
+billed per trip — twelve periods and eighteen over the same three years.
+One Work-level cadence could not describe the letter, and a per-item one
+would ask the operator to type the same number against every item and let
+them disagree.
+
+**What the schedules screen offers.** Each schedule carries two fields:
+how many billing periods its maintenance is measured in, and the word the
+agency calls one of them ("quarter", "month", "year", "half-year",
+"visit"). Both move together — two values set the cycle, two blanks remove
+it, and a half-stated pair is refused (`AMC_CYCLE_INCOMPLETE`). The word
+is the word alone: "quarter", never "quarterly bill" or "1 quarter".
+
+**No default is guessed.** A schedule with no cycle stated proposes
+nothing and bills exactly as it bills today. The owner's rulings default a
+no-cycle letter to one period (final bill for the total) and a
+monthly-priced letter to quarterly — and both are defaults the IMPORT
+PROPOSES and the operator confirms, never values the product writes on its
+own.
+
+**What the cycle proposes.** On the acceptance-certificate screen, each
+schedule that states a cycle shows what the NEXT period should certify per
+AMC item: the period number, what is certified so far, and the proposed
+quantity
+
+    proposed = round3(Q x n / M) - what is certified so far
+
+which is a REMAINDER, not the period's own width. The difference matters
+because certificates are the railway's: one taken by hand at a different
+figure would otherwise put every period after it out by the same amount
+and leave the contract short of Q, or over the sanction cap. Reconciling
+against the certified total instead makes the last period exactly
+Q - certified, whatever happened before it — so the cadence always closes
+on Q, a cycle changed mid-contract self-corrects, and no period ever
+proposes a quantity the cap would refuse. Where Q does not divide evenly
+the periods differ in the third decimal, and the row says so rather than
+presenting an uneven split as an even one.
+
+**How many periods are closed** is asked of the split itself — how many of
+its boundaries the certified total has reached — never of a ratio.
+Rounding a ratio is wrong at both ends: it puts a whole period at 0.9999
+of one, and it calls 99 of 100 over four periods "all four certified"
+while a unit is still outstanding.
+
+**It is a proposal and only a proposal.** Nothing about it writes
+anything, the certification cap is unchanged, and an operator certifying a
+different quantity is certifying what the railway actually accepted. A
+Measurement Book always certifies the FULL period quantity: downtime is a
+bill-time PENALTY deduction, never a short certificate.
+
+**What the Measurement Book says.** On a Work whose schedule states a
+cycle, an AMC line's ACCEPTANCE-CERTIFICATE stage counts PERIODS instead
+of quantity, inside the existing remark grammar and with the existing
+spellings — "Prepaid 95% for 2 quarters. Now to pay 95% for 1 quarter."
+The prepaid clause is still omitted on a first book.
+
+Only that stage. A cycle divides the certified quantity and nothing else,
+so a delivery challan against the same item keeps the item's own unit
+rather than being counted against a Q it has no relationship to.
+
+**A part-period is never rounded up to a whole one.** The remark is frozen
+into a finalised document and read as a contractual statement, so half a
+quarter reads "0.5 quarters", not "1 quarter". Only a figure integral
+within the split's own third-decimal wobble reads as a whole period.
+
+The clause can only appear on a Work carrying a cycle, which no
+already-finalised Measurement Book does, so the remark template version
+does not move.
+
+**A cycle is not changed on a Work that is closed.** A completed Work
+refuses it under R8, like every other operational change; the cadence
+decides what every later certificate is proposed at.
+
+**What does not change.** No payment-matrix change, no per-item axis, and
+the rate is still the ACCEPTED rate the server derives.
+
+**Letters that print a negotiated per-item bid rate** — PL-257's shape —
+accept that rate less the rebate on the total value, never the advertised
+one. The rule is written and proved against the letter's own printed
+totals, but nothing computes with it yet: that letter's item table does
+not parse, so the figures it needs are not extracted. The caller lands
+with the importer work that makes those rows readable. Until then a
+letter of the shape reaches a human anyway — its non-zero rebate is a
+letter-level review flag.
+
+**App-side divergence.** The mock draws neither surface: its Work carries
+no maintenance schedule and no acceptance certificates. Both are built
+from the mock's existing table, field and action components.
+
+### 27. Installation recording, and number-only fields — APPROVED
 
 **Status: APPROVED, owner ruling of 2026-08-19**, items 10, 11 and 12 of the
 live-testing corrections ledger. Two unrelated surfaces in one section
 because they landed in one pack and the second one touches the first: the
 installation table's quantity cells are the shared numeric control.
 
-#### 25a. The installation capture flow becomes a table
+#### 27a. The installation capture flow becomes a table
 
 The mock draws `components/installation-capture-flow.tsx` (at `a8e1fde`) as a
 numbered, one-item-at-a-time form: pick the Work, pick the item, type a
@@ -1837,11 +2021,11 @@ delivery, and a mock cannot express "the same visit wrote six records".
 
 | #   | What the application does                                                                                                                                                                                                                                                                                                | What the mock draws                                          | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 25a | Date, location and remark stated ONCE above a table of items; each filled row becomes its own installation record, all in one transaction                                                                                                                                                                                | Five numbered fields, one item, one record                   | They are facts about the VISIT, not about the item. Stating them once removes the only way six records of one visit could carry five different dates. All-or-nothing because half a visit recorded is worse than none: the operator cannot tell which half from a screen that has already reset.                                                                                                                                                                                                                                         |
-| 25b | The table LEADS with the items that have an installable balance, with a search box over them; the items already installed to their sanctioned quantity are folded away under "Installed to sanction — recording more flags a variation", and the ones whose DELIVERED quantity is fully installed are not offered at all | A `Select` over every item                                   | Ledger item 10. The picker offered the whole schedule, including items with nothing standing on site, so the operator had to remember which had material and which did not. The three outcomes are three different rules, not one: R5 caps a serial-tracked item at what issued challans delivered and refuses more, so a row for it could not succeed; an item with no supply leg has no such floor and the 2026-08-17 ruling says more MAY be recorded, so it keeps a surface rather than losing one; AMC is never installable (0068). |
-| 25c | Serials are TYPED as numbers, per row, with the delivered pool as one button per serial beneath the field                                                                                                                                                                                                                | A tap-select checklist of literal serials                    | Ledger item 12. The field has to accept a number that is in no pool — see 25d — so the pool is an assist and never a whitelist. It was a `<datalist>` for one revision and that was wrong: the browser matches a datalist against the WHOLE field value, so it helped with the first of six nameplates and went dead the moment the field held "SN-001, ". Buttons append to the field instead and disable once their serial is in it, which is the tap-select the mock drew, per unit rather than per row.                              |
-| 25d | A serial the Delivery Challan missed is ACCEPTED, recorded against the installation, and marked `added here` on the record                                                                                                                                                                                               | Nothing — the mock's serials are literals with no provenance | The owner's rule, verbatim: "if missing serial in DC is added in IC then accept it and record it." A challan is typed from a despatch note; the nameplate is read by the person in front of the equipment. Migration 0108 carries the origin, and the tenant-wide serial trace renders it as a third origin beside Delivered and Production.                                                                                                                                                                                             |
-| 25e | The item balances get a failure state of their own, with its own Retry, and it says recording is paused                                                                                                                                                                                                                  | No loading or failure states at all                          | The balances used to be a courtesy line under the quantity field, and a failed read hid one sentence. They now decide the table's CONTENTS, and a silent failure would read as "nothing left to install" — a different fact entirely. Recording is gated on the read rather than degraded, because without balances the only honest table is the whole schedule, which is what 25b removed; the panel says so rather than leaving an empty table to be read as an answer. § Shared states: one failure state per independent read.       |
+| 27a | Date, location and remark stated ONCE above a table of items; each filled row becomes its own installation record, all in one transaction                                                                                                                                                                                | Five numbered fields, one item, one record                   | They are facts about the VISIT, not about the item. Stating them once removes the only way six records of one visit could carry five different dates. All-or-nothing because half a visit recorded is worse than none: the operator cannot tell which half from a screen that has already reset.                                                                                                                                                                                                                                         |
+| 27b | The table LEADS with the items that have an installable balance, with a search box over them; the items already installed to their sanctioned quantity are folded away under "Installed to sanction — recording more flags a variation", and the ones whose DELIVERED quantity is fully installed are not offered at all | A `Select` over every item                                   | Ledger item 10. The picker offered the whole schedule, including items with nothing standing on site, so the operator had to remember which had material and which did not. The three outcomes are three different rules, not one: R5 caps a serial-tracked item at what issued challans delivered and refuses more, so a row for it could not succeed; an item with no supply leg has no such floor and the 2026-08-17 ruling says more MAY be recorded, so it keeps a surface rather than losing one; AMC is never installable (0068). |
+| 27c | Serials are TYPED as numbers, per row, with the delivered pool as one button per serial beneath the field                                                                                                                                                                                                                | A tap-select checklist of literal serials                    | Ledger item 12. The field has to accept a number that is in no pool — see 27d — so the pool is an assist and never a whitelist. It was a `<datalist>` for one revision and that was wrong: the browser matches a datalist against the WHOLE field value, so it helped with the first of six nameplates and went dead the moment the field held "SN-001, ". Buttons append to the field instead and disable once their serial is in it, which is the tap-select the mock drew, per unit rather than per row.                              |
+| 27d | A serial the Delivery Challan missed is ACCEPTED, recorded against the installation, and marked `added here` on the record                                                                                                                                                                                               | Nothing — the mock's serials are literals with no provenance | The owner's rule, verbatim: "if missing serial in DC is added in IC then accept it and record it." A challan is typed from a despatch note; the nameplate is read by the person in front of the equipment. Migration 0108 carries the origin, and the tenant-wide serial trace renders it as a third origin beside Delivered and Production.                                                                                                                                                                                             |
+| 27e | The item balances get a failure state of their own, with its own Retry, and it says recording is paused                                                                                                                                                                                                                  | No loading or failure states at all                          | The balances used to be a courtesy line under the quantity field, and a failed read hid one sentence. They now decide the table's CONTENTS, and a silent failure would read as "nothing left to install" — a different fact entirely. Recording is gated on the read rather than degraded, because without balances the only honest table is the whole schedule, which is what 27b removed; the panel says so rather than leaving an empty table to be read as an answer. § Shared states: one failure state per independent read.       |
 
 The record list, the per-item installed summary, the variation chip and
 the cancel-with-note form are untouched, and so is every server rule the
@@ -1868,7 +2052,7 @@ complete against, and is a future decision rather than a gap. The refusal's
 remedy says all of this in one sentence
 (`apps/server/src/remedies.ts`, `DUPLICATE_SERIAL`).
 
-#### 25b. Every number-only field filters on the way in
+#### 27b. Every number-only field filters on the way in
 
 Ledger item 11. Numeric fields were one of two hand-rolled shapes:
 `<input type="number">`, which brings spinner arrows and a scroll wheel

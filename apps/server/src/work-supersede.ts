@@ -188,6 +188,8 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   pac_certificate_items: 'lines of a PAC certificate, which blocks',
   measurement_book_lines: 'lines of a Measurement Book, which blocks',
   mb_sources: 'the measurements a Measurement Book claims, which blocks',
+  mb_measured_overrides:
+    'the downward measured-quantity adjustments on a DRAFT Measurement Book (0106), which is not a document and does not block — and the book itself does',
   purchase_order_lines: 'lines of a purchase order, which blocks',
   tax_invoice_lines: 'lines of a tax invoice, which blocks',
   tax_invoice_renders: 'render history of a tax invoice, which blocks',

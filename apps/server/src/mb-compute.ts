@@ -75,6 +75,18 @@ export interface MbItemInput {
    * was physically done clamps its lifetime billed quantity here (see
    * `clampToSanctioned`). */
   readonly sanctionedQuantity: string;
+  /** The operator's downward adjustment for this draft's line, per stage
+   * (migration 0106), or null where none was made. Never trusted as an
+   * upper bound: `min(override, measured)` is applied below, so an
+   * adjustment left behind by a source that was later deselected can
+   * only ever reduce further, never raise. */
+  readonly measuredSupplied: string | null;
+  readonly measuredInstalled: string | null;
+  /** The item's schedule's AMC billing cadence (migration 0107), or null
+   * on every schedule that states none. Read only for an AMC item, and
+   * only to render period language in the remark. */
+  readonly amcBillingPeriods: number | null;
+  readonly amcCycleNoun: string | null;
 }
 
 /** One computed (previewed or to-be-snapshotted) MB line. */
@@ -96,6 +108,20 @@ export interface MbComputedLine {
    * when the item is over-installed and its variation order has not
    * arrived. */
   readonly deltaInstalled: string;
+  /** What the selected sources measure BEFORE the operator's downward
+   * adjustment (0106) — the two deltas above are what will be billed,
+   * these two are what the evidence says, and they are equal on every
+   * line nobody adjusted. Carried so the draft screen can print
+   * "computed 10 / entered 8"; the finalize snapshot has no column for
+   * them and does not need one. */
+  readonly sourceSupplied: string;
+  readonly sourceInstalled: string;
+  /** The STORED adjustment per stage, passed straight through so a
+   * screen replacing the whole set can send back one nobody touched.
+   * Not the same as the two deltas above: those are what will be billed
+   * after the sanction clamp has had its say. */
+  readonly overrideSupplied: string | null;
+  readonly overrideInstalled: string | null;
   /** BILLED certified quantity, clamped the same way and for the same
    * reason — a non-AMC certificate attests installed work, which is no
    * longer bounded by the sanction. */
@@ -131,14 +157,27 @@ interface MbUnresolvedItem {
 }
 
 export interface MbComputation {
-  /** Lines in item-number order; only items with at least one nonzero
-   * stage delta appear (an MB bills deltas). */
+  /** Lines in item-number order; an item appears when it has at least one
+   * nonzero stage delta (an MB bills deltas) or when the operator has
+   * adjusted its measured quantity, including down to nothing — see the
+   * `isAdjusted` note in `computeMeasurementBook`. */
   readonly lines: readonly MbComputedLine[];
   /** SUM of the line totals (line-rounded then summed, R13), exactly 2
    * fraction digits. */
   readonly totalAmount: string;
   /** Items that would appear on the MB but cannot resolve percentages. */
   readonly unresolved: readonly MbUnresolvedItem[];
+  /** What the operator's own downward adjustments left out of this book,
+   * in rupees — priced through the same stage percentages and accepted
+   * rate the lines are, rounded per line and summed (R13). '0.00' when
+   * nothing was adjusted.
+   *
+   * It exists because without it the reduction is invisible to every
+   * number on the screen: the lines show what will be billed, the total
+   * sums them, and the quantity the operator declined to measure appears
+   * nowhere at all. The counterpart of the Work's unbillable variation
+   * exposure, on the same footing. */
+  readonly adjustedAwayAmount: string;
 }
 
 // eslint-disable-next-line security/detect-unsafe-regex -- fully anchored, two adjacent digit runs with no nested quantifier; linear on all inputs (same shape as mb-remark.ts)
@@ -166,6 +205,36 @@ export function subtractDecimalStrings(a: string, b: string): string {
 /** The smaller of two exact decimals, without a float in the middle. */
 function minDecimalStrings(a: string, b: string): string {
   return isNegativeDecimal(subtractDecimalStrings(a, b)) ? a : b;
+}
+
+/**
+ * THE DOWNWARD-ONLY MEASURED QUANTITY (owner ruling, 2026-08-19: a draft
+ * Measurement Book's per-line measured quantity is editable downward
+ * only, capped at the claimed source's quantity).
+ *
+ * Applied here, beside `clampToSanctioned`, for the reason this module's
+ * header gives for that one: the draft preview, the draft PDF and the
+ * finalize snapshot all read this function, so what an operator is shown
+ * before finalizing is what finalizing writes. It is deliberately NOT a
+ * `least(...)` inside `ITEM_INPUTS_SQL` — that statement is P11's six
+ * grouped CTEs and its plan shape is under a measured buffer ratchet
+ * (`apps/server/test/query-aggregates.integration.test.ts`), and pushing
+ * an eighth join into it to do arithmetic this module already does
+ * exactly would spend that budget on nothing.
+ *
+ * `min`, not "the override": migration 0106's trigger refuses an
+ * adjustment above what the book's claimed sources measure AT THE MOMENT
+ * IT IS WRITTEN, and the sources can move afterwards — a challan
+ * deselected from the draft leaves an adjustment that now names more than
+ * the evidence. Taking the smaller of the two means a stale adjustment
+ * can only ever reduce further, never resurrect a quantity whose source
+ * has gone.
+ */
+export function applyMeasuredOverride(
+  measured: string,
+  override: string | null,
+): string {
+  return override === null ? measured : minDecimalStrings(override, measured);
 }
 
 /**
@@ -231,6 +300,25 @@ export function computeFinalBillDelta(item: MbItemInput): string {
 }
 
 /**
+ * Whether a computed line bills any quantity at all.
+ *
+ * It exists because a line can now be present and measure nothing: an
+ * adjusted-to-zero line stays in the preview so its own input is still
+ * on screen (see `isAdjusted` below). Finalize asks this of every line
+ * rather than counting them. A string comparison against `'0'` would not
+ * do — the loader renders quantities at `numeric(18,3)`, so an empty
+ * stage arrives as `'0.000'`.
+ */
+export function lineHasQuantity(line: MbComputedLine): boolean {
+  return (
+    isPositiveDecimal(line.deltaSupplied) ||
+    isPositiveDecimal(line.deltaInstalled) ||
+    isPositiveDecimal(line.deltaPac) ||
+    isPositiveDecimal(line.deltaFinalBill)
+  );
+}
+
+/**
  * Computes the full MB line set from live state. Deterministic and
  * side-effect free; the finalize transaction snapshots the result
  * verbatim and the draft GET serves it as the preview.
@@ -243,6 +331,7 @@ export function computeMeasurementBook(input: {
   const lines: MbComputedLine[] = [];
   const unresolved: MbUnresolvedItem[] = [];
   let totalAmount = '0.00';
+  let adjustedAwayAmount = '0.00';
 
   // Natural order (`compareItemNumbers`), which is the order the letter's
   // schedule is written in: A1/2 before A1/10, not after it. A finalized
@@ -252,6 +341,15 @@ export function computeMeasurementBook(input: {
   const ordered = byItemNumber(input.items);
 
   for (const item of ordered) {
+    // The operator's downward adjustment comes FIRST, because it states
+    // what was measured; the sanction clamp then decides how much of that
+    // measurement this book may bill. Reversing them would let an
+    // adjustment above the sanction quietly reopen room the clamp had
+    // already closed.
+    const deltaSupplied = applyMeasuredOverride(
+      item.deltaSupplied,
+      item.measuredSupplied,
+    );
     // The two stages measured on work physically done are clamped at the
     // sanctioned quantity; the supply stage is not, for the reason
     // `computeFinalBillDelta` gives. From here down `deltaInstalled` and
@@ -261,7 +359,7 @@ export function computeMeasurementBook(input: {
     // reported as the Work's unbillable variation exposure.
     const deltaInstalled = clampToSanctioned({
       priorQuantity: item.priorInstalled,
-      deltaQuantity: item.deltaInstalled,
+      deltaQuantity: applyMeasuredOverride(item.deltaInstalled, item.measuredInstalled),
       sanctionedQuantity: item.sanctionedQuantity,
     });
     const deltaPac = clampToSanctioned({
@@ -270,12 +368,23 @@ export function computeMeasurementBook(input: {
       sanctionedQuantity: item.sanctionedQuantity,
     });
     const deltaFinalBill = input.isFinal ? computeFinalBillDelta(item) : '0';
+    // An ADJUSTED line stays on the book even when every stage reduces to
+    // zero, and that is the whole reason this flag exists. Without it the
+    // line vanishes from the preview the moment an operator types 0, and
+    // the field they would type into to undo it vanishes with it. Keeping
+    // it also keeps the rule this module exists to hold — preview, PDF
+    // and snapshot are the same computation — rather than showing a line
+    // that finalize would silently drop. `finalize` refuses a book whose
+    // lines all measure nothing, so a zeroed book still cannot be
+    // numbered.
+    const isAdjusted =
+      item.measuredSupplied !== null || item.measuredInstalled !== null;
     const hasDelta =
-      isPositiveDecimal(item.deltaSupplied) ||
+      isPositiveDecimal(deltaSupplied) ||
       isPositiveDecimal(deltaInstalled) ||
       isPositiveDecimal(deltaPac) ||
       isPositiveDecimal(deltaFinalBill);
-    if (!hasDelta) continue;
+    if (!hasDelta && !isAdjusted) continue;
 
     const resolution = resolvePaymentPercentages(input.matrix, item.paymentCategory);
     if (!resolution.resolved) {
@@ -298,7 +407,7 @@ export function computeMeasurementBook(input: {
         {
           stage: 'supply',
           percent: percentages.pctSupply,
-          deltaQuantity: item.deltaSupplied,
+          deltaQuantity: deltaSupplied,
         },
         {
           stage: 'installation',
@@ -315,14 +424,30 @@ export function computeMeasurementBook(input: {
     });
     const byStage = new Map(amounts.perStage.map((s) => [s.stage, s.amount]));
 
+    // Period language fires only for an AMC item whose schedule states a
+    // cadence (owner ruling Q3, 2026-08-19). Gating on the category as
+    // well as the columns keeps a supply item that happens to sit on a
+    // maintenance schedule reading in its own unit.
+    const amcCycle =
+      item.paymentCategory === 'AMC' &&
+      item.amcBillingPeriods !== null &&
+      item.amcCycleNoun !== null
+        ? {
+            totalQuantity: item.sanctionedQuantity,
+            billingPeriods: item.amcBillingPeriods,
+            cycleNoun: item.amcCycleNoun,
+          }
+        : undefined;
+
     const remark = computeMbRemark({
       unit: item.unitCode,
+      ...(amcCycle === undefined ? {} : { amcCycle }),
       stages: [
         {
           stage: 'supply',
           percent: percentages.pctSupply,
           priorCumulativeQuantity: item.priorSupplied,
-          deltaQuantity: item.deltaSupplied,
+          deltaQuantity: deltaSupplied,
         },
         {
           stage: 'installation',
@@ -354,8 +479,12 @@ export function computeMeasurementBook(input: {
       resolvedCategory: resolution.category,
       percentages,
       effectiveRate: item.effectiveRate,
-      deltaSupplied: item.deltaSupplied,
+      deltaSupplied,
       deltaInstalled,
+      sourceSupplied: item.deltaSupplied,
+      sourceInstalled: item.deltaInstalled,
+      overrideSupplied: item.measuredSupplied,
+      overrideInstalled: item.measuredInstalled,
       deltaPac,
       deltaFinalBill,
       priorSupplied: item.priorSupplied,
@@ -371,7 +500,41 @@ export function computeMeasurementBook(input: {
     };
     lines.push(line);
     totalAmount = addDecimalStrings(totalAmount, amounts.total);
+
+    // What the adjustment left out, in rupees: the same two stages
+    // priced at what the sources measure, less what they were priced at
+    // after the reduction. Computed only on a line that was actually
+    // adjusted, so an unadjusted book issues no arithmetic at all.
+    if (isAdjusted) {
+      const unreduced = computeStageAmounts({
+        effectiveRate: item.effectiveRate,
+        stages: [
+          {
+            stage: 'supply',
+            percent: percentages.pctSupply,
+            deltaQuantity: item.deltaSupplied,
+          },
+          {
+            stage: 'installation',
+            percent: percentages.pctInstallation,
+            deltaQuantity: clampToSanctioned({
+              priorQuantity: item.priorInstalled,
+              deltaQuantity: item.deltaInstalled,
+              sanctionedQuantity: item.sanctionedQuantity,
+            }),
+          },
+        ],
+      });
+      const reduced = addDecimalStrings(
+        byStage.get('supply') ?? '0.00',
+        byStage.get('installation') ?? '0.00',
+      );
+      adjustedAwayAmount = addDecimalStrings(
+        adjustedAwayAmount,
+        subtractDecimalStrings(unreduced.total, reduced),
+      );
+    }
   }
 
-  return { lines, totalAmount, unresolved };
+  return { lines, totalAmount, unresolved, adjustedAwayAmount };
 }

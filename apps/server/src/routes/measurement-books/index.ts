@@ -5,6 +5,7 @@ import type { ObjectStorage } from '@auto-mb/documents';
 import { registerMeasurementBookCloseRoute } from './close.js';
 import { registerMeasurementBookDraftingRoutes } from './drafting.js';
 import { registerMeasurementBookFinalizeRoutes } from './finalize.js';
+import { registerMeasurementBookMeasuredQuantityRoutes } from './measured-quantities.js';
 import { registerMeasurementBookMergeRoutes } from './merge.js';
 import { registerMeasurementBookRenderRoutes } from './render.js';
 import { registerMeasurementBookSourceRoutes } from './sources.js';
@@ -32,6 +33,7 @@ export function registerMeasurementBookRoutes(
   registerMeasurementBookDraftingRoutes(app, auth, database);
   registerMeasurementBookMergeRoutes(app, auth, database);
   registerMeasurementBookSourceRoutes(app, auth, database);
+  registerMeasurementBookMeasuredQuantityRoutes(app, auth, database);
   registerMeasurementBookFinalizeRoutes(app, auth, database);
   registerMeasurementBookCloseRoute(app, auth, database);
   registerMeasurementBookRenderRoutes(app, auth, database, storage, gotenbergUrl);

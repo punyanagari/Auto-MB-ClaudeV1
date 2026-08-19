@@ -185,6 +185,10 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the Measurement Book; the railway bill that settled this measurement is already recorded against it, and a closure is never re-taken.',
   MB_NOT_FINALIZED:
     'Finalize the Measurement Book first; a draft has measured nothing the railway could have billed.',
+  MB_MEASURED_ABOVE_SOURCE:
+    'Lower the figure to the quantity shown beside it, or select the challan or installation that carries the rest.',
+  AMC_CYCLE_INCOMPLETE:
+    'Enter both the number of billing periods and the word this schedule calls one of them, or clear both to remove the cycle.',
   TAX_INVOICE_STATUS_CONFLICT:
     'Reload the invoice; a submitted invoice is corrected by issuing a credit note against it, never by editing.',
   CREDIT_NOTE_STATUS_CONFLICT:

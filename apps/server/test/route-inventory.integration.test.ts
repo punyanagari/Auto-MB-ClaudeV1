@@ -301,6 +301,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ['GET /api/works/:id/correction-notices', 'grows per Work — next candidate'],
   ['GET /api/works/:id/pac-certificates', 'grows per Work — next candidate'],
   [
+    'GET /api/works/:id/amc-cycle-proposal',
+    "the next period's proposed certified quantity, one row per AMC item of each schedule that states a billing cycle (migration 0107). Bounded by the Work's own maintenance schedule, which is a handful of items and never grows with time — the proposal is recomputed, never accumulated, so a second page could only ever repeat the answer",
+  ],
+  [
     'GET /api/works/:id/measurement-books',
     'grows per Work; pack P11 owns this route this wave',
   ],

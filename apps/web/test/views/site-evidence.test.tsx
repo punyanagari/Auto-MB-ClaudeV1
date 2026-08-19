@@ -1092,6 +1092,11 @@ describe('MeasurementBooks workspace', () => {
     effectiveRate: '1.00',
     deltaSupplied: '5000.000',
     deltaInstalled: '0.000',
+    // What the claimed sources measure before any downward adjustment
+    // (migration 0106) — equal to the deltas above, which is what a line
+    // nobody adjusted looks like.
+    sourceSupplied: '5000.000',
+    sourceInstalled: '0.000',
     deltaPac: '0.000',
     deltaFinalBill: '0.000',
     priorSupplied: '0.000',
@@ -1113,6 +1118,7 @@ describe('MeasurementBooks workspace', () => {
     warnings: [],
     previewTotal: '4000.00',
     unbillableVariationExposure: '0.00',
+    measurementAdjustedAway: '0.00',
   };
 
   const FINAL_DETAIL = {
@@ -1122,6 +1128,7 @@ describe('MeasurementBooks workspace', () => {
     warnings: [],
     previewTotal: '4000.00',
     unbillableVariationExposure: '0.00',
+    measurementAdjustedAway: '0.00',
   };
 
   const CANDIDATES: Partial<ApiClient> = {

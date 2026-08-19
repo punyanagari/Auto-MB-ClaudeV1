@@ -123,3 +123,50 @@ export function acceptedRateFrom(
   }
   return formatScaled(divideRoundHalfUp(rate * factor, PERCENT_UNIT), RATE_SCALE);
 }
+
+/**
+ * THE COMPOUND SHAPE (owner ruling Q5, 2026-08-19, from PL-257/SBC):
+ * accepted = the NEGOTIATED per-item bid rate x (1 - the rebate on the
+ * total value).
+ *
+ * NOTHING CALLS THIS IN PRODUCTION YET, and that is deliberate rather
+ * than an oversight. The shape needs two figures the extraction cannot
+ * supply: PL-257's item table does not decompose at all — the negotiated
+ * Bid Rate column defeats the anchor tail, and the parser answers by
+ * keeping every raw line and raising `layout_junk` on all thirteen rows
+ * (`packages/loa-parser/test/amc-corpus.test.ts` pins exactly that).
+ * Wiring a caller before those rows parse would mean feeding it the
+ * ADVERTISED rate, which is the one number the ruling says is wrong.
+ * The rule is written and proved here against the letter's own printed
+ * totals; the caller lands with the SBC-shaped importer work that makes
+ * the rows readable.
+ *
+ * Nothing mis-prices meanwhile: a letter of this shape prints a non-zero
+ * `Rebate on Total Value`, which `detectUnexpectedRebate` flags at
+ * letter level, so it reaches a human before any rate is confirmed.
+ *
+ * A THIRD SHAPE, not a variation of the two above, and the difference is
+ * which number the percentage is applied TO. Shapes A and B apply a
+ * letter- or schedule-level tender result to the ADVERTISED rate,
+ * because that is the only rate those letters print per item. PL-257
+ * prints two: an advertised rate and a `Bid Rate/Unit Rate` the
+ * contractor negotiated down to, item by item — and then takes a further
+ * `Rebate on Total Value (%)` off the schedule's total. Its own totals
+ * prove which of the two the rebate multiplies: the schedule sums to
+ * 1,653,075.04 at the BID rates, and 1,653,075.04 x 0.99 is the letter's
+ * Net Bid Value of 1,636,544.29 exactly. Applying the rebate to the
+ * advertised rates reproduces neither figure.
+ *
+ * So the base is the bid rate and the multiplier is the rebate, and
+ * this is the same arithmetic `acceptedRateFrom` already does — one
+ * rate, one percentage, below par — named so a call site cannot pass the
+ * advertised rate to it by accident. Exact decimal throughout, at the
+ * rate column's own scale, like everything else here.
+ *
+ * A letter that prints bid rates and NO rebate passes '0': the accepted
+ * rate is then the bid rate, and it travels through the same formatting
+ * path so it is indistinguishable from any other 0%-below item.
+ */
+export function acceptedRateFromBid(bidRate: string, rebatePercent: string): string {
+  return acceptedRateFrom(bidRate, { percentage: rebatePercent, direction: 'below' });
+}
