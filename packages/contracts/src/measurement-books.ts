@@ -5,7 +5,10 @@ import {
   RateStringSchema,
   UuidSchema,
 } from './primitives.js';
-import { WorkItemPaymentCategorySchema } from './payment.js';
+import {
+  PaymentMatrixCategorySchema,
+  WorkItemPaymentCategorySchema,
+} from './payment.js';
 
 /**
  * Milestone 8 phase 2: the stage-wise Measurement Book lifecycle
@@ -281,16 +284,32 @@ const MeasurementBookLineSchema = Type.Object(
 );
 export type MeasurementBookLine = Static<typeof MeasurementBookLineSchema>;
 
-/** A draft-preview warning: an item that would appear on the MB but
- * whose category has no payment-matrix row to resolve through. */
+/**
+ * A draft-preview warning: an item that would appear on the MB but
+ * cannot be priced.
+ *
+ * `missingCategory` is a CLOSED union, not a bare string, so the two
+ * cases cannot be rendered as one. A category names the matrix row that
+ * has to be created; `NOT_SELECTED` says the item has no category at all
+ * (migration 0105) and there is no row to create — the remedy is a
+ * decision on the item. As a bare string the sentinel leaked to the
+ * screen verbatim, which sent the operator to add a "NOT_SELECTED" row
+ * that must never exist.
+ */
+export const MB_NOT_SELECTED_CATEGORY = 'NOT_SELECTED';
+
 const MeasurementBookWarningSchema = Type.Object(
   {
     workItemId: UuidSchema,
     itemNumber: Type.String(),
-    missingCategory: Type.String(),
+    missingCategory: Type.Union([
+      PaymentMatrixCategorySchema,
+      Type.Literal(MB_NOT_SELECTED_CATEGORY),
+    ]),
   },
   { additionalProperties: false },
 );
+export type MeasurementBookWarning = Static<typeof MeasurementBookWarningSchema>;
 
 export const MeasurementBookDetailResponseSchema = Type.Object(
   {

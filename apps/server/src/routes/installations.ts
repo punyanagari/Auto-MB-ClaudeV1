@@ -1,4 +1,5 @@
 import {
+  byItemNumber,
   CancelInstallationRequestSchema,
   InstallationListResponseSchema,
   InstallationRegisterQuerySchema,
@@ -236,11 +237,15 @@ export function registerInstallationRoutes(
         return {
           installations: paged.rows.map(toInstallation),
           nextCursor: paged.nextCursor,
-          itemSummaries: summaries.map((summary) => ({
-            workItemId: summary.work_item_id,
-            itemNumber: summary.item_number,
-            installedQuantity: summary.installed_quantity,
-          })),
+          // Natural order: `item_number` is text and the SQL sorts A1/10
+          // before A1/2.
+          itemSummaries: byItemNumber(
+            summaries.map((summary) => ({
+              workItemId: summary.work_item_id,
+              itemNumber: summary.item_number,
+              installedQuantity: summary.installed_quantity,
+            })),
+          ),
         };
       });
     },

@@ -22,7 +22,7 @@ import { readDetail } from './internal.js';
  * unmeasured two are not lost — they stay outside this book exactly as an
  * over-installed quantity does, and the final Measurement Book's
  * final-bill stage sweeps them up wherever the payment matrix gives that
- * stage a share (`docs/UX.md` § 24).
+ * stage a share (`docs/UX.md` § 25).
  *
  * REPLACE-THE-WHOLE-SET, exactly like `PUT .../sources` next door: the
  * body is the draft's complete set of adjustments, an item absent from it

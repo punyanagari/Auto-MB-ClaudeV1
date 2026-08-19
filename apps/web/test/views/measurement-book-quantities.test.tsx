@@ -11,7 +11,7 @@ import { billableBook, ORG_ID, stubApi, WORK_ID } from './helpers.js';
 
 /**
  * The editable measured quantity on a draft Measurement Book's lines
- * (owner ruling of 2026-08-19; `docs/UX.md` § 24).
+ * (owner ruling of 2026-08-19; `docs/UX.md` § 25).
  *
  * The assertions here are the ones the pull request stands on in place of
  * screenshots: that the operator sees BOTH figures, that an untouched

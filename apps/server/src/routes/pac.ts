@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  byItemNumber,
   CancelPacCertificateRequestSchema,
   PacCertificateListResponseSchema,
   PacCertificateSchema,
@@ -149,10 +150,15 @@ function toCertificate(
           typeof (entry as ItemLine).certifiedQuantity === 'string',
       )
     : [];
-  const priced = lines.map((line) => ({
-    ...line,
-    releasedValue: lineReleasedValue(releasedValues, line),
-  }));
+  // Natural order. The stored aggregate is ordered by `item_number`,
+  // which is text, so it holds A1/10 before A1/2; the certificate is
+  // read beside the schedule it certifies.
+  const priced = byItemNumber(
+    lines.map((line) => ({
+      ...line,
+      releasedValue: lineReleasedValue(releasedValues, line),
+    })),
+  );
   return {
     id: row.id,
     workId: row.work_id,
@@ -307,15 +313,19 @@ async function readItemSummaries(
     where wi.work_id = ${workId} and wi.deleted_at is null
     order by wi.item_number
   `;
-  return rows.map((row) => ({
-    workItemId: row.work_item_id,
-    itemNumber: row.item_number,
-    installedQuantity: row.installed_quantity,
-    certificationBasis: row.certification_basis,
-    supportingQuantity: row.supporting_quantity,
-    pacCertifiedQuantity: row.pac_certified_quantity,
-    availableQuantity: row.available_quantity,
-  }));
+  // Natural order: `item_number` is text and the SQL sorts A1/10 before
+  // A1/2, which is not the order the schedule is written in.
+  return byItemNumber(
+    rows.map((row) => ({
+      workItemId: row.work_item_id,
+      itemNumber: row.item_number,
+      installedQuantity: row.installed_quantity,
+      certificationBasis: row.certification_basis,
+      supportingQuantity: row.supporting_quantity,
+      pacCertifiedQuantity: row.pac_certified_quantity,
+      availableQuantity: row.available_quantity,
+    })),
+  );
 }
 
 export function registerPacRoutes(
@@ -561,14 +571,16 @@ export function registerPacRoutes(
         const offending = capRows.filter((row) => row.exceeded);
         if (offending.length > 0) {
           const details: PacCapExceededDetails = {
-            items: offending.map((row) => ({
-              workItemId: row.work_item_id,
-              itemNumber: row.item_number,
-              basis: row.basis,
-              supporting: row.supporting,
-              covered: row.covered,
-              available: row.available,
-            })),
+            items: byItemNumber(
+              offending.map((row) => ({
+                workItemId: row.work_item_id,
+                itemNumber: row.item_number,
+                basis: row.basis,
+                supporting: row.supporting,
+                covered: row.covered,
+                available: row.available,
+              })),
+            ),
           };
           // R18's requirement: the error states the supporting quantity,
           // what is already covered, and what is left. Two codes rather

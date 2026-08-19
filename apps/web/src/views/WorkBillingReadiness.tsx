@@ -12,7 +12,7 @@ import type { ApiClient } from '../api.js';
 // while that screen shows "Purely installation" sends them looking for a
 // row that is not there under that name.
 import { missingOrganisationFacts } from '../lib/organisation-facts.js';
-import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
+import { categoryLabelOf } from '../lib/payment-matrix.js';
 import { useReload } from '../lib/view-state.js';
 import { mastersHash, SETTINGS_HASH, workHash } from '../lib/workspace-routes.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
@@ -117,12 +117,29 @@ export function WorkBillingReadiness({
     );
   }
 
+  // Two different ways an item cannot be priced, and two different
+  // remedies. A NULL category used to be read as UNCATEGORISED here, so a
+  // Work whose items nobody had categorised reported READY while
+  // finalisation was about to refuse — a false green on the one screen
+  // whose whole job is to say what will refuse.
   const usedCategories = [
-    ...new Set(workItems.map((item) => item.paymentCategory ?? 'UNCATEGORISED')),
+    ...new Set(
+      workItems
+        .map((item) => item.paymentCategory ?? null)
+        .filter(
+          (category): category is NonNullable<typeof category> => category !== null,
+        ),
+    ),
   ];
   const matrixCategories = new Set(matrix.map((row) => row.category as string));
   const missingCategories = usedCategories.filter(
     (category) => !matrixCategories.has(category),
+  );
+  // `?? null` because an older client payload may omit the field, and an
+  // absent category is the same thing as an unchosen one — the idiom
+  // WorkPaymentSetup already uses.
+  const unselectedItems = workItems.filter(
+    (item) => (item.paymentCategory ?? null) === null,
   );
 
   const activeClients = contacts.filter(
@@ -137,8 +154,25 @@ export function WorkBillingReadiness({
       label: 'Payment matrix covers every item category',
       ok: missingCategories.length === 0,
       detail: `No matrix row for: ${missingCategories
-        .map((category) => CATEGORY_LABELS[category] ?? category)
+        .map((category) => categoryLabelOf(category, matrix))
         .join(', ')}. The Measurement Book cannot be finalized until the rows exist.`,
+      fix: {
+        label: 'Open the payment matrix',
+        hash: workHash(workId, 'schedules'),
+      },
+    },
+    {
+      key: 'item-categories',
+      label: 'Every item has a payment category',
+      ok: unselectedItems.length === 0,
+      detail: `${String(unselectedItems.length)} item${
+        unselectedItems.length === 1 ? '' : 's'
+      } (${unselectedItems
+        .slice(0, 5)
+        .map((item) => item.itemNumber)
+        .join(
+          ', ',
+        )}${unselectedItems.length > 5 ? ', …' : ''}) still say Not selected. An item with no category bills nothing, and no matrix row changes that — the Measurement Book refuses to finalize while one is on it.`,
       fix: {
         label: 'Open the payment matrix',
         hash: workHash(workId, 'schedules'),

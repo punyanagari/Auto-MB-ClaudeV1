@@ -65,7 +65,11 @@ function itemInput(overrides: Partial<MbItemInput>): MbItemInput {
     itemNumber: '1',
     description: fixture.case.item.description,
     unitCode: fixture.case.item.unit,
-    paymentCategory: null,
+    // The workbook's item bills through the Work's residual row. It was
+    // NULL here until migration 0105 gave that state its own meaning
+    // ("not selected"), which resolves through nothing; the row this
+    // fixture has always billed against is the UNCATEGORISED one.
+    paymentCategory: 'UNCATEGORISED',
     effectiveRate: '100.00',
     deltaSupplied: '0',
     deltaInstalled: '0',
@@ -256,8 +260,8 @@ describe('computeMeasurementBook over the workbook scenario', () => {
         }),
       ],
     });
-    // The uncategorised item resolves; the two categorised items do not
-    // fall back to UNCATEGORISED (resolution never substitutes rows).
+    // The residual-category item resolves; the two other categorised
+    // items do not fall back to it (resolution never substitutes rows).
     expect(computation.lines).toHaveLength(1);
     expect(computation.lines[0]?.itemNumber).toBe('3');
     expect(computation.unresolved).toEqual([

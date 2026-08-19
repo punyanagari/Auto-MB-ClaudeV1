@@ -127,7 +127,6 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createInstrument: vi.fn(),
     updateInstrument: vi.fn(),
     listMbEntries: vi.fn().mockResolvedValue([]),
-    recordMbEntry: vi.fn(),
     listBills: vi.fn().mockResolvedValue({ bills: [], summary: NO_BILLING }),
     setBillStatus: vi.fn(),
     workTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),

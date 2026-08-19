@@ -62,6 +62,7 @@ interface MatrixRowRecord {
   pct_installation: string;
   pct_pac: string;
   pct_final_bill: string;
+  category_label: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -75,6 +76,7 @@ function toMatrixRow(row: MatrixRowRecord): PaymentMatrixRow {
     pctInstallation: row.pct_installation,
     pctPac: row.pct_pac,
     pctFinalBill: row.pct_final_bill,
+    categoryLabel: row.category_label,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
@@ -401,22 +403,30 @@ function nameFirst(labels: readonly string[]): string {
  * client that computed the coverage differently.
  *
  * The resolution is the one `payment-matrix.ts` performs at billing
- * time: an item's own category, and `UNCATEGORISED` when it has none. A
+ * time: an item's own category, and nothing at all when it has none. A
  * categorised item deliberately does not fall back, so a SUPPLY item on
  * a Work with only an UNCATEGORISED row is uncovered and named here.
+ *
+ * An item with NO category chosen is skipped, not named (migration
+ * 0105). It resolves through no row, so there is no row this save could
+ * be asked to add — the remedy is a decision on the item, and the
+ * Measurement Book asks for it by item name at finalisation. Naming a
+ * category here for an item that has none would send the operator to
+ * configure a row that changes nothing.
  */
 async function assertEveryItemResolves(
   tx: TransactionSql,
   workId: string,
 ): Promise<void> {
   const uncovered = await tx<{ category: string }[]>`
-    select distinct coalesce(wi.payment_category, 'UNCATEGORISED') as category
+    select distinct wi.payment_category as category
     from work_items wi
     where wi.work_id = ${workId} and wi.deleted_at is null
+      and wi.payment_category is not null
       and not exists (
         select 1 from payment_matrices pm
         where pm.work_id = wi.work_id
-          and pm.category = coalesce(wi.payment_category, 'UNCATEGORISED')
+          and pm.category = wi.payment_category
       )
     order by 1
   `;
@@ -441,7 +451,8 @@ async function assertEveryItemResolves(
 const MATRIX_COLUMNS_SQL = `
   id, work_id, category, pct_supply::text as pct_supply,
   pct_installation::text as pct_installation, pct_pac::text as pct_pac,
-  pct_final_bill::text as pct_final_bill, created_at, updated_at
+  pct_final_bill::text as pct_final_bill, category_label,
+  created_at, updated_at
 `;
 
 /**
@@ -478,28 +489,52 @@ async function writeMatrixRow(
       pct_installation: string;
       pct_pac: string;
       pct_final_bill: string;
+      category_label: string | null;
     }[]
   >`
     select pct_supply::text as pct_supply,
            pct_installation::text as pct_installation,
            pct_pac::text as pct_pac,
-           pct_final_bill::text as pct_final_bill
+           pct_final_bill::text as pct_final_bill,
+           category_label
     from payment_matrices
     where work_id = ${workId} and category = ${category}
     for update
   `;
 
+  // The residual row's per-Work name (migration 0105), and only that
+  // row's. Refused here as well as by the CHECK: a caller labelling the
+  // SUPPLY row is asking for a second name for a category the whole
+  // product agrees on, and a constraint violation would not say so.
+  if (body.categoryLabel !== undefined && category !== 'UNCATEGORISED') {
+    throw httpError(
+      400,
+      'PAYMENT_MATRIX_CATEGORY_LABEL_NOT_ALLOWED',
+      'Only the uncategorised-items row carries a per-Work name; the other categories are named the same on every Work.',
+    );
+  }
+  // Omitted keeps what is stored; explicit null clears it. A blank or
+  // all-space name is a cleared name, not a name made of spaces.
+  const label =
+    body.categoryLabel === undefined
+      ? (existing?.category_label ?? null)
+      : body.categoryLabel === null || body.categoryLabel.trim().length === 0
+        ? null
+        : body.categoryLabel.trim();
+
   const rows = (await tx.unsafe(
     `insert into payment_matrices (
        organisation_id, work_id, category, pct_supply,
-       pct_installation, pct_pac, pct_final_bill, created_by_user_id
+       pct_installation, pct_pac, pct_final_bill, category_label,
+       created_by_user_id
      )
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      on conflict (organisation_id, work_id, category) do update set
        pct_supply = excluded.pct_supply,
        pct_installation = excluded.pct_installation,
        pct_pac = excluded.pct_pac,
-       pct_final_bill = excluded.pct_final_bill
+       pct_final_bill = excluded.pct_final_bill,
+       category_label = excluded.category_label
      returning ${MATRIX_COLUMNS_SQL}`,
     [
       organisationId,
@@ -509,6 +544,7 @@ async function writeMatrixRow(
       body.pctInstallation,
       body.pctPac,
       body.pctFinalBill,
+      label,
       userId,
     ],
   )) as unknown as MatrixRowRecord[];
@@ -523,12 +559,14 @@ async function writeMatrixRow(
           pctInstallation: existing.pct_installation,
           pctPac: existing.pct_pac,
           pctFinalBill: existing.pct_final_bill,
+          categoryLabel: existing.category_label,
         },
     {
       pctSupply: row.pct_supply,
       pctInstallation: row.pct_installation,
       pctPac: row.pct_pac,
       pctFinalBill: row.pct_final_bill,
+      categoryLabel: row.category_label,
     },
   );
   await audit(

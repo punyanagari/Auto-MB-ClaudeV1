@@ -8,6 +8,7 @@ import {
   PAYMENT_MATRIX_CATEGORIES,
   LoaDocumentListResponseSchema,
   UploadLoaQuerySchema,
+  byItemNumber,
   WorkDetailResponseSchema,
   WorkListResponseSchema,
   type ConfirmPaymentMatrixRow,
@@ -1181,12 +1182,29 @@ export function registerLoaRoutes(
           );
         }
 
+        // The completion date the reviewer confirmed, if the letter gave
+        // one to propose. Refused rather than clamped when it precedes
+        // the letter: the column's own CHECK (migration 0011) would
+        // otherwise report it as a constraint violation with nothing
+        // naming the field, and the same sentence is what
+        // `PUT /api/works/:id/completion-dates` says.
+        if (
+          body.completionDate !== undefined &&
+          body.completionDate < body.letterDate
+        ) {
+          throw httpError(
+            400,
+            'COMPLETION_DATE_INVALID',
+            `The completion date cannot precede the LOA letter date (${body.letterDate}).`,
+          );
+        }
         const [work] = await tx<WorkRow[]>`
             insert into works (
               organisation_id, work_code, letter_number, letter_date, title,
               advertised_value, contract_value, pricing_shape,
               letter_percentage, letter_percentage_direction,
               gst_basis, gst_rate,
+              original_completion_date, current_completion_date,
               pbg_required_amount, pbg_submission_days, pbg_extension_days,
               pbg_penal_interest_percent, pbg_requirement_source,
               created_by_user_id
@@ -1198,6 +1216,7 @@ export function registerLoaRoutes(
               ${body.letterPercentage ?? null},
               ${body.letterPercentageDirection ?? null},
               ${gstBasis}, ${gstRate},
+              ${body.completionDate ?? null}, ${body.completionDate ?? null},
               ${pbg?.requiredAmount ?? null}, ${pbg?.submissionDays ?? null},
               ${pbg?.extensionDays ?? null}, ${pbg?.penalInterestPercent ?? null},
               ${pbgSource === null ? null : tx.json(pbgSource as never)},
@@ -1556,6 +1575,11 @@ export function registerLoaRoutes(
                 // did this Work come from" without a join.
                 supersessionId,
                 workCode: body.workCode,
+                // The contractual deadline as confirmed. Recorded on the
+                // creation event rather than as a second
+                // `work.completion_date_set`: it was set at creation, and
+                // the trail should say so once.
+                completionDate: body.completionDate ?? null,
                 scheduleCount: body.schedules.length,
                 itemCount: body.schedules.reduce(
                   (total, schedule) => total + schedule.items.length,
@@ -1814,33 +1838,45 @@ export function registerLoaRoutes(
           position: schedule.position,
           amcBillingPeriods: schedule.amc_billing_periods,
           amcCycleNoun: schedule.amc_cycle_noun,
-          items: itemRows
-            .filter((item) => item.schedule_id === schedule.id)
-            .map((item) => ({
-              id: item.id,
-              scheduleId: item.schedule_id,
-              itemNumber: item.item_number,
-              description: item.description,
-              unitCode: item.unit_code,
-              awardedQuantity: item.awarded_quantity,
-              effectiveRate: canonicalRateText(item.effective_rate),
-              // Amendment overlays (Milestone 6): null = original applies.
-              effectiveQuantity: item.effective_quantity,
-              effectiveUnitRate:
-                item.effective_unit_rate === null
-                  ? null
-                  : canonicalRateText(item.effective_unit_rate),
-              effectiveDescription: item.effective_description,
-              effectiveUnit: item.effective_unit,
-              amendmentAdded: item.amendment_added,
-              requiresSerials: item.requires_serials,
-              installedQuantity: item.installed_quantity,
-              pendingVariation: item.pending_variation,
-              // Milestone 8: null = uncategorised (resolves through the
-              // Work's UNCATEGORISED matrix row).
-              paymentCategory: item.payment_category,
-              pacCertifiedQuantity: item.pac_certified_quantity,
-            })),
+          // Natural order, not the text order the column sorts in.
+          // `item_number` is text, so `ORDER BY item_number` reads A1/1,
+          // A1/10, A1/11, A1/2 — an order no schedule is written in. This
+          // one read builds the Work workspace's item list, so sorting it
+          // here is what puts the payment matrix, the schedules editor,
+          // the ledgers and every item picker into the letter's own
+          // order. Postgres has no numeric-aware collation configured, so
+          // the SQL order is a stable starting point and the reading is
+          // decided in one place both sides of the wire share.
+          items: byItemNumber(
+            itemRows
+              .filter((item) => item.schedule_id === schedule.id)
+              .map((item) => ({
+                id: item.id,
+                scheduleId: item.schedule_id,
+                itemNumber: item.item_number,
+                description: item.description,
+                unitCode: item.unit_code,
+                awardedQuantity: item.awarded_quantity,
+                effectiveRate: canonicalRateText(item.effective_rate),
+                // Amendment overlays (Milestone 6): null = original applies.
+                effectiveQuantity: item.effective_quantity,
+                effectiveUnitRate:
+                  item.effective_unit_rate === null
+                    ? null
+                    : canonicalRateText(item.effective_unit_rate),
+                effectiveDescription: item.effective_description,
+                effectiveUnit: item.effective_unit,
+                amendmentAdded: item.amendment_added,
+                requiresSerials: item.requires_serials,
+                installedQuantity: item.installed_quantity,
+                pendingVariation: item.pending_variation,
+                // Migration 0105: null = NOT SELECTED — it resolves
+                // through no matrix row at all. UNCATEGORISED is a
+                // value of its own now, and it is a choice.
+                paymentCategory: item.payment_category,
+                pacCertifiedQuantity: item.pac_certified_quantity,
+              })),
+          ),
         }));
         // The Work page's Installations tally. The records themselves are
         // read only when their tab is opened — the list expands every

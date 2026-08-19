@@ -814,7 +814,7 @@ export function detectBannedItemsBranch(
 // ---------------------------------------------------------------------------
 //
 // Two triggers added for the owner's AMC billing-cycle ruling of
-// 2026-08-19 (`docs/UX.md` § 25). Both exist because the importer has to
+// 2026-08-19 (`docs/UX.md` § 26). Both exist because the importer has to
 // propose a maintenance cadence and must never guess one, and both are
 // measured against the corpus rather than reasoned about: the first fires
 // on 7 of the corpus's 24 schedules, the second on 1 letter.

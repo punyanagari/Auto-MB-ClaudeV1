@@ -22,7 +22,12 @@
  * shown before finalizing is what finalizing writes.
  */
 
-import type { WorkItemPaymentCategory } from '@auto-mb/contracts';
+import {
+  MB_NOT_SELECTED_CATEGORY,
+  byItemNumber,
+  type PaymentMatrixCategory,
+  type WorkItemPaymentCategory,
+} from '@auto-mb/contracts';
 import {
   addDecimalStrings,
   computeMbRemark,
@@ -91,8 +96,9 @@ export interface MbComputedLine {
   readonly description: string;
   readonly unitCode: string;
   readonly paymentCategory: WorkItemPaymentCategory | null;
-  /** The matrix row the item resolved through ('UNCATEGORISED' for
-   * uncategorised items). */
+  /** The matrix row the item resolved through. Always the item's own
+   * category since migration 0105 — an item with none resolves through
+   * nothing and never reaches a line. */
   readonly resolvedCategory: string;
   readonly percentages: PaymentMatrixPercentages;
   readonly effectiveRate: string;
@@ -137,7 +143,11 @@ export interface MbComputedLine {
 interface MbUnresolvedItem {
   readonly workItemId: string;
   readonly itemNumber: string;
-  readonly missingCategory: string;
+  /** The matrix row that has to be created, or `NOT_SELECTED` when the
+   * item has no category at all and no row would help. A closed union on
+   * the wire too (`MeasurementBookWarningSchema`), so the sentinel cannot
+   * be rendered as if it named a category. */
+  readonly missingCategory: PaymentMatrixCategory | typeof MB_NOT_SELECTED_CATEGORY;
 }
 
 export interface MbComputation {
@@ -305,9 +315,12 @@ export function computeMeasurementBook(input: {
   const unresolved: MbUnresolvedItem[] = [];
   let totalAmount = '0.00';
 
-  const ordered = [...input.items].sort((a, b) =>
-    a.itemNumber.localeCompare(b.itemNumber, 'en'),
-  );
+  // Natural order (`compareItemNumbers`), which is the order the letter's
+  // schedule is written in: A1/2 before A1/10, not after it. A finalized
+  // MB's line order is snapshotted from this sort and printed, so a
+  // character-by-character sort put every item past the ninth in a place
+  // the reader has to hunt for.
+  const ordered = byItemNumber(input.items);
 
   for (const item of ordered) {
     // The operator's downward adjustment comes FIRST, because it states
@@ -360,7 +373,11 @@ export function computeMeasurementBook(input: {
       unresolved.push({
         workItemId: item.workItemId,
         itemNumber: item.itemNumber,
-        missingCategory: resolution.missingCategory,
+        // NULL from the resolver means the item has no category YET, so
+        // there is no row to name. `NOT_SELECTED` is that state on the
+        // wire — a token the finalize route turns into the sentence
+        // that says the remedy is a decision, not a matrix row.
+        missingCategory: resolution.missingCategory ?? MB_NOT_SELECTED_CATEGORY,
       });
       continue;
     }

@@ -444,7 +444,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   const CHALLAN_ID = '44444444-4444-4444-8444-444444444444';
   const CHALLAN_ITEM_ID = '66666666-6666-4666-8666-666666666666';
   // The open DRAFT Measurement Book, whose preview carries the editable
-  // measured-quantity fields (docs/UX.md section 24).
+  // measured-quantity fields (docs/UX.md § 25).
   const MB_DRAFT_ID = 'eeeeeeee-9999-4999-8999-eeeeeeeeeeee';
   // The register row the scan opens, and the document behind it.
   const INVOICE_ID = '88888888-8888-4888-8888-888888888888';
@@ -1170,7 +1170,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
     ),
   );
   // The draft's preview, so the measurement leg can scan the editable
-  // measured-quantity fields (docs/UX.md § 24) where colour actually
+  // measured-quantity fields (docs/UX.md § 25) where colour actually
   // lands on them: a field, its claimed-quantity description beside it,
   // and the amount the pair prices.
   await page.route(`**/api/measurement-books/${MB_DRAFT_ID}`, (route) =>
@@ -1312,7 +1312,7 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   await expectNoAxeViolations(page, 'work detail — measurement');
 
   // The DRAFT's preview, scanned separately because that is where the
-  // editable measured quantity lives (docs/UX.md section 24): a field,
+  // editable measured quantity lives (docs/UX.md § 25): a field,
   // the claimed figure beside it as its own description, and the amount
   // the pair prices. The register above carries none of them.
   await page.getByRole('button', { name: 'Draft', exact: true }).click();

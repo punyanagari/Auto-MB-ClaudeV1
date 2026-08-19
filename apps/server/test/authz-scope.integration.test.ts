@@ -331,18 +331,15 @@ describe('site role evidence permissions', () => {
     });
     expect(receipt.statusCode, receipt.body).toBe(201);
 
+    // The loose site-measurement register lost its writer (2026-08-19),
+    // so what site staff have here is the read. The receipt above is the
+    // evidence this role still records.
     const measurement = await authed(site, {
-      method: 'POST',
+      method: 'GET',
       url: `/api/works/${workAId}/mb-entries`,
       organisationId,
-      payload: {
-        workItemId: itemAId,
-        deliveryChallanId: challanAId,
-        measuredQuantity: '1.000',
-        measuredOn: '2026-08-08',
-      },
     });
-    expect(measurement.statusCode, measurement.body).toBe(201);
+    expect(measurement.statusCode, measurement.body).toBe(200);
 
     const draft = await authed(site, {
       method: 'POST',

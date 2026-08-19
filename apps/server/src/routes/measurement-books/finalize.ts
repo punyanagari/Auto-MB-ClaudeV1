@@ -1,4 +1,5 @@
 import {
+  MB_NOT_SELECTED_CATEGORY,
   BillSchema,
   CancelMeasurementBookRequestSchema,
   MeasurementBookDetailResponseSchema,
@@ -235,13 +236,22 @@ export function registerMeasurementBookFinalizeRoutes(
           const details: MbPercentagesUnresolvedDetails = {
             items: [...computation.unresolved],
           };
+          // Two different remedies, so two different sentences. An item
+          // with no category chosen (migration 0105) needs a decision,
+          // not a matrix row, and telling its operator to "add the
+          // missing NOT_SELECTED row" would send them looking for a row
+          // that cannot exist.
           const names = computation.unresolved
-            .map((item) => `${item.itemNumber} (missing ${item.missingCategory} row)`)
+            .map((item) =>
+              item.missingCategory === MB_NOT_SELECTED_CATEGORY
+                ? `${item.itemNumber} (no payment category chosen)`
+                : `${item.itemNumber} (missing ${item.missingCategory} row)`,
+            )
             .join('; ');
           throw httpError(
             409,
             'MB_PERCENTAGES_UNRESOLVED',
-            `The payment matrix cannot price every item on this Measurement Book — ${names}. Add the missing matrix rows and retry.`,
+            `The payment matrix cannot price every item on this Measurement Book — ${names}. Choose a payment category for every item named, add the missing matrix rows, and retry.`,
             details,
           );
         }

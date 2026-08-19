@@ -524,11 +524,11 @@ beforeAll(async () => {
   await admin`
     insert into work_items (
       id, organisation_id, work_id, schedule_id, item_number, description,
-      unit_code, awarded_quantity, effective_rate
+      unit_code, awarded_quantity, effective_rate, payment_category
     )
     values (
       ${itemId}, ${organisationId}, ${workId}, ${scheduleId}, '1',
-      'Signalling cable', 'mtr', 10000.000, 100.00
+      'Signalling cable', 'mtr', 10000.000, 100.00, 'UNCATEGORISED'
     )
   `;
   await admin`
