@@ -7,7 +7,10 @@ import type {
   WorkItem,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
-import { formatInr } from '../format.js';
+// `formatRate` left with the read-only lines table when that half of this
+// view became the shared `PurchaseOrderPanel`; `todayIso` stays, because
+// the create form is still here.
+import { formatInr, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -216,7 +219,13 @@ export function WorkPurchaseOrders({
               <FieldRow>
                 <Field>
                   <label htmlFor="po-date">PO date</label>
-                  <input id="po-date" name="po-date" type="date" required />
+                  <input
+                    id="po-date"
+                    name="po-date"
+                    type="date"
+                    required
+                    defaultValue={todayIso()}
+                  />
                 </Field>
                 <Field>
                   <label htmlFor="po-expected">Expected by (optional)</label>

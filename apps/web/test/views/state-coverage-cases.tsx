@@ -402,7 +402,7 @@ export const STATE_CASES: readonly StateCase[] = [
         organisationId={ORG_ID}
         workId={WORK_ID}
         canModify
-        workItems={[]}
+        schedules={[]}
       />
     ),
     retry: /Retry PAC certificates/,
@@ -420,7 +420,7 @@ export const STATE_CASES: readonly StateCase[] = [
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[]}
+        schedules={[]}
         canModify
         onItemCategoryChanged={noop}
       />
@@ -440,7 +440,7 @@ export const STATE_CASES: readonly StateCase[] = [
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[]}
+        schedules={[]}
         canModify
         onItemCategoryChanged={noop}
       />

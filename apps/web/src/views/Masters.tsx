@@ -17,6 +17,7 @@ import type {
 import { formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
+import { useReveal } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
@@ -91,7 +92,13 @@ function useMasterList<T>(
     setRows(null);
     reload();
   }, [reload]);
-  return { rows, reload };
+  /* Every tab on this screen is one form above one list, which is the
+   * exact arrangement the reveal exists for: the form is at the top, the
+   * masters run to hundreds of rows, and a new contact lands wherever the
+   * server's ordering puts it — frequently off screen. Carried by the
+   * shared list hook so all six tabs get it from the same place. */
+  const { reveal, revealProps } = useReveal();
+  return { rows, reload, reveal, revealProps };
 }
 
 function RetiredFilter({
@@ -240,7 +247,11 @@ function ItemsTab({ api, organisationId, canModify }: MastersProps) {
     },
     [api, organisationId],
   );
-  const { rows, reload } = useMasterList(load, includeRetired, setError);
+  const { rows, reload, reveal, revealProps } = useMasterList(
+    load,
+    includeRetired,
+    setError,
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -264,7 +275,7 @@ function ItemsTab({ api, organisationId, canModify }: MastersProps) {
     setError(null);
     setNotice(null);
     try {
-      await api.saveCanonicalItem(organisationId, editing?.id ?? null, {
+      const saved = await api.saveCanonicalItem(organisationId, editing?.id ?? null, {
         name: formValue(data, 'name').trim(),
         groupName: formValue(data, 'groupName').trim(),
         defaultUnit: formValue(data, 'defaultUnit').trim(),
@@ -275,6 +286,7 @@ function ItemsTab({ api, organisationId, canModify }: MastersProps) {
       setNotice(editing === null ? 'Canonical item added.' : 'Canonical item updated.');
       setEditing(null);
       form.reset();
+      reveal(saved.id);
       reload();
     } catch (cause) {
       setError(errorMessage(cause, 'The canonical item could not be saved.'));
@@ -289,6 +301,7 @@ function ItemsTab({ api, organisationId, canModify }: MastersProps) {
     setNotice(null);
     try {
       await api.setCanonicalItemActive(organisationId, row.id, active);
+      reveal(row.id);
       setNotice(
         active
           ? `${row.name} reactivated.`
@@ -355,7 +368,7 @@ function ItemsTab({ api, organisationId, canModify }: MastersProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">
                   <span className="flex flex-col gap-0.5">
                     <span>{row.name}</span>
@@ -533,7 +546,11 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     (retired: boolean) => api.listContacts(organisationId, { includeRetired: retired }),
     [api, organisationId],
   );
-  const { rows, reload } = useMasterList(load, includeRetired, setError);
+  const { rows, reload, reveal, revealProps } = useMasterList(
+    load,
+    includeRetired,
+    setError,
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -572,7 +589,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     setError(null);
     setNotice(null);
     try {
-      await api.saveContact(organisationId, editing?.id ?? null, {
+      const saved = await api.saveContact(organisationId, editing?.id ?? null, {
         designation: formValue(data, 'designation').trim(),
         ...(address !== undefined ? { address } : {}),
         ...(contactPerson !== undefined ? { contactPerson } : {}),
@@ -597,6 +614,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
       setNotice(editing === null ? 'Contact added.' : 'Contact updated.');
       startEditing(null);
       form.reset();
+      reveal(saved.id);
       reload();
     } catch (cause) {
       setError(errorMessage(cause, 'The contact could not be saved.'));
@@ -611,6 +629,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
     setNotice(null);
     try {
       await api.setContactActive(organisationId, row.id, active);
+      reveal(row.id);
       setNotice(
         active
           ? `${row.designation} reactivated.`
@@ -667,7 +686,7 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">{row.designation}</th>
                 <td className={wrapCell}>
                   {[
@@ -1039,7 +1058,11 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
     (retired: boolean) => api.listLocationMasters(organisationId, retired),
     [api, organisationId],
   );
-  const { rows, reload } = useMasterList(load, includeRetired, setError);
+  const { rows, reload, reveal, revealProps } = useMasterList(
+    load,
+    includeRetired,
+    setError,
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1049,13 +1072,14 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
     setError(null);
     setNotice(null);
     try {
-      await api.saveLocationMaster(organisationId, editing?.id ?? null, {
+      const saved = await api.saveLocationMaster(organisationId, editing?.id ?? null, {
         name: formValue(data, 'name').trim(),
         kind: (formValue(data, 'kind') || 'other') as LocationKind,
       });
       setNotice(editing === null ? 'Location added.' : 'Location updated.');
       setEditing(null);
       form.reset();
+      reveal(saved.id);
       reload();
     } catch (cause) {
       setError(errorMessage(cause, 'The location could not be saved.'));
@@ -1070,6 +1094,7 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
     setNotice(null);
     try {
       await api.setLocationMasterActive(organisationId, row.id, active);
+      reveal(row.id);
       setNotice(active ? `${row.name} reactivated.` : `${row.name} retired.`);
       reload();
     } catch (cause) {
@@ -1116,7 +1141,7 @@ function LocationsTab({ api, organisationId, canModify }: MastersProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">{row.name}</th>
                 <td>{LOCATION_KIND_LABELS[row.kind]}</td>
                 <td>
@@ -1217,7 +1242,11 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
     (retired: boolean) => api.listUnitMasters(organisationId, retired),
     [api, organisationId],
   );
-  const { rows, reload } = useMasterList(load, includeRetired, setError);
+  const { rows, reload, reveal, revealProps } = useMasterList(
+    load,
+    includeRetired,
+    setError,
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1227,12 +1256,13 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
     setError(null);
     setNotice(null);
     try {
-      await api.saveUnitMaster(organisationId, editing?.id ?? null, {
+      const saved = await api.saveUnitMaster(organisationId, editing?.id ?? null, {
         name: formValue(data, 'name').trim(),
       });
       setNotice(editing === null ? 'Unit added.' : 'Unit updated.');
       setEditing(null);
       form.reset();
+      reveal(saved.id);
       reload();
     } catch (cause) {
       setError(errorMessage(cause, 'The unit could not be saved.'));
@@ -1247,6 +1277,7 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
     setNotice(null);
     try {
       await api.setUnitMasterActive(organisationId, row.id, active);
+      reveal(row.id);
       setNotice(active ? `${row.name} reactivated.` : `${row.name} retired.`);
       reload();
     } catch (cause) {
@@ -1292,7 +1323,7 @@ function UnitsTab({ api, organisationId, canModify }: MastersProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">{row.name}</th>
                 <td>
                   <StatusChip active={row.active} />
@@ -1377,7 +1408,11 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
     (retired: boolean) => api.listSignatories(organisationId, retired),
     [api, organisationId],
   );
-  const { rows, reload } = useMasterList(load, includeRetired, setError);
+  const { rows, reload, reveal, revealProps } = useMasterList(
+    load,
+    includeRetired,
+    setError,
+  );
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1387,13 +1422,14 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
     setError(null);
     setNotice(null);
     try {
-      await api.saveSignatory(organisationId, editing?.id ?? null, {
+      const saved = await api.saveSignatory(organisationId, editing?.id ?? null, {
         name: formValue(data, 'name').trim(),
         designation: formValue(data, 'designation').trim(),
       });
       setNotice(editing === null ? 'Signatory added.' : 'Signatory updated.');
       setEditing(null);
       form.reset();
+      reveal(saved.id);
       reload();
     } catch (cause) {
       setError(errorMessage(cause, 'The signatory could not be saved.'));
@@ -1408,6 +1444,7 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
     setNotice(null);
     try {
       await api.setSignatoryActive(organisationId, row.id, active);
+      reveal(row.id);
       setNotice(active ? `${row.name} reactivated.` : `${row.name} retired.`);
       reload();
     } catch (cause) {
@@ -1454,7 +1491,7 @@ function SignatoriesTab({ api, organisationId, canModify }: MastersProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">{row.name}</th>
                 <td>{row.designation}</td>
                 <td>
@@ -1552,7 +1589,7 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
     () => api.listGstRates(organisationId),
     [api, organisationId],
   );
-  const { rows, reload } = useMasterList(load, false, setError);
+  const { rows, reload, reveal, revealProps } = useMasterList(load, false, setError);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1563,7 +1600,7 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
     setError(null);
     setNotice(null);
     try {
-      await api.createGstRate(organisationId, {
+      const saved = await api.createGstRate(organisationId, {
         rate: formValue(data, 'rate').trim(),
         label: formValue(data, 'label').trim(),
         effectiveFrom: formValue(data, 'effectiveFrom'),
@@ -1571,6 +1608,7 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
       });
       setNotice('GST rate recorded.');
       form.reset();
+      reveal(saved.id);
       reload();
     } catch (cause) {
       setError(errorMessage(cause, 'The GST rate could not be recorded.'));
@@ -1587,11 +1625,12 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
     setError(null);
     setNotice(null);
     try {
-      await api.endDateGstRate(organisationId, ending.id, {
+      const saved = await api.endDateGstRate(organisationId, ending.id, {
         effectiveTo: formValue(data, 'endingEffectiveTo'),
       });
       setNotice(`${ending.rate}% end-dated. History stays covered for old invoices.`);
       setEnding(null);
+      reveal(saved.id);
       reload();
     } catch (cause) {
       setError(errorMessage(cause, 'The GST rate could not be end-dated.'));
@@ -1633,7 +1672,7 @@ function GstRatesTab({ api, organisationId, isOwner = false }: MastersProps) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">{row.rate}%</th>
                 <td className={wrapCell}>{row.label}</td>
                 <td>{formatDate(row.effectiveFrom)}</td>

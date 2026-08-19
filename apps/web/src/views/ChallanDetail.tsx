@@ -753,7 +753,13 @@ export function ChallanDetail({
               </p>
               <Field>
                 <label htmlFor="receipt-date">Received on</label>
-                <input id="receipt-date" name="receipt-date" type="date" required />
+                <input
+                  id="receipt-date"
+                  name="receipt-date"
+                  type="date"
+                  required
+                  defaultValue={todayIso()}
+                />
               </Field>
               <Field>
                 <label htmlFor="receipt-by">Received by</label>

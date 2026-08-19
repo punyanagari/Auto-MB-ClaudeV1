@@ -1,5 +1,6 @@
 import type { Contact, GstRateMaster, TaxInvoiceLineShape } from '@auto-mb/contracts';
 import { formValue } from '../../api.js';
+import { todayIso } from '../../format.js';
 import { Field, FieldRow, Hint } from '../../ui/form.js';
 import { InvoiceLineEditor, type DraftLine } from './InvoiceLineEditor.js';
 import { BuyerOptions, GstRateOptions } from './shared.js';
@@ -100,6 +101,7 @@ export function InvoiceFactFields({
             name={`${idPrefix}-date`}
             type="date"
             required
+            defaultValue={todayIso()}
           />
           {invoiceDateHint !== undefined && <Hint>{invoiceDateHint}</Hint>}
         </Field>

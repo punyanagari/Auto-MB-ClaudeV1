@@ -19,7 +19,7 @@ import {
   RequestFailedError,
   type ApiClient,
 } from '../api.js';
-import { compareDecimalStrings, formatDate, formatInr } from '../format.js';
+import { compareDecimalStrings, formatDate, formatInr, todayIso } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
 import {
   errorMessage,
@@ -752,7 +752,13 @@ export function MeasurementBooks({
           >
             <Field>
               <label htmlFor="mb-draft-date">MB date</label>
-              <input id="mb-draft-date" name="mb-draft-date" type="date" required />
+              <input
+                id="mb-draft-date"
+                name="mb-draft-date"
+                type="date"
+                required
+                defaultValue={todayIso()}
+              />
             </Field>
             <Field>
               <label htmlFor="mb-draft-kind">Kind</label>
@@ -904,7 +910,13 @@ export function MeasurementBooks({
               </fieldset>
               <Field>
                 <label htmlFor="mb-merge-date">Merged MB date</label>
-                <input id="mb-merge-date" name="mb-merge-date" type="date" required />
+                <input
+                  id="mb-merge-date"
+                  name="mb-merge-date"
+                  type="date"
+                  required
+                  defaultValue={todayIso()}
+                />
               </Field>
               <Actions>
                 <Button type="submit" disabled={pending || mergeSelection.size === 0}>

@@ -5,7 +5,7 @@ import type {
   WorkWarrantyResponse,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
-import { formatDate } from '../format.js';
+import { formatDate, todayIso } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { WARRANTY_BASIS_LABELS, warrantyCountdown } from '../lib/warranty.js';
@@ -489,6 +489,7 @@ export function WorkWarranty({
                         name={`close-on-${warranty.id}`}
                         label={`Discharged on, for ${warranty.itemNumber}`}
                         required
+                        defaultValue={todayIso()}
                         hint={`On or after ${formatDate(warranty.dlpExpiresOn)}, and never in the future.`}
                       />
                       <Field>
