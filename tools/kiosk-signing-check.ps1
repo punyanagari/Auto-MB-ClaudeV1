@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   The real-token check for the Auto-MB kiosk signing lane.
 
@@ -225,7 +225,7 @@ if ($BaseUrl) {
   $headers = @{ Authorization = "Bearer $token" }
 
   Write-Host ''
-  Write-Host "Claiming one request from $BaseUrl…"
+  Write-Host "Claiming one request from ${BaseUrl}..."
   $claimed = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/signing/agent/claim" `
     -Headers $headers -ContentType 'application/json' -Body '{}'
   if ($null -eq $claimed.job) {

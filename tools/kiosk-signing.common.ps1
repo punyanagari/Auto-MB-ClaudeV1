@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Shared guards for the Auto-MB kiosk signing scripts (ADR-0012 lane 2).
 
