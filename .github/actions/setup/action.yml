@@ -65,13 +65,17 @@ runs:
             apt-get install -y --no-install-recommends postgresql-client-17
         }
         for attempt in 1 2 3; do
-          if install_pg_client; then exit 0; fi
+          if install_pg_client; then installed=true; break; fi
           echo "pgdg install attempt ${attempt} failed or stalled; retrying" >&2
         done
-        echo "pgdg install failed after 3 bounded attempts" >&2
-        exit 1
+        if [ "${installed:-false}" != "true" ]; then
+          echo "pgdg install failed after 3 bounded attempts" >&2
+          exit 1
+        fi
         # /usr/bin/pg_dump is Debian's pg_wrapper and kept answering as the
         # image's preinstalled 16 even with 17 installed; put the real 17
-        # binaries first on PATH for the steps that follow.
+        # binaries first on PATH for the steps that follow. This MUST run
+        # after the retry loop rather than inside it — an early exit 0 here
+        # once skipped it, and every backup test dumped with the wrong major.
         echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
         /usr/lib/postgresql/17/bin/pg_dump --version
