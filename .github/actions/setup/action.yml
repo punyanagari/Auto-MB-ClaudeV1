@@ -43,17 +43,33 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile
 
+    # Bounded like the Playwright browser install in ci.yml (commit
+    # aa95057), and for the same reason: a stalled connection to
+    # apt.postgresql.org has held this step for a job's entire 20-minute
+    # budget (observed three times on 2026-08-20), where a killed attempt
+    # retried in seconds. Each attempt gets two minutes; three attempts;
+    # then a loud named failure instead of a silently eaten job.
     - name: Install PostgreSQL 17 client
       if: ${{ inputs.postgres-client == 'true' }}
       shell: bash
       run: |
-        sudo install -d /usr/share/postgresql-common/pgdg
-        sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-          https://www.postgresql.org/media/keys/ACCC4CF8.asc
-        echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-          | sudo tee /etc/apt/sources.list.d/pgdg.list
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends postgresql-client-17
+        install_pg_client() {
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsS --max-time 60 \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo timeout --kill-after=10 120 apt-get update -qq
+          sudo timeout --kill-after=10 120 \
+            apt-get install -y --no-install-recommends postgresql-client-17
+        }
+        for attempt in 1 2 3; do
+          if install_pg_client; then exit 0; fi
+          echo "pgdg install attempt ${attempt} failed or stalled; retrying" >&2
+        done
+        echo "pgdg install failed after 3 bounded attempts" >&2
+        exit 1
         # /usr/bin/pg_dump is Debian's pg_wrapper and kept answering as the
         # image's preinstalled 16 even with 17 installed; put the real 17
         # binaries first on PATH for the steps that follow.
