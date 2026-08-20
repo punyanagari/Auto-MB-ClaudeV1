@@ -35,6 +35,9 @@ const ACTION_LABELS: Record<string, string> = {
   'bill.paid': 'Bill paid',
   'received_railway_bill.recorded': 'Railway bill recorded',
   'received_railway_bill.discarded': 'Railway bill discarded',
+  'railway_measurement.recorded': 'Railway measurement recorded',
+  'railway_measurement.line_confirmed': 'Railway measurement line confirmed',
+  'railway_measurement.discarded': 'Railway measurement discarded',
   'measurement_book.closed': 'Measurement closed by railway bill',
   // The inspection lifecycle (0082). `inspection.clauses_saved` and
   // `inspection.checklist_saved` are filed against the WORK, not the call

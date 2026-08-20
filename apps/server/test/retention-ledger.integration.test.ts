@@ -16,6 +16,7 @@ import {
   removeOrganisationResidue,
 } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
+import { seedConfirmedRailwayMeasurement } from './helpers/railway-measurement-seed.js';
 
 /**
  * Retention money, and liquidated damages (migration 0098).
@@ -190,6 +191,16 @@ async function seedWork(label: string): Promise<Fixture> {
       ${ownerUserId}, ${bookId}
     )
   `;
+  // The precondition 0111 added: a bill records only against a book whose
+  // railway measurement is on file and settled. This suite's subject is
+  // what happens after the money arrives, so the measurement is seeded
+  // rather than driven.
+  await seedConfirmedRailwayMeasurement(admin, {
+    organisationId: org,
+    workId,
+    measurementBookId: bookId,
+    userId: ownerUserId,
+  });
   const [recorded] = await admin<{ id: string }[]>`
     insert into received_railway_bills (
       organisation_id, work_id, measurement_book_id, object_key,

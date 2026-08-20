@@ -235,6 +235,7 @@ import type {
   CreateMeasurementBookRequest,
   MeasurementBookDetailResponse,
   ReceivedRailwayBill,
+  RailwayMeasurementResponse,
   ReceivedRailwayBillListResponse,
   BillPayment,
   BillSettlementPosition,
@@ -1342,6 +1343,35 @@ export interface ApiClient {
     receivedRailwayBillId: string,
     reason?: string,
   ) => Promise<ReceivedRailwayBill>;
+  /**
+   * The document BEFORE the bill (migration 0111): the railway's own copy
+   * of a finalized Measurement Book. Read and compared line by line on the
+   * server, so nothing about it is sent either. No bill may be recorded
+   * against a Measurement Book whose measurement is not on record and
+   * either matched or confirmed.
+   */
+  readonly uploadRailwayMeasurement: (
+    organisationId: string,
+    measurementBookId: string,
+    file: Blob,
+    filename: string,
+  ) => Promise<RailwayMeasurementResponse>;
+  readonly getRailwayMeasurement: (
+    organisationId: string,
+    measurementBookId: string,
+  ) => Promise<RailwayMeasurementResponse>;
+  /** One line, confirmed by one member, when the PDF could not be read.
+   * Singular on purpose: the fallback is an act per line. */
+  readonly confirmRailwayMeasurementLine: (
+    organisationId: string,
+    railwayMeasurementId: string,
+    itemNumber: string,
+  ) => Promise<RailwayMeasurementResponse>;
+  readonly discardRailwayMeasurement: (
+    organisationId: string,
+    railwayMeasurementId: string,
+    reason?: string,
+  ) => Promise<RailwayMeasurementResponse>;
   /** Outstanding with the railway, one position per prepared bill, with
    * the receipts that produced it. The three figures never collapse into
    * one: money the railway KEPT is settled, money that never arrived is
@@ -4260,6 +4290,49 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     async discardReceivedRailwayBill(organisationId, receivedRailwayBillId, reason) {
       return request<ReceivedRailwayBill>(
         `/api/received-railway-bills/${receivedRailwayBillId}/discard`,
+        {
+          method: 'POST',
+          body: reason === undefined ? {} : { reason },
+          organisationId,
+        },
+      );
+    },
+    async uploadRailwayMeasurement(organisationId, measurementBookId, file, filename) {
+      const query = new URLSearchParams({ filename });
+      const response = await fetchImpl(
+        `/api/measurement-books/${measurementBookId}/railway-measurement?${query.toString()}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as RailwayMeasurementResponse;
+    },
+    async getRailwayMeasurement(organisationId, measurementBookId) {
+      return request<RailwayMeasurementResponse>(
+        `/api/measurement-books/${measurementBookId}/railway-measurement`,
+        { organisationId },
+      );
+    },
+    async confirmRailwayMeasurementLine(
+      organisationId,
+      railwayMeasurementId,
+      itemNumber,
+    ) {
+      return request<RailwayMeasurementResponse>(
+        `/api/railway-measurements/${railwayMeasurementId}/confirm-line`,
+        { method: 'POST', body: { itemNumber }, organisationId },
+      );
+    },
+    async discardRailwayMeasurement(organisationId, railwayMeasurementId, reason) {
+      return request<RailwayMeasurementResponse>(
+        `/api/railway-measurements/${railwayMeasurementId}/discard`,
         {
           method: 'POST',
           body: reason === undefined ? {} : { reason },

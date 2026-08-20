@@ -30,6 +30,7 @@ import {
   RailwayBillParseError,
 } from '../railway-bill-parse.js';
 import { assessRailwayBillVerdict } from '../railway-bill-verdict.js';
+import { assertRailwayMeasurementSettles } from './railway-measurements.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -232,6 +233,14 @@ export function registerReceivedRailwayBillRoutes(
             'This measurement is already closed; it takes no further railway bills.',
           );
         }
+        // THE MEASUREMENT COMES FIRST (migration 0111). IWRCMS raises this
+        // bill from a measurement, and until that measurement is on file
+        // and agrees with the Measurement Book — or has been confirmed
+        // line by line, when its text could not be read — there is nothing
+        // for the bill to settle. Refused here, before the scan and the
+        // extraction are spent on a document that cannot be filed; the
+        // trigger holds the same rule under the lock.
+        await assertRailwayMeasurementSettles(tx, measurementBookId);
         return book;
       });
 
@@ -336,6 +345,12 @@ export function registerReceivedRailwayBillRoutes(
             `Bill ${existing.billNumber} is already recorded against this measurement.`,
           );
         }
+        // Asked again under the lock: the measurement could have been
+        // discarded while this bill was being scanned, extracted and
+        // verified. The trigger would refuse the insert anyway, with a
+        // 23R SQLSTATE; asking here is what turns that into the same named
+        // refusal an operator got a moment earlier.
+        await assertRailwayMeasurementSettles(tx, measurementBookId);
 
         const [row] = await tx<ReceivedRailwayBillRow[]>`
           with inserted as (

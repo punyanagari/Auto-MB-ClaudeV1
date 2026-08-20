@@ -55,6 +55,7 @@ describe('IssueChallanDetail on a completed Work', () => {
     });
     render(
       <IssueChallanDetail
+        canSign={false}
         api={api}
         organisationId={ORG_ID}
         challanId={IC_ID}

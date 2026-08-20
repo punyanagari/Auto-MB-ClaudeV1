@@ -20,6 +20,7 @@ import { buildApp } from '../src/app.js';
 import { loadTrustAnchors } from '@auto-mb/documents';
 import { appendSignature, createTestPki, type TestPki } from './helpers/signed-pdf.js';
 import { railwayBillText, textLayoutPdf } from './helpers/railway-bill-pdf.js';
+import { seedConfirmedRailwayMeasurement } from './helpers/railway-measurement-seed.js';
 
 /**
  * The railway bill, end to end: recorded against the Measurement Book it
@@ -148,6 +149,12 @@ async function seedFinalizedBook(options: {
   readonly sequence: number;
   readonly letterNumber?: string;
   readonly withBill?: boolean;
+  /** Migration 0111 gates a received bill on the book's railway
+   * measurement. Every book here gets one so this suite keeps testing
+   * what it was written to test; the gate itself is proved in
+   * `railway-measurements.integration.test.ts`, and one case below turns
+   * this off to show the two suites agree about it. */
+  readonly withMeasurement?: boolean;
 }): Promise<{
   workId: string;
   bookId: string;
@@ -190,6 +197,16 @@ async function seedFinalizedBook(options: {
         finalized_by_user_id = ${options.userId}
     where id = ${bookId}
   `;
+  // The railway's own measurement of that book (0111), without which no
+  // On-Account Bill may be recorded against it.
+  if (options.withMeasurement !== false) {
+    await seedConfirmedRailwayMeasurement(admin, {
+      organisationId: options.organisationId,
+      workId,
+      measurementBookId: bookId,
+      userId: options.userId,
+    });
+  }
   // Only the payment gate needs a prepared bill. The other twenty seeded
   // books were each creating one and never using it, which is twenty
   // rows of churn in a database P11's block budgets are measured against

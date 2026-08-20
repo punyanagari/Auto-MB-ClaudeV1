@@ -28,7 +28,16 @@ import { UuidSchema, nonBlankString } from './primitives.js';
 
 /* --- Vocabulary ----------------------------------------------------------- */
 
-const SIGNING_DOCUMENT_TYPES = ['delivery_challan', 'tax_invoice'] as const;
+// Three outward registers, and the third is migration 0110's. The Issue
+// Challan is material leaving the agency's custody under the agency's own
+// name; it renders a PDF like its siblings, and it is signed by exactly
+// the machinery they are, because an operator should not have to learn a
+// second story for the sibling document.
+const SIGNING_DOCUMENT_TYPES = [
+  'delivery_challan',
+  'issue_challan',
+  'tax_invoice',
+] as const;
 const SigningDocumentTypeSchema = Type.Union(
   SIGNING_DOCUMENT_TYPES.map((value) => Type.Literal(value)),
   { description: 'Which issued register the document being signed belongs to.' },

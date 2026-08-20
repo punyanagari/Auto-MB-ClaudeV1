@@ -248,6 +248,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     "one railway bill per measurement, and a Work's measurements are its Measurement Books",
   ],
   [
+    'GET /api/measurement-books/:id/railway-measurement',
+    'one measurement book, and the answer is its ONE live railway measurement plus the ones discarded before it — a partial unique index allows exactly one live row, and a book that has been through more than a handful of discarded uploads has an operational problem a page control would hide rather than solve',
+  ],
+  [
     'GET /api/works/:id/bill-settlement',
     'one position per prepared bill, and a bill is prepared from a Measurement Book; the whole point of the answer is that it is a Work-wide total',
   ],

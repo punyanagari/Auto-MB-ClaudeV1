@@ -188,6 +188,42 @@ async function seedIssuedChallan(
   return { challanId, objectKey, sha256 };
 }
 
+/**
+ * An ISSUE Challan, issued and rendered, in the same shape (0110).
+ *
+ * The sibling document that joined the lane on the owner's ruling. Seeded
+ * the same way and for the same reason: this suite is about what happens
+ * to an issued document, not about how it came to be issued.
+ */
+async function seedIssuedIssueChallan(
+  text: string,
+): Promise<{ challanId: string; objectKey: string; sha256: string }> {
+  const challanId = randomUUID();
+  const bytes = unsignedPdf(text);
+  const objectKey = `${organisationId}/ic/${challanId}.pdf`;
+  await createFileSystemStorage(storageDir).put(objectKey, bytes);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const [sequence] = await admin<{ next: number }[]>`
+    select coalesce(max(sequence_number), 0)::int + 1 as next
+    from issue_challans where organisation_id = ${organisationId}
+  `;
+  await admin`
+    insert into issue_challans (
+      id, organisation_id, work_id, movement_type, status, challan_date,
+      challan_number, sequence_number, prefix, issued_to_name, issued_snapshot,
+      issued_at, rendered_object_key, rendered_sha256, created_by_user_id,
+      issued_by_user_id
+    )
+    values (
+      ${challanId}, ${organisationId}, ${workId}, 'issue', 'issued', '2026-08-01',
+      ${`IC/${runId.toUpperCase()}/${String(sequence?.next ?? 1)}`},
+      ${sequence?.next ?? 1}, 'IC', 'Site Engineer', ${admin.json({ text })}, now(),
+      ${objectKey}, ${sha256}, ${ownerUserId}, ${ownerUserId}
+    )
+  `;
+  return { challanId, objectKey, sha256 };
+}
+
 /** Replaces a challan's render in place, exactly as
  * `POST /api/challans/:id/render` does — the same key, different bytes.
  * This is the event the digest binding exists to catch. */
@@ -280,6 +316,14 @@ beforeAll(async () => {
     baseUrl: 'http://127.0.0.1:3000',
     objectStorageDir: storageDir,
     pdfTrustAnchors: anchors,
+    // The shipped kiosk throttle is 60 polls a minute, sized against an
+    // agent that polls every fifteen seconds. This suite drives the whole
+    // loop dozens of times in a few seconds, and 0110's Issue Challan arm
+    // pushed it over the line. The throttle has its own coverage in
+    // `upload-inventory` and in this suite's own credential cases; a
+    // suite that quietly stayed under the limit would be shaping its
+    // coverage around an unrelated rule.
+    rateLimits: { signing: { windowMs: 60_000, max: 1000 } },
   });
 
   owner = await signUp(ownerEmail, 'Signing Owner');
@@ -510,6 +554,88 @@ describe('the signing round trip', () => {
       'signing_request.raised',
       'signing_request.signed',
     ]);
+  });
+
+  it('signs an ISSUE Challan through exactly the same lane (0110)', async () => {
+    // The point of the item: an operator should not have to learn a
+    // second story for the sibling document. Nothing below is a
+    // different call — only the document type changes.
+    const challan = await seedIssuedIssueChallan('Issue challan for signing');
+    const raised = await authed(owner, {
+      method: 'POST',
+      url: '/api/signing-requests',
+      organisationId,
+      payload: { documentType: 'issue_challan', documentId: challan.challanId },
+    });
+    expect(raised.statusCode, raised.body).toBe(201);
+    const created = raised.json<SigningRequestResponse>().request;
+    expect(created.documentType).toBe('issue_challan');
+    expect(created.documentId).toBe(challan.challanId);
+    // The queue names the document by its own number, which means the
+    // register's join found the Issue Challan register rather than
+    // falling through to a null.
+    expect(created.documentNumber).toMatch(/^IC\//);
+    expect(created.sourceSha256).toBe(challan.sha256);
+
+    const result = await runKiosk();
+    expect(result.status).toBe('signed');
+
+    const row = (await queue()).requests.find((entry) => entry.id === created.id);
+    expect(row?.status).toBe('signed');
+    expect(row?.signatureVerdict?.status).toBe('signed_and_intact');
+    const bytes = await createFileSystemStorage(storageDir).get(
+      (
+        await admin<{ signed_object_key: string }[]>`
+          select signed_object_key from signing_requests where id = ${created.id}
+        `
+      )[0]?.signed_object_key ?? '',
+    );
+    expect(verifyPdfSignatures(bytes, { trustAnchors: anchors }).status).toBe(
+      'signed_and_intact',
+    );
+  });
+
+  it('holds one open request per ISSUE Challan, and refuses a draft one', async () => {
+    const challan = await seedIssuedIssueChallan('One issue-challan request only');
+    const first = await authed(owner, {
+      method: 'POST',
+      url: '/api/signing-requests',
+      organisationId,
+      payload: { documentType: 'issue_challan', documentId: challan.challanId },
+    });
+    expect(first.statusCode, first.body).toBe(201);
+    const second = await authed(owner, {
+      method: 'POST',
+      url: '/api/signing-requests',
+      organisationId,
+      payload: { documentType: 'issue_challan', documentId: challan.challanId },
+    });
+    expect(second.statusCode, second.body).toBe(409);
+    expect(second.json<{ code: string }>().code).toBe('SIGNING_REQUEST_OPEN');
+    await runKiosk();
+
+    // A draft has no render and nothing anyone reviewed; the route
+    // refuses it before the guard has to.
+    const draftId = randomUUID();
+    await admin`
+      insert into issue_challans (
+        id, organisation_id, work_id, movement_type, status, challan_date,
+        prefix, issued_to_name, created_by_user_id
+      )
+      values (
+        ${draftId}, ${organisationId}, ${workId}, 'issue', 'draft', '2026-08-02',
+        'IC', 'Site Engineer', ${ownerUserId}
+      )
+    `;
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: '/api/signing-requests',
+      organisationId,
+      payload: { documentType: 'issue_challan', documentId: draftId },
+    });
+    expect(draft.statusCode, draft.body).toBe(409);
+    expect(draft.json<{ code: string }>().code).toBe('SIGNING_DOCUMENT_NOT_RENDERED');
+    await admin`delete from issue_challans where id = ${draftId}`;
   });
 
   it('offers nothing when the queue is empty', async () => {

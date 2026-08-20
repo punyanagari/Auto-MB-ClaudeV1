@@ -16,6 +16,7 @@ import {
   removeOrganisationResidue,
 } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
+import { seedConfirmedRailwayMeasurement } from './helpers/railway-measurement-seed.js';
 
 /**
  * The payment register, and the outstanding position it produces.
@@ -157,6 +158,14 @@ async function closeBook(
   bookId: string,
   label: string,
 ): Promise<void> {
+  // 0111's precondition: no bill records against a book whose railway
+  // measurement is not on file and settled.
+  await seedConfirmedRailwayMeasurement(admin, {
+    organisationId: org,
+    workId,
+    measurementBookId: bookId,
+    userId: ownerUserId,
+  });
   const [recorded] = await admin<{ id: string }[]>`
     insert into received_railway_bills (
       organisation_id, work_id, measurement_book_id, object_key,

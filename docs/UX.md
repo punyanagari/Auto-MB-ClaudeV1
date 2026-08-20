@@ -670,11 +670,11 @@ would be a second place to do something:
 The queue is where signing is _read_. The acts live where their documents
 live, and all three are the mock's existing components with no new grammar:
 
-| Surface                                             | What it is                                                                                          | Why there                                                                                                                                                                               |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Send for signing** on the challan and the invoice | One more `Button` in the `Actions` row those screens already have, beside Generate PDF and Open PDF | Signing is a thing you do TO a document. It appears only on an issued/submitted document that has a render, for a member holding the signing authority.                                 |
-| **Signing kiosk** in Settings                       | A `Card` with the registered kiosks, a register form, and a destructive `ConfirmDialog` for revoke  | It hands out a credential, so it is owner-only and sits with the other owner-only settings. The one-time token is shown in a bordered panel that must be dismissed, never auto-hidden.  |
-| **Open signed PDF** on a completed queue row        | A `Button` that fetches and opens, exactly as the challan's own Open PDF does                       | A signed document nobody can open is a record of an act with the act missing. Same work-scope authority as the unsigned document's download — it is the same document plus a signature. |
+| Surface                                                                         | What it is                                                                                          | Why there                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Send for signing** on the Delivery Challan, the Issue Challan and the invoice | One more `Button` in the `Actions` row those screens already have, beside Generate PDF and Open PDF | Signing is a thing you do TO a document. It appears only on an issued/submitted document that has a render, for a member holding the signing authority. The Issue Challan joined on the owner's ruling of 2026-08-19 (item 16, migration 0110): it is material leaving the agency's custody under the agency's own name, it renders a PDF already, and an operator should not have to learn a second story for the sibling document. |
+| **Signing kiosk** in Settings                                                   | A `Card` with the registered kiosks, a register form, and a destructive `ConfirmDialog` for revoke  | It hands out a credential, so it is owner-only and sits with the other owner-only settings. The one-time token is shown in a bordered panel that must be dismissed, never auto-hidden.                                                                                                                                                                                                                                               |
+| **Open signed PDF** on a completed queue row                                    | A `Button` that fetches and opens, exactly as the challan's own Open PDF does                       | A signed document nobody can open is a record of an act with the act missing. Same work-scope authority as the unsigned document's download — it is the same document plus a signature.                                                                                                                                                                                                                                              |
 
 **Two chips joined the shared vocabulary** rather than being styled
 locally: `signed` in the success family beside `paid` and `approved`, and
@@ -2222,6 +2222,70 @@ rail and collides with nothing already on it.
   reads the register whole, which is what every other register here does
   and what makes the mock's tab counts counts of the register rather than
   of a page. § 19's register-export posture is unchanged.
+
+### 29. Railway measurement — the panel before the bill panel
+
+**Status: application-first, owner ruling of 2026-08-19 (live-testing
+corrections item 17; migration 0111).**
+
+**There is no mock citation for this panel and none is possible.** The mock
+draws no settlement chain at all — no Measurement Book detail, no railway
+bill, and therefore nothing this could replicate. `RailwayBillPanel`
+established the precedent when it landed, and this sits directly above it
+on the same screen, in the same grammar: the `.data-surface` wrapper, the
+`DataTable`, the dot-plus-label `StatusChip`, the file `Field` with its
+`Hint`, and the shared `EmptyState` / `LoadingState` / `ErrorState`. No new
+visual language, so § Design contract 4 covers it exactly as it covers § 16.
+
+**Why it sits ABOVE the bill panel.** The order on screen is the order the
+railway produces the documents in. IWRCMS raises an On-Account Bill FROM a
+measurement its own system holds, and until that measurement is on record
+and agrees with the finalized Measurement Book there is nothing for a bill
+to settle. A panel below the bill would put the precondition after the
+thing it conditions.
+
+**Three shapes, and the difference between them is the whole point.**
+
+| Reading               | What the panel draws                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| **Matched**           | A success chip and one sentence. A document that agrees needs no reading.                     |
+| **Does not match**    | The per-line table with the differing lines named, and NO control of any kind on those lines. |
+| **Could not be read** | The Measurement Book's own lines with a `Confirm item …` button on each, and a running count. |
+
+**The mismatch shape offers no way past itself, and that is a design rule
+rather than an omission.** A disagreement about quantities is a
+conversation with the railway; a button that let an operator confirm past
+it would make the whole comparison theatre, and the server refusing the
+click afterwards would only make that a worse experience rather than a
+safer one. The refusal is enforced twice on the server as well
+(`routes/railway-measurements.ts`, and migration 0111's `23V05`), so the
+screen and the database agree about it.
+
+**The unreadable shape is deliberately more work than reading a verdict.**
+Each line is confirmed on its own, by name, and the confirmation is
+recorded against the member who made it. There is no "confirm all": the
+fallback is an act per line, and a single control would be the single
+click the model refuses.
+
+**What was walked away from is listed under what stands.** Discarding a
+mismatch and uploading a document the parser cannot read re-enters the
+gate through the manual confirmation path — a route that is fully audited
+and, without this, invisible on the one screen where the next decision
+gets taken. So the panel lists every measurement previously discarded
+against the book, each with the verdict it carried and the date it was
+discarded. Refusing the second upload instead was considered and refused:
+the bypass uses a DIFFERENT document, so a digest check would catch only
+the honest re-upload of the same file. Visibility is the honest fix, and
+the place for it is here rather than in the audit register.
+
+**The bill panel below names the precondition in its own words** rather
+than leaving an operator to discover it by being refused. Its upload hint
+says the measurement must be matched or confirmed first and points at this
+panel; the server's refusal carries the same remedy from the shared
+catalog, so the two cannot drift into saying different things.
+
+**When the mock grows a settlement screen, the mock wins.** This entry
+retires on the § 4 iteration pipeline, like § 16.
 
 ## Settled information architecture
 

@@ -48,6 +48,7 @@ import { registerIssueChallanRoutes } from './routes/issue-challans.js';
 import { registerCorrectionRoutes } from './routes/corrections.js';
 import { registerContractSourceRoutes } from './routes/contract-sources.js';
 import { registerReceivedRailwayBillRoutes } from './routes/received-railway-bills.js';
+import { registerRailwayMeasurementRoutes } from './routes/railway-measurements.js';
 import { registerBillPaymentRoutes } from './routes/bill-payments.js';
 import { registerCompanyDocumentRoutes } from './routes/company-documents.js';
 import { registerInspectionRoutes } from './routes/inspections.js';
@@ -1051,6 +1052,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
       scanner,
       pdfTrustAnchors,
     );
+    // The middle document of the settlement chain (0111), registered
+    // before the bill that may not be recorded without it. No trust
+    // anchors: a railway measurement is read for its quantities, and its
+    // signatures are the bill's question — the bill is what money rests
+    // on, and 0066's verdict rules are about that document.
+    registerRailwayMeasurementRoutes(app, authInstance, database, storage, scanner);
     registerReceivedRailwayBillRoutes(
       app,
       authInstance,

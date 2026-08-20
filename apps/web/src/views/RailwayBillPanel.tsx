@@ -200,7 +200,9 @@ export function RailwayBillPanel({
               />
               <Hint>
                 The IWRCMS bill as downloaded. Its number, date, amount and measurement
-                are read from the document itself.
+                are read from the document itself. The railway&apos;s measurement for
+                this book must be matched or confirmed first — the Railway measurement
+                panel above — because the bill is raised from that measurement.
               </Hint>
             </Field>
             <Button type="submit" disabled={pending}>

@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
 import { AccountSecurity } from '../../src/views/AccountSecurity.js';
 import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
+import { RailwayMeasurementPanel } from '../../src/views/RailwayMeasurementPanel.js';
 import { Approvals } from '../../src/views/Approvals.js';
 import { AuditTrail } from '../../src/views/AuditTrail.js';
 import { Mis } from '../../src/views/Mis.js';
@@ -348,6 +349,7 @@ export const STATE_CASES: readonly StateCase[] = [
     loads: ['getIssueChallan'],
     render: (api) => (
       <IssueChallanDetail
+        canSign={false}
         api={api}
         organisationId={ORG_ID}
         challanId="ic-1"
@@ -491,6 +493,23 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry railway bills/,
     empty: { text: /still\s+outstanding with the railway/ },
+  },
+  {
+    view: 'RailwayMeasurementPanel.tsx',
+    name: "the railway's measurement of a finalized book",
+    loads: ['getRailwayMeasurement'],
+    render: (api) => (
+      <RailwayMeasurementPanel
+        api={api}
+        organisationId={ORG_ID}
+        book={billableBook()}
+        canIssue
+        canCancel
+        onChanged={() => undefined}
+      />
+    ),
+    retry: /Retry railway measurement/,
+    empty: { text: /not on record/ },
   },
   {
     view: 'Inspection.tsx',

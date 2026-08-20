@@ -507,6 +507,25 @@ export const ERROR_CODES = [
   'RAILWAY_BILL_MEASUREMENT_UNMATCHED',
   'RAILWAY_BILL_NOT_FOR_WORK',
   'RAILWAY_BILL_NOT_FOUND',
+  // The measurement the bill is raised from (migration 0111).
+  //
+  // GATE FIRST, then the rest alphabetically — deliberately out of the
+  // file's usual A-to-Z run, and stated because nothing enforces order in
+  // here so a reader would otherwise take it for an accident. The first
+  // three ARE the gate: no measurement, a measurement that disagrees, and
+  // a measurement nobody could read and nobody has confirmed. They are
+  // three codes rather than one because they are three different pieces
+  // of work for the operator, and reading them as a group is how anyone
+  // checks the gate is completely covered.
+  'RAILWAY_MEASUREMENT_MISSING',
+  'RAILWAY_MEASUREMENT_UNMATCHED',
+  'RAILWAY_MEASUREMENT_UNCONFIRMED',
+  'RAILWAY_MEASUREMENT_ALREADY_DISCARDED',
+  'RAILWAY_MEASUREMENT_ALREADY_RECORDED',
+  'RAILWAY_MEASUREMENT_LINE_UNKNOWN',
+  'RAILWAY_MEASUREMENT_NOT_CONFIRMABLE',
+  'RAILWAY_MEASUREMENT_NOT_FOR_BOOK',
+  'RAILWAY_MEASUREMENT_NOT_FOUND',
   'RATE_INVALID',
   'RATE_LIMITED',
   'RECEIPT_EXISTS',

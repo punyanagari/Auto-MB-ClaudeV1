@@ -24,6 +24,17 @@ import { parseDdMmYyyy } from '@auto-mb/loa-parser';
  * The traps this module exists to survive are recorded, with evidence,
  * in `test/fixtures/railway-settlement/corpus.json` under `trap_notes`.
  * Each one is named at the code that handles it.
+ *
+ * ## Four helpers are exported rather than private
+ *
+ * `cellsOf`, `readInlineField`, `readWrappedField` and `nearlyEqual` read
+ * a Poppler `-layout` grid and know nothing whatever about bills.
+ * `railway-measurement-parse.ts` (migration 0111) reads the OTHER
+ * document IWRCMS produces from the same Measurement Book, printed by the
+ * same system with the same grid, and re-deriving the wrapped-cell rule
+ * there would be a second copy of the trap notes above — which is how two
+ * readers of one layout drift apart. They live here, where the traps are
+ * documented, and are imported there.
  */
 
 /**
@@ -122,7 +133,7 @@ export function parseMeasurementNumber(value: string): MeasurementNumberParts | 
 }
 
 /** One `-layout` cell: the text and the column it starts at. */
-interface Cell {
+export interface Cell {
   readonly column: number;
   readonly text: string;
 }
@@ -134,7 +145,7 @@ interface Cell {
  * single spaces inside a cell, so `Is Provisional Bill ?` stays one cell
  * while the value beside it becomes another.
  */
-function cellsOf(line: string): Cell[] {
+export function cellsOf(line: string): Cell[] {
   // Scanned rather than matched. The natural pattern for this — a
   // non-space, a lazy middle, and a lookahead for two spaces or the end of
   // the line — backtracks quadratically, and every line reaching this
@@ -171,7 +182,10 @@ function isColumnGap(character: string | undefined): boolean {
  * The grid is three label/value column pairs wide, so the value is
  * simply the next cell to the right of the label cell.
  */
-function readInlineField(lines: readonly string[], label: string): string | null {
+export function readInlineField(
+  lines: readonly string[],
+  label: string,
+): string | null {
   for (const line of lines) {
     const cells = cellsOf(line);
     const index = cells.findIndex((cell) => cell.text === label);
@@ -212,7 +226,10 @@ function readInlineField(lines: readonly string[], label: string): string | null
  * that is the order they were printed in — the label being vertically
  * centred does not reorder them.
  */
-function readWrappedField(lines: readonly string[], label: string): string | null {
+export function readWrappedField(
+  lines: readonly string[],
+  label: string,
+): string | null {
   for (const [index, line] of lines.entries()) {
     const cells = cellsOf(line);
     const labelCell = cells.find((cell) => cell.text === label);
@@ -265,7 +282,7 @@ function readWrappedField(lines: readonly string[], label: string): string | nul
  * document, so cells are matched to a column with a small tolerance
  * rather than by equality.
  */
-function nearlyEqual(a: number, b: number): boolean {
+export function nearlyEqual(a: number, b: number): boolean {
   return Math.abs(a - b) <= 2;
 }
 
@@ -321,7 +338,7 @@ export function toMoneyString(printed: string, field: string): string {
   return `${rupees}.${fraction.padEnd(2, '0')}`;
 }
 
-function isDigits(value: string): boolean {
+export function isDigits(value: string): boolean {
   if (value === '') return false;
   for (const character of value) {
     if (character < '0' || character > '9') return false;

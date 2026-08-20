@@ -14,6 +14,10 @@ let allSql = '';
 let createdTables: string[] = [];
 let createdTriggers: string[] = [];
 let triggersByMigration: Record<string, number> = {};
+/** Every custom SQLSTATE the migration series raises, to the GUARD each
+ * raise sits inside. One code, one guard — see the census that reads
+ * this, and the reason it counts guards rather than files. */
+let sqlstateOwners: Map<string, Set<string>> = new Map();
 
 /**
  * How many triggers each migration creates.
@@ -104,6 +108,12 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // widen their event list to `work_id`, which a draft may now be moved
   // between once the column is nullable (0109).
   '0109_organisation_purchase_orders.sql': 7,
+  // 0110 creates no trigger at all: the Issue Challan's signing arm is a
+  // column, two constraints, two indexes and a CREATE OR REPLACE of
+  // 0091's existing guard. A migration with no trigger is absent from
+  // this census by construction, and its own `it` block below asserts
+  // that it replaced the guard rather than adding a second one.
+  '0111_railway_measurements.sql': 4,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -123,6 +133,30 @@ const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
  */
 const COUNTER_DECREASE_EXEMPT = ['extension_request_counters'];
 
+/**
+ * The three SQLSTATEs a later migration deliberately CONTINUES rather
+ * than colliding with, each with the reason.
+ *
+ * The census below refuses a code raised from two migrations, because
+ * that is normally two rules wearing one name and a route can only map
+ * it to one of them. These three are the other thing: one rule that grew
+ * a second enforcement point in a later pack, so the code still means
+ * exactly what its route already says it means, and splitting them would
+ * make an operator learn two codes for one refusal.
+ *
+ * A new entry here is a claim that needs the same argument. If the two
+ * raises would read differently to an operator, it is a collision and
+ * the later pack moves.
+ */
+const SQLSTATE_CONTINUATIONS: Readonly<Record<string, string>> = {
+  '23F02':
+    '0087\'s "the movement\'s source document does not admit it", continued by 0088 for the maintenance challan as a new source kind. Same sentence, same remedy.',
+  '23H01':
+    '0089 opened the 23H block with "no statutory schedule covers this, or more than one does"; 0090\'s payroll calculation raises the same refusal when it looks the same schedule up.',
+  '23P05':
+    "0098's \"the facts an assessment was computed from are written once\", continued by 0104's contract-value snapshot — which reuses 0098's CONSTRAINT name too, and says so at the raise, because for an operator it is the same rule.",
+};
+
 beforeAll(async () => {
   const files = (await readdir(migrationsDirectory))
     .filter((name) => name.endsWith('.sql'))
@@ -133,10 +167,34 @@ beforeAll(async () => {
   );
   allSql = contents.join('\n');
   triggersByMigration = {};
+  sqlstateOwners = new Map();
   files.forEach((name, index) => {
-    const created = [...(contents[index] ?? '').matchAll(/^\s*create trigger (\w+)/gim)]
-      .length;
+    const source = contents[index] ?? '';
+    const created = [...source.matchAll(/^\s*create trigger (\w+)/gim)].length;
     if (created > 0) triggersByMigration[name] = created;
+    // The custom classes only: `23` plus a LETTER. The standard codes
+    // (23502 not-null, 23505 unique, 23514 check, 23503 foreign key) are
+    // PostgreSQL's own and are raised by many migrations on purpose.
+    //
+    // Raises inside a `CREATE OR REPLACE` are SKIPPED: that is a later
+    // migration restating a guard it did not write, and the code it
+    // repeats still belongs to the migration that introduced it. Only an
+    // original `CREATE FUNCTION` — or a raise outside any function —
+    // claims a code. See the census that reads this for why.
+    let restating = false;
+    for (const match of source.matchAll(
+      /CREATE (OR REPLACE )?FUNCTION app_private\.\w+|ERRCODE = '(23[A-Z]\d\d)'/g,
+    )) {
+      if (match[0].startsWith('CREATE')) {
+        restating = match[1] !== undefined;
+        continue;
+      }
+      if (restating) continue;
+      const code = match[2] ?? '';
+      const owners = sqlstateOwners.get(code) ?? new Set<string>();
+      owners.add(name);
+      sqlstateOwners.set(code, owners);
+    }
   });
   createdTables = [...allSql.matchAll(/^create table (\w+)/gim)].map(
     (match) => match[1] ?? '',
@@ -473,6 +531,72 @@ describe('tenant migration contract', () => {
     expect(sql).toContain('purchase_orders_one_draft_per_work_vendor');
     expect(sql).toContain('purchase_orders_update_guard');
     expect(sql).toContain('budgetary_quotations_update_guard');
+  });
+
+  /**
+   * ONE CUSTOM SQLSTATE, ONE RULE — across the whole series.
+   *
+   * This census exists because four packs in a row shipped a collision.
+   * Each of them carried a "takes the next free SQLSTATE block" test, and
+   * every one of those tests read only its OWN migration file: it proved
+   * the codes were in the block the author intended and could not see
+   * that another pack, merged in between, had already taken them. 0111
+   * was the fourth — it claimed 23R01–23R06 while 0106 held 23R01/23R02
+   * and 0107 held 23R03 — and it went green all the way to review.
+   *
+   * What a collision costs is not abstract. `routes/*.ts` map a SQLSTATE
+   * to one named refusal with one remedy, so two rules sharing a code
+   * means an operator who hits one of them is told about the other and
+   * handed the wrong thing to do about it.
+   *
+   * ## Why this counts GUARDS and not FILES
+   *
+   * The obvious census — one code, one migration file — is wrong here,
+   * and wrong in the direction that would have made it unmergeable. This
+   * repository's house style is that a later migration amending a guard
+   * restates the WHOLE body with `CREATE OR REPLACE`, codes included.
+   * Seventeen pairs on main are exactly that: 0090 restating 0080's
+   * payment guards, 0112 restating 0099's warranty guards, and this
+   * pack's own 0110 restating 0091's signing guard. Every one of them is
+   * one rule written twice, which is the opposite of the problem.
+   *
+   * So a code is attributed to the guard FUNCTION its raise sits inside.
+   * One function, however many files restate it, is one rule. Two
+   * function names is two rules and a real collision — which is what
+   * 0111-versus-0106 was, and what this catches.
+   *
+   * Deliberately limited to the CUSTOM classes — `23` plus a letter.
+   * PostgreSQL's own 23502/23503/23505/23514 are raised by many
+   * migrations by design and mean the same thing in every one of them.
+   */
+  it('gives every custom SQLSTATE in the 23 block exactly one owning rule', () => {
+    const shared = [...sqlstateOwners.entries()]
+      .filter(([code, owners]) => owners.size > 1 && !(code in SQLSTATE_CONTINUATIONS))
+      .map(
+        ([code, owners]) => `${code} is raised by ${[...owners].sort().join(' and ')}`,
+      )
+      .sort();
+    expect(
+      shared,
+      'two RULES raising one SQLSTATE means a route can only map it to one ' +
+        'of them, so an operator meeting the other is told about the wrong ' +
+        'refusal. Move the later pack to a free block. (A later migration ' +
+        'restating an earlier guard verbatim is not this: it is one rule, and ' +
+        'both files declare the one function it is attributed to.)',
+    ).toEqual([]);
+    // The census is only worth anything if it is actually reading the
+    // codes; a regex that silently stopped matching would report no
+    // collisions forever.
+    expect(sqlstateOwners.size).toBeGreaterThanOrEqual(60);
+    // …and an allowlist entry for a code that is no longer shared is a
+    // waiver nobody needs, which is how an allowlist quietly becomes the
+    // place collisions go to hide.
+    for (const code of Object.keys(SQLSTATE_CONTINUATIONS)) {
+      expect(
+        (sqlstateOwners.get(code)?.size ?? 0) > 1,
+        `${code} is no longer raised from two migrations; drop its continuation entry`,
+      ).toBe(true);
+    }
   });
 
   it('counts the triggers the series creates, per migration', () => {
@@ -3220,5 +3344,250 @@ describe('the owner rulings of 2026-08-19 (0104)', () => {
     expect(raises.length).toBe(1);
     expect(sql.match(/USING ERRCODE = '23R\d\d'/g)?.length).toBe(raises.length);
     expect(sql).toContain("ERRCODE = '23R03', CONSTRAINT = 'work_schedule_frozen'");
+  });
+});
+
+describe('the Issue Challan joins the signing lane (0110)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0110_issue_challan_signing.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that rewrites a constraint', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('adds the third document arm as a real composite foreign key', () => {
+    // The whole argument of 0091's document model: a foreign key that
+    // only exists when a type column happens to say the right thing is
+    // not a foreign key. The third arm gets the same three-column
+    // reference its siblings have, against a key `issue_challans` has
+    // published since 0014 — so unlike `tax_invoices`, which had to gain
+    // that key in 0091, this arm costs the referenced register nothing.
+    expect(sql).toContain('ADD COLUMN issue_challan_id uuid;');
+    expect(sql).toContain(
+      'FOREIGN KEY (organisation_id, issue_challan_id, work_id)\n  REFERENCES issue_challans (organisation_id, id, work_id);',
+    );
+    expect(sql).not.toMatch(/ALTER TABLE issue_challans\s+ADD CONSTRAINT/);
+  });
+
+  it('restates the shape CHECK with all three arms rather than loosening it', () => {
+    // A CASE-shaped constraint must enumerate every arm: one left out is
+    // silently permitted rather than loudly missing. Both the vocabulary
+    // and the shape are dropped and re-added whole, so there is exactly
+    // one authority on each and a reader does not have to intersect two.
+    expect(sql).toContain('DROP CONSTRAINT signing_requests_document_type_check;');
+    expect(sql).toContain(
+      "document_type IN ('delivery_challan', 'issue_challan', 'tax_invoice')",
+    );
+    expect(sql).toContain('DROP CONSTRAINT signing_requests_document_shape;');
+    for (const arm of ['delivery_challan', 'issue_challan', 'tax_invoice']) {
+      expect(sql, arm).toContain(`WHEN '${arm}' THEN`);
+    }
+    // Every arm still excludes the other two explicitly. A shape that
+    // only asserted the named column is not null would admit a row
+    // naming three documents at once.
+    expect(sql).toContain(
+      'issue_challan_id IS NOT NULL\n        AND delivery_challan_id IS NULL AND tax_invoice_id IS NULL',
+    );
+  });
+
+  it('carries one open request per Issue Challan, and an index a foreign key can use', () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX signing_requests_one_open_per_issue_challan\s+ON signing_requests \(organisation_id, issue_challan_id\)\s+WHERE issue_challan_id IS NOT NULL AND status IN \('pending', 'claimed'\);/,
+    );
+    // NON-partial, beside the partial unique one: referential integrity
+    // cannot use a partial index, which is what the FK-index census
+    // measures.
+    expect(sql).toContain(
+      'CREATE INDEX signing_requests_issue_challan_idx\n  ON signing_requests (organisation_id, issue_challan_id);',
+    );
+  });
+
+  it('replaces 0091 guard rather than adding a second one, and freezes the new column', () => {
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.guard_signing_request()',
+    );
+    // No new trigger: a second BEFORE trigger on one table is two rules
+    // whose order nobody stated. The trigger census above counts this
+    // migration at zero for exactly this reason.
+    expect(sql).not.toMatch(/CREATE TRIGGER/);
+    // The frozen ROW is a denylist, so a column left out of it is
+    // silently editable — and a signing request that could be re-pointed
+    // at another document after its digest was authorised is the one edit
+    // this table must never admit.
+    expect(sql).toContain('NEW.issue_challan_id, NEW.tax_invoice_id, NEW.work_id,');
+    expect(sql).toContain('OLD.issue_challan_id, OLD.tax_invoice_id, OLD.work_id,');
+    // The INSERT branch reads the Issue Challan's OWN register. An `ELSE`
+    // would have sent it to the tax-invoice arm against a NULL id, found
+    // no row, and refused every Issue Challan with "missing".
+    expect(sql).toContain('ELSIF NEW.issue_challan_id IS NOT NULL THEN');
+    expect(sql).toContain('FROM issue_challans t');
+  });
+
+  it('adds no SQLSTATE of its own', () => {
+    // The migration adds an ARM to existing rules, not a rule. A third
+    // arm raising a new code would mean routes/signing.ts mapping two
+    // SQLSTATEs to one message.
+    const codes = new Set(
+      [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map((match) => match[1]),
+    );
+    expect([...codes].sort()).toEqual(['23J01', '23J02', '23J03', '23J04']);
+  });
+});
+
+describe('the railway measurement and its gate (0111)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0111_railway_measurements.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that adds a trigger to a live table', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('holds both new tables in the ADR-0010 policy shape with no DELETE', () => {
+    for (const table of ['railway_measurements', 'railway_measurement_confirmations']) {
+      expect(sql, table).toContain(`CREATE POLICY ${table}_tenant_policy`);
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+    expect(
+      sql.match(
+        /USING \(organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)\)/g,
+      ),
+    ).toHaveLength(2);
+    // Evidence never leaves; discard is the only exit for the document,
+    // and a confirmation somebody made is not editable at all.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON railway_measurements TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT ON railway_measurement_confirmations TO auto_mb_app;',
+    );
+    expect(sql).not.toContain(
+      'UPDATE ON railway_measurement_confirmations TO auto_mb_app',
+    );
+  });
+
+  it('binds the object key to the tenant prefix, as every stored document does', () => {
+    expect(sql).toContain("CHECK (object_key LIKE organisation_id::text || '/%')");
+    expect(sql).toContain(
+      "media_type text NOT NULL CHECK (media_type = 'application/pdf')",
+    );
+    expect(sql).toContain('sha256 sha256_hex NOT NULL');
+  });
+
+  it('cannot hold a reading and its absence at the same time', () => {
+    // An unreadable document has nothing extracted and nothing compared;
+    // a read one has both. Without this a row could claim `matched` with
+    // an empty verdict list, and the gate would open on nothing.
+    expect(sql).toContain('railway_measurements_reading_shape_check');
+    expect(sql).toMatch(
+      /match_status = 'unreadable'\s+AND extraction_payload IS NULL\s+AND line_verdicts = '\[\]'::jsonb/,
+    );
+    expect(sql).toMatch(
+      /match_status <> 'unreadable'\s+AND extraction_payload IS NOT NULL\s+AND jsonb_array_length\(line_verdicts\) > 0/,
+    );
+  });
+
+  it('keeps one live measurement per book, with a foreign key index beside it', () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX railway_measurements_one_live_per_book\s+ON railway_measurements \(organisation_id, measurement_book_id\)\s+WHERE discarded_at IS NULL;/,
+    );
+    expect(sql).toContain(
+      'CREATE INDEX railway_measurements_book_idx\n  ON railway_measurements (organisation_id, measurement_book_id);',
+    );
+  });
+
+  it('refuses a confirmation that would turn the fallback into a bypass', () => {
+    // Three ways past the gate, all closed in the database rather than in
+    // the route alone: confirming a document that WAS read (a mismatch is
+    // a disagreement about quantities, not a reading problem), confirming
+    // a discarded one, and confirming an item the Measurement Book does
+    // not have — which would let the count be reached without every real
+    // line being looked at.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_railway_measurement_confirmation()',
+    );
+    expect(sql).toContain("IF measurement.match_status <> 'unreadable' THEN");
+    expect(sql).toContain('IF measurement.discarded_at IS NOT NULL THEN');
+    expect(sql).toContain('FROM measurement_book_lines l');
+    expect(sql).toContain(
+      'CREATE TRIGGER railway_measurement_confirmations_guard\nBEFORE INSERT ON railway_measurement_confirmations',
+    );
+  });
+
+  it('gates the received railway bill on the measurement, counting confirmations', () => {
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_railway_bill_needs_measurement()',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER received_railway_bills_needs_measurement_guard\nBEFORE INSERT ON received_railway_bills',
+    );
+    // The unreadable arm counts rows rather than trusting a flag, which
+    // is the whole reason the confirmations are a table.
+    expect(sql).toContain('FROM railway_measurement_confirmations c');
+    expect(sql).toContain('AND c.item_number = l.item_number');
+    // INSERT only, and deliberately: 0066 froze
+    // `received_railway_bills.measurement_book_id`, so no UPDATE can move
+    // a bill onto an ungated measurement. An UPDATE arm would watch a
+    // door that is welded shut.
+    expect(sql).not.toMatch(/BEFORE INSERT OR UPDATE ON received_railway_bills/);
+  });
+
+  it('refuses to discard the measurement a standing bill rests on', () => {
+    // The other half of the gate, and the half the route cannot hold on
+    // its own: the discard route reads the bill unlocked and the two
+    // routes lock different rows, so nothing serialises a discard against
+    // a concurrent upload. Without this arm the "enforced twice" claim is
+    // true of the insert and false of the discard.
+    expect(sql).toContain(
+      'IF OLD.discarded_at IS NULL AND NEW.discarded_at IS NOT NULL\n     AND EXISTS (\n       SELECT 1 FROM received_railway_bills b',
+    );
+    expect(sql).toContain('AND b.measurement_book_id = OLD.measurement_book_id');
+    expect(sql).toContain('AND b.discarded_at IS NULL');
+  });
+
+  it('keeps every refusal inside its own SQLSTATE block', () => {
+    // 23V. This assertion says the codes are all in ONE block and does
+    // not — cannot — say the block is free: it reads a single file, which
+    // is exactly how this pack shipped 23R while 0106 and 0107 held it.
+    // Whether the block is free is the repo-wide census above ("gives
+    // every custom SQLSTATE in the 23 block exactly one owning
+    // migration"), and that is where a future collision fails.
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    expect(codes.length).toBeGreaterThanOrEqual(7);
+    expect(codes.every((code) => code?.startsWith('23V'))).toBe(true);
+    expect([...new Set(codes)].sort()).toEqual([
+      '23V01',
+      '23V02',
+      '23V03',
+      '23V04',
+      '23V05',
+      '23V06',
+      '23V07',
+    ]);
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    // Every table these guards touch is one the caller may already read
+    // under RLS, so definer rights would add authority for nothing — and
+    // a definer here would read across tenants.
+    expect(sql).not.toContain('SECURITY DEFINER');
+    expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(3);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(3);
   });
 });

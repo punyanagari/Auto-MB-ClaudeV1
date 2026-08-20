@@ -1731,6 +1731,7 @@ export function OperationsWorkspace({
                 canModify={canModify}
                 canIssue={canIssue}
                 canCancel={canCancel}
+                canSign={canSign}
                 workActive={challanWorkActive}
                 onEdit={(challanId) => {
                   navigate({

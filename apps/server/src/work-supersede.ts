@@ -27,9 +27,9 @@ import { assertWorkOperable } from './work-status.js';
  * The registers that make a Work ineligible: everything the agency issued,
  * received, or became bound by on this Work's account.
  *
- * Fifty-one tables can reach `works` through a chain of foreign keys.
+ * Fifty-three tables can reach `works` through a chain of foreign keys.
  * This list holds the 17 that are documents in their own right;
- * `WORK_CHILD_TABLES_EXEMPT` holds the other 34 with the reason each is
+ * `WORK_CHILD_TABLES_EXEMPT` holds the other 36 with the reason each is
  * exempt, and the census in `test/work-supersede.integration.test.ts`
  * proves the union is exactly the catalog — TRANSITIVELY, not only over
  * direct children, because a document hanging off an exempt parent is
@@ -253,7 +253,21 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   // checks. Withdrawing the letter behind it changes none of that; it
   // withdraws the CLAIM, not the signature.
   signing_requests:
-    'a signature on an issued document, and that document — a delivery challan or a tax invoice — blocks first',
+    'a signature on an issued document, and that document — a delivery challan, an issue challan or a tax invoice — blocks first',
+  // The railway's own measurement (0111), exempt by exactly the argument
+  // above it. It is real received evidence and looks like a blocker; it
+  // is structurally unreachable as one, because the shape of the table
+  // requires a `measurement_books` row and only a FINALIZED book can
+  // carry a measurement at all — and `measurement_books` is in the
+  // blocking list. There is no arrangement of rows in which a Work
+  // carries a railway measurement and is eligible, so an eighteenth
+  // register would ask a question the Measurement Book has already
+  // answered. Its confirmations hang off the measurement, one further
+  // step behind the same wall.
+  railway_measurements:
+    'the railway’s copy of a measurement, and the Measurement Book it is about blocks first',
+  railway_measurement_confirmations:
+    'one member’s statement about one line of a measurement that itself blocks behind its Measurement Book',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

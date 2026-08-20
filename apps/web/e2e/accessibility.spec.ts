@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   DASHBOARD,
   MAINTENANCE_AWAITING_APPROVAL,
@@ -432,6 +432,124 @@ test('LOA upload and review screens pass the axe scan', async ({ page }) => {
   await expect(page.getByText('The printed unit could not be resolved.')).toBeVisible();
   await expectNoAxeViolations(page, 'review');
 });
+
+/** The two finalized Measurement Books the work-detail mock carries, one
+ * per railway-measurement shape the axe scan needs. */
+const MEASUREMENT_BOOKS = {
+  'DCW-1-MB-01': 'eeeeeeee-8888-4888-8888-eeeeeeeeeeee',
+  'DCW-1-MB-02': 'eeeeeeee-9999-4999-8999-eeeeeeeeeeee',
+} as const;
+
+/**
+ * Opens one of those books with a chosen railway-measurement reading
+ * (0111).
+ *
+ * A book PER SHAPE rather than one book re-routed twice: the panel's read
+ * is keyed on the book it is given, so re-opening the same book with a
+ * different mocked reading leaves the effect unfired and the previous
+ * reading on screen — and the scan then passes against a state nobody set
+ * up, which is worse than failing.
+ */
+async function openMeasurementBook(
+  page: Page,
+  workId: string,
+  mbNumber: keyof typeof MEASUREMENT_BOOKS,
+  measurement: {
+    readonly matchStatus: 'matched' | 'mismatched' | 'unreadable';
+    readonly settles: boolean;
+    readonly lines: readonly Record<string, unknown>[];
+  },
+): Promise<void> {
+  const bookId = MEASUREMENT_BOOKS[mbNumber];
+  await page.route(`**/api/measurement-books/${bookId}`, (route) =>
+    route.fulfill(
+      json({
+        book: {
+          id: bookId,
+          workId,
+          status: 'finalized',
+          isFinal: mbNumber === 'DCW-1-MB-01',
+          mbDate: '2026-08-05',
+          mbNumber,
+          sequenceNumber: mbNumber === 'DCW-1-MB-01' ? 1 : 2,
+          totalAmount: '200.00',
+          remarkTemplateVersion: 'mb-remark-v1',
+          templateVersion: 'mb-v1',
+          renderedAvailable: true,
+          cancellationNote: null,
+          billId: null,
+          createdAt: '2026-08-05T00:00:00.000Z',
+          finalizedAt: '2026-08-05T10:00:00.000Z',
+          cancelledAt: null,
+          closedAt: null,
+        },
+        sources: [],
+        lines: [],
+        warnings: [],
+        previewTotal: null,
+        unbillableVariationExposure: '0.00',
+        // 0106's rupee value of what the measured-quantity adjustments
+        // left out. Required by the response schema, and the screen
+        // formats it unconditionally — a mock that omits it blanks the
+        // whole workspace rather than failing near the missing field.
+        measurementAdjustedAway: '0.00',
+      }),
+    ),
+  );
+  await page.route(`**/api/measurement-books/${bookId}/railway-measurement`, (route) =>
+    route.fulfill(
+      json({
+        measurement: {
+          id: `ffffffff-8888-4888-8888-fffffffffff${mbNumber.slice(-1)}`,
+          workId,
+          measurementBookId: bookId,
+          originalFilename: 'CMB-01.pdf',
+          sha256: 'a'.repeat(64),
+          sizeBytes: 2048,
+          discardedAt: null,
+          createdAt: '2026-08-06T00:00:00.000Z',
+          ...measurement,
+        },
+        // The MB-02 leg carries a discarded mismatch as well, so the
+        // "previously recorded and discarded" list is on screen for the
+        // scan: it is the one place this panel puts a destructive chip
+        // inside body text rather than at the top of a section.
+        discarded:
+          mbNumber === 'DCW-1-MB-02'
+            ? [
+                {
+                  id: 'ffffffff-0000-4000-8000-ffffffffffff',
+                  workId,
+                  measurementBookId: bookId,
+                  originalFilename: 'CMB-01-first-try.pdf',
+                  sha256: 'b'.repeat(64),
+                  sizeBytes: 2048,
+                  matchStatus: 'mismatched',
+                  lines: [],
+                  settles: false,
+                  discardedAt: '2026-08-06T09:00:00.000Z',
+                  createdAt: '2026-08-05T00:00:00.000Z',
+                },
+              ]
+            : [],
+      }),
+    ),
+  );
+  // Awaited before it is clicked: the register's own list is in flight
+  // when the tab opens, and a click that lands on nothing leaves the
+  // failure pointing at the panel rather than at the row.
+  const row = page.getByRole('button', { name: mbNumber });
+  await expect(row).toBeVisible();
+  await row.click();
+  // The panel's own heading is the wait, and the only one. An
+  // intermediate assertion on the book's heading was scaffolding while
+  // the two-books-per-shape bug was being found; it outlived its use and
+  // was itself brittle — the heading interleaves chips with its text, so
+  // its accessible name is not the string it reads as.
+  await expect(
+    page.getByRole('heading', { name: 'Railway measurement' }),
+  ).toBeVisible();
+}
 
 test('work detail and challan editor pass the axe scan', async ({ page }) => {
   /* By far the heaviest spec in the suite: twelve `expectNoAxeViolations`
@@ -1203,6 +1321,32 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
             finalizedAt: '2026-08-05T10:00:00.000Z',
             cancelledAt: null,
           },
+          // A SECOND finalized book, and it exists for the railway
+          // measurement scans below rather than for the register.
+          //
+          // The panel's read is keyed on the book it is given, so opening
+          // the SAME book twice with a different mocked reading leaves the
+          // effect unfired and the first reading on screen — the scan then
+          // passes against a state nobody set up. Two books, one shape
+          // each, is the honest way to reach both.
+          {
+            id: 'eeeeeeee-9999-4999-8999-eeeeeeeeeeee',
+            workId: WORK_ID,
+            status: 'finalized',
+            isFinal: false,
+            mbDate: '2026-08-06',
+            mbNumber: 'DCW-1-MB-02',
+            sequenceNumber: 2,
+            totalAmount: '150.00',
+            remarkTemplateVersion: 'mb-remark-v1',
+            templateVersion: 'mb-v1',
+            renderedAvailable: true,
+            cancellationNote: null,
+            billId: null,
+            createdAt: '2026-08-06T00:00:00.000Z',
+            finalizedAt: '2026-08-06T10:00:00.000Z',
+            cancelledAt: null,
+          },
           {
             id: MB_DRAFT_ID,
             workId: WORK_ID,
@@ -1409,6 +1553,70 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
   // colour on colour and the one place the reduction is stated as money.
   await expect(page.getByText('Measured down on this Measurement Book')).toBeVisible();
   await expectNoAxeViolations(page, 'work detail — measurement book draft');
+
+  /* The railway measurement panel (0111), scanned in the two shapes that
+     put colour on a word. The MATCHED shape reuses the success chip every
+     register already draws and needs no separate pass; the two below are
+     the ones with new tone usage on this screen — a destructive chip
+     beside a sentence naming a quantity difference, and a warning chip
+     above a column of per-line buttons.
+
+     Opened rather than asserted from the register, because the panel only
+     exists inside a finalized book's detail. */
+  await openMeasurementBook(page, WORK_ID, 'DCW-1-MB-01', {
+    matchStatus: 'mismatched',
+    settles: false,
+    lines: [
+      {
+        itemNumber: 'A/1',
+        matched: false,
+        refusal: 'quantity',
+        detail:
+          "Item A/1: this Measurement Book measures 2.8, the railway's measurement records 2.1.",
+        confirmedByUserId: null,
+        confirmedAt: null,
+      },
+    ],
+  });
+  await expect(page.getByText('Does not match')).toBeVisible();
+  // The rule the panel must not soften, asserted here as well as in the
+  // unit test: a mismatch offers no way past itself.
+  await expect(page.getByRole('button', { name: /^Confirm item/ })).toHaveCount(0);
+  await expectNoAxeViolations(page, 'railway measurement — mismatched');
+
+  await openMeasurementBook(page, WORK_ID, 'DCW-1-MB-02', {
+    matchStatus: 'unreadable',
+    settles: false,
+    lines: [
+      {
+        itemNumber: 'A/1',
+        matched: false,
+        refusal: null,
+        detail: null,
+        confirmedByUserId: null,
+        confirmedAt: null,
+      },
+      {
+        itemNumber: 'A/6',
+        matched: false,
+        refusal: null,
+        detail: null,
+        confirmedByUserId: 'user-1',
+        confirmedAt: '2026-08-06T09:00:00.000Z',
+      },
+    ],
+  });
+  // Exact: the chip's word and the sentence explaining it both carry the
+  // phrase, and the chip is what this scan is about.
+  await expect(page.getByText('Could not be read', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Confirm item A/1' })).toBeVisible();
+  // The discarded-history list, scanned with the rest: a destructive chip
+  // inside body text is a contrast pairing the section headings above it
+  // never produce.
+  await expect(
+    page.getByRole('heading', { name: 'Previously recorded and discarded' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'railway measurement — awaiting confirmation');
 
   await openTab('Bills');
   await expect(page.getByRole('heading', { name: /Bill #1/ })).toBeVisible();

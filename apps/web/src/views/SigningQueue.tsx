@@ -52,6 +52,16 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
  * request and the cursor is there for the year, not the day. */
 const PAGE_SIZE = 50;
 
+/** What each outward register is called on the row. A record rather than
+ * a ternary, so migration 0110's third arm — and whatever the payroll
+ * module adds as a fourth — is a line here and a type error if it is
+ * forgotten, instead of an Issue Challan quietly labelled "Tax invoice". */
+const DOCUMENT_TYPE_LABELS: Readonly<Record<SigningRequest['documentType'], string>> = {
+  delivery_challan: 'Delivery challan',
+  issue_challan: 'Issue challan',
+  tax_invoice: 'Tax invoice',
+};
+
 /** Whether the authorisation's window has closed. The server holds the
  * same rule (`lapsed` in `routes/signing.ts`) and is authoritative; this
  * decides only what to draw. */
@@ -197,9 +207,7 @@ export function SigningQueue({ api, organisationId, canModify }: SigningQueuePro
                       {request.documentNumber ?? 'Unnumbered'}
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      {request.documentType === 'delivery_challan'
-                        ? 'Delivery challan'
-                        : 'Tax invoice'}
+                      {DOCUMENT_TYPE_LABELS[request.documentType]}
                     </span>
                   </td>
                   <td>{request.workCode ?? '—'}</td>

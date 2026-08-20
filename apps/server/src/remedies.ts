@@ -247,8 +247,13 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     "Cancel the final Measurement Book first — it closes the Work's payment cycle, so anything recorded after it could never be billed.",
   MB_SOURCE_ALREADY_BILLED:
     'Pick measurements no live Measurement Book already carries; each source is billed exactly once.',
+  // Two call sites since 0111, and one sentence has to serve both: the
+  // bill upload refusing a second bill, and the measurement discard
+  // refusing to pull the ground out from under the bill that stands on
+  // it. Both are answered by discarding that bill first, so the remedy
+  // names the act rather than the screen either caller was on.
   RAILWAY_BILL_ALREADY_RECORDED:
-    'Discard the railway bill already recorded against this measurement before uploading another; one bill settles one measurement.',
+    "Discard the railway bill recorded against this measurement first — from the Measurement Book's Railway bill panel; one bill settles one measurement, and the measurement that admitted it cannot be withdrawn while it stands.",
   CONTACT_EXISTS:
     'Open the existing contact in Masters, Contacts and edit it rather than adding a second under the same designation and address.',
   DUPLICATE_ENTRY:
@@ -422,6 +427,20 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Finalize the Measurement Book this bill measures before recording the bill, and check the measurement number printed on the bill names this Work.',
   RAILWAY_BILL_NOT_FOR_WORK:
     'Open the Work whose LOA number the bill prints and record it there; a bill is filed against the letter it names.',
+  RAILWAY_MEASUREMENT_MISSING:
+    "Upload the railway's measurement for this Measurement Book in its Railway measurement panel first; the bill is raised from that measurement and is recorded after it.",
+  RAILWAY_MEASUREMENT_UNMATCHED:
+    'Read the per-line differences in the Railway measurement panel and settle them with the railway, then upload the corrected measurement; a bill cannot be recorded against quantities the two sides do not agree on.',
+  RAILWAY_MEASUREMENT_UNCONFIRMED:
+    'Confirm each remaining line against the railway document in the Railway measurement panel; the lines it still needs are named in the refusal.',
+  RAILWAY_MEASUREMENT_ALREADY_RECORDED:
+    'Discard the measurement already on this Measurement Book before uploading another; one measurement is on record at a time.',
+  RAILWAY_MEASUREMENT_NOT_CONFIRMABLE:
+    'Read the per-line verdicts in the Railway measurement panel instead; only a measurement whose text could not be read is confirmed by hand.',
+  RAILWAY_MEASUREMENT_NOT_FOR_BOOK:
+    'Open the Measurement Book whose measurement number the document prints and upload it there; a measurement is filed against the measurement it names.',
+  RAILWAY_MEASUREMENT_NOT_FOUND:
+    "Open the measurement from the Measurement Book's Railway measurement panel; a discarded measurement keeps its record but a stale link resolves to nothing.",
 
   // ---- Masters and configuration -----------------------------------------
   CONTACT_RETIRED:

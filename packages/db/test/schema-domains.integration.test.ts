@@ -252,8 +252,12 @@ describe('the schema at head names all three shapes', () => {
     // file they were handed against; 36 after 0109 adds
     // vendor_invoices.document_sha256, the digest of the vendor's own tax
     // invoice — the one upload in this application a state transition
-    // depends on, since a purchase order does not close without it.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(36);
+    // depends on, since a purchase order does not close without it; 37
+    // after 0111 adds railway_measurements.sha256, the digest of the
+    // railway's own measurement sheet — the document the gate on a
+    // received bill reads, so the bytes a verdict was computed over stay
+    // identifiable.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(37);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

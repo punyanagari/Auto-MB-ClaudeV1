@@ -10,6 +10,7 @@ import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
+import { seedConfirmedRailwayMeasurement } from './helpers/railway-measurement-seed.js';
 
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
@@ -495,6 +496,14 @@ describe('dashboard', () => {
           'submitted', now()
         )
       `;
+      // 0111's precondition: a bill records only against a book whose
+      // railway measurement is on file and settled.
+      await seedConfirmedRailwayMeasurement(admin, {
+        organisationId,
+        workId: payWorkId,
+        measurementBookId: bookId,
+        userId: ownerUserId,
+      });
       const [received] = await admin<{ id: string }[]>`
         insert into received_railway_bills (
           organisation_id, work_id, measurement_book_id, object_key,
