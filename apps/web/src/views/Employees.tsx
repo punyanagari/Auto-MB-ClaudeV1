@@ -4,7 +4,7 @@ import type { Contact, Employee, EmployeeSummary } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
 import { errorMessage, describeLoadFailure } from '../lib/load-failure.js';
-import { useReload } from '../lib/view-state.js';
+import { useReload, useReveal } from '../lib/view-state.js';
 import { navigateOnClick, PAYROLL_HASH } from '../lib/workspace-routes.js';
 import { Button, buttonVariants } from '../ui/button.js';
 import { Card } from '../ui/card.js';
@@ -16,6 +16,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The employee register (migrations 0089 and 0090).
@@ -65,6 +66,7 @@ export function Employees({
   onOpenPayroll,
 }: EmployeesProps) {
   const [employees, setEmployees] = useState<readonly EmployeeSummary[] | null>(null);
+  const { reveal, revealProps } = useReveal();
   const [currentCount, setCurrentCount] = useState(0);
   /* Summed by PostgreSQL, not by this page. Adding a column of rupees
      up in JavaScript is exactly the float arithmetic AGENTS.md rule 5
@@ -284,7 +286,7 @@ export function Employees({
             </thead>
             <tbody>
               {shown.map((employee) => (
-                <tr key={employee.id}>
+                <tr key={employee.id} {...revealProps(employee.id)}>
                   <th scope="row" className={wrapCell}>
                     <span className="block font-medium">{employee.name}</span>
                     <span className="font-mono text-xs text-muted-foreground">
@@ -351,8 +353,9 @@ export function Employees({
           onClose={() => {
             setComposerOpen(false);
           }}
-          onCreated={() => {
+          onCreated={(employee) => {
             setComposerOpen(false);
+            reveal(employee.id);
             reload();
           }}
         />
@@ -651,10 +654,9 @@ function EmployeeComposer({
 
         <Field>
           <label htmlFor="employee-basic">Basic</label>
-          <input
+          <NumericInput
             id="employee-basic"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={basic}
             onChange={(event) => {
               setBasic(event.target.value);
@@ -663,10 +665,9 @@ function EmployeeComposer({
         </Field>
         <Field>
           <label htmlFor="employee-da">Dearness allowance</label>
-          <input
+          <NumericInput
             id="employee-da"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={da}
             onChange={(event) => {
               setDa(event.target.value);
@@ -675,10 +676,9 @@ function EmployeeComposer({
         </Field>
         <Field>
           <label htmlFor="employee-hra">House rent allowance</label>
-          <input
+          <NumericInput
             id="employee-hra"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={hra}
             onChange={(event) => {
               setHra(event.target.value);
@@ -687,10 +687,9 @@ function EmployeeComposer({
         </Field>
         <Field>
           <label htmlFor="employee-other">Other allowances</label>
-          <input
+          <NumericInput
             id="employee-other"
             className="input font-mono tabular-nums"
-            inputMode="decimal"
             value={other}
             onChange={(event) => {
               setOther(event.target.value);

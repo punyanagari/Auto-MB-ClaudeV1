@@ -788,7 +788,11 @@ export function registerInventoryRoutes(
 
         if (body.purchaseOrderLineId !== undefined) {
           const [line] = await tx<
-            { production_item_id: string | null; status: string; work_id: string }[]
+            {
+              production_item_id: string | null;
+              status: string;
+              work_id: string | null;
+            }[]
           >`
             select pol.production_item_id, po.status, po.work_id
             from purchase_order_lines pol
@@ -804,13 +808,19 @@ export function registerInventoryRoutes(
           }
           // The order is a Work's document even though the shelf is not,
           // so R8 reaches through it exactly as it reaches through a job
-          // card.
-          await assertWorkUsable(
-            tx,
-            user.id,
-            line.work_id,
-            'receiving against a purchase order',
-          );
+          // card — and, since migration 0109, exactly as far: an order
+          // raised outside any LOA has no Work to reach, so there is no
+          // work-scope to apply and no completion state to be blocked
+          // by. `app_private.guard_stock_movement` carries the same
+          // exemption, so the two layers agree.
+          if (line.work_id !== null) {
+            await assertWorkUsable(
+              tx,
+              user.id,
+              line.work_id,
+              'receiving against a purchase order',
+            );
+          }
           if (line.production_item_id !== body.productionItemId) {
             throw httpError(
               409,

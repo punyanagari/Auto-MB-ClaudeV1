@@ -18,7 +18,7 @@ import type {
 import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
-import { useReload } from '../lib/view-state.js';
+import { useReload, useReveal } from '../lib/view-state.js';
 import { navigateOnClick, STOCK_SHORTAGES_HASH } from '../lib/workspace-routes.js';
 import { Button, buttonVariants } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -30,6 +30,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The stock register (migration 0087).
@@ -216,11 +217,20 @@ export function StockRegister({
       });
   }
 
-  async function run(work: () => Promise<unknown>): Promise<void> {
+  /* The optional second argument names the row the ledger should reveal.
+   * The reorder-level call writes a stock ITEM rather than a movement, so
+   * it has no ledger row to scroll to and passes nothing. */
+  const { reveal, revealProps } = useReveal();
+
+  async function run<T>(
+    work: () => Promise<T>,
+    revealed?: (result: T) => string,
+  ): Promise<void> {
     setBusy(true);
     setActionError(null);
     try {
-      await work();
+      const result = await work();
+      if (revealed !== undefined) reveal(revealed(result));
       setMovementFor(null);
       reload();
     } catch (cause: unknown) {
@@ -559,7 +569,7 @@ export function StockRegister({
               </thead>
               <tbody>
                 {movements.map((movement) => (
-                  <tr key={movement.id}>
+                  <tr key={movement.id} {...revealProps(movement.id)}>
                     <th scope="row" className="font-mono text-xs">
                       {movement.reference}
                     </th>
@@ -600,7 +610,10 @@ export function StockRegister({
             setMovementFor(null);
           }}
           onSubmit={(form) =>
-            void run(() => api.postStockMovement(organisationId, form))
+            void run(
+              () => api.postStockMovement(organisationId, form),
+              (posted) => posted.movement.id,
+            )
           }
           onSetReorderLevel={(level) =>
             void run(() =>
@@ -713,9 +726,8 @@ function MovementDialog({
         </Field>
         <Field>
           <label htmlFor="movement-quantity">Quantity ({item.unit})</label>
-          <input
+          <NumericInput
             id="movement-quantity"
-            inputMode="decimal"
             required
             value={quantity}
             onChange={(event) => {
@@ -763,9 +775,8 @@ function MovementDialog({
           <label htmlFor="reorder-level">
             Reorder level ({item.unit}) — blank means no level is set
           </label>
-          <input
+          <NumericInput
             id="reorder-level"
-            inputMode="decimal"
             value={reorderLevel}
             onChange={(event) => {
               setReorderLevel(event.currentTarget.value);

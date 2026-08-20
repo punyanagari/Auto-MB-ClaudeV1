@@ -5,9 +5,9 @@ import type {
   WorkRetentionResponse,
 } from '@auto-mb/contracts';
 import type { ApiClient } from '../api.js';
-import { useAction, useReload } from '../lib/view-state.js';
+import { useAction, useReload, useReveal } from '../lib/view-state.js';
 import { describeLoadFailure } from '../lib/load-failure.js';
-import { formatDate, formatInr } from '../format.js';
+import { formatDate, formatInr, todayIso } from '../format.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { ConfirmDialog } from '../ui/confirm.js';
@@ -16,6 +16,7 @@ import { Actions, Field, FieldError, FieldRow, Hint } from '../ui/form.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * What the railway is still holding, and what it kept because the work
@@ -161,6 +162,8 @@ export function WorkRetention({
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
+
+  const { reveal, revealProps } = useReveal();
 
   /**
    * One mutation, then a re-read of the whole position.
@@ -349,11 +352,9 @@ export function WorkRetention({
             <FieldRow>
               <Field>
                 <label htmlFor="retention-percent">Retention per bill (%)</label>
-                <input
+                <NumericInput
                   id="retention-percent"
                   name="retentionPercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.retentionPercent ?? ''}
                   className="font-mono tabular-nums"
@@ -362,11 +363,9 @@ export function WorkRetention({
               </Field>
               <Field>
                 <label htmlFor="retention-limit-percent">Ceiling (% of contract)</label>
-                <input
+                <NumericInput
                   id="retention-limit-percent"
                   name="retentionLimitPercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.retentionLimitPercent ?? ''}
                   className="font-mono tabular-nums"
@@ -379,17 +378,17 @@ export function WorkRetention({
                 <label htmlFor="defect-liability-months">
                   Defect liability (months)
                 </label>
-                <input
+                <NumericInput
+                  integer
                   id="defect-liability-months"
                   name="defectLiabilityMonths"
-                  type="number"
-                  min={0}
-                  max={120}
-                  // A liability period is a count of months. Without the
-                  // step the browser accepts "1.5", which the request
-                  // builder then drops silently rather than sending — a
-                  // field that appears to save and does not.
-                  step={1}
+                  // A liability period is a count of months, which is what
+                  // `integer` buys: the decimal point cannot be typed at
+                  // all. This used to be a `step={1}` on a number input,
+                  // and without that step the browser accepted "1.5",
+                  // which the request builder then dropped silently
+                  // rather than sending — a field that appeared to save
+                  // and did not.
                   disabled={pending}
                   defaultValue={terms?.defectLiabilityMonths ?? ''}
                   className="font-mono tabular-nums"
@@ -400,11 +399,9 @@ export function WorkRetention({
             <FieldRow>
               <Field>
                 <label htmlFor="ld-rate-percent">Damages rate (%)</label>
-                <input
+                <NumericInput
                   id="ld-rate-percent"
                   name="ldRatePercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.ldRatePercent ?? ''}
                   className="font-mono tabular-nums"
@@ -447,11 +444,9 @@ export function WorkRetention({
               </Field>
               <Field>
                 <label htmlFor="ld-cap-percent">Damages cap (%)</label>
-                <input
+                <NumericInput
                   id="ld-cap-percent"
                   name="ldCapPercent"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   defaultValue={terms?.ldCapPercent ?? ''}
                   className="font-mono tabular-nums"
@@ -536,7 +531,7 @@ export function WorkRetention({
           </thead>
           <tbody>
             {releases.map((release) => (
-              <tr key={release.id}>
+              <tr key={release.id} {...revealProps(release.id)}>
                 <th scope="row" className="tabular-nums">
                   {formatDate(release.releasedOn)}
                   {release.voidedAt !== null && (
@@ -600,7 +595,12 @@ export function WorkRetention({
                 ...maybe('description', fieldOrUndefined(form, 'description')),
               };
               void run(async () => {
-                await api.recordRetentionRelease(organisationId, workId, body);
+                const recorded = await api.recordRetentionRelease(
+                  organisationId,
+                  workId,
+                  body,
+                );
+                reveal(recorded.id);
                 form.reset();
                 setBasis('pac');
               }, 'Release recorded; the retention balance has moved.');
@@ -614,16 +614,15 @@ export function WorkRetention({
                   name="releasedOn"
                   type="date"
                   required
+                  defaultValue={todayIso()}
                   disabled={pending}
                 />
               </Field>
               <Field>
                 <label htmlFor="release-amount">Amount</label>
-                <input
+                <NumericInput
                   id="release-amount"
                   name="amount"
-                  type="text"
-                  inputMode="decimal"
                   required
                   disabled={pending}
                   className="font-mono tabular-nums"
@@ -749,7 +748,7 @@ export function WorkRetention({
           </thead>
           <tbody>
             {assessments.map((assessment) => (
-              <tr key={assessment.id}>
+              <tr key={assessment.id} {...revealProps(assessment.id)}>
                 <th scope="row" className="tabular-nums">
                   {formatDate(assessment.assessedOn)}
                   {assessment.outcomeReason !== null && (
@@ -860,7 +859,8 @@ export function WorkRetention({
                 ...maybe('basisLabel', fieldOrUndefined(form, 'basisLabel')),
               };
               void run(async () => {
-                await api.assessLd(organisationId, workId, body);
+                const assessed = await api.assessLd(organisationId, workId, body);
+                reveal(assessed.id);
                 form.reset();
               }, 'Assessment made; the arithmetic is on the row.');
             }}
@@ -890,6 +890,7 @@ export function WorkRetention({
                   id="assessed-on"
                   name="assessedOn"
                   type="date"
+                  defaultValue={todayIso()}
                   required
                   disabled={pending}
                 />
@@ -898,11 +899,9 @@ export function WorkRetention({
             <FieldRow>
               <Field>
                 <label htmlFor="basis-amount">Basis</label>
-                <input
+                <NumericInput
                   id="basis-amount"
                   name="basisAmount"
-                  type="text"
-                  inputMode="decimal"
                   disabled={pending}
                   className="font-mono tabular-nums"
                 />
@@ -1056,10 +1055,8 @@ export function WorkRetention({
           {deciding.decision === 'levy' ? (
             <Field>
               <label htmlFor="ld-levied-amount">What the railway levied</label>
-              <input
+              <NumericInput
                 id="ld-levied-amount"
-                type="text"
-                inputMode="decimal"
                 value={leviedAmount}
                 disabled={pending}
                 aria-describedby="ld-levied-amount-hint"

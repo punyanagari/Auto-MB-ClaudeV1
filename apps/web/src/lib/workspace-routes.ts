@@ -74,6 +74,16 @@ export type WorkspaceView =
    * `workId` is the mock's `?work=` deep link, taken the way every other
    * cross-Work register takes it. */
   | { name: 'warranties'; workId: string | null }
+  /** The purchase-order register (migration 0109): every order the caller
+   * may see, raised against an award or outside any LOA. Ported from the
+   * mock's own top-level page (`app/purchase-orders/page.tsx` at
+   * fdfd610), which draws exactly this: a header, a two-tab split by
+   * what the order is against, and one dense table.
+   *
+   * `workId` is the mock's `?work=` deep link, taken the way every other
+   * cross-Work register here takes it — a Work's own Procurement tab
+   * remains the place an order against that Work is edited. */
+  | { name: 'purchase-orders'; workId: string | null }
   /** The tax-invoice module's own register: every invoice the caller may
    * see, work-backed and direct alike. A DIRECT invoice — raised against
    * a private customer, so belonging to no Work — has no Work to open
@@ -307,6 +317,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
         : `#/installations/${view.workId}`;
     case 'warranties':
       return view.workId === null ? '#/warranties' : `#/warranties/${view.workId}`;
+    case 'purchase-orders':
+      return view.workId === null
+        ? '#/purchase-orders'
+        : `#/purchase-orders/${view.workId}`;
     case 'invoices':
       return '#/invoices';
     case 'invoice':
@@ -603,6 +617,14 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       }
       if (!isRecordId(workId) || extra.length > 0) return null;
       return { view: { name: 'warranties', workId } };
+    }
+    case 'purchase-orders': {
+      const [workId, ...extra] = rest;
+      if (workId === undefined) {
+        return { view: { name: 'purchase-orders', workId: null } };
+      }
+      if (!isRecordId(workId) || extra.length > 0) return null;
+      return { view: { name: 'purchase-orders', workId } };
     }
     case 'inventory': {
       const [first, ...extra] = rest;

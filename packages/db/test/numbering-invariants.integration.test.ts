@@ -111,6 +111,16 @@ const COUNTER_TABLES = [
     refusal: 'purchase_order_counters',
   },
   {
+    // The second purchase-order series (0109), for orders raised outside
+    // any LOA: organisation-wide, like the budgetary quotation's, because
+    // there is no Work to count it under. Monotonic for the reason every
+    // document counter here is — a cancelled order keeps its number, so
+    // winding back would hand `PO-01` out twice.
+    table: 'organisation_purchase_order_counters',
+    scope: 'organisation',
+    refusal: 'organisation_purchase_order_counters',
+  },
+  {
     table: 'standalone_challan_counters',
     scope: 'financial-year',
     refusal: 'standalone challan counters',

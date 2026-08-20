@@ -231,7 +231,59 @@ over non-cancelled records for the item — computed nowhere else.
 
 - Recording is a site action, not an office one: the location is picked
   from the master or created inline while standing at it, and serial-
-  flagged items attach exactly one delivered, uninstalled serial per unit.
+  flagged items attach exactly one serial per unit.
+- **One site visit writes several records** (owner ruling, 2026-08-19,
+  corrections ledger item 12). A crew installs several items at one
+  station on one day, so the date, the location and the remark are stated
+  once and each item with a quantity becomes its own installation record,
+  written in a single transaction. All or nothing: half a visit recorded
+  is worse than none, because the operator cannot tell which half. An item
+  appears once per visit — two rows naming it are refused rather than
+  summed, since two quantities for one item on one day is a typo far more
+  often than it is two crews.
+- **The recording surface leads with the items that have a balance**
+  (ledger item 10): the delivered balance for a serial-tracked supply item,
+  the sanctioned balance for an item with no supply leg. The whole schedule
+  is never offered at once.
+  - An item whose **delivered** quantity is fully installed is not offered
+    at all. R5's delivery floor refuses more, so a row for it would be a
+    form that cannot succeed.
+  - An item installed to its **sanctioned** quantity, with no delivery
+    floor beneath it, is **folded away rather than dropped**, under
+    "Installed to sanction — recording more flags a variation". More may
+    still be recorded, per the ruling above, and a surface that hid it
+    would be a surface on which that ruling could not be exercised.
+  - AMC items are never offered (migration 0068).
+- **A serial the Delivery Challan missed is accepted at installation**
+  (ledger item 12, owner's words: "if missing serial in DC is added in IC
+  then accept it and record it"). A challan is typed from a despatch note;
+  a nameplate is read by the person in front of the equipment. Such a
+  serial is recorded with `origin = 'installation'` (migration 0108),
+  still unique within its Work, still one per installed unit, and the
+  serial trace names its origin rather than presenting it as delivered.
+  It belongs to its installation and not to any challan, so cancelling a
+  Delivery Challan releases exactly its own serials as it always did, and
+  cancelling the INSTALLATION is what releases this one.
+- **A serial keeps the origin it entered with. There is no adoption.**
+  When the office later tidies the Delivery Challan and tries to record
+  the same number against its line, the recording is refused
+  (`DUPLICATE_SERIAL`): the number is already traced under this Work, and
+  a serial identifies one physical unit. The lawful move is to record the
+  challan line **without** that serial and leave the number where the site
+  put it — the unit is traceable either way, and the trace says honestly
+  where the paperwork started. Moving a serial from `installation` to
+  `delivery` origin, so the challan could claim it, is a recorded FUTURE
+  decision and deliberately not built: it would rewrite what an issued
+  document was proven complete against, which is the one thing issued
+  documents do not do.
+- **Known degradation: a mistyped challan serial is not corrected by
+  this flow.** If the challan captured `SN-0O1` where the nameplate reads
+  `SN-001`, the site records the real number as an installation-origin
+  serial and the typo stays in the delivered pool, uninstalled, forever.
+  The Work then holds more traced serials for that item than it delivered
+  units, which is visible but not flagged. Correcting the typo means the
+  existing challan-correction path (a correction notice against the issued
+  document), not this one; nothing here edits an issued challan.
 - **Installation is measured as it happened, even past the sanction**
   (owner decision, 2026-08-17). Work goes in before the paperwork catches
   up: the railway asks for more at the site meeting, the gang installs it,
@@ -2298,10 +2350,42 @@ filter and the challan editor's over-receipt warning, so three readers cannot
 disagree about what has arrived.
 
 **A job card serving a private purchase order cannot raise one.** A purchase
-order belongs to a Work — its number is per Work, its authorization is per
-Work — and a private job card has none. The refusal says so; relaxing it is a
-numbering-and-authorization change to an issued-document surface and belongs
-in its own change.
+order belonged to a Work — its number was per Work, its authorization was per
+Work — and a private job card has none. That refusal stood until migration
+0109, which is the change 0087 said would need its own pack. It stays worded
+as a refusal here because the shortage-to-order conversion still needs a Work
+to convert INTO: the order it drafts buys for the contract the job card
+serves, and a job card with no contract has no such order to extend. What
+0109 added is the other direction — an order raised deliberately outside any
+LOA, from the register rather than from a shortage.
+
+**A purchase order may be raised outside any LOA (migration 0109, owner
+ruling of 2026-08-19).** `purchase_orders.work_id` is nullable. An order
+against an award is unchanged in every respect: same per-Work counter, same
+`<work_code>-PO-NN`, same work-scope wall, same R8 refusal on a completed
+Work. An order with no Work carries none of those, because there is no Work
+to carry them against — it is numbered `PO-NN` from a second, independent
+organisation-wide counter, it is visible to every member of the organisation
+(work-scope answers "which Works may this member see", and this order is in
+no Work's answer), its date has a future bound but no LOA letter to be
+after, and its lines cannot name a Work item. It is received onto the stock
+shelf, never onto a delivery challan, because a challan belongs to a Work.
+The two number series cannot collide: a work code is never empty, so
+`PO-01` is never `<code>-PO-01`.
+
+**Closing ANY purchase order requires the vendor's tax invoice (owner
+amendment of 2026-08-19).** Closing has always been derived — an order
+closes when its lines are received — and the ruling adds a second,
+independent condition: at least one live vendor invoice linked to the order,
+carrying its uploaded PDF. The two are separate refusals because the
+remedies are separate: material still owed is chased at the gate, a missing
+bill in the accounts inbox. A cancelled invoice does not count, and neither
+does one recorded without its paper — evidence nobody can produce is not
+evidence. `vendor_invoices` (§5.7's liability register) gained the optional
+order link and the document to carry it; the invoice rides the existing
+payments and TDS machinery unchanged. Both the route and a database trigger
+hold the rule, and both the link and the document freeze once written, so a
+closed order's evidence cannot be re-pointed afterwards.
 
 **Stock is organisation-level, and a Work is not.** One shelf serves every
 contract, so the register and the ledger are visible to every member. Every

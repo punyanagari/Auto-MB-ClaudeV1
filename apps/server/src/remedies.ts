@@ -165,6 +165,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Upload the letter again if it was discarded by mistake; a discarded intake package keeps its record but accepts no further work.',
   SERIAL_NOT_FOUND:
     'Find the serial with Serial Lookup; it names the challan that delivered it and where it now stands.',
+  DUPLICATE_SERIAL:
+    'Look the number up in Global Search: if the unit is already traced under this Work — including from an installation that captured it — record the challan line without it and leave the number where it is; otherwise correct whichever of the two misread the nameplate.',
   NOT_FOUND:
     'Choose the organisation again from the organisation picker; the one addressed is not one this account can open.',
 
@@ -288,6 +290,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // workflow.
   INSTALLATION_EXCEEDS_DELIVERY:
     'Issue the Delivery Challan for the balance first; installation is only ever recorded against material already delivered.',
+  INSTALLATION_ROWS_DUPLICATED:
+    'Put the whole quantity for an item on its single row; one item appears once per site visit, and a second row for it is a typo far more often than it is a second delivery.',
   INSPECTION_DOCUMENT_NOT_FOUND:
     'Open the call on the Inspection screen and upload the paper against its checklist row; a row with nothing attached has no file to open.',
   INSPECTION_CALL_NOT_FOUND:
@@ -353,6 +357,24 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the register: this receipt has already been withdrawn, and the amount it carried is outstanding again.',
   VENDOR_INVOICE_NOT_FOUND:
     'Reload the vendor ledger: the invoice was cancelled or belongs to another organisation, so record it again if it is genuinely outstanding.',
+  // The two halves of the close rule (migration 0109) are separate codes
+  // because they are separate errands: one is chased at the gate, the
+  // other in the accounts inbox.
+  PO_NO_TAX_INVOICE:
+    "Record the vendor's tax invoice against this order on the Payments screen's Vendors tab and upload the invoice PDF, then close the order.",
+  VENDOR_INVOICE_ORDER_MISMATCH:
+    'Pick a purchase order that is issued or closed and placed on this same vendor; an order still in draft has ordered nothing to bill for.',
+  VENDOR_INVOICE_CLOSES_ORDER:
+    'Record the replacement bill against that purchase order and upload its PDF first; a closed order keeps the evidence it was closed on until another one stands in its place.',
+  VENDOR_INVOICE_DOCUMENT_EXISTS:
+    "Cancel this invoice and record it again with the right file: a bill's own paper is stored once so a closed order's evidence cannot be swapped afterwards.",
+  // Crossed the three-throw coverage bar when the document routes (0109)
+  // became a second and third caller: a cancelled bill takes no paper and
+  // is no evidence for a purchase order's close.
+  VENDOR_INVOICE_CANCELLED:
+    'Record the bill again if it is genuinely owed; a cancelled invoice takes no document and closes no purchase order.',
+  VENDOR_INVOICE_DOCUMENT_NOT_FOUND:
+    'Upload the vendor invoice PDF from the vendor ledger; the invoice was recorded without its paper.',
   VENDOR_PAYMENT_EXCEEDS_INVOICE:
     'Reload the vendor ledger and pay at most what the invoice still shows outstanding; record the rest against the invoice it actually belongs to.',
   VENDOR_PAYMENT_TDS_EXCEEDS_GROSS:

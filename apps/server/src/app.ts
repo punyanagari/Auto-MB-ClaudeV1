@@ -1032,7 +1032,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerRetentionLedgerRoutes(app, authInstance, database);
     registerCompanyDocumentRoutes(app, authInstance, database, storage, scanner);
     registerInspectionRoutes(app, authInstance, database, storage, scanner);
-    registerPaymentsWorkspaceRoutes(app, authInstance, database);
+    registerPaymentsWorkspaceRoutes(app, authInstance, database, storage, scanner);
     registerHrRoutes(app, authInstance, database);
     registerTenderRoutes(app, authInstance, database, storage, scanner);
     registerProductionRoutes(app, authInstance, database);

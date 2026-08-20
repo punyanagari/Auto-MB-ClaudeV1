@@ -5,7 +5,7 @@ import type {
   WorkWarrantyResponse,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
-import { formatDate } from '../format.js';
+import { formatDate, todayIso } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { WARRANTY_BASIS_LABELS, warrantyCountdown } from '../lib/warranty.js';
@@ -17,6 +17,7 @@ import { Disclosure } from '../ui/disclosure.js';
 import { Actions, Field, FormError, Hint } from '../ui/form.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The Work's defect liability card, rendered inside its Instruments tab.
@@ -217,12 +218,10 @@ export function WorkWarranty({
           >
             <Field>
               <label htmlFor="dlp-months">Warranty period (months)</label>
-              <input
+              <NumericInput
+                integer
                 id="dlp-months"
                 name="dlp-months"
-                type="number"
-                min={1}
-                max={120}
                 required
                 defaultValue={terms?.dlpMonths ?? 24}
               />
@@ -489,6 +488,7 @@ export function WorkWarranty({
                         name={`close-on-${warranty.id}`}
                         label={`Discharged on, for ${warranty.itemNumber}`}
                         required
+                        defaultValue={todayIso()}
                         hint={`On or after ${formatDate(warranty.dlpExpiresOn)}, and never in the future.`}
                       />
                       <Field>

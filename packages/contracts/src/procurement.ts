@@ -10,17 +10,34 @@ import {
   UuidSchema,
   nonBlankString,
 } from './primitives.js';
+import { NextCursorSchema } from './pagination.js';
 
 /**
  * The procurement wave (migration 0033; legacy spec §5.8).
  *
- * A PURCHASE ORDER is what the contractor buys IN to supply a Work. It is
- * placed on a contact carrying `isVendor`, carries lines against the
- * Work's items or against consumables the LOA never named, and follows
- * the delivery challan's posture exactly: draft (no number) -> issued
- * (gapless `<work_code>-PO-NN`, vendor snapshotted, total frozen) ->
- * closed once its lines have been fully received against issued delivery
- * challans, or cancelled with a note it keeps forever.
+ * A PURCHASE ORDER is what the contractor buys IN. It is placed on a
+ * contact carrying `isVendor`, carries lines against a Work's items or
+ * against consumables no LOA ever named, and follows the delivery
+ * challan's posture exactly: draft (no number) -> issued (gapless number,
+ * vendor snapshotted, total frozen) -> closed once its lines have been
+ * fully received AND the vendor has billed for them, or cancelled with a
+ * note it keeps forever.
+ *
+ * IT MAY OR MAY NOT BUY FOR A WORK (migration 0109). An order raised
+ * against an award carries `workId` and is numbered `<work_code>-PO-NN`
+ * in that Work's own series. An order raised outside any LOA — office
+ * stores, plant, anything bought before or beside a contract — carries
+ * `workId: null` and is numbered `PO-NN` in a second, independent
+ * organisation-wide series. The two series never collide, because a work
+ * code is never empty. Everything else about the two is the same
+ * document, which is why it is the same table and the same routes.
+ *
+ * CLOSING TAKES TWO INDEPENDENT FACTS, and refuses with a different code
+ * for each: `PO_NOT_FULLY_RECEIVED` while material is still owed, and
+ * `PO_NO_TAX_INVOICE` while no live vendor invoice carrying its uploaded
+ * document points at the order (owner ruling, 2026-08-19). The remedies
+ * are different — one is chased at the gate, the other in the accounts
+ * inbox — so the refusals are too.
  *
  * A BUDGETARY QUOTATION is a priced offer made OUTWARD — to a private
  * customer, or to a railway officer assembling a tender's item list. It
@@ -116,12 +133,27 @@ export type CreatePurchaseOrderRequest = Static<
   typeof CreatePurchaseOrderRequestSchema
 >;
 
-/** A line buys an awarded item (`workItemId`) or a consumable the LOA
- * never named — the description always stands on its own, which is why
- * the link is optional and the text is not. */
+/**
+ * A line buys an awarded item (`workItemId`), a part that goes on a shelf
+ * (`productionItemId`), or a consumable nobody has modelled at all — the
+ * description always stands on its own, which is why both links are
+ * optional and the text is not.
+ *
+ * THE TWO LINKS ARE THE TWO RECEIPT CHANNELS (migration 0087). A line
+ * naming a part is received into the stock ledger by a movement; a line
+ * without one is received by an issued delivery challan. That is why they
+ * are mutually exclusive here: a line is received on exactly one channel,
+ * and a line that named both would be a contract item nobody could ever
+ * put on a challan.
+ *
+ * It is also the only channel a work-less order has (migration 0109):
+ * a delivery challan belongs to a Work, so an order raised outside any
+ * LOA is received onto the shelf or not at all.
+ */
 const PurchaseOrderLineInputSchema = Type.Object(
   {
     workItemId: Type.Optional(UuidSchema),
+    productionItemId: Type.Optional(UuidSchema),
     ...ProcurementLineInputFields,
   },
   { additionalProperties: false },
@@ -159,6 +191,9 @@ const PurchaseOrderLineSchema = Type.Object(
     ...ProcurementLineFields,
     /** Null on a consumable bought outside the LOA. */
     workItemId: Type.Union([UuidSchema, Type.Null()]),
+    /** The part this line buys onto a shelf, or null. Non-null is what
+     * makes the line stock-received rather than challan-received. */
+    productionItemId: Type.Union([UuidSchema, Type.Null()]),
     /** Present on the detail response: the sum of this line's quantities
      * on ISSUED delivery challans (a cancelled challan releases its
      * own). Together they are the close rule — an order closes when no
@@ -173,7 +208,14 @@ export type PurchaseOrderLine = Static<typeof PurchaseOrderLineSchema>;
 const PurchaseOrderSchema = Type.Object(
   {
     id: UuidSchema,
-    workId: UuidSchema,
+    /** Null on an order raised outside any LOA (migration 0109). */
+    workId: Type.Union([UuidSchema, Type.Null()]),
+    /** The Work's code, for a register that lists orders across Works and
+     * has to say what each one is AGAINST. Null exactly when `workId`
+     * is. Read-only provenance, resolved on every read rather than
+     * snapshotted: a Work's code is its identity and does not change
+     * under an issued document. */
+    workCode: Type.Union([Type.String(), Type.Null()]),
     /** Provenance only — the snapshot below is the record. */
     vendorContactId: UuidSchema,
     /** The vendor as the document names it: the issue-time snapshot's
@@ -188,6 +230,12 @@ const PurchaseOrderSchema = Type.Object(
     /** Issue-written; null while draft. */
     totalAmount: Type.Union([DecimalStringSchema, Type.Null()]),
     cancellationNote: Type.Union([Type.String(), Type.Null()]),
+    /** How many lines the order carries. The register shows it where the
+     * mock shows a single `item - qty unit` string: the mock's fixture
+     * gives an order ONE item, this application's order carries up to
+     * five hundred lines, and a count is the honest one-cell summary of
+     * a list that cannot fit in a cell. */
+    lineCount: Type.Integer({ minimum: 0 }),
     createdAt: Type.String({ format: 'date-time' }),
     issuedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     closedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
@@ -202,6 +250,57 @@ export const PurchaseOrderListResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 export type PurchaseOrderListResponse = Static<typeof PurchaseOrderListResponseSchema>;
+
+/* --- The organisation-wide register (migration 0109) -------------------
+ *
+ * Every purchase order the caller may see, work-linked and work-less
+ * together, because the question the register answers — what has this
+ * organisation ordered, and what is still outstanding — does not stop at
+ * the edge of a contract. The Work's own Procurement tab keeps answering
+ * the narrower question and is unchanged; `work` here is the same filter
+ * expressed as a deep link, so a row's Work opens the register already
+ * narrowed to it.
+ */
+
+/** `status` filters exactly as the per-Work list's does. `basis` is the
+ * register's own axis: `work` lists orders raised against an award,
+ * `organisation` those raised outside any LOA. `work` (the uuid) narrows
+ * to one Work and implies `basis: 'work'`. */
+export const PurchaseOrderRegisterQuerySchema = Type.Object(
+  {
+    status: Type.Optional(
+      Type.Union([
+        Type.Literal('open'),
+        ...PURCHASE_ORDER_STATUSES.map((status) => Type.Literal(status)),
+      ]),
+    ),
+    basis: Type.Optional(
+      Type.Union([Type.Literal('work'), Type.Literal('organisation')]),
+    ),
+    work: Type.Optional(UuidSchema),
+  },
+  { additionalProperties: false },
+);
+export type PurchaseOrderRegisterQuery = Static<
+  typeof PurchaseOrderRegisterQuerySchema
+>;
+
+export const PurchaseOrderRegisterResponseSchema = Type.Object(
+  {
+    purchaseOrders: Type.Array(PurchaseOrderSchema),
+    nextCursor: NextCursorSchema,
+  },
+  { additionalProperties: false },
+);
+export type PurchaseOrderRegisterResponse = Static<
+  typeof PurchaseOrderRegisterResponseSchema
+>;
+
+/* `POST /api/purchase-orders` — the work-less draft — takes
+ * {@link CreatePurchaseOrderRequestSchema} unchanged. The only difference
+ * between the two documents is the Work, and the Work is in the URL of
+ * the one that has it, so there is nothing for a second body schema to
+ * say. */
 
 export const PurchaseOrderDetailResponseSchema = Type.Object(
   {

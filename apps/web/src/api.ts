@@ -218,6 +218,8 @@ import type {
   Installation,
   InstallationListResponse,
   InstallationRegisterResponse,
+  RecordInstallationBatchRequest,
+  RecordInstallationBatchResponse,
   RecordInstallationRequest,
   PaymentMatrixCategory,
   PaymentMatrixRow,
@@ -256,6 +258,7 @@ import type {
   PurchaseOrder,
   PurchaseOrderStatus,
   PurchaseOrderDetailResponse,
+  PurchaseOrderRegisterResponse,
   CreatePurchaseOrderRequest,
   SavePurchaseOrderLinesRequest,
   CancelPurchaseOrderRequest,
@@ -964,6 +967,19 @@ export interface ApiClient {
     organisationId: string,
     body: RecordVendorInvoice,
   ) => Promise<VendorInvoice>;
+  /** The vendor's own tax invoice as a PDF (migration 0109). Stored once:
+   * a second upload is refused with VENDOR_INVOICE_DOCUMENT_EXISTS, and a
+   * purchase order does not close until one of its invoices has this. */
+  readonly uploadVendorInvoiceDocument: (
+    organisationId: string,
+    invoiceId: string,
+    file: Blob,
+    filename: string,
+  ) => Promise<VendorInvoice>;
+  readonly downloadVendorInvoiceDocument: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<Blob>;
   readonly previewVendorTds: (
     organisationId: string,
     invoiceId: string,
@@ -1075,6 +1091,13 @@ export interface ApiClient {
     workId: string,
     body: RecordInstallationRequest,
   ) => Promise<Installation>;
+  /** One site visit: a shared date and location, one record per filled
+   * row. All or nothing — half a visit recorded is worse than none. */
+  readonly recordWorkInstallations: (
+    organisationId: string,
+    workId: string,
+    body: RecordInstallationBatchRequest,
+  ) => Promise<RecordInstallationBatchResponse>;
   readonly cancelWorkInstallation: (
     organisationId: string,
     installationId: string,
@@ -1475,6 +1498,24 @@ export interface ApiClient {
    * issued orders with at least one line still owed material; a literal
    * status filters literally; no filter lists everything. Line money is
    * computed server-side — the client never sends amounts. */
+  /** The organisation-wide register (migration 0109): every order the
+   * caller may see, of both series. `work` narrows it to one Work, which
+   * is what the register's own deep link sends. */
+  readonly listPurchaseOrders: (
+    organisationId: string,
+    query?: {
+      readonly status?: 'open' | PurchaseOrderStatus;
+      readonly basis?: 'work' | 'organisation';
+      readonly work?: string;
+      readonly limit?: number;
+      readonly cursor?: string;
+    },
+  ) => Promise<PurchaseOrderRegisterResponse>;
+  /** A draft raised outside any LOA. */
+  readonly createPurchaseOrder: (
+    organisationId: string,
+    body: CreatePurchaseOrderRequest,
+  ) => Promise<PurchaseOrderDetailResponse>;
   readonly listWorkPurchaseOrders: (
     organisationId: string,
     workId: string,
@@ -3661,6 +3702,30 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
+    async uploadVendorInvoiceDocument(organisationId, invoiceId, file, filename) {
+      const response = await fetchImpl(
+        `/api/vendor-invoices/${invoiceId}/document?filename=${encodeURIComponent(filename)}`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/pdf',
+            'x-organisation-id': organisationId,
+          },
+          body: file,
+        },
+      );
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as VendorInvoice;
+    },
+    async downloadVendorInvoiceDocument(organisationId, invoiceId) {
+      const response = await fetchImpl(`/api/vendor-invoices/${invoiceId}/document`, {
+        credentials: 'same-origin',
+        headers: { 'x-organisation-id': organisationId },
+      });
+      if (!response.ok) throw await parseError(response);
+      return response.blob();
+    },
     async previewVendorTds(organisationId, invoiceId, body) {
       // POST for a read: the amount is a rupee figure about a named
       // vendor, and a query string is the one place logs and history
@@ -3957,6 +4022,12 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         body,
         organisationId,
       });
+    },
+    async recordWorkInstallations(organisationId, workId, body) {
+      return request<RecordInstallationBatchResponse>(
+        `/api/works/${workId}/installations/batch`,
+        { method: 'POST', body, organisationId },
+      );
     },
     async challanCorrectionEligibility(organisationId, challanId) {
       return request<CorrectionEligibilityResponse>(
@@ -4390,6 +4461,25 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     },
     async reopenWork(organisationId, workId, body) {
       return request<WorkStatusResponse>(`/api/works/${workId}/reopen`, {
+        method: 'POST',
+        body,
+        organisationId,
+      });
+    },
+    async listPurchaseOrders(organisationId, query = {}) {
+      const params = new URLSearchParams();
+      if (query.status !== undefined) params.set('status', query.status);
+      if (query.basis !== undefined) params.set('basis', query.basis);
+      if (query.work !== undefined) params.set('work', query.work);
+      if (query.limit !== undefined) params.set('limit', String(query.limit));
+      if (query.cursor !== undefined) params.set('cursor', query.cursor);
+      const suffix = params.size > 0 ? `?${params.toString()}` : '';
+      return request<PurchaseOrderRegisterResponse>(`/api/purchase-orders${suffix}`, {
+        organisationId,
+      });
+    },
+    async createPurchaseOrder(organisationId, body) {
+      return request<PurchaseOrderDetailResponse>('/api/purchase-orders', {
         method: 'POST',
         body,
         organisationId,

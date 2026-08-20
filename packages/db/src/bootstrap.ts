@@ -177,6 +177,7 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   purchase_orders: 'SELECT, INSERT, UPDATE, DELETE',
   purchase_order_lines: 'SELECT, INSERT, UPDATE, DELETE',
   purchase_order_counters: 'SELECT, INSERT, UPDATE',
+  organisation_purchase_order_counters: 'SELECT, INSERT, UPDATE',
   budgetary_quotations: 'SELECT, INSERT, UPDATE, DELETE',
   budgetary_quotation_lines: 'SELECT, INSERT, UPDATE, DELETE',
   budgetary_quotation_counters: 'SELECT, INSERT, UPDATE',

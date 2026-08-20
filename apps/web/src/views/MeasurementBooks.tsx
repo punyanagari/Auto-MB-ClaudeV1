@@ -19,7 +19,7 @@ import {
   RequestFailedError,
   type ApiClient,
 } from '../api.js';
-import { compareDecimalStrings, formatDate, formatInr } from '../format.js';
+import { compareDecimalStrings, formatDate, formatInr, todayIso } from '../format.js';
 import { openPdf } from '../lib/openPdf.js';
 import {
   errorMessage,
@@ -37,6 +37,7 @@ import { Field, Actions, FormError, Hint } from '../ui/form.js';
 import { Disclosure } from '../ui/disclosure.js';
 import { RailwayBillPanel } from './RailwayBillPanel.js';
 import { RailwayMeasurementPanel } from './RailwayMeasurementPanel.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface MeasurementBooksProps {
   readonly api: ApiClient;
@@ -168,9 +169,7 @@ function MeasuredCell({
   const hintId = `mb-measured-${stage}-${itemNumber}`;
   return (
     <td className={numericCell}>
-      <input
-        type="text"
-        inputMode="decimal"
+      <NumericInput
         className="w-20 text-right font-mono tabular-nums"
         value={entered}
         aria-label={`${stage === 'supplied' ? 'Supplied' : 'Installed'} quantity measured for item ${itemNumber}`}
@@ -753,7 +752,13 @@ export function MeasurementBooks({
           >
             <Field>
               <label htmlFor="mb-draft-date">MB date</label>
-              <input id="mb-draft-date" name="mb-draft-date" type="date" required />
+              <input
+                id="mb-draft-date"
+                name="mb-draft-date"
+                type="date"
+                required
+                defaultValue={todayIso()}
+              />
             </Field>
             <Field>
               <label htmlFor="mb-draft-kind">Kind</label>
@@ -905,7 +910,13 @@ export function MeasurementBooks({
               </fieldset>
               <Field>
                 <label htmlFor="mb-merge-date">Merged MB date</label>
-                <input id="mb-merge-date" name="mb-merge-date" type="date" required />
+                <input
+                  id="mb-merge-date"
+                  name="mb-merge-date"
+                  type="date"
+                  required
+                  defaultValue={todayIso()}
+                />
               </Field>
               <Actions>
                 <Button type="submit" disabled={pending || mergeSelection.size === 0}>

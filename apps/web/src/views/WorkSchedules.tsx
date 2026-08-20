@@ -16,6 +16,7 @@ import {
 } from '../ui/schedule-section.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { PaymentMatrix } from './PaymentMatrix.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /** Renders "original → effective" when an approved amendment changed the
  * value, and the original alone otherwise. */
@@ -195,10 +196,9 @@ function TaxFactsEditor({
       <label className="sr-only" htmlFor={`tax-rate-${item.id}`}>
         GST rate percentage for {item.itemNumber}
       </label>
-      <input
+      <NumericInput
         id={`tax-rate-${item.id}`}
         className="w-20"
-        inputMode="decimal"
         maxLength={6}
         placeholder="GST %"
         value={gstRate}
@@ -534,7 +534,7 @@ export function WorkSchedules({
         api={api}
         organisationId={organisationId}
         workId={workId}
-        workItems={workItems}
+        schedules={schedules}
         canModify={canModify}
         onItemCategoryChanged={(workItemId, paymentCategory) => {
           patchItem(workItemId, { paymentCategory });

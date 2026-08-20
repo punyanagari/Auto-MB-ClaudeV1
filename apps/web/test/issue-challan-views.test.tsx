@@ -180,6 +180,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .fn()
       .mockResolvedValue({ invoices: [], totalOutstanding: '0', overdueCount: 0 }),
     recordVendorInvoice: vi.fn(),
+    uploadVendorInvoiceDocument: vi.fn(),
+    downloadVendorInvoiceDocument: vi.fn(),
     previewVendorTds: vi.fn(),
     recordVendorPayment: vi.fn(),
     voidVendorPayment: vi.fn(),
@@ -212,6 +214,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       .mockResolvedValue({ installations: [], itemSummaries: [] }),
     listInstallations: vi.fn().mockResolvedValue([]),
     recordWorkInstallation: vi.fn(),
+    recordWorkInstallations: vi.fn(),
     cancelWorkInstallation: vi.fn(),
     getWorkWarranty: vi.fn().mockResolvedValue({
       terms: null,
@@ -310,6 +313,10 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     workCompletionReadiness: vi
       .fn()
       .mockResolvedValue({ ready: true, unfinished: [], blockers: [] }),
+    listPurchaseOrders: vi
+      .fn()
+      .mockResolvedValue({ purchaseOrders: [], nextCursor: null }),
+    createPurchaseOrder: vi.fn(),
     listWorkPurchaseOrders: vi.fn().mockResolvedValue([]),
     createWorkPurchaseOrder: vi.fn(),
     getPurchaseOrder: vi.fn(),

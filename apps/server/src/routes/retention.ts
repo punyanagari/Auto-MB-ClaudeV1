@@ -1038,15 +1038,16 @@ async function listSerials(
 ): Promise<{
   serials: {
     id: string;
-    deliveryChallanId: string;
-    challanItemId: string;
+    deliveryChallanId: string | null;
+    challanItemId: string | null;
+    origin: 'delivery' | 'installation';
     challanNumber: string | null;
     itemDescription: string;
     serialNumber: string;
     installedOn: string | null;
     installationRemarks: string | null;
     workItemId: string;
-    challanStatus: 'draft' | 'issued' | 'cancelled';
+    challanStatus: 'draft' | 'issued' | 'cancelled' | null;
     installationId: string | null;
     installationLocation: string | null;
   }[];
@@ -1059,28 +1060,41 @@ async function listSerials(
   const rows = await tx<
     {
       id: string;
-      delivery_challan_id: string;
-      delivery_challan_item_id: string;
+      delivery_challan_id: string | null;
+      delivery_challan_item_id: string | null;
+      origin: 'delivery' | 'installation';
       challan_number: string | null;
       description_snapshot: string;
       serial_number: string;
       installed_on: string | null;
       installation_remarks: string | null;
       work_item_id: string;
-      challan_status: 'draft' | 'issued' | 'cancelled';
+      challan_status: 'draft' | 'issued' | 'cancelled' | null;
       installation_id: string | null;
       installation_location: string | null;
     }[]
   >`
-    select s.id, s.delivery_challan_id, s.delivery_challan_item_id,
-           dc.challan_number, dci.description_snapshot, s.serial_number,
+    select s.id, s.delivery_challan_id, s.delivery_challan_item_id, s.origin,
+           dc.challan_number,
+           -- Off the challan line for a delivered serial (a snapshot,
+           -- frozen at despatch) and off the Work item for one recorded at
+           -- installation, which never had a line to snapshot.
+           coalesce(dci.description_snapshot, wi.effective_description,
+                    wi.description) as description_snapshot,
+           s.serial_number,
            s.installed_on::text as installed_on, s.installation_remarks,
-           dci.work_item_id, dc.status as challan_status,
+           coalesce(dci.work_item_id, s.work_item_id) as work_item_id,
+           dc.status as challan_status,
            inst.id as installation_id,
            inst.location_name as installation_location
     from challan_item_serials s
-    join delivery_challans dc on dc.id = s.delivery_challan_id
-    join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+    -- LEFT since migration 0108. An inner join here made a serial recorded
+    -- at an installation invisible to the Work's own register: absent from
+    -- the traced-serial count, absent from every consumer of this list, and
+    -- silently missing from a register that claims to be the Work's.
+    left join delivery_challans dc on dc.id = s.delivery_challan_id
+    left join delivery_challan_items dci on dci.id = s.delivery_challan_item_id
+    left join work_items wi on wi.id = s.work_item_id
     -- Milestone 7: the live quantity-level installation record covering
     -- this serial, if any (released attachments no longer count).
     left join installation_serials att
@@ -1099,6 +1113,7 @@ async function listSerials(
       id: row.id,
       deliveryChallanId: row.delivery_challan_id,
       challanItemId: row.delivery_challan_item_id,
+      origin: row.origin,
       challanNumber: row.challan_number,
       itemDescription: row.description_snapshot,
       serialNumber: row.serial_number,

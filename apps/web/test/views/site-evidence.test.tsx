@@ -11,6 +11,9 @@ import { openForm, submitButton, stubApi, ORG_ID, WORK_ID } from './helpers.js';
 describe('Installations', () => {
   const ITEM_PLAIN = '44444444-4444-4444-8444-444444444444';
   const ITEM_SERIAL = '55555555-5555-4555-8555-555555555555';
+  const ITEM_DONE = '44444444-3333-4333-8333-444444444444';
+  const ITEM_AMC = '44444444-2222-4222-8222-444444444444';
+  const ITEM_AT_SANCTION = '44444444-1111-4111-8111-444444444444';
   const LOCATION_ID = '66666666-6666-4666-8666-666666666666';
   const INSTALLATION_ID = '99999999-9999-4999-8999-999999999999';
   const SERIAL_ONE = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
@@ -125,11 +128,44 @@ describe('Installations', () => {
     ],
   };
 
+  /** The balance read the recording table now depends on: which item has
+   * material standing on site decides whether it is offered at all
+   * (corrections ledger item 10). A/1 is not serial-tracked, so its
+   * ceiling is the LOA quantity; A/2 is, so its ceiling is what issued
+   * challans delivered. */
+  const BALANCE = {
+    allowExcessDelivery: false,
+    today: '2026-08-09',
+    items: [
+      {
+        workItemId: ITEM_PLAIN,
+        itemNumber: 'A/1',
+        description: 'Cable set',
+        unitCode: 'Set',
+        awardedQuantity: '10.000',
+        deliveredQuantity: '4.000',
+        remainingQuantity: '6.000',
+        effectiveRate: '250.00',
+      },
+      {
+        workItemId: ITEM_SERIAL,
+        itemNumber: 'A/2',
+        description: 'Main switchboard',
+        unitCode: 'Nos',
+        awardedQuantity: '5.000',
+        deliveredQuantity: '3.000',
+        remainingQuantity: '2.000',
+        effectiveRate: '100.00',
+      },
+    ],
+  };
+
   function installationsApi(overrides: Partial<ApiClient> = {}): ApiClient {
     return stubApi({
       listWorkInstallations: vi.fn().mockResolvedValue(LIST),
       listLocationMasters: vi.fn().mockResolvedValue([LOCATION]),
       listWorkSerials: vi.fn().mockResolvedValue(SERIALS),
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
       ...overrides,
     });
   }
@@ -157,7 +193,7 @@ describe('Installations', () => {
   it('shows the per-item installed summary and the records', async () => {
     renderInstallations(installationsApi());
 
-    await screen.findByRole('button', { name: 'New installation' });
+    await screen.findByRole('button', { name: 'Record installations' });
     // Summary rows: the authoritative installed quantity per item.
     expect(screen.getAllByText('1.000').length).toBeGreaterThan(0);
     expect(screen.getByText('0.000')).toBeTruthy();
@@ -180,98 +216,299 @@ describe('Installations', () => {
     expect((await screen.findByRole('alert')).textContent).toMatch(
       /location master could not be loaded/i,
     );
-    expect(screen.queryByRole('button', { name: 'New installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record installations' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry locations' }));
 
     expect(
-      await screen.findByRole('button', { name: 'New installation' }),
+      await screen.findByRole('button', { name: 'Record installations' }),
     ).toBeTruthy();
     expect(listLocationMasters).toHaveBeenCalledTimes(2);
   });
 
-  it('records a plain quantity installation against an existing location', async () => {
-    const recordWorkInstallation = vi.fn().mockResolvedValue({
-      ...RECORDED,
-      id: 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb',
-      workItemId: ITEM_PLAIN,
-      itemNumber: 'A/1',
-      quantity: '2.500',
-      serials: [],
-      locationId: LOCATION_ID,
-    });
-    const api = installationsApi({ recordWorkInstallation });
-    renderInstallations(api);
+  it('says so when the item balances fail, instead of an empty recording table', async () => {
+    // The balances used to be a courtesy read behind the quantity field.
+    // They decide the table's CONTENTS now, so a silent failure would read
+    // as "nothing left to install" — which is a different fact entirely.
+    const workBalance = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Balances unavailable.'))
+      .mockResolvedValueOnce(BALANCE);
+    renderInstallations(installationsApi({ workBalance }));
 
-    await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('1. Work item'), {
-      target: { value: ITEM_PLAIN },
+    expect(await screen.findByText('SN-003')).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /item balances could not be loaded/i,
+    );
+    expect(screen.queryByRole('button', { name: 'Record installations' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry item balances' }));
+
+    expect(
+      await screen.findByRole('button', { name: 'Record installations' }),
+    ).toBeTruthy();
+  });
+
+  /** The scope fixture: the four cases the recording table has to tell
+   * apart. A/1 (10 sanctioned, 0 installed) and A/2 (3 delivered, 1
+   * installed) lead the table; A/3 is serial-tracked with everything
+   * delivered already installed, which R5's delivery floor makes genuinely
+   * un-recordable; A/5 is installed to its sanctioned quantity with no
+   * delivery floor beneath it, which the 2026-08-17 ruling says may still
+   * be recorded; A/4 is AMC and is never installable at all. */
+  function scopeFixture() {
+    const workItems: readonly WorkItem[] = [
+      ...WORK_ITEMS,
+      {
+        id: ITEM_DONE,
+        scheduleId: '77777777-7777-4777-8777-777777777777',
+        itemNumber: 'A/3',
+        description: 'Relay panel',
+        unitCode: 'Nos',
+        awardedQuantity: '4.000',
+        effectiveRate: '80.00',
+        requiresSerials: true,
+      },
+      {
+        id: ITEM_AMC,
+        scheduleId: '77777777-7777-4777-8777-777777777777',
+        itemNumber: 'A/4',
+        description: 'Annual maintenance',
+        unitCode: 'Year',
+        awardedQuantity: '3.000',
+        effectiveRate: '5000.00',
+        requiresSerials: false,
+        paymentCategory: 'AMC',
+      },
+      {
+        id: ITEM_AT_SANCTION,
+        scheduleId: '77777777-7777-4777-8777-777777777777',
+        itemNumber: 'A/5',
+        description: 'Earthing strip',
+        unitCode: 'Metre',
+        awardedQuantity: '3.000',
+        effectiveRate: '20.00',
+        requiresSerials: false,
+      },
+    ];
+    const api = installationsApi({
+      listWorkInstallations: vi.fn().mockResolvedValue({
+        ...LIST,
+        itemSummaries: [
+          ...LIST.itemSummaries,
+          { workItemId: ITEM_DONE, itemNumber: 'A/3', installedQuantity: '2.000' },
+          { workItemId: ITEM_AMC, itemNumber: 'A/4', installedQuantity: '0.000' },
+          {
+            workItemId: ITEM_AT_SANCTION,
+            itemNumber: 'A/5',
+            installedQuantity: '3.000',
+          },
+        ],
+      }),
+      workBalance: vi.fn().mockResolvedValue({
+        ...BALANCE,
+        items: [
+          ...BALANCE.items,
+          {
+            workItemId: ITEM_DONE,
+            itemNumber: 'A/3',
+            description: 'Relay panel',
+            unitCode: 'Nos',
+            awardedQuantity: '4.000',
+            // Two delivered, two installed: nothing standing on site, and
+            // the delivery floor refuses more.
+            deliveredQuantity: '2.000',
+            remainingQuantity: '2.000',
+            effectiveRate: '80.00',
+          },
+          {
+            workItemId: ITEM_AMC,
+            itemNumber: 'A/4',
+            description: 'Annual maintenance',
+            unitCode: 'Year',
+            awardedQuantity: '3.000',
+            deliveredQuantity: '0.000',
+            remainingQuantity: '3.000',
+            effectiveRate: '5000.00',
+          },
+          {
+            workItemId: ITEM_AT_SANCTION,
+            itemNumber: 'A/5',
+            description: 'Earthing strip',
+            unitCode: 'Metre',
+            // Three sanctioned, three installed. No supply leg, so no
+            // delivery floor: more MAY be recorded and raises a variation.
+            awardedQuantity: '3.000',
+            deliveredQuantity: '0.000',
+            remainingQuantity: '3.000',
+            effectiveRate: '20.00',
+          },
+        ],
+      }),
     });
-    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
-      target: { value: '2.500' },
+    return { api, workItems };
+  }
+
+  it('leads with the items that have a balance, and searches within them', async () => {
+    // Corrections ledger item 10.
+    const { api, workItems } = scopeFixture();
+    renderInstallations(api, { workItems });
+
+    await openForm('Record installations');
+    expect(screen.getByLabelText('Quantity of A/1 installed now')).toBeTruthy();
+    expect(screen.getByLabelText('Quantity of A/2 installed now')).toBeTruthy();
+    // Serial-tracked with nothing left standing on site: R5's delivery
+    // floor refuses it, so it is not offered anywhere.
+    expect(screen.queryByLabelText('Quantity of A/3 installed now')).toBeNull();
+    // AMC is never installable.
+    expect(screen.queryByLabelText('Quantity of A/4 installed now')).toBeNull();
+    // …and the item installed to its sanction is not in the lead table.
+    expect(screen.queryByLabelText('Quantity of A/5 installed now')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Find an item'), {
+      target: { value: 'switchboard' },
     });
-    fireEvent.change(screen.getByLabelText('3. Installed on'), {
+    expect(screen.queryByLabelText('Quantity of A/1 installed now')).toBeNull();
+    expect(screen.getByLabelText('Quantity of A/2 installed now')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Find an item'), {
+      target: { value: 'nothing here' },
+    });
+    expect(screen.getByText(/No item matches/)).toBeTruthy();
+  });
+
+  it('keeps an item installed to its sanction recordable, folded away', async () => {
+    // The owner's ruling of 2026-08-17: installation is measured as it
+    // happened even past the sanction, and the server accepts it and flags
+    // the item pending variation. Hiding A/5 would have left that ruling
+    // with no surface at all.
+    const { api, workItems } = scopeFixture();
+    const recordWorkInstallations = vi
+      .fn()
+      .mockResolvedValue({ installations: [RECORDED] });
+    renderInstallations(installationsApi({ ...api, recordWorkInstallations }), {
+      workItems: workItems.map((item) =>
+        item.id === ITEM_AT_SANCTION ? { ...item, pendingVariation: true } : item,
+      ),
+    });
+
+    await openForm('Record installations');
+    await openForm(/Installed to sanction/);
+    const quantity = screen.getByLabelText('Quantity of A/5 installed now');
+    expect(quantity).toBeTruthy();
+    // The row carries the chip that says what recording more will mean.
+    expect(screen.getAllByText('Above LOA — variation pending').length).toBeGreaterThan(
+      0,
+    );
+
+    fireEvent.change(quantity, { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.change(screen.getByLabelText('4. Location'), {
+    fireEvent.change(screen.getByLabelText('Location'), {
       target: { value: LOCATION_ID },
     });
     fireEvent.click(submitButton('Record installation'));
 
     await waitFor(() => {
-      expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
-        workItemId: ITEM_PLAIN,
-        quantity: '2.500',
+      expect(recordWorkInstallations).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
         installedOn: '2026-08-05',
         locationId: LOCATION_ID,
+        rows: [{ workItemId: ITEM_AT_SANCTION, quantity: '1' }],
       });
     });
   });
 
-  it('keeps a successful record successful when the location refresh fails', async () => {
-    const recordWorkInstallation = vi.fn().mockResolvedValue(RECORDED);
-    const listLocationMasters = vi
-      .fn()
-      .mockResolvedValueOnce([LOCATION])
-      .mockRejectedValueOnce(new Error('Locations unavailable.'));
-    const api = installationsApi({ recordWorkInstallation, listLocationMasters });
-    renderInstallations(api);
+  it('keeps a typed row on screen when the search or the balance moves past it', async () => {
+    // A balance reloads while the operator is filling the table, and a row
+    // that vanished mid-visit would take a typed quantity out of the
+    // request with it — silently, from a screen that no longer shows what
+    // was lost. Searching past it must not lose it either.
+    const { api, workItems } = scopeFixture();
+    renderInstallations(api, { workItems });
 
-    await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
-      target: { value: '1' },
-    });
-    fireEvent.change(screen.getByLabelText('3. Installed on'), {
-      target: { value: '2026-08-05' },
-    });
-    fireEvent.click(submitButton('Record installation'));
-
-    expect(await screen.findByText('Installation recorded.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Retry locations' })).toBeTruthy();
-    expect(screen.queryByText(/nothing was changed/i)).toBeNull();
-  });
-
-  it('records a serialised installation with tap-selected serials and an inline location', async () => {
-    const recordWorkInstallation = vi.fn().mockResolvedValue(RECORDED);
-    const api = installationsApi({ recordWorkInstallation });
-    renderInstallations(api);
-
-    await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('1. Work item'), {
-      target: { value: ITEM_SERIAL },
-    });
-    // The pool offers only delivered-but-uninstalled serials of the item.
-    expect(screen.getByLabelText(/SN-001/)).toBeTruthy();
-    expect(screen.getByLabelText(/SN-002/)).toBeTruthy();
-    expect(screen.queryByLabelText(/SN-003/)).toBeNull();
-
-    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
+    await openForm('Record installations');
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 installed now'), {
       target: { value: '2' },
     });
-    fireEvent.change(screen.getByLabelText('3. Installed on'), {
+    fireEvent.change(screen.getByLabelText('Find an item'), {
+      target: { value: 'switchboard' },
+    });
+    // A/1 is not a switchboard, but it is part of the visit now.
+    const kept = screen.getByLabelText<HTMLInputElement>(
+      'Quantity of A/1 installed now',
+    );
+    expect(kept.value).toBe('2');
+    expect(submitButton('Record installation')).toBeTruthy();
+  });
+
+  it('records one site visit as one record per filled row', async () => {
+    const recordWorkInstallations = vi.fn().mockResolvedValue({
+      installations: [
+        {
+          ...RECORDED,
+          id: 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb',
+          workItemId: ITEM_PLAIN,
+          itemNumber: 'A/1',
+          quantity: '2.500',
+          serials: [],
+        },
+        RECORDED,
+      ],
+    });
+    const api = installationsApi({ recordWorkInstallations });
+    renderInstallations(api);
+
+    await openForm('Record installations');
+    fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.change(screen.getByLabelText('4. Location'), {
+    fireEvent.change(screen.getByLabelText('Location'), {
+      target: { value: LOCATION_ID },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 installed now'), {
+      target: { value: '2.500' },
+    });
+    fireEvent.change(screen.getByLabelText('Quantity of A/2 installed now'), {
+      target: { value: '2' },
+    });
+    // Two nameplates: one already in the delivered pool, one the challan
+    // missed. Both are typed the same way and the server decides which is
+    // which — the owner's rule, "if missing serial in DC is added in IC
+    // then accept it and record it".
+    fireEvent.change(screen.getByLabelText('Serials of A/2 installed now'), {
+      target: { value: 'SN-001, SN-009' },
+    });
+    fireEvent.click(submitButton('Record 2 installations'));
+
+    await waitFor(() => {
+      expect(recordWorkInstallations).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        installedOn: '2026-08-05',
+        locationId: LOCATION_ID,
+        rows: [
+          { workItemId: ITEM_PLAIN, quantity: '2.500' },
+          {
+            workItemId: ITEM_SERIAL,
+            quantity: '2',
+            serialNumbers: ['SN-001', 'SN-009'],
+          },
+        ],
+      });
+    });
+  });
+
+  it('sends an inline location once for the whole visit', async () => {
+    const recordWorkInstallations = vi
+      .fn()
+      .mockResolvedValue({ installations: [RECORDED] });
+    const api = installationsApi({ recordWorkInstallations });
+    renderInstallations(api);
+
+    await openForm('Record installations');
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Location'), {
       target: { value: '__new__' },
     });
     fireEvent.change(screen.getByLabelText('New location name'), {
@@ -280,19 +517,107 @@ describe('Installations', () => {
     fireEvent.change(screen.getByLabelText('New location kind'), {
       target: { value: 'installation_point' },
     });
-    fireEvent.click(screen.getByLabelText(/SN-001/));
-    fireEvent.click(screen.getByLabelText(/SN-002/));
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 installed now'), {
+      target: { value: '1' },
+    });
     fireEvent.click(submitButton('Record installation'));
 
     await waitFor(() => {
-      expect(recordWorkInstallation).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
-        workItemId: ITEM_SERIAL,
-        quantity: '2',
+      expect(recordWorkInstallations).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
         installedOn: '2026-08-05',
         newLocation: { name: 'Bhusawal yard', kind: 'installation_point' },
-        serialIds: [SERIAL_ONE, SERIAL_TWO],
+        rows: [{ workItemId: ITEM_PLAIN, quantity: '1' }],
       });
     });
+  });
+
+  it('keeps a successful record successful when the location refresh fails', async () => {
+    const recordWorkInstallations = vi
+      .fn()
+      .mockResolvedValue({ installations: [RECORDED] });
+    const listLocationMasters = vi
+      .fn()
+      .mockResolvedValueOnce([LOCATION])
+      .mockRejectedValueOnce(new Error('Locations unavailable.'));
+    const api = installationsApi({ recordWorkInstallations, listLocationMasters });
+    renderInstallations(api);
+
+    await openForm('Record installations');
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 installed now'), {
+      target: { value: '1' },
+    });
+    fireEvent.change(screen.getByLabelText('Installed on'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.click(submitButton('Record installation'));
+
+    expect(await screen.findByText('1 installation record written.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry locations' })).toBeTruthy();
+    expect(screen.queryByText(/nothing was changed/i)).toBeNull();
+  });
+
+  it('taps the delivered pool in one serial at a time, and still takes any other', async () => {
+    // This was a `<datalist>`, which the browser matches against the WHOLE
+    // field value: it helped with the first of six nameplates and went dead
+    // the moment the field held "SN-001, ". Buttons append instead.
+    renderInstallations(installationsApi());
+
+    await openForm('Record installations');
+    const field = screen.getByLabelText<HTMLInputElement>(
+      'Serials of A/2 installed now',
+    );
+    // Delivered and uninstalled only; SN-003 is already in.
+    expect(screen.getByRole('button', { name: 'SN-001' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'SN-002' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'SN-003' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'SN-001' }));
+    expect(field.value).toBe('SN-001');
+    // …and the assist still works for the SECOND unit, which is the whole
+    // reason it is not a datalist.
+    fireEvent.click(screen.getByRole('button', { name: 'SN-002' }));
+    expect(field.value).toBe('SN-001, SN-002');
+    // One tap per unit: a serial already in the field cannot be added twice.
+    expect(
+      screen.getByRole('button', { name: 'SN-001' }).hasAttribute('disabled'),
+    ).toBe(true);
+
+    // An assist, not a whitelist: the field takes a number that is in no
+    // pool at all, which is the entire point of the flow.
+    fireEvent.change(field, { target: { value: 'SN-404' } });
+    expect(field.value).toBe('SN-404');
+  });
+
+  it('marks a serial that entered at the installation, on the record', async () => {
+    renderInstallations(
+      installationsApi({
+        listWorkInstallations: vi.fn().mockResolvedValue({
+          ...LIST,
+          installations: [
+            {
+              ...RECORDED,
+              serials: [
+                {
+                  serialId: 'aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa',
+                  serialNumber: 'SN-003',
+                  challanNumber: 'DC/1',
+                  origin: 'delivery' as const,
+                },
+                {
+                  serialId: 'aaaaaaaa-4444-4444-8444-aaaaaaaaaaaa',
+                  serialNumber: 'SN-009',
+                  challanNumber: null,
+                  origin: 'installation' as const,
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(await screen.findByText('SN-009')).toBeTruthy();
+    expect(screen.getByText('added here')).toBeTruthy();
   });
 
   it('cancels a record with a mandatory note', async () => {
@@ -322,7 +647,7 @@ describe('Installations', () => {
   });
 
   it('announces a cap conflict in an alert region', async () => {
-    const recordWorkInstallation = vi.fn().mockRejectedValue(
+    const recordWorkInstallations = vi.fn().mockRejectedValue(
       // The sanctioned quantity stopped capping installation in
       // migration 0077; the delivery floor below it did not, and it is
       // the cap conflict the recording form can still meet.
@@ -332,14 +657,14 @@ describe('Installations', () => {
         'Cumulative installation for A/1 would exceed the delivered quantity.',
       ),
     );
-    const api = installationsApi({ recordWorkInstallation });
+    const api = installationsApi({ recordWorkInstallations });
     renderInstallations(api);
 
-    await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
+    await openForm('Record installations');
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 installed now'), {
       target: { value: '99' },
     });
-    fireEvent.change(screen.getByLabelText('3. Installed on'), {
+    fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-05' },
     });
     fireEvent.click(submitButton('Record installation'));
@@ -348,7 +673,7 @@ describe('Installations', () => {
     expect(alert.textContent).toContain('exceed the delivered quantity');
   });
 
-  it('flags an over-installed item as owing a variation, on the row and in the form', async () => {
+  it('flags an over-installed item as owing a variation, on the summary and the row', async () => {
     // Replicates the mock's chip (Auto-MB-Vercel-du,
     // components/installation-capture-flow.tsx at a8e1fde): same words,
     // same warning tone. The flag is the server's — the browser never
@@ -359,14 +684,11 @@ describe('Installations', () => {
       ),
     });
 
-    await screen.findByRole('button', { name: 'New installation' });
+    await screen.findByRole('button', { name: 'Record installations' });
     expect(screen.getAllByText('Above LOA — variation pending')).toHaveLength(1);
 
-    // …and again beside the item picker once the form is open on it.
-    await openForm('New installation');
-    fireEvent.change(screen.getByLabelText('1. Work item'), {
-      target: { value: ITEM_PLAIN },
-    });
+    // …and again on the item's own row of the recording table.
+    await openForm('Record installations');
     expect(screen.getAllByText('Above LOA — variation pending')).toHaveLength(2);
   });
 
@@ -374,29 +696,30 @@ describe('Installations', () => {
     // The Work items this panel is handed are the ones the Work page last
     // loaded, so the recording that CREATES the variation would otherwise
     // leave the operator looking at a screen that does not know yet.
-    const recordWorkInstallation = vi.fn().mockResolvedValue({
-      ...RECORDED,
-      workItemId: ITEM_PLAIN,
-      itemNumber: 'A/1',
-      quantity: '12.000',
-      serials: [],
-      locationId: LOCATION_ID,
-      pendingVariation: true,
+    const recordWorkInstallations = vi.fn().mockResolvedValue({
+      installations: [
+        {
+          ...RECORDED,
+          workItemId: ITEM_PLAIN,
+          itemNumber: 'A/1',
+          quantity: '12.000',
+          serials: [],
+          locationId: LOCATION_ID,
+          pendingVariation: true,
+        },
+      ],
     });
-    renderInstallations(installationsApi({ recordWorkInstallation }));
+    renderInstallations(installationsApi({ recordWorkInstallations }));
 
-    await openForm('New installation');
+    await openForm('Record installations');
     expect(screen.queryByText('Above LOA — variation pending')).toBeNull();
-    fireEvent.change(screen.getByLabelText('1. Work item'), {
-      target: { value: ITEM_PLAIN },
-    });
-    fireEvent.change(screen.getByLabelText('2. Quantity installed'), {
+    fireEvent.change(screen.getByLabelText('Quantity of A/1 installed now'), {
       target: { value: '12.000' },
     });
-    fireEvent.change(screen.getByLabelText('3. Installed on'), {
+    fireEvent.change(screen.getByLabelText('Installed on'), {
       target: { value: '2026-08-05' },
     });
-    fireEvent.change(screen.getByLabelText('4. Location'), {
+    fireEvent.change(screen.getByLabelText('Location'), {
       target: { value: LOCATION_ID },
     });
     fireEvent.click(submitButton('Record installation'));
@@ -414,7 +737,7 @@ describe('Installations', () => {
     // resolves against the loading state and the absence checks below
     // would pass vacuously while the list is still loading (§2.7 hazard).
     expect(await screen.findByText('SN-003')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'New installation' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record installations' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel record' })).toBeNull();
   });
 });
@@ -445,6 +768,18 @@ describe('PAC certificates', () => {
       awardedQuantity: '5.000',
       effectiveRate: '100.00',
       requiresSerials: true,
+    },
+  ];
+
+  const PAC_SCHEDULES = [
+    {
+      id: '77777777-7777-4777-8777-777777777777',
+      scheduleCode: 'A',
+      title: 'Supply and installation',
+      position: 1,
+      amcBillingPeriods: null,
+      amcCycleNoun: null,
+      items: PAC_WORK_ITEMS,
     },
   ];
 
@@ -528,7 +863,7 @@ describe('PAC certificates', () => {
         organisationId={ORG_ID}
         workId={WORK_ID}
         canModify={options.canModify ?? true}
-        workItems={PAC_WORK_ITEMS}
+        schedules={PAC_SCHEDULES}
       />,
     );
   }
@@ -607,6 +942,53 @@ describe('PAC certificates', () => {
     await waitFor(() => {
       expect(recordWorkPacCertificate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
         reference: 'PAC/2026/02',
+        issueDate: '2026-08-05',
+        consigneeMasterId: CONSIGNEE_ID,
+        items: [{ workItemId: ITEM_TWO, certifiedQuantity: '1.000' }],
+      });
+    });
+  });
+
+  it('keeps a typed quantity while its schedule section is shut and reopened', async () => {
+    /* The certified quantities are grouped into schedule sections, and a
+       shut section is UNMOUNTED — that is what keeps its fields out of the
+       tab order. A form read back off the DOM at submit would therefore
+       lose everything typed into a section the operator then collapsed, so
+       the quantities are React state and this is the proof. */
+    const recordWorkPacCertificate = vi.fn().mockResolvedValue({
+      ...RECORDED_PAC,
+      id: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb',
+      reference: 'PAC/2026/04',
+    });
+    const api = pacApi({ recordWorkPacCertificate });
+    renderPac(api);
+
+    await openForm('New PAC certificate');
+    fireEvent.change(screen.getByLabelText('Certificate reference'), {
+      target: { value: 'PAC/2026/04' },
+    });
+    fireEvent.change(screen.getByLabelText('Issue date'), {
+      target: { value: '2026-08-05' },
+    });
+    fireEvent.change(screen.getByLabelText('Issuing consignee'), {
+      target: { value: CONSIGNEE_ID },
+    });
+    fireEvent.change(screen.getByLabelText(/A\/2 — Main switchboard/), {
+      target: { value: '1.000' },
+    });
+
+    const section = screen.getByRole('button', { name: /Schedule A/ });
+    fireEvent.click(section);
+    expect(screen.queryByLabelText(/A\/2 — Main switchboard/)).toBeNull();
+    fireEvent.click(section);
+    expect(
+      screen.getByLabelText<HTMLInputElement>(/A\/2 — Main switchboard/).value,
+    ).toBe('1.000');
+
+    fireEvent.click(submitButton('Record PAC certificate'));
+    await waitFor(() => {
+      expect(recordWorkPacCertificate).toHaveBeenCalledWith(ORG_ID, WORK_ID, {
+        reference: 'PAC/2026/04',
         issueDate: '2026-08-05',
         consigneeMasterId: CONSIGNEE_ID,
         items: [{ workItemId: ITEM_TWO, certifiedQuantity: '1.000' }],

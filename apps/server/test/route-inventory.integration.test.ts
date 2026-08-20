@@ -531,6 +531,17 @@ const PAYLOAD_OVERRIDES = new Map<string, unknown>([
       locationId: randomUUID(),
     },
   ],
+  // Same guard on the batch route, plus its own duplicate-row guard: both
+  // run before the tenant transaction, so the probe names one location and
+  // one row and must still be refused at the membership floor.
+  [
+    'POST /api/works/:id/installations/batch',
+    {
+      installedOn: '2026-01-15',
+      locationId: randomUUID(),
+      rows: [{ workItemId: randomUUID(), quantity: '1.000' }],
+    },
+  ],
   // assertValidTemplate runs before the tenant transaction and requires
   // the {SEQ} token.
   ['PUT /api/organisation/number-series/:documentType', { template: '{PREFIX}/{SEQ}' }],

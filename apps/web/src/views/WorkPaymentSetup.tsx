@@ -32,6 +32,7 @@ import { Modal } from '../ui/dialog.js';
 import { FormError } from '../ui/form.js';
 import { DataTable, controlCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The payment setup a Work is offered as soon as the letter that created
@@ -428,11 +429,10 @@ export function WorkPaymentSetup({
                     const locked = category === 'AMC' && LOCKED_AMC_STAGES.has(field);
                     return (
                       <td key={field}>
-                        <input
+                        <NumericInput
                           aria-label={`${label} for ${categoryLabelOf(category, rows)}`}
                           className="w-24"
                           value={locked ? '0' : draft[field]}
-                          inputMode="decimal"
                           disabled={locked || pending}
                           title={
                             locked

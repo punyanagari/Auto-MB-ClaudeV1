@@ -240,6 +240,19 @@ export const VendorPaymentSchema = Type.Object(
 );
 export type VendorPayment = Static<typeof VendorPaymentSchema>;
 
+/** The stored file, described rather than located: filename, digest and
+ * size are what an operator checks a document by, and the object key is
+ * an internal address a client has no use for and no business holding. */
+const VendorInvoiceDocumentSchema = Type.Object(
+  {
+    filename: Type.String(),
+    sha256: Type.String(),
+    sizeBytes: Type.Integer({ minimum: 1 }),
+    uploadedAt: Type.String({ format: 'date-time' }),
+  },
+  { additionalProperties: false },
+);
+
 export const VendorInvoiceSchema = Type.Object(
   {
     id: UuidSchema,
@@ -253,6 +266,15 @@ export const VendorInvoiceSchema = Type.Object(
     dueOn: DateOnlySchema,
     amount: PositiveMoneyStringSchema,
     workId: Type.Union([UuidSchema, Type.Null()]),
+    /** The purchase order this invoice bills for, where there is one
+     * (migration 0109). Fixed once set: a closed order's evidence must
+     * not be re-pointed after the fact. */
+    purchaseOrderId: Type.Union([UuidSchema, Type.Null()]),
+    /** The vendor's own tax invoice as a stored PDF, or null while none
+     * has been uploaded. The bytes are fetched from
+     * `GET /api/vendor-invoices/:id/document`; the object key never
+     * leaves the server. */
+    document: Type.Union([VendorInvoiceDocumentSchema, Type.Null()]),
     tdsSection: Type.Union([TdsSectionSchema, Type.Null()]),
     tdsPayeeClass: Type.Union([TdsPayeeClassSchema, Type.Null()]),
     /** Summed in SQL over live payments, by GROSS. */
@@ -275,6 +297,14 @@ export const RecordVendorInvoiceSchema = Type.Object(
     creditDays: Type.Integer({ minimum: 0, maximum: 365 }),
     amount: PositiveMoneyStringSchema,
     workId: Type.Optional(UuidSchema),
+    /** The purchase order this invoice bills for. Optional — a vendor
+     * bills for plenty no order was raised against — but it is what a
+     * purchase order's close rule reads, so an invoice raised to close
+     * one carries it. The order must be issued or closed and must be on
+     * the same vendor, and its Work must agree with `workId` — omit
+     * `workId` and the order's own is inherited, so the vendor ledger
+     * and the order cannot tell different stories about the same Work. */
+    purchaseOrderId: Type.Optional(UuidSchema),
     /** Both or neither: a section without a payee class cannot produce
      * a rate. */
     tdsSection: Type.Optional(TdsSectionSchema),
@@ -283,6 +313,16 @@ export const RecordVendorInvoiceSchema = Type.Object(
   { additionalProperties: false },
 );
 export type RecordVendorInvoice = Static<typeof RecordVendorInvoiceSchema>;
+
+/** The query the document upload carries beside its raw PDF body, the
+ * same shape every other upload route in this application uses. */
+export const UploadVendorInvoiceDocumentQuerySchema = Type.Object(
+  { filename: Type.String({ minLength: 1, maxLength: 255 }) },
+  { additionalProperties: false },
+);
+export type UploadVendorInvoiceDocumentQuery = Static<
+  typeof UploadVendorInvoiceDocumentQuerySchema
+>;
 
 /**
  * Paying a vendor.

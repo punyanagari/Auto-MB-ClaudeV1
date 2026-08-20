@@ -16,6 +16,7 @@ import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FieldRow, FormError, FormNotice } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The OEM item master and its recursive bill of material.
@@ -806,10 +807,9 @@ function BillOfMaterialCard({
             </Field>
             <Field>
               <label htmlFor="bom-quantity">Quantity per unit</label>
-              <input
+              <NumericInput
                 id="bom-quantity"
                 required
-                inputMode="decimal"
                 pattern="[0-9]+(\.[0-9]{1,3})?"
                 value={quantity}
                 onChange={(event) => {

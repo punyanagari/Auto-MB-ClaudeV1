@@ -52,6 +52,7 @@ import { SigningQueue } from '../../src/views/SigningQueue.js';
 import { Notifications } from '../../src/views/Notifications.js';
 import { Employees } from '../../src/views/Employees.js';
 import { PayrollRun } from '../../src/views/PayrollRun.js';
+import { PurchaseOrders } from '../../src/views/PurchaseOrders.js';
 import { StockRegister } from '../../src/views/StockRegister.js';
 import { StockShortages } from '../../src/views/StockShortages.js';
 import { Tenders } from '../../src/views/Tenders.js';
@@ -403,7 +404,7 @@ export const STATE_CASES: readonly StateCase[] = [
         organisationId={ORG_ID}
         workId={WORK_ID}
         canModify
-        workItems={[]}
+        schedules={[]}
       />
     ),
     retry: /Retry PAC certificates/,
@@ -421,7 +422,7 @@ export const STATE_CASES: readonly StateCase[] = [
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[]}
+        schedules={[]}
         canModify
         onItemCategoryChanged={noop}
       />
@@ -441,7 +442,7 @@ export const STATE_CASES: readonly StateCase[] = [
         api={api}
         organisationId={ORG_ID}
         workId={WORK_ID}
-        workItems={[]}
+        schedules={[]}
         canModify
         onItemCategoryChanged={noop}
       />
@@ -811,6 +812,26 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry the payroll register/,
     empty: { text: /No payroll run has been opened/ },
+  },
+  {
+    view: 'PurchaseOrders.tsx',
+    name: 'the purchase order register',
+    // One read on mount, unnarrowed: the whole register, both series.
+    loads: ['listPurchaseOrders'],
+    render: (api) => (
+      <PurchaseOrders
+        api={api}
+        organisationId={ORG_ID}
+        workId={null}
+        canCreate
+        canIssue
+        canCancel
+        onOpenWork={noop}
+        onClearWorkFilter={noop}
+      />
+    ),
+    retry: /Retry purchase orders/,
+    empty: { text: /No purchase order has been raised against a Work yet/ },
   },
   {
     view: 'StockRegister.tsx',
@@ -1265,6 +1286,13 @@ export const EXEMPT_VIEWS: Readonly<Record<string, string>> = {
   // form rather than to a failure.
   'WorkPurchaseOrders.tsx':
     'WorkDetail owns the purchase-order load, its failure state and its retry',
+  // The opened order itself is loaded by whichever register opened it,
+  // which owns the failure and the retry. This panel's own mount load is
+  // the stock-part picker, which degrades to a select without the stock
+  // channel rather than to a failure — the same posture the vendor picker
+  // above it takes.
+  'purchase-order-panel.tsx':
+    'its caller owns the order load; its own mount load is the optional stock-part picker',
   // The upload screen's only mount load is the award-conversion context
   // panel (migration 0079): when the LOA intake was reached from an
   // awarded tender it reads that tender to show its facts. Deliberately

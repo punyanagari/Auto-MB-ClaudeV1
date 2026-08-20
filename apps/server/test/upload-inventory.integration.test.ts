@@ -92,6 +92,17 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
+    // The vendor's own tax invoice (0109). Inbound paper like the railway
+    // bill above, and the one upload in this application a state
+    // transition depends on: a purchase order does not close until one
+    // of its vendor invoices carries this file.
+    key: 'POST /api/vendor-invoices/:id/document',
+    sourceFile: 'routes/payments.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=inventory.pdf',
+  },
+  {
     // The company document library (0079): a credential and its first
     // version arrive together, and a renewal appends to the credential
     // it renews. Two addresses, one handler, the same gate as every

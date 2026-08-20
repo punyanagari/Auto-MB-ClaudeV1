@@ -17,6 +17,7 @@ import { CATEGORY_LABELS } from '../lib/payment-matrix.js';
 import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
 import { DataTable, wrapCell } from '../ui/table.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 const STAGES = [
   ['pctSupply', 'Supply %'],
@@ -386,9 +387,8 @@ export function TenderTermsReview({
                     const locked = category === 'AMC' && LOCKED_AMC_STAGES.has(field);
                     return (
                       <td key={field}>
-                        <input
+                        <NumericInput
                           className="min-w-24"
-                          inputMode="decimal"
                           aria-label={`${label} for ${CATEGORY_LABELS[category]}`}
                           value={locked ? '0' : draft[field]}
                           disabled={!canModify || !draft.enabled || locked}

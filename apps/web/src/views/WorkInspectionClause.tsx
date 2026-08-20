@@ -19,6 +19,7 @@ import { Card, CardHeader } from '../ui/card.js';
 import { Actions, Field, FormError, FormNotice, Hint } from '../ui/form.js';
 import { controlCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 /**
  * The Work's Inspection clause tab.
@@ -222,10 +223,9 @@ export function WorkInspectionClause({
                     </select>
                   </td>
                   <td className="text-right">
-                    <input
+                    <NumericInput
                       aria-label={`Inspection quantity for ${row.itemNumber}`}
                       className="w-24 text-right font-mono tabular-nums"
-                      inputMode="decimal"
                       disabled={!canModify || pending}
                       value={row.inspectionQuantity ?? ''}
                       onChange={(event) => {

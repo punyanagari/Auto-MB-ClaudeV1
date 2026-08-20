@@ -8,7 +8,7 @@ import type {
   GstRateMaster,
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
-import { formatDate, formatInr, formatRate } from '../format.js';
+import { formatDate, formatInr, formatRate, todayIso } from '../format.js';
 import { cn } from '../lib/cn.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { useAction, useReload } from '../lib/view-state.js';
@@ -19,6 +19,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
+import { NumericInput } from '../ui/numeric-input.js';
 
 interface QuotationsProps {
   readonly api: ApiClient;
@@ -80,6 +81,17 @@ const EMPTY_HEADER: HeaderState = {
   validUntil: '',
   notes: '',
 };
+
+/** An untouched create form, dated today.
+ *
+ * A function rather than a constant with the date baked in: the module is
+ * evaluated once when its chunk loads, and a quotation screen left open
+ * across midnight would otherwise keep offering yesterday. `validUntil`
+ * stays empty — it is a deadline the operator decides, not an event that
+ * has happened. */
+function freshHeader(): HeaderState {
+  return { ...EMPTY_HEADER, bqDate: todayIso() };
+}
 
 /** Legal dates are date-only text and stay that way (engineering rule 6):
  * shape-checked without ever constructing a Date. */
@@ -353,7 +365,7 @@ export function Quotations({
   const [gstRates, setGstRates] = useState<readonly GstRateMaster[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [detail, setDetail] = useState<BudgetaryQuotationDetailResponse | null>(null);
-  const [createState, setCreateState] = useState<HeaderState>(EMPTY_HEADER);
+  const [createState, setCreateState] = useState<HeaderState>(freshHeader);
   const [headerState, setHeaderState] = useState<HeaderState>(EMPTY_HEADER);
   const [lines, setLines] = useState<readonly LineDraft[]>([]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -615,7 +627,7 @@ export function Quotations({
                   );
                   await refreshList();
                   await openQuotation(created.budgetaryQuotation.id);
-                  setCreateState(EMPTY_HEADER);
+                  setCreateState(freshHeader());
                 }, 'Draft quotation created — price its lines below.');
               }}
             >
@@ -778,9 +790,8 @@ export function Quotations({
                               />
                             </td>
                             <td>
-                              <input
+                              <NumericInput
                                 aria-label={`Line ${String(lineNumber)} quantity`}
-                                inputMode="decimal"
                                 value={line.quantity}
                                 onChange={(event) => {
                                   set({ quantity: event.target.value });
@@ -789,9 +800,8 @@ export function Quotations({
                               />
                             </td>
                             <td>
-                              <input
+                              <NumericInput
                                 aria-label={`Line ${String(lineNumber)} rate`}
-                                inputMode="decimal"
                                 value={line.rate}
                                 onChange={(event) => {
                                   set({ rate: event.target.value });
@@ -819,9 +829,8 @@ export function Quotations({
                                   ))}
                                 </select>
                               ) : (
-                                <input
+                                <NumericInput
                                   aria-label={`Line ${String(lineNumber)} GST rate (optional)`}
-                                  inputMode="decimal"
                                   value={line.gstRate}
                                   onChange={(event) => {
                                     set({ gstRate: event.target.value });

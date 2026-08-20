@@ -20,6 +20,7 @@ import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
+import { billPurchaseOrder } from './helpers/vendor-bill.js';
 
 const adminUrl =
   process.env.DATABASE_ADMIN_URL ??
@@ -2064,6 +2065,10 @@ describe('closed purchase orders across cancel-and-replace', () => {
       organisationId,
     });
     expect(issuedDc.statusCode, issuedDc.body).toBe(201);
+    // Closing also needs the vendor's tax invoice on file (migration
+    // 0109); this test is about what a correction does to a CLOSED
+    // order, so the bill is a fixture.
+    await billPurchaseOrder(admin, poId, ownerUserId);
     const closed = await authed(owner, {
       method: 'POST',
       url: `/api/purchase-orders/${poId}/close`,
