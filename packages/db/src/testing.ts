@@ -71,13 +71,26 @@ export async function removeOrganisationResidue(
   const tables = await listTenantTables(sql);
   await sql.begin(async (tx) => {
     await tx.unsafe(`set local session_replication_role = 'replica'`);
+    // THE ORDER IS LOAD-BEARING: the parent goes FIRST, children after.
+    // Replica mode makes that legal (RI triggers are off), and it is the
+    // only order that survives a writer still inserting tenant rows while
+    // this runs — the fire-and-forget export build today (`void
+    // buildExport(...)`, which writes an `audit_events` row of its own),
+    // any undrained worker job tomorrow. Deleting children first leaves a
+    // window between the child sweep and COMMIT in which such an insert
+    // lands and is never re-checked, stranding an orphan that fails the
+    // census of every suite that runs afterwards. Parent-first closes it
+    // both ways: a concurrent insert either blocks on the organisation
+    // row lock and then fails its own foreign key at commit, or it
+    // committed early enough that the per-table delete below — READ
+    // COMMITTED, so each statement takes a fresh snapshot — sweeps it.
+    await tx.unsafe(`delete from organisations where id = any($1::uuid[])`, [ids]);
     for (const table of tables) {
       await tx.unsafe(
         `delete from ${quoteIdentifier(table)} where organisation_id = any($1::uuid[])`,
         [ids],
       );
     }
-    await tx.unsafe(`delete from organisations where id = any($1::uuid[])`, [ids]);
   });
   await assertNoForeignKeyOrphans(sql);
 }
