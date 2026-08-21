@@ -30,6 +30,9 @@ const SNAPSHOT: MeasurementBookSnapshot = {
   mbNumber: 'PL270-CRB-MB-03',
   mbDate: '2026-08-08',
   isFinal: false,
+  // The physical rendering is the one this fixture was written against;
+  // the coefficient sheet gets its own case below.
+  way: 'physical',
   work: {
     workCode: 'PL270-CRB',
     title: 'Supply of "switchboards"',
@@ -52,7 +55,7 @@ const SNAPSHOT: MeasurementBookSnapshot = {
   remarkTemplateVersion: MB_REMARK_TEMPLATE_VERSION,
 };
 
-describe('measurement book HTML template (mb-v1)', () => {
+describe('measurement book HTML template (mb-v2)', () => {
   it('is deterministic and carries the template version trail', () => {
     const first = renderMeasurementBookHtml(SNAPSHOT);
     const second = renderMeasurementBookHtml({ ...SNAPSHOT });
@@ -129,5 +132,49 @@ describe('measurement book HTML template (mb-v1)', () => {
     expect(branded).toContain('Plot 4 &lt;MIDC&gt;');
     expect(branded).toContain('GSTIN 27ABCDE1234F1Z5');
     expect(branded).toContain(`<td class="remark">${workbookRemark}</td>`);
+  });
+
+  /**
+   * The coefficient sheet (migration 0113). The caller has already applied
+   * the scaling — see `toSnapshot` for why the template cannot — so what
+   * is asserted here is the part the template owns: the PAYABLE column,
+   * and that the money is untouched by the way.
+   */
+  it('prints a payable column reading 100% on a coefficient sheet, and none on a physical one', () => {
+    const coefficient = renderMeasurementBookHtml({
+      ...SNAPSHOT,
+      way: 'coefficient',
+      lines: [
+        {
+          ...(SNAPSHOT.lines[0] ?? {
+            itemNumber: 'A/1',
+            description: '',
+            unitCode: 'mtr',
+            deltaSupplied: '0',
+            deltaInstalled: '0',
+            deltaPac: '0',
+            lineTotal: '0.00',
+            remark: '',
+          }),
+          // 1000 mtr at 80%, already scaled by the caller.
+          deltaSupplied: '800.000',
+        },
+      ],
+    });
+    expect(coefficient).toContain('<th>Payable</th>');
+    expect(coefficient).toContain('<td class="num">100%</td>');
+    expect(coefficient).toContain('<td class="num">800</td>');
+    // The total spans one more column now that the row is one column
+    // wider, and the amount beside it has not moved.
+    expect(coefficient).toContain('<td colspan="7">Total payable this MB</td>');
+    expect(coefficient).toContain('<td class="num">1000.00</td>');
+
+    const physical = renderMeasurementBookHtml(SNAPSHOT);
+    expect(physical).not.toContain('<th>Payable</th>');
+    // Not a bare '100%' search: the stylesheet and the remark grammar both
+    // legitimately carry that string.
+    expect(physical).not.toContain('<td class="num">100%</td>');
+    expect(physical).toContain('<td colspan="6">Total payable this MB</td>');
+    expect(physical).toContain('<td class="num">1000.00</td>');
   });
 });

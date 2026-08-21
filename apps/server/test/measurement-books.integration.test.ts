@@ -1625,7 +1625,7 @@ describe('the MB document (phase 3): persisted render, streaming, draft preview'
     expect(rendered.statusCode, rendered.body).toBe(200);
     const detail = rendered.json<MeasurementBookDetailResponse>();
     expect(detail.book.renderedAvailable).toBe(true);
-    expect(detail.book.templateVersion).toBe('mb-v1');
+    expect(detail.book.templateVersion).toBe('mb-v2');
 
     // FINAL BILL banner on the final MB; no watermark once finalized.
     const html = gotenbergBodies.at(-1) ?? '';
@@ -3442,5 +3442,140 @@ describe('billing clamps at the sanctioned quantity while a variation is pending
       from work_items wi where wi.id = ${vItemId}
     `;
     expect(state).toEqual({ installed: '15.000', sanctioned: '15.000' });
+  });
+});
+
+/**
+ * The "use coefficient" way (migration 0113; owner ruling, corrections
+ * item 24).
+ *
+ * The arithmetic itself is proved against the real railway documents in
+ * `test/mb-coefficient.test.ts`. What is proved HERE is the part only a
+ * database can answer: that the flip is a draft-only act, that it is
+ * refused in both layers rather than only in the route, that the Work's
+ * sticky default really carries to the next book, and that no amount
+ * moves when the way does.
+ */
+describe('the coefficient way (0113)', () => {
+  let wayWorkId = '';
+  let wayItemId = '';
+  let draftId = '';
+
+  beforeAll(async () => {
+    wayItemId = randomUUID();
+    wayWorkId = await seedWork({
+      code: `WAY${runId.slice(0, 4).toUpperCase()}`,
+      items: [
+        {
+          id: wayItemId,
+          itemNumber: 'A/1',
+          description: 'Coefficient cable',
+          unit: 'mtr',
+          // Twice what the first challan delivers, so the finalize case
+          // below has room for a second one without meeting the delivery
+          // cap — which is a different rule and not this block's subject.
+          quantity: '2000',
+          rate: '100.00',
+          paymentCategory: 'SUPPLY',
+        },
+      ],
+    });
+    await insertMatrixRow(wayWorkId, 'SUPPLY', ['80', '0', '0', '20']);
+    const dcId = await issueChallan(
+      wayWorkId,
+      `WAY${runId.slice(0, 4).toUpperCase()}DC`,
+      [{ workItemId: wayItemId, quantity: '1000' }],
+    );
+    const draft = await createDraft(wayWorkId, { mbDate: '2026-08-10' });
+    draftId = draft.book.id;
+    const claimed = await setSources(draftId, [
+      { sourceType: 'delivery_challan', sourceId: dcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+  });
+
+  it('defaults to coefficient and serves both renderings of every line', async () => {
+    const detail = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${draftId}`,
+      organisationId,
+    });
+    expect(detail.statusCode, detail.body).toBe(200);
+    const body = detail.json<MeasurementBookDetailResponse>();
+    // The owner's ruling: coefficient is ON unless somebody says
+    // otherwise, on every Work and every book.
+    expect(body.book.way).toBe('coefficient');
+    const line = body.lines[0];
+    // 1000 mtr supplied at an 80% supply stage: physical 1000, printed
+    // 800. Both travel on every line whichever way the book is filed, so
+    // the screen picks a column instead of doing decimal arithmetic.
+    expect(line?.deltaSupplied).toBe('1000.000');
+    expect(line?.coefficientSupplied).toBe('800');
+    expect(body.previewTotal).toBe('80000.00');
+  });
+
+  it('flips the draft and moves the Work default with it, without moving a rupee', async () => {
+    const flipped = await authed(owner, {
+      method: 'PUT',
+      url: `/api/measurement-books/${draftId}/way`,
+      organisationId,
+      payload: { way: 'physical' },
+    });
+    expect(flipped.statusCode, flipped.body).toBe(200);
+    const body = flipped.json<MeasurementBookDetailResponse>();
+    expect(body.book.way).toBe('physical');
+    // THE WHOLE CLAIM OF ITEM 24 IN ONE ASSERTION: the way is a
+    // rendering, so the total is the same figure it was before the flip.
+    expect(body.previewTotal).toBe('80000.00');
+    expect(body.lines[0]?.coefficientSupplied).toBe('800');
+
+    const [work] = await admin<{ mb_way_default: string }[]>`
+      select mb_way_default from works where id = ${wayWorkId}
+    `;
+    expect(work?.mb_way_default).toBe('physical');
+
+    // Sticky: the NEXT book on this Work starts where the operator left
+    // it, which is the difference between a preference and a per-book
+    // question nobody wants to answer twelve times.
+    await authed(owner, {
+      method: 'DELETE',
+      url: `/api/measurement-books/${draftId}`,
+      organisationId,
+    });
+    const next = await createDraft(wayWorkId, { mbDate: '2026-08-11' });
+    expect(next.book.way).toBe('physical');
+    draftId = next.book.id;
+  });
+
+  it('refuses the flip on a finalized book in the route AND in the database', async () => {
+    const dcId = await issueChallan(
+      wayWorkId,
+      `WAY${runId.slice(0, 4).toUpperCase()}FN`,
+      [{ workItemId: wayItemId, quantity: '10' }],
+    );
+    const claimed = await setSources(draftId, [
+      { sourceType: 'delivery_challan', sourceId: dcId },
+    ]);
+    expect(claimed.statusCode, claimed.body).toBe(200);
+    const finalized = await finalize(draftId);
+    expect(finalized.statusCode, finalized.body).toBe(200);
+
+    const refused = await authed(owner, {
+      method: 'PUT',
+      url: `/api/measurement-books/${draftId}/way`,
+      organisationId,
+      payload: { way: 'coefficient' },
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'MB_STATUS_CONFLICT' });
+
+    // The second layer, which is the one that holds against a writer that
+    // never went through the route: 0113 put mb_way into the frozen row of
+    // the finalized-immutability guard.
+    await expect(
+      admin`
+        update measurement_books set mb_way = 'coefficient' where id = ${draftId}
+      `,
+    ).rejects.toThrow(/finalized Measurement Book business data is immutable/);
   });
 });

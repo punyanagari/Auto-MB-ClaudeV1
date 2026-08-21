@@ -424,6 +424,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createWorkMeasurementBook: vi.fn<ApiClient['createWorkMeasurementBook']>(),
     getMeasurementBook: vi.fn<ApiClient['getMeasurementBook']>(),
     setMeasurementBookSources: vi.fn<ApiClient['setMeasurementBookSources']>(),
+    setMeasurementBookWay: vi.fn<ApiClient['setMeasurementBookWay']>(),
     finalizeMeasurementBook: vi.fn<ApiClient['finalizeMeasurementBook']>(),
     cancelMeasurementBook: vi.fn<ApiClient['cancelMeasurementBook']>(),
     deleteMeasurementBook: vi
@@ -1238,6 +1239,7 @@ export function billableBook(
     isFinal: false,
     consigneeContactId: null,
     mbDate: '2026-07-30',
+    way: 'coefficient',
     mbNumber: 'DCW-1-MB-01',
     sequenceNumber: 1,
     totalAmount: '4226994.01',

@@ -2287,6 +2287,58 @@ catalog, so the two cannot drift into saying different things.
 **When the mock grows a settlement screen, the mock wins.** This entry
 retires on the § 4 iteration pipeline, like § 16.
 
+### 32. The "Use coefficient" toggle on a Measurement Book draft
+
+**Status: application-first, owner ruling of 2026-08-21 (live-testing
+corrections item 24; migration 0113).**
+
+**No mock citation, and none is possible** — the mock draws no Measurement
+Book detail at all, which is the same position § 29 is in and for the same
+reason. What lands is one checkbox and one `Hint` inside the existing
+`Field` grammar, plus a sentence of plain text on a finalized book. No new
+visual language, so § Design contract 4 covers it.
+
+**What the toggle decides, stated in the words the toggle itself uses.**
+Indian Railways files a Measurement Book two ways. The COEFFICIENT way
+records the physical quantity multiplied by the payment stage's
+percentage and pays that figure at 100% — 3 Nos at 70% is written as 2.1
+— and it is this organisation's own practice and the way every document
+in the committed settlement corpus is written. The PHYSICAL way records
+what was measured and applies the percentage when the bill is computed.
+
+**It is a rendering and the screen says so.** The amounts, the line
+totals and the book's total are identical whichever way is chosen; only
+the quantity column changes meaning, and a coefficient sheet gains a
+`Payable` column reading 100%, which is what IWRCMS prints beside its own
+`Reason for Reduction` text. The hint says the total is the same either
+way in as many words, because an operator flipping a checkbox beside a
+money column deserves to be told that the money does not move before
+they discover it.
+
+**Default on, sticky per Work, flippable per draft.** New Works and new
+books start on the coefficient way — the owner's ruling and the corpus
+agree — and flipping a draft also sets the Work's default, so the choice
+is made once rather than on every book. A book that has to go out the
+other way flips itself without disturbing the Work.
+
+**Draft only, and a finalized book states rather than offers.** Once
+numbered, the way is part of what the book says: the railway's own copy
+was typed from that sheet, and the measurement match (§ 29) is read
+against it. So a finalized book prints "Filed the coefficient way" as
+text with no control, the route answers `MB_STATUS_CONFLICT`, and
+migration 0113 puts the column in the finalized-immutability guard's
+frozen row.
+
+**The quantity columns on this screen stay PHYSICAL in both ways, and
+that is deliberate.** The draft's supplied and installed cells are
+editable measured quantities (§ 27b, migration 0106) — what an operator
+types there is what was measured on site, never a scaled figure — so
+scaling them would ask somebody to type into a column that is not the one
+they are answering. The coefficient rendering belongs to the DOCUMENT,
+and the draft PDF preview beside the toggle is where it is read.
+
+**When the mock grows a Measurement Book screen, the mock wins.**
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

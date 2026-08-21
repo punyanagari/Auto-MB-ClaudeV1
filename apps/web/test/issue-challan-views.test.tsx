@@ -272,6 +272,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createWorkMeasurementBook: vi.fn(),
     getMeasurementBook: vi.fn(),
     setMeasurementBookSources: vi.fn(),
+    setMeasurementBookWay: vi.fn(),
     finalizeMeasurementBook: vi.fn(),
     cancelMeasurementBook: vi.fn(),
     deleteMeasurementBook: vi.fn().mockResolvedValue(undefined),

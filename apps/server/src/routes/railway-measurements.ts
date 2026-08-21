@@ -26,6 +26,7 @@ import {
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
 } from '../upload-guards.js';
+import type { MbWay } from '../mb-coefficient.js';
 import {
   matchRailwayMeasurement,
   type MeasurementLineVerdict,
@@ -141,12 +142,19 @@ function toRailwayMeasurement(
           matched: false,
           refusal: null,
           detail: null,
+          // Nothing was read, so no way was detected. A hand-confirmed
+          // line says the two documents agree; it does not say which
+          // arithmetic the railway's typist used, and inventing one here
+          // would put a machine's guess under a person's name.
+          way: null,
         }))
       : stored.map((verdict) => ({
           itemNumber: verdict.itemNumber,
           matched: verdict.matched,
           refusal: verdict.refusal,
           detail: verdict.detail,
+          // Verdicts stored before migration 0113 carry no way at all.
+          way: verdict.way ?? null,
         }));
 
   const lines = base.map((line) => {
@@ -357,9 +365,11 @@ export function registerRailwayMeasurementRoutes(
             status: string;
             sequence_number: number | null;
             letter_number: string;
+            mb_way: MbWay;
           }[]
         >`
-          select m.id, m.work_id, m.status, m.sequence_number, w.letter_number
+          select m.id, m.work_id, m.status, m.sequence_number, m.mb_way,
+                 w.letter_number
           from measurement_books m
           join works w on w.id = m.work_id
           where m.id = ${measurementBookId}
@@ -450,7 +460,14 @@ export function registerRailwayMeasurementRoutes(
               `${String(expected.book.sequence_number ?? 0)}.`,
           );
         }
-        const match = matchRailwayMeasurement(expected.lines, parsed.items);
+        // The book's own recorded way (migration 0113) breaks the tie on a
+        // line whose figure fits both arithmetics; it never decides a line
+        // that fits only one. See `matchRailwayMeasurement`.
+        const match = matchRailwayMeasurement(
+          expected.lines,
+          parsed.items,
+          expected.book.mb_way,
+        );
         matchStatus = match.status;
         verdicts = match.lines;
         extraction = parsed;

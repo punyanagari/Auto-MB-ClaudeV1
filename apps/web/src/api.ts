@@ -233,6 +233,7 @@ import type {
   PacCertificateListResponse,
   RecordPacCertificateRequest,
   CreateMeasurementBookRequest,
+  MbWay,
   MeasurementBookDetailResponse,
   ReceivedRailwayBill,
   RailwayMeasurementResponse,
@@ -1304,6 +1305,14 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
     body: SetMbMeasuredQuantitiesRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  /** Flips a DRAFT Measurement Book between the two ways a railway sheet
+   * is filed, and makes the choice the Work's sticky default (migration
+   * 0113). Presentation only: no line moves and no amount changes. */
+  readonly setMeasurementBookWay: (
+    organisationId: string,
+    measurementBookId: string,
+    way: MbWay,
   ) => Promise<MeasurementBookDetailResponse>;
   readonly finalizeMeasurementBook: (
     organisationId: string,
@@ -4237,6 +4246,12 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       return request<MeasurementBookDetailResponse>(
         `/api/measurement-books/${measurementBookId}/sources`,
         { method: 'PUT', body, organisationId },
+      );
+    },
+    async setMeasurementBookWay(organisationId, measurementBookId, way) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/way`,
+        { method: 'PUT', body: { way }, organisationId },
       );
     },
     async finalizeMeasurementBook(organisationId, measurementBookId) {

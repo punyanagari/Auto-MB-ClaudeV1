@@ -3591,3 +3591,95 @@ describe('the railway measurement and its gate (0111)', () => {
     expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(3);
   });
 });
+
+describe('the Measurement Book coefficient way (0113)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0113_mb_coefficient_way.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks', () => {
+    // Both ALTERs take an ACCESS EXCLUSIVE lock on a table every request
+    // touches. The columns carry defaults, so PostgreSQL rewrites nothing,
+    // but the lock still has to be taken and waiting for it unbounded is
+    // what turns a fast migration into an outage.
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('gives both columns the same two-value domain and the same default', () => {
+    // Two columns, one vocabulary. A Work whose default said something a
+    // book could not be would be a default nothing can consume.
+    expect(sql).toContain(
+      "ADD COLUMN mb_way_default text NOT NULL DEFAULT 'coefficient'",
+    );
+    expect(sql).toContain("CHECK (mb_way_default IN ('coefficient', 'physical'))");
+    expect(sql).toContain("ADD COLUMN mb_way text NOT NULL DEFAULT 'coefficient'");
+    expect(sql).toContain("CHECK (mb_way IN ('coefficient', 'physical'))");
+  });
+
+  it('freezes the way by restating the guard rather than adding one', () => {
+    // The rule is the existing one — a finalized book's business data is
+    // immutable — and mb_way is one more column of it.
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.guard_measurement_book_update()',
+    );
+    expect(sql).toContain('NEW.finalized_at,\n      NEW.mb_way');
+    expect(sql).toContain('OLD.finalized_at,\n      OLD.mb_way');
+    expect(sql).toContain(
+      "RAISE EXCEPTION 'finalized Measurement Book business data is immutable'",
+    );
+  });
+
+  it('restates the CURRENT body, not the one 0024 installed', () => {
+    // The trap this pack walked into and had to be dug out of. This guard
+    // has been restated five times; restating 0024's copy compiles, passes
+    // every text assertion about the new column, and silently deletes the
+    // render evidence, bill-lock, newest-only, completed-Work, `kind` and
+    // closure rules. The four clauses below are one from each of the
+    // migrations that would be lost.
+    // 0036 — the frozen ROW names `kind` and never the generated column.
+    // Read from the ROW itself rather than from the whole file, whose
+    // header discusses `NEW.is_final` precisely to warn against it.
+    const frozenRow =
+      [...sql.matchAll(/IS DISTINCT FROM ROW\([\s\S]*?\) THEN/g)]
+        .map((match) => match[0])
+        .find((row) => row.includes('mb_way')) ?? '';
+    expect(frozenRow).toContain('OLD.kind');
+    expect(frozenRow).not.toContain('is_final');
+    expect(sql).toContain('a closed Measurement Book cannot be reopened'); // 0066
+    expect(sql).toContain('only the newest may be cancelled'); // 0027
+    expect(sql).toContain('reopen it before cancelling a Measurement Book'); // 0032
+  });
+
+  it('creates no trigger and no function of its own', () => {
+    // A restatement, not an addition: 0024's trigger already carries this
+    // guard. A migration creating no trigger is absent from
+    // MIGRATION_TRIGGERS by construction, which is what the census above
+    // requires — and this assertion is why that absence is deliberate
+    // rather than forgotten.
+    expect(sql).not.toMatch(/CREATE TRIGGER/);
+    expect(sql).not.toMatch(/CREATE FUNCTION app_private\./);
+    expect(sql).not.toContain('SECURITY DEFINER');
+  });
+
+  it('takes no custom SQLSTATE of its own', () => {
+    // This pack's block is 23W and 0114 opens it. Nothing here raises a
+    // NEW refusal: the restated guard keeps the `check_violation` codes it
+    // already had, and a way that cannot change on a finalized book is the
+    // immutability sentence rather than a rule of its own.
+    expect(sql).not.toMatch(/USING ERRCODE = '23[A-Z]\d\d'/);
+  });
+
+  it('creates no table, so it adds no RLS surface', () => {
+    // Two columns on tables that already carry organisation_id and are
+    // already under FORCE RLS. The repo-wide coverage assertion above
+    // reads created tables; stating the absence here is what says the
+    // coverage was considered rather than skipped.
+    expect(sql).not.toMatch(/CREATE TABLE/i);
+  });
+});

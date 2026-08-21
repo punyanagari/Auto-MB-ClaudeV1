@@ -12,6 +12,7 @@ import {
 } from '@auto-mb/contracts';
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { httpError } from '../../http.js';
+import { coefficientLineQuantities, type MbWay } from '../../mb-coefficient.js';
 import {
   computeMeasurementBook,
   type MbComputation,
@@ -64,6 +65,7 @@ export interface BookRow {
   consignee_contact_id: string | null;
   merged_into_id: string | null;
   mb_date: string;
+  mb_way: MbWay;
   mb_number: string | null;
   sequence_number: number | null;
   total_amount: string | null;
@@ -89,6 +91,7 @@ export function toBook(row: BookRow): MeasurementBook {
     consigneeContactId: row.consignee_contact_id,
     mergedIntoId: row.merged_into_id,
     mbDate: row.mb_date,
+    way: row.mb_way,
     mbNumber: row.mb_number,
     sequenceNumber: row.sequence_number,
     totalAmount: row.total_amount,
@@ -108,6 +111,7 @@ export function toBook(row: BookRow): MeasurementBook {
 export const BOOK_COLUMNS = `
   mb.id, mb.work_id, mb.status, mb.kind, mb.is_final,
   mb.consignee_contact_id, mb.merged_into_id, mb.mb_date::text as mb_date,
+  mb.mb_way,
   mb.mb_number, mb.sequence_number, mb.total_amount::text as total_amount,
   mb.remark_template_version, mb.template_version, mb.rendered_object_key,
   mb.cancellation_note,
@@ -516,8 +520,39 @@ export async function computeForBook(
   return computeMeasurementBook({ matrix, isFinal: book.is_final, items });
 }
 
+/** The coefficient view of one line, added to every line the API serves
+ * (migration 0113) so the screen renders a column instead of computing
+ * one. Both callers below build it the same way, from the same three
+ * quantities and the same three percentages. */
+function coefficientFields(line: {
+  readonly deltaSupplied: string;
+  readonly deltaInstalled: string;
+  readonly deltaPac: string;
+  readonly pctSupply: string;
+  readonly pctInstallation: string;
+  readonly pctPac: string;
+}): Pick<
+  MeasurementBookLine,
+  'coefficientSupplied' | 'coefficientInstalled' | 'coefficientPac'
+> {
+  const scaled = coefficientLineQuantities(line);
+  return {
+    coefficientSupplied: scaled.supplied,
+    coefficientInstalled: scaled.installed,
+    coefficientPac: scaled.pac,
+  };
+}
+
 export function toLine(line: MbComputedLine): MeasurementBookLine {
   return {
+    ...coefficientFields({
+      deltaSupplied: line.deltaSupplied,
+      deltaInstalled: line.deltaInstalled,
+      deltaPac: line.deltaPac,
+      pctSupply: line.percentages.pctSupply,
+      pctInstallation: line.percentages.pctInstallation,
+      pctPac: line.percentages.pctPac,
+    }),
     workItemId: line.workItemId,
     itemNumber: line.itemNumber,
     description: line.description,
@@ -619,6 +654,14 @@ export async function readStoredLines(
   // documents produced from here on read naturally.
   return byItemNumber(
     rows.map((row) => ({
+      ...coefficientFields({
+        deltaSupplied: row.delta_supplied,
+        deltaInstalled: row.delta_installed,
+        deltaPac: row.delta_pac,
+        pctSupply: row.pct_supply,
+        pctInstallation: row.pct_installation,
+        pctPac: row.pct_pac,
+      }),
       workItemId: row.work_item_id,
       itemNumber: row.item_number,
       description: row.description,
@@ -1055,6 +1098,14 @@ export function toSnapshot(
   if (book.status === 'merged') {
     throw new Error('merged record Measurement Books render no document');
   }
+  // THE PRINTED QUANTITY IS DECIDED HERE, not in the template (migration
+  // 0113). `mb-html.ts` renders a self-contained snapshot and nothing
+  // else, which is what lets a document be reproduced years later; the
+  // coefficient figures need the stage percentages, and the snapshot has
+  // no column for those. So the way is applied at the one place that
+  // holds both — and the draft preview, the draft PDF and the finalized
+  // render all come through here, so all three print the same sheet.
+  const coefficient = book.mb_way === 'coefficient';
   return {
     templateVersion: MB_TEMPLATE_VERSION,
     organisationName,
@@ -1062,6 +1113,7 @@ export function toSnapshot(
     mbNumber: book.mb_number,
     mbDate: book.mb_date,
     isFinal: book.is_final,
+    way: book.mb_way,
     work: {
       workCode: work.work_code,
       title: work.title,
@@ -1072,9 +1124,9 @@ export function toSnapshot(
       itemNumber: line.itemNumber,
       description: line.description,
       unitCode: line.unitCode,
-      deltaSupplied: line.deltaSupplied,
-      deltaInstalled: line.deltaInstalled,
-      deltaPac: line.deltaPac,
+      deltaSupplied: coefficient ? line.coefficientSupplied : line.deltaSupplied,
+      deltaInstalled: coefficient ? line.coefficientInstalled : line.deltaInstalled,
+      deltaPac: coefficient ? line.coefficientPac : line.deltaPac,
       lineTotal: line.lineTotal,
       remark: line.remark,
     })),
