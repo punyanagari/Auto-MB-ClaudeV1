@@ -2781,6 +2781,26 @@ Retiring an address never touches a document that copied it, and a retired addre
 is refused for a new one. That is the same sentence the Contacts register has
 carried since the master existed, applied one level down.
 
+**Retirement blocks new citations, never the tab.** The clause save re-submits
+the whole table, so a vendor or address retired after being mapped must not brick
+every other row: a citation left exactly as stored saves untouched, and only the
+row whose citation CHANGES is re-proved — its refusal names the item ("Item
+A-0003: …") and carries the `workItemId`. The tab shows a retired citation by
+name, marked "(retired)" on the row that carries it with a destructive badge in
+place of "Mapped"; the picker itself still offers only live vendors and
+addresses. Raising a CALL under a retired citation is where the refusal lands,
+and a vendor mapped with no saved address and no typed premises is refused at
+call time in a sentence rather than surfacing as a bare 500.
+
+**Making an address primary is a body-less verb.** The Masters button posts
+`make-primary` and sends nothing else, so a concurrent edit of the address text
+cannot be overwritten by whatever copy the browser held. Retiring the primary
+hands the flag to the next live address in the same statement; reactivating an
+address of a contact left with no primary restores it — Masters never shows a
+live address while the challan editor refuses the contact as having none. A new
+address never claims primary by itself unless it is the contact's first live one:
+an address deliberately cleared on the contact form stays cleared.
+
 ## Focus, keyboard and navigation
 
 - Workspace navigation is serialised into `location.hash` (hand-rolled, no router

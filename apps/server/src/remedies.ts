@@ -445,6 +445,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // ---- Masters and configuration -----------------------------------------
   CONTACT_RETIRED:
     'Reactivate the contact in Masters, Contacts, or pick an active one; retiring withdraws a contact from the pickers without touching issued documents.',
+  CONTACT_ADDRESS_INVALID:
+    'Give the address at least three real characters, and either pick a saved address or type the premises — never both at once, and never an address without its contact.',
   CONTACT_ADDRESS_NOT_FOUND:
     'Pick the address again from the contact’s own address list in Masters, Contacts — an address belongs to one contact, and another contact’s is never selectable here.',
   CONTACT_ADDRESS_RETIRED:

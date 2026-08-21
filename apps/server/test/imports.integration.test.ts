@@ -421,6 +421,16 @@ describe('committing a batch', () => {
     `;
     expect(contact?.designation).toBe('Commit One Traders');
 
+    // The address arrives as the contact's PRIMARY address-list row too
+    // (migration 0116), exactly like the backfill wrote for pre-existing
+    // contacts. Without it, the first address added through the API found
+    // no primary and the mirror overwrote the imported address unaudited.
+    const [child] = await admin<{ address: string; is_primary: boolean }[]>`
+      select address, is_primary from contact_addresses
+      where contact_id = ${written[0]?.imported_record_id ?? ''}
+    `;
+    expect(child).toMatchObject({ address: 'Jalgaon', is_primary: true });
+
     // Terminal. A committed batch is the record of rows that are now in
     // a register, and re-running it would write them twice.
     const again = await authed(owner, {

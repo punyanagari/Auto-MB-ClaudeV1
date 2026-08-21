@@ -254,6 +254,19 @@ ALTER TABLE inspection_clauses
   ADD COLUMN vendor_contact_id uuid,
   ADD COLUMN vendor_address_id uuid;
 
+-- The clause's own free text is widened exactly as the call's is below,
+-- and for the same reason: the contract already accepts 1000 characters
+-- (a master address runs to that), and a clause bound to 0082's 200 would
+-- refuse at the database what the API just accepted.
+ALTER TABLE inspection_clauses
+  DROP CONSTRAINT inspection_clauses_vendor_premises_check;
+ALTER TABLE inspection_clauses
+  ADD CONSTRAINT inspection_clauses_vendor_premises_check CHECK (
+    vendor_premises IS NULL
+    OR (btrim(vendor_premises) = vendor_premises
+        AND length(vendor_premises) BETWEEN 1 AND 1000)
+  );
+
 ALTER TABLE inspection_clauses
   ADD CONSTRAINT inspection_clauses_vendor_contact_fkey
     FOREIGN KEY (organisation_id, vendor_contact_id)

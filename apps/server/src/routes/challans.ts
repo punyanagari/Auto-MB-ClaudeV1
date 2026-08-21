@@ -623,6 +623,10 @@ async function loadStandaloneConsignee(
       name: contact.designation.trim(),
       address: contact.address.trim(),
       ...(phone.length > 0 ? { phone } : {}),
+      // Which saved address was copied, kept ON the snapshot so an edit
+      // of the draft can round-trip the choice: a PUT that omits the id
+      // falls back to it rather than silently reverting to the primary.
+      ...(addressId !== undefined ? { addressId } : {}),
     },
     gstin: contact.gstin,
   };
@@ -2003,10 +2007,22 @@ export function registerChallanRoutes(
         await assertStandaloneChallanAccess(tx, user.id);
         requireStatus(challan, 'draft');
         await assertStandaloneChallanDate(tx, body.challanDate);
+        // An omitted address id PRESERVES the draft's stored choice (the
+        // snapshot carries it as provenance) rather than reverting to the
+        // primary — but only while the consignee is unchanged, because
+        // another contact's address id would name premises the new
+        // consignee does not keep.
+        const stored = parseJsonbColumn(challan.consignee_snapshot) as
+          Partial<Consignee> | undefined;
+        const addressId =
+          body.consigneeAddressId ??
+          (challan.consignee_contact_id === body.consigneeContactId
+            ? stored?.addressId
+            : undefined);
         const { consignee, gstin: contactGstin } = await loadStandaloneConsignee(
           tx,
           body.consigneeContactId,
-          body.consigneeAddressId,
+          addressId,
         );
         const statutory = normaliseChallanStatutory(body, contactGstin);
         const linesBefore = await readLineInputs(tx, id);

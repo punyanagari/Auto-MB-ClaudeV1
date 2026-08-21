@@ -672,6 +672,24 @@ const CONTACTS_TARGET: ImportTarget = {
       returning id
     `;
     if (!inserted) throw new Error('contact insert returned no row');
+    // The address-list child row, the same shape 0116's backfill wrote:
+    // a contact imported with an address must start with it as the
+    // PRIMARY row of its list. Without this the parent alone carried the
+    // text, and the first POST to the address list found no primary and
+    // claimed the flag — at which point the mirror overwrote the imported
+    // address with the new row's text, unaudited.
+    if (row.address !== null) {
+      await tx`
+        insert into contact_addresses (
+          organisation_id, contact_id, address, pincode, locality,
+          state_code, is_primary, created_by_user_id
+        )
+        values (
+          ${organisationId}, ${inserted.id}, ${row.address}, ${row.pincode},
+          ${row.locality}, ${row.stateCode}, true, ${userId}
+        )
+      `;
+    }
     return inserted.id;
   },
 };

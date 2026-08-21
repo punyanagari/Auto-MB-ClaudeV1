@@ -102,6 +102,13 @@ function useMasterList<T>(
   return { rows, reload, reveal, revealProps };
 }
 
+/** One line for a postal address: the populated parts joined with
+ * middots, an em dash when there are none — the contact register and the
+ * address panel say it identically. */
+function addressSummary(parts: readonly (string | null | undefined)[]): string {
+  return parts.filter((part) => part != null).join(' · ') || '—';
+}
+
 function RetiredFilter({
   id,
   includeRetired,
@@ -690,14 +697,12 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
               <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">{row.designation}</th>
                 <td className={wrapCell}>
-                  {[
+                  {addressSummary([
                     row.address,
                     row.pincode,
                     row.locality,
                     row.stateCode ? `State ${row.stateCode}` : null,
-                  ]
-                    .filter((part) => part !== null && part !== undefined)
-                    .join(' · ') || '—'}
+                  ])}
                 </td>
                 <td>{row.gstin ?? '—'}</td>
                 <td className={wrapCell}>
@@ -1054,8 +1059,13 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
           organisationId={organisationId}
           contact={editing}
           onChanged={(saved) => {
+            // ONE fetch per address action, the panel's own (it must see
+            // retired addresses whatever the register filter says).
+            // Re-reading the whole register here as well doubled every
+            // click; the register row behind the editor catches up on the
+            // next save or reload, and until then only its mirrored
+            // Address column can lag.
             setEditing(saved);
-            reload();
           }}
         />
       )}
@@ -1147,14 +1157,12 @@ function ContactAddressPanel({
               <tr key={address.id}>
                 <th scope="row">{address.label ?? '—'}</th>
                 <td className={wrapCell}>
-                  {[
+                  {addressSummary([
                     address.address,
                     address.pincode,
                     address.locality,
                     address.stateCode === null ? null : `State ${address.stateCode}`,
-                  ]
-                    .filter((part) => part !== null)
-                    .join(' · ')}
+                  ])}
                 </td>
                 <td>
                   {address.isPrimary && <Badge variant="info">primary</Badge>}{' '}
@@ -1163,32 +1171,19 @@ function ContactAddressPanel({
                 <td>
                   {!address.isPrimary && address.active && (
                     <>
+                      {/* The body-less MOVE verb, not the PUT: re-sending
+                          the browser's copy of the text fields would
+                          silently overwrite a concurrent edit of the
+                          address itself. */}
                       <Button
                         variant="outline"
                         disabled={pending}
                         onClick={() =>
                           void run(() =>
-                            api.saveContactAddress(
+                            api.makeContactAddressPrimary(
                               organisationId,
                               contact.id,
                               address.id,
-                              {
-                                address: address.address,
-                                isPrimary: true,
-                                sortOrder: address.sortOrder,
-                                ...(address.label === null
-                                  ? {}
-                                  : { label: address.label }),
-                                ...(address.pincode === null
-                                  ? {}
-                                  : { pincode: address.pincode }),
-                                ...(address.locality === null
-                                  ? {}
-                                  : { locality: address.locality }),
-                                ...(address.stateCode === null
-                                  ? {}
-                                  : { stateCode: address.stateCode }),
-                              },
                             ),
                           )
                         }

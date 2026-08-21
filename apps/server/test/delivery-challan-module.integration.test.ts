@@ -650,6 +650,65 @@ describe('standalone Delivery Challans', () => {
     expect(removed.statusCode, removed.body).toBe(204);
   });
 
+  it('keeps the chosen address across a PUT that does not resend it', async () => {
+    const added = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${secondConsigneeContactId}/addresses`,
+      organisationId,
+      payload: { label: 'Depot store', address: 'Depot Lane, Manmad' },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    const depotId = added.json<{ id: string }>().id;
+
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: '/api/delivery-challans',
+      organisationId,
+      payload: {
+        challanDate: await organisationToday(),
+        prefix: 'SDC',
+        consigneeContactId: secondConsigneeContactId,
+        consigneeAddressId: depotId,
+        items: [{ description: 'Clamp', unit: 'Nos', quantity: '2', rate: '40.00' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const drafted = draft.json<ChallanDetailResponse>();
+    // The choice is on the snapshot as provenance, so a client CAN
+    // round-trip it.
+    expect(drafted.challan.consignee).toMatchObject({
+      address: 'Depot Lane, Manmad',
+      addressId: depotId,
+    });
+
+    // A PUT that omits the id — every caller predating the address list —
+    // keeps the stored choice rather than silently reverting the paper to
+    // the primary address.
+    const edited = await authed(owner, {
+      method: 'PUT',
+      url: `/api/delivery-challans/${drafted.challan.id}`,
+      organisationId,
+      payload: {
+        challanDate: await organisationToday(),
+        prefix: 'SDC',
+        consigneeContactId: secondConsigneeContactId,
+        items: [{ description: 'Clamp', unit: 'Nos', quantity: '3', rate: '40.00' }],
+      },
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    expect(edited.json<ChallanDetailResponse>().challan.consignee).toMatchObject({
+      address: 'Depot Lane, Manmad',
+      addressId: depotId,
+    });
+
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/challans/${drafted.challan.id}`,
+      organisationId,
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
+  });
+
   it('allows one open draft per consignee, and another consignee its own', async () => {
     const repeat = await authed(owner, {
       method: 'POST',

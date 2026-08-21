@@ -8,6 +8,7 @@ import type {
   WorkBalanceItem,
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, type ApiClient } from '../api.js';
+import { addressOptionLabel, liveAddresses } from '../lib/addresses.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
@@ -713,11 +714,11 @@ export function ChallanEditor({
   const linkedConsignees = workConsignees.filter((candidate) => candidate.active);
   /** The live addresses of the contact the picker last copied from
    * (migration 0116), primary first as the masters route returns them. */
-  const consigneeAddresses = (
+  const consigneeAddresses = liveAddresses(
     [...linkedConsignees, ...consignees].find(
       (candidate) => candidate.id === pickedConsignee,
-    )?.addresses ?? []
-  ).filter((address) => address.active);
+    ),
+  );
 
   // The column exists only while the Work has open purchase orders with
   // lines to receive against; without them the table reads exactly as it
@@ -883,8 +884,7 @@ export function ChallanEditor({
               <option value="">Typed by hand</option>
               {consigneeAddresses.map((address) => (
                 <option key={address.id} value={address.id}>
-                  {address.label ?? address.address}
-                  {address.isPrimary ? ' (primary)' : ''}
+                  {addressOptionLabel(address)}
                 </option>
               ))}
             </select>

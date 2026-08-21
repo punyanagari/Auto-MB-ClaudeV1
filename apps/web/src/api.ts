@@ -794,6 +794,14 @@ export interface ApiClient {
     addressId: string,
     active: boolean,
   ) => Promise<ContactAddress>;
+  /** A body-less MOVE of the primary flag: nothing else about the address
+   * is sent, so a concurrent edit of its text cannot be overwritten by a
+   * stale copy the browser held. */
+  readonly makeContactAddressPrimary: (
+    organisationId: string,
+    contactId: string,
+    addressId: string,
+  ) => Promise<ContactAddress>;
   readonly listWorkConsignees: (
     organisationId: string,
     workId: string,
@@ -3528,6 +3536,12 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         `/api/masters/contacts/${contactId}/addresses/${addressId}/${
           active ? 'reactivate' : 'retire'
         }`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async makeContactAddressPrimary(organisationId, contactId, addressId) {
+      return request<ContactAddress>(
+        `/api/masters/contacts/${contactId}/addresses/${addressId}/make-primary`,
         { method: 'POST', organisationId },
       );
     },

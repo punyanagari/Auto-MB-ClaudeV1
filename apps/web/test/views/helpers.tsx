@@ -252,6 +252,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     setContactActive: vi.fn<ApiClient['setContactActive']>(),
     saveContactAddress: vi.fn<ApiClient['saveContactAddress']>(),
     setContactAddressActive: vi.fn<ApiClient['setContactAddressActive']>(),
+    makeContactAddressPrimary: vi.fn<ApiClient['makeContactAddressPrimary']>(),
     listWorkConsignees: vi.fn<ApiClient['listWorkConsignees']>().mockResolvedValue([]),
     linkWorkConsignee: vi.fn<ApiClient['linkWorkConsignee']>(),
     unlinkWorkConsignee: vi.fn<ApiClient['unlinkWorkConsignee']>(),

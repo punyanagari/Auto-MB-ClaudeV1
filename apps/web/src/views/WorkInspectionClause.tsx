@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import {
   INSPECTION_AGENCIES,
   INSPECTION_CLAUSE_AGENCIES,
   type Contact,
-  type ContactAddress,
   type InspectionAgency,
   type InspectionChecklistField,
   type InspectionClauseAgency,
@@ -13,6 +12,7 @@ import {
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { todayIso } from '../format.js';
+import { addressOptionLabel, liveAddresses } from '../lib/addresses.js';
 import { proposeInspectionAgency } from '../lib/inspection-clause-match.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { useAction, useReload } from '../lib/view-state.js';
@@ -67,19 +67,6 @@ const MATCHED = 'matched';
 const OTHER = 'other';
 const SECTION_IDS = [MATCHED, OTHER];
 
-/** The addresses a vendor currently offers: live ones only, primary
- * first — the order the masters route already returns them in, filtered
- * rather than re-sorted so the picker and the register agree. */
-function liveAddresses(vendor: Contact | undefined): readonly ContactAddress[] {
-  return (vendor?.addresses ?? []).filter((address) => address.active);
-}
-
-/** What an address is called in a one-line picker: its own label where
- * the operator gave it one, the address text otherwise. */
-function addressLabel(address: ContactAddress): string {
-  return address.label ?? address.address;
-}
-
 interface WorkInspectionClauseProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -100,11 +87,12 @@ export function WorkInspectionClause({
 }: WorkInspectionClauseProps) {
   const [config, setConfig] = useState<WorkInspectionConfig | null>(null);
   const [rows, setRows] = useState<readonly InspectionClauseRow[]>([]);
-  /** Vendor-role contacts, with their address lists. The premises picker
-   * offers these; a sub-vendor with no master row is still typed in, the
-   * way 0082 has always allowed. A failed load leaves the list empty and
-   * the free-text field is what remains, so the screen degrades to what
-   * it was rather than to nothing. */
+  /** Vendor-role contacts, with their address lists — RETIRED ones
+   * included, because a stored clause may cite a vendor retired since:
+   * without its row the citation would render as a blank picker over a
+   * green badge, indistinguishable from an unmapped item. The PICKER
+   * still offers only live vendors; the retired one appears only as the
+   * named, clearable current value of the rows that cite it. */
   const [vendors, setVendors] = useState<readonly Contact[]>([]);
   const [agency, setAgency] = useState<InspectionAgency>('RDSO');
   const [fields, setFields] = useState<readonly InspectionChecklistField[]>([]);
@@ -133,12 +121,16 @@ export function WorkInspectionClause({
     setConfig(null);
     setLoadError(null);
     api
-      .listContacts(organisationId, { role: 'vendor' })
+      .listContacts(organisationId, { role: 'vendor', includeRetired: true })
       .then((loaded) => {
         if (!cancelled) setVendors(loaded);
       })
-      .catch(() => {
-        if (!cancelled) setVendors([]);
+      .catch((cause: unknown) => {
+        // Said out loud, not swallowed: with an empty vendor list every
+        // saved citation would render as if it were unmapped, which is
+        // the screen lying rather than degrading.
+        if (cancelled) return;
+        setLoadError(errorMessage(cause, 'The vendor list could not be loaded.'));
       });
     api
       .getWorkInspectionConfig(organisationId, workId)
@@ -160,6 +152,23 @@ export function WorkInspectionClause({
   // matched one open on arrival and the rest shut, which is what
   // `useScheduleAccordion` already does with the first id it is given.
   const accordion = useScheduleAccordion(SECTION_IDS);
+
+  // THE TWO LISTS' keys. An item whose description names an agency is one
+  // the operator came here to map; the rest are shown too, collapsed.
+  // Memoised on the LOADED config, not on the editable rows: the fuzzy
+  // matcher walks every description (a million character comparisons on a
+  // 129-item schedule), descriptions never change while editing, and the
+  // rows' identity changes on every keystroke.
+  const proposals = useMemo(
+    () =>
+      new Map(
+        (config?.items ?? []).map((row) => [
+          row.workItemId,
+          proposeInspectionAgency(row.description),
+        ]),
+      ),
+    [config],
+  );
 
   if (loadError !== null) {
     return (
@@ -194,9 +203,6 @@ export function WorkInspectionClause({
   // because a clause sometimes lives in the tender text rather than in
   // the item, and hiding those items outright would make the screen
   // capable of being wrong in a way nobody could see.
-  const proposals = new Map(
-    rows.map((row) => [row.workItemId, proposeInspectionAgency(row.description)]),
-  );
   const matched = rows.filter((row) => proposals.get(row.workItemId) != null);
   const others = rows.filter((row) => proposals.get(row.workItemId) == null);
 
@@ -204,6 +210,31 @@ export function WorkInspectionClause({
     contactId === null
       ? undefined
       : vendors.find((candidate) => candidate.id === contactId);
+
+  const activeVendors = vendors.filter((vendor) => vendor.active);
+
+  /** What one row currently cites, retired or not. A retired vendor or
+   * address is not hidden from the row that cites it — that rendered as a
+   * blank control over a green badge — it is shown by name, marked
+   * retired, and stays clearable like any other choice. */
+  const citationOf = (row: InspectionClauseRow) => {
+    const vendor = vendorOf(row.vendorContactId);
+    const live = liveAddresses(vendor);
+    const cited =
+      row.vendorAddressId === null
+        ? undefined
+        : (vendor?.addresses ?? []).find(
+            (address) => address.id === row.vendorAddressId,
+          );
+    const vendorRetired = vendor !== undefined && !vendor.active;
+    const addressRetired = cited !== undefined && !cited.active;
+    return {
+      vendor,
+      vendorRetired,
+      addressRetired,
+      offered: addressRetired && cited !== undefined ? [...live, cited] : live,
+    };
+  };
 
   /** Picking a vendor proposes its PRIMARY address, which is the one
    * every other picker in the product defaults to, and clears the free
@@ -222,7 +253,7 @@ export function WorkInspectionClause({
   };
 
   const premisesCell = (row: InspectionClauseRow) => {
-    const live = liveAddresses(vendorOf(row.vendorContactId));
+    const { vendor, vendorRetired, addressRetired, offered } = citationOf(row);
     return (
       <td className={controlCell}>
         <select
@@ -234,13 +265,16 @@ export function WorkInspectionClause({
           }}
         >
           <option value="">Not a saved vendor</option>
-          {vendors.map((vendor) => (
-            <option key={vendor.id} value={vendor.id}>
-              {vendor.designation}
+          {activeVendors.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              {candidate.designation}
             </option>
           ))}
+          {vendorRetired && vendor !== undefined && (
+            <option value={vendor.id}>{vendor.designation} (retired)</option>
+          )}
         </select>
-        {row.vendorContactId !== null && live.length > 0 && (
+        {row.vendorContactId !== null && offered.length > 0 && (
           <select
             aria-label={`Inspection address for ${row.itemNumber}`}
             disabled={!canModify || pending}
@@ -254,10 +288,10 @@ export function WorkInspectionClause({
             }}
           >
             <option value="">Type the premises instead</option>
-            {live.map((address) => (
+            {offered.map((address) => (
               <option key={address.id} value={address.id}>
-                {addressLabel(address)}
-                {address.isPrimary ? ' (primary)' : ''}
+                {addressOptionLabel(address)}
+                {address.active ? '' : ' (retired)'}
               </option>
             ))}
           </select>
@@ -275,12 +309,20 @@ export function WorkInspectionClause({
             }}
           />
         )}
+        {(vendorRetired || addressRetired) && (
+          <Hint>
+            {vendorRetired ? 'This vendor is retired' : 'This address is retired'} — the
+            next call will be refused until it is reactivated in Masters or the row
+            picks another.
+          </Hint>
+        )}
       </td>
     );
   };
 
   const clauseRow = (row: InspectionClauseRow) => {
     const proposal = proposals.get(row.workItemId) ?? null;
+    const { vendorRetired, addressRetired } = citationOf(row);
     return (
       <tr key={row.workItemId}>
         <td className={wrapCell}>
@@ -358,7 +400,14 @@ export function WorkInspectionClause({
         <td>
           {row.agency !== null &&
           (row.vendorAddressId !== null || row.vendorPremises !== null) ? (
-            <Badge variant="success">Mapped</Badge>
+            vendorRetired || addressRetired ? (
+              <Badge variant="destructive">
+                <AlertTriangle className="size-3" />
+                {vendorRetired ? 'Vendor retired' : 'Address retired'}
+              </Badge>
+            ) : (
+              <Badge variant="success">Mapped</Badge>
+            )
           ) : (
             <Badge variant="destructive">
               <AlertTriangle className="size-3" />

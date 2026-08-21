@@ -10,6 +10,7 @@ import type {
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatRate, todayIso } from '../format.js';
+import { addressOptionLabel, liveAddresses } from '../lib/addresses.js';
 import { cn } from '../lib/cn.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { useAction, useReload } from '../lib/view-state.js';
@@ -243,9 +244,9 @@ export function DeliveryChallans({
     setChallans(await api.listDeliveryChallans(organisationId, workId));
   }, [api, organisationId, workId]);
 
-  const consigneeAddresses = (
-    contacts.find((contact) => contact.id === consigneeContactId)?.addresses ?? []
-  ).filter((address) => address.active);
+  const consigneeAddresses = liveAddresses(
+    contacts.find((contact) => contact.id === consigneeContactId),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -652,7 +653,7 @@ export function DeliveryChallans({
                       <option value="">Primary address</option>
                       {consigneeAddresses.map((address) => (
                         <option key={address.id} value={address.id}>
-                          {address.label ?? address.address}
+                          {addressOptionLabel(address)}
                         </option>
                       ))}
                     </select>

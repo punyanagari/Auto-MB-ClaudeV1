@@ -159,6 +159,15 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'INSPECTION_VENDOR_INVALID',
     'The inspection vendor must be a contact carrying the vendor role.',
   ],
+  // The generic CHECK-violation backstop. Every named rule above and every
+  // route-level refusal fires first; what remains is a stored shape rule —
+  // a premises or name that is blank, padded with spaces, or longer than
+  // the column allows, or a call snapshot missing its copied text — and a
+  // named 409 beats the bare 500 it used to surface as.
+  '23514': [
+    'INSPECTION_CLAUSE_INVALID',
+    'A stored inspection rule refused this write — most often a premises or name that is blank, starts or ends with spaces, or is longer than the field allows.',
+  ],
 };
 
 function rethrowWriteRefusal(error: unknown): never {
@@ -169,6 +178,33 @@ function rethrowWriteRefusal(error: unknown): never {
   const refusal = DATABASE_REFUSALS[code];
   if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
   throw error;
+}
+
+/** The same refusal, restated to say WHICH row of the clause table it is
+ * about: the message gains the item number and the payload carries the
+ * `workItemId`, so a client can point at the row instead of the operator
+ * hunting a long schedule for it. Anything that is not a curated refusal
+ * passes through untouched. */
+function namedForItem(
+  error: unknown,
+  workItemId: string,
+  itemNumber: string | undefined,
+): unknown {
+  if (
+    error instanceof Error &&
+    'expose' in error &&
+    'statusCode' in error &&
+    'code' in error &&
+    typeof error.statusCode === 'number'
+  ) {
+    return httpError(
+      error.statusCode,
+      error.code as ErrorCode,
+      itemNumber === undefined ? error.message : `Item ${itemNumber}: ${error.message}`,
+      { workItemId },
+    );
+  }
+  return error;
 }
 
 // --- Row shapes -------------------------------------------------------------
@@ -632,13 +668,14 @@ export function registerInspectionRoutes(
         // half of the dispatch gate: `routes/challans.ts` takes the same
         // locks before it reads `gates_dispatch`, so a toggle and an issue
         // of the same Work serialise in either order rather than racing.
-        const items = await tx<{ id: string }[]>`
-          select id from work_items
+        const items = await tx<{ id: string; item_number: string }[]>`
+          select id, item_number from work_items
           where work_id = ${workId} and deleted_at is null
           order by id
           for update
         `;
         const known = new Set(items.map((item) => item.id));
+        const numberOf = new Map(items.map((item) => [item.id, item.item_number]));
         for (const clause of clauses) {
           if (!known.has(clause.workItemId)) {
             throw httpError(
@@ -658,9 +695,18 @@ export function registerInspectionRoutes(
         // the flag does. Both are the class of act
         // `works.allow_excess_delivery` reserves to the owner.
         const before = await tx<
-          { work_item_id: string; gates_dispatch: boolean; agency: string }[]
+          {
+            work_item_id: string;
+            gates_dispatch: boolean;
+            agency: string;
+            vendor_contact_id: string | null;
+            vendor_address_id: string | null;
+            vendor_premises: string | null;
+          }[]
         >`
-          select work_item_id, gates_dispatch, agency from inspection_clauses
+          select work_item_id, gates_dispatch, agency,
+                 vendor_contact_id, vendor_address_id, vendor_premises
+          from inspection_clauses
           where work_id = ${workId}
         `;
         const previous = new Map(before.map((row) => [row.work_item_id, row]));
@@ -693,13 +739,59 @@ export function registerInspectionRoutes(
             and (${kept.length === 0} or work_item_id <> all(${kept}::uuid[]))
         `;
         const written = clauses.filter((clause) => clause.agency !== null);
-        // The premises of every mapped item, proved against the contacts
-        // master before a single row is written: a half-written mapping
-        // would leave the gate configured from two states at once, which
-        // is the reason this whole save is a whole-table replace.
+        // The premises of every CHANGED citation, proved against the
+        // contacts master before a single row is written: a half-written
+        // mapping would leave the gate configured from two states at
+        // once, which is the reason this whole save is a whole-table
+        // replace.
+        //
+        // A citation the submission left exactly as stored is NOT
+        // re-proved. The save being a whole-table replace, re-proving
+        // every row would let one retired vendor or address brick the
+        // whole tab — no other item could be edited until the one
+        // citation was cleared. Retirement withdraws a master from being
+        // NEWLY cited; it does not invalidate configuration that already
+        // cites it (the next CALL raised under it is where a retired
+        // master is refused, with the item named).
+        //
+        // Distinct citations resolve once, not once per row: a 129-item
+        // schedule inspected at one vendor is one lookup.
         const premises = new Map<string, ResolvedPremises>();
+        const resolved = new Map<string, ResolvedPremises>();
         for (const clause of written) {
-          premises.set(clause.workItemId, await resolvePremises(tx, clause));
+          const was = previous.get(clause.workItemId);
+          const free = normaliseText(clause.vendorPremises);
+          if (
+            was !== undefined &&
+            was.vendor_contact_id === (clause.vendorContactId ?? null) &&
+            was.vendor_address_id === (clause.vendorAddressId ?? null) &&
+            was.vendor_premises === free
+          ) {
+            premises.set(clause.workItemId, {
+              vendorContactId: was.vendor_contact_id,
+              vendorAddressId: was.vendor_address_id,
+              vendorName: null,
+              vendorAddress: null,
+              vendorPremises: was.vendor_premises,
+            });
+            continue;
+          }
+          const key = `${clause.vendorContactId ?? ''}|${clause.vendorAddressId ?? ''}|${free ?? ''}`;
+          let proof = resolved.get(key);
+          if (proof === undefined) {
+            proof = await resolvePremises(tx, clause).catch((error: unknown) => {
+              // The refusal names WHICH row, or the operator is left
+              // hunting a long schedule for the one citation a 409
+              // refuses to identify.
+              throw namedForItem(
+                error,
+                clause.workItemId,
+                numberOf.get(clause.workItemId),
+              );
+            });
+            resolved.set(key, proof);
+          }
+          premises.set(clause.workItemId, proof);
         }
         if (written.length > 0) {
           // One statement, not one per row: the house pattern
@@ -1054,6 +1146,23 @@ export function registerInspectionRoutes(
         // vendor or retiring the address afterwards must not rewrite what
         // the agency was sent (AGENTS.md rule 7).
         const premises = await resolvePremises(tx, body);
+        // A named vendor with no premises text anywhere — no chosen
+        // address, no typed free text — has nowhere to send the agency,
+        // and the call's snapshot CHECK refuses the row as an unmapped
+        // 23514. A clause may legitimately hold just the vendor; the CALL
+        // is where the gap has to be closed, so it is refused here in a
+        // sentence.
+        if (
+          premises.vendorContactId !== null &&
+          premises.vendorAddress === null &&
+          premises.vendorPremises === null
+        ) {
+          throw httpError(
+            400,
+            'INSPECTION_CLAUSE_INVALID',
+            'This vendor has no premises for the call — pick one of its saved addresses or type the premises, then raise the call again.',
+          );
+        }
         const [call] = await tx<{ id: string }[]>`
           insert into inspection_calls (
             organisation_id, work_id, sequence_number, agency, requested_on,

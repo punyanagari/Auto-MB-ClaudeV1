@@ -21,6 +21,14 @@ export const ConsigneeSchema = Type.Object(
     name: Type.String({ minLength: 2, maxLength: 200 }),
     address: Type.String({ minLength: 3, maxLength: 1000 }),
     phone: Type.Optional(Type.String({ minLength: 3, maxLength: 30 })),
+    /** PROVENANCE, standalone challans only: which of the consignee's
+     * saved addresses (migration 0116) the block above was copied from,
+     * recorded so a client editing the draft can round-trip the choice —
+     * without it, a PUT that omits `consigneeAddressId` silently reverts
+     * to the primary. The printed text is still `address` beside it; the
+     * id is never re-read. Absent on work challans (free text) and on any
+     * standalone challan whose consignee was copied from the primary. */
+    addressId: Type.Optional(UuidSchema),
   },
   { additionalProperties: false },
 );
