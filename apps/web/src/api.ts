@@ -296,6 +296,7 @@ import type {
   CancelEwayBillRequest,
   CancelStatutoryDocumentRequest,
   RecordManualStatutoryCancellationRequest,
+  RegisterSort,
 } from '@auto-mb/contracts';
 import { isOffline } from './lib/offline.js';
 
@@ -533,6 +534,9 @@ export interface ApiClient {
    * narrows it to one Work — the module's `?work=` deep link, pushed into
    * the request so the answer is that Work's movements rather than the
    * ones that happened to be on the page. */
+  /* No `sort`: this read sends no `limit`, so it receives the whole
+   * register and the Challans screen orders it in the view. The route's
+   * `?sort=` is for the registers that page. */
   readonly listDeliveryChallans: (
     organisationId: string,
     workId?: string | null,
@@ -1089,6 +1093,9 @@ export interface ApiClient {
       readonly limit?: number;
       readonly installedFrom?: string;
       readonly installedTo?: string;
+      /** Which way round the register reads its date column. Omitted is
+       * newest first, exactly as before the parameter existed. */
+      readonly sort?: RegisterSort;
     },
   ) => Promise<InstallationRegisterResponse>;
   readonly recordWorkInstallation: (
@@ -1920,6 +1927,9 @@ export interface ApiClient {
       readonly limit?: number;
       readonly invoicedFrom?: string;
       readonly invoicedTo?: string;
+      /** Which way round the register reads its date column. Omitted is
+       * newest first, exactly as before the parameter existed. */
+      readonly sort?: RegisterSort;
     },
   ) => Promise<TaxInvoiceRegisterResponse>;
   readonly createWorkTaxInvoice: (
@@ -3996,6 +4006,7 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       if (options.installedTo !== undefined) {
         parameters.set('installedTo', options.installedTo);
       }
+      if (options.sort !== undefined) parameters.set('sort', options.sort);
       const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       return request<InstallationRegisterResponse>(`/api/installations${suffix}`, {
         organisationId,
@@ -5005,6 +5016,7 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       if (options.invoicedTo !== undefined) {
         parameters.set('invoicedTo', options.invoicedTo);
       }
+      if (options.sort !== undefined) parameters.set('sort', options.sort);
       const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       return request<TaxInvoiceRegisterResponse>(`/api/tax-invoices${suffix}`, {
         organisationId,

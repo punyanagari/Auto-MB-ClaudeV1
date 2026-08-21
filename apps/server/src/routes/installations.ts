@@ -22,6 +22,7 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import {
   cursorRowId,
   keysetPage,
+  registerKeyset,
   sqlLimit,
   workScopedCursorRowId,
 } from '../pagination.js';
@@ -298,7 +299,18 @@ export function registerInstallationRoutes(
         // cursor is proven against the work-scope predicate too, not only
         // against the tenant: see `workScopedCursorRowId` for the oracle
         // an organisation-wide cursor check leaves behind.
-        const cursor = await workScopedCursorRowId(tx, 'installations', query.cursor, {
+        // `?sort=date_asc` reads the register oldest first. One call
+        // decides the ORDER BY, the direction of the keyset comparison
+        // and the cursor's sort tag, so the seek can never point the
+        // other way from the ordering, and a cursor minted under the
+        // other sort is refused rather than silently answering the far
+        // side of its row. Omitting `sort` is unchanged.
+        const seek = registerKeyset(query.sort, query.cursor, {
+          table: 'installations',
+          alias: 'i',
+          columns: ['installed_on', 'created_at', 'id'],
+        });
+        const cursor = await workScopedCursorRowId(tx, 'installations', seek.cursor, {
           userId: user.id,
           full,
         });
@@ -345,16 +357,15 @@ export function registerInstallationRoutes(
             -- The date window, both bounds inclusive and either omittable.
             and (${installedFrom}::date is null or i.installed_on >= ${installedFrom}::date)
             and (${installedTo}::date is null or i.installed_on <= ${installedTo}::date)
-            and (${cursor === null} or
-              (i.installed_on, i.created_at, i.id) < (
-                select c.installed_on, c.created_at, c.id from installations c
-                where c.id = ${cursor}))
-          order by i.installed_on desc, i.created_at desc, i.id desc
+            and ${seek.predicate(tx, cursor)}
+          order by ${tx.unsafe(seek.orderBy)}
           limit ${sqlLimit(query.limit)}
         `;
         const paged = keysetPage(rows, query.limit, (row) => row.id);
         return {
-          nextCursor: paged.nextCursor,
+          // Tagged with the sort it was minted under, so the next request
+          // cannot pair it with the other one.
+          nextCursor: seek.tag(paged.nextCursor),
           installations: paged.rows.map((row) => ({
             id: row.id,
             workId: row.work_id,

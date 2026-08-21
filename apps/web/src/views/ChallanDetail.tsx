@@ -14,6 +14,7 @@ import { formatInr, formatRate, formatTimestampDate, todayIso } from '../format.
 import { openPdf } from '../lib/openPdf.js';
 import { formatMinorUnits, parseDecimalMinorUnits } from '../loa-payload.js';
 import { Button } from '../ui/button.js';
+import { UnavailableAction } from '../ui/unavailable.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -577,7 +578,20 @@ export function ChallanDetail({
             {challan.renderedAvailable ? 'Re-generate PDF' : 'Generate PDF'}
           </Button>
         )}
-        {challan.renderedAvailable && (
+        {/* Offered on an ISSUED challan with nothing to open yet, saying
+            what is missing: the Generate button sits beside it, and
+            whether a generated PDF can be re-opened at all was otherwise
+            a thing the operator had to discover by generating one.
+            Deliberately NOT offered on a draft or a cancelled challan —
+            neither has a PDF and neither ever will in that state, and the
+            status chip above already says so, which is the case UX.md
+            § 31 keeps as an absence rather than a disabled control.
+
+            The reason states the DOCUMENT's condition rather than naming
+            a button: Generate is itself behind `canModify`, so a reader
+            without it would be told to press something that is not on
+            their screen. */}
+        {challan.renderedAvailable ? (
           <Button
             variant="outline"
             disabled={pending}
@@ -592,6 +606,15 @@ export function ChallanDetail({
           >
             Open PDF
           </Button>
+        ) : (
+          challan.status === 'issued' && (
+            <UnavailableAction
+              variant="outline"
+              reason="No PDF has been generated for this challan yet."
+            >
+              Open PDF
+            </UnavailableAction>
+          )
         )}
         {/* SEND FOR SIGNING (0091, ADR-0012). Only on an issued challan
             that has a render — the signature covers stored bytes, so
@@ -616,7 +639,7 @@ export function ChallanDetail({
             Send for signing
           </Button>
         )}
-        {challan.signedCopyAvailable && (
+        {challan.signedCopyAvailable ? (
           <Button
             variant="outline"
             disabled={pending}
@@ -631,6 +654,22 @@ export function ChallanDetail({
           >
             Open signed copy
           </Button>
+        ) : (
+          /* A signed copy is a real thing an ISSUED challan can carry,
+             and an operator waiting on one needs to see that it is not
+             here yet rather than that it does not exist. A draft or a
+             cancelled challan is not waiting for one, so it keeps the
+             absence — and the reason never claims the document went to
+             the signing queue, because on an issued-but-unsigned challan
+             it usually has not. */
+          challan.status === 'issued' && (
+            <UnavailableAction
+              variant="outline"
+              reason="This challan has not been signed yet."
+            >
+              Open signed copy
+            </UnavailableAction>
+          )
         )}
         <Button variant="outline" onClick={onBack}>
           Back to Work

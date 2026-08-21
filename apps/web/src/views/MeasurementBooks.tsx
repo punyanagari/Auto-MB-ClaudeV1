@@ -773,13 +773,20 @@ export function MeasurementBooks({
                 <option value="on_account">
                   On-account — the billable Measurement Book
                 </option>
-                {/* A record MB is a consignee's sheet, so the kind is only
-                    offered once the Work has consignees to name. */}
-                {consignees.length > 0 && (
-                  <option value="record">
-                    Record — one consignee&apos;s parallel measurement sheet
-                  </option>
-                )}
+                {/* A record MB is a consignee's sheet, so it cannot be
+                    raised until the Work has a consignee to name. The
+                    kind used to vanish until then, which read as though
+                    record Measurement Books were not a thing this product
+                    does; it is offered, disabled, with the one fact that
+                    would make it choosable. The reason rides IN the
+                    option text because that text is the option's whole
+                    accessible name — a `title` on an `<option>` is
+                    announced by nothing. */}
+                <option value="record" disabled={consignees.length === 0}>
+                  {consignees.length === 0
+                    ? 'Record — assign a consignee to this Work first'
+                    : "Record — one consignee's parallel measurement sheet"}
+                </option>
                 <option value="final">
                   Final — the last Measurement Book of the Work
                 </option>

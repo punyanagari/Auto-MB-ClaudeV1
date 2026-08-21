@@ -815,6 +815,67 @@ describe('ChallanEditor consignee picker', () => {
       'Sr. DEE (G) NR',
     );
   });
+
+  /* The picker's disabled reasons (docs/UX.md § 31): an empty roster and
+     an unreadable one are different sentences, because they demand
+     opposite actions — Masters → Contacts versus a reload. */
+
+  it('stays visible but disabled when no consignee is on file yet', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listContacts: vi.fn().mockResolvedValue([]),
+      listWorkConsignees: vi.fn().mockResolvedValue([]),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    const picker = screen.getByLabelText<HTMLSelectElement>(
+      'Prefill consignee from contacts',
+    );
+    expect(picker.disabled).toBe(true);
+    const reason = screen.getByText(/No consignee contact is on file yet/);
+    // Bound to the control, so the two are one announcement.
+    expect(picker.getAttribute('aria-describedby')).toBe(reason.id);
+  });
+
+  it('says the contact master could not be read rather than claiming it is empty', async () => {
+    const api = stubApi({
+      workBalance: vi.fn().mockResolvedValue(BALANCE),
+      listContacts: vi.fn().mockRejectedValue(new Error('down')),
+      listWorkConsignees: vi.fn().mockResolvedValue([]),
+    });
+    render(
+      <ChallanEditor
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        workCode="DCW-1"
+        challanId={null}
+        onSaved={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('2.000');
+    const picker = screen.getByLabelText<HTMLSelectElement>(
+      'Prefill consignee from contacts',
+    );
+    expect(picker.disabled).toBe(true);
+    // The honest sentence: a failed read must not send the operator to
+    // Masters to duplicate a contact that already exists.
+    expect(screen.getByText(/contact master could not be read/)).toBeTruthy();
+    expect(screen.queryByText(/No consignee contact is on file yet/)).toBeNull();
+  });
 });
 
 describe('Retired consignees stop being offered', () => {

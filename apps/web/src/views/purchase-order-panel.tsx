@@ -260,24 +260,41 @@ export function PurchaseOrderPanel({
                         }}
                       >
                         <option value="">Free text</option>
-                        {workItems.length > 0 && (
-                          <optgroup label="Work items — arrive on a delivery challan">
-                            {workItems.map((item) => (
+                        {/* Both groups stay in the list when they are
+                            empty, each holding one disabled line saying
+                            why. Dropping the group altogether left an
+                            operator who expected to order a stock part
+                            unable to tell whether the catalogue was
+                            empty, the Work had no schedule, or the
+                            product simply does not link PO lines to
+                            either — three very different answers. */}
+                        <optgroup label="Work items — arrive on a delivery challan">
+                          {workItems.length === 0 ? (
+                            <option value="" disabled>
+                              This purchase order is against no Work, so it has no
+                              schedule items
+                            </option>
+                          ) : (
+                            workItems.map((item) => (
                               <option key={item.id} value={`w:${item.id}`}>
                                 {item.itemNumber} — {item.description}
                               </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {parts.length > 0 && (
-                          <optgroup label="Stock parts — arrive on the shelf">
-                            {parts.map((item) => (
+                            ))
+                          )}
+                        </optgroup>
+                        <optgroup label="Stock parts — arrive on the shelf">
+                          {parts.length === 0 ? (
+                            <option value="" disabled>
+                              No stock part is catalogued yet — add one under Masters
+                            </option>
+                          ) : (
+                            parts.map((item) => (
                               <option key={item.id} value={`p:${item.id}`}>
                                 {item.itemCode} — {item.name}
                               </option>
-                            ))}
-                          </optgroup>
-                        )}
+                            ))
+                          )}
+                        </optgroup>
                       </select>
                     </td>
                     <td>
