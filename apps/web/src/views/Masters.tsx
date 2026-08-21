@@ -360,7 +360,7 @@ function ItemsTab({ api, organisationId, canModify }: MastersProps) {
               <th scope="col">Group</th>
               <th scope="col">Aliases</th>
               <th scope="col">Unit</th>
-              <th className="text-right" scope="col">
+              <th className={numericCell} scope="col">
                 Mapped lines
               </th>
               <th scope="col">Status</th>

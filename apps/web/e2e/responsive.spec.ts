@@ -255,6 +255,35 @@ test('a schedule summary and the ledger inside it stack under the shell header',
   ).toBe(`${String(viewportHeight - reserved)}px`);
 });
 
+test('prose cells wrap instead of painting over their neighbours', async ({ page }) => {
+  await mockWorkspace(page, { document: reviewDocument(30) });
+
+  await page.goto(`/#/loa/${DOC_ID}`);
+  await expect(
+    page.getByRole('heading', { name: /Review loa-letter\.pdf/ }),
+  ).toBeVisible();
+
+  /* Regression guard for the overlap defect found in live testing
+   * (2026-08-21). `wrapCell`'s `whitespace-normal` sat at specificity
+   * 0-1-0 under the DataTable default `[&_td]:whitespace-nowrap` (a
+   * descendant selector at 0-1-1), so every "wrapping" cell computed to
+   * nowrap — while its `overflow-wrap:anywhere` still let the table-layout
+   * algorithm shrink the column, and the unwrappable text painted across
+   * the neighbouring cells. Both halves are asserted on a rendered cell:
+   * the computed style, and that the glyphs stay inside the cell's box. */
+  const prose = page.locator('td.whitespace-normal').first();
+  await expect(prose).toBeVisible();
+  expect(
+    await prose.evaluate((node) => window.getComputedStyle(node).whiteSpace),
+    'a wrapCell td must compute white-space: normal, not inherit the register default',
+  ).toBe('normal');
+  const overflow = await prose.evaluate((node) => node.scrollWidth - node.clientWidth);
+  expect(
+    overflow,
+    `the prose cell's text escapes its box by ${String(overflow)}px and paints over the next column`,
+  ).toBeLessThanOrEqual(1);
+});
+
 test('a register too wide for the screen scrolls inside its own container', async ({
   page,
 }) => {
