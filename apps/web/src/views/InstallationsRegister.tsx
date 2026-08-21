@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { InstallationRegisterEntry } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
@@ -9,7 +9,15 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
 import { PageHeader } from '../ui/page-header.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  registerSortParameter,
+  sortRows,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { WorkLink } from '../ui/work-link.js';
 
@@ -99,6 +107,20 @@ export function InstallationsRegister({
   }>({ from: '', to: '' });
   const [loadVersion, retry] = useReload();
 
+  /* Across Works this register PAGES, so its order is the server's: a
+   * sort applied over the rows already loaded would order the pages
+   * fetched so far and present that as the register, and the oldest
+   * record is on the last page — exactly the one an oldest-first sort is
+   * asked for. Narrowed to one Work it reads that Work's own unpaginated
+   * list, which takes no `sort`, so there the heading sorts in the view
+   * and costs no round trip (see the render below).
+   *
+   * `registerSortParameter` maps descending to `undefined`, so the FIRST
+   * click on the heading — which asks for the order already on screen —
+   * does not blank the register to re-read it. */
+  const [sort, toggleSort] = useColumnSort<'installedOn'>();
+  const sortParameter = workId === null ? registerSortParameter(sort) : undefined;
+
   const fetchPage = useCallback(
     (cursor?: string) =>
       api.listInstallations(organisationId, {
@@ -106,12 +128,25 @@ export function InstallationsRegister({
         ...(cursor !== undefined ? { cursor } : {}),
         ...(dateWindow.from !== '' ? { installedFrom: dateWindow.from } : {}),
         ...(dateWindow.to !== '' ? { installedTo: dateWindow.to } : {}),
+        ...(sortParameter !== undefined ? { sort: sortParameter } : {}),
       }),
-    [api, organisationId, dateWindow],
+    [api, organisationId, dateWindow, sortParameter],
   );
+  /* Which read the rows on screen came from.
+   *
+   * `loadMore` is an async continuation of a read that may already be
+   * obsolete: flip the sort while a page is in flight and the response
+   * carries rows from the OLD order, plus a cursor minted under it. Both
+   * are poison — the rows append to a differently-ordered list, and the
+   * cursor then walks the rest of the register from a position the new
+   * order never had. The ref is bumped by the same effect that starts a
+   * fresh read, and a continuation whose stamp no longer matches is
+   * dropped rather than merged. */
+  const readStamp = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    readStamp.current += 1;
     setInstallations(null);
     setWorkFilter(null);
     setNextCursor(null);
@@ -174,13 +209,19 @@ export function InstallationsRegister({
 
   async function loadMore(): Promise<void> {
     if (nextCursor === null) return;
+    const stamp = readStamp.current;
     setPending(true);
     setLoadError(null);
     try {
       const page = await fetchPage(nextCursor);
+      // The sort or the date window changed while this page was in
+      // flight: these rows belong to a register that is no longer on
+      // screen, and so does the cursor they came with.
+      if (readStamp.current !== stamp) return;
       setInstallations((current) => [...(current ?? []), ...page.installations]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
+      if (readStamp.current !== stamp) return;
       setLoadError(
         errorMessage(
           cause,
@@ -285,7 +326,9 @@ export function InstallationsRegister({
                     <th scope="col" className={numericCell}>
                       Quantity
                     </th>
-                    <th scope="col">Installed on</th>
+                    <SortHeader sortKey="installedOn" sort={sort} onSort={toggleSort}>
+                      Installed on
+                    </SortHeader>
                     <th scope="col">Location</th>
                     <th scope="col" className={numericCell}>
                       Serials
@@ -294,7 +337,18 @@ export function InstallationsRegister({
                   </tr>
                 </thead>
                 <tbody>
-                  {installations.map((row) => (
+                  {/* Narrowed to one Work the screen reads that Work's own
+                      unpaginated list, which takes no `sort` — so the
+                      heading sorts it here. Across Works it is the paged
+                      register above, already ordered by the server, and
+                      re-sorting it would be a no-op over rows that are
+                      already in the asked-for order. */}
+                  {(workFilter === null
+                    ? installations
+                    : sortRows(installations, sort, {
+                        installedOn: (row) => row.installedOn,
+                      })
+                  ).map((row) => (
                     <tr key={row.id}>
                       <th scope="row">
                         <WorkLink
