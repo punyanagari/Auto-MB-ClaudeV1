@@ -68,6 +68,7 @@ describe('WorkDetail retention', () => {
     installationCounts: { recorded: 0, cancelled: 0 },
     measurementBookCount: 0,
     taxInvoiceCount: 0,
+    historicalInvoiceCount: 0,
   };
 
   const ISSUED_CHALLAN = {
@@ -392,6 +393,10 @@ describe('WorkDetail retention', () => {
         ...WORK_DETAIL,
         measurementBookCount: 2,
         taxInvoiceCount: 3,
+        // The Bills badge counts the historical register too (0115), so
+        // this fixture carries one: a badge that ignored it would claim a
+        // smaller number than the tab shows.
+        historicalInvoiceCount: 1,
       }),
       listWorkMeasurementBooks,
       listWorkTaxInvoices,
@@ -400,7 +405,8 @@ describe('WorkDetail retention', () => {
 
     const tabs = await screen.findByRole('navigation', { name: 'Work sections' });
     // The fixture carries 1 loose entry and 1 bill, so the badges must read
-    // 1 + 2 books = 3 and 1 + 3 invoices = 4 — with neither list read.
+    // 1 + 2 books = 3 and 1 + 3 tax invoices + 1 historical = 5 — with
+    // neither list read.
     expect(
       within(tabs).getByRole('button', {
         name: (name: string) => name.startsWith('Measurement'),
@@ -410,7 +416,7 @@ describe('WorkDetail retention', () => {
       within(tabs).getByRole('button', {
         name: (name: string) => name.startsWith('Bills'),
       }).textContent,
-    ).toContain('4');
+    ).toContain('5');
     expect(listWorkMeasurementBooks).not.toHaveBeenCalled();
     expect(listWorkTaxInvoices).not.toHaveBeenCalled();
   });

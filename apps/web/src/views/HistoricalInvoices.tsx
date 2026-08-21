@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import type { ImportedInvoice, ImportedInvoiceImportResult } from '@auto-mb/contracts';
+import type {
+  ImportedInvoice,
+  ImportedInvoiceImportResult,
+  ImportedInvoiceList,
+} from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
@@ -47,8 +51,8 @@ import { WorkLink } from '../ui/work-link.js';
  * `docs/UX.md` § 34 records the stance.
  */
 
-/** One request's worth of rows. The whole register is 638 invoices, so a
- * financial year arrives whole and the register is two pages. */
+/** One request's worth of rows. The whole register is 638 invoices, so it
+ * arrives in seven pages and a single financial year usually in one. */
 const PAGE_SIZE = 100;
 
 /** How many rows of the preview the confirmation step draws before it
@@ -80,19 +84,45 @@ interface RegisterFilter {
  * `fetchPage`'s identity and refire the read. */
 const NO_FILTER: RegisterFilter = { customer: '', linked: '', financialYear: '' };
 
-/** The financial years the register can be narrowed to, newest first.
- * Derived from the rows on screen rather than hard-coded, so a register
- * that starts in 2023 does not offer 2019. */
-function financialYearsOf(invoices: readonly ImportedInvoice[]): number[] {
-  const years = new Set<number>();
-  for (const invoice of invoices) {
-    const [year, month] = invoice.invoiceDate.split('-').map(Number);
-    if (year === undefined || month === undefined) continue;
-    // April opens the Indian financial year, so January to March belongs
-    // to the year before.
-    years.add(month >= 4 ? year : year - 1);
-  }
-  return [...years].sort((a, b) => b - a);
+/** Zoho's own cancellation, and the one reading of `zohoStatus` this
+ * register trusts: a voided invoice billed nobody anything. It stays on
+ * the register — it is part of the record — and it is out of the billed
+ * total the header reports, which the server computes. */
+function voided(invoice: ImportedInvoice): boolean {
+  return (invoice.zohoStatus ?? '').trim().toLowerCase() === 'void';
+}
+
+/** The Indian financial year a date falls in, named by its opening
+ * calendar year: April opens it, so January to March belongs to the year
+ * before. */
+function financialYearOf(date: string): number | null {
+  const [year, month] = date.split('-').map(Number);
+  if (year === undefined || month === undefined || Number.isNaN(year)) return null;
+  return month >= 4 ? year : year - 1;
+}
+
+/**
+ * The financial years the filter offers, newest first.
+ *
+ * FROM THE REGISTER'S OWN SPAN, not from the rows on screen. Deriving them
+ * from the loaded page looked equivalent and was not: the register is
+ * paginated newest-first, so the first page of 638 invoices is the most
+ * recent hundred, and the filter offered only the years those hundred fell
+ * in — every earlier year was missing from the control that exists to
+ * reach it. The read reports the oldest and newest invoice date over the
+ * whole filtered register (one aggregate it was already making), and the
+ * range between them is what the dropdown lists.
+ */
+function financialYears(
+  earliest: string | null,
+  latest: string | null,
+): readonly number[] {
+  const from = earliest === null ? null : financialYearOf(earliest);
+  const to = latest === null ? null : financialYearOf(latest);
+  if (from === null || to === null) return [];
+  const years: number[] = [];
+  for (let year = to; year >= from; year -= 1) years.push(year);
+  return years;
 }
 
 export function HistoricalInvoices({
@@ -104,11 +134,11 @@ export function HistoricalInvoices({
   onClearWorkFilter,
 }: HistoricalInvoicesProps) {
   const [invoices, setInvoices] = useState<readonly ImportedInvoice[] | null>(null);
-  const [totals, setTotals] = useState<{
-    readonly invoiceCount: number;
-    readonly linkedCount: number;
-    readonly totalValue: string;
-  } | null>(null);
+  /* The register's own summary, which arrives with the FIRST page only:
+     a request carrying a cursor is continuing a walk whose totals this
+     screen already has on screen and does not redraw. So a later page
+     leaves them alone rather than replacing them with null. */
+  const [totals, setTotals] = useState<ImportedInvoiceList['totals']>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -223,7 +253,10 @@ export function HistoricalInvoices({
   const narrowed = workId !== null;
   const filtered =
     filter.customer !== '' || filter.linked !== '' || filter.financialYear !== '';
-  const years = financialYearsOf(invoices ?? []);
+  const years = financialYears(
+    totals?.earliestDate ?? null,
+    totals?.latestDate ?? null,
+  );
   /* Every unlinked invoice, then enough linked ones to see the shape of
      the proposal. The unlinked half is what the operator is deciding
      about, so it is never the half that gets truncated. */
@@ -273,7 +306,7 @@ export function HistoricalInvoices({
             <span className="font-mono tabular-nums">
               {formatInr(totals.totalValue)}
             </span>
-            .
+            . Invoices Zoho voided are on the register and out of that total.
           </p>
         )}
 
@@ -494,7 +527,15 @@ export function HistoricalInvoices({
                       <td className={wrapCell}>{row.customerName}</td>
                       <td className={numericCell}>{formatInr(row.total)}</td>
                       <td>
-                        {row.workId !== null && row.workCode !== null ? (
+                        {/* A Work that has since been superseded (0071) is
+                            named and NOT linked: the invoice stays filed
+                            against it — what was billed against that
+                            contract is still what was billed — but the
+                            workspace no longer lists it, so a link would
+                            open a 404. */}
+                        {row.workId !== null &&
+                        row.workCode !== null &&
+                        !row.workWithdrawn ? (
                           <WorkLink
                             workId={row.workId}
                             workCode={row.workCode}
@@ -502,6 +543,10 @@ export function HistoricalInvoices({
                             tab="bills"
                             onOpenWork={onOpenWork}
                           />
+                        ) : row.workCode !== null ? (
+                          <span className="font-mono text-muted-foreground">
+                            {row.workCode} (withdrawn)
+                          </span>
                         ) : (
                           <span className="text-muted-foreground">Not filed</span>
                         )}
@@ -509,8 +554,19 @@ export function HistoricalInvoices({
                       <td>{row.linkMethod ?? '—'}</td>
                       <td>
                         {/* DERIVED from the IRN, not copied from the
-                            export's own status column — see the header. */}
-                        <StatusChip status={row.issued ? 'issued' : 'draft'} />
+                            export's own status column — see the header.
+                            With ONE exception, and it is the one reading of
+                            that column this register does trust: `Void` is
+                            not a workflow flag nobody advanced, it is Zoho
+                            saying the document was cancelled. Such an
+                            invoice may still carry the IRN it was
+                            registered under, so deriving from the IRN alone
+                            would draw a cancelled document as issued. */}
+                        <StatusChip
+                          status={
+                            voided(row) ? 'cancelled' : row.issued ? 'issued' : 'draft'
+                          }
+                        />
                       </td>
                     </tr>
                   ))}

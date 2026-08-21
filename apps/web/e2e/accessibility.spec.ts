@@ -2347,10 +2347,11 @@ test('the historical invoice register passes the axe scan', async ({ page }) => 
      Scanned with the filter row, the import panel and the register on
      screen together — three labelled controls beside a submit, a file
      input whose label is the only thing naming it, and a table whose
-     Work cell is sometimes a link and sometimes a word. Both readings of
-     the e-invoice chip are drawn, because it is the only colour this
-     screen puts on a word and it has to hold against its ground in each
-     theme. */
+     Work cell is sometimes a link and sometimes a word. All three
+     readings of the e-invoice chip are drawn — issued, draft and the
+     Zoho void that renders cancelled — because it is the only colour this
+     screen puts on a word and each tone has to hold against its ground in
+     both themes. */
   await expect(
     page.getByRole('heading', { name: 'Historical invoices' }),
   ).toBeVisible();
@@ -2363,7 +2364,7 @@ test('the historical invoice register passes the axe scan', async ({ page }) => 
   await expect(
     page.getByRole('cell', { name: 'Not filed', exact: true }).first(),
   ).toBeVisible();
-  for (const label of ['issued', 'draft']) {
+  for (const label of ['issued', 'draft', 'cancelled']) {
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
   }
   await expectNoAxeViolations(page, 'historical invoice register');

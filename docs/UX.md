@@ -2478,6 +2478,31 @@ built around saying so.**
   receivable rendered from a system that never saw the money would be
   believed, and would be wrong.
 
+**A voided invoice is the one reading of that status column the screen does
+trust.** `Void` is not a workflow flag nobody advanced; it is Zoho saying
+the document was cancelled. Such an invoice usually still carries the IRN
+it was registered under, so deriving from the IRN alone would draw a
+cancelled document as issued. It gets the cancelled lamp, it stays on the
+register — it is part of the record — and it is **out of the billed total**
+the header reports, which the server computes so the two cannot disagree.
+The header says so in a sentence rather than leaving the arithmetic to be
+reverse-engineered.
+
+**A Work that has since been withdrawn is named, not linked.** Supersession
+(§ 0071) does not clear the invoice's link — what was billed against that
+contract is still what was billed — but the workspace no longer lists the
+Work, so the cell renders the code with `(withdrawn)` beside it instead of
+a link into a screen that would 404. Filing an invoice against such a Work
+by hand is refused for the same reason.
+
+**Discarding and re-importing is the correction path, and it works.** There
+is no delete: an invoice imported from the wrong file is discarded, with
+the reason, and the corrected export is uploaded. Both rows stay on the
+record and the register lists the live one. This is why the register's
+uniqueness is over live rows only — a key that counted the withdrawn row
+would answer the corrected import with "already imported", write nothing,
+and report success.
+
 **The import is a conversation, not a button.** The Zoho CSV is read twice
 against the same bytes. The first read PROPOSES — which Work each invoice
 would be filed against, from what evidence (a v1 work code found in the
@@ -2504,7 +2529,15 @@ the bottom, under the tax invoices it raised. It lists what this contract
 was billed before the cutover and links into the register filtered to that
 Work. Short on purpose: the tab answers "what has this contract billed",
 and the answer's historical half belongs beside its current half without
-becoming a second register inside a tab.
+becoming a second register inside a tab. **The tab's badge counts them**,
+on the terms § 29 set for the two counts beside it: a badge that showed a
+smaller number than the tab lists teaches an operator not to read badges.
+
+**The financial-year filter offers the register's own span**, not the years
+the loaded page happens to cover. The register pages newest-first, so a
+filter built from the rows on screen offered the last hundred invoices'
+years and silently omitted every earlier one — from the control whose whole
+purpose is reaching them.
 
 **Only the import is gated.** Reading the register carries the writer role
 alone — which invoices this organisation raised in 2023 is ordinary

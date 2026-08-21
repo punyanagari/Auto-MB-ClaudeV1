@@ -241,6 +241,105 @@ describe('readZohoInvoiceCsv', () => {
     );
     expect(invoice?.total).toBe('118000.00');
   });
+
+  it('refuses a date that is well-formed and not a day of any month', () => {
+    // `2023-02-30` satisfies YYYY-MM-DD and is not a date. Refused HERE,
+    // in the preview, where the refusal names the row — rather than by
+    // PostgreSQL mid-commit as a 22008 with nothing naming anything.
+    for (const spelling of ['2023-02-30', '2023-13-01', '2023-00-10']) {
+      try {
+        readZohoInvoiceCsv(csv([{ ...RAILWAY_LINE, 'Invoice Date': spelling }]));
+        expect.unreachable(`${spelling} is not a date and must be refused`);
+      } catch (error) {
+        expect(error).toBeInstanceOf(ZohoInvoiceImportError);
+        expect((error as ZohoInvoiceImportError).rowNumber).toBe(2);
+        expect((error as ZohoInvoiceImportError).column).toBe('Invoice Date');
+      }
+    }
+    // The leap day of a leap year is a date, and is not refused.
+    const [leap] = readZohoInvoiceCsv(
+      csv([{ ...RAILWAY_LINE, 'Invoice Date': '2024-02-29' }]),
+    );
+    expect(leap?.invoiceDate).toBe('2024-02-29');
+  });
+
+  it('drops leading zeros, because the API pattern refuses them', () => {
+    // The regression: `0000123.00` parsed cleanly, was stored, and then
+    // failed response validation as a 500 with nothing naming the cell.
+    const [invoice] = readZohoInvoiceCsv(
+      csv([{ ...RAILWAY_LINE, Total: '0000123.00', SubTotal: '000.50' }]),
+    );
+    expect(invoice?.total).toBe('123.00');
+    expect(invoice?.subTotal).toBe('0.50');
+  });
+
+  it('refuses a figure wider than the column that has to hold it', () => {
+    try {
+      readZohoInvoiceCsv(csv([{ ...RAILWAY_LINE, Total: '1234567890123456.00' }]));
+      expect.unreachable('a sixteen-digit total must be refused');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZohoInvoiceImportError);
+      expect((error as ZohoInvoiceImportError).column).toBe('Total');
+    }
+    // The rate column is numeric(18,6), so its ceiling is twelve digits.
+    expect(() =>
+      readZohoInvoiceCsv(csv([{ ...RAILWAY_LINE, 'Item Price': '1234567890123.0' }])),
+    ).toThrow(ZohoInvoiceImportError);
+  });
+
+  it('refuses a space inside a number rather than closing it up', () => {
+    // `1 200` is 1200 or 12.00 depending on what went wrong, and the two
+    // readings differ by a factor of ten. Trailing and leading whitespace
+    // is still trimmed: that is formatting, not ambiguity.
+    expect(() =>
+      readZohoInvoiceCsv(csv([{ ...RAILWAY_LINE, Total: '11 800.00' }])),
+    ).toThrow(ZohoInvoiceImportError);
+    const [padded] = readZohoInvoiceCsv(
+      csv([{ ...RAILWAY_LINE, Total: '  11800.00  ' }]),
+    );
+    expect(padded?.total).toBe('11800.00');
+  });
+
+  it('refuses a tax rate that is not a percentage', () => {
+    // The way this happens is a mis-mapped column: an AMOUNT read as a
+    // rate. Stored unchecked it becomes a rate of ninety thousand percent
+    // and nothing ever says so.
+    try {
+      readZohoInvoiceCsv(csv([{ ...RAILWAY_LINE, 'CGST Rate %': '900.00' }]));
+      expect.unreachable('a rate above 100 must be refused');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZohoInvoiceImportError);
+      expect((error as ZohoInvoiceImportError).column).toBe('CGST Rate %');
+    }
+    // The boundary itself is a legitimate rate, and so is nil-rated
+    // supply.
+    const [ok] = readZohoInvoiceCsv(
+      csv([{ ...RAILWAY_LINE, 'CGST Rate %': '100', 'SGST Rate %': '0' }]),
+    );
+    expect(ok?.lines[0]?.cgstRate).toBe('100.00');
+    expect(ok?.lines[0]?.sgstRate).toBe('0.00');
+  });
+
+  it('names the CSV row a bad line actually sits on', () => {
+    // Zoho does not write an invoice's lines contiguously. Row 2 opens
+    // invoice 1001, row 3 belongs to 1002, and row 4 is 1001's second
+    // line — so a refusal on that line must say 4, which the old
+    // first-row-plus-position arithmetic reported as 3.
+    try {
+      readZohoInvoiceCsv(
+        csv([
+          RAILWAY_LINE,
+          { ...RAILWAY_LINE, 'Invoice ID': '1002', 'Invoice Number': 'PEB/23-24/002' },
+          { ...RAILWAY_LINE, 'Item Total': 'four hundred' },
+        ]),
+      );
+      expect.unreachable('a non-numeric line total must be refused');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ZohoInvoiceImportError);
+      expect((error as ZohoInvoiceImportError).rowNumber).toBe(4);
+      expect((error as ZohoInvoiceImportError).column).toBe('Item Total');
+    }
+  });
 });
 
 describe('proposeWorkLink', () => {
@@ -309,6 +408,33 @@ describe('proposeWorkLink', () => {
         works,
       ),
     ).toBeNull();
+  });
+
+  it('does not read a work code across two fields', () => {
+    // The haystack is the reference text and every line's name and
+    // description joined with newlines. A separator of `\s` matched that
+    // newline, so a reference ending in `PL` beside a description opening
+    // `4711` was read as `PL-4711` and would have filed the invoice
+    // against a contract neither field named.
+    expect(
+      proposeWorkLink(
+        read({
+          ...RAILWAY_LINE,
+          PurchaseOrder: 'Supply order PL',
+          'Item Name': '4711 signal lamps',
+          'Item Desc': '',
+        }),
+        works,
+      ),
+    ).toBeNull();
+    // A space INSIDE one field is still a match: `PL 4711` is how a
+    // typist writes it.
+    expect(
+      proposeWorkLink(
+        read({ ...RAILWAY_LINE, PurchaseOrder: 'Order PL 4711', 'Item Name': '' }),
+        works,
+      )?.workId,
+    ).toBe('w-1');
   });
 
   it('does not match a code the organisation has no Work for', () => {

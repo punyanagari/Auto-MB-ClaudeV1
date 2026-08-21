@@ -460,11 +460,11 @@ describe('committing the export', () => {
     });
     expect(list.statusCode, list.body).toBe(200);
     const register = list.json<ImportedInvoiceList>();
-    expect(register.totals.invoiceCount).toBe(4);
-    expect(register.totals.linkedCount).toBe(2);
+    expect(register.totals?.invoiceCount).toBe(4);
+    expect(register.totals?.linkedCount).toBe(2);
     // Four invoices of 11800.00 each, summed by the database rather than
     // in JavaScript.
-    expect(register.totals.totalValue).toBe('47200.00');
+    expect(register.totals?.totalValue).toBe('47200.00');
     // Newest first.
     expect(register.invoices[0]?.invoiceDate).toBe('2024-07-19');
 
@@ -549,14 +549,14 @@ describe('committing the export', () => {
       organisationId,
     });
     expect(byWork.statusCode, byWork.body).toBe(200);
-    expect(byWork.json<ImportedInvoiceList>().totals.invoiceCount).toBe(2);
+    expect(byWork.json<ImportedInvoiceList>().totals?.invoiceCount).toBe(2);
 
     const unlinked = await authed(owner, {
       method: 'GET',
       url: '/api/imported-invoices?linked=unlinked',
       organisationId,
     });
-    expect(unlinked.json<ImportedInvoiceList>().totals.invoiceCount).toBe(2);
+    expect(unlinked.json<ImportedInvoiceList>().totals?.invoiceCount).toBe(2);
 
     // 2023-24 is 1 April 2023 to 31 March 2024: one of the four.
     const fy = await authed(owner, {
@@ -564,7 +564,7 @@ describe('committing the export', () => {
       url: '/api/imported-invoices?financialYear=2023',
       organisationId,
     });
-    expect(fy.json<ImportedInvoiceList>().totals.invoiceCount).toBe(1);
+    expect(fy.json<ImportedInvoiceList>().totals?.invoiceCount).toBe(1);
   }, 60_000);
 });
 
@@ -646,13 +646,13 @@ describe('the two annotations and the exit', () => {
       url: '/api/imported-invoices',
       organisationId,
     });
-    expect(list.json<ImportedInvoiceList>().totals.invoiceCount).toBe(3);
+    expect(list.json<ImportedInvoiceList>().totals?.invoiceCount).toBe(3);
     const withDiscarded = await authed(owner, {
       method: 'GET',
       url: '/api/imported-invoices?includeDiscarded=true',
       organisationId,
     });
-    expect(withDiscarded.json<ImportedInvoiceList>().totals.invoiceCount).toBe(4);
+    expect(withDiscarded.json<ImportedInvoiceList>().totals?.invoiceCount).toBe(4);
   }, 60_000);
 });
 
@@ -731,5 +731,253 @@ describe('the walls', () => {
         values (${organisationId}, ${row?.id ?? ''}, 99, '{}'::jsonb)
       `,
     ).rejects.toMatchObject({ code: '23X02' });
+  }, 30_000);
+
+  it('refuses a line appended to an import that already finished', async () => {
+    // The arm the guard's own comment promised and did not enforce. A
+    // live, undiscarded invoice imported by an EARLIER transaction takes
+    // no further lines: appending one changes what a completed import is
+    // on record as having contained, and with it every figure the
+    // register derives from the lines.
+    const [row] = await admin<{ id: string }[]>`
+      select id from imported_invoices
+      where organisation_id = ${organisationId} and discarded_at is null
+      limit 1
+    `;
+    await expect(
+      admin`
+        insert into imported_invoice_lines (
+          organisation_id, imported_invoice_id, position, raw_row
+        )
+        values (${organisationId}, ${row?.id ?? ''}, 98, '{}'::jsonb)
+      `,
+    ).rejects.toMatchObject({ code: '23X02' });
+  }, 30_000);
+});
+
+describe('corrections, cancellations and the shape of a page', () => {
+  async function liveIdOf(zohoInvoiceId: string): Promise<string> {
+    const [row] = await admin<{ id: string }[]>`
+      select id from imported_invoices
+      where organisation_id = ${organisationId}
+        and zoho_invoice_id = ${zohoInvoiceId}
+        and discarded_at is null
+    `;
+    return row?.id ?? '';
+  }
+
+  it('re-imports an invoice that was discarded, rather than calling it already imported', async () => {
+    /* THE CORRECTION PATH, END TO END. Invoice 1003 was discarded by the
+       block above — that is what an operator does with a row imported
+       from the wrong file, because there is no DELETE. Uploading the
+       corrected export must then bring it back.
+
+       Under a NON-partial unique key it did not: the discarded row still
+       owned the key, `on conflict do nothing` skipped the insert, and the
+       import reported the invoice as already imported. The operator was
+       told the work was done and the register held only the withdrawn
+       copy — wrong, and confidently reported as right. */
+    const preview = await importCsv(exportCsv);
+    expect(preview.statusCode, preview.body).toBe(200);
+    const proposed = preview.json<ImportedInvoiceImportResult>();
+    expect(
+      proposed.invoices.find((entry) => entry.zohoInvoiceId === '1003')
+        ?.alreadyImported,
+    ).toBe(false);
+
+    const committed = await importCsv(exportCsv, { mode: 'commit' });
+    expect(committed.statusCode, committed.body).toBe(200);
+    expect(committed.json<ImportedInvoiceImportResult>().importedCount).toBe(1);
+
+    // Both rows are on the record: the withdrawn one with its reason, and
+    // the fresh one. The register lists the live one only.
+    const [rows] = await admin<{ count: string }[]>`
+      select count(*)::text as count from imported_invoices
+      where organisation_id = ${organisationId} and zoho_invoice_id = '1003'
+    `;
+    expect(Number(rows?.count ?? '0')).toBe(2);
+    const list = await authed(owner, {
+      method: 'GET',
+      url: '/api/imported-invoices',
+      organisationId,
+    });
+    expect(
+      list
+        .json<ImportedInvoiceList>()
+        .invoices.filter((entry) => entry.zohoInvoiceId === '1003'),
+    ).toHaveLength(1);
+  }, 60_000);
+
+  it('leaves the half of a link the request did not name exactly as it was', async () => {
+    /* The contract says omitting a property leaves it alone, and the
+       provenance columns are part of what is left alone. The earlier
+       reading recomputed BOTH halves from the merged value, so moving the
+       Work also restamped the customer link as a person's choice and
+       overwrote a `gstin` match with `name` — destroying the only record
+       of how that link was arrived at. */
+    const id = await liveIdOf('1001');
+    const [before] = await admin<
+      { link_method: string; linked_at: string; contact_match_method: string }[]
+    >`
+      select link_method, linked_at::text as linked_at, contact_match_method
+      from imported_invoices where id = ${id}
+    `;
+    expect(before?.link_method).toBe('pl_code');
+    expect(before?.contact_match_method).toBe('gstin');
+
+    // Only the customer moves. The machine-proposed Work link, its
+    // provenance and its timestamp must all survive untouched.
+    const contactOnly = await authed(owner, {
+      method: 'POST',
+      url: `/api/imported-invoices/${id}/link`,
+      organisationId,
+      payload: { contactId },
+    });
+    expect(contactOnly.statusCode, contactOnly.body).toBe(200);
+    const afterContact = contactOnly.json<ImportedInvoiceDetail>().invoice;
+    expect(afterContact.workId).toBe(workId);
+    expect(afterContact.linkMethod).toBe('pl_code');
+    // A person chose this customer, so the row says so — not 'name',
+    // which would claim a match nothing automatic ever made.
+    expect(afterContact.contactMatchMethod).toBe('manual');
+    const [held] = await admin<{ linked_at: string }[]>`
+      select linked_at::text as linked_at from imported_invoices where id = ${id}
+    `;
+    expect(held?.linked_at).toBe(before?.linked_at);
+
+    // …and the mirror image: only the Work moves, and the customer link
+    // keeps the provenance it just acquired.
+    const workOnly = await authed(owner, {
+      method: 'POST',
+      url: `/api/imported-invoices/${id}/link`,
+      organisationId,
+      payload: { workId: null },
+    });
+    expect(workOnly.statusCode, workOnly.body).toBe(200);
+    const afterWork = workOnly.json<ImportedInvoiceDetail>().invoice;
+    expect(afterWork.workId).toBeNull();
+    expect(afterWork.linkMethod).toBeNull();
+    expect(afterWork.contactId).toBe(contactId);
+    expect(afterWork.contactMatchMethod).toBe('manual');
+  }, 60_000);
+
+  it('refuses to file an invoice against a Work that has been withdrawn', async () => {
+    // `assertWorkAccess` answers "may this member see it", which a
+    // superseded Work (0071) still passes. Filing against one would leave
+    // a register row whose only link is to a screen the workspace no
+    // longer lists.
+    const [withdrawn] = await admin<{ id: string }[]>`
+      insert into works (
+        organisation_id, work_code, letter_number, letter_date, title,
+        advertised_value, contract_value, pricing_shape, created_by_user_id,
+        deleted_at
+      )
+      values (
+        ${organisationId}, 'PL-9003', ${`${letterNumber}/C`}, '2023-01-17',
+        'Zoho fixture withdrawn work', '100000.00', '95000.00', 'per_schedule',
+        (select user_id from organisation_memberships
+          where organisation_id = ${organisationId} and role = 'owner'),
+        now()
+      )
+      returning id
+    `;
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/imported-invoices/${await liveIdOf('1004')}/link`,
+      organisationId,
+      payload: { workId: withdrawn?.id ?? '' },
+    });
+    expect(response.statusCode, response.body).toBe(404);
+    expect(response.json<{ code: string }>().code).toBe('WORK_NOT_FOUND');
+  }, 60_000);
+
+  it('keeps a voided invoice on the register and out of what was billed', async () => {
+    const before = await authed(owner, {
+      method: 'GET',
+      url: '/api/imported-invoices',
+      organisationId,
+    });
+    const totalsBefore = before.json<ImportedInvoiceList>().totals;
+
+    const voided = csv([
+      {
+        ...BASE,
+        'Invoice Date': '2025-01-09',
+        'Invoice ID': '1009',
+        'Invoice Number': 'FIX/24-25/090',
+        // Zoho's own cancellation, which is the ONE reading of this
+        // column the register trusts. It carries an IRN — it was
+        // registered before it was cancelled — so deriving from the IRN
+        // alone would count it as issued and as billed.
+        'Invoice Status': 'Void',
+        'e-Invoice Reference Number': 'c'.repeat(64),
+        PurchaseOrder: '',
+        'Item Name': 'Cancelled supply',
+      },
+    ]);
+    const response = await importCsv(voided, { mode: 'commit' });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<ImportedInvoiceImportResult>().importedCount).toBe(1);
+
+    const after = await authed(owner, {
+      method: 'GET',
+      url: '/api/imported-invoices',
+      organisationId,
+    });
+    const totals = after.json<ImportedInvoiceList>().totals;
+    // Counted — it is part of the record and it is on screen — and the
+    // billed figure has not moved.
+    expect(totals?.invoiceCount).toBe((totalsBefore?.invoiceCount ?? 0) + 1);
+    expect(totals?.totalValue).toBe(totalsBefore?.totalValue);
+  }, 60_000);
+
+  it('reports the register span, and sends the totals with the first page only', async () => {
+    const first = await authed(owner, {
+      method: 'GET',
+      url: '/api/imported-invoices?limit=1',
+      organisationId,
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    const page = first.json<ImportedInvoiceList>();
+    // The span is over the WHOLE filtered register rather than the page,
+    // which is what the financial-year filter is built from: a page of one
+    // row would otherwise offer one year of a register spanning three.
+    expect(page.totals?.earliestDate).toBe('2023-04-07');
+    expect(page.totals?.latestDate).toBe('2025-01-09');
+    expect(page.nextCursor).not.toBeNull();
+
+    const second = await authed(owner, {
+      method: 'GET',
+      url: `/api/imported-invoices?limit=1&cursor=${page.nextCursor ?? ''}`,
+      organisationId,
+    });
+    expect(second.statusCode, second.body).toBe(200);
+    // A request carrying a cursor is continuing a walk whose totals the
+    // caller already has; recounting the register would be an aggregate
+    // over every row to answer a question nobody re-asked.
+    expect(second.json<ImportedInvoiceList>().totals).toBeNull();
+    expect(second.json<ImportedInvoiceList>().invoices).toHaveLength(1);
+  }, 60_000);
+
+  it('refuses a file that is not UTF-8, rather than importing the mojibake', async () => {
+    // What Excel writes when an operator opens the export and re-saves
+    // it. `toString('utf8')` never fails — it substitutes U+FFFD — so
+    // without this the register takes the damage permanently, and it is
+    // immutable.
+    const text = csv([{ ...BASE, 'Invoice ID': '1010', 'Invoice Number': 'X' }]);
+    const latin1 = Buffer.concat([
+      Buffer.from(text.slice(0, 40), 'utf8'),
+      Buffer.from([0xa0, 0xa9]),
+      Buffer.from(text.slice(40), 'utf8'),
+    ]);
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/imported-invoices/import?mode=preview&filename=Invoice.csv',
+      organisationId,
+      headers: { 'content-type': 'text/csv' },
+      payload: latin1,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('ZOHO_EXPORT_UNREADABLE');
   }, 30_000);
 });

@@ -49,11 +49,23 @@ export const ImportedInvoiceLinkMethodSchema = Type.Union([
 export type ImportedInvoiceLinkMethod = Static<typeof ImportedInvoiceLinkMethodSchema>;
 
 /** How the customer was matched to the contacts master: by GSTIN, which is
- * the identifier the tax system itself uses, or by an exact name. */
+ * the identifier the tax system itself uses, by an exact name, or by a
+ * person choosing.
+ *
+ * `manual` is here for the same reason `manual` is in the link method
+ * beside it, and it is settled NOW rather than when somebody notices: the
+ * relink route lets a person point an invoice at a customer the importer
+ * never proposed, and recording that as `name` would put a claim about
+ * automatic matching on a row nothing automatic ever touched. The
+ * provenance of a link is the only thing that makes it auditable. */
 export const ImportedInvoiceContactMatchSchema = Type.Union([
   Type.Literal('gstin'),
   Type.Literal('name'),
+  Type.Literal('manual'),
 ]);
+export type ImportedInvoiceContactMatch = Static<
+  typeof ImportedInvoiceContactMatchSchema
+>;
 
 /** What the upload is being asked to do. `preview` parses, proposes and
  * answers; it writes nothing. `commit` does the same reading and then
@@ -132,6 +144,12 @@ export const ImportedInvoiceSchema = Type.Object(
     roundOff: Type.Union([SignedMoneyStringSchema, Type.Null()]),
     workId: Type.Union([UuidSchema, Type.Null()]),
     workCode: Type.Union([Type.String({ maxLength: 20 }), Type.Null()]),
+    /** True when the Work this invoice is filed against has since been
+     * superseded (0071). The link is not cleared — what was billed against
+     * that contract is still what was billed — but the register renders it
+     * as withdrawn rather than as a live destination, because a link into
+     * a Work the workspace no longer lists is a link to a 404. */
+    workWithdrawn: Type.Boolean(),
     linkMethod: Type.Union([ImportedInvoiceLinkMethodSchema, Type.Null()]),
     lineCount: Type.Integer({ minimum: 0 }),
     discardedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
@@ -171,15 +189,34 @@ export const ImportedInvoiceListSchema = Type.Object(
     invoices: Type.Array(ImportedInvoiceSchema),
     nextCursor: NextCursorSchema,
     /** Counted over the WHOLE filtered register rather than the page, so
-     * the screen's header does not change as an operator scrolls. */
-    totals: Type.Object(
-      {
-        invoiceCount: Type.Integer({ minimum: 0 }),
-        linkedCount: Type.Integer({ minimum: 0 }),
-        totalValue: SignedMoneyStringSchema,
-      },
-      { additionalProperties: false },
-    ),
+     * the screen's header does not change as an operator scrolls. Sent
+     * with the FIRST page only: a request carrying a cursor is asking to
+     * continue a walk whose totals it already has, and recounting the
+     * register on every page is an aggregate over every row to answer a
+     * question nothing on screen re-asks. */
+    totals: Type.Union([
+      Type.Object(
+        {
+          invoiceCount: Type.Integer({ minimum: 0 }),
+          linkedCount: Type.Integer({ minimum: 0 }),
+          /** VOID INVOICES ARE EXCLUDED from this sum, and only from it.
+           * A voided invoice is stored verbatim and stays visible — it is
+           * part of the record — but it billed nobody anything, and a
+           * register that added it to "what we have billed this customer"
+           * would overstate five years of turnover by whatever Zoho
+           * cancelled. */
+          totalValue: SignedMoneyStringSchema,
+          /** The oldest and newest invoice date in the filtered register,
+           * so the screen's financial-year filter offers every year the
+           * register actually spans rather than only the years the first
+           * page happened to contain. Null on an empty register. */
+          earliestDate: Type.Union([DateOnlySchema, Type.Null()]),
+          latestDate: Type.Union([DateOnlySchema, Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+      Type.Null(),
+    ]),
   },
   { additionalProperties: false },
 );

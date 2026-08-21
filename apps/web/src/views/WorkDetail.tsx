@@ -427,6 +427,13 @@ export function WorkDetail({
    * load or change, so the badges track the tabs without a reload. */
   const [measurementBookCount, setMeasurementBookCount] = useState<number | null>(null);
   const [taxInvoiceCount, setTaxInvoiceCount] = useState<number | null>(null);
+  /* The historical Zoho register's tally for this Work (0115), on the same
+     terms as the two above: the Bills tab lists those invoices under the
+     ones this application raised, so the badge has to count them or it
+     claims a smaller number than the tab shows. */
+  const [historicalInvoiceCount, setHistoricalInvoiceCount] = useState<number | null>(
+    null,
+  );
   const [amendments, setAmendments] = useState<readonly ApprovalRequest[]>([]);
   const [correctionNotices, setCorrectionNotices] = useState<
     readonly CorrectionNotice[]
@@ -507,6 +514,7 @@ export function WorkDetail({
         setInstallationCounts(loaded.installationCounts);
         setMeasurementBookCount(loaded.measurementBookCount);
         setTaxInvoiceCount(loaded.taxInvoiceCount);
+        setHistoricalInvoiceCount(loaded.historicalInvoiceCount);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -991,6 +999,10 @@ export function WorkDetail({
         label: 'Tax invoices',
         value: taxInvoiceCount === null ? '—' : String(taxInvoiceCount),
       },
+      {
+        label: 'Historical invoices',
+        value: historicalInvoiceCount === null ? '—' : String(historicalInvoiceCount),
+      },
     ],
     instruments: [
       {
@@ -1034,7 +1046,7 @@ export function WorkDetail({
         : null,
     bills:
       relatedStateForTab('bills') === 'ready'
-        ? bills.length + (taxInvoiceCount ?? 0)
+        ? bills.length + (taxInvoiceCount ?? 0) + (historicalInvoiceCount ?? 0)
         : null,
     instruments:
       relatedStateForTab('instruments') === 'ready' ? instruments.length : null,

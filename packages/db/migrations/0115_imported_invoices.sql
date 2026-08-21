@@ -124,15 +124,17 @@ SET LOCAL statement_timeout = '5min';
 -- money, the IRN, the raw row — raises 23X01. The lines raise 23X02 and
 -- have no hinge at all.
 --
--- RE-UPLOAD INSERTS, IT DOES NOT REWRITE. `UNIQUE (organisation_id,
--- zoho_invoice_id)` makes the export's own stable id the idempotency key,
--- and the import route inserts `ON CONFLICT DO NOTHING`: uploading the
--- same file twice adds the invoices that were not there and leaves the
--- ones that were exactly as they are. That is the only reading compatible
--- with the immutability above — an upsert that UPDATED would let a second
--- export silently rewrite a filed invoice's amount, which is precisely
--- what the guard exists to refuse. An invoice whose historical record is
--- genuinely wrong is discarded and re-imported, visibly.
+-- RE-UPLOAD INSERTS, IT DOES NOT REWRITE. A partial unique index on
+-- `(organisation_id, zoho_invoice_id) WHERE discarded_at IS NULL` makes
+-- the export's own stable id the idempotency key, and the import route
+-- inserts `ON CONFLICT DO NOTHING`: uploading the same file twice adds
+-- the invoices that were not there and leaves the ones that were exactly
+-- as they are. That is the only reading compatible with the immutability
+-- above — an upsert that UPDATED would let a second export silently
+-- rewrite a filed invoice's amount, which is precisely what the guard
+-- exists to refuse. An invoice whose historical record is genuinely wrong
+-- is discarded and re-imported, visibly — which is the whole reason the
+-- key is partial, and § 1 states that argument where the index is.
 --
 -- ---------------------------------------------------------------------
 -- SQLSTATEs: the 23X block, which this migration is the first to use, by
@@ -164,7 +166,7 @@ SET LOCAL statement_timeout = '5min';
 --   Tables altered                0
 --   Functions created             2
 --   Triggers created              2
---   Indexes created               7
+--   Indexes created               8
 --   RLS policies created          2
 
 -- ═════════════════════════════════════════════════════════════════════
@@ -220,8 +222,14 @@ CREATE TABLE imported_invoices (
   -- found. Nullable and correctable: an unmatched invoice is a visible,
   -- fixable state, and a WRONG match is neither.
   contact_id uuid,
+  -- 'manual' is a person pointing this invoice at a customer the
+  -- importer never proposed. Settled here rather than left to be noticed:
+  -- the relink route can set this column, and recording a person's choice
+  -- as 'name' would put a claim about automatic matching on a row nothing
+  -- automatic touched.
   contact_match_method text CHECK (
-    contact_match_method IS NULL OR contact_match_method IN ('gstin', 'name')
+    contact_match_method IS NULL
+      OR contact_match_method IN ('gstin', 'name', 'manual')
   ),
 
   -- Zoho's workflow flag, verbatim, as EVIDENCE. See the header: it says
@@ -292,9 +300,9 @@ CREATE TABLE imported_invoices (
 
   UNIQUE (organisation_id, id),
 
-  -- THE IDEMPOTENCY KEY. Re-uploading the export inserts what is missing
-  -- and collides on what is not.
-  UNIQUE (organisation_id, zoho_invoice_id),
+  -- The idempotency key is NOT here. It is a partial unique index below,
+  -- because it must exclude discarded rows, and a table constraint cannot
+  -- be partial. The index carries the reasoning.
 
   FOREIGN KEY (organisation_id, work_id) REFERENCES works(organisation_id, id),
   FOREIGN KEY (organisation_id, contact_id) REFERENCES contacts(organisation_id, id),
@@ -360,6 +368,31 @@ CREATE POLICY imported_invoices_tenant_policy ON imported_invoices
 -- received_railway_bills and railway_measurements.
 GRANT SELECT, INSERT, UPDATE ON imported_invoices TO auto_mb_app;
 
+-- ─────────────────────────────────────────────────────────────────────
+-- THE IDEMPOTENCY KEY, AND WHY IT IS PARTIAL.
+--
+-- Re-uploading the export inserts the invoices that are missing and
+-- collides on the ones that are not. That is what makes a cutover import
+-- survivable: an operator who is unsure whether it ran can run it again.
+--
+-- The uniqueness is over the LIVE rows only, because the discard is the
+-- register's correction mechanism and a non-partial key silently disarms
+-- it. An invoice imported from the wrong file is discarded — the row
+-- stays, with the reason, because there is no DELETE grant — and the
+-- corrected export is then uploaded. Under a non-partial key the
+-- discarded row still owns the id, `ON CONFLICT DO NOTHING` skips the
+-- corrected invoice, and the import reports it as ALREADY IMPORTED. The
+-- operator is told the work is done and the register is left holding only
+-- the withdrawn copy, which is the worst of the three possible outcomes:
+-- wrong, and confidently reported as right.
+--
+-- Discarded rows keep no uniqueness of their own, deliberately: an
+-- invoice may be imported and discarded more than once, and each attempt
+-- is a separate thing that happened.
+CREATE UNIQUE INDEX imported_invoices_zoho_id_key
+  ON imported_invoices (organisation_id, zoho_invoice_id)
+  WHERE discarded_at IS NULL;
+
 -- The register reads newest first, per organisation.
 CREATE INDEX imported_invoices_org_date_idx
   ON imported_invoices (organisation_id, invoice_date DESC, id DESC);
@@ -421,8 +454,8 @@ CREATE TABLE imported_invoice_lines (
     usage_unit IS NULL OR length(btrim(usage_unit)) BETWEEN 1 AND 40
   ),
   -- A RATE, not a money amount, and the real export is what settled it:
-  -- `Item Price` carries three fraction digits on real lines (7395144.068
-  -- is one of them), because a unit price in this business is a rate per
+  -- `Item Price` carries three fraction digits on real lines (rates like
+  -- 1234.568), because a unit price in this business is a rate per
   -- metre or per unit rather than a rupee figure. `money_amount` is
   -- numeric(18,2) and would have rounded the third digit away silently —
   -- so this takes the shape 0027 gave every rate column in this schema,
@@ -624,12 +657,31 @@ BEGIN
       USING ERRCODE = '23X02';
   END IF;
 
+  -- AND THE ARM THE PARAGRAPH ABOVE ACTUALLY PROMISED: the invoice must be
+  -- one THIS transaction imported. `created_at` defaults to `now()`, which
+  -- is `transaction_timestamp()`, so an invoice inserted by this
+  -- transaction carries this transaction's own timestamp and one imported
+  -- last month does not.
+  --
+  -- Without it the two checks above only refuse a MISSING or DISCARDED
+  -- parent, and appending a line to a completed, live import — which
+  -- changes what a finished import is on record as having contained, and
+  -- with it every total the register computes from the lines — was
+  -- allowed. The import route writes its lines in the same transaction as
+  -- its invoices, so nothing legitimate is refused here.
+  IF v_imported <> transaction_timestamp() THEN
+    RAISE EXCEPTION
+      'imported invoice % was imported by an earlier transaction and its lines are complete',
+      NEW.imported_invoice_id
+      USING ERRCODE = '23X02';
+  END IF;
+
   RETURN NEW;
 END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_imported_invoice_line() IS
-  'A line of an imported invoice is written once, into an invoice that exists in this tenant and has not been discarded. Never edited: the application role holds no UPDATE, and this refuses one anyway so the rule survives a grant somebody widens later.';
+  'A line of an imported invoice is written once, into an invoice that exists in this tenant, has not been discarded, and is being imported by this same transaction. Never edited: the application role holds no UPDATE, and this refuses one anyway so the rule survives a grant somebody widens later.';
 
 CREATE TRIGGER imported_invoice_lines_guard
 BEFORE INSERT OR UPDATE ON imported_invoice_lines

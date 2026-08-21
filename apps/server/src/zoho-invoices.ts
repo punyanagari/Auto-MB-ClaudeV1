@@ -37,7 +37,7 @@
  *    infers a supply kind from it.
  */
 
-import { CsvParseError, parseCsv } from './csv.js';
+import { CsvParseError, headerKey, parseCsv } from './csv.js';
 
 /* --- refusals -------------------------------------------------------------- */
 
@@ -118,15 +118,6 @@ const REQUIRED_COLUMNS = [
   COLUMNS.total,
 ] as const;
 
-/** Header text reduced to what it meant. Case, spacing and punctuation are
- * noise; `imports.ts` normalises the same way for the same reason. */
-function headerKey(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
 /* --- value readers --------------------------------------------------------- */
 
 function trimmed(value: string | undefined): string | null {
@@ -143,6 +134,23 @@ function trimmed(value: string | undefined): string | null {
  * scale are accepted (`1.500` at scale 2 is `1.50`); a significant digit
  * beyond it is NOT, because dropping it would invent an amount.
  *
+ * INTERIOR WHITESPACE IS A REFUSAL, not something to collapse. Only the
+ * ends are trimmed. An earlier reading stripped every space anywhere in
+ * the cell, which turned `1 200` into `1200` and `12 00` into `1200` with
+ * equal confidence — a cell that has a space in the middle of a number is
+ * a cell nobody should be guessing about, and the two readings of it
+ * differ by a factor of ten.
+ *
+ * THE CANONICAL FORM IS WHAT THE API'S OWN PATTERNS ACCEPT. Leading zeros
+ * are stripped, because `SignedMoneyStringSchema` spells its integer part
+ * `0|[1-9]\d*` — a spreadsheet's `0000123.00` parsed cleanly here and then
+ * failed response validation as a 500 with nothing naming the cell. The
+ * integer digits are bounded for the mirror-image reason: the column is
+ * `numeric(18, scale)` and a twenty-digit figure reached PostgreSQL as a
+ * numeric field overflow, which is also a 500 with no cell named. Both are
+ * refused HERE, in the preview, where the refusal carries a row number and
+ * nothing has been written.
+ *
  * Nothing here goes through `Number`. The string is padded and truncated
  * as text, so an eighteen-digit figure is exact for the same reason
  * `money.ts` counts in BigInt.
@@ -153,7 +161,7 @@ function exactDecimal(
   column: string,
   rowNumber: number,
 ): string | null {
-  const text = (raw ?? '').replace(/[,\s₹]/g, '');
+  const text = (raw ?? '').trim().replace(/[,₹]/g, '');
   if (text.length === 0) return null;
   // Fully anchored, one digit run then an optional fraction. Each
   // repetition consumes a digit no other branch can also consume, so this
@@ -176,7 +184,49 @@ function exactDecimal(
       column,
     );
   }
-  return `${match[1] ?? ''}${match[2] ?? '0'}.${fraction.slice(0, scale).padEnd(scale, '0')}`;
+  // The column is numeric(18, scale), and the API's money and quantity
+  // patterns stop at fifteen integer digits — so the narrower of the two
+  // is the bound, computed rather than restated per call site.
+  const limit = Math.min(18 - scale, 15);
+  const integer = (match[2] ?? '0').replace(/^0+(?=\d)/, '');
+  if (integer.length > limit) {
+    throw new ZohoInvoiceImportError(
+      `"${column}" is ${JSON.stringify(raw ?? '')}, which is wider than this register stores (${String(limit)} digits before the decimal point).`,
+      rowNumber,
+      column,
+    );
+  }
+  return `${match[1] ?? ''}${integer}.${fraction.slice(0, scale).padEnd(scale, '0')}`;
+}
+
+/**
+ * A GST rate: an exact decimal that is also a PERCENTAGE.
+ *
+ * The three rate columns are the only cells in the export whose meaning
+ * bounds them — a CGST rate is 0, 2.5, 6, 9 or 14 in practice and cannot
+ * exceed 100 in principle. Without the ceiling a mis-mapped column (an
+ * amount read as a rate is the obvious way it happens) is stored as a rate
+ * of nine hundred thousand percent and nothing ever says so.
+ *
+ * `Number` appears here and nowhere else in this file, and only as a
+ * COMPARISON against a bound — never as a value that is stored. The lexeme
+ * it reads has already been proven to be at most two integer digits' worth
+ * of interest either side of the bound, so the comparison is exact.
+ */
+function rate(
+  raw: string | undefined,
+  column: string,
+  rowNumber: number,
+): string | null {
+  const value = exactDecimal(raw, 2, column, rowNumber);
+  if (value !== null && Math.abs(Number(value)) > 100) {
+    throw new ZohoInvoiceImportError(
+      `"${column}" is ${JSON.stringify(raw ?? '')}, which is not a tax rate — a rate is a percentage and cannot exceed 100.`,
+      rowNumber,
+      column,
+    );
+  }
+  return value;
 }
 
 /** A required money figure. The header-level totals are always present in
@@ -229,6 +279,28 @@ function dateOnly(
   if (match === null) {
     throw new ZohoInvoiceImportError(
       `"${column}" is ${JSON.stringify(text)}; this reader only accepts YYYY-MM-DD, because guessing between day-first and month-first would be wrong silently.`,
+      rowNumber,
+      column,
+    );
+  }
+  // WELL-SHAPED IS NOT THE SAME AS REAL. `2023-02-30` and `2023-13-01`
+  // both satisfy the pattern above and neither is a date; PostgreSQL
+  // refuses them with 22008, which arrives as a 500 in the middle of a
+  // commit with nothing naming the row. Proved here instead, in the
+  // preview, where the refusal carries the row number and nothing has
+  // been written. The round trip through UTC is the check: a component
+  // that does not survive it was never a day of that month.
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    throw new ZohoInvoiceImportError(
+      `"${column}" is ${JSON.stringify(text)}, which is not a date on any calendar.`,
       rowNumber,
       column,
     );
@@ -330,7 +402,16 @@ export function readZohoInvoiceCsv(text: string): ZohoInvoice[] {
     return index === undefined ? undefined : row[index];
   };
 
-  const groups = new Map<string, { rowNumber: number; rows: string[][] }>();
+  // EACH ROW CARRIES ITS OWN CSV LINE NUMBER, rather than the group's
+  // first plus the line's position. Zoho does not write an invoice's lines
+  // contiguously — a second line of invoice 1001 can sit twenty rows below
+  // the first — so `first + index` names whichever unrelated row happens
+  // to be there, and a refusal that points at the wrong line is worse than
+  // one that points at none.
+  const groups = new Map<
+    string,
+    { rowNumber: number; rows: { row: string[]; rowNumber: number }[] }
+  >();
   records.slice(1).forEach((row, offset) => {
     const rowNumber = offset + 2;
     const id = trimmed(cell(row, COLUMNS.zohoInvoiceId));
@@ -346,8 +427,8 @@ export function readZohoInvoiceCsv(text: string): ZohoInvoice[] {
       );
     }
     const group = groups.get(id);
-    if (group === undefined) groups.set(id, { rowNumber, rows: [row] });
-    else group.rows.push(row);
+    if (group === undefined) groups.set(id, { rowNumber, rows: [{ row, rowNumber }] });
+    else group.rows.push({ row, rowNumber });
   });
 
   if (groups.size === 0) {
@@ -364,7 +445,7 @@ export function readZohoInvoiceCsv(text: string): ZohoInvoice[] {
   };
 
   return [...groups.entries()].map(([zohoInvoiceId, group]) => {
-    const first = group.rows[0] ?? [];
+    const first = group.rows[0]?.row ?? [];
     const rowNumber = group.rowNumber;
     const invoiceNumber = trimmed(cell(first, COLUMNS.invoiceNumber));
     if (invoiceNumber === null) {
@@ -429,8 +510,7 @@ export function readZohoInvoiceCsv(text: string): ZohoInvoice[] {
       issued: irn !== null,
       rawRow: rawOf(first),
       rowNumber,
-      lines: group.rows.map((row, index) => {
-        const lineRowNumber = rowNumber + index;
+      lines: group.rows.map(({ row, rowNumber: lineRowNumber }, index) => {
         return {
           position: index + 1,
           itemName: trimmed(cell(row, COLUMNS.itemName)),
@@ -462,24 +542,9 @@ export function readZohoInvoiceCsv(text: string): ZohoInvoice[] {
           ),
           hsnSac: trimmed(cell(row, COLUMNS.hsnSac)),
           supplyType: trimmed(cell(row, COLUMNS.supplyType)),
-          cgstRate: exactDecimal(
-            cell(row, COLUMNS.cgstRate),
-            2,
-            COLUMNS.cgstRate,
-            lineRowNumber,
-          ),
-          sgstRate: exactDecimal(
-            cell(row, COLUMNS.sgstRate),
-            2,
-            COLUMNS.sgstRate,
-            lineRowNumber,
-          ),
-          igstRate: exactDecimal(
-            cell(row, COLUMNS.igstRate),
-            2,
-            COLUMNS.igstRate,
-            lineRowNumber,
-          ),
+          cgstRate: rate(cell(row, COLUMNS.cgstRate), COLUMNS.cgstRate, lineRowNumber),
+          sgstRate: rate(cell(row, COLUMNS.sgstRate), COLUMNS.sgstRate, lineRowNumber),
+          igstRate: rate(cell(row, COLUMNS.igstRate), COLUMNS.igstRate, lineRowNumber),
           cgstAmount: exactDecimal(
             cell(row, COLUMNS.cgstAmount),
             2,
@@ -529,8 +594,16 @@ export interface WorkLinkProposal {
  * `PL-99` in the real export, which is the whole population — so the
  * pattern is narrow on purpose. A looser one (`[A-Z]{2}-\d+`) would match
  * a GST rate, a phone extension and half the item descriptions.
+ *
+ * THE SEPARATOR IS A HYPHEN OR A SPACE, and deliberately not `\s`. The
+ * haystack below is the reference text and every line's name and
+ * description joined with newlines, and `\s` matches a newline: a
+ * reference field ending in `PL` beside an item description beginning
+ * `270` would have been read as `PL270` and filed the invoice against a
+ * contract neither field named. A separator that cannot cross the join is
+ * what keeps a match inside one field.
  */
-const PL_CODE = /\bPL[-\s]?(\d{2,})\b/gi;
+const PL_CODE = /\bPL[- ]?(\d{2,})\b/gi;
 
 /** Punctuation and case removed, so `LOA/2023/117` and `loa-2023-117`
  * compare equal. A letter number is copied by hand into a Zoho field and

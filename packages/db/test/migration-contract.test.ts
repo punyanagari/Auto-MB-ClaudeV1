@@ -3650,15 +3650,42 @@ describe('the historical Zoho invoice register (0115)', () => {
     expect(sql).not.toContain('UPDATE ON imported_invoice_lines TO auto_mb_app');
   });
 
-  it('makes the export’s own id the idempotency key', () => {
+  it('makes the export’s own id the idempotency key, over live rows only', () => {
     // Without this a second upload of the same file doubles the register,
     // and the import route's ON CONFLICT DO NOTHING has nothing to
     // conflict on.
-    expect(sql).toContain('UNIQUE (organisation_id, zoho_invoice_id)');
+    //
+    // PARTIAL, and the WHERE is the load-bearing half. Discarding a row
+    // imported from the wrong file and uploading the corrected export is
+    // this register's only correction path, because there is no DELETE
+    // grant — and under a total key the discarded row keeps owning the id,
+    // so the corrected invoice is skipped and reported as already
+    // imported. Wrong, and confidently reported as right.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX imported_invoices_zoho_id_key\s+ON imported_invoices \(organisation_id, zoho_invoice_id\)\s+WHERE discarded_at IS NULL/,
+    );
+    // A total constraint would silently disarm the correction path, so it
+    // must not be there beside the index.
+    expect(sql).not.toContain('UNIQUE (organisation_id, zoho_invoice_id)');
     // …and the invoice NUMBER is deliberately not unique: a Zoho series
     // may repeat a number across financial years, and refusing that would
     // refuse history that happened.
     expect(sql).not.toContain('UNIQUE (organisation_id, invoice_number)');
+  });
+
+  it('completes an import before it stops taking lines', () => {
+    // The line guard has three arms and the third was only in its comment:
+    // a live, undiscarded invoice imported by an EARLIER transaction takes
+    // no further lines. `created_at` defaults to now(), which is
+    // transaction_timestamp(), so the comparison is exact.
+    expect(sql).toContain('IF v_imported <> transaction_timestamp() THEN');
+  });
+
+  it('records a person’s own customer choice as manual', () => {
+    // Settled before any row exists rather than when somebody notices: the
+    // relink route can write this column, and recording a person's choice
+    // as 'name' would claim an automatic match nothing made.
+    expect(sql).toMatch(/contact_match_method IN \('gstin', 'name', 'manual'\)/);
   });
 
   it('derives issued-ness from the IRN rather than trusting the status column', () => {

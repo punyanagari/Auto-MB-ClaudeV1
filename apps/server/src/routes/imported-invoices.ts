@@ -15,7 +15,7 @@ import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
 import { CsvParseError } from '../csv.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
-import { keysetPage, sqlLimit } from '../pagination.js';
+import { keysetPage, registerKeyset, sqlLimit } from '../pagination.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
 import {
   MAX_CSV_UPLOAD_BYTES,
@@ -32,7 +32,13 @@ import {
   type WorkLinkProposal,
   type ZohoInvoice,
 } from '../zoho-invoices.js';
-import { IdParamsSchema, audit, errorResponses, requireTrimmed } from './shared.js';
+import {
+  IdParamsSchema,
+  audit,
+  errorResponses,
+  requireTrimmed,
+  writeRefusals,
+} from './shared.js';
 
 /**
  * The historical Zoho Books invoice register (migration 0115).
@@ -61,10 +67,15 @@ import { IdParamsSchema, audit, errorResponses, requireTrimmed } from './shared.
  * states and a supersession rule.
  *
  * The two things a staging table would have bought are bought otherwise:
- * committing twice is safe because `UNIQUE (organisation_id,
- * zoho_invoice_id)` makes the second one a no-op, and the operator's
- * decision is recorded because every imported invoice writes its own audit
- * event naming the file it came from.
+ * committing twice is safe because the partial unique index on
+ * `(organisation_id, zoho_invoice_id) WHERE discarded_at IS NULL` makes the
+ * second one a no-op, and the operator's decision is recorded because every
+ * imported invoice writes its own audit event naming the file it came from.
+ * The index is partial and this route's own "already imported" check
+ * carries the same `discarded_at is null`, so a discarded invoice is
+ * genuinely absent to both: discarding a row imported from the wrong file
+ * and uploading the corrected export is the register's correction path,
+ * and it only works if the two agree.
  *
  * ## Permissions
  *
@@ -87,10 +98,22 @@ import { IdParamsSchema, audit, errorResponses, requireTrimmed } from './shared.
  * unscoped would have leaked the existence of Works a member may not see.
  */
 
-/** The database's own refusals, mapped to named codes. Migration 0115
- * raises from the 23X block, one code per rule, so a guard that fires
- * because a route's own check lost a race surfaces as the same 409 an
- * operator would have got from the route — not as an unexplained 500. */
+/**
+ * The database's own refusals, mapped to named codes.
+ *
+ * Migration 0115 raises from the 23X block, one code per rule, so a guard
+ * that fires because a route's own check lost a race surfaces as the same
+ * 409 an operator would have got from the route — not as an unexplained
+ * 500.
+ *
+ * The four PostgreSQL-native codes beneath them are BACKSTOPS, and they
+ * exist because this route's input is a file rather than a form. The
+ * reader refuses a calendar-invalid date, an over-wide figure and an
+ * impossible tax rate up front, with a row number, in the preview — that
+ * is where an operator can act. These say something honest if one ever
+ * reaches the insert anyway: a 409 naming the file, rather than a 500
+ * whose reason is only in the server log.
+ */
 const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
   '23X01': [
     'IMPORTED_INVOICE_IMMUTABLE',
@@ -100,17 +123,27 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'IMPORTED_INVOICE_IMMUTABLE',
     'The lines of a historical invoice record what the Zoho export said and cannot be changed.',
   ],
+  // 22008 datetime_field_overflow, 22003 numeric_value_out_of_range,
+  // 23514 check_violation, 23503 foreign_key_violation.
+  '22008': [
+    'ZOHO_EXPORT_UNREADABLE',
+    'That export carries a date no calendar has. Correct it in Zoho Books, export again, and read the file before importing it.',
+  ],
+  '22003': [
+    'ZOHO_EXPORT_UNREADABLE',
+    'That export carries a figure too large for this register to store. Read the file first: the preview names the row and the column.',
+  ],
+  '23514': [
+    'ZOHO_EXPORT_UNREADABLE',
+    'That export carries a value this register refuses. Read the file first: the preview names the row and the column.',
+  ],
+  '23503': [
+    'WORK_NOT_FOUND',
+    'That Work is no longer on this organisation’s register, so nothing can be filed against it.',
+  ],
 };
 
-function rethrowWriteRefusal(error: unknown): never {
-  const code =
-    error !== null && typeof error === 'object' && 'code' in error
-      ? String(error.code)
-      : '';
-  const refusal = DATABASE_REFUSALS[code];
-  if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
-  throw error;
-}
+const rethrowWriteRefusal = writeRefusals(DATABASE_REFUSALS);
 
 /** How many invoices the register returns when the caller asks for no
  * page. The whole history is 638 rows and a clerk scrolls it; this is the
@@ -142,7 +175,8 @@ const INVOICE_COLUMNS = `
   i.ack_date::text as ack_date, i.reference_text, i.sub_total, i.total,
   i.balance, i.round_off, i.work_id, i.link_method, i.discarded_at,
   i.discard_reason, i.created_at,
-  w.work_code, c.designation as contact_name,
+  w.work_code, (w.deleted_at is not null) as work_withdrawn,
+  c.designation as contact_name,
   (select count(*)::int from imported_invoice_lines l
     where l.imported_invoice_id = i.id) as line_count
 `;
@@ -177,6 +211,7 @@ interface InvoiceRow {
   round_off: string | null;
   work_id: string | null;
   work_code: string | null;
+  work_withdrawn: boolean;
   link_method: string | null;
   line_count: number;
   discarded_at: string | null;
@@ -214,7 +249,7 @@ function toInvoice(row: InvoiceRow) {
     placeOfSupply: row.place_of_supply,
     contactId: row.contact_id,
     contactName: row.contact_name,
-    contactMatchMethod: row.contact_match_method as 'gstin' | 'name' | null,
+    contactMatchMethod: row.contact_match_method as 'gstin' | 'name' | 'manual' | null,
     zohoStatus: row.zoho_status,
     issued: row.issued,
     irn: row.irn,
@@ -227,6 +262,7 @@ function toInvoice(row: InvoiceRow) {
     roundOff: row.round_off,
     workId: row.work_id,
     workCode: row.work_code,
+    workWithdrawn: row.work_withdrawn,
     linkMethod: row.link_method as 'pl_code' | 'loa_match' | 'manual' | null,
     lineCount: row.line_count,
     discardedAt:
@@ -340,6 +376,19 @@ export function registerImportedInvoiceRoutes(
             ? [null, null]
             : financialYearBounds(query.financialYear);
 
+        // THE KEY TUPLE IS STATED ONCE, and the ORDER BY and the keyset
+        // comparison are both derived from it — the shared machinery every
+        // other register here uses, rather than a fourth hand-written copy
+        // of it. No `?sort` yet: this register is read newest-first and
+        // nothing has asked for the other direction, so the parameter is
+        // omitted rather than added speculatively. `registerKeyset` takes
+        // the direction as an argument and will take it the day a
+        // querystring offers one.
+        const seek = registerKeyset(undefined, query.cursor, {
+          table: 'imported_invoices',
+          alias: 'i',
+          columns: ['invoice_date', 'id'],
+        });
         // The cursor is proven against the SAME predicate the rows are.
         // `workScopedCursorRowId` cannot serve this register: it refuses a
         // row whose `work_id` is null, and here that is a private order
@@ -347,10 +396,10 @@ export function registerImportedInvoiceRoutes(
         // is — same status, same code, same sentence — so the two stay
         // indistinguishable and the register cannot be used as an oracle.
         let cursor: string | null = null;
-        if (query.cursor !== undefined) {
+        if (seek.cursor !== undefined) {
           const [row] = await tx<{ id: string }[]>`
             select i.id from imported_invoices i
-            where i.id = ${query.cursor}
+            where i.id = ${seek.cursor}
               and (i.work_id is null or ${full} or exists (
                 select 1 from work_assignments wa
                 where wa.work_id = i.work_id and wa.user_id = ${user.id}
@@ -392,35 +441,63 @@ export function registerImportedInvoiceRoutes(
             -- The sort key is read and compared inside PostgreSQL, at the
             -- precision it stores, rather than being round-tripped through
             -- the driver (pagination.ts states the reasoning in full).
-            and (
-              ${cursor}::uuid is null
-              or (i.invoice_date, i.id) <
-                 (select invoice_date, id from imported_invoices where id = ${cursor})
-            )
-          order by i.invoice_date desc, i.id desc
+            and ${seek.predicate(tx, cursor)}
+          order by ${tx.unsafe(seek.orderBy)}
           limit ${sqlLimit(limit)}
         `;
         // Totals over the WHOLE filtered register, so the header does not
-        // change as the operator pages. One extra aggregate rather than a
-        // second pass over the rows: a page is not the register.
-        const [totals] = await tx<
-          { invoice_count: number; linked_count: number; total_value: string }[]
-        >`
-          select count(*)::int as invoice_count,
-                 count(i.work_id)::int as linked_count,
-                 coalesce(sum(i.total), 0)::text as total_value
-          from imported_invoices i
-          where ${filters}
-        `;
+        // change as the operator pages — and computed ONLY for the first
+        // page. A request carrying a cursor is continuing a walk whose
+        // totals the screen already has and does not redraw, so recounting
+        // is an aggregate over every row the caller may see to answer a
+        // question nobody re-asked.
+        /* Void invoices are out of the SUM and out of nothing else. Zoho's
+           Void is a cancelled document: it is part of the record, it stays
+           in the register and it is stored verbatim, but it billed nobody
+           anything. Adding it to "what we have billed" would overstate the
+           history by whatever was cancelled. Compared case-insensitively,
+           because that column is the export's own spelling. */
+        const totalRows =
+          cursor !== null
+            ? []
+            : await tx<
+                {
+                  invoice_count: number;
+                  linked_count: number;
+                  total_value: string;
+                  earliest_date: string | null;
+                  latest_date: string | null;
+                }[]
+              >`
+                select count(*)::int as invoice_count,
+                       count(i.work_id)::int as linked_count,
+                       coalesce(sum(i.total) filter (
+                         where lower(coalesce(i.zoho_status, '')) <> 'void'
+                       ), 0)::text as total_value,
+                       -- The span of the filtered register, so the
+                       -- screen's financial-year filter offers every year
+                       -- the register actually covers rather than the
+                       -- years one page of it happened to contain.
+                       min(i.invoice_date)::text as earliest_date,
+                       max(i.invoice_date)::text as latest_date
+                from imported_invoices i
+                where ${filters}
+              `;
+        const totals = totalRows[0] ?? null;
         const page = keysetPage(rows, limit, (row) => row.id);
         return {
           invoices: page.rows.map(toInvoice),
-          nextCursor: page.nextCursor,
-          totals: {
-            invoiceCount: totals?.invoice_count ?? 0,
-            linkedCount: totals?.linked_count ?? 0,
-            totalValue: totals?.total_value ?? '0.00',
-          },
+          nextCursor: seek.tag(page.nextCursor),
+          totals:
+            totals === null
+              ? null
+              : {
+                  invoiceCount: totals.invoice_count,
+                  linkedCount: totals.linked_count,
+                  totalValue: totals.total_value,
+                  earliestDate: totals.earliest_date,
+                  latestDate: totals.latest_date,
+                },
         };
       });
     },
@@ -495,9 +572,26 @@ export function registerImportedInvoiceRoutes(
       await tenant(() => Promise.resolve());
       await assertNotMalware(malwareScanner, bytes);
 
+      // NOT UTF-8 IS A REFUSAL, not something to import. `toString('utf8')`
+      // never fails: a byte sequence it cannot decode becomes U+FFFD, so a
+      // file saved as Windows-1252 — which is what Excel writes when an
+      // operator opens the export and re-saves it — imports cleanly with a
+      // replacement character wherever a rupee sign, a dash or an accented
+      // name was. Nothing downstream can tell that from a customer whose
+      // name genuinely contains one, and the register is immutable, so the
+      // mojibake is permanent. Cheaper to say so now, with the remedy.
+      const text = bytes.toString('utf8');
+      if (text.includes('�')) {
+        throw httpError(
+          400,
+          'ZOHO_EXPORT_UNREADABLE',
+          'That file is not UTF-8 text, so some characters in it cannot be read. Export the invoice register from Zoho Books again and upload it without opening and re-saving it in Excel.',
+        );
+      }
+
       let parsed: ZohoInvoice[];
       try {
-        parsed = readZohoInvoiceCsv(bytes.toString('utf8'));
+        parsed = readZohoInvoiceCsv(text);
       } catch (cause: unknown) {
         if (cause instanceof ZohoInvoiceImportError) {
           throw httpError(
@@ -517,6 +611,14 @@ export function registerImportedInvoiceRoutes(
         const works = await candidateWorks(tx, user.id);
         const contacts = await candidateContacts(tx);
 
+        // LIVE ROWS ONLY, which is the same predicate the partial unique
+        // index carries. A discarded invoice is one the operator withdrew
+        // in order to import a corrected copy; counting it as present
+        // would answer that corrected import with "already imported",
+        // write nothing, and report success — leaving the register holding
+        // only the withdrawn row. The index and this check have to agree
+        // about what "already there" means, or the preview describes a
+        // different import from the one the commit performs.
         const existing = new Set(
           (
             await tx<{ zoho_invoice_id: string }[]>`
@@ -524,6 +626,7 @@ export function registerImportedInvoiceRoutes(
               where zoho_invoice_id = any(${tx.array(
                 parsed.map((invoice) => invoice.zohoInvoiceId),
               )}::text[])
+                and discarded_at is null
             `
           ).map((row) => row.zoho_invoice_id),
         );
@@ -589,7 +692,13 @@ export function registerImportedInvoiceRoutes(
                 imported_by_user_id: user.id,
               })),
             )}
-            on conflict (organisation_id, zoho_invoice_id) do nothing
+            -- The inference clause names the PARTIAL index, because that
+            -- is the constraint being deferred to: without the WHERE,
+            -- PostgreSQL finds no matching arbiter and the statement is a
+            -- 42P10 rather than a skip.
+            on conflict (organisation_id, zoho_invoice_id)
+              where discarded_at is null
+              do nothing
             returning id, zoho_invoice_id
           `.catch(rethrowWriteRefusal);
 
@@ -768,6 +877,23 @@ export function registerImportedInvoiceRoutes(
           await assertWorkAccess(tx, user.id, invoice.work_id);
         if (body.workId !== undefined && body.workId !== null) {
           await assertWorkAccess(tx, user.id, body.workId);
+          // AND THAT IT IS STILL A WORK. `assertWorkAccess` answers "may
+          // this member see it", which a superseded Work (0071) still
+          // passes — so without this an invoice could be filed against a
+          // contract the workspace no longer lists, producing a register
+          // row whose only link is to a 404. The same `deleted_at is null`
+          // the importer's own candidate list applies, so a person cannot
+          // reach by hand a Work the proposal would never have offered.
+          const [live] = await tx<{ id: string }[]>`
+            select id from works where id = ${body.workId} and deleted_at is null
+          `;
+          if (!live) {
+            throw httpError(
+              404,
+              'WORK_NOT_FOUND',
+              'That Work has been withdrawn, so nothing can be filed against it.',
+            );
+          }
         }
         if (body.contactId !== undefined && body.contactId !== null) {
           const [contact] = await tx<{ id: string }[]>`
@@ -782,17 +908,46 @@ export function registerImportedInvoiceRoutes(
           }
         }
 
-        const nextWork = body.workId === undefined ? invoice.work_id : body.workId;
-        const nextContact =
-          body.contactId === undefined ? invoice.contact_id : body.contactId;
+        /* OMITTING A HALF LEAVES IT ALONE — its provenance included.
+           The contract says so and the earlier reading did not honour it:
+           it recomputed BOTH halves from the merged value, so a request
+           that only moved the Work also restamped the contact link as a
+           person's manual choice and, worse, overwrote a `gstin` match
+           with `name`. A relink that rewrites provenance nobody asked it
+           to touch destroys the only record of how a link was arrived at,
+           which is the thing that makes the link auditable at all.
+
+           So each half is written only when its key was PRESENT in the
+           body, and the provenance columns move with the value they
+           describe. A link set here is `manual` on both sides: a person
+           chose it, and recording that as `name` would claim an automatic
+           match that never happened. */
+        const relinkWork = body.workId !== undefined;
+        const relinkContact = body.contactId !== undefined;
+        const nextWork = relinkWork ? body.workId : invoice.work_id;
+        const nextContact = relinkContact ? body.contactId : invoice.contact_id;
         await tx`
           update imported_invoices
-          set work_id = ${nextWork},
-              link_method = ${nextWork === null ? null : 'manual'},
-              linked_by_user_id = ${nextWork === null ? null : user.id},
-              linked_at = ${nextWork === null ? null : new Date().toISOString()},
-              contact_id = ${nextContact},
-              contact_match_method = ${nextContact === null ? null : 'name'}
+          set work_id = case when ${relinkWork} then ${nextWork ?? null}::uuid
+                             else work_id end,
+              link_method = case
+                when not ${relinkWork} then link_method
+                when ${nextWork ?? null}::uuid is null then null
+                else 'manual' end,
+              linked_by_user_id = case
+                when not ${relinkWork} then linked_by_user_id
+                when ${nextWork ?? null}::uuid is null then null
+                else ${user.id} end,
+              linked_at = case
+                when not ${relinkWork} then linked_at
+                when ${nextWork ?? null}::uuid is null then null
+                else now() end,
+              contact_id = case when ${relinkContact} then ${nextContact ?? null}::uuid
+                                else contact_id end,
+              contact_match_method = case
+                when not ${relinkContact} then contact_match_method
+                when ${nextContact ?? null}::uuid is null then null
+                else 'manual' end
           where id = ${id}
         `.catch(rethrowWriteRefusal);
 

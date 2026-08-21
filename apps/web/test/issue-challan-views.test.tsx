@@ -240,7 +240,13 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listImportedInvoices: vi.fn().mockResolvedValue({
       invoices: [],
       nextCursor: null,
-      totals: { invoiceCount: 0, linkedCount: 0, totalValue: '0.00' },
+      totals: {
+        invoiceCount: 0,
+        linkedCount: 0,
+        totalValue: '0.00',
+        earliestDate: null,
+        latestDate: null,
+      },
     }),
     readImportedInvoice: vi.fn(),
     importZohoInvoices: vi.fn(),

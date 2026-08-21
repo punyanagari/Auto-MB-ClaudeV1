@@ -61,10 +61,16 @@ export function WorkHistoricalInvoices({
       .then((page) => {
         if (cancelled) return;
         setInvoices(page.invoices);
-        setTotal({
-          invoiceCount: page.totals.invoiceCount,
-          totalValue: page.totals.totalValue,
-        });
+        // The totals ride the first page only, and this panel never asks
+        // for a second one.
+        setTotal(
+          page.totals === null
+            ? null
+            : {
+                invoiceCount: page.totals.invoiceCount,
+                totalValue: page.totals.totalValue,
+              },
+        );
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -135,7 +141,18 @@ export function WorkHistoricalInvoices({
                     <td className={wrapCell}>{row.customerName}</td>
                     <td className={numericCell}>{formatInr(row.total)}</td>
                     <td>
-                      <StatusChip status={row.issued ? 'issued' : 'draft'} />
+                      {/* Derived from the IRN, except where Zoho itself
+                          says the document was cancelled — the register's
+                          own reading, stated in HistoricalInvoices.tsx. */}
+                      <StatusChip
+                        status={
+                          (row.zohoStatus ?? '').trim().toLowerCase() === 'void'
+                            ? 'cancelled'
+                            : row.issued
+                              ? 'issued'
+                              : 'draft'
+                        }
+                      />
                     </td>
                   </tr>
                 ))}
@@ -149,7 +166,7 @@ export function WorkHistoricalInvoices({
               <span className="font-mono tabular-nums">
                 {formatInr(total?.totalValue ?? '0.00')}
               </span>
-              .{' '}
+              , voided invoices excluded from that figure.{' '}
               {/* A plain anchor, and no click handler: the destination is
                   a hash, so the shell's own hashchange listener does the
                   navigation and a middle-click opens the same address a

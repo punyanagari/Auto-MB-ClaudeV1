@@ -25,6 +25,27 @@
  * length about `spreadsheet_import_rows.cells`).
  */
 
+/**
+ * Header text reduced to what an operator meant by it. Case, spacing and
+ * the punctuation people sprinkle through a header row ("GSTIN *",
+ * "PIN-code:") are all noise, and a reader that only matched its own exact
+ * strings would refuse the sheet it generated the moment somebody bolded a
+ * column and Excel round-tripped it.
+ *
+ * Lives here rather than in either caller because BOTH tabular readers
+ * need it and had a byte-identical copy: `routes/imports.ts` for the
+ * spreadsheet importer (0094) and `zoho-invoices.ts` for the Zoho export
+ * (0115). Two copies of a normaliser are two answers to "is this the same
+ * column", and the day they differ is the day one importer accepts a
+ * header the other refuses.
+ */
+export function headerKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 /** A refusal an operator can act on, distinct from a defect in this
  * reader. The import route turns it into a 400. */
 export class CsvParseError extends Error {

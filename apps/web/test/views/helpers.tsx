@@ -374,7 +374,13 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listImportedInvoices: vi.fn<ApiClient['listImportedInvoices']>().mockResolvedValue({
       invoices: [],
       nextCursor: null,
-      totals: { invoiceCount: 0, linkedCount: 0, totalValue: '0.00' },
+      totals: {
+        invoiceCount: 0,
+        linkedCount: 0,
+        totalValue: '0.00',
+        earliestDate: null,
+        latestDate: null,
+      },
     }),
     readImportedInvoice: vi.fn<ApiClient['readImportedInvoice']>(),
     importZohoInvoices: vi.fn<ApiClient['importZohoInvoices']>(),
@@ -1056,6 +1062,7 @@ export function challanWork(requiresSerials = false): WorkDetailResponse {
   return {
     measurementBookCount: 0,
     taxInvoiceCount: 0,
+    historicalInvoiceCount: 0,
     work: {
       id: WORK_ID,
       workCode: 'DCW-1',

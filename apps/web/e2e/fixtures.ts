@@ -1317,8 +1317,10 @@ const IMPORTED_INVOICE_REGISTER = {
   invoices: (
     [
       ['ZB-2023-0041', '2023-07-14', true, '33333333-3333-4333-8333-333333333333'],
-      ['ZB-2024-0106', '2024-11-02', true, null],
-      ['ZB-2025-0233', '2025-02-27', false, null],
+      ['ZB-2024-0106', '2024-11-02', false, null],
+      // Voided, and still carrying the IRN it was registered under — which
+      // is why the chip cannot be derived from the IRN alone.
+      ['ZB-2025-0233', '2025-02-27', true, null],
     ] as const
   ).map(([invoiceNumber, invoiceDate, issued, workId], index) => ({
     id: `6666666${String(index)}-6666-4666-8666-666666666666`,
@@ -1332,7 +1334,11 @@ const IMPORTED_INVOICE_REGISTER = {
     contactId: workId === null ? null : '55555555-5555-4555-8555-555555555555',
     contactName: workId === null ? null : 'Central Railway, Bhusawal',
     contactMatchMethod: workId === null ? null : 'gstin',
-    zohoStatus: 'Draft',
+    // The export's own column, kept as evidence and NOT as the chip's
+    // source — except for 'Void', which is the one reading of it this
+    // register trusts. The last row carries it, so the scan draws all
+    // three tones the chip can take.
+    zohoStatus: index === 2 ? 'Void' : 'Draft',
     issued,
     irn: issued ? `irn-${String(index + 1)}` : null,
     ackNumber: issued ? `11220${String(index)}` : null,
@@ -1344,6 +1350,7 @@ const IMPORTED_INVOICE_REGISTER = {
     roundOff: null,
     workId,
     workCode: workId === null ? null : 'PL270-CRB',
+    workWithdrawn: false,
     linkMethod: workId === null ? null : 'loa_match',
     lineCount: 2,
     discardedAt: null,
@@ -1351,7 +1358,15 @@ const IMPORTED_INVOICE_REGISTER = {
     importedAt: '2026-08-21T05:00:00.000Z',
   })),
   nextCursor: null,
-  totals: { invoiceCount: 3, linkedCount: 1, totalValue: '651360.00' },
+  totals: {
+    invoiceCount: 3,
+    linkedCount: 1,
+    // The third row is a Zoho void, and the server leaves it out of this
+    // figure: two invoices' worth, not three.
+    totalValue: '434240.00',
+    earliestDate: '2023-07-14',
+    latestDate: '2025-02-27',
+  },
 };
 
 /* The purchase-order register (migration 0109), drawn with both series on
