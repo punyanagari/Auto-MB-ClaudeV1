@@ -13,6 +13,7 @@ import {
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import { httpError } from '../../http.js';
 import { coefficientLineQuantities, type MbWay } from '../../mb-coefficient.js';
+import { addDecimalStrings } from '../../mb-remark.js';
 import {
   computeMeasurementBook,
   type MbComputation,
@@ -475,6 +476,73 @@ export async function loadAmcCertified(
   return new Map(rows.map((row) => [row.work_item_id, row.total]));
 }
 
+/**
+ * The Work's LOCKED opening billing position, per item (migration 0114).
+ *
+ * THE PRIOR-CUMULATIVE MEMORY OF A WORK THAT PREDATES THIS PRODUCT.
+ * `ITEM_INPUTS_SQL`'s `prior` CTE sums the deltas of this system's own
+ * finalized Measurement Books, which on an imported Work is nothing at
+ * all — so without this the next book bills quantities the railway paid
+ * for years ago all over again, and its remarks narrate a history that
+ * did not happen.
+ *
+ * ITS OWN STATEMENT rather than a seventh CTE, following the precedent
+ * `loadAmcCertified` and `loadMeasuredOverrides` set above and for their
+ * reason: `ITEM_INPUTS_SQL`'s plan shape is under a measured buffer
+ * ratchet (`test/query-aggregates.integration.test.ts`), and this table
+ * is EMPTY for every Work born in this product, which is almost all of
+ * them. One index probe of `work_billing_baseline_lines_item_idx` against
+ * a statement whose six grouped CTEs are the module's hottest read.
+ *
+ * UNLOCKED BASELINES ARE INVISIBLE HERE, and that is the whole meaning of
+ * the lock: a draft is a form somebody is filling in, and a form must not
+ * be able to move what a Measurement Book bills while it is half typed.
+ */
+export async function loadBaselinePriors(
+  tx: TransactionSql,
+  workId: string,
+): Promise<
+  Map<
+    string,
+    {
+      supplied: string;
+      installed: string;
+      pac: string;
+      finalBill: string;
+    }
+  >
+> {
+  const rows = await tx<
+    {
+      work_item_id: string;
+      prior_supplied: string;
+      prior_installed: string;
+      prior_pac: string;
+      prior_final_bill: string;
+    }[]
+  >`
+    select l.work_item_id,
+           l.prior_supplied::text as prior_supplied,
+           l.prior_installed::text as prior_installed,
+           l.prior_pac::text as prior_pac,
+           l.prior_final_bill::text as prior_final_bill
+    from work_billing_baseline_lines l
+    join work_billing_baselines b on b.id = l.work_billing_baseline_id
+    where l.work_id = ${workId} and b.locked_at is not null
+  `;
+  return new Map(
+    rows.map((row) => [
+      row.work_item_id,
+      {
+        supplied: row.prior_supplied,
+        installed: row.prior_installed,
+        pac: row.prior_pac,
+        finalBill: row.prior_final_bill,
+      },
+    ]),
+  );
+}
+
 export async function computeForBook(
   tx: TransactionSql,
   book: { work_id: string; id: string; is_final: boolean },
@@ -500,16 +568,43 @@ export async function computeForBook(
     ? await loadAmcCycles(tx, book.work_id)
     : new Map<string, { periods: number; noun: string }>();
   const overrides = await loadMeasuredOverrides(tx, book.id);
+  // The opening position of a Work whose history predates this product
+  // (migration 0114). Empty on every Work born here, which is why it is
+  // its own statement — see `loadBaselinePriors`.
+  const baseline = await loadBaselinePriors(tx, book.work_id);
   const items =
-    needsAmcBase || hasAmc || overrides.size > 0
+    needsAmcBase || hasAmc || overrides.size > 0 || baseline.size > 0
       ? loaded.map((item) => {
           const cycle = cycles.get(item.workItemId);
           const override = overrides.get(item.workItemId);
+          const opening = baseline.get(item.workItemId);
           return {
             ...item,
             ...(needsAmcBase
               ? { cumulativeAmcCertified: certified.get(item.workItemId) ?? '0' }
               : {}),
+            // ADDED to the system's own prior memory, never replacing it:
+            // once a Work has both a locked baseline and finalized books
+            // here, what it has been billed is the sum of the two. Exact
+            // decimal strings, so no float touches a quantity that
+            // decides money.
+            ...(opening === undefined
+              ? {}
+              : {
+                  priorSupplied: addDecimalStrings(
+                    item.priorSupplied,
+                    opening.supplied,
+                  ),
+                  priorInstalled: addDecimalStrings(
+                    item.priorInstalled,
+                    opening.installed,
+                  ),
+                  priorPac: addDecimalStrings(item.priorPac, opening.pac),
+                  priorFinalBill: addDecimalStrings(
+                    item.priorFinalBill,
+                    opening.finalBill,
+                  ),
+                }),
             measuredSupplied: override?.supplied ?? null,
             measuredInstalled: override?.installed ?? null,
             amcBillingPeriods: cycle?.periods ?? null,

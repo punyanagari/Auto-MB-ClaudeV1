@@ -2339,6 +2339,87 @@ and the draft PDF preview beside the toggle is where it is read.
 
 **When the mock grows a Measurement Book screen, the mock wins.**
 
+### 33. The opening billing position — the panel above the Measurement Books
+
+**Status: application-first, owner ruling of 2026-08-21 (live-testing
+corrections item 23; migration 0114).**
+
+**No mock citation, and none is possible** — the mock draws no settlement
+chain at all, which is the position § 29 records for the railway
+measurement panel. This is the same shape of answer: a `.data-surface`
+panel on the Work's Measurement tab, in the grammar already there — the
+`DataTable`, the dot-plus-label `StatusChip`, the file `Field` with its
+`Hint`, the shared `EmptyState` / `LoadingState` / `ErrorState`. No new
+visual language, so § Design contract 4 covers it.
+
+**A PANEL AND NOT A TAB, deliberately.** A new Work tab is a change to
+navigation, which § Design contract 1 reserves to the mock; a panel
+inside an existing screen is what § 29 established as the way to land
+settlement behaviour the mock cannot express. It sits ABOVE the
+Measurement Books workspace because it is the state those books count
+from: on an imported Work, reading the register before reading the
+opening position tells you a Work that has been billed for four years is
+at MB-01.
+
+**It only appears on a Work that has one to state.** A Work born in this
+product has no opening position — its history is the Measurement Books
+below — so the panel offers the upload only where no book has ever been
+numbered, and otherwise says nothing at all.
+
+**Four steps, in the order the operator meets them.**
+
+| Step                      | What the panel draws                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Upload the last bill**  | A file `Field`. On a bill this product can read, its number, date and amount appear as read facts.           |
+| **Upload the last sheet** | A second file `Field`, optional. Fills the per-item proposal.                                                |
+| **State and confirm**     | The line table: proposed figures beside stated ones, a `Confirm item …` button on each, and a running count. |
+| **Lock**                  | One action, offered only when the count is complete.                                                         |
+
+**A bill the product cannot read is recorded, not refused.** When the
+server answers that the uploaded bill's own text cannot be read — a scan,
+most often — the panel reveals four fields (number, date, amount, the
+measurement sequence the bill settles) and the operator types them off
+the document in front of them; the row then says a person did. The fields
+appear only after the server has said so, and withdraw again if the next
+upload turns out readable, because typed figures beside a readable bill
+are two claims about one document and the server refuses them.
+
+**The proposal is drawn beside the stated figure, never instead of it.**
+What a parser read and what a person accepted are two statements, and a
+screen that showed only the second could not answer "did anybody change
+this?" — which is the first question anyone asks of a figure that turns
+out wrong. The railway's own remark is printed on the line too, so the
+proposal can be argued with rather than only accepted.
+
+**Editing a line clears its confirmation, and the screen shows that
+happening.** The confirmation was a statement about the figures that were
+there; carrying it across an edit would put a member's name on a number
+they never saw.
+
+**No "confirm all".** § 29's rule, restated for the same reason: the
+confirmation is an act per line with an author, and one control that
+signed a hundred lines would be the single click the model refuses.
+
+**The lock is drawn as what it is.** Its confirmation dialog says the two
+things that change: the Work's Measurement Book numbering resumes at the
+railway's own sequence plus one, and every book raised afterwards counts
+its prior quantities from these figures. After it, the panel is a record —
+no controls, and the deductions beside it go read-only with it.
+
+**The receivables position reads gross to net in one place.** Billed to
+date, the deductions summed, and the net — all three computed on the
+server, because a net receivable computed in a browser is a second net
+receivable.
+
+**The bill's own total is shown beside the proposed sum and is not
+compared to it.** The two are on different tax bases — IWRCMS prints its
+bill amount GST-inclusive — so the screen puts them side by side for a
+person to reconcile rather than asserting an equality that would be
+wrong.
+
+**When the mock grows a settlement screen, the mock wins.** This entry
+retires on the § 4 iteration pipeline, like § 16 and § 29.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

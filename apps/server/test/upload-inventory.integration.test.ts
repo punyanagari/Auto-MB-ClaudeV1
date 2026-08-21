@@ -92,6 +92,25 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     query: '?filename=inventory.pdf',
   },
   {
+    // The last railway bill an imported Work was paid on (0114): the
+    // document its opening billing position rests on. Same gate, same
+    // throttle, same ceiling.
+    key: 'POST /api/works/:id/billing-baseline',
+    sourceFile: 'routes/billing-baselines.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=inventory.pdf',
+  },
+  {
+    // And the measurement sheet that bill was raised from, which is what
+    // the per-item proposal is derived from.
+    key: 'POST /api/billing-baselines/:id/measurement',
+    sourceFile: 'routes/billing-baselines.ts',
+    format: 'pdf',
+    bodyLimit: MAX_PDF_UPLOAD_BYTES,
+    query: '?filename=inventory.pdf',
+  },
+  {
     // The vendor's own tax invoice (0109). Inbound paper like the railway
     // bill above, and the one upload in this application a state
     // transition depends on: a purchase order does not close until one

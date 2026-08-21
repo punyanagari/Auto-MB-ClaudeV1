@@ -424,6 +424,29 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createWorkMeasurementBook: vi.fn<ApiClient['createWorkMeasurementBook']>(),
     getMeasurementBook: vi.fn<ApiClient['getMeasurementBook']>(),
     setMeasurementBookSources: vi.fn<ApiClient['setMeasurementBookSources']>(),
+    // Resolved rather than bare: the billing-baseline panel loads on
+    // every Measurement tab, so a stub that answered `undefined` would
+    // fail every Work-page test with a `.then` of undefined rather than
+    // with anything about the test's own subject.
+    getWorkBillingBaseline: vi
+      .fn<ApiClient['getWorkBillingBaseline']>()
+      .mockResolvedValue({
+        baseline: null,
+        openable: true,
+        lines: [],
+        deductions: [],
+        grossBilledToDate: '0.00',
+        deductionsTotal: '0.00',
+        netReceivable: '0.00',
+      }),
+    uploadBillingBaselineBill: vi.fn<ApiClient['uploadBillingBaselineBill']>(),
+    uploadBillingBaselineMeasurement:
+      vi.fn<ApiClient['uploadBillingBaselineMeasurement']>(),
+    setBillingBaselineLines: vi.fn<ApiClient['setBillingBaselineLines']>(),
+    confirmBillingBaselineLine: vi.fn<ApiClient['confirmBillingBaselineLine']>(),
+    lockBillingBaseline: vi.fn<ApiClient['lockBillingBaseline']>(),
+    deleteBillingBaseline: vi.fn<ApiClient['deleteBillingBaseline']>(),
+    setWorkDeductions: vi.fn<ApiClient['setWorkDeductions']>(),
     setMeasurementBookWay: vi.fn<ApiClient['setMeasurementBookWay']>(),
     finalizeMeasurementBook: vi.fn<ApiClient['finalizeMeasurementBook']>(),
     cancelMeasurementBook: vi.fn<ApiClient['cancelMeasurementBook']>(),

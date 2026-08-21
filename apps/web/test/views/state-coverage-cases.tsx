@@ -60,6 +60,7 @@ import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
 import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
+import { BillingBaselinePanel } from '../../src/views/BillingBaselinePanel.js';
 import { WorkRetention } from '../../src/views/WorkRetention.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
@@ -1102,6 +1103,24 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry payments against bills/,
     empty: { text: /nothing is outstanding with the railway yet/ },
+  },
+  {
+    view: 'BillingBaselinePanel.tsx',
+    name: "a Work's opening billing position",
+    loads: ['getWorkBillingBaseline'],
+    render: (api) => (
+      <BillingBaselinePanel
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canIssue
+      />
+    ),
+    retry: /Retry opening position/,
+    // The empty state of this panel is the upload that fills it: a Work
+    // with no opening position on record is a Work waiting for its last
+    // railway bill, so the form IS the sentence.
+    empty: { text: /Last railway bill/ },
   },
   {
     view: 'WorkRetention.tsx',

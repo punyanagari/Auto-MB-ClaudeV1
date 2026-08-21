@@ -268,6 +268,25 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
     'the railway’s copy of a measurement, and the Measurement Book it is about blocks first',
   railway_measurement_confirmations:
     'one member’s statement about one line of a measurement that itself blocks behind its Measurement Book',
+  // The opening billing position of a pre-system Work (0114). Exempt, and
+  // not as a deferral: it is exactly the IMPORTED Works that carry
+  // baselines, and an imported Work's letter can be misread like any
+  // other's. The baseline RESTATES railway documents the agency still
+  // holds — the last bill, the last measurement sheet — so the successor
+  // Work records its opening position again from the same paper; nothing
+  // is issued to anybody or un-sayable afterwards. Blocking would trap
+  // the correction of a misread letter behind having stated the opening
+  // position, which is the deadlock the production entries below
+  // describe. An unlocked baseline is a deletable draft besides. And the
+  // moment the baseline has actually SHAPED a system document — the
+  // next Measurement Book — that book is in the blocking list and
+  // refuses first.
+  work_billing_baselines:
+    'a restatement of railway documents the agency still holds; the successor Work states its opening position again from the same paper, and any Measurement Book raised from it blocks first',
+  work_billing_baseline_lines:
+    'one line of an opening position that is itself exempt as a restatement',
+  work_deduction_entries:
+    'cumulative figures typed from the agency’s own ledger, restated on the successor the same way',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

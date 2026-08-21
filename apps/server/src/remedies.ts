@@ -50,6 +50,20 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the Work and pick the item from its current schedule — an approved amendment can omit or renumber an item.',
   RAILWAY_BILL_NOT_FOUND:
     "Open the railway bill from the Measurement Book's Railway bill panel; a discarded bill keeps its record but a deleted link resolves to nothing.",
+  BILLING_BASELINE_NOT_FOUND:
+    "Open the opening billing position from the Work's own page; a baseline deleted while it was still a draft leaves its link behind.",
+  BILLING_BASELINE_EXISTS:
+    'Read the existing opening position on this Work, or delete it while it is still unlocked and start again.',
+  BILLING_BASELINE_LOCKED:
+    'A locked opening position is what every Measurement Book since counts from; record a correction on the next Measurement Book instead.',
+  BILLING_BASELINE_LINES_UNCONFIRMED:
+    'Confirm each of the named lines against the railway documents, then lock the opening position.',
+  BILLING_BASELINE_ITEM_NOT_FOUND:
+    'Reload the opening position and pick the item from its current list — an approved amendment can renumber or omit an item.',
+  BILLING_BASELINE_WORK_ALREADY_BILLED:
+    'A Work that has numbered a Measurement Book here already carries its billing history in this system and needs no opening position.',
+  BILLING_BASELINE_BILL_UNREADABLE:
+    "Record the bill's number, date, amount and measurement sequence with the upload, reading them off the document itself.",
   CHALLAN_NOT_FOUND:
     'Open the challan from the Delivery Challans register; a draft deleted elsewhere leaves its link behind.',
   MEASUREMENT_BOOK_NOT_FOUND:

@@ -114,6 +114,11 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // this census by construction, and its own `it` block below asserts
   // that it replaced the guard rather than adding a second one.
   '0111_railway_measurements.sql': 4,
+  // 0113 creates no trigger: it restates an existing guard and the
+  // trigger 0024 created still carries it (its own block below says so).
+  // Eight in 0114 — three guards and a touch on the baseline, a guard and
+  // a touch on its lines, a guard and a touch on the deductions.
+  '0114_work_billing_baseline.sql': 8,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -3681,5 +3686,130 @@ describe('the Measurement Book coefficient way (0113)', () => {
     // reads created tables; stating the absence here is what says the
     // coverage was considered rather than skipped.
     expect(sql).not.toMatch(/CREATE TABLE/i);
+  });
+});
+
+describe('the opening billing position of a pre-system Work (0114)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0114_work_billing_baseline.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('puts all three tables under forced RLS with the initplan predicate', () => {
+    for (const table of [
+      'work_billing_baselines',
+      'work_billing_baseline_lines',
+      'work_deduction_entries',
+    ]) {
+      expect(sql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      expect(sql).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql).toContain(`CREATE POLICY ${table}_tenant_policy`);
+    }
+    // ADR-0010's scalar-subquery form, once per table.
+    expect(
+      sql.match(
+        /USING \(organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)\)/g,
+      ),
+    ).toHaveLength(3);
+  });
+
+  it('stores its two documents on the same terms as every other inbound PDF', () => {
+    // The tenant prefix is checked HERE as well as in storage.ts, exactly
+    // as 0003 does for loa_documents and 0111 for the measurement: a path
+    // is a filesystem escape and one layer of checking is one bug from
+    // none.
+    expect(sql).toContain("CHECK (bill_object_key LIKE organisation_id::text || '/%')");
+    expect(sql).toContain("measurement_object_key LIKE organisation_id::text || '/%'");
+    expect(sql).toContain("CHECK (bill_media_type = 'application/pdf')");
+    expect(sql).toContain('bill_sha256 sha256_hex NOT NULL');
+    // The optional sheet travels as one fact or not at all.
+    expect(sql).toContain('work_billing_baselines_measurement_shape_check');
+  });
+
+  it('lets an unlocked baseline be deleted and a locked one never', () => {
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON work_billing_baselines TO auto_mb_app;',
+    );
+    // The grant is wide and the GUARD is the rule, which is the opposite
+    // of the posture 0066 and 0111 take with their evidence tables — and
+    // deliberately so: an unlocked baseline is a form somebody is filling
+    // in, not a document that was received.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_work_billing_baseline_delete()',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER work_billing_baselines_guard_delete\nBEFORE DELETE ON work_billing_baselines',
+    );
+  });
+
+  it('holds the lock to a full confirmation count and to a Work with no history here', () => {
+    // The two preconditions that make the lock load-bearing rather than a
+    // timestamp, both in the same guard as the immutability rule.
+    expect(sql).toContain('string_agg(wi.item_number');
+    expect(sql).toContain("USING ERRCODE = '23W03'");
+    // Checked at INSERT and again at LOCK: a Measurement Book can be
+    // finalized in between, and the lock is the moment the row starts
+    // changing what other books compute.
+    expect(sql.match(/USING ERRCODE = '23W01'/g)).toHaveLength(2);
+  });
+
+  it('freezes the deductions with the baseline rather than on their own', () => {
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_work_deduction_entry_mutation()',
+    );
+    expect(sql).toContain("USING ERRCODE = '23W05'");
+    expect(sql).toContain('b.locked_at IS NOT NULL');
+  });
+
+  it('keeps every refusal inside its own SQLSTATE block', () => {
+    // 23W, this pack's, opened here. Whether the block is FREE is the
+    // repo-wide census above; this only says the file is internally
+    // consistent, which is the distinction 0111 learned the hard way.
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    expect(codes.length).toBeGreaterThanOrEqual(7);
+    expect(codes.every((code) => code?.startsWith('23W'))).toBe(true);
+    expect([...new Set(codes)].sort()).toEqual([
+      '23W01',
+      '23W02',
+      '23W03',
+      '23W04',
+      '23W05',
+      '23W06',
+    ]);
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    // Every table these guards read is one the caller may already read
+    // under RLS, so definer rights would add authority for nothing — and
+    // a definer here would read across tenants.
+    expect(sql).not.toContain('SECURITY DEFINER');
+    expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(5);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(5);
+  });
+
+  it('indexes every foreign key it creates from the referencing side', () => {
+    expect(sql).toContain(
+      'CREATE INDEX work_billing_baselines_work_idx\n  ON work_billing_baselines (organisation_id, work_id);',
+    );
+    expect(sql).toContain(
+      'CREATE INDEX work_billing_baseline_lines_baseline_idx\n  ON work_billing_baseline_lines (organisation_id, work_billing_baseline_id);',
+    );
+    expect(sql).toContain(
+      'CREATE INDEX work_billing_baseline_lines_item_idx\n  ON work_billing_baseline_lines (organisation_id, work_item_id);',
+    );
+    expect(sql).toContain(
+      'CREATE INDEX work_deduction_entries_work_idx\n  ON work_deduction_entries (organisation_id, work_id);',
+    );
   });
 });

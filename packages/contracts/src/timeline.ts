@@ -43,6 +43,17 @@ export const TIMELINE_ENTITY_TYPES = [
   // trail that showed a bill arriving with no sign of the measurement
   // that admitted it would omit the gate, which is the interesting half.
   'railway_measurements',
+  // The opening billing position of a Work whose history predates this
+  // product (0114). Recording it, proposing from the railway's sheet,
+  // confirming a line and locking the position are acts on the Work's
+  // paper trail, and they are the acts that decide what every Measurement
+  // Book after them bills — a trail that omitted them would show a book
+  // starting at MB-04 with nothing saying why.
+  'work_billing_baselines',
+  // And what was withheld against the bills this product never saw. Keyed
+  // on the Work itself, like work_retention_terms: there is one opening
+  // deduction position per Work, not one document per act.
+  'work_deduction_entries',
   // The RDSO/RITES inspection call (0082). Raising it, receiving the
   // agency's letter, certifying and withdrawing are acts on the Work's
   // paper trail — and a despatch this Work could not make without the
