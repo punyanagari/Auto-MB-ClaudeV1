@@ -112,6 +112,29 @@ describe('the Delivery Challan register', () => {
     expect(api.listDeliveryChallans).toHaveBeenCalledWith(ORG_ID, null);
   });
 
+  it('sorts by date in the view, without re-reading the register (UX.md § 30)', async () => {
+    const { api } = renderRegister();
+    await screen.findByRole('link', { name: 'DC/1' });
+
+    const heading = screen.getByRole('columnheader', { name: 'Date' });
+    const firstDataRow = () => screen.getAllByRole('row')[1];
+
+    // Descending on the first click: the newer standalone (09/08) leads.
+    fireEvent.click(within(heading).getByRole('button', { name: 'Date' }));
+    expect(heading.getAttribute('aria-sort')).toBe('descending');
+    expect(firstDataRow()?.textContent).toContain('Modern Rail Systems');
+
+    // Ascending on the second: the older DC/1 (08/08) leads.
+    fireEvent.click(within(heading).getByRole('button', { name: 'Date' }));
+    expect(heading.getAttribute('aria-sort')).toBe('ascending');
+    expect(firstDataRow()?.textContent).toContain('DC/1');
+
+    // The screen holds the whole register, so neither click is a round
+    // trip — and the contact roster is not re-read either.
+    expect(api.listDeliveryChallans).toHaveBeenCalledTimes(1);
+    expect(api.listContacts).toHaveBeenCalledTimes(1);
+  });
+
   it('names which of the three movements each row is', async () => {
     renderRegister();
     const supply = await screen.findByRole('row', { name: /DC\/1/ });

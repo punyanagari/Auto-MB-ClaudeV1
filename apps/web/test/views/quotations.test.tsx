@@ -335,6 +335,45 @@ describe('Quotations workspace', () => {
     // The editor closes with the draft gone.
     expect(screen.queryByRole('form', { name: 'Quotation details' })).toBeNull();
   });
+
+  /* The client picker's disabled reasons (docs/UX.md § 31): an empty
+     roster and an unreadable one are different sentences, because they
+     demand opposite actions — Masters → Contacts versus a reload. */
+
+  it('keeps the client picker visible but disabled when no client exists yet', async () => {
+    renderQuotations(
+      bqApi({
+        listBudgetaryQuotations: vi.fn().mockResolvedValue([]),
+        listContacts: vi.fn().mockResolvedValue([]),
+      }),
+    );
+
+    const picker = await screen.findByLabelText<HTMLSelectElement>(
+      'Client contact (optional)',
+    );
+    expect(picker.disabled).toBe(true);
+    const reason = screen.getByText(/no client contact to link yet/);
+    // Bound to the control, so the two are one announcement.
+    expect(picker.getAttribute('aria-describedby')).toBe(reason.id);
+  });
+
+  it('says the roster could not be read rather than claiming it is empty', async () => {
+    renderQuotations(
+      bqApi({
+        listBudgetaryQuotations: vi.fn().mockResolvedValue([]),
+        listContacts: vi.fn().mockRejectedValue(new Error('down')),
+      }),
+    );
+
+    const picker = await screen.findByLabelText<HTMLSelectElement>(
+      'Client contact (optional)',
+    );
+    expect(picker.disabled).toBe(true);
+    // The honest sentence: a failed read must not send the operator to
+    // Masters to duplicate a contact that already exists.
+    expect(screen.getByText(/contact master could not be read/)).toBeTruthy();
+    expect(screen.queryByText(/no client contact to link yet/)).toBeNull();
+  });
 });
 
 // --- Procurement: the Work's purchase orders --------------------------------
