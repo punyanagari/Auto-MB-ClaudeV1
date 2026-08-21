@@ -2287,6 +2287,85 @@ catalog, so the two cannot drift into saying different things.
 **When the mock grows a settlement screen, the mock wins.** This entry
 retires on the § 4 iteration pipeline, like § 16.
 
+### 34. Historical invoices — five years of billing that predates the product
+
+**Status: application-first, owner ruling of 2026-08-21 (live-testing
+corrections item 25; migration 0115).** Numbered 34 by coordinator
+allocation, not by position: four packs of this wave write sections at
+once and each was given a number so the merge is an insert rather than a
+renumber.
+
+**There is no mock citation for this screen and none is possible.** The
+mock draws the registers of a product that has always existed. This one
+exists because the product did not: 638 invoices were raised in Zoho Books
+between January 2023 and the cutover, and until they were brought in
+"what have we billed this customer" was a question answered from a CSV on
+somebody's laptop. Built in the mock's existing grammar under AGENTS.md
+§ Design contract 2 and 4 — its page header, its data table, its status
+chip, its filter row — with no new visual language, exactly as § 18 and
+§ 29 record for the two screens before it.
+
+**A separate rail entry, directly under Invoices, and not a tab of it.**
+The two registers answer the same question about different eras, which is
+the argument for putting them together; what settles it the other way is
+that they answer it under different rules. An invoice in the Invoices
+register was raised by this application against a finalized Measurement
+Book, can be cancelled, credited, rendered and registered at the IRP, and
+participates in what the Work owes. A historical invoice is a record of a
+document another system issued: nothing measures, bills or settles against
+it, and there is no act to perform on it beyond saying which Work it was
+for. A tab strip promising two views of one register would put a "Raise
+invoice" control one click from rows that can never have one.
+
+**Two columns are not what an operator would assume, and the screen is
+built around saying so.**
+
+- **The e-invoice column is DERIVED**, from whether the invoice carries an
+  IRN — not copied from the export's own status column, which reads
+  `Draft` on 372 of the 638 real invoices, most of them e-invoiced and
+  filed years ago. The raw status is imported and kept as evidence; it is
+  not what the chip renders.
+- **There is no balance column at all.** The export carries one, and it is
+  stored, and it is never shown as an amount owed: the receipts against
+  these invoices are in Tally, which this product does not read. A
+  receivable rendered from a system that never saw the money would be
+  believed, and would be wrong.
+
+**The import is a conversation, not a button.** The Zoho CSV is read twice
+against the same bytes. The first read PROPOSES — which Work each invoice
+would be filed against, from what evidence (a v1 work code found in the
+invoice's own text, or the LOA letter number found in its reference
+field), which customers matched the contacts master, and, listed first
+and never truncated, every invoice that could not be linked at all. It
+writes nothing. The second read does the identical work and inserts.
+
+That order is the whole feature. A Work link is a regex's opinion until a
+person confirms it, and a register that filed 440 invoices against
+contracts without showing anybody which ones would be a register nobody
+could trust afterwards. Where the evidence names two different Works, the
+importer proposes NOTHING and reports the invoice unlinked: a coin flip
+between two contracts is worse than five seconds of an operator's time.
+
+**Uploading the same export again is safe, and the screen says so.** The
+second upload adds the invoices that are missing and changes nothing else
+— Zoho's own invoice id is the register's uniqueness key. An operator who
+is not sure whether the import ran can simply run it again, which is the
+property that makes a cutover import survivable.
+
+**The Work's Bills tab gains a short reading of the same register**, at
+the bottom, under the tax invoices it raised. It lists what this contract
+was billed before the cutover and links into the register filtered to that
+Work. Short on purpose: the tab answers "what has this contract billed",
+and the answer's historical half belongs beside its current half without
+becoming a second register inside a tab.
+
+**Only the import is gated.** Reading the register carries the writer role
+alone — which invoices this organisation raised in 2023 is ordinary
+register history — and pointing a file at it needs the data-import
+authority of § 18 and migration 0094, for that section's reason. A member
+without it sees the register and not the upload panel, rather than an
+upload panel that answers 403.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

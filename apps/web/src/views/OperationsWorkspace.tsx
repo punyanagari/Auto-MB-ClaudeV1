@@ -193,6 +193,11 @@ const Notifications = lazy(() =>
 const Imports = lazy(() =>
   import('./Imports.js').then((module) => ({ default: module.Imports })),
 );
+const HistoricalInvoices = lazy(() =>
+  import('./HistoricalInvoices.js').then((module) => ({
+    default: module.HistoricalInvoices,
+  })),
+);
 const Warranties = lazy(() =>
   import('./Warranties.js').then((module) => ({ default: module.Warranties })),
 );
@@ -1345,6 +1350,21 @@ export function OperationsWorkspace({
                 api={api}
                 organisationId={organisation.id}
                 canImport={canImport}
+              />
+            )}
+
+            {view.name === 'historical-invoices' && (
+              <HistoricalInvoices
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                canImport={canImport}
+                onOpenWork={(openWorkId) => {
+                  navigate({ name: 'work', workId: openWorkId }, { workTab: 'bills' });
+                }}
+                onClearWorkFilter={() => {
+                  navigate({ name: 'historical-invoices', workId: null });
+                }}
               />
             )}
 

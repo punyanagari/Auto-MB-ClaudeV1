@@ -65,6 +65,7 @@ import { WorkInstallations } from './WorkInstallations.js';
 import { WorkPaymentSetup } from './WorkPaymentSetup.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
+import { WorkHistoricalInvoices } from './WorkHistoricalInvoices.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -1686,6 +1687,15 @@ export function WorkDetail({
             pending={pending}
             act={act}
             onInvoicesKnown={setTaxInvoiceCount}
+          />
+          {/* …and what this Work was billed BEFORE this system (0115).
+              Last on the tab because it is history rather than work: the
+              register above is what this contract bills now, and this is
+              the part of its billing that happened in Zoho Books. */}
+          <WorkHistoricalInvoices
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
           />
         </>
       )}
