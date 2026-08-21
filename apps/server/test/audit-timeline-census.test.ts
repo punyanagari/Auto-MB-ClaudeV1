@@ -52,6 +52,8 @@ const NON_TIMELINE: Record<string, string> = {
   work_assignments:
     'Access administration: who may see a Work is an identity fact, kept off the Work’s own paper trail.',
   contacts: 'Organisation-level master data.',
+  contact_addresses:
+    'Organisation-level master data, one level below contacts: a document snapshots the address it copied, so an edit here belongs to the master’s own history and not to any Work’s.',
   unit_masters: 'Organisation-level master data.',
   location_masters: 'Organisation-level master data.',
   gst_rates: 'Organisation-level master data (notified rate history).',

@@ -972,6 +972,74 @@ export function registerMasterRoutes(
     },
   );
 
+  /**
+   * Retire or reactivate one address.
+   *
+   * Written once, outside the two-route loop below, for the reason
+   * `registerActiveToggle` keeps its own UPDATE in a callback: the
+   * per-row write census reads the SOURCE, and a tagged-template write
+   * sitting inside a `for` is indistinguishable to it from a real
+   * round-trip-per-row loop. The loop here iterates over two ROUTE
+   * REGISTRATIONS, which happens once at boot.
+   */
+  async function setAddressActive(
+    tx: TransactionSql,
+    organisationId: string,
+    userId: string,
+    contactId: string,
+    addressId: string,
+    active: boolean,
+  ): Promise<ContactAddress> {
+    // Retiring the primary address gives up the flag in the same
+    // statement — the 0116 CHECK refuses a retired primary — and the next
+    // live address inherits it below, so the contact does not silently
+    // stop advertising an address it still keeps.
+    const [row] = await tx<ContactAddressRow[]>`
+      update contact_addresses
+      set active = ${active}, is_primary = is_primary and ${active}
+      where organisation_id = ${organisationId}
+        and id = ${addressId} and contact_id = ${contactId}
+      returning ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)}
+    `;
+    if (!row) {
+      throw httpError(
+        404,
+        'CONTACT_ADDRESS_NOT_FOUND',
+        'No such address on this contact.',
+      );
+    }
+    if (!active) {
+      const [heir] = await tx<{ id: string }[]>`
+        select id from contact_addresses
+        where organisation_id = ${organisationId}
+          and contact_id = ${contactId}
+          and active
+          and not exists (
+            select 1 from contact_addresses p
+            where p.organisation_id = ${organisationId}
+              and p.contact_id = ${contactId} and p.is_primary
+          )
+        order by sort_order, lower(coalesce(label, '')), id
+        limit 1
+      `;
+      if (heir) await claimPrimary(tx, organisationId, contactId, heir.id);
+    }
+    await audit(
+      tx,
+      organisationId,
+      userId,
+      `contact_address.${active ? 'reactivated' : 'retired'}`,
+      'contact_addresses',
+      addressId,
+      { contactId },
+    );
+    const [reread] = await tx<ContactAddressRow[]>`
+      select ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)} from contact_addresses
+      where id = ${addressId}
+    `;
+    return toContactAddress(reread ?? row);
+  }
+
   for (const active of [false, true]) {
     tenantRoute(
       {
@@ -987,56 +1055,9 @@ export function registerMasterRoutes(
       },
       async ({ request, user, organisationId, tenant }) => {
         const { id: contactId, addressId } = request.params;
-        return tenant(async (tx) => {
-          // Retiring the primary address gives up the flag in the same
-          // statement — the 0116 CHECK refuses a retired primary — and
-          // the next live address inherits it below, so the contact does
-          // not silently stop advertising an address it still keeps.
-          const [row] = await tx<ContactAddressRow[]>`
-            update contact_addresses
-            set active = ${active}, is_primary = is_primary and ${active}
-            where organisation_id = ${organisationId}
-              and id = ${addressId} and contact_id = ${contactId}
-            returning ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)}
-          `;
-          if (!row) {
-            throw httpError(
-              404,
-              'CONTACT_ADDRESS_NOT_FOUND',
-              'No such address on this contact.',
-            );
-          }
-          if (!active) {
-            const [heir] = await tx<{ id: string }[]>`
-              select id from contact_addresses
-              where organisation_id = ${organisationId}
-                and contact_id = ${contactId}
-                and active
-                and not exists (
-                  select 1 from contact_addresses p
-                  where p.organisation_id = ${organisationId}
-                    and p.contact_id = ${contactId} and p.is_primary
-                )
-              order by sort_order, lower(coalesce(label, '')), id
-              limit 1
-            `;
-            if (heir) await claimPrimary(tx, organisationId, contactId, heir.id);
-          }
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            `contact_address.${active ? 'reactivated' : 'retired'}`,
-            'contact_addresses',
-            addressId,
-            { contactId },
-          );
-          const [reread] = await tx<ContactAddressRow[]>`
-            select ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)} from contact_addresses
-            where id = ${addressId}
-          `;
-          return toContactAddress(reread ?? row);
-        });
+        return tenant(async (tx) =>
+          setAddressActive(tx, organisationId, user.id, contactId, addressId, active),
+        );
       },
     );
   }
