@@ -659,6 +659,31 @@ const SECTIONS: readonly ExportSection[] = [
     sql: `select * from railway_measurement_confirmations order by confirmed_at, id`,
   },
   {
+    // The historical Zoho Books invoice register (0115). It travels for
+    // the reason the whole export exists: this is five years of the
+    // organisation's billing, and a package that handed back everything
+    // except what the organisation had already invoiced would be a
+    // portability promise with the history taken out.
+    //
+    // The raw CSV row rides as stored jsonb rather than being rebuilt from
+    // the typed columns. It is the truth source — the typed columns are a
+    // reading of it — and a restore that reconstructed it would hand back
+    // this schema's opinion of the export instead of the export.
+    //
+    // `, id` closes the order for the reason the measurement above gives:
+    // two invoices bearing the same date would otherwise come back in
+    // whatever order the planner chose, and a package whose row order is
+    // not deterministic cannot be diffed against yesterday's.
+    key: 'importedInvoices',
+    sql: `select * from imported_invoices order by invoice_date, id`,
+    jsonbColumns: ['raw_row'],
+  },
+  {
+    key: 'importedInvoiceLines',
+    sql: `select * from imported_invoice_lines order by imported_invoice_id, position`,
+    jsonbColumns: ['raw_row'],
+  },
+  {
     key: 'deliveryChallans',
     sql: `select * from delivery_challans order by created_at`,
     jsonbColumns: ['consignee_snapshot', 'issued_snapshot'],

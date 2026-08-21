@@ -114,6 +114,12 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // this census by construction, and its own `it` block below asserts
   // that it replaced the guard rather than adding a second one.
   '0111_railway_measurements.sql': 4,
+  // One guard per table (0115): the invoice's, which freezes everything
+  // the Zoho export stated and admits only the Work link, the contact
+  // link and the discard; and the line's, which refuses an edit outright
+  // and refuses an insert into an invoice this tenant cannot read or has
+  // already discarded.
+  '0115_imported_invoices.sql': 2,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -3589,5 +3595,170 @@ describe('the railway measurement and its gate (0111)', () => {
     expect(sql).not.toContain('SECURITY DEFINER');
     expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(3);
     expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(3);
+  });
+});
+
+describe('the historical Zoho invoice register (0115)', () => {
+  let sql = '';
+
+  /**
+   * The file with every comment line removed.
+   *
+   * 0052's split-guard assertion does this for the same reason: this
+   * migration's header ARGUES about `SECURITY DEFINER` and about the
+   * whole-row comparison shape it deliberately does not use, so a
+   * `not.toContain` over the raw bytes would fail on the prose that
+   * explains the rule. Refusals about what the migration DOES are read
+   * from code only.
+   */
+  const codeOnly = (source: string): string =>
+    source
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0115_imported_invoices.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that adds a trigger', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('holds both new tables in the ADR-0010 policy shape with no DELETE', () => {
+    for (const table of ['imported_invoices', 'imported_invoice_lines']) {
+      expect(sql, table).toContain(`CREATE POLICY ${table}_tenant_policy`);
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+    expect(
+      sql.match(
+        /USING \(organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)\)/g,
+      ),
+    ).toHaveLength(2);
+    // The header takes UPDATE for its three hinges; a line has none.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON imported_invoices TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT ON imported_invoice_lines TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('UPDATE ON imported_invoice_lines TO auto_mb_app');
+  });
+
+  it('makes the export’s own id the idempotency key', () => {
+    // Without this a second upload of the same file doubles the register,
+    // and the import route's ON CONFLICT DO NOTHING has nothing to
+    // conflict on.
+    expect(sql).toContain('UNIQUE (organisation_id, zoho_invoice_id)');
+    // …and the invoice NUMBER is deliberately not unique: a Zoho series
+    // may repeat a number across financial years, and refusing that would
+    // refuse history that happened.
+    expect(sql).not.toContain('UNIQUE (organisation_id, invoice_number)');
+  });
+
+  it('derives issued-ness from the IRN rather than trusting the status column', () => {
+    // The export says `Draft` on 372 of 638 real invoices, most of which
+    // carry an IRN. A generated column is the only shape in which this
+    // fact cannot acquire a second answer.
+    expect(sql).toContain(
+      'issued boolean NOT NULL GENERATED ALWAYS AS (irn IS NOT NULL) STORED',
+    );
+    // And the raw status survives as evidence rather than being resolved
+    // away.
+    expect(sql).toMatch(/zoho_status text CHECK \(/);
+  });
+
+  it('cannot hold half a link or e-invoice evidence without an IRN', () => {
+    expect(sql).toContain('imported_invoices_work_link_shape_check');
+    expect(sql).toContain('imported_invoices_contact_link_shape_check');
+    // An acknowledgement or a QR with no IRN behind it is e-invoice
+    // evidence for an invoice that was never registered.
+    expect(sql).toContain('imported_invoices_irn_shape_check');
+    expect(sql).toMatch(
+      /irn IS NOT NULL\s+OR \(ack_number IS NULL AND ack_date IS NULL AND qr_payload IS NULL\)/,
+    );
+  });
+
+  it('freezes everything the export stated and admits exactly three hinges', () => {
+    const guard = codeOnly(
+      sql.slice(
+        sql.indexOf('CREATE FUNCTION app_private.guard_imported_invoice()'),
+        sql.indexOf('CREATE TRIGGER imported_invoices_guard'),
+      ),
+    );
+    for (const frozen of [
+      'NEW.zoho_invoice_id',
+      'NEW.invoice_number',
+      'NEW.invoice_date',
+      'NEW.customer_name',
+      'NEW.customer_gstin',
+      'NEW.irn',
+      'NEW.sub_total',
+      'NEW.total',
+      'NEW.balance',
+      'NEW.raw_row',
+    ]) {
+      expect(guard, frozen).toContain(frozen);
+    }
+    // The three hinges are ABSENT from the comparison, which is what makes
+    // them writable. A test that only asserted the frozen list would pass
+    // just as happily with the hinges frozen too, and the register would
+    // be unlinkable.
+    for (const hinge of [
+      'NEW.work_id',
+      'NEW.link_method',
+      'NEW.contact_id',
+      'NEW.contact_match_method',
+      'NEW.discarded_at',
+    ]) {
+      expect(guard, hinge).not.toContain(hinge);
+    }
+    // A discard is final, and it is written as "no UPDATE at all" rather
+    // than as a whole-row comparison: `issued` is GENERATED, and NEW.*
+    // carries a null for it inside a BEFORE trigger.
+    expect(guard).toContain('IF OLD.discarded_at IS NOT NULL THEN');
+    expect(guard).not.toContain('ROW(NEW.*) IS DISTINCT FROM ROW(OLD.*)');
+  });
+
+  it('refuses a line that is edited, orphaned or added to a discarded invoice', () => {
+    const guard = codeOnly(
+      sql.slice(
+        sql.indexOf('CREATE FUNCTION app_private.guard_imported_invoice_line()'),
+        sql.indexOf('CREATE TRIGGER imported_invoice_lines_guard'),
+      ),
+    );
+    expect(guard).toContain("IF TG_OP = 'UPDATE' THEN");
+    expect(guard).toContain('IF v_imported IS NULL THEN');
+    expect(guard).toContain('IF v_discarded IS NOT NULL THEN');
+    // The parent read is tenant-pinned by the row's own key: a guard that
+    // looked the invoice up by id alone would reach across tenants.
+    expect(guard).toContain('WHERE i.organisation_id = NEW.organisation_id');
+  });
+
+  it('keeps every refusal inside its own SQLSTATE block', () => {
+    // 23X, by coordinator allocation. Whether the block is free is the
+    // repo-wide census above; this says only that the codes are all in
+    // one block, which is all a single-file assertion can say.
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    expect(codes.length).toBeGreaterThanOrEqual(5);
+    expect(codes.every((code) => code?.startsWith('23X'))).toBe(true);
+    expect([...new Set(codes)].sort()).toEqual(['23X01', '23X02']);
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    // Every table these guards touch is one the caller may already read
+    // under RLS, so definer rights would add authority for nothing — and a
+    // definer here would read across tenants.
+    const code = codeOnly(sql);
+    expect(code).not.toContain('SECURITY DEFINER');
+    expect(code.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(2);
+    expect(code.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(2);
   });
 });

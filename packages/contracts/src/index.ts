@@ -45,6 +45,7 @@ export * from './maintenance.js';
 export * from './warranty.js';
 export * from './notifications.js';
 export * from './imports.js';
+export * from './imported-invoices.js';
 export * from './audit.js';
 export * from './mis.js';
 export * from './platform.js';
