@@ -1732,7 +1732,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
      editor's disclosure present. */
   await page
     .getByRole('navigation', { name: 'Modules' })
-    .getByRole('link', { name: 'Invoices' })
+    // Exact: the rail names "Historical invoices" directly beneath this
+    // one (0115), and a substring match resolves to both.
+    .getByRole('link', { name: 'Invoices', exact: true })
     .click();
   await expect(page.getByRole('link', { name: 'TI/2026-27/001' })).toBeVisible();
   await expect(page.getByText('Deccan Switchgear Pvt Ltd')).toBeVisible();
@@ -2332,6 +2334,39 @@ test('the purchase order register passes the axe scan', async ({ page }) => {
   await expect(page.getByText('PO-01', { exact: true })).toBeVisible();
   await expect(page.getByText('Outside any LOA').first()).toBeVisible();
   await expectNoAxeViolations(page, 'purchase order register, organisation basis');
+});
+
+test('the historical invoice register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/historical-invoices');
+
+  /* The Zoho Books history (0115). Its own top-level test rather than a
+     leg of the invoice journey, for the reason the warranty register
+     below took one: that journey is already budgeted with test.slow().
+
+     Scanned with the filter row, the import panel and the register on
+     screen together — three labelled controls beside a submit, a file
+     input whose label is the only thing naming it, and a table whose
+     Work cell is sometimes a link and sometimes a word. Both readings of
+     the e-invoice chip are drawn, because it is the only colour this
+     screen puts on a word and it has to hold against its ground in each
+     theme. */
+  await expect(
+    page.getByRole('heading', { name: 'Historical invoices' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Zoho Books export (.csv)')).toBeVisible();
+  await expect(page.getByLabel('Customer', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Financial year')).toBeVisible();
+  await expect(page.getByRole('link', { name: /PL270-CRB/ })).toBeVisible();
+  // By cell: the filter's own "Not filed against a Work" option carries
+  // the same words inside a closed select, where nothing is visible.
+  await expect(
+    page.getByRole('cell', { name: 'Not filed', exact: true }).first(),
+  ).toBeVisible();
+  for (const label of ['issued', 'draft']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'historical invoice register');
 });
 
 test('the warranty register passes the axe scan', async ({ page }) => {

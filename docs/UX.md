@@ -2901,7 +2901,8 @@ Book builder · Billing readiness · Bill settlement · Railway bill · Tax-invo
 IRP transport and credit notes · Organisation chooser · Two-factor enrolment and
 recovery · Password recovery · Account security · Organisation access settings ·
 Appearance settings · Monthly payroll · Spreadsheet imports · Signing queue ·
-Warranties register and the Work's defect liability card
+Warranties register and the Work's defect liability card · Historical invoice
+register and its Zoho Books import (§ 34)
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.
