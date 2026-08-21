@@ -17,6 +17,25 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v35: the historical Zoho Books register (0115) joins the package
+ * — the invoices this organisation raised before this application
+ * existed, their lines, and the raw export row each was read from.
+ *
+ * NUMBER PROVISIONAL. 35 is the next free number as this branch was
+ * written, and the coordinator reassigns it at merge if a pack of this
+ * wave lands ahead of it. That is the same allocation the v25-to-v28
+ * block below records, and for the same reason: a version string
+ * identifies a format, two formats sharing one string is the failure that
+ * matters, and a gap is not. `apps/server/test/helpers/export-format.ts`
+ * carries the value the suite expects and moves with this one.
+ *
+ * It travels because the whole export exists to hand an organisation back
+ * everything of its own, and five years of billing is not an exception to
+ * that. The raw CSV row rides as the stored jsonb rather than being
+ * rebuilt from the typed columns beside it: the row is the truth source
+ * and the columns are a reading of it, so a package that reconstructed it
+ * would return this schema's opinion of the export instead of the export.
+ *
  * export-v34: the railway's own measurement (0111) joins the package —
  * the document IWRCMS raises its On-Account Bill from, its per-line
  * verdicts, and the manual confirmations that stood in for a reading
@@ -457,7 +476,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v34';
+export const EXPORT_FORMAT_VERSION = 'export-v35';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
