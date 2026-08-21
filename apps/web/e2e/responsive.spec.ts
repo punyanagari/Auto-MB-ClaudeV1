@@ -255,9 +255,7 @@ test('a schedule summary and the ledger inside it stack under the shell header',
   ).toBe(`${String(viewportHeight - reserved)}px`);
 });
 
-test('prose cells wrap instead of painting over their neighbours', async ({
-  page,
-}) => {
+test('prose cells wrap instead of painting over their neighbours', async ({ page }) => {
   await mockWorkspace(page, { document: reviewDocument(30) });
 
   await page.goto(`/#/loa/${DOC_ID}`);
