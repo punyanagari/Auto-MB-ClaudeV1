@@ -17,10 +17,8 @@ const errorResponses = {
 } as const;
 
 /**
- * export-v35 (PLACEHOLDER — the coordinator assigns the final number at
- * merge, because four packs of this wave each add a section and only one
- * of them can be v35): a contact's ADDRESS LIST (migration 0116) joins
- * the package.
+ * export-v36: a contact's ADDRESS LIST (migration 0116) joins the
+ * package.
  *
  * It travels for the reason the contacts section itself travels: the
  * primary address is mirrored onto `contacts`, so a restore without this
@@ -29,6 +27,33 @@ const errorResponses = {
  * shed — silently gone. An inspection clause citing one would restore
  * pointing at nothing.
  *
+ * Numbered 36 because the billing-history pack merged first and took the
+ * v35 this pack had placeholdered — versions are monotonic with the
+ * order packages MERGE, not the order they are branched (the v35 note
+ * below says the same).
+ *
+ * ---------------------------------------------------------------------
+ * export-v35: the opening billing position of a pre-system Work (0114)
+ * joins the package — the baseline, its per-item lines, the opening
+ * deductions, and the two railway documents it rests on.
+ *
+ * It travels because for an IMPORTED Work it is not a copy of anything.
+ * Every other prior-cumulative figure in this package can be re-derived
+ * from the Measurement Books beside it; a Work that arrived at the v1
+ * cutover has no Measurement Books here, and the baseline IS its billing
+ * memory. A package that dropped it would restore an organisation whose
+ * imported Works bill from zero and re-claim quantities the railway paid
+ * for years ago. The confirmations travel with the lines for migration
+ * 0111's reason, restated one document back: on a figure a person
+ * confirmed, the opening position rests on that person, and a package
+ * without their name restores the figure with no account of it.
+ *
+ * NUMBERED 35, and allocated at merge time rather than claimed when the
+ * pack was written — export versions are monotonic with the order
+ * packages MERGE, not the order they are branched. See the v32 note
+ * below for why a gap is not a defect.
+ *
+ * ---------------------------------------------------------------------
  * export-v34: the railway's own measurement (0111) joins the package —
  * the document IWRCMS raises its On-Account Bill from, its per-line
  * verdicts, and the manual confirmations that stood in for a reading
@@ -469,7 +494,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v35';
+export const EXPORT_FORMAT_VERSION = 'export-v36';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -492,6 +517,7 @@ type ManifestBucket =
   | 'loa-document'
   | 'received-railway-bill'
   | 'railway-measurement'
+  | 'billing-baseline'
   | 'challan'
   | 'correction-notice'
   | 'pac-certificate'
@@ -513,6 +539,7 @@ const MANIFEST_ORDER: readonly ManifestBucket[] = [
   'loa-document',
   'received-railway-bill',
   'railway-measurement',
+  'billing-baseline',
   'challan',
   'correction-notice',
   'pac-certificate',
@@ -669,6 +696,50 @@ const SECTIONS: readonly ExportSection[] = [
     // one case where the gate rests on a person rather than on a parse.
     key: 'railwayMeasurementConfirmations',
     sql: `select * from railway_measurement_confirmations order by confirmed_at, id`,
+  },
+  {
+    // The opening billing position of a Work whose history predates this
+    // product (0114), and the two documents it rests on. Without it a
+    // restored organisation's imported Works would bill from zero all
+    // over again — the baseline IS the prior-cumulative memory for them,
+    // and it is the one that cannot be re-derived from anything else in
+    // the package.
+    key: 'workBillingBaselines',
+    sql: `select * from work_billing_baselines order by created_at, id`,
+    jsonbColumns: ['bill_extraction', 'measurement_extraction'],
+    manifest: {
+      bucket: 'billing-baseline',
+      entries: (row) => [
+        {
+          kind: 'billing-baseline-bill',
+          objectKey: row.bill_object_key,
+          sha256: row.bill_sha256,
+        },
+        // The measurement sheet is optional, and a manifest entry for a
+        // document that was never uploaded would name an object that does
+        // not exist.
+        ...(row.measurement_object_key !== null
+          ? [
+              {
+                kind: 'billing-baseline-measurement',
+                objectKey: row.measurement_object_key,
+                sha256: row.measurement_sha256,
+              },
+            ]
+          : []),
+      ],
+    },
+  },
+  {
+    // The per-item figures, and who confirmed each of them. The rows the
+    // Measurement Book engine actually reads.
+    key: 'workBillingBaselineLines',
+    sql: `select * from work_billing_baseline_lines order by created_at, id`,
+  },
+  {
+    // What has been withheld against bills this product never saw.
+    key: 'workDeductionEntries',
+    sql: `select * from work_deduction_entries order by created_at, id`,
   },
   {
     key: 'deliveryChallans',

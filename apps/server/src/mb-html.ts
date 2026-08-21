@@ -1,5 +1,5 @@
 /**
- * Deterministic Measurement Book document HTML (template_version mb-v1;
+ * Deterministic Measurement Book document HTML (template_version mb-v2;
  * spec §5.9 "MB document (PDF)" and §11 document conventions). The
  * legal content — the MB identity, the work identity, the per-item
  * stage deltas, amounts, remarks, the total, and the amount in words —
@@ -24,9 +24,18 @@ import {
   WATERMARK_CSS,
   type ChallanBranding,
 } from './challan-html.js';
+import type { MbWay } from './mb-coefficient.js';
 import { renderQuantity } from './mb-remark.js';
 
-export const MB_TEMPLATE_VERSION = 'mb-v1';
+/**
+ * mb-v2, and the bump is the coefficient rendering (migration 0113).
+ *
+ * The version identifies the TEMPLATE a stored PDF was produced under, and
+ * this template now prints a column the v1 one did not. A finalized book
+ * rendered under v1 keeps its bytes and its version; nothing is
+ * re-rendered.
+ */
+export const MB_TEMPLATE_VERSION = 'mb-v2';
 
 export type MeasurementBookBranding = ChallanBranding;
 
@@ -35,7 +44,11 @@ interface MeasurementBookSnapshotLine {
   readonly itemNumber: string;
   readonly description: string;
   readonly unitCode: string;
-  /** Stage delta quantities as exact decimal strings. */
+  /** Stage delta quantities as exact decimal strings — PHYSICAL on a
+   * `physical` sheet, already scaled by the stage percentage on a
+   * `coefficient` one (migration 0113). The caller applies the way, for
+   * the reason `toSnapshot` gives: the scaling needs percentages this
+   * snapshot deliberately does not carry. */
   readonly deltaSupplied: string;
   readonly deltaInstalled: string;
   readonly deltaPac: string;
@@ -54,6 +67,20 @@ export interface MeasurementBookSnapshot {
   readonly mbDate: string;
   /** The final MB closes the payment cycle: FINAL BILL banner. */
   readonly isFinal: boolean;
+  /**
+   * How this sheet is filed (migration 0113).
+   *
+   * On a `coefficient` sheet the stage quantities above are already
+   * multiplied by their stage percentages and a PAYABLE column reads
+   * 100%, which is exactly what IWRCMS prints beside its own `Reason for
+   * Reduction` text on every document of the settlement corpus. On a
+   * `physical` sheet the quantities are physical, the percentages live in
+   * the remark as they always have, and no payable column is printed.
+   *
+   * The amounts and the total are identical either way; this changes what
+   * the quantity column MEANS, never what is owed.
+   */
+  readonly way: MbWay;
   readonly work: {
     readonly workCode: string;
     readonly title: string;
@@ -93,6 +120,16 @@ export function renderMeasurementBookHtml(
     snapshot.status === 'draft' ? '<div class="watermark">DRAFT</div>' : '';
   const finalBanner = snapshot.isFinal ? '<p class="final-banner">FINAL BILL</p>' : '';
 
+  // The coefficient sheet's PAYABLE column: a literal 100% against every
+  // line, because the quantity beside it has already absorbed the stage
+  // percentage. Not computed per line — on a coefficient sheet it is 100%
+  // by construction, and a column that could read anything else would be
+  // saying the scaling had not been done.
+  const payableHeader = snapshot.way === 'coefficient' ? '<th>Payable</th>' : '';
+  const payableCell =
+    snapshot.way === 'coefficient' ? '\n  <td class="num">100%</td>' : '';
+  const totalSpan = snapshot.way === 'coefficient' ? 7 : 6;
+
   const rows = snapshot.lines
     .map(
       (line) => `<tr>
@@ -101,7 +138,7 @@ export function renderMeasurementBookHtml(
   <td>${escapeHtml(line.unitCode)}</td>
   <td class="num">${escapeHtml(renderQuantity(line.deltaSupplied))}</td>
   <td class="num">${escapeHtml(renderQuantity(line.deltaInstalled))}</td>
-  <td class="num">${escapeHtml(renderQuantity(line.deltaPac))}</td>
+  <td class="num">${escapeHtml(renderQuantity(line.deltaPac))}</td>${payableCell}
   <td class="num">${escapeHtml(line.lineTotal)}</td>
   <td class="remark">${escapeHtml(line.remark)}</td>
 </tr>`,
@@ -155,13 +192,13 @@ ${watermark}
   <thead>
     <tr>
       <th>Schedule/Sr</th><th>Description</th><th>Unit</th>
-      <th>Supplied Δ</th><th>Installed Δ</th><th>PAC Δ</th>
+      <th>Supplied Δ</th><th>Installed Δ</th><th>PAC Δ</th>${payableHeader}
       <th>Amount (Rs.)</th><th>Remark</th>
     </tr>
   </thead>
   <tbody>
 ${rows}
-    <tr class="total"><td colspan="6">Total payable this MB</td><td class="num">${escapeHtml(snapshot.totalAmount)}</td><td></td></tr>
+    <tr class="total"><td colspan="${String(totalSpan)}">Total payable this MB</td><td class="num">${escapeHtml(snapshot.totalAmount)}</td><td></td></tr>
   </tbody>
 </table>
 <p class="in-words"><span class="label">Amount in words</span><br />${escapeHtml(amountInWords(snapshot.totalAmount))}</p>

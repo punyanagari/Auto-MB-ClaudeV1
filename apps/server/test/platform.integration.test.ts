@@ -432,6 +432,7 @@ describe('recurring statutory checks', () => {
 async function settledExport(
   cookie: string,
   exportId: string,
+  organisation: string = organisationId,
 ): Promise<{
   state: string;
   sha256: string | null;
@@ -442,7 +443,7 @@ async function settledExport(
     const response = await app.inject({
       method: 'GET',
       url: '/api/platform/exports',
-      headers: { cookie, 'x-organisation-id': organisationId },
+      headers: { cookie, 'x-organisation-id': organisation },
     });
     expect(response.statusCode, response.body).toBe(200);
     const record = response
@@ -645,6 +646,14 @@ describe('the organisation export', () => {
     // id must not confirm it exists somewhere else.
     expect(response.statusCode, response.body).toBe(404);
     expect(response.json<{ code: string }>().code).toBe('EXPORT_NOT_FOUND');
+
+    // Settle the other organisation's build before leaving. It is the one
+    // export this suite starts and never polls, so without this the build
+    // is still writing (it inserts an `audit_events` row of its own) while
+    // `afterAll` deletes the tenant — the exact concurrency the cleanup
+    // ordering now survives, but a test that leaves work running is a
+    // flake generator regardless of who catches it.
+    await settledExport(otherOwnerCookie, theirId, otherOrganisationId);
   });
 
   it('refuses a lapsed artefact even before the sweep reaches it', async () => {

@@ -45,6 +45,40 @@ const MeasurementBookKindSchema = Type.Union(
 );
 export type MeasurementBookKind = Static<typeof MeasurementBookKindSchema>;
 
+/**
+ * How a Measurement Book is transcribed for the railway (migration 0113;
+ * owner ruling, corrections item 24).
+ *
+ *   coefficient  the recorded quantity is the physical quantity times the
+ *                payment stage's percentage, paid at 100% — a stage
+ *                reading "70% for 3 Nos" prints as 2.1. This
+ *                organisation's own practice, and the way every document
+ *                in the committed settlement corpus is written.
+ *   physical     the physical quantity is recorded and the stage
+ *                percentage is applied when the bill is computed.
+ *
+ * PRESENTATION ONLY. The Measurement Book's internal snapshot is physical
+ * quantities plus percentages either way, and the money is identical: what
+ * the way decides is what the quantity column of the draft preview and of
+ * the PDF reads. It is persisted because the railway's own copy is typed
+ * from whichever way the sheet was filed, and the measurement matcher has
+ * to know what it is reading a year later rather than guess.
+ */
+const MB_WAYS = ['coefficient', 'physical'] as const;
+export const MbWaySchema = Type.Union(MB_WAYS.map((way) => Type.Literal(way)));
+export type MbWay = Static<typeof MbWaySchema>;
+
+/** PUT /api/measurement-books/:id/way — flips a DRAFT book between the
+ * two renderings, and makes the choice the Work's sticky default for the
+ * books raised after it. */
+export const SetMeasurementBookWayRequestSchema = Type.Object(
+  { way: MbWaySchema },
+  { additionalProperties: false },
+);
+export type SetMeasurementBookWayRequest = Static<
+  typeof SetMeasurementBookWayRequestSchema
+>;
+
 /** The three billable source record types (spec §5.9 "Sources"). */
 const MB_SOURCE_TYPES = [
   'delivery_challan',
@@ -186,6 +220,9 @@ const MeasurementBookSchema = Type.Object(
      * record's sources. */
     mergedIntoId: Type.Union([UuidSchema, Type.Null()]),
     mbDate: DateOnlySchema,
+    /** Which rendering this book is filed in (migration 0113). Flippable
+     * while draft; frozen with the rest of the snapshot at finalize. */
+    way: MbWaySchema,
     mbNumber: Type.Union([Type.String(), Type.Null()]),
     sequenceNumber: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
     /** Finalize-written; null while draft. */
@@ -256,6 +293,18 @@ const MeasurementBookLineSchema = Type.Object(
     deltaSupplied: DecimalStringSchema,
     deltaInstalled: DecimalStringSchema,
     deltaPac: DecimalStringSchema,
+    /** The same three stage quantities as a COEFFICIENT sheet prints them
+     * (migration 0113): `round2(delta x percent / 100)`, paid at 100%.
+     *
+     * Computed on every line whatever way the book is filed, so a screen
+     * picks a column rather than doing decimal arithmetic in a browser —
+     * `apps/web` renders, it does not compute (AGENTS.md). Nothing here is
+     * ever summed into money: the amounts beside them are the snapshot's,
+     * and `mb-coefficient.ts` states where the two arithmetics can part
+     * company at the third decimal and why that changes no rupee. */
+    coefficientSupplied: DecimalStringSchema,
+    coefficientInstalled: DecimalStringSchema,
+    coefficientPac: DecimalStringSchema,
     /** What the draft's claimed sources measure for this line BEFORE the
      * operator's downward adjustment (migration 0106) — so a screen can
      * print "computed 10 / entered 8" rather than only the number that

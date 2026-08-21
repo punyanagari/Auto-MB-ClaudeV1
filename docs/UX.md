@@ -2287,6 +2287,290 @@ catalog, so the two cannot drift into saying different things.
 **When the mock grows a settlement screen, the mock wins.** This entry
 retires on the § 4 iteration pipeline, like § 16.
 
+### 30. Register sorting — APPROVED
+
+**Owner ruling of 2026-08-21, corrections round 4, item 22.** An
+app-side divergence from the frozen mock: the mock's registers carry no
+sort affordance, and this adds one to their column headings. It is
+recorded here in place of a mock commit, on the owner's instruction, and
+retires on the § 4 iteration pipeline the moment the mock grows one of its
+own — at which point the mock wins.
+
+A register is kept in the order the office keeps it in — newest first
+almost everywhere — and that stays the order it opens in. What it gains
+is the ability to answer the two other questions the same rows can
+answer: which contract is the largest, and which document is the oldest.
+
+**The affordance is the column heading.** A sortable heading is a button
+inside its own `th`, carrying the column's name, a direction arrow, and
+`aria-sort` on the cell. Clicking a new column sorts it DESCENDING —
+largest value, latest date, which is the answer usually wanted — and
+clicking the sorted column again flips it to ascending. There is no third
+"unsorted" click: the register's own default order is what is on screen
+before anything is clicked, and until something is, no heading claims a
+sort. Adding a sortable heading therefore changes no screen until it is
+used.
+
+**Where the sort happens depends on whether the SCREEN pages — not on
+whether the route can.** A screen holding the whole list sorts it in the
+view (`sortRows` in `apps/web/src/ui/table.tsx`): the browser has the
+rows, so asking the server again would blank the table, spend a round
+trip, fail offline, and hand back the same rows in a different order. A
+screen that pages asks the SERVER, with an optional `?sort=date_asc` on
+the register's own route, because sorting the pages fetched so far and
+calling that the register is wrong in the exact case the sort was asked
+for: the oldest row is on the last page. Three rules hold that parameter
+together.
+
+- It is additive and optional. Omitting it is the register byte-for-byte
+  as it was.
+- Its ORDER BY and its keyset predicate turn round together, because a
+  predicate left seeking the other way does not fail — it quietly loses or
+  repeats rows at each page boundary.
+- Its cursor carries the sort it was minted under. A bare row id means
+  "the rows before this one" in one order and "the rows after it" in the
+  other, so a cursor replayed under the other sort would answer 200 with
+  the far side of its own row — a skip nothing about the answer reveals.
+  A crossed pairing is refused as `CURSOR_INVALID`.
+
+**Sorted surfaces.** Works (LOA letter date, contract value) · Delivery
+challans (challan date) · Issue challans (challan date) · Tax invoices
+(invoice date, **server**) · Installations (installed on, **server**
+across Works; in the view when narrowed to one Work, whose list is
+unpaginated) · Purchase orders (PO date, value, expected date) · Payments
+— advances (amount) and payables (due date, amount, outstanding) ·
+Quotations (date, valid until, total).
+
+**Not offered offline.** Reversing a register that pages is a new read,
+so with no connection it can only be answered from a cached entry for
+that exact sort. The screen shows its load failure and its retry rather
+than re-drawing the previous order under the new heading — descending
+rows under an ascending arrow is a worse answer than an honest failure.
+
+**Deliberately not sorted.** Document-detail line tables and micro-tables:
+a document's line order IS the document, and reordering an issued
+challan's lines on screen would misrepresent the paper. Money columns on
+the registers that page: a tax invoice's taxable value is NULL while it is
+a draft, which as a leading keyset key makes the whole row comparison NULL
+and drops every draft after the first page. The Delivery Challan
+register's value column, whose figure is a per-page lateral sum of the
+challan's lines rather than a stored column. Installed quantity:
+quantities in different units do not compare. Tenders, which is a card
+list rather than a column table and has no heading to click — giving it a
+sort control would be new furniture the frozen mock does not carry, so it
+waits for a mock that has one.
+
+### 31. Unavailable choices stay visible — APPROVED
+
+**Owner ruling of 2026-08-21, corrections round 4, item 26.** An
+app-side divergence from the frozen mock: the mock draws each screen in
+one state and says nothing about what a control does when its data
+condition is unmet, so the disabled-with-a-reason state is built here in
+the mock's own grammar — its `select`, its `Button`, its `Hint` — without
+new visual language. Recorded here in place of a mock commit, on the
+owner's instruction, and retires on the § 4 iteration pipeline if the mock
+later states the unavailable state itself.
+
+A choice the product could offer, but cannot offer YET because of a DATA
+condition, stays on the screen: visible, disabled, and saying what would
+have to be true. It is not removed.
+
+**Why.** Removing it teaches the operator that the feature does not
+exist, which is the one thing that is definitely false. They go looking
+for it in another module, or ask whether it was ever built. The condition
+is nearly always something they can fix in a minute somewhere else, and
+naming it is the whole difference between a dead end and a next step. The
+worked case: the Measurement Book kind dropdown dropped "Record" until
+the Work had a consignee, so record Measurement Books read as a thing
+this product does not do. It is now offered as `Record — assign a
+consignee to this Work first`.
+
+**The mechanics.** The reason is VISIBLE text, not only a `title`. A
+tooltip is a pointer affordance: a touch screen has no hover, a disabled
+control is not in the tab order so keyboard focus never reaches it, and a
+name that exists only in a tooltip is a name the axe gate counts as
+absent. On an `<option>` the reason rides in the option's own text, which
+is its entire accessible name. On a `select` it is
+`ui/unavailable.tsx`'s `useUnavailableControl`, which disables the control
+and binds it to the `Hint` below by `aria-describedby` — the two are one
+announcement rather than two neighbours. On a button it is the same
+module's `UnavailableAction`.
+
+**A reason must be true of THIS record, in the state it is in.** It never
+names a control the reader cannot see (a reason that says "generate the
+PDF first" is wrong for a member without the permission to generate one),
+and it never asserts a history the document may not have (an unsigned
+challan has usually not been to the signing queue at all). Where the
+honest sentence would be one the status chip beside it already gives, the
+choice keeps its absence instead — see the exclusions below.
+
+**PERMISSION is the exception, and it is not a small one.** A choice
+withheld because the caller's membership does not carry the right stays
+HIDDEN. A disabled control naming the permission it wants publishes the
+permission matrix to every member who cannot use it, which is a worse
+failure than a missing button. Where a gate is a conjunction of both — a
+draft-status test AND a `can*` test — only the data half converts, and the
+permission half keeps hiding the control outright.
+
+**Also not converted, and why.** An action whose absence is already
+explained by state shown beside it: a per-row Withdraw on a row whose
+status chip already reads "cancelled" is not a hidden choice, and a
+disabled duplicate of that sentence is noise. This covers the document
+actions on a draft or cancelled record — a draft challan has no PDF and
+no signed copy, will have neither while it stays a draft, and says
+"Draft" at the top of the screen. A per-row Remove hidden while a form
+holds one line: the last line cannot be removed and a disabled control on
+every single-line form is clutter. Loading, empty, retry and "Load more"
+branches, which are states rather than choices. Mutually exclusive
+relabellings of the same values, which omit nothing. Fields locked
+because the LOA parse produced their value, which are settled under their
+own ruling.
+
+**An empty list and an unreadable one are different sentences.** Where a
+picker's roster is fetched with its failure swallowed, an empty array
+means both "there are none" and "it could not be read", and the two
+demand opposite actions: the first sends the operator to Masters to
+create a contact, the second is a reload. A picker that cannot tell them
+apart must not claim either, so the roster is carried as `null` on
+failure and the reason names which case it is.
+
+### 32. The "Use coefficient" toggle on a Measurement Book draft
+
+**Status: application-first, owner ruling of 2026-08-21 (live-testing
+corrections item 24; migration 0113).**
+
+**No mock citation, and none is possible** — the mock draws no Measurement
+Book detail at all, which is the same position § 29 is in and for the same
+reason. What lands is one checkbox and one `Hint` inside the existing
+`Field` grammar, plus a sentence of plain text on a finalized book. No new
+visual language, so § Design contract 4 covers it.
+
+**What the toggle decides, stated in the words the toggle itself uses.**
+Indian Railways files a Measurement Book two ways. The COEFFICIENT way
+records the physical quantity multiplied by the payment stage's
+percentage and pays that figure at 100% — 3 Nos at 70% is written as 2.1
+— and it is this organisation's own practice and the way every document
+in the committed settlement corpus is written. The PHYSICAL way records
+what was measured and applies the percentage when the bill is computed.
+
+**It is a rendering and the screen says so.** The amounts, the line
+totals and the book's total are identical whichever way is chosen; only
+the quantity column changes meaning, and a coefficient sheet gains a
+`Payable` column reading 100%, which is what IWRCMS prints beside its own
+`Reason for Reduction` text. The hint says the total is the same either
+way in as many words, because an operator flipping a checkbox beside a
+money column deserves to be told that the money does not move before
+they discover it.
+
+**Default on, sticky per Work, flippable per draft.** New Works and new
+books start on the coefficient way — the owner's ruling and the corpus
+agree — and flipping a draft also sets the Work's default, so the choice
+is made once rather than on every book. A book that has to go out the
+other way flips itself without disturbing the Work.
+
+**Draft only, and a finalized book states rather than offers.** Once
+numbered, the way is part of what the book says: the railway's own copy
+was typed from that sheet, and the measurement match (§ 29) is read
+against it. So a finalized book prints "Filed the coefficient way" as
+text with no control, the route answers `MB_STATUS_CONFLICT`, and
+migration 0113 puts the column in the finalized-immutability guard's
+frozen row.
+
+**The quantity columns on this screen stay PHYSICAL in both ways, and
+that is deliberate.** The draft's supplied and installed cells are
+editable measured quantities (§ 27b, migration 0106) — what an operator
+types there is what was measured on site, never a scaled figure — so
+scaling them would ask somebody to type into a column that is not the one
+they are answering. The coefficient rendering belongs to the DOCUMENT,
+and the draft PDF preview beside the toggle is where it is read.
+
+**When the mock grows a Measurement Book screen, the mock wins.**
+
+### 33. The opening billing position — the panel above the Measurement Books
+
+**Status: application-first, owner ruling of 2026-08-21 (live-testing
+corrections item 23; migration 0114).**
+
+**No mock citation, and none is possible** — the mock draws no settlement
+chain at all, which is the position § 29 records for the railway
+measurement panel. This is the same shape of answer: a `.data-surface`
+panel on the Work's Measurement tab, in the grammar already there — the
+`DataTable`, the dot-plus-label `StatusChip`, the file `Field` with its
+`Hint`, the shared `EmptyState` / `LoadingState` / `ErrorState`. No new
+visual language, so § Design contract 4 covers it.
+
+**A PANEL AND NOT A TAB, deliberately.** A new Work tab is a change to
+navigation, which § Design contract 1 reserves to the mock; a panel
+inside an existing screen is what § 29 established as the way to land
+settlement behaviour the mock cannot express. It sits ABOVE the
+Measurement Books workspace because it is the state those books count
+from: on an imported Work, reading the register before reading the
+opening position tells you a Work that has been billed for four years is
+at MB-01.
+
+**It only appears on a Work that has one to state.** A Work born in this
+product has no opening position — its history is the Measurement Books
+below — so the panel offers the upload only where no book has ever been
+numbered, and otherwise says nothing at all.
+
+**Four steps, in the order the operator meets them.**
+
+| Step                      | What the panel draws                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Upload the last bill**  | A file `Field`. On a bill this product can read, its number, date and amount appear as read facts.           |
+| **Upload the last sheet** | A second file `Field`, optional. Fills the per-item proposal.                                                |
+| **State and confirm**     | The line table: proposed figures beside stated ones, a `Confirm item …` button on each, and a running count. |
+| **Lock**                  | One action, offered only when the count is complete.                                                         |
+
+**A bill the product cannot read is recorded, not refused.** When the
+server answers that the uploaded bill's own text cannot be read — a scan,
+most often — the panel reveals four fields (number, date, amount, the
+measurement sequence the bill settles) and the operator types them off
+the document in front of them; the row then says a person did. The fields
+appear only after the server has said so, and withdraw again if the next
+upload turns out readable, because typed figures beside a readable bill
+are two claims about one document and the server refuses them.
+
+**The proposal is drawn beside the stated figure, never instead of it.**
+What a parser read and what a person accepted are two statements, and a
+screen that showed only the second could not answer "did anybody change
+this?" — which is the first question anyone asks of a figure that turns
+out wrong. The railway's own remark is printed on the line too, so the
+proposal can be argued with rather than only accepted.
+
+**Editing a line clears its confirmation, and the screen shows that
+happening.** The confirmation was a statement about the figures that were
+there; carrying it across an edit would put a member's name on a number
+they never saw. The five figure cells edit in place while the baseline is
+a draft — this is the hand-entry path for a Work whose sheet is lost, and
+the correction path over a proposal that read wrongly — and one `Save
+stated lines` action states the changed lines together; an emptied cell
+is an unstated one and keeps its stored figure.
+
+**No "confirm all".** § 29's rule, restated for the same reason: the
+confirmation is an act per line with an author, and one control that
+signed a hundred lines would be the single click the model refuses.
+
+**The lock is drawn as what it is.** Its confirmation dialog says the two
+things that change: the Work's Measurement Book numbering resumes at the
+railway's own sequence plus one, and every book raised afterwards counts
+its prior quantities from these figures. After it, the panel is a record —
+no controls, and the deductions beside it go read-only with it.
+
+**The receivables position reads gross to net in one place.** Billed to
+date, the deductions summed, and the net — all three computed on the
+server, because a net receivable computed in a browser is a second net
+receivable.
+
+**The bill's own total is shown beside the proposed sum and is not
+compared to it.** The two are on different tax bases — IWRCMS prints its
+bill amount GST-inclusive — so the screen puts them side by side for a
+person to reconcile rather than asserting an equality that would be
+wrong.
+
+**When the mock grows a settlement screen, the mock wins.** This entry
+retires on the § 4 iteration pipeline, like § 16 and § 29.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

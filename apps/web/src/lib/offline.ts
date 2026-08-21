@@ -235,17 +235,38 @@ function cachedRead<A extends readonly unknown[], R>(
  * decision in one file: no register changes, no view learns a second way
  * to load, and the list above is the entire policy.
  *
- * ONE PROPERTY OF THE CACHE KEY THAT IS INERT HERE AND WOULD NOT BE
- * ELSEWHERE: `cachedRead` keys on `JSON.stringify(args)`, which collapses
- * `undefined` and `null` — a trailing argument left off, passed
- * `undefined`, or passed `null` all serialise the same, as does an
- * options property set to `undefined` versus omitted. Every read above
- * treats those spellings as the same request (`listDeliveryChallans`
- * defaults `workId` to null and both mean the whole register), so the
- * collapse cannot serve one call's answer to another. It becomes live the
- * moment a filtered register joins this list and `null` starts meaning
- * something `undefined` does not — at which point the key needs a
- * discriminator, not a second cache.
+ * TWO PROPERTIES OF THE CACHE KEY, both currently harmless and neither
+ * to be relied on. `cachedRead` keys on `JSON.stringify(args)`.
+ *
+ * It collapses `undefined` and `null` IN PLACE: `[org, undefined]` and
+ * `[org, null]` both serialise to `[<org>,null]`, and an options property
+ * set to `undefined` serialises identically to one omitted. It does NOT
+ * collapse arity — `[org]` is `[<org>]`, a different string from
+ * `[<org>,null]` — so a trailing argument left off keys separately from
+ * the same argument passed explicitly. Here that only ever splits one
+ * request across two entries (`listDeliveryChallans` defaults `workId` to
+ * null and both spellings mean the whole register), which costs a little
+ * storage and never serves the wrong answer.
+ *
+ * The in-place collapse becomes live the moment a filtered register joins
+ * this list and `null` starts meaning something `undefined` does not — at
+ * which point the key needs a discriminator, not a second cache.
+ *
+ * `listInstallations` now takes a `sort`, and that is safe under both
+ * rules: the parameter is inside the options object and is OMITTED rather
+ * than set to `undefined` when the register is read in its default order,
+ * so an ascending read keys separately from a descending one and neither
+ * can be served the other's rows.
+ *
+ * WHAT IS NOT OFFERED OFFLINE, stated rather than pretended: changing the
+ * sort on a register that PAGES is a new read, so offline it can only be
+ * answered from a cached entry for that exact sort. The first time an
+ * operator reverses the installations register with no connection, the
+ * screen shows its load failure and its retry — the rows are not re-drawn
+ * from the previous order, because a table showing descending rows under
+ * an ascending heading is a worse answer than an honest failure. The tax
+ * invoice register is not cached here at all (it reads several endpoints)
+ * and behaves the same way for the same reason.
  */
 export function withOfflineReads(api: ApiClient): ApiClient {
   return {

@@ -1,6 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { GstinSchema } from './masters.js';
-import { NextCursorSchema, withKeysetQuery } from './pagination.js';
+import {
+  NextCursorSchema,
+  SortedNextCursorSchema,
+  withSortedKeysetQuery,
+} from './pagination.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -365,7 +369,7 @@ export type DeliveryChallanRegisterEntry = Static<
  * Pattern rather than `format: 'uuid'`, for the reason `pagination.ts`
  * states about cursors: the check must not depend on which formats the
  * serving ajv instance happens to have registered. */
-export const DeliveryChallanRegisterQuerySchema = withKeysetQuery(
+export const DeliveryChallanRegisterQuerySchema = withSortedKeysetQuery(
   Type.Object(
     {
       work: Type.Optional(
@@ -387,7 +391,9 @@ export const DeliveryChallanRegisterQuerySchema = withKeysetQuery(
 export const DeliveryChallanRegisterResponseSchema = Type.Object(
   {
     challans: Type.Array(DeliveryChallanRegisterEntrySchema),
-    nextCursor: NextCursorSchema,
+    /* Sort-tagged: this register sorts, so its cursor carries the order
+     * it was minted under and cannot be replayed under the other one. */
+    nextCursor: SortedNextCursorSchema,
   },
   { additionalProperties: false },
 );

@@ -17,7 +17,14 @@ import { useAction, useReload } from '../lib/view-state.js';
 import { challanHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  sortRows,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -240,6 +247,19 @@ export function DeliveryChallans({
   const [transportDistanceKm, setTransportDistanceKm] = useState('');
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
 
+  /* Sorted HERE, not by the server.
+   *
+   * `/api/delivery-challans` is keyset-capable and takes a `?sort=`, but
+   * this screen sends no `limit`, so it holds the whole register and the
+   * server has nothing left to decide. Asking for it again would blank
+   * the table, re-read every row and the contact list with it, and answer
+   * with the same rows in a different order — a round trip and an offline
+   * failure for work the browser can do on rows it already has. The
+   * server parameter is for the registers that genuinely page
+   * (installations, tax invoices), where the oldest row is on a page this
+   * screen has not fetched. */
+  const [sort, toggleSort] = useColumnSort<'challanDate'>();
+
   const refreshList = useCallback(async () => {
     setChallans(await api.listDeliveryChallans(organisationId, workId));
   }, [api, organisationId, workId]);
@@ -334,8 +354,13 @@ export function DeliveryChallans({
   );
 
   const rows = useMemo(
-    () => (filter === 'all' ? scoped : scoped.filter((row) => row.movement === filter)),
-    [scoped, filter],
+    () =>
+      sortRows(
+        filter === 'all' ? scoped : scoped.filter((row) => row.movement === filter),
+        sort,
+        { challanDate: (row) => row.challanDate },
+      ),
+    [scoped, filter, sort],
   );
 
   /* One open draft per Work is the rule the server enforces; here it is
@@ -476,7 +501,13 @@ export function DeliveryChallans({
                   <th scope="col">Number</th>
                   <th scope="col">Movement</th>
                   <th scope="col">Work / consignee</th>
-                  <th scope="col">Date</th>
+                  <SortHeader sortKey="challanDate" sort={sort} onSort={toggleSort}>
+                    Date
+                  </SortHeader>
+                  {/* Value is deliberately NOT sortable here. The column
+                      is a per-page lateral sum of the challan's lines, so
+                      it is not a column the cursor could seek on; sorting
+                      it would sort the page and call it the register. */}
                   <th scope="col" className={numericCell}>
                     Value
                   </th>

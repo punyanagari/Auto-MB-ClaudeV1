@@ -72,6 +72,24 @@ export function registerMeasurementBookRenderRoutes(
             `Only finalized Measurement Books render to a persisted PDF (current status: ${book.status}); drafts stream a live preview instead.`,
           );
         }
+        // A book already rendered under an OLDER template does not
+        // re-render: the stored PDF is the issued document, and a newer
+        // template can print different figures on the same snapshot —
+        // 0113's coefficient way changes the quantity column of a
+        // staged-percentage book — so overwriting the bytes would rewrite
+        // what went to the railway. Same-version re-render stays allowed
+        // (idempotent figures; a refreshed logo is not a rewrite).
+        if (
+          book.rendered_object_key !== null &&
+          book.template_version !== null &&
+          book.template_version !== MB_TEMPLATE_VERSION
+        ) {
+          throw httpError(
+            409,
+            'MB_RENDER_TEMPLATE_SUPERSEDED',
+            `This Measurement Book's PDF was rendered under template ${book.template_version} and is the issued document; the current template (${MB_TEMPLATE_VERSION}) may print different figures, so the stored render is retained.`,
+          );
+        }
         const work = await readWorkIdentity(tx, book.work_id);
         const lines = await readStoredLines(tx, id);
         const organisation = await readBranding(tx);

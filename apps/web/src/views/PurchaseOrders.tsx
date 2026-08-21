@@ -17,7 +17,14 @@ import { Field, FieldRow, Actions, Hint } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { TabRail } from '../ui/tab-rail.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  sortRows,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { PurchaseOrderPanel } from './purchase-order-panel.js';
 
 /**
@@ -183,7 +190,20 @@ export function PurchaseOrders({
   const narrowed = workId !== null;
   const workOrders = (orders ?? []).filter((order) => order.workId !== null);
   const orgOrders = (orders ?? []).filter((order) => order.workId === null);
-  const shown = narrowed ? (orders ?? []) : basis === 'work' ? workOrders : orgOrders;
+  const listed = narrowed ? (orders ?? []) : basis === 'work' ? workOrders : orgOrders;
+  /* The screen holds the whole list for the basis it is showing, so the
+     two other questions — which order is the largest, and what is due
+     back first — are answered here. A draft that has not been priced or
+     dated yet has no value and no expected date; those rows sink to the
+     bottom either way round rather than posing as the smallest. The
+     amount is a decimal string read as a number for COMPARISON only. */
+  const [sort, toggleSort] = useColumnSort<'poDate' | 'totalAmount' | 'expectedOn'>();
+  const shown = sortRows(listed, sort, {
+    poDate: (order) => order.poDate,
+    totalAmount: (order) =>
+      order.totalAmount === null ? null : Number(order.totalAmount),
+    expectedOn: (order) => order.expectedOn,
+  });
   /* A vendor may hold one open work-less draft, so the picker says which
      vendors already do rather than letting the server refuse the submit. */
   const draftVendorIds = new Set(
@@ -263,16 +283,27 @@ export function PurchaseOrders({
               </caption>
               <thead>
                 <tr>
-                  <th scope="col">PO number</th>
+                  {/* The number cell carries the PO date under the
+                      number, and that date is what this column sorts. */}
+                  <SortHeader sortKey="poDate" sort={sort} onSort={toggleSort}>
+                    PO number
+                  </SortHeader>
                   <th scope="col">Against</th>
                   <th scope="col">Vendor</th>
                   <th scope="col" className={numericCell}>
                     Lines
                   </th>
-                  <th scope="col" className={numericCell}>
+                  <SortHeader
+                    className={numericCell}
+                    sortKey="totalAmount"
+                    sort={sort}
+                    onSort={toggleSort}
+                  >
                     Value
-                  </th>
-                  <th scope="col">Expected</th>
+                  </SortHeader>
+                  <SortHeader sortKey="expectedOn" sort={sort} onSort={toggleSort}>
+                    Expected
+                  </SortHeader>
                   <th scope="col">Status</th>
                 </tr>
               </thead>

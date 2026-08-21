@@ -773,13 +773,20 @@ export function MeasurementBooks({
                 <option value="on_account">
                   On-account — the billable Measurement Book
                 </option>
-                {/* A record MB is a consignee's sheet, so the kind is only
-                    offered once the Work has consignees to name. */}
-                {consignees.length > 0 && (
-                  <option value="record">
-                    Record — one consignee&apos;s parallel measurement sheet
-                  </option>
-                )}
+                {/* A record MB is a consignee's sheet, so it cannot be
+                    raised until the Work has a consignee to name. The
+                    kind used to vanish until then, which read as though
+                    record Measurement Books were not a thing this product
+                    does; it is offered, disabled, with the one fact that
+                    would make it choosable. The reason rides IN the
+                    option text because that text is the option's whole
+                    accessible name — a `title` on an `<option>` is
+                    announced by nothing. */}
+                <option value="record" disabled={consignees.length === 0}>
+                  {consignees.length === 0
+                    ? 'Record — assign a consignee to this Work first'
+                    : "Record — one consignee's parallel measurement sheet"}
+                </option>
                 <option value="final">
                   Final — the last Measurement Book of the Work
                 </option>
@@ -949,6 +956,38 @@ export function MeasurementBooks({
             )}{' '}
             {book.isFinal && <StatusChip status="issued">FINAL BILL</StatusChip>}
           </h3>
+          {/* How this book is filed for the railway (migration 0113). A
+              draft offers the flip; a finalized book states what its sheet
+              said, because the railway's own copy was typed from it and
+              the measurement match is read against that. */}
+          {book.status === 'draft' && canModify ? (
+            <Field>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={book.way === 'coefficient'}
+                  disabled={pending}
+                  onChange={(event) => {
+                    const way = event.target.checked ? 'coefficient' : 'physical';
+                    tryAct(async () => {
+                      setDetail(
+                        await api.setMeasurementBookWay(organisationId, book.id, way),
+                      );
+                    }, 'Way saved.');
+                  }}
+                />
+                Use coefficient
+              </label>
+              <Hint>
+                The railway sheet records quantity × stage percentage and pays it at
+                100% — 3 Nos at 70% prints as 2.1. Clear it to print physical quantities
+                with the percentage in the remark. The amounts and the total are the
+                same either way, and the choice becomes this Work&apos;s default.
+              </Hint>
+            </Field>
+          ) : (
+            <p className="text-muted-foreground">Filed the {book.way} way.</p>
+          )}
           {book.status === 'cancelled' && book.cancellationNote !== null && (
             <p className="text-muted-foreground">Cancelled: {book.cancellationNote}</p>
           )}

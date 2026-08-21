@@ -16,6 +16,7 @@ import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
 import { DataTable, controlCell, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, ActionBar, FormError, FieldError, Hint } from '../ui/form.js';
+import { useUnavailableControl } from '../ui/unavailable.js';
 import { formatRate } from '../format.js';
 import { NumericInput } from '../ui/numeric-input.js';
 
@@ -308,7 +309,9 @@ export function ChallanEditor({
   const [state, setState] = useState<EditorState | null>(null);
   /** The draft exactly as it loaded; Cancel compares against it. */
   const [loadedState, setLoadedState] = useState<EditorState | null>(null);
-  const [consignees, setConsignees] = useState<readonly Contact[]>([]);
+  /** The consignee roster, or `null` when the contact master could not be
+   * read — which is a different sentence from "there are none". */
+  const [consignees, setConsignees] = useState<readonly Contact[] | null>([]);
   const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   /** Which contact the picker last copied from, so the address chooser
    * below knows whose address list to offer. Not part of the challan: the
@@ -328,6 +331,22 @@ export function ChallanEditor({
   const [overRemaining, setOverRemaining] = useState<ReadonlySet<string>>(new Set());
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
+  /* Three states, not two: a roster with contacts in it, an empty one,
+     and one that could not be READ. The last two are both an empty
+     select, and telling the operator to go and create a contact when the
+     truth is that the list failed to load sends them off to duplicate one
+     that already exists. Computed here rather than beside the picker
+     because the hook it feeds cannot sit after this component's loading
+     return. */
+  const consigneePickerUnavailable =
+    consignees === null
+      ? 'The contact master could not be read, so there is nothing to prefill from. Reload to try again — the consignee can still be typed out below.'
+      : consignees.length === 0 &&
+          workConsignees.filter((candidate) => candidate.active).length === 0
+        ? 'No consignee contact is on file yet — add one under Masters → Contacts and it will prefill here. The consignee can still be typed out below.'
+        : null;
+  const { control: consigneePickerControl, hintId: consigneePickerHintId } =
+    useUnavailableControl(consigneePickerUnavailable);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   /* The Work code only ever seeds a new draft's prefix, but it is not
    * stable: on reload or deep-link the workspace mounts this editor with
@@ -372,8 +391,14 @@ export function ChallanEditor({
         ? Promise.resolve(null)
         : api.getChallan(organisationId, challanId),
       // The picker is a convenience: an unavailable master list must not
-      // block manual consignee entry.
-      api.listContacts(organisationId, { role: 'consignee' }).catch(() => []),
+      // block manual consignee entry. `null` rather than `[]` on failure,
+      // because the picker below has to tell an empty roster from an
+      // unreadable one — "no consignee is on file yet" sends the operator
+      // to Masters to create one, and is a lie when the truth is that the
+      // list could not be fetched.
+      api
+        .listContacts(organisationId, { role: 'consignee' })
+        .catch((): readonly Contact[] | null => null),
       // R16: the Work's linked consignees are offered first; any active
       // consignee stays selectable below them.
       api.listWorkConsignees(organisationId, workId).catch(() => []),
@@ -712,10 +737,11 @@ export function ChallanEditor({
   // "All consignees" group is already active-only, and linking a retired
   // contact is refused with 409 CONTACT_RETIRED.
   const linkedConsignees = workConsignees.filter((candidate) => candidate.active);
+  const listedConsignees = consignees ?? [];
   /** The live addresses of the contact the picker last copied from
    * (migration 0116), primary first as the masters route returns them. */
   const consigneeAddresses = liveAddresses(
-    [...linkedConsignees, ...consignees].find(
+    [...linkedConsignees, ...listedConsignees].find(
       (candidate) => candidate.id === pickedConsignee,
     ),
   );
@@ -803,60 +829,62 @@ export function ChallanEditor({
             )}
           </Field>
         </FieldRow>
-        {consignees.length > 0 && (
-          <Field>
-            <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
-            <select
-              id="consignee-picker"
-              defaultValue=""
-              onChange={(event) => {
-                // The picker only PREFILLS the snapshot fields below —
-                // the challan keeps its own free-text copy, and every
-                // field stays editable after picking.
-                const chosen = [...linkedConsignees, ...consignees].find(
-                  (candidate) => candidate.id === event.target.value,
-                );
-                if (chosen === undefined) return;
-                setPickedConsignee(chosen.id);
-                setState({
-                  ...state,
-                  name: chosen.designation,
-                  // `address` is the contact's PRIMARY address (the
-                  // database keeps it equal to the primary row of its
-                  // address list), which is what this picker has always
-                  // copied. A second address is chosen below.
-                  address: chosen.address ?? '',
-                  phone: chosen.phone ?? '',
-                });
-              }}
-            >
-              <option value="">Manual entry</option>
-              {linkedConsignees.length > 0 && (
-                <optgroup label="Linked to this Work">
-                  {linkedConsignees.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.designation}
-                      {candidate.address !== null ? ` — ${candidate.address}` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="All consignees">
-                {consignees.map((candidate) => (
-                  <option key={`all-${candidate.id}`} value={candidate.id}>
+        {/* The picker stays put with no consignee contacts on file. It
+            used to vanish, so the only visible way to address a challan
+            was to type the consignee out every time — with nothing saying
+            that a contact master exists and would prefill it. */}
+        <Field>
+          <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
+          <select
+            id="consignee-picker"
+            defaultValue=""
+            {...consigneePickerControl}
+            onChange={(event) => {
+              // The picker only PREFILLS the snapshot fields below —
+              // the challan keeps its own free-text copy, and every
+              // field stays editable after picking.
+              const chosen = [...linkedConsignees, ...listedConsignees].find(
+                (candidate) => candidate.id === event.target.value,
+              );
+              if (chosen === undefined) return;
+              setPickedConsignee(chosen.id);
+              setState({
+                ...state,
+                name: chosen.designation,
+                // `address` is the contact's PRIMARY address (the
+                // database keeps it equal to the primary row of its
+                // address list), which is what this picker has always
+                // copied. A second address is chosen below.
+                address: chosen.address ?? '',
+                phone: chosen.phone ?? '',
+              });
+            }}
+          >
+            <option value="">Manual entry</option>
+            {linkedConsignees.length > 0 && (
+              <optgroup label="Linked to this Work">
+                {linkedConsignees.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
                     {candidate.designation}
                     {candidate.address !== null ? ` — ${candidate.address}` : ''}
                   </option>
                 ))}
               </optgroup>
-            </select>
-            <Hint>
-              Consignees linked to this Work are listed first; any active consignee can
-              be picked. Picking copies the details into this challan; edits here never
-              change the contact.
-            </Hint>
-          </Field>
-        )}
+            )}
+            <optgroup label="All consignees">
+              {listedConsignees.map((candidate) => (
+                <option key={`all-${candidate.id}`} value={candidate.id}>
+                  {candidate.designation}
+                  {candidate.address !== null ? ` — ${candidate.address}` : ''}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+          <Hint id={consigneePickerHintId}>
+            {consigneePickerUnavailable ??
+              'Consignees linked to this Work are listed first; any active consignee can be picked. Picking copies the details into this challan; edits here never change the contact.'}
+          </Hint>
+        </Field>
         {/* The second address onward (migration 0116). Offered only when
             the consignee just picked keeps more than one, because a
             one-address contact has nothing to choose between and the
