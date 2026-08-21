@@ -56,6 +56,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Read the existing opening position on this Work, or delete it while it is still unlocked and start again.',
   BILLING_BASELINE_LOCKED:
     'A locked opening position is what every Measurement Book since counts from; record a correction on the next Measurement Book instead.',
+  BILLING_BASELINE_LINES_MISSING:
+    'An item was added to the schedule after the opening lines were made; delete the draft baseline and upload the bill again so every item gets its line.',
   BILLING_BASELINE_LINES_UNCONFIRMED:
     'Confirm each of the named lines against the railway documents, then lock the opening position.',
   BILLING_BASELINE_ITEM_NOT_FOUND:
@@ -195,6 +197,8 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Reload the Issue Challan; an issued one is changed by cancelling and re-issuing, and a draft is edited directly.',
   MB_STATUS_CONFLICT:
     'Reload the Measurement Book; a draft is edited or deleted, a finalized one is cancelled with a note, and a merged one moves only through the book that absorbed it.',
+  MB_RENDER_TEMPLATE_SUPERSEDED:
+    'The stored PDF is the document that went out and stays as rendered; the current template applies to books finalized from now on.',
   MB_ALREADY_CLOSED:
     'Reload the Measurement Book; the railway bill that settled this measurement is already recorded against it, and a closure is never re-taken.',
   MB_NOT_FINALIZED:

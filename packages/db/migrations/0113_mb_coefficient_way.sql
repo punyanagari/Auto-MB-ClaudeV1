@@ -51,10 +51,11 @@ SET LOCAL statement_timeout = '5min';
 --
 -- Two columns rather than one, because they answer different questions.
 -- `works.mb_way_default` is what the NEXT book on this Work starts as;
--- `measurement_books.mb_way` is what THIS book is. An agency that files
--- one Work the railway's coefficient way and another physically sets the
--- default once per Work rather than once per book, and a book that has to
--- go out the other way flips itself without changing the Work.
+-- `measurement_books.mb_way` is what THIS book is. Flipping a draft ALSO
+-- moves the Work's default — the item-24 ruling made the choice sticky
+-- per Work, so the way a book actually went out is the way the next one
+-- starts, and an agency that files one Work the railway's coefficient way
+-- and another physically states each Work's practice by flipping once.
 --
 -- Both default to `coefficient`, which is the owner's ruling and is also
 -- what every book already in the database was in fact filed as — the

@@ -2394,7 +2394,11 @@ proposal can be argued with rather than only accepted.
 **Editing a line clears its confirmation, and the screen shows that
 happening.** The confirmation was a statement about the figures that were
 there; carrying it across an edit would put a member's name on a number
-they never saw.
+they never saw. The five figure cells edit in place while the baseline is
+a draft — this is the hand-entry path for a Work whose sheet is lost, and
+the correction path over a proposal that read wrongly — and one `Save
+stated lines` action states the changed lines together; an emptied cell
+is an unstated one and keeps its stored figure.
 
 **No "confirm all".** § 29's rule, restated for the same reason: the
 confirmation is an act per line with an author, and one control that

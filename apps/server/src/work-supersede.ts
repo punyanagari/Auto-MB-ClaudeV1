@@ -27,9 +27,9 @@ import { assertWorkOperable } from './work-status.js';
  * The registers that make a Work ineligible: everything the agency issued,
  * received, or became bound by on this Work's account.
  *
- * Fifty-three tables can reach `works` through a chain of foreign keys.
- * This list holds the 17 that are documents in their own right;
- * `WORK_CHILD_TABLES_EXEMPT` holds the other 36 with the reason each is
+ * Fifty-six tables can reach `works` through a chain of foreign keys.
+ * This list holds the 18 that are documents in their own right;
+ * `WORK_CHILD_TABLES_EXEMPT` holds the other 38 with the reason each is
  * exempt, and the census in `test/work-supersede.integration.test.ts`
  * proves the union is exactly the catalog — TRANSITIVELY, not only over
  * direct children, because a document hanging off an exempt parent is
@@ -37,8 +37,10 @@ import { assertWorkOperable } from './work-status.js';
  *
  * The identifiers are frozen literals interpolated as identifiers (postgres
  * has no parameter form for a table name); every value is a bound
- * parameter. `packages/db/migrations/0071_work_supersession.sql` carries the
- * same list as SQL, and the census test compares the two.
+ * parameter. The soft-delete guard carries the same list as SQL — written
+ * in `packages/db/migrations/0071_work_supersession.sql` and last restated
+ * by `0114_work_billing_baseline.sql` § 9 — and the census test compares
+ * the two.
  */
 export const DOWNSTREAM_REGISTERS = [
   { register: 'delivery_challans', label: 'delivery challans' },
@@ -61,6 +63,7 @@ export const DOWNSTREAM_REGISTERS = [
   { register: 'received_railway_bills', label: 'received railway bills' },
   { register: 'amendment_variation_orders', label: 'cited variation orders' },
   { register: 'approval_requests', label: 'live change requests' },
+  { register: 'work_billing_baselines', label: 'locked opening billing baselines' },
 ] as const;
 
 /**
@@ -268,23 +271,22 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
     'the railway’s copy of a measurement, and the Measurement Book it is about blocks first',
   railway_measurement_confirmations:
     'one member’s statement about one line of a measurement that itself blocks behind its Measurement Book',
-  // The opening billing position of a pre-system Work (0114). Exempt, and
-  // not as a deferral: it is exactly the IMPORTED Works that carry
-  // baselines, and an imported Work's letter can be misread like any
-  // other's. The baseline RESTATES railway documents the agency still
-  // holds — the last bill, the last measurement sheet — so the successor
-  // Work records its opening position again from the same paper; nothing
-  // is issued to anybody or un-sayable afterwards. Blocking would trap
-  // the correction of a misread letter behind having stated the opening
-  // position, which is the deadlock the production entries below
-  // describe. An unlocked baseline is a deletable draft besides. And the
-  // moment the baseline has actually SHAPED a system document — the
-  // next Measurement Book — that book is in the blocking list and
-  // refuses first.
-  work_billing_baselines:
-    'a restatement of railway documents the agency still holds; the successor Work states its opening position again from the same paper, and any Measurement Book raised from it blocks first',
+  // The opening billing position of a pre-system Work (0114). The
+  // baseline REGISTER blocks — with a predicate, like approval_requests:
+  // only a LOCKED baseline counts. A locked position is the settlement
+  // memory every Measurement Book after it counts from, and the trap is
+  // specific: the successor Work starts clean, and 0114's own 23W01
+  // guard would refuse it a new baseline the moment it finalizes its
+  // first book — the history would be lost with no way back. An UNLOCKED
+  // baseline is a deletable draft and does not block: superseding is how
+  // a misread letter gets re-read, and a half-typed form must not close
+  // that door. The lines and deductions hang off the Work on the same
+  // terms and do not need registers of their own — the lines are frozen
+  // exactly when the baseline is locked (which blocks first), and the
+  // deductions are typed from the agency's own ledger and restated on
+  // the successor the same way.
   work_billing_baseline_lines:
-    'one line of an opening position that is itself exempt as a restatement',
+    'one line of an opening position whose baseline blocks when locked and deletes when draft',
   work_deduction_entries:
     'cumulative figures typed from the agency’s own ledger, restated on the successor the same way',
   // The rule's own bookkeeping: it points at both ends of the change, and
@@ -447,8 +449,14 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
 const LIVE_APPROVAL_PREDICATE =
   "entity_type <> 'work_supersede' and status in ('pending', 'approved')";
 
+/** A billing baseline blocks only once LOCKED (0114 § 9): a draft is a
+ * form somebody is filling in and deletes without residue. */
+const LOCKED_BASELINE_PREDICATE = 'locked_at is not null';
+
 function registerPredicate(register: string): string {
-  return register === 'approval_requests' ? ` and ${LIVE_APPROVAL_PREDICATE}` : '';
+  if (register === 'approval_requests') return ` and ${LIVE_APPROVAL_PREDICATE}`;
+  if (register === 'work_billing_baselines') return ` and ${LOCKED_BASELINE_PREDICATE}`;
+  return '';
 }
 
 /**

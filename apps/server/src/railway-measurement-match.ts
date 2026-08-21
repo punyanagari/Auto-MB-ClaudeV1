@@ -253,8 +253,9 @@ function normaliseRemark(value: string): string {
 /** `A/01` and `A/1` are one item. The railway zero-pads its item numbers
  * and this product's schedules do not; nothing else about the key is
  * folded, because a schedule letter is not a number and `A/1` must never
- * be read as `B/1`. */
-function normaliseItemNumber(value: string): string {
+ * be read as `B/1`. Exported for the billing-baseline proposal, which
+ * keys the same railway sheet against the same schedules. */
+export function normaliseItemNumber(value: string): string {
   return value
     .trim()
     .toUpperCase()

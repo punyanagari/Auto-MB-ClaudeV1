@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { WorkBillingBaselineResponse } from '@auto-mb/contracts';
+import type { DeductionHead, WorkBillingBaselineResponse } from '@auto-mb/contracts';
 import { RequestFailedError, type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
 import { useReload } from '../lib/view-state.js';
@@ -41,10 +41,19 @@ const DEDUCTION_LABELS = {
   liquidated_damages: 'Liquidated damages',
   income_tax_tds: 'Income-tax TDS',
   gst_tds: 'GST TDS',
-} as const;
+} as const satisfies Record<DeductionHead, string>;
 
 type DeductionHeadKey = keyof typeof DEDUCTION_LABELS;
 const DEDUCTION_HEADS = Object.keys(DEDUCTION_LABELS) as readonly DeductionHeadKey[];
+
+const LINE_FIELDS = [
+  'priorSupplied',
+  'priorInstalled',
+  'priorPac',
+  'priorFinalBill',
+  'amount',
+] as const;
+type LineField = (typeof LINE_FIELDS)[number];
 
 interface BillingBaselinePanelProps {
   readonly api: ApiClient;
@@ -88,6 +97,15 @@ export function BillingBaselinePanel({
     billAmount: '',
     lastMbSequenceNumber: '',
   });
+  // Line figures as the operator is typing them, keyed by item. Only the
+  // keys that exist have been touched; everything else renders the
+  // server's own figure. This is the hand-entry path for a Work whose
+  // measurement sheet is lost or unreadable — the proposal fills the same
+  // cells when there is a sheet, and either way the server clears a
+  // confirmation whose figures moved.
+  const [lineDrafts, setLineDrafts] = useState<
+    Record<string, Partial<Record<LineField, string>>>
+  >({});
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +182,26 @@ export function BillingBaselinePanel({
   const locked = baseline !== null && baseline.lockedAt !== null;
   const unconfirmed = position.lines.filter((line) => line.confirmedAt === null);
   const editable = canIssue && !locked;
+  // The lines whose typed figures differ from the server's. A field
+  // cleared to nothing falls back to the stored figure — an empty cell is
+  // an unstated one, not a zero.
+  const changedLines = position.lines.flatMap((line) => {
+    const draft = lineDrafts[line.workItemId];
+    if (draft === undefined) return [];
+    const value = (field: LineField) => {
+      const typed = draft[field];
+      return typed === undefined || typed.trim() === '' ? line[field] : typed.trim();
+    };
+    const stated = {
+      workItemId: line.workItemId,
+      priorSupplied: value('priorSupplied'),
+      priorInstalled: value('priorInstalled'),
+      priorPac: value('priorPac'),
+      priorFinalBill: value('priorFinalBill'),
+      amount: value('amount'),
+    };
+    return LINE_FIELDS.some((field) => stated[field] !== line[field]) ? [stated] : [];
+  });
 
   return (
     <section className="data-surface mt-4 flex flex-col gap-3 p-4">
@@ -403,6 +441,12 @@ export function BillingBaselinePanel({
                   Installed
                 </th>
                 <th scope="col" className={numericCell}>
+                  PAC
+                </th>
+                <th scope="col" className={numericCell}>
+                  Final bill
+                </th>
+                <th scope="col" className={numericCell}>
                   Amount
                 </th>
                 <th scope="col">Proposed from</th>
@@ -410,54 +454,113 @@ export function BillingBaselinePanel({
               </tr>
             </thead>
             <tbody>
-              {position.lines.map((line) => (
-                <tr key={line.workItemId}>
-                  <th scope="row">{line.itemNumber}</th>
-                  <td className={wrapCell}>{line.description}</td>
-                  <td className={numericCell}>{line.priorSupplied}</td>
-                  <td className={numericCell}>{line.priorInstalled}</td>
-                  <td className={numericCell}>{formatInr(line.amount)}</td>
-                  {/* The proposal, beside the stated figure and never
-                      instead of it: what a parser read and what a person
-                      accepted are two statements, and the railway's own
-                      sentence is here so the figures can be argued with
-                      rather than only accepted. */}
-                  <td className={wrapCell}>
-                    {line.proposedFromRemark ?? (
-                      <span className="text-muted-foreground">entered by hand</span>
-                    )}
-                  </td>
-                  <td>
-                    {line.confirmedAt !== null ? (
-                      <StatusChip status="issued">confirmed</StatusChip>
-                    ) : editable ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => {
-                          act(
-                            () =>
-                              api.confirmBillingBaselineLine(
-                                organisationId,
-                                baseline.id,
-                                line.itemNumber,
-                              ),
-                            `Item ${line.itemNumber} confirmed.`,
-                          );
-                        }}
-                      >
-                        Confirm item {line.itemNumber}
-                      </Button>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {position.lines.map((line) => {
+                const draft = lineDrafts[line.workItemId] ?? {};
+                // Editable in place — this is the hand-entry path the
+                // Hint above promises for a Work whose sheet is lost, and
+                // the correction path over a proposal that read wrongly.
+                // The server clears the confirmation of a figure that
+                // moved, and the screen re-renders what it answers.
+                const figure = (field: LineField, label: string) =>
+                  editable ? (
+                    <NumericInput
+                      aria-label={`Item ${line.itemNumber} ${label}`}
+                      className="w-24 text-right font-mono tabular-nums"
+                      value={draft[field] ?? line[field]}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        setLineDrafts((current) => ({
+                          ...current,
+                          [line.workItemId]: {
+                            ...current[line.workItemId],
+                            [field]: value,
+                          },
+                        }));
+                      }}
+                    />
+                  ) : field === 'amount' ? (
+                    formatInr(line.amount)
+                  ) : (
+                    line[field]
+                  );
+                return (
+                  <tr key={line.workItemId}>
+                    <th scope="row">{line.itemNumber}</th>
+                    <td className={wrapCell}>{line.description}</td>
+                    <td className={numericCell}>
+                      {figure('priorSupplied', 'supplied')}
+                    </td>
+                    <td className={numericCell}>
+                      {figure('priorInstalled', 'installed')}
+                    </td>
+                    <td className={numericCell}>{figure('priorPac', 'PAC')}</td>
+                    <td className={numericCell}>
+                      {figure('priorFinalBill', 'final bill')}
+                    </td>
+                    <td className={numericCell}>{figure('amount', 'amount')}</td>
+                    {/* The proposal, beside the stated figure and never
+                        instead of it: what a parser read and what a person
+                        accepted are two statements, and the railway's own
+                        sentence is here so the figures can be argued with
+                        rather than only accepted. */}
+                    <td className={wrapCell}>
+                      {line.proposedFromRemark ?? (
+                        <span className="text-muted-foreground">entered by hand</span>
+                      )}
+                    </td>
+                    <td>
+                      {line.confirmedAt !== null ? (
+                        <StatusChip status="issued">confirmed</StatusChip>
+                      ) : editable ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => {
+                            act(
+                              () =>
+                                api.confirmBillingBaselineLine(
+                                  organisationId,
+                                  baseline.id,
+                                  line.itemNumber,
+                                ),
+                              `Item ${line.itemNumber} confirmed.`,
+                            );
+                          }}
+                        >
+                          Confirm item {line.itemNumber}
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </DataTable>
+
+          {editable && changedLines.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                act(async () => {
+                  const updated = await api.setBillingBaselineLines(
+                    organisationId,
+                    baseline.id,
+                    { lines: changedLines },
+                  );
+                  setLineDrafts({});
+                  return updated;
+                }, 'Lines stated; a confirmed line whose figures moved needs confirming again.');
+              }}
+            >
+              Save stated lines
+            </Button>
+          )}
 
           {editable && (
             <p className="text-muted-foreground">
@@ -481,49 +584,56 @@ export function BillingBaselinePanel({
         </>
       )}
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          act(
-            () =>
-              api.setWorkDeductions(organisationId, workId, {
-                deductions: DEDUCTION_HEADS.filter(
-                  (head) => (deductions[head] ?? '').trim() !== '',
-                ).map((head) => ({ head, amount: (deductions[head] ?? '').trim() })),
-              }),
-            'Opening deductions recorded.',
-          );
-          form.blur();
-        }}
-      >
-        <h4>Opening deductions</h4>
-        <Hint>
-          Cumulative to date under each head, from the agency&apos;s own ledger — the
-          bills they were withheld on are the bills this system never saw. Editable
-          until the opening position is locked, and locked with it.
-        </Hint>
-        {DEDUCTION_HEADS.map((head) => (
-          <Field key={head}>
-            <label htmlFor={`deduction-${head}`}>{DEDUCTION_LABELS[head]}</label>
-            <NumericInput
-              id={`deduction-${head}`}
-              className="text-right font-mono tabular-nums"
-              value={deductions[head] ?? ''}
-              disabled={!canIssue || locked}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setDeductions((current) => ({ ...current, [head]: value }));
-              }}
-            />
-          </Field>
-        ))}
-        {canIssue && !locked && (
-          <Button type="submit" variant="outline" disabled={pending}>
-            Save deductions
-          </Button>
-        )}
-      </form>
+      {/* The deductions are part of the opening POSITION, so a Work that
+          can never have one — born in this product, its history is the
+          register below — gets no form: pre-system withholdings on a Work
+          with no pre-system billing would be subtracted from nothing.
+          The server refuses the same way. */}
+      {(baseline !== null || openable) && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            act(
+              () =>
+                api.setWorkDeductions(organisationId, workId, {
+                  deductions: DEDUCTION_HEADS.filter(
+                    (head) => (deductions[head] ?? '').trim() !== '',
+                  ).map((head) => ({ head, amount: (deductions[head] ?? '').trim() })),
+                }),
+              'Opening deductions recorded.',
+            );
+            form.blur();
+          }}
+        >
+          <h4>Opening deductions</h4>
+          <Hint>
+            Cumulative to date under each head, from the agency&apos;s own ledger — the
+            bills they were withheld on are the bills this system never saw. Editable
+            until the opening position is locked, and locked with it.
+          </Hint>
+          {DEDUCTION_HEADS.map((head) => (
+            <Field key={head}>
+              <label htmlFor={`deduction-${head}`}>{DEDUCTION_LABELS[head]}</label>
+              <NumericInput
+                id={`deduction-${head}`}
+                className="text-right font-mono tabular-nums"
+                value={deductions[head] ?? ''}
+                disabled={!canIssue || locked}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setDeductions((current) => ({ ...current, [head]: value }));
+                }}
+              />
+            </Field>
+          ))}
+          {canIssue && !locked && (
+            <Button type="submit" variant="outline" disabled={pending}>
+              Save deductions
+            </Button>
+          )}
+        </form>
+      )}
 
       {confirmLock && baseline !== null && (
         <ConfirmDialog

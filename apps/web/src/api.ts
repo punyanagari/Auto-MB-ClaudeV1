@@ -1309,9 +1309,6 @@ export interface ApiClient {
     measurementBookId: string,
     body: SetMbMeasuredQuantitiesRequest,
   ) => Promise<MeasurementBookDetailResponse>;
-  /** Flips a DRAFT Measurement Book between the two ways a railway sheet
-   * is filed, and makes the choice the Work's sticky default (migration
-   * 0113). Presentation only: no line moves and no amount changes. */
   /** The opening billing position of a Work whose history predates this
    * product (migration 0114). The upload is the last railway bill; the
    * four `recorded` figures are for a bill this product cannot read, and
@@ -1361,6 +1358,9 @@ export interface ApiClient {
     workId: string,
     body: SetWorkDeductionsRequest,
   ) => Promise<WorkBillingBaselineResponse>;
+  /** Flips a DRAFT Measurement Book between the two ways a railway sheet
+   * is filed, and makes the choice the Work's sticky default (migration
+   * 0113). Presentation only: no line moves and no amount changes. */
   readonly setMeasurementBookWay: (
     organisationId: string,
     measurementBookId: string,
@@ -4314,20 +4314,11 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         query.set('billAmount', recorded.billAmount);
         query.set('lastMbSequenceNumber', String(recorded.lastMbSequenceNumber));
       }
-      const response = await fetchImpl(
+      return uploadPdf<WorkBillingBaselineResponse>(
         `/api/works/${workId}/billing-baseline?${query.toString()}`,
-        {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'content-type': 'application/pdf',
-            'x-organisation-id': organisationId,
-          },
-          body: file,
-        },
+        organisationId,
+        file,
       );
-      if (!response.ok) throw await parseError(response);
-      return (await response.json()) as WorkBillingBaselineResponse;
     },
     async uploadBillingBaselineMeasurement(
       organisationId,
@@ -4336,20 +4327,11 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       filename,
     ) {
       const query = new URLSearchParams({ filename });
-      const response = await fetchImpl(
+      return uploadPdf<WorkBillingBaselineResponse>(
         `/api/billing-baselines/${billingBaselineId}/measurement?${query.toString()}`,
-        {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'content-type': 'application/pdf',
-            'x-organisation-id': organisationId,
-          },
-          body: file,
-        },
+        organisationId,
+        file,
       );
-      if (!response.ok) throw await parseError(response);
-      return (await response.json()) as WorkBillingBaselineResponse;
     },
     async setBillingBaselineLines(organisationId, billingBaselineId, body) {
       return request<WorkBillingBaselineResponse>(

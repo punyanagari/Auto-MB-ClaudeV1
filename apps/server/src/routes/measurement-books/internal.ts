@@ -491,8 +491,10 @@ export async function loadAmcCertified(
  * reason: `ITEM_INPUTS_SQL`'s plan shape is under a measured buffer
  * ratchet (`test/query-aggregates.integration.test.ts`), and this table
  * is EMPTY for every Work born in this product, which is almost all of
- * them. One index probe of `work_billing_baseline_lines_item_idx` against
- * a statement whose six grouped CTEs are the module's hottest read.
+ * them. The filter is on the BASELINE's work_id — its unique
+ * (organisation_id, work_id) key is an index probe, and the lines then
+ * come off `work_billing_baseline_lines_baseline_idx` — beside a
+ * statement whose six grouped CTEs are the module's hottest read.
  *
  * UNLOCKED BASELINES ARE INVISIBLE HERE, and that is the whole meaning of
  * the lock: a draft is a form somebody is filling in, and a form must not
@@ -526,9 +528,9 @@ export async function loadBaselinePriors(
            l.prior_installed::text as prior_installed,
            l.prior_pac::text as prior_pac,
            l.prior_final_bill::text as prior_final_bill
-    from work_billing_baseline_lines l
-    join work_billing_baselines b on b.id = l.work_billing_baseline_id
-    where l.work_id = ${workId} and b.locked_at is not null
+    from work_billing_baselines b
+    join work_billing_baseline_lines l on l.work_billing_baseline_id = b.id
+    where b.work_id = ${workId} and b.locked_at is not null
   `;
   return new Map(
     rows.map((row) => [

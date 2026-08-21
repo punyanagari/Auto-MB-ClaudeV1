@@ -1,4 +1,3 @@
-import { createHash, randomUUID } from 'node:crypto';
 import {
   BillingBaselineMeasurementQuerySchema,
   BillingBaselineUploadQuerySchema,
@@ -33,6 +32,7 @@ import {
   resolvePaymentPercentages,
   type PaymentMatrixPercentages,
 } from '../payment-matrix.js';
+import { normaliseItemNumber } from '../railway-measurement-match.js';
 import { parseRailwayMeasurement } from '../railway-measurement-parse.js';
 import { canonicalRateText } from '../rate-text.js';
 import {
@@ -43,6 +43,7 @@ import {
   assertNotMalware,
   consumeUpload,
   MAX_PDF_UPLOAD_BYTES,
+  storePdfUpload,
 } from '../upload-guards.js';
 import { audit, upstreamErrorResponses as errorResponses } from './shared.js';
 import type { AppInstance } from '../app-instance.js';
@@ -69,7 +70,7 @@ import { createTenantRouteRegistrar } from '../tenant-route.js';
  * ## Two layers, as everywhere else in this tree
  *
  * Every rule below is refused here with a named 409 and again in the
- * database by migration 0114's guards (23W01..23W06). The route exists so
+ * database by migration 0114's guards (23W01..23W07). The route exists so
  * an operator gets a sentence and a remedy; the guards exist because a
  * route is one forgotten import away from being no rule at all, and this
  * is money.
@@ -315,6 +316,10 @@ const BASELINE_SQLSTATES: Readonly<Record<string, readonly [string, string]>> = 
     'BILLING_BASELINE_ITEM_NOT_FOUND',
     'A baseline line names an item that is not live on this Work.',
   ],
+  '23W07': [
+    'BILLING_BASELINE_LINES_MISSING',
+    'Every live item of this Work needs a baseline line before the opening position can be locked.',
+  ],
 };
 
 function nameBaselineRefusal(error: unknown): unknown {
@@ -330,6 +335,15 @@ function nameBaselineRefusal(error: unknown): unknown {
     }
   }
   return error;
+}
+
+/** Every mutating handler below funnels its transaction through this, so
+ * a guard refusal that raced past the route's own check still surfaces
+ * as its named 409 rather than a bare SQLSTATE. */
+function named<T>(work: Promise<T>): Promise<T> {
+  return work.catch((error: unknown) => {
+    throw nameBaselineRefusal(error);
+  });
 }
 
 const IdParams = Type.Object({ id: Type.String({ format: 'uuid' }) });
@@ -354,10 +368,12 @@ export function registerBillingBaselineRoutes(
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      return tenant(async (tx) => {
-        await assertWorkAccess(tx, user.id, workId);
-        return readPosition(tx, workId);
-      });
+      return named(
+        tenant(async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          return readPosition(tx, workId);
+        }),
+      );
     },
   );
 
@@ -395,23 +411,24 @@ export function registerBillingBaselineRoutes(
       const { id: workId } = request.params;
       const query = request.query;
 
-      const items = await tenant(async (tx) => {
-        await assertWorkAccess(tx, user.id, workId);
-        const [work] = await tx<{ id: string }[]>`
+      await named(
+        tenant(async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null
         `;
-        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        const existing = await readBaseline(tx, workId);
-        if (existing !== undefined) {
-          throw httpError(
-            409,
-            'BILLING_BASELINE_EXISTS',
-            'This Work already has an opening billing baseline; delete the draft one or read the locked one.',
-          );
-        }
-        await assertNoSystemHistory(tx, workId);
-        return loadPricedItems(tx, workId);
-      });
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          const existing = await readBaseline(tx, workId);
+          if (existing !== undefined) {
+            throw httpError(
+              409,
+              'BILLING_BASELINE_EXISTS',
+              'This Work already has an opening billing baseline; delete the draft one or read the locked one.',
+            );
+          }
+          await assertNoSystemHistory(tx, workId);
+        }),
+      );
 
       await assertNotMalware(scanner, body);
 
@@ -461,7 +478,10 @@ export function registerBillingBaselineRoutes(
         if (error !== null && typeof error === 'object' && 'statusCode' in error) {
           throw error;
         }
-        if (!(error instanceof RailwayBillParseError) && !(error instanceof Error)) {
+        // ONLY the parser's own refusal falls through to the recorded
+        // path. Any other throw is a defect in this route, and dressing
+        // it up as "the bill could not be read" would bury it.
+        if (!(error instanceof RailwayBillParseError)) {
           throw error;
         }
         if (
@@ -478,25 +498,27 @@ export function registerBillingBaselineRoutes(
         }
       }
 
-      const baselineId = randomUUID();
-      const sha256 = createHash('sha256').update(body).digest('hex');
-      const objectKey = `${organisationId}/billingbaseline/${baselineId}.pdf`;
-      await storage.put(objectKey, body);
+      const {
+        id: baselineId,
+        objectKey,
+        sha256,
+      } = await storePdfUpload(storage, organisationId, 'billingbaseline', body);
 
-      const position = await tenant(async (tx) => {
-        // Re-read under the Work lock: a Measurement Book could have been
-        // finalized, or a second baseline started, while the scan and the
-        // extraction ran.
-        await tx`select id from works where id = ${workId} for update`;
-        if ((await readBaseline(tx, workId)) !== undefined) {
-          throw httpError(
-            409,
-            'BILLING_BASELINE_EXISTS',
-            'An opening billing baseline was started on this Work while this bill was being read.',
-          );
-        }
-        await assertNoSystemHistory(tx, workId);
-        await tx`
+      const position = await named(
+        tenant(async (tx) => {
+          // Re-read under the Work lock: a Measurement Book could have been
+          // finalized, or a second baseline started, while the scan and the
+          // extraction ran.
+          await tx`select id from works where id = ${workId} for update`;
+          if ((await readBaseline(tx, workId)) !== undefined) {
+            throw httpError(
+              409,
+              'BILLING_BASELINE_EXISTS',
+              'An opening billing baseline was started on this Work while this bill was being read.',
+            );
+          }
+          await assertNoSystemHistory(tx, workId);
+          await tx`
           insert into work_billing_baselines (
             id, organisation_id, work_id, bill_object_key, bill_filename,
             bill_sha256, bill_media_type, bill_size_bytes, bill_source,
@@ -511,33 +533,34 @@ export function registerBillingBaselineRoutes(
             ${billNumber}, ${billDate}, ${billAmount}, ${sequence}, ${user.id}
           )
         `;
-        // One line per priced item, empty, in one statement (the
-        // finalize.ts unnest pattern). The baseline states a position for
-        // EVERY item — a stage left silently at zero because nobody made
-        // a row for it is the failure this table exists to prevent — and
-        // the confirmation count the lock reads is over exactly these.
-        await tx`
+          // One line per live item, empty, in one statement (the
+          // finalize.ts unnest pattern). The baseline states a position for
+          // EVERY item — a stage left silently at zero because nobody made
+          // a row for it is the failure this table exists to prevent — and
+          // the confirmation count the lock reads is over exactly these.
+          // The ids are read HERE, inside the transaction that writes the
+          // rows, so an item added while the scan and extraction ran still
+          // gets its line.
+          await tx`
           insert into work_billing_baseline_lines (
             organisation_id, work_billing_baseline_id, work_id, work_item_id
           )
-          select ${organisationId}, ${baselineId}, ${workId}, item_id
-          from unnest(
-            ${items.map((item) => item.workItemId)}::uuid[]
-          ) as t(item_id)
+          select ${organisationId}, ${baselineId}, ${workId}, wi.id
+          from work_items wi
+          where wi.work_id = ${workId} and wi.deleted_at is null
         `;
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_billing_baseline.created',
-          'work_billing_baselines',
-          baselineId,
-          { workId, billNumber, billDate, billSource: source, items: items.length },
-        );
-        return readPosition(tx, workId);
-      }).catch((error: unknown) => {
-        throw nameBaselineRefusal(error);
-      });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work_billing_baseline.created',
+            'work_billing_baselines',
+            baselineId,
+            { workId, billNumber, billDate, billSource: source },
+          );
+          return readPosition(tx, workId);
+        }),
+      );
       return reply.status(201).send(position);
     },
   );
@@ -572,10 +595,12 @@ export function registerBillingBaselineRoutes(
       const { id } = request.params;
       const { filename } = request.query;
 
-      const target = await tenant(async (tx) => {
-        const baseline = await requireUnlocked(tx, user.id, id);
-        return { workId: baseline.work_id };
-      });
+      const target = await named(
+        tenant(async (tx) => {
+          const baseline = await requireUnlocked(tx, user.id, id);
+          return { workId: baseline.work_id };
+        }),
+      );
 
       await assertNotMalware(scanner, body);
 
@@ -597,36 +622,45 @@ export function registerBillingBaselineRoutes(
         );
       }
 
-      const sha256 = createHash('sha256').update(body).digest('hex');
-      const objectKey = `${organisationId}/billingbaseline/${id}-measurement.pdf`;
-      await storage.put(objectKey, body);
+      // A FRESH uuid key per upload (0111's posture, via the shared
+      // helper), never a key derived from the baseline id: a deterministic
+      // key written outside the transaction could be raced into
+      // overwriting a locked baseline's evidence bytes by a request that
+      // then loses its 409.
+      const { objectKey, sha256 } = await storePdfUpload(
+        storage,
+        organisationId,
+        'billingbaseline',
+        body,
+      );
 
-      return tenant(async (tx) => {
-        const baseline = await requireUnlocked(tx, user.id, id, true);
-        const items = await loadPricedItems(tx, baseline.work_id);
-        // The sheet keys its items the way the railway prints them; the
-        // matcher's own normalisation (A/01 and A/1 are one item) is the
-        // rule this reuses rather than re-derives.
-        const byItem = new Map(
-          parsed.items.map((item) => [normaliseItemNumber(item.itemNumber), item]),
-        );
-        const proposals = items.flatMap((item) => {
-          const found = byItem.get(normaliseItemNumber(item.itemNumber));
-          if (found === undefined || item.percentages === null) return [];
-          const proposal = proposeBaselineLine({
-            remark: found.remark,
-            percentages: item.percentages,
-            effectiveRate: item.effectiveRate,
+      return named(
+        tenant(async (tx) => {
+          const baseline = await requireUnlocked(tx, user.id, id, true);
+          const items = await loadPricedItems(tx, baseline.work_id);
+          // The sheet keys its items the way the railway prints them; the
+          // matcher's own normalisation (A/01 and A/1 are one item) is the
+          // rule this reuses rather than re-derives.
+          const byItem = new Map(
+            parsed.items.map((item) => [normaliseItemNumber(item.itemNumber), item]),
+          );
+          const proposals = items.flatMap((item) => {
+            const found = byItem.get(normaliseItemNumber(item.itemNumber));
+            if (found === undefined || item.percentages === null) return [];
+            const proposal = proposeBaselineLine({
+              remark: found.remark,
+              percentages: item.percentages,
+              effectiveRate: item.effectiveRate,
+            });
+            if (proposal === null) return [];
+            return [{ workItemId: item.workItemId, remark: found.remark, ...proposal }];
           });
-          if (proposal === null) return [];
-          return [{ workItemId: item.workItemId, remark: found.remark, ...proposal }];
-        });
-        // One statement over every proposed line (the finalize.ts unnest
-        // pattern). Confirmed lines are left exactly as they are: a
-        // proposal arriving after a person has signed off a figure must
-        // not move it, and must not quietly unsign it either.
-        if (proposals.length > 0) {
-          await tx`
+          // One statement over every proposed line (the finalize.ts unnest
+          // pattern). Confirmed lines are left exactly as they are: a
+          // proposal arriving after a person has signed off a figure must
+          // not move it, and must not quietly unsign it either.
+          if (proposals.length > 0) {
+            await tx`
             update work_billing_baseline_lines l set
               proposed_supplied = p.supplied,
               proposed_installed = p.installed,
@@ -652,9 +686,9 @@ export function registerBillingBaselineRoutes(
               and l.work_item_id = p.work_item_id
               and l.confirmed_at is null
           `;
-        }
-        const proposed = proposals.length;
-        await tx`
+          }
+          const proposed = proposals.length;
+          await tx`
           update work_billing_baselines set
             measurement_object_key = ${objectKey},
             measurement_filename = ${filename},
@@ -663,23 +697,22 @@ export function registerBillingBaselineRoutes(
             measurement_extraction = ${tx.json(parsed as never)}
           where id = ${id}
         `;
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_billing_baseline.proposed',
-          'work_billing_baselines',
-          id,
-          {
-            workId: target.workId,
-            itemsRead: parsed.items.length,
-            linesProposed: proposed,
-          },
-        );
-        return readPosition(tx, baseline.work_id);
-      }).catch((error: unknown) => {
-        throw nameBaselineRefusal(error);
-      });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work_billing_baseline.proposed',
+            'work_billing_baselines',
+            id,
+            {
+              workId: target.workId,
+              itemsRead: parsed.items.length,
+              linesProposed: proposed,
+            },
+          );
+          return readPosition(tx, baseline.work_id);
+        }),
+      );
     },
   );
 
@@ -707,32 +740,36 @@ export function registerBillingBaselineRoutes(
           'Each baseline line appears at most once in a statement.',
         );
       }
-      return tenant(async (tx) => {
-        const baseline = await requireUnlocked(tx, user.id, id, true);
-        // One statement over every stated line (the finalize.ts unnest
-        // pattern). A figure that MOVES loses its confirmation: the
-        // confirmation was a statement about the numbers that were there,
-        // and carrying it across an edit would put a member's name on a
-        // figure they never saw.
-        const updated = await tx<{ work_item_id: string }[]>`
+      return named(
+        tenant(async (tx) => {
+          const baseline = await requireUnlocked(tx, user.id, id, true);
+          // One statement over every stated line (the finalize.ts unnest
+          // pattern). A figure that MOVES loses its confirmation: the
+          // confirmation was a statement about the numbers that were there,
+          // and carrying it across an edit would put a member's name on a
+          // figure they never saw.
+          const updated = await tx<{ work_item_id: string }[]>`
           update work_billing_baseline_lines l set
             prior_supplied = v.supplied,
             prior_installed = v.installed,
             prior_pac = v.pac,
             prior_final_bill = v.final_bill,
             amount = v.amount,
-            confirmed_by_user_id = case
-              when (l.prior_supplied, l.prior_installed, l.prior_pac,
-                    l.prior_final_bill, l.amount)
-                   is distinct from
-                   (v.supplied, v.installed, v.pac, v.final_bill, v.amount)
-              then null else l.confirmed_by_user_id end,
-            confirmed_at = case
-              when (l.prior_supplied, l.prior_installed, l.prior_pac,
-                    l.prior_final_bill, l.amount)
-                   is distinct from
-                   (v.supplied, v.installed, v.pac, v.final_bill, v.amount)
-              then null else l.confirmed_at end
+            -- The comparison is written once (a multi-assignment
+            -- sub-select may read both the old row and the unnest), so
+            -- the two confirmation columns cannot drift apart.
+            (confirmed_by_user_id, confirmed_at) = (
+              select
+                case when moved then null else l.confirmed_by_user_id end,
+                case when moved then null else l.confirmed_at end
+              from (
+                select (l.prior_supplied, l.prior_installed, l.prior_pac,
+                        l.prior_final_bill, l.amount)
+                       is distinct from
+                       (v.supplied, v.installed, v.pac, v.final_bill, v.amount)
+                       as moved
+              ) m
+            )
           from unnest(
             ${lines.map((line) => line.workItemId)}::uuid[],
             ${lines.map((line) => line.priorSupplied)}::numeric(18,3)[],
@@ -745,26 +782,25 @@ export function registerBillingBaselineRoutes(
             and l.work_item_id = v.work_item_id
           returning l.work_item_id
         `;
-        if (updated.length !== lines.length) {
-          throw httpError(
-            404,
-            'BILLING_BASELINE_ITEM_NOT_FOUND',
-            'This opening baseline has no line for that item.',
+          if (updated.length !== lines.length) {
+            throw httpError(
+              404,
+              'BILLING_BASELINE_ITEM_NOT_FOUND',
+              'This opening baseline has no line for that item.',
+            );
+          }
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work_billing_baseline.lines_set',
+            'work_billing_baselines',
+            id,
+            { workId: baseline.work_id, lines: lines.length },
           );
-        }
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_billing_baseline.lines_set',
-          'work_billing_baselines',
-          id,
-          { workId: baseline.work_id, lines: lines.length },
-        );
-        return readPosition(tx, baseline.work_id);
-      }).catch((error: unknown) => {
-        throw nameBaselineRefusal(error);
-      });
+          return readPosition(tx, baseline.work_id);
+        }),
+      );
     },
   );
 
@@ -782,9 +818,10 @@ export function registerBillingBaselineRoutes(
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
       const { itemNumber } = request.body;
-      return tenant(async (tx) => {
-        const baseline = await requireUnlocked(tx, user.id, id, true);
-        const [confirmed] = await tx<{ work_item_id: string }[]>`
+      return named(
+        tenant(async (tx) => {
+          const baseline = await requireUnlocked(tx, user.id, id, true);
+          const [confirmed] = await tx<{ work_item_id: string }[]>`
           update work_billing_baseline_lines l set
             confirmed_by_user_id = ${user.id},
             confirmed_at = now()
@@ -794,26 +831,25 @@ export function registerBillingBaselineRoutes(
             and l.work_billing_baseline_id = ${id}
           returning l.work_item_id
         `;
-        if (confirmed === undefined) {
-          throw httpError(
-            404,
-            'BILLING_BASELINE_ITEM_NOT_FOUND',
-            'This opening baseline has no line for that item.',
+          if (confirmed === undefined) {
+            throw httpError(
+              404,
+              'BILLING_BASELINE_ITEM_NOT_FOUND',
+              'This opening baseline has no line for that item.',
+            );
+          }
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work_billing_baseline.line_confirmed',
+            'work_billing_baselines',
+            id,
+            { workId: baseline.work_id, itemNumber },
           );
-        }
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_billing_baseline.line_confirmed',
-          'work_billing_baselines',
-          id,
-          { workId: baseline.work_id, itemNumber },
-        );
-        return readPosition(tx, baseline.work_id);
-      }).catch((error: unknown) => {
-        throw nameBaselineRefusal(error);
-      });
+          return readPosition(tx, baseline.work_id);
+        }),
+      );
     },
   );
 
@@ -821,8 +857,9 @@ export function registerBillingBaselineRoutes(
    * The lock, and the two things it does beyond setting a timestamp.
    *
    * It moves the Work's Measurement Book counter to the railway's own
-   * sequence plus one, so the next book this product numbers continues
-   * the series instead of restarting it at 01 beside a railway register
+   * sequence — the finalize counter is increment-then-use, so the next
+   * book this product numbers is that sequence plus one, continuing the
+   * series instead of restarting it at 01 beside a railway register
    * already at 04. The counter's own 0003 decrease guard means this can
    * only ever move the series FORWARD, which is the right shape: a
    * baseline can start a Work's numbering late and can never rewind it.
@@ -844,54 +881,84 @@ export function registerBillingBaselineRoutes(
     },
     async ({ request, user, organisationId, tenant }) => {
       const { id } = request.params;
-      return tenant(async (tx) => {
-        const baseline = await requireUnlocked(tx, user.id, id, true);
-        const unconfirmed = await tx<{ item_number: string }[]>`
+      return named(
+        tenant(async (tx) => {
+          const baseline = await requireUnlocked(tx, user.id, id, true);
+          const unconfirmed = await tx<{ item_number: string }[]>`
           select wi.item_number
           from work_billing_baseline_lines l
           join work_items wi on wi.id = l.work_item_id
           where l.work_billing_baseline_id = ${id} and l.confirmed_at is null
           order by wi.item_number
         `;
-        if (unconfirmed.length > 0) {
-          throw httpError(
-            409,
-            'BILLING_BASELINE_LINES_UNCONFIRMED',
-            `These baseline lines are not confirmed yet: ${unconfirmed
-              .map((row) => row.item_number)
-              .join(', ')}.`,
-          );
-        }
-        await assertNoSystemHistory(tx, baseline.work_id);
-        await tx`
+          if (unconfirmed.length > 0) {
+            throw httpError(
+              409,
+              'BILLING_BASELINE_LINES_UNCONFIRMED',
+              `These baseline lines are not confirmed yet: ${unconfirmed
+                .map((row) => row.item_number)
+                .join(', ')}.`,
+            );
+          }
+          // Every LIVE item has a line. The lines were seeded when the bill
+          // was uploaded; an item added to the schedule since would
+          // otherwise enter the ledger with a silent opening of zero — the
+          // one gap the confirmation count cannot see. Refused here with the
+          // items named, and again by 0114's guard (23W07).
+          const uncovered = await tx<{ item_number: string }[]>`
+          select wi.item_number
+          from work_items wi
+          where wi.work_id = ${baseline.work_id} and wi.deleted_at is null
+            and not exists (
+              select 1 from work_billing_baseline_lines l
+              where l.work_billing_baseline_id = ${id}
+                and l.work_item_id = wi.id
+            )
+          order by wi.item_number
+        `;
+          if (uncovered.length > 0) {
+            throw httpError(
+              409,
+              'BILLING_BASELINE_LINES_MISSING',
+              `These items have no baseline line yet: ${uncovered
+                .map((row) => row.item_number)
+                .join(', ')}.`,
+            );
+          }
+          await assertNoSystemHistory(tx, baseline.work_id);
+          await tx`
           update work_billing_baselines
           set locked_at = now(), locked_by_user_id = ${user.id}
           where id = ${id}
         `;
-        const next = baseline.last_mb_sequence_number + 1;
-        await tx`
+          // SEEDED AT THE RAILWAY'S OWN SEQUENCE, not one past it: the
+          // finalize counter is increment-then-use (finalize.ts upserts and
+          // the conflict branch assigns next_value + 1), so a counter
+          // holding N numbers the next book N+1. Seeding N+1 here would
+          // skip a number the railway's register expects.
+          const next = baseline.last_mb_sequence_number;
+          await tx`
           insert into measurement_book_counters (organisation_id, work_id, next_value)
           values (${organisationId}, ${baseline.work_id}, ${next})
           on conflict (organisation_id, work_id) do update
             set next_value = greatest(measurement_book_counters.next_value, ${next})
         `;
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_billing_baseline.locked',
-          'work_billing_baselines',
-          id,
-          {
-            workId: baseline.work_id,
-            lastMbSequenceNumber: baseline.last_mb_sequence_number,
-            nextMbSequenceNumber: next,
-          },
-        );
-        return readPosition(tx, baseline.work_id);
-      }).catch((error: unknown) => {
-        throw nameBaselineRefusal(error);
-      });
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work_billing_baseline.locked',
+            'work_billing_baselines',
+            id,
+            {
+              workId: baseline.work_id,
+              lastMbSequenceNumber: baseline.last_mb_sequence_number,
+              nextMbSequenceNumber: next + 1,
+            },
+          );
+          return readPosition(tx, baseline.work_id);
+        }),
+      );
     },
   );
 
@@ -904,29 +971,29 @@ export function registerBillingBaselineRoutes(
     },
     async ({ request, reply, user, organisationId, tenant }) => {
       const { id } = request.params;
-      await tenant(async (tx) => {
-        const baseline = await requireUnlocked(tx, user.id, id, true);
-        // The lines go with it. An unlocked baseline is a form somebody
-        // is filling in, and abandoning one leaves nothing behind — the
-        // deductions stay, because they are recorded per Work and are not
-        // this document's.
-        await tx`
+      await named(
+        tenant(async (tx) => {
+          const baseline = await requireUnlocked(tx, user.id, id, true);
+          // The lines go with it. An unlocked baseline is a form somebody
+          // is filling in, and abandoning one leaves nothing behind — the
+          // deductions stay, because they are recorded per Work and are not
+          // this document's.
+          await tx`
           delete from work_billing_baseline_lines
           where work_billing_baseline_id = ${id}
         `;
-        await tx`delete from work_billing_baselines where id = ${id}`;
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_billing_baseline.deleted',
-          'work_billing_baselines',
-          id,
-          { workId: baseline.work_id },
-        );
-      }).catch((error: unknown) => {
-        throw nameBaselineRefusal(error);
-      });
+          await tx`delete from work_billing_baselines where id = ${id}`;
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work_billing_baseline.deleted',
+            'work_billing_baselines',
+            id,
+            { workId: baseline.work_id },
+          );
+        }),
+      );
       return reply.status(204).send(null);
     },
   );
@@ -953,28 +1020,37 @@ export function registerBillingBaselineRoutes(
           'Each deduction head appears at most once.',
         );
       }
-      return tenant(async (tx) => {
-        await assertWorkAccess(tx, user.id, workId);
-        const [work] = await tx<{ id: string }[]>`
+      return named(
+        tenant(async (tx) => {
+          await assertWorkAccess(tx, user.id, workId);
+          const [work] = await tx<{ id: string }[]>`
           select id from works where id = ${workId} and deleted_at is null for update
         `;
-        if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
-        const baseline = await readBaseline(tx, workId);
-        if (baseline?.locked_at != null) {
-          throw httpError(
-            409,
-            'BILLING_BASELINE_LOCKED',
-            'The opening deductions were locked with this Work’s billing baseline.',
-          );
-        }
-        // Wholesale: a head left out of the request means nothing was
-        // withheld under it, which is a statement and not an omission.
-        await tx`
+          if (!work) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
+          const baseline = await readBaseline(tx, workId);
+          if (baseline?.locked_at != null) {
+            throw httpError(
+              409,
+              'BILLING_BASELINE_LOCKED',
+              'The opening deductions were locked with this Work’s billing baseline.',
+            );
+          }
+          // The opening deductions are part of the opening POSITION, so a
+          // Work that can never have one — it has numbered a Measurement
+          // Book here, its history is this system's — takes none. Without
+          // this the receivables arithmetic would subtract pre-system
+          // withholdings from a Work that has no pre-system billing.
+          if (baseline === undefined) {
+            await assertNoSystemHistory(tx, workId);
+          }
+          // Wholesale: a head left out of the request means nothing was
+          // withheld under it, which is a statement and not an omission.
+          await tx`
           delete from work_deduction_entries
           where work_id = ${workId} and head <> all(${heads}::text[])
         `;
-        if (deductions.length > 0) {
-          await tx`
+          if (deductions.length > 0) {
+            await tx`
             insert into work_deduction_entries (
               organisation_id, work_id, head, amount, note, recorded_by_user_id
             )
@@ -989,38 +1065,24 @@ export function registerBillingBaselineRoutes(
                   note = excluded.note,
                   recorded_by_user_id = excluded.recorded_by_user_id
           `;
-        }
-        await audit(
-          tx,
-          organisationId,
-          user.id,
-          'work_deduction_entry.recorded',
-          'work_deduction_entries',
-          // Keyed on the WORK, like work_retention_terms: there is one
-          // opening deduction position per Work rather than a document
-          // per act, and the timeline reads it by that key.
-          workId,
-          { workId, heads },
-        );
-        return readPosition(tx, workId);
-      }).catch((error: unknown) => {
-        throw nameBaselineRefusal(error);
-      });
+          }
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'work_deduction_entry.recorded',
+            'work_deduction_entries',
+            // Keyed on the WORK, like work_retention_terms: there is one
+            // opening deduction position per Work rather than a document
+            // per act, and the timeline reads it by that key.
+            workId,
+            { workId, heads },
+          );
+          return readPosition(tx, workId);
+        }),
+      );
     },
   );
-}
-
-/** `A/01` and `A/1` are one item — the railway zero-pads and this
- * product's schedules do not. The same fold `railway-measurement-match.ts`
- * applies, and deliberately no more of one: a schedule letter is not a
- * number and `A/1` must never read as `B/1`. */
-function normaliseItemNumber(value: string): string {
-  return value
-    .trim()
-    .toUpperCase()
-    .split('/')
-    .map((segment) => (/^\d+$/.test(segment) ? String(Number(segment)) : segment))
-    .join('/');
 }
 
 interface PricedItem {

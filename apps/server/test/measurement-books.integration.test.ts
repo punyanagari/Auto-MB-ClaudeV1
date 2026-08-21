@@ -1682,6 +1682,40 @@ describe('the MB document (phase 3): persisted render, streaming, draft preview'
     expect(auditRow?.count).toBe('2');
   });
 
+  it('refuses to re-render a PDF issued under an older template', async () => {
+    // 0113 backfilled the coefficient way onto every finalized book, and a
+    // newer template can print DIFFERENT figures on the same snapshot — so
+    // a book whose PDF went out under the old template keeps that PDF. The
+    // one-click "Re-render" must not become a rewrite of what the railway
+    // holds.
+    const [before] = await admin<{ template_version: string | null }[]>`
+      select template_version from measurement_books where id = ${finalMbId}
+    `;
+    await admin`
+      update measurement_books set template_version = 'mb-v1'
+      where id = ${finalMbId}
+    `;
+    const refused = await authed(owner, {
+      method: 'POST',
+      url: `/api/measurement-books/${finalMbId}/render`,
+      organisationId,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'MB_RENDER_TEMPLATE_SUPERSEDED' });
+    // The stored bytes are untouched and still stream.
+    const pdf = await authed(owner, {
+      method: 'GET',
+      url: `/api/measurement-books/${finalMbId}/pdf`,
+      organisationId,
+    });
+    expect(pdf.statusCode).toBe(200);
+    await admin`
+      update measurement_books
+      set template_version = ${before?.template_version ?? null}
+      where id = ${finalMbId}
+    `;
+  });
+
   it('a cancelled-after-finalized MB keeps its render downloadable but re-renders no more', async () => {
     // Work 3's MB-02 is the newest live finalized MB and carries no bill.
     const [mb02] = await admin<{ id: string }[]>`

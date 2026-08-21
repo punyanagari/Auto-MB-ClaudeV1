@@ -110,6 +110,9 @@ SET LOCAL statement_timeout = '5min';
 --   23W04  a locked baseline's lines are frozen.
 --   23W05  the opening deductions are frozen with the baseline.
 --   23W06  a baseline line is about a live item of its own Work.
+--   23W07  a baseline locks only when every live item of its Work has a
+--          line — an item added after the lines were seeded would
+--          otherwise enter the ledger with a silent opening of zero.
 --
 -- 23S and 23T remain held by the wave ledger for E-whatsapp-delivery and
 -- E-msme (0111 § SQLSTATEs records why); 23M is free and unclaimed. This
@@ -426,6 +429,7 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   unconfirmed text;
+  uncovered text;
 BEGIN
   IF OLD.locked_at IS NOT NULL THEN
     RAISE EXCEPTION
@@ -492,6 +496,31 @@ BEGIN
         'these baseline lines are not confirmed yet: %', unconfirmed
         USING ERRCODE = '23W03';
     END IF;
+
+    -- Every LIVE item has a line, checked over the item table rather
+    -- than the lines: the lines were seeded when the bill was uploaded,
+    -- and an item added to the schedule between then and the lock would
+    -- otherwise enter the ledger with a silent opening of zero — the
+    -- exact failure the per-item rows exist to prevent, arriving through
+    -- the one gap the confirmation count cannot see.
+    SELECT string_agg(wi.item_number, ', ' ORDER BY wi.item_number)
+      INTO uncovered
+    FROM work_items wi
+    WHERE wi.organisation_id = NEW.organisation_id
+      AND wi.work_id = NEW.work_id
+      AND wi.deleted_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM work_billing_baseline_lines l
+        WHERE l.organisation_id = NEW.organisation_id
+          AND l.work_billing_baseline_id = NEW.id
+          AND l.work_item_id = wi.id
+      );
+
+    IF uncovered IS NOT NULL THEN
+      RAISE EXCEPTION
+        'these items of Work % have no baseline line: %', NEW.work_id, uncovered
+        USING ERRCODE = '23W07';
+    END IF;
   END IF;
 
   RETURN NEW;
@@ -499,7 +528,7 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_work_billing_baseline_update() IS
-  'A billing baseline locks only when every one of its lines has been confirmed by name and the Work still has no Measurement Book of its own; after that it is immutable. Its uploaded documents and their readings never change at all.';
+  'A billing baseline locks only when every one of its lines has been confirmed by name, every live item of its Work has a line, and the Work still has no Measurement Book of its own; after that it is immutable. Its uploaded documents and their readings never change at all.';
 
 CREATE TRIGGER work_billing_baselines_guard_update
 BEFORE UPDATE ON work_billing_baselines
@@ -664,3 +693,155 @@ FOR EACH ROW EXECUTE FUNCTION app_private.guard_work_deduction_entry_mutation();
 CREATE TRIGGER work_deduction_entries_touch_updated_at
 BEFORE UPDATE ON work_deduction_entries
 FOR EACH ROW EXECUTE FUNCTION app_private.touch_updated_at();
+
+-- ---------------------------------------------------------------------
+-- 9. A locked baseline blocks supersession: 0071's soft-delete guard,
+--    restated with an eighteenth register.
+--
+-- Superseding withdraws a Work so its letter can be re-read, and the
+-- successor starts clean — which is exactly the trap: the successor has
+-- no baseline, and the 23W01 insert guard above will refuse it a new one
+-- the moment it finalizes its first Measurement Book. A Work whose
+-- opening position was LOCKED has a settlement history this product is
+-- counting from, and withdrawing the Work out from under it would lose
+-- that history with no way back. An UNLOCKED baseline does not block —
+-- it is a form somebody is filling in, deleted without residue, the same
+-- footing every other draft has here.
+--
+-- The body below is 0071's, verbatim, plus the one new arm (last writer
+-- wins, the same discipline the founder-grant migrations follow);
+-- apps/server/src/work-supersede.ts carries the matching register with
+-- the matching predicate, and the census in
+-- apps/server/test/work-supersede.integration.test.ts compares the two.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION app_private.guard_work_soft_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  blocker text;
+BEGIN
+  IF OLD.deleted_at IS NOT NULL THEN
+    -- Terminal. A withdrawn Work is the record of what was withdrawn;
+    -- nothing about it moves again, including the deletion stamp itself.
+    IF ROW(NEW.*) IS DISTINCT FROM ROW(OLD.*) THEN
+      RAISE EXCEPTION 'Work % is superseded and is immutable', OLD.id
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.deleted_at IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Provenance: nothing withdraws a Work except a supersession whose
+  -- row this transaction has already written, AND whose cited approval
+  -- request is a live supersede request against THIS Work. See 0071.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM work_supersessions s
+    JOIN approval_requests r
+      ON r.organisation_id = s.organisation_id
+     AND r.id = s.approval_request_id
+    WHERE s.organisation_id = NEW.organisation_id
+      AND s.superseded_work_id = NEW.id
+      AND r.entity_type = 'work_supersede'
+      AND r.entity_id = NEW.id
+      AND r.work_id = NEW.id
+      AND r.status NOT IN ('rejected', 'withdrawn')
+  ) THEN
+    RAISE EXCEPTION
+      'a Work is withdrawn only by a supersession citing a live supersede request against it; none names Work %',
+      NEW.id
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- Eligibility: 0071's seventeen registers, plus the locked opening
+  -- billing baseline this migration creates.
+  SELECT x.label INTO blocker FROM (
+    SELECT 'delivery challan' AS label WHERE EXISTS (
+      SELECT 1 FROM delivery_challans t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'issue challan' WHERE EXISTS (
+      SELECT 1 FROM issue_challans t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'installation' WHERE EXISTS (
+      SELECT 1 FROM installations t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'Measurement Book' WHERE EXISTS (
+      SELECT 1 FROM measurement_books t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'Measurement Book merge record' WHERE EXISTS (
+      SELECT 1 FROM measurement_book_merge_provenance t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'Measurement Book entry' WHERE EXISTS (
+      SELECT 1 FROM mb_entries t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'tax invoice' WHERE EXISTS (
+      SELECT 1 FROM tax_invoices t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'credit note' WHERE EXISTS (
+      SELECT 1 FROM credit_notes t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'PAC certificate' WHERE EXISTS (
+      SELECT 1 FROM pac_certificates t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'correction notice' WHERE EXISTS (
+      SELECT 1 FROM correction_notices t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'submitted instrument' WHERE EXISTS (
+      SELECT 1 FROM work_instruments t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'bill' WHERE EXISTS (
+      SELECT 1 FROM bills t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'extension request' WHERE EXISTS (
+      SELECT 1 FROM extension_requests t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'purchase order' WHERE EXISTS (
+      SELECT 1 FROM purchase_orders t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'received railway bill' WHERE EXISTS (
+      SELECT 1 FROM received_railway_bills t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'cited variation order' WHERE EXISTS (
+      SELECT 1 FROM amendment_variation_orders t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id)
+    UNION ALL
+    SELECT 'live change request' WHERE EXISTS (
+      SELECT 1 FROM approval_requests t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id
+        AND t.entity_type <> 'work_supersede'
+        AND t.status IN ('pending', 'approved'))
+    UNION ALL
+    SELECT 'locked opening billing baseline' WHERE EXISTS (
+      SELECT 1 FROM work_billing_baselines t
+      WHERE t.organisation_id = NEW.organisation_id AND t.work_id = NEW.id
+        AND t.locked_at IS NOT NULL)
+  ) AS x LIMIT 1;
+
+  IF blocker IS NOT NULL THEN
+    RAISE EXCEPTION
+      'Work % cannot be superseded while a % names it', NEW.id, blocker
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END
+$$;

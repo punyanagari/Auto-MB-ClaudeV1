@@ -374,12 +374,14 @@ describe('the opening billing position', () => {
       locked.json<WorkBillingBaselineResponse>().baseline?.lockedAt,
     ).not.toBeNull();
 
-    // RESUMPTION, half one: the numbering. The railway is at measurement
-    // 04, so the next book this product numbers is 05 and not 01.
+    // RESUMPTION, half one: the numbering. The counter is seeded at the
+    // railway's own sequence — the finalize counter is increment-then-use,
+    // so a counter holding 4 numbers the next book 5. (Seeding 5 here was
+    // this pack's original off-by-one: it numbered the resumed book MB-06.)
     const [counter] = await admin<{ next_value: number }[]>`
       select next_value from measurement_book_counters where work_id = ${work.workId}
     `;
-    expect(counter?.next_value).toBe(5);
+    expect(counter?.next_value).toBe(4);
 
     // RESUMPTION, half two: the memory. A draft raised now must bill the
     // DELTA over the 18 Nos the railway already paid for, and its remark
@@ -429,6 +431,20 @@ describe('the opening billing position', () => {
     // And the remark narrates the railway's own history: 18 Nos prepaid
     // at the supply stage before this product billed anything.
     expect(line?.remark).toContain('Prepaid 70% for 18');
+
+    // RESUMPTION, proved to the number: the finalized book CONTINUES the
+    // railway's series. The finalize counter is increment-then-use, so
+    // this is the assertion that would have caught a seed of N+1 — the
+    // railway is at 04 and the first book this product numbers must be
+    // MB-05, not MB-06 and not MB-01.
+    const finalized = await authed({
+      method: 'POST',
+      url: `/api/measurement-books/${bookId}/finalize`,
+    });
+    expect(finalized.statusCode, finalized.body).toBe(200);
+    const book = finalized.json<MeasurementBookDetailResponse>().book;
+    expect(book.sequenceNumber).toBe(5);
+    expect(book.mbNumber).toBe(`${work.label}-MB-05`);
   });
 
   it('refuses every act on a locked baseline, in the route and in the database', async () => {
@@ -495,6 +511,21 @@ describe('the opening billing position', () => {
     await expect(
       admin`delete from work_billing_baselines where id = ${baselineId}`,
     ).rejects.toThrow(/locked; every Measurement Book raised since counts from it/);
+
+    // And the Work is no longer supersedable: the locked position is the
+    // settlement memory every book after it counts from, and 0114's own
+    // insert guard would refuse the successor a second one — the history
+    // would be lost with no way back (0114 § 9 blocks in the database,
+    // the register census here).
+    const eligibility = await authed({
+      method: 'GET',
+      url: `/api/works/${work.workId}/supersede-eligibility`,
+    });
+    expect(eligibility.statusCode, eligibility.body).toBe(200);
+    const blockers = eligibility.json<{
+      blockers: readonly { register: string }[];
+    }>().blockers;
+    expect(blockers.map((entry) => entry.register)).toContain('work_billing_baselines');
   });
 
   it('refuses a baseline on a Work this product has already billed, in both layers', async () => {
@@ -542,6 +573,70 @@ describe('the opening billing position', () => {
         )
       `,
     ).rejects.toThrow(/has finalized a Measurement Book in this system/);
+
+    // And the same Work takes no opening deductions: pre-system
+    // withholdings on a Work whose billing history is native to this
+    // system would be subtracted from a gross that never existed.
+    const deductionsRefused = await authed({
+      method: 'PUT',
+      url: `/api/works/${work.workId}/deductions`,
+      payload: { deductions: [{ head: 'retention', amount: '1.00' }] },
+    });
+    expect(deductionsRefused.statusCode).toBe(409);
+    expect(deductionsRefused.json()).toMatchObject({
+      code: 'BILLING_BASELINE_WORK_ALREADY_BILLED',
+    });
+  });
+
+  it('refuses to lock while a live item has no line, in both layers', async () => {
+    const work = await seedImportedWork();
+    const created = await uploadBill(work.workId, billPdf('07'));
+    expect(created.statusCode, created.body).toBe(201);
+    const body = created.json<WorkBillingBaselineResponse>();
+    const baselineId = body.baseline?.id ?? '';
+    for (const line of body.lines) {
+      await authed({
+        method: 'POST',
+        url: `/api/billing-baselines/${baselineId}/lines/confirm`,
+        payload: { itemNumber: line.itemNumber },
+      });
+    }
+
+    // An item lands on the schedule AFTER the lines were seeded — the one
+    // gap the confirmation count cannot see, because there is nothing
+    // unconfirmed, only something absent.
+    const [schedule] = await admin<{ schedule_id: string }[]>`
+      select schedule_id from work_items where id = ${work.itemIds[0] ?? ''}
+    `;
+    await admin`
+      insert into work_items (
+        organisation_id, work_id, schedule_id, item_number, description,
+        unit_code, awarded_quantity, effective_rate, payment_category
+      )
+      values (
+        ${organisationId}, ${work.workId}, ${schedule?.schedule_id ?? ''},
+        'A/9', 'Item added after the lines were made', 'Nos', '5.000',
+        '100.00', 'SUPPLY'
+      )
+    `;
+
+    const refused = await authed({
+      method: 'POST',
+      url: `/api/billing-baselines/${baselineId}/lock`,
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'BILLING_BASELINE_LINES_MISSING' });
+    expect(refused.json<{ message: string }>().message).toContain('A/9');
+
+    // The second layer: a lock written straight past the route gets the
+    // same refusal from 0114's guard (23W07).
+    await expect(
+      admin`
+        update work_billing_baselines
+        set locked_at = now(), locked_by_user_id = ${ownerUserId}
+        where id = ${baselineId}
+      `,
+    ).rejects.toThrow(/have no baseline line/);
   });
 
   it('records a bill whose own text cannot be read, and refuses to be told twice', async () => {

@@ -3774,18 +3774,25 @@ describe('the opening billing position of a pre-system Work (0114)', () => {
     // 23W, this pack's, opened here. Whether the block is FREE is the
     // repo-wide census above; this only says the file is internally
     // consistent, which is the distinction 0111 learned the hard way.
+    //
+    // The 23514s are not this pack's: they belong to § 9's restatement of
+    // 0071's soft-delete guard, which carries its own codes with its own
+    // body — a restatement that rewrote them would be a different guard.
     const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
       (match) => match[1],
     );
-    expect(codes.length).toBeGreaterThanOrEqual(7);
-    expect(codes.every((code) => code?.startsWith('23W'))).toBe(true);
-    expect([...new Set(codes)].sort()).toEqual([
+    const own = codes.filter((code) => code !== '23514');
+    expect(codes.filter((code) => code === '23514')).toHaveLength(3);
+    expect(own.length).toBeGreaterThanOrEqual(8);
+    expect(own.every((code) => code?.startsWith('23W'))).toBe(true);
+    expect([...new Set(own)].sort()).toEqual([
       '23W01',
       '23W02',
       '23W03',
       '23W04',
       '23W05',
       '23W06',
+      '23W07',
     ]);
   });
 
