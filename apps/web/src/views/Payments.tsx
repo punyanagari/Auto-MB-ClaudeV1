@@ -22,11 +22,19 @@ import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FormError, FormNotice, Hint } from '../ui/form.js';
+import { useUnavailableControl } from '../ui/unavailable.js';
 import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  sortRows,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { errorMessage, describeLoadFailure } from '../lib/load-failure.js';
 import { NumericInput } from '../ui/numeric-input.js';
 
@@ -390,6 +398,9 @@ function EmployeeRegister({
 }) {
   const [creating, setCreating] = useState(false);
   const [paying, setPaying] = useState<PaymentRequest | null>(null);
+  /* Which advance is the largest. The screen holds the whole list; the
+     amount is a decimal string read as a number for COMPARISON only. */
+  const [sort, toggleSort] = useColumnSort<'amount'>();
 
   if (error !== null) {
     return (
@@ -468,15 +479,22 @@ function EmployeeRegister({
               <th scope="col">Type</th>
               <th scope="col">Beneficiary</th>
               <th scope="col">Purpose</th>
-              <th scope="col" className="numeric">
+              <SortHeader
+                className="numeric"
+                sortKey="amount"
+                sort={sort}
+                onSort={toggleSort}
+              >
                 Amount
-              </th>
+              </SortHeader>
               <th scope="col">Status</th>
               <th scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
-            {requests.map((request) => (
+            {sortRows(requests, sort, {
+              amount: (request) => Number(request.amount),
+            }).map((request) => (
               <tr key={request.id}>
                 <td className={numericCell}>
                   {request.requestNumber}
@@ -863,6 +881,12 @@ function VendorRegister({
 }) {
   const [recording, setRecording] = useState(false);
   const [paying, setPaying] = useState<VendorInvoice | null>(null);
+  /* The payables ledger's own questions: what is due first, and what is
+     the largest bill still open. The screen holds the whole ledger, so
+     both are answered here. Money is a decimal string read as a number
+     for COMPARISON only — every figure on screen is still formatted from
+     the string the server sent. */
+  const [sort, toggleSort] = useColumnSort<'dueOn' | 'amount' | 'outstandingAmount'>();
 
   if (error !== null) {
     return (
@@ -914,20 +938,36 @@ function VendorRegister({
           <thead>
             <tr>
               <th scope="col">Vendor / invoice</th>
-              <th scope="col">Due</th>
-              <th scope="col" className="numeric">
+              <SortHeader sortKey="dueOn" sort={sort} onSort={toggleSort}>
+                Due
+              </SortHeader>
+              <SortHeader
+                className="numeric"
+                sortKey="amount"
+                sort={sort}
+                onSort={toggleSort}
+              >
                 Amount
-              </th>
-              <th scope="col" className="numeric">
+              </SortHeader>
+              <SortHeader
+                className="numeric"
+                sortKey="outstandingAmount"
+                sort={sort}
+                onSort={toggleSort}
+              >
                 Outstanding
-              </th>
+              </SortHeader>
               <th scope="col">TDS</th>
               <th scope="col">Invoice PDF</th>
               <th scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
-            {invoices.map((invoice) => {
+            {sortRows(invoices, sort, {
+              dueOn: (invoice) => invoice.dueOn,
+              amount: (invoice) => Number(invoice.amount),
+              outstandingAmount: (invoice) => Number(invoice.outstandingAmount),
+            }).map((invoice) => {
               const livePayments = invoice.payments.filter(
                 (payment) => payment.voidedAt === null,
               );
@@ -1175,7 +1215,10 @@ function NewVendorInvoiceForm({
   const [section, setSection] = useState<'' | '194C' | '194J'>('');
   const [payeeClass, setPayeeClass] = useState<'individual_huf' | 'other'>('other');
   const [purchaseOrderId, setPurchaseOrderId] = useState('');
-  const [orders, setOrders] = useState<readonly PurchaseOrder[]>([]);
+  /** This vendor's billable orders, or `null` while they are unknown —
+   * not yet read, or read and failed. `[]` means the read came back and
+   * matched nothing, which is a different sentence. */
+  const [orders, setOrders] = useState<readonly PurchaseOrder[] | null>(null);
 
   /* The orders this vendor could have billed for (migration 0109): issued
      or closed, since a draft has ordered nothing. The picker is a
@@ -1191,17 +1234,25 @@ function NewVendorInvoiceForm({
        — either way the operator is refused for a value they were shown as
        unset. */
     setPurchaseOrderId('');
-    if (vendor === '') {
-      setOrders([]);
-      return;
-    }
+    /* Cleared BEFORE the refetch, not only when the new vendor has none.
+       Leaving the previous vendor's orders in state while the next
+       vendor's read is in flight offers the operator a list of orders
+       belonging to somebody else — and if the read then fails, it leaves
+       them there permanently. */
+    setOrders(null);
+    if (vendor === '') return;
     let cancelled = false;
     /* Narrowed at the SERVER, not in the browser: the register grows
        without limit and this control needs at most a page of it. `issued`
        is the status a bill is normally raised against; a closed order can
        take a second invoice, and the operator reaches that one from the
        order itself rather than from a dropdown of every order this
-       organisation has ever placed. */
+       organisation has ever placed.
+       ponytail: the route has no vendor filter, so this reads one page of
+       the register and matches the vendor here — a vendor whose order is
+       older than that page finds an empty picker, which is why the hint
+       below says "recently issued" rather than claiming they have none.
+       Upgrade path is a `?vendor=` on /api/purchase-orders. */
     api
       .listPurchaseOrders(organisationId, { status: 'issued', limit: 100 })
       .then((result) => {
@@ -1211,12 +1262,29 @@ function NewVendorInvoiceForm({
         );
       })
       .catch(() => {
-        // The picker simply is not offered; the invoice still records.
+        // Stays null: unknown, not empty. The picker says so, and the
+        // invoice still records without a link.
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, vendor]);
+
+  /* Four states the operator can tell apart, where there used to be two.
+     No vendor chosen yet; the read failed or has not landed; the read
+     landed and this vendor has no RECENTLY issued order — which is not
+     the same claim as "has none", because only a page of the register was
+     read; and orders to choose from. */
+  const orderPickerUnavailable =
+    vendor === ''
+      ? 'Choose the vendor first; their purchase orders are read from the register once they are named.'
+      : orders === null
+        ? 'The purchase orders could not be read, so there is nothing to link to. Reload to try again — the invoice records either way.'
+        : orders.length === 0
+          ? 'None of the recently issued purchase orders is for this vendor. If theirs is an older one, open it under Purchase orders and record the invoice from there — the link is optional here.'
+          : null;
+  const { control: orderPickerControl, hintId: orderPickerHintId } =
+    useUnavailableControl(orderPickerUnavailable);
 
   const ready = vendor !== '' && number.trim() !== '' && amount.trim() !== '';
 
@@ -1332,33 +1400,35 @@ function NewVendorInvoiceForm({
           </select>
         </Field>
       )}
-      {orders.length > 0 && (
-        <Field>
-          <label htmlFor="invoice-purchase-order">Against purchase order</label>
-          <select
-            id="invoice-purchase-order"
-            className="input"
-            value={purchaseOrderId}
-            onChange={(event) => {
-              setPurchaseOrderId(event.target.value);
-            }}
-          >
-            <option value="">No purchase order</option>
-            {orders.map((order) => (
-              <option key={order.id} value={order.id}>
-                {order.poNumber ?? 'Draft'}
-                {order.workCode !== null
-                  ? ` — ${order.workCode}`
-                  : ' — outside any LOA'}
-              </option>
-            ))}
-          </select>
-          <Hint>
-            A purchase order does not close until one of its vendor invoices is recorded
-            here with its PDF uploaded.
-          </Hint>
-        </Field>
-      )}
+      {/* The field stays put when this vendor has no open purchase
+          order. Removing it hid the LINK between the two documents, so an
+          operator recording an invoice against a PO they had just raised
+          could not tell whether the link existed and was missing, or the
+          product does not make it. Disabled, it says which. */}
+      <Field>
+        <label htmlFor="invoice-purchase-order">Against purchase order</label>
+        <select
+          id="invoice-purchase-order"
+          className="input"
+          value={purchaseOrderId}
+          {...orderPickerControl}
+          onChange={(event) => {
+            setPurchaseOrderId(event.target.value);
+          }}
+        >
+          <option value="">No purchase order</option>
+          {(orders ?? []).map((order) => (
+            <option key={order.id} value={order.id}>
+              {order.poNumber ?? 'Draft'}
+              {order.workCode !== null ? ` — ${order.workCode}` : ' — outside any LOA'}
+            </option>
+          ))}
+        </select>
+        <Hint id={orderPickerHintId}>
+          {orderPickerUnavailable ??
+            'A purchase order does not close until one of its vendor invoices is recorded here with its PDF uploaded.'}
+        </Hint>
+      </Field>
       <Actions>
         <Button
           disabled={pending || !ready}

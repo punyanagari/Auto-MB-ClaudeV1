@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { type ApiClient } from '../../src/api.js';
 import { Approvals } from '../../src/views/Approvals.js';
@@ -503,7 +510,11 @@ describe('Correction flow (issued Delivery Challan)', () => {
     renderDetail(api);
 
     expect(await screen.findByText('DCW-1-CN-01')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
+    // Scoped to the notice's own row: the challan's action bar above
+    // carries an Open PDF of its own, disabled while the challan has no
+    // render (UX.md § 31), so the name is no longer unique on the page.
+    const noticeRow = screen.getByRole('row', { name: /DCW-1-CN-01/ });
+    expect(within(noticeRow).getByRole('button', { name: 'Open PDF' })).toBeTruthy();
   });
 
   it('renders a correction request in the approvals queue with its type and document', async () => {
@@ -780,5 +791,86 @@ describe('Draft challan serial recording', () => {
     expect(screen.queryByRole('heading', { name: 'Serial numbers' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record serials' })).toBeNull();
     expect(screen.queryByText(/Serials outstanding/)).toBeNull();
+  });
+});
+
+describe('Document actions that cannot be offered yet (docs/UX.md § 31)', () => {
+  function renderIssued() {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(
+        challanDetail({
+          status: 'issued',
+          challanNumber: 'DC/1',
+          sequenceNumber: 1,
+          issuedAt: '2026-08-08T10:00:00.000Z',
+        }),
+      ),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canSign={false}
+        // Deliberately WITHOUT canModify: the reasons below must hold for
+        // a reader who has no Generate button on screen, so they state
+        // the document's condition rather than naming a control.
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('shows both document actions on an issued challan, disabled with their reasons', async () => {
+    renderIssued();
+    await screen.findByRole('heading', { name: 'Delivery Challan DC/1' });
+
+    const openPdf = screen.getByRole('button', { name: 'Open PDF' });
+    expect(openPdf.hasAttribute('disabled')).toBe(true);
+    const pdfReason = screen.getByText(
+      'No PDF has been generated for this challan yet.',
+    );
+    // One announcement, not two neighbours.
+    expect(openPdf.getAttribute('aria-describedby')).toBe(pdfReason.id);
+
+    const openSigned = screen.getByRole('button', { name: 'Open signed copy' });
+    expect(openSigned.hasAttribute('disabled')).toBe(true);
+    // Status-truthful: never claims the challan went to the signing
+    // queue, because an issued-but-unsigned challan usually has not.
+    const signedReason = screen.getByText('This challan has not been signed yet.');
+    expect(openSigned.getAttribute('aria-describedby')).toBe(signedReason.id);
+  });
+
+  it('keeps the absence on a draft, whose status chip already says why', async () => {
+    const api = stubApi({
+      getChallan: vi.fn().mockResolvedValue(challanDetail()),
+      getWork: vi.fn().mockResolvedValue(challanWork()),
+    });
+    render(
+      <ChallanDetail
+        api={api}
+        organisationId={ORG_ID}
+        challanId={CHALLAN_ID}
+        canSign={false}
+        canModify={false}
+        canIssue={false}
+        canCancel={false}
+        canRecordEvidence={false}
+        onEdit={vi.fn()}
+        onDeleted={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole('heading', { name: 'Draft Delivery Challan' });
+    // A draft has no PDF and no signed copy, and will have neither while
+    // it stays a draft — a disabled control would restate its own chip.
+    expect(screen.queryByRole('button', { name: 'Open PDF' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open signed copy' })).toBeNull();
   });
 });

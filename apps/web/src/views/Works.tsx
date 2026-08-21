@@ -10,6 +10,7 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { DownloadButton } from '../ui/download-button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
+import { SortHeader, sortRows, useColumnSort } from '../ui/table.js';
 
 interface WorksProps {
   readonly api: ApiClient;
@@ -132,8 +133,15 @@ export function Works({
     [works],
   );
 
+  /* The register's two other questions. The server returns the whole
+   * list, so both are answered here rather than by a round trip: which
+   * contracts are the largest, and which letters are the oldest. The
+   * contract value is a decimal string on the wire and is read as a
+   * number for COMPARISON only — nothing is summed. */
+  const [sort, toggleSort] = useColumnSort<'letterDate' | 'contractValue'>();
+
   const rows = useMemo(() => {
-    let list = works ?? [];
+    let list: readonly Work[] = works ?? [];
     if (filter !== 'all') list = list.filter((work) => work.status === filter);
     const needle = query.trim().toLowerCase();
     if (needle.length > 0) {
@@ -144,8 +152,11 @@ export function Works({
           work.letterNumber.toLowerCase().includes(needle),
       );
     }
-    return list;
-  }, [works, filter, query]);
+    return sortRows(list, sort, {
+      letterDate: (work) => work.letterDate,
+      contractValue: (work) => Number(work.contractValue),
+    });
+  }, [works, filter, query, sort]);
 
   return (
     <>
@@ -259,8 +270,25 @@ export function Works({
                   <thead>
                     <tr className="border-b border-border bg-muted/40 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                       <th className="px-4 py-3">Work</th>
-                      <th className="px-4 py-3">Letter</th>
-                      <th className="px-4 py-3 text-right">Contract value</th>
+                      {/* The letter's DATE is what this column sorts on —
+                          the LOA date the office asks the register for,
+                          not the letter number printed above it. */}
+                      <SortHeader
+                        className="px-4 py-3"
+                        sortKey="letterDate"
+                        sort={sort}
+                        onSort={toggleSort}
+                      >
+                        Letter date
+                      </SortHeader>
+                      <SortHeader
+                        className="px-4 py-3 text-right"
+                        sortKey="contractValue"
+                        sort={sort}
+                        onSort={toggleSort}
+                      >
+                        Contract value
+                      </SortHeader>
                       <th className="px-4 py-3">Status</th>
                     </tr>
                   </thead>

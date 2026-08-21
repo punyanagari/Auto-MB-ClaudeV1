@@ -13,7 +13,7 @@ import {
   nonBlankString,
 } from './primitives.js';
 import { InvoiceNumberPrefixSchema } from './organisations.js';
-import { NextCursorSchema, withKeysetQuery } from './pagination.js';
+import { SortedNextCursorSchema, withSortedKeysetQuery } from './pagination.js';
 
 /**
  * The two GST tax documents (migration 0035): the TAX INVOICE and the
@@ -593,7 +593,7 @@ export type TaxInvoiceRegisterEntry = Static<typeof TaxInvoiceRegisterEntrySchem
  * would duplicate the Work's own Bills tab, and a status filter would offer
  * to hide the drafts and the cancellations the register exists to keep
  * visible. Both bounds are inclusive; either may be sent alone. */
-export const TaxInvoiceRegisterQuerySchema = withKeysetQuery(
+export const TaxInvoiceRegisterQuerySchema = withSortedKeysetQuery(
   Type.Object(
     {
       invoicedFrom: Type.Optional(DateOnlySchema),
@@ -611,7 +611,9 @@ export const TaxInvoiceRegisterQuerySchema = withKeysetQuery(
 export const TaxInvoiceRegisterResponseSchema = Type.Object(
   {
     invoices: Type.Array(TaxInvoiceRegisterEntrySchema),
-    nextCursor: NextCursorSchema,
+    /* Sort-tagged: this register sorts, so its cursor carries the order
+     * it was minted under and cannot be replayed under the other one. */
+    nextCursor: SortedNextCursorSchema,
   },
   { additionalProperties: false },
 );

@@ -2,11 +2,13 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  useCallback,
   useEffect,
   useId,
   useRef,
   useState,
 } from 'react';
+import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '../lib/cn.js';
 
 /* The corner cells clip the card themselves rather than the table carrying
@@ -256,3 +258,170 @@ export const wrapCell =
  * width guessed per screen.
  */
 export const controlCell = 'min-w-44 align-top';
+
+/* ---------------------------------------------------------------------
+ * Register sorting.
+ *
+ * A register answers one question in the order the office keeps it in —
+ * newest first, almost everywhere — and a second question the same rows
+ * can answer only in a different order: which contract is the largest,
+ * which letter is the oldest. The affordance is the column heading
+ * itself, because the heading already names the key being sorted on and
+ * a separate sort control would be a second place to look.
+ *
+ * The cycle is desc then asc, not desc/asc/none: "none" is a state an
+ * operator cannot see the point of, and the register's own default order
+ * is what is on screen before anything is clicked. That default is
+ * `null` here, so a register that has not been sorted renders exactly the
+ * order the server sent — which is why adding a sortable heading changes
+ * no screen until it is used.
+ * ------------------------------------------------------------------- */
+
+export type SortDirection = 'asc' | 'desc';
+
+/** The column being sorted on and which way. `null` is the register's own
+ * default order. */
+export interface ColumnSort<K extends string = string> {
+  readonly key: K;
+  readonly direction: SortDirection;
+}
+
+/**
+ * The sort state a register's headings drive.
+ *
+ * `toggle` is the whole interaction: clicking a new column sorts it
+ * descending (largest value, latest date — the answer the operator is
+ * usually after), clicking the sorted column again flips it to ascending,
+ * and clicking it a third time returns to descending.
+ */
+export function useColumnSort<K extends string>(
+  initial: ColumnSort<K> | null = null,
+): readonly [ColumnSort<K> | null, (key: K) => void] {
+  const [sort, setSort] = useState<ColumnSort<K> | null>(initial);
+  const toggle = useCallback((key: K) => {
+    setSort((current) =>
+      current !== null && current.key === key && current.direction === 'desc'
+        ? { key, direction: 'asc' }
+        : { key, direction: 'desc' },
+    );
+  }, []);
+  return [sort, toggle];
+}
+
+/**
+ * The `?sort=` a paged register's route wants, for the column state its
+ * headings hold.
+ *
+ * Descending maps to `undefined`, not to `date_desc`. They mean the same
+ * thing to the server, but `undefined` is the request the screen has
+ * ALREADY made: mapping the first click on a Date heading to an explicit
+ * `date_desc` would blank the register and re-read it to receive the rows
+ * it is already showing, in the order it is already showing them. Only a
+ * genuine reversal costs a round trip.
+ *
+ * A register with more than one sortable column would need a key here as
+ * well; the routes offer their date column and nothing else (see
+ * `packages/contracts/src/pagination.ts` for why a money column cannot be
+ * a cursor key), so the direction is the whole of it.
+ */
+export function registerSortParameter(sort: ColumnSort | null): 'date_asc' | undefined {
+  return sort !== null && sort.direction === 'asc' ? 'date_asc' : undefined;
+}
+
+/**
+ * A column heading that sorts its register.
+ *
+ * `aria-sort` rides the `th` (where the specification puts it, and where a
+ * screen reader reads it as it enters the column) while the button inside
+ * carries the label and the tab stop. The button is `inline-flex`, so it
+ * follows the cell's own text alignment — a `numericCell` heading stays
+ * right-aligned without being told twice.
+ *
+ * The arrow is decorative: the sorted state is announced by `aria-sort`,
+ * so an icon repeating it in the accessible name would say it twice.
+ */
+export function SortHeader<K extends string>({
+  sortKey,
+  sort,
+  onSort,
+  className,
+  children,
+  ...props
+}: Omit<React.ComponentProps<'th'>, 'onClick'> & {
+  readonly sortKey: K;
+  readonly sort: ColumnSort<K> | null;
+  readonly onSort: (key: K) => void;
+}) {
+  const active = sort !== null && sort.key === sortKey;
+  const Icon = !active
+    ? ChevronsUpDown
+    : sort.direction === 'asc'
+      ? ArrowUp
+      : ArrowDown;
+  return (
+    <th
+      scope="col"
+      aria-sort={
+        active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'
+      }
+      className={className}
+      {...props}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          onSort(sortKey);
+        }}
+        className="inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-inherit uppercase focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+      >
+        {children}
+        <Icon
+          aria-hidden="true"
+          className={cn('size-3 shrink-0', active ? 'text-foreground' : 'opacity-40')}
+        />
+      </button>
+    </th>
+  );
+}
+
+/**
+ * Sorts a register the view already holds in full.
+ *
+ * One accessor per sortable column, returning the value to compare:
+ * a `YYYY-MM-DD` date (which compares correctly as text), a display
+ * string, or a number. Money and quantities are decimal strings on the
+ * wire; a view that sorts on one converts it here, for COMPARISON only —
+ * no total is ever computed from the result, so engineering rule 5 is
+ * untouched.
+ *
+ * Rows with no value for the sorted column sink to the bottom in BOTH
+ * directions: a challan with no value yet is not "the smallest", it is
+ * unanswered, and burying it under an ascending sort would hide it.
+ *
+ * `Array.prototype.sort` is stable, so rows that tie keep the order the
+ * server sent — which is the register's default order, and the reason a
+ * sort on a coarse key like a date does not shuffle within the day.
+ */
+export function sortRows<T, K extends string>(
+  rows: readonly T[],
+  sort: ColumnSort<K> | null,
+  accessors: Readonly<Record<K, (row: T) => string | number | null | undefined>>,
+): readonly T[] {
+  if (sort === null) return rows;
+  const read = accessors[sort.key];
+  const sign = sort.direction === 'asc' ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const a = read(left);
+    const b = read(right);
+    const aMissing = a === null || a === undefined || a === '';
+    const bMissing = b === null || b === undefined || b === '';
+    if (aMissing && bMissing) return 0;
+    if (aMissing) return 1;
+    if (bMissing) return -1;
+    const order =
+      typeof a === 'number' && typeof b === 'number'
+        ? a - b
+        : String(a).localeCompare(String(b));
+    return sign * order;
+  });
+}

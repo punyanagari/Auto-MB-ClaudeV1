@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Contact,
   CreditNote,
@@ -27,7 +27,14 @@ import { DateField } from '../ui/date-field.js';
 import { FormError, FormNotice } from '../ui/form.js';
 import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  registerSortParameter,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { WorkLink } from '../ui/work-link.js';
 import { DirectInvoiceForm } from './work-tax-invoices/DirectInvoiceForm.js';
@@ -144,6 +151,30 @@ export function InvoicesRegister({
    * Operable) is the real gate, exactly as the challan register trusts it. */
   const [openWorkActive, setOpenWorkActive] = useState(true);
 
+  /* This register PAGES, so its order is the server's. Sorting the rows
+   * already loaded would order the pages fetched so far and call that the
+   * register — the oldest invoice is on the last page, which is the one
+   * an oldest-first sort is asked for. Clicking the heading re-reads from
+   * the first page with `?sort=`; `null` sends nothing, which is the
+   * register's own newest-first order.
+   *
+   * Only the date sorts. `taxableValue` is null while an invoice is a
+   * draft, and a null leading keyset key drops every draft after the
+   * first page — see `packages/contracts/src/pagination.ts`.
+   *
+   * `registerSortParameter` maps descending to `undefined`, so the FIRST
+   * click on the heading — which asks for the order already on screen —
+   * does not blank the register to re-read it. */
+  const [sort, toggleSort] = useColumnSort<'invoiceDate'>();
+  const sortParameter = registerSortParameter(sort);
+  /* Which read the rows on screen came from. `loadMore` is an async
+   * continuation of a read that may already be obsolete: flip the sort
+   * while a page is in flight and the response carries rows from the OLD
+   * order, plus a cursor minted under it. Appending those rows and
+   * installing that cursor would walk the rest of the register from a
+   * position the new order never had. */
+  const readStamp = useRef(0);
+
   const fetchPage = useCallback(
     (cursor?: string) =>
       api.listTaxInvoices(organisationId, {
@@ -151,12 +182,14 @@ export function InvoicesRegister({
         ...(cursor !== undefined ? { cursor } : {}),
         ...(dateWindow.from !== '' ? { invoicedFrom: dateWindow.from } : {}),
         ...(dateWindow.to !== '' ? { invoicedTo: dateWindow.to } : {}),
+        ...(sortParameter !== undefined ? { sort: sortParameter } : {}),
       }),
-    [api, organisationId, dateWindow],
+    [api, organisationId, dateWindow, sortParameter],
   );
 
   useEffect(() => {
     let cancelled = false;
+    readStamp.current += 1;
     setInvoices(null);
     setNextCursor(null);
     setLoadError(null);
@@ -306,13 +339,19 @@ export function InvoicesRegister({
 
   async function loadMore(): Promise<void> {
     if (nextCursor === null) return;
+    const stamp = readStamp.current;
     setPending(true);
     setLoadError(null);
     try {
       const page = await fetchPage(nextCursor);
+      // The sort or the date window changed while this page was in
+      // flight: these rows belong to a register that is no longer on
+      // screen, and so does the cursor they came with.
+      if (readStamp.current !== stamp) return;
       setInvoices((current) => [...(current ?? []), ...page.invoices]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
+      if (readStamp.current !== stamp) return;
       setLoadError(
         errorMessage(cause, 'The next page of tax invoices could not be loaded.'),
       );
@@ -432,7 +471,9 @@ export function InvoicesRegister({
                   <tr>
                     <th scope="col">Number</th>
                     <th scope="col">Buyer</th>
-                    <th scope="col">Date</th>
+                    <SortHeader sortKey="invoiceDate" sort={sort} onSort={toggleSort}>
+                      Date
+                    </SortHeader>
                     <th scope="col" className={numericCell}>
                       Taxable value
                     </th>
