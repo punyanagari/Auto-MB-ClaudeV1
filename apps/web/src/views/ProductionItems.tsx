@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Boxes, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { Boxes, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import type {
   BomNode,
   ProductionItem,
+  ProductionItemRole,
   ProductionSpecification,
+  SaveProductionItemRequest,
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { cn } from '../lib/cn.js';
@@ -13,10 +15,11 @@ import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
-import { Actions, Field, FieldRow, FormError, FormNotice } from '../ui/form.js';
+import { Actions, Field, FieldRow, FormError, FormNotice, Hint } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { NumericInput } from '../ui/numeric-input.js';
+import { TabRail } from '../ui/tab-rail.js';
 
 /**
  * The OEM item master and its recursive bill of material.
@@ -74,6 +77,48 @@ const EMPTY_DRAFT: ItemDraft = {
   serialControlled: true,
 };
 
+/** What each kind is called where the screen LABELS one. */
+const ROLE_NOUN: Readonly<Record<ProductionItemRole, string>> = {
+  oem: 'OEM item',
+  sub: 'Sub item',
+};
+
+/** The same two inside a sentence — "New OEM item", "Add sub item". An
+ * initialism keeps its capitals mid-sentence and a common noun does
+ * not, which is why this is a second table rather than `toLowerCase`. */
+const ROLE_NOUN_INLINE: Readonly<Record<ProductionItemRole, string>> = {
+  oem: 'OEM item',
+  sub: 'sub item',
+};
+
+/**
+ * A draft, shaped into the request body both forms send.
+ *
+ * The implications live here and only here, because the server states
+ * them as refusals and a form that computed them differently in two
+ * places would meet one of those refusals in exactly one of them: an OEM
+ * item is manufactured (migration 0117), and a manufactured item always
+ * carries a serial series and is always serial controlled (0084).
+ */
+function itemBody(
+  draft: ItemDraft,
+  role: ProductionItemRole,
+  specifications?: readonly ProductionSpecification[],
+): SaveProductionItemRequest {
+  const manufactured = role === 'oem' || draft.manufactured;
+  return {
+    itemCode: draft.itemCode,
+    name: draft.name,
+    category: draft.category,
+    unit: draft.unit,
+    manufactured,
+    role,
+    ...(manufactured ? { serialPrefix: draft.serialPrefix.toUpperCase() } : {}),
+    serialControlled: manufactured || draft.serialControlled,
+    ...(specifications === undefined ? {} : { specifications: [...specifications] }),
+  };
+}
+
 export function ProductionItems({
   api,
   organisationId,
@@ -85,6 +130,11 @@ export function ProductionItems({
   const [loadVersion, reload] = useReload();
   const [includeRetired, setIncludeRetired] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  /* Item 31: the rail is the OEM catalogue, and sub items are the parts
+     it is built from. Both stay reachable — a part still has to be
+     renamed and retired — but only one of them is what an operator opens
+     this screen to find. */
+  const [kind, setKind] = useState<ProductionItemRole>('oem');
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +148,7 @@ export function ProductionItems({
         setActiveId((current) =>
           current !== null && loaded.items.some((item) => item.id === current)
             ? current
-            : (loaded.items.find((item) => item.manufactured)?.id ??
+            : (loaded.items.find((item) => item.role === 'oem')?.id ??
               loaded.items[0]?.id ??
               null),
         );
@@ -119,7 +169,7 @@ export function ProductionItems({
       eyebrow="Production master"
       title="Manufactured items"
       titleId="production-items-title"
-      description="Define OEM products, user-owned specifications, serial series, and recursive bills of material."
+      description="Define OEM products and the sub items they are built from, with user-owned specifications, serial series, and recursive bills of material."
       action={
         canModify ? (
           <Button
@@ -128,7 +178,7 @@ export function ProductionItems({
             }}
           >
             <Plus data-icon="inline-start" aria-hidden="true" />
-            Add OEM item
+            Add item
           </Button>
         ) : undefined
       }
@@ -156,6 +206,7 @@ export function ProductionItems({
   }
 
   const active = items.find((item) => item.id === activeId) ?? null;
+  const visible = items.filter((item) => item.role === kind);
 
   return (
     <>
@@ -166,6 +217,7 @@ export function ProductionItems({
           organisationId={organisationId}
           onSaved={(created) => {
             setCreating(false);
+            setKind(created.role);
             setActiveId(created.id);
             reload();
           }}
@@ -196,38 +248,64 @@ export function ProductionItems({
       ) : (
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
           <Card>
-            <CardHeader>
-              <h2 className="text-sm font-semibold">OEM catalogue</h2>
+            <CardHeader className="flex flex-col items-stretch gap-3">
+              <h2 className="text-sm font-semibold">Catalogue</h2>
+              <TabRail
+                label="Catalogue kind"
+                tabs={[
+                  ['oem', 'OEM items'],
+                  ['sub', 'Sub items'],
+                ]}
+                active={kind}
+                onSelect={(next) => {
+                  setKind(next);
+                  /* The rail's selection follows its filter: an item
+                     that is no longer listed cannot be the one the
+                     detail pane is describing. */
+                  const first = items.find((item) => item.role === next);
+                  if (first !== undefined) setActiveId(first.id);
+                }}
+              />
             </CardHeader>
-            <ul className="m-0 flex list-none flex-col gap-2 p-0">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    aria-current={item.id === activeId ? 'true' : undefined}
-                    onClick={() => {
-                      setActiveId(item.id);
-                    }}
-                    className={cn(
-                      'w-full rounded-lg border p-3 text-left transition-colors',
-                      item.id === activeId
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:bg-muted',
-                    )}
-                  >
-                    <p className="m-0 font-medium">{item.name}</p>
-                    <p className="m-0 mt-1 font-mono text-xs tabular-nums text-muted-foreground">
-                      {item.itemCode}
-                    </p>
-                    {!item.manufactured && (
-                      <Badge variant="outline" className="mt-2">
-                        Component
-                      </Badge>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {visible.length === 0 ? (
+              <EmptyState>
+                {kind === 'oem'
+                  ? 'No OEM items yet. An OEM item is a product the agency builds and sells, named unit by unit from its own serial series.'
+                  : 'No sub items yet. A sub item is a part or a sub-assembly a product is built from; it appears inside a bill of material rather than in the OEM catalogue.'}
+              </EmptyState>
+            ) : (
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                {visible.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      aria-current={item.id === activeId ? 'true' : undefined}
+                      onClick={() => {
+                        setActiveId(item.id);
+                      }}
+                      className={cn(
+                        'w-full rounded-lg border p-3 text-left transition-colors',
+                        item.id === activeId
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:bg-muted',
+                      )}
+                    >
+                      <p className="m-0 font-medium">{item.name}</p>
+                      <p className="m-0 mt-1 font-mono text-xs tabular-nums text-muted-foreground">
+                        {item.itemCode}
+                      </p>
+                      {/* A sub item may be bought or built, which is the
+                          reason the kind is not the manufactured flag. */}
+                      {item.role === 'sub' && item.manufactured && (
+                        <Badge variant="outline" className="mt-2">
+                          Manufactured
+                        </Badge>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           {active !== null && (
@@ -260,19 +338,38 @@ export function ProductionItems({
 
 /** The create form. Inline under the header rather than in a modal: the
  * mock's own "Add OEM item" opens nothing, so there is no dialog to
- * replicate, and a six-field form does not earn a focus trap. */
+ * replicate, and a six-field form does not earn a focus trap.
+ *
+ * It opens on a QUESTION rather than on fields, per the owner's item-31
+ * ruling: "Add OEM item" misled, because not everything in the catalogue
+ * is an OEM product. The kind is asked first because it decides the rest
+ * of the form — an OEM item is manufactured and therefore serialised,
+ * where a sub item may be bought in.
+ */
 function ItemForm({
   api,
   organisationId,
+  kind: fixedRole,
   onSaved,
   onCancel,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
+  /** Set where the kind is not the operator's to choose — the bill of
+   * material creates parts, and a part is a sub item by definition. */
+  readonly kind?: ProductionItemRole;
   readonly onSaved: (item: ProductionItem) => void;
   readonly onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState<ItemDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<ItemDraft>({
+    ...EMPTY_DRAFT,
+    // The kind the chooser is skipped for still has to bring the default
+    // the chooser would have set: a part is bought in until it says
+    // otherwise, and a form that opened asking for a serial series it
+    // never shows cannot be submitted at all.
+    manufactured: fixedRole !== 'sub',
+  });
+  const [chosen, setChosen] = useState<ProductionItemRole | null>(fixedRole ?? null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -280,10 +377,77 @@ function ItemForm({
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
+  if (chosen === null) {
+    return (
+      <Card className="mb-4">
+        <CardHeader>
+          <h2 className="text-base font-semibold">What kind of item is this?</h2>
+        </CardHeader>
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="outline"
+            className="h-auto justify-start py-3 text-left"
+            onClick={() => {
+              setChosen('oem');
+              set('manufactured', true);
+            }}
+          >
+            <span>
+              <span className="block font-medium">OEM item</span>
+              <span className="block text-xs font-normal text-muted-foreground">
+                A product the agency builds and sells. It is named unit by unit from its
+                own serial series, and job cards are raised for it.
+              </span>
+            </span>
+          </Button>
+          <Button
+            variant="outline"
+            className="h-auto justify-start py-3 text-left"
+            onClick={() => {
+              setChosen('sub');
+              /* Most sub items are bought in; the ones that are not say
+                 so with the checkbox the choice reveals. */
+              set('manufactured', false);
+            }}
+          >
+            <span>
+              <span className="block font-medium">Sub item</span>
+              <span className="block text-xs font-normal text-muted-foreground">
+                A part or a sub-assembly a product is built from, bought in or built
+                here. It appears inside bills of material rather than in the OEM
+                catalogue.
+              </span>
+            </span>
+          </Button>
+        </div>
+        <Actions>
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </Actions>
+      </Card>
+    );
+  }
+
+  const role = chosen;
+  const manufactured = role === 'oem' || draft.manufactured;
+
   return (
     <Card className="mb-4">
-      <CardHeader>
-        <h2 className="text-base font-semibold">New OEM item</h2>
+      <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">New {ROLE_NOUN_INLINE[role]}</h2>
+        {fixedRole === undefined && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setChosen(null);
+            }}
+          >
+            Choose a different kind
+          </Button>
+        )}
       </CardHeader>
       <form
         onSubmit={(event) => {
@@ -291,17 +455,7 @@ function ItemForm({
           setError(null);
           setPending(true);
           api
-            .saveProductionItem(organisationId, null, {
-              itemCode: draft.itemCode,
-              name: draft.name,
-              category: draft.category,
-              unit: draft.unit,
-              manufactured: draft.manufactured,
-              ...(draft.manufactured
-                ? { serialPrefix: draft.serialPrefix.toUpperCase() }
-                : {}),
-              serialControlled: draft.manufactured || draft.serialControlled,
-            })
+            .saveProductionItem(organisationId, null, itemBody(draft, role))
             .then(onSaved)
             .catch((cause: unknown) => {
               setError(errorMessage(cause, 'The item could not be saved.'));
@@ -366,24 +520,29 @@ function ItemForm({
             />
           </Field>
         </FieldRow>
-        <Field>
-          <label
-            className="flex items-center gap-2 font-normal!"
-            htmlFor="production-item-manufactured"
-          >
-            <input
-              id="production-item-manufactured"
-              type="checkbox"
-              checked={draft.manufactured}
-              onChange={(event) => {
-                set('manufactured', event.currentTarget.checked);
-              }}
-            />
-            The agency manufactures this. A job card may be raised for it, and every
-            unit it produces is named from a serial series.
-          </label>
-        </Field>
-        {draft.manufactured ? (
+        {/* An OEM item is manufactured by definition (migration 0117),
+            so the question is only asked of a sub item — a bolt is
+            bought and a welded sub-assembly is not. */}
+        {role === 'sub' && (
+          <Field>
+            <label
+              className="flex items-center gap-2 font-normal!"
+              htmlFor="production-item-manufactured"
+            >
+              <input
+                id="production-item-manufactured"
+                type="checkbox"
+                checked={draft.manufactured}
+                onChange={(event) => {
+                  set('manufactured', event.currentTarget.checked);
+                }}
+              />
+              The agency manufactures this. A job card may be raised for it, and every
+              unit it produces is named from a serial series.
+            </label>
+          </Field>
+        )}
+        {manufactured ? (
           <Field>
             <label htmlFor="production-item-prefix">Serial series</label>
             <input
@@ -426,7 +585,7 @@ function ItemForm({
         {error !== null && <FormError>{error}</FormError>}
         <Actions>
           <Button type="submit" disabled={pending}>
-            Add item
+            Add {ROLE_NOUN_INLINE[role]}
           </Button>
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
@@ -457,12 +616,14 @@ function ItemDetail({
     readonly active: boolean;
   }) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
-            <p className="section-label m-0">OEM item</p>
+            <p className="section-label m-0">{ROLE_NOUN[item.role]}</p>
             <h2 className="mt-1 text-xl font-semibold">{item.name}</h2>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge variant="neutral">{item.category}</Badge>
@@ -472,16 +633,27 @@ function ItemDetail({
               {!item.active && <StatusChip status="archived">Retired</StatusChip>}
             </div>
             {canModify && (
-              <Button
-                className="mt-3"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  onSetActive({ id: item.id, active: !item.active });
-                }}
-              >
-                {item.active ? 'Retire item' : 'Reactivate item'}
-              </Button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditing((open) => !open);
+                  }}
+                >
+                  <Pencil data-icon="inline-start" aria-hidden="true" />
+                  Edit item
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onSetActive({ id: item.id, active: !item.active });
+                  }}
+                >
+                  {item.active ? 'Retire item' : 'Reactivate item'}
+                </Button>
+              </div>
             )}
           </div>
           {/* The mock's muted well. It prints its fixture's `nextSerial`;
@@ -509,6 +681,21 @@ function ItemDetail({
         </div>
       </Card>
 
+      {editing && canModify && (
+        <ItemEditForm
+          api={api}
+          organisationId={organisationId}
+          item={item}
+          onSaved={() => {
+            setEditing(false);
+            onChanged();
+          }}
+          onCancel={() => {
+            setEditing(false);
+          }}
+        />
+      )}
+
       <SpecificationsCard
         api={api}
         organisationId={organisationId}
@@ -524,9 +711,279 @@ function ItemDetail({
           item={item}
           catalogue={catalogue}
           canModify={canModify}
+          onCatalogueChanged={onChanged}
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The edit form the item master never had (owner ruling, item 29).
+ *
+ * A production item is a MASTER, and a master is meant to be correctable
+ * — a part number typed wrong on a Tuesday should not be permanent.
+ * Name, part number, category and unit are therefore free; every record
+ * that snapshotted them kept its own copy, so none of them rewrites
+ * history.
+ *
+ * The three that are NOT free are refusals with names rather than
+ * controls quietly missing from the form. Each stays visible, disabled,
+ * and says why — at the pointer through `title`, and in view through the
+ * hint under it — because a control that vanished would leave an
+ * operator looking for it, and one that submitted and failed would teach
+ * them the rule one 409 at a time:
+ *
+ *   * the serial series, once a unit carries the prefix on its label;
+ *   * whether the agency manufactures this, and whether its serials are
+ *     captured, once a job card, a unit or a consumption references it;
+ *   * OEM as a KIND, while the item is not manufactured and can no
+ *     longer become so.
+ *
+ * The same three are refused by the route under its own row lock and by
+ * the database guard behind it (`0084` § 1, widened by `0117`). This
+ * layer only spares the operator the trip.
+ */
+function ItemEditForm({
+  api,
+  organisationId,
+  item,
+  onSaved,
+  onCancel,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly item: ProductionItem;
+  readonly onSaved: () => void;
+  readonly onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<ItemDraft>({
+    itemCode: item.itemCode,
+    name: item.name,
+    category: item.category,
+    unit: item.unit,
+    manufactured: item.manufactured,
+    serialPrefix: item.serialPrefix ?? '',
+    serialControlled: item.serialControlled,
+  });
+  const [role, setRole] = useState<ProductionItemRole>(item.role);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const set = <K extends keyof ItemDraft>(key: K, value: ItemDraft[K]): void => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const manufactured = role === 'oem' || draft.manufactured;
+  const seriesReason = item.serialSeriesLocked
+    ? `Units have already been built as ${item.serialPrefix ?? ''}-00001 and up, and the prefix is printed on them, so the series can no longer change.`
+    : null;
+  const flagsReason = item.flagsLocked
+    ? 'This item has job cards, units or consumptions on record, so whether the agency manufactures it and whether its serials are captured are both settled.'
+    : null;
+  // Becoming an OEM item means becoming manufactured, which is the one
+  // thing the flags lock refuses.
+  const oemReason =
+    !item.manufactured && item.flagsLocked
+      ? 'An OEM item is manufactured, and this item cannot start being manufactured now that it has job cards, units or consumptions on record.'
+      : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="text-base font-semibold">Edit {ROLE_NOUN_INLINE[item.role]}</h2>
+        <p className="m-0 text-sm text-muted-foreground">
+          Documents that already named this item keep the wording they were issued with.
+        </p>
+      </CardHeader>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          setError(null);
+          setPending(true);
+          api
+            .saveProductionItem(
+              organisationId,
+              item.id,
+              itemBody(draft, role, item.specifications),
+            )
+            .then(() => {
+              onSaved();
+            })
+            .catch((cause: unknown) => {
+              setError(errorMessage(cause, 'The item could not be saved.'));
+            })
+            .finally(() => {
+              setPending(false);
+            });
+        }}
+      >
+        <FieldRow>
+          <Field>
+            <label htmlFor="production-item-edit-code">Part number</label>
+            <input
+              id="production-item-edit-code"
+              required
+              minLength={2}
+              maxLength={40}
+              value={draft.itemCode}
+              onChange={(event) => {
+                set('itemCode', event.currentTarget.value);
+              }}
+            />
+          </Field>
+          <Field>
+            <label htmlFor="production-item-edit-name">Name</label>
+            <input
+              id="production-item-edit-name"
+              required
+              minLength={2}
+              maxLength={200}
+              value={draft.name}
+              onChange={(event) => {
+                set('name', event.currentTarget.value);
+              }}
+            />
+          </Field>
+        </FieldRow>
+        <FieldRow>
+          <Field>
+            <label htmlFor="production-item-edit-category">Category</label>
+            <input
+              id="production-item-edit-category"
+              required
+              minLength={2}
+              maxLength={100}
+              value={draft.category}
+              onChange={(event) => {
+                set('category', event.currentTarget.value);
+              }}
+            />
+          </Field>
+          <Field>
+            <label htmlFor="production-item-edit-unit">Unit</label>
+            <input
+              id="production-item-edit-unit"
+              required
+              maxLength={20}
+              value={draft.unit}
+              onChange={(event) => {
+                set('unit', event.currentTarget.value);
+              }}
+            />
+          </Field>
+        </FieldRow>
+        <fieldset className="m-0 border-0 p-0">
+          <legend className="text-sm leading-snug font-medium">Kind</legend>
+          <label
+            className="mt-2 flex items-center gap-2 text-sm"
+            htmlFor="production-item-edit-role-oem"
+            title={oemReason ?? undefined}
+          >
+            <input
+              id="production-item-edit-role-oem"
+              type="radio"
+              name="production-item-edit-role"
+              checked={role === 'oem'}
+              disabled={oemReason !== null}
+              onChange={() => {
+                setRole('oem');
+              }}
+            />
+            OEM item — a product the agency builds and sells
+          </label>
+          <label
+            className="mt-2 flex items-center gap-2 text-sm"
+            htmlFor="production-item-edit-role-sub"
+          >
+            <input
+              id="production-item-edit-role-sub"
+              type="radio"
+              name="production-item-edit-role"
+              checked={role === 'sub'}
+              onChange={() => {
+                setRole('sub');
+              }}
+            />
+            Sub item — a part or a sub-assembly, reached through a bill of material
+          </label>
+          {oemReason !== null && <Hint>{oemReason}</Hint>}
+        </fieldset>
+        {role === 'sub' && (
+          <Field>
+            <label
+              className="flex items-center gap-2 font-normal!"
+              htmlFor="production-item-edit-manufactured"
+              title={flagsReason ?? undefined}
+            >
+              <input
+                id="production-item-edit-manufactured"
+                type="checkbox"
+                checked={draft.manufactured}
+                disabled={flagsReason !== null}
+                onChange={(event) => {
+                  set('manufactured', event.currentTarget.checked);
+                }}
+              />
+              The agency manufactures this. A job card may be raised for it, and every
+              unit it produces is named from a serial series.
+            </label>
+            {flagsReason !== null && <Hint>{flagsReason}</Hint>}
+          </Field>
+        )}
+        {manufactured ? (
+          <Field>
+            <label htmlFor="production-item-edit-prefix">Serial series</label>
+            <input
+              id="production-item-edit-prefix"
+              required
+              pattern="[A-Za-z0-9][A-Za-z0-9-]{1,15}"
+              maxLength={16}
+              placeholder="IPDB6"
+              disabled={seriesReason !== null}
+              title={seriesReason ?? undefined}
+              value={draft.serialPrefix}
+              onChange={(event) => {
+                set('serialPrefix', event.currentTarget.value);
+              }}
+            />
+            <Hint>
+              {seriesReason ??
+                `Units are named ${(draft.serialPrefix || 'PREFIX').toUpperCase()}-00001. It cannot be changed once the first unit is built.`}
+            </Hint>
+          </Field>
+        ) : (
+          <Field>
+            <label
+              className="flex items-center gap-2 font-normal!"
+              htmlFor="production-item-edit-serial-controlled"
+              title={flagsReason ?? undefined}
+            >
+              <input
+                id="production-item-edit-serial-controlled"
+                type="checkbox"
+                checked={draft.serialControlled}
+                disabled={flagsReason !== null}
+                onChange={(event) => {
+                  set('serialControlled', event.currentTarget.checked);
+                }}
+              />
+              Capture this part&apos;s serials when it is consumed into a unit.
+            </label>
+            {flagsReason !== null && <Hint>{flagsReason}</Hint>}
+          </Field>
+        )}
+        {error !== null && <FormError>{error}</FormError>}
+        <Actions>
+          <Button type="submit" disabled={pending}>
+            Save item
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </Actions>
+      </form>
+    </Card>
   );
 }
 
@@ -694,22 +1151,40 @@ function BillOfMaterialCard({
   item,
   catalogue,
   canModify,
+  onCatalogueChanged,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly item: ProductionItem;
   readonly catalogue: readonly ProductionItem[];
   readonly canModify: boolean;
+  /** Called when the panel closes having created a part, so the rail
+   * catches up. Deliberately NOT called the moment the part is created:
+   * the page reload it triggers unmounts this card, and it would take
+   * the half-filled material line with it. */
+  readonly onCatalogueChanged: () => void;
 }) {
   const [nodes, setNodes] = useState<readonly BomNode[] | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [creatingPart, setCreatingPart] = useState(false);
+  const [createdParts, setCreatedParts] = useState<readonly ProductionItem[]>([]);
   const [componentId, setComponentId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [pending, setPending] = useState(false);
   const [loadVersion, retry] = useReload();
+
+  /** Closes the panel, and tells the page about any part created inside
+   * it. Both exits go through here so neither can forget. */
+  const closePanel = (): void => {
+    setAdding(false);
+    setCreatingPart(false);
+    setComponentId('');
+    setQuantity('1');
+    if (createdParts.length > 0) onCatalogueChanged();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -733,8 +1208,13 @@ function BillOfMaterialCard({
 
   /* Every item except this one is a candidate. The database refuses a
      cycle and a retired part regardless (migration 0084 § 2); the select
-     only spares the operator the two refusals it can see coming. */
-  const candidates = catalogue.filter((candidate) => candidate.id !== item.id);
+     only spares the operator the two refusals it can see coming.
+     Anything created inside this panel joins the list immediately —
+     the page's own catalogue is a load behind until the panel closes. */
+  const candidates = [
+    ...catalogue,
+    ...createdParts.filter((part) => !catalogue.some((known) => known.id === part.id)),
+  ].filter((candidate) => candidate.id !== item.id);
 
   return (
     <Card>
@@ -750,7 +1230,8 @@ function BillOfMaterialCard({
             variant="outline"
             size="sm"
             onClick={() => {
-              setAdding((open) => !open);
+              if (adding) closePanel();
+              else setAdding(true);
             }}
           >
             <Plus data-icon="inline-start" aria-hidden="true" />
@@ -759,7 +1240,52 @@ function BillOfMaterialCard({
         )}
       </CardHeader>
 
-      {adding && canModify && (
+      {/* Item 28: the component select used to be an empty dropdown
+          whenever the catalogue held nothing else — no reason given and
+          nowhere to go. The part is created here instead, and the panel
+          comes back with it chosen. */}
+      {adding && canModify && creatingPart && (
+        <ItemForm
+          api={api}
+          organisationId={organisationId}
+          kind="sub"
+          onSaved={(created) => {
+            setCreatedParts((current) => [...current, created]);
+            setComponentId(created.id);
+            setCreatingPart(false);
+          }}
+          onCancel={() => {
+            setCreatingPart(false);
+          }}
+        />
+      )}
+
+      {adding && canModify && !creatingPart && candidates.length === 0 && (
+        <div className="mb-3 rounded-lg border border-border p-3">
+          <EmptyState>
+            There are no other items in the catalogue yet, so there is nothing to build
+            this one from. Add the first part — a bought-in component or a sub-assembly
+            — and it will be waiting here.
+          </EmptyState>
+          <Actions>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setCreatingPart(true);
+              }}
+            >
+              <Plus data-icon="inline-start" aria-hidden="true" />
+              Create a part
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={closePanel}>
+              Cancel
+            </Button>
+          </Actions>
+        </div>
+      )}
+
+      {adding && canModify && !creatingPart && candidates.length > 0 && (
         <form
           className="mb-3 rounded-lg border border-border p-3"
           onSubmit={(event) => {
@@ -774,9 +1300,7 @@ function BillOfMaterialCard({
               .then((updated) => {
                 setNodes(updated.nodes);
                 setTruncated(updated.truncated);
-                setAdding(false);
-                setComponentId('');
-                setQuantity('1');
+                closePanel();
               })
               .catch((cause: unknown) => {
                 setActionError(errorMessage(cause, 'The material could not be added.'));
@@ -804,6 +1328,18 @@ function BillOfMaterialCard({
                   </option>
                 ))}
               </select>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="self-start"
+                onClick={() => {
+                  setCreatingPart(true);
+                }}
+              >
+                <Plus data-icon="inline-start" aria-hidden="true" />
+                Create a part
+              </Button>
             </Field>
             <Field>
               <label htmlFor="bom-quantity">Quantity per unit</label>
@@ -822,14 +1358,7 @@ function BillOfMaterialCard({
             <Button type="submit" size="sm" disabled={pending}>
               Add material
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setAdding(false);
-              }}
-            >
+            <Button type="button" size="sm" variant="outline" onClick={closePanel}>
               Cancel
             </Button>
           </Actions>

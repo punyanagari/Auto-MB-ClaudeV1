@@ -23,6 +23,7 @@ import {
   type JobCardSummary,
   type MaterialRequirement,
   type ProductionItem,
+  type ProductionItemRole,
   type ProductionSpecification,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
@@ -279,14 +280,52 @@ interface ItemRow {
   manufactured: boolean;
   serial_prefix: string | null;
   serial_controlled: boolean;
+  item_role: ProductionItemRole;
   specifications: unknown;
   active: boolean;
   created_at: Date;
+  serial_series_locked: boolean;
+  flags_locked: boolean;
 }
+
+/**
+ * The item master's columns, plus the two facts an edit form has to know
+ * BEFORE it is submitted.
+ *
+ * `serial_series_locked` and `flags_locked` are the guard's own
+ * questions (migrations 0084 and 0117) asked on the read, so the form
+ * can disable a control and say why rather than let an operator type
+ * into it and meet a 409. They are correlated EXISTS rather than stored
+ * counters for the reason 0084's header gives about stored readiness: a
+ * copy of a computed fact is a field that can disagree with the fact.
+ * The catalogue is one unpaginated list per organisation, so three
+ * EXISTS per row is a cost nobody notices.
+ */
+const ITEM_LOCK_COLUMNS = `
+  exists (
+    select 1 from production_serials s
+    where s.organisation_id = production_items.organisation_id
+      and s.item_id = production_items.id
+  ) as serial_series_locked,
+  (exists (
+     select 1 from production_job_cards j
+     where j.organisation_id = production_items.organisation_id
+       and j.item_id = production_items.id
+   ) or exists (
+     select 1 from production_serials s
+     where s.organisation_id = production_items.organisation_id
+       and s.item_id = production_items.id
+   ) or exists (
+     select 1 from production_component_serials c
+     where c.organisation_id = production_items.organisation_id
+       and c.component_item_id = production_items.id
+   )) as flags_locked
+`;
 
 const ITEM_COLUMNS = `
   id, item_code, name, category, unit, manufactured, serial_prefix,
-  serial_controlled, specifications, active, created_at
+  serial_controlled, item_role, specifications, active, created_at,
+  ${ITEM_LOCK_COLUMNS}
 `;
 
 /** The stored jsonb, narrowed back to the shape its CHECK constraint
@@ -308,6 +347,9 @@ function toItem(row: ItemRow): ProductionItem {
     manufactured: row.manufactured,
     serialPrefix: row.serial_prefix,
     serialControlled: row.serial_controlled,
+    role: row.item_role,
+    serialSeriesLocked: row.serial_series_locked,
+    flagsLocked: row.flags_locked,
     specifications: specificationsOf(row.specifications),
     active: row.active,
     createdAt: row.created_at.toISOString(),
@@ -952,7 +994,7 @@ export function registerProductionRoutes(
           select ${tx.unsafe(ITEM_COLUMNS)}
           from production_items
           where (${includeRetired} or active)
-          order by manufactured desc, lower(category), lower(name)
+          order by (item_role = 'oem') desc, lower(category), lower(name)
         `;
         return { items: rows.map(toItem) };
       });
@@ -977,15 +1019,20 @@ export function registerProductionRoutes(
         // which field was wrong about an organisation they cannot reach
         // — which `route-inventory` refuses for every tenant route.
         const fields = itemFieldsOf(request.body);
+        // Absent `role` keeps the pre-0117 reading of the catalogue,
+        // which is also the migration's backfill rule.
+        const role = request.body.role ?? (fields.manufactured ? 'oem' : 'sub');
+        if (role === 'oem' && !fields.manufactured) throw oemMustBeManufactured();
         const [inserted] = await tx<ItemRow[]>`
           insert into production_items (
             organisation_id, item_code, name, category, unit, manufactured,
-            serial_prefix, serial_controlled, specifications, created_by_user_id
+            serial_prefix, serial_controlled, item_role, specifications,
+            created_by_user_id
           )
           values (
             ${organisationId}, ${fields.itemCode}, ${fields.name},
             ${fields.category}, ${fields.unit}, ${fields.manufactured},
-            ${fields.serialPrefix}, ${fields.serialControlled},
+            ${fields.serialPrefix}, ${fields.serialControlled}, ${role},
             ${tx.json(fields.specifications as never)}, ${user.id}
           )
           returning ${tx.unsafe(ITEM_COLUMNS)}
@@ -1001,7 +1048,7 @@ export function registerProductionRoutes(
           'production_item.created',
           'production_items',
           inserted.id,
-          { itemCode: fields.itemCode, manufactured: fields.manufactured },
+          { itemCode: fields.itemCode, manufactured: fields.manufactured, role },
         );
         return toItem(inserted);
       });
@@ -1024,6 +1071,44 @@ export function registerProductionRoutes(
       const { id } = request.params;
       return tenant(async (tx) => {
         const fields = itemFieldsOf(request.body);
+        // The row is READ AND LOCKED before the refusals are decided, so
+        // a unit minted between the check and the write cannot slip
+        // past. The guard (0084 § 1, widened by 0117) is the concurrent
+        // arm of the same three rules and answers 23D03 to any writer
+        // that reaches the table another way; what this layer adds is
+        // the SENTENCE — which control is settled and by what — because
+        // the guard's own message reaches an operator as "the item
+        // changed underneath this edit".
+        const [current] = await tx<ItemRow[]>`
+          select ${tx.unsafe(ITEM_COLUMNS)}
+          from production_items where id = ${id} for update
+        `;
+        if (!current) {
+          throw httpError(404, 'PRODUCTION_ITEM_NOT_FOUND', 'No such production item.');
+        }
+        const role = request.body.role ?? current.item_role;
+        if (role === 'oem' && !fields.manufactured) throw oemMustBeManufactured();
+        if (
+          fields.serialPrefix !== current.serial_prefix &&
+          current.serial_series_locked
+        ) {
+          throw httpError(
+            409,
+            'PRODUCTION_ITEM_LOCKED',
+            `Units have already been built as ${current.serial_prefix ?? ''}-…, and the prefix is printed on them, so the serial series can no longer change.`,
+          );
+        }
+        if (
+          (fields.manufactured !== current.manufactured ||
+            fields.serialControlled !== current.serial_controlled) &&
+          current.flags_locked
+        ) {
+          throw httpError(
+            409,
+            'PRODUCTION_ITEM_LOCKED',
+            'This item already has job cards, units or consumptions on record, so whether the agency manufactures it and whether its serials are captured are both settled.',
+          );
+        }
         const [updated] = await tx<ItemRow[]>`
           update production_items
           set item_code = ${fields.itemCode}, name = ${fields.name},
@@ -1031,6 +1116,7 @@ export function registerProductionRoutes(
               manufactured = ${fields.manufactured},
               serial_prefix = ${fields.serialPrefix},
               serial_controlled = ${fields.serialControlled},
+              item_role = ${role},
               specifications = ${tx.json(fields.specifications as never)}
           where id = ${id}
           returning ${tx.unsafe(ITEM_COLUMNS)}
@@ -1048,7 +1134,12 @@ export function registerProductionRoutes(
           'production_item.updated',
           'production_items',
           id,
-          { itemCode: fields.itemCode, manufactured: fields.manufactured },
+          {
+            itemCode: fields.itemCode,
+            name: fields.name,
+            manufactured: fields.manufactured,
+            role,
+          },
         );
         return toItem(updated);
       });
@@ -2032,6 +2123,18 @@ function itemExists(): Error {
     409,
     'PRODUCTION_ITEM_EXISTS',
     'Another item already carries this part number or serial series. A retired item keeps both, because the code is printed on labels.',
+  );
+}
+
+/** The 0117 invariant, refused with a sentence rather than as the
+ * `production_items_oem_manufactured_check` a caller reads as a 500. An
+ * OEM item is a product named unit by unit, so it is manufactured, which
+ * 0084's shape CHECK carries on to a serial series. */
+function oemMustBeManufactured(): Error {
+  return httpError(
+    400,
+    'PRODUCTION_ITEM_INVALID',
+    'An OEM item is a product the agency builds, so it is manufactured and carries a serial series. Record a bought-in part as a sub item instead.',
   );
 }
 

@@ -495,8 +495,180 @@ describe('the OEM item master', () => {
         serialPrefix: `Z${suffix}99`,
       },
     });
+    // The ROUTE answers first, and answers with the sentence rather than
+    // with the guard's "the item changed underneath this edit" (item 29).
     expect(renamed.statusCode, renamed.body).toBe(409);
-    expect(renamed.json<{ code: string }>().code).toBe('PRODUCTION_ITEM_INVALID');
+    expect(renamed.json<{ code: string }>().code).toBe('PRODUCTION_ITEM_LOCKED');
+
+    // …and the guard behind it still refuses a writer that never went
+    // through the route. Two layers, not one.
+    await expect(
+      admin`
+        update production_items set serial_prefix = ${`Z${suffix}98`}
+        where id = ${product.id}
+      `,
+    ).rejects.toThrow(/serial series cannot change/);
+  });
+
+  /* --- Item 31: OEM items and sub items ---------------------------- */
+
+  it('records the kind an item was created as, and lists OEM items first', async () => {
+    const part = await createItem({
+      itemCode: `SUB-${suffix}`,
+      name: 'Zinc bracket',
+      // 'A' sorts before the product's category, so an ordering that fell
+      // back to category alone would put the sub item first.
+      category: 'A brackets',
+      manufactured: false,
+      role: 'sub',
+    });
+    const product = await createProduct({
+      name: 'Kind-split board',
+      category: 'Z boards',
+      role: 'oem',
+    });
+    expect(part.role).toBe('sub');
+    expect(product.role).toBe('oem');
+
+    const listed = await authed(office, {
+      method: 'GET',
+      url: '/api/production/items',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const items = listed.json<{ items: ProductionItem[] }>().items;
+    const productAt = items.findIndex((row) => row.id === product.id);
+    const partAt = items.findIndex((row) => row.id === part.id);
+    expect(productAt).toBeGreaterThanOrEqual(0);
+    expect(partAt).toBeGreaterThan(productAt);
+    expect(items.every((row) => row.role === 'oem' || row.role === 'sub')).toBe(true);
+  });
+
+  it('refuses an OEM item that the agency does not manufacture', async () => {
+    const response = await authed(office, {
+      method: 'POST',
+      url: '/api/production/items',
+      organisationId,
+      payload: {
+        itemCode: `BOUGHTOEM-${suffix}`,
+        name: 'Bought-in board',
+        category: 'Display boards',
+        unit: 'Nos',
+        manufactured: false,
+        role: 'oem',
+      },
+    });
+    expect(response.statusCode, response.body).toBe(400);
+    expect(response.json<{ code: string }>().code).toBe('PRODUCTION_ITEM_INVALID');
+  });
+
+  it('reads the kind off the manufactured flag when the caller states none', async () => {
+    const product = await createProduct({ name: 'Implied kind board' });
+    expect(product.role).toBe('oem');
+    const part = await createItem({
+      itemCode: `IMPSUB-${suffix}`,
+      name: 'Implied kind bracket',
+      manufactured: false,
+    });
+    expect(part.role).toBe('sub');
+  });
+
+  /* --- Item 29: the edit path the master never had ------------------ */
+
+  it('edits the name, part number, category and unit of an item in use', async () => {
+    const product = await createProduct({ name: 'Editable board' });
+    const card = await createJobCard(product.id, { quantity: 1 });
+    expect(card.statusCode, card.body).toBe(201);
+    expect((await mintSerial(card.json<JobCardDetail>().id)).statusCode).toBe(201);
+
+    const edited = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${product.id}`,
+      organisationId,
+      payload: {
+        itemCode: `EDITED-${suffix}`,
+        name: 'Editable board, corrected',
+        category: 'Corrected boards',
+        unit: 'Set',
+        manufactured: true,
+        serialPrefix: product.serialPrefix ?? '',
+        role: 'sub',
+      },
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    const after = edited.json<ProductionItem>();
+    expect(after.itemCode).toBe(`EDITED-${suffix}`);
+    expect(after.name).toBe('Editable board, corrected');
+    expect(after.category).toBe('Corrected boards');
+    expect(after.unit).toBe('Set');
+    // The kind is a decision, not a physical fact, so it moves even for
+    // an item with units already built.
+    expect(after.role).toBe('sub');
+    expect(after.serialSeriesLocked).toBe(true);
+    expect(after.flagsLocked).toBe(true);
+  });
+
+  it('settles the manufactured and serial-control flags once a job card exists', async () => {
+    const product = await createProduct({ name: 'Settled flags board' });
+    const card = await createJobCard(product.id, { quantity: 1 });
+    expect(card.statusCode, card.body).toBe(201);
+
+    const flipped = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${product.id}`,
+      organisationId,
+      payload: {
+        itemCode: product.itemCode,
+        name: product.name,
+        category: product.category,
+        unit: product.unit,
+        manufactured: false,
+        serialControlled: false,
+        role: 'sub',
+      },
+    });
+    expect(flipped.statusCode, flipped.body).toBe(409);
+    expect(flipped.json<{ code: string }>().code).toBe('PRODUCTION_ITEM_LOCKED');
+
+    await expect(
+      admin`
+        update production_items set manufactured = false, serial_controlled = false
+        where id = ${product.id}
+      `,
+    ).rejects.toThrow(/job cards, units or consumptions on record/);
+  });
+
+  it('lets the flags move while nothing references the item, and locks them after', async () => {
+    const part = await createItem({
+      itemCode: `FREEFLAG-${suffix}`,
+      name: 'Free-flag bracket',
+      manufactured: false,
+      role: 'sub',
+    });
+    expect(part.flagsLocked).toBe(false);
+    expect(part.serialSeriesLocked).toBe(false);
+
+    const promoted = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${part.id}`,
+      organisationId,
+      payload: {
+        itemCode: part.itemCode,
+        name: part.name,
+        category: part.category,
+        unit: part.unit,
+        manufactured: true,
+        serialPrefix: `FF${suffix}`,
+        role: 'oem',
+      },
+    });
+    expect(promoted.statusCode, promoted.body).toBe(200);
+    const after = promoted.json<ProductionItem>();
+    expect(after.manufactured).toBe(true);
+    expect(after.role).toBe('oem');
+    // No unit has been built yet, so the series is still movable.
+    expect(after.serialSeriesLocked).toBe(false);
+    expect(after.flagsLocked).toBe(false);
   });
 
   it('refuses to retire an item with an open job card, and allows it once cancelled', async () => {

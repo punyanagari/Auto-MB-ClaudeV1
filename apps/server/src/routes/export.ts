@@ -17,6 +17,20 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v35: what kind of catalogue entry a production item is (0117)
+ * rides along. The `productionItems` section takes `select *`, so
+ * `item_role` travels without an edit here — what moves the version is
+ * the format, not the query: a v34 package restored into a 0117 schema
+ * would land every item on the column's default and file the agency's
+ * own products as parts, so a reader has to be able to tell the two
+ * shapes apart by the string alone. No new section, no manifest change.
+ *
+ * The number was claimed by the pack rather than allocated — round 5
+ * allocated migration, SQLSTATE and UX numbers but no export version —
+ * and the constant lives in exactly two lines so that a sibling pack
+ * claiming the same number becomes a visible merge conflict rather than
+ * two formats sharing one string (see `test/helpers/export-format.ts`).
+ *
  * export-v34: the railway's own measurement (0111) joins the package —
  * the document IWRCMS raises its On-Account Bill from, its per-line
  * verdicts, and the manual confirmations that stood in for a reading
@@ -457,7 +471,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v34';
+export const EXPORT_FORMAT_VERSION = 'export-v35';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no

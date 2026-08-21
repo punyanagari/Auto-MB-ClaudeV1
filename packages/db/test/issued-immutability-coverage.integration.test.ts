@@ -118,11 +118,19 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     // Both of these DO change, which is why they are here rather than in
     // the freeze: an item stops being manufactured when the agency stops
     // making it, and retiring one is the masters delete. Each carries a
-    // one-way rule instead — the guard refuses clearing `manufactured`
-    // once job cards exist, and refuses clearing `active` while one is
-    // open — and a one-way rule is not a freeze.
+    // conditional rule instead — 0117 settles `manufactured` and
+    // `serial_controlled` together once a job card, a minted unit or a
+    // consumption references the row, and the guard refuses clearing
+    // `active` while a job card is open — and a rule that only bites
+    // once something references the row is not a freeze.
     'manufactured',
     'active',
+    // What KIND of catalogue entry this is (0117). Deliberately not
+    // frozen: picking OEM when the item is really a sub-assembly is
+    // exactly the mistake a master edit exists to correct, and
+    // `production_items_oem_manufactured_check` is what stops the
+    // correction from claiming something untrue.
+    'item_role',
     // The stock ledger's one column on this master (0087). Editable by
     // design and by nothing else here: it is a threshold an operator
     // tunes as consumption changes, and the guard has no opinion on it.
