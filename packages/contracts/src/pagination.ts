@@ -101,10 +101,53 @@ export const RegisterSortSchema = Type.Union(
 );
 export type RegisterSort = Static<typeof RegisterSortSchema>;
 
-/** Adds the optional `sort` parameter to a register's querystring. */
-export function withRegisterSort<T extends TSchema>(schema: T) {
+/**
+ * A cursor into a SORTABLE register: the row id, plus the sort it was
+ * minted under.
+ *
+ * A bare id cannot say which order it was a position in, and the two
+ * orders give it opposite meanings — under `date_desc` it means "the rows
+ * after this one going backwards", under `date_asc` "the rows after this
+ * one going forwards". Replaying a cursor from one walk under the other
+ * sort is therefore not an error the server can see: it answers 200 with
+ * the far side of the row, which to a client mid-walk is the register
+ * silently skipping everything between. So the sort travels WITH the
+ * cursor and a crossed pairing is refused as CURSOR_INVALID.
+ *
+ * The tag is a suffix on the ascending cursor only, so a descending
+ * cursor — the default order, and every cursor any of these registers has
+ * ever minted — is unchanged. `~` is outside the UUID alphabet, so the id
+ * and its tag cannot be confused for one another.
+ */
+export const ASCENDING_CURSOR_TAG = '~a';
+const SORTED_CURSOR_PATTERN = `${UUID_PATTERN.slice(0, -1)}(${ASCENDING_CURSOR_TAG})?$`;
+
+/** The cursor a sortable register hands back. Same shape as its input. */
+export const SortedNextCursorSchema = Type.Union([
+  Type.String({ pattern: SORTED_CURSOR_PATTERN }),
+  Type.Null(),
+]);
+
+/**
+ * The querystring of a register that both pages AND sorts: its own
+ * filters, `limit`, the sort-tagged `cursor`, and `sort`.
+ *
+ * Stated in one object rather than by composing {@link withKeysetQuery}
+ * with a second wrapper, because the cursor property has to be DECLARED
+ * with the wider pattern rather than intersected with the plain-uuid one —
+ * an intersection would require both, and a tagged cursor satisfies only
+ * the wider.
+ */
+export function withSortedKeysetQuery<T extends TSchema>(schema: T) {
   return Type.Composite(
-    [schema, Type.Object({ sort: Type.Optional(RegisterSortSchema) })],
+    [
+      schema,
+      Type.Object({
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_PAGE_SIZE })),
+        cursor: Type.Optional(Type.String({ pattern: SORTED_CURSOR_PATTERN })),
+        sort: Type.Optional(RegisterSortSchema),
+      }),
+    ],
     { additionalProperties: false },
   );
 }

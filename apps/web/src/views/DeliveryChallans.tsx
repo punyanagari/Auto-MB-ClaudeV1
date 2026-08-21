@@ -7,7 +7,6 @@ import type {
   DeliveryChallanRegisterEntry,
   EwayBill,
   MovementReason,
-  RegisterSort,
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatRate, todayIso } from '../format.js';
@@ -21,6 +20,7 @@ import {
   DataTable,
   SortHeader,
   numericCell,
+  sortRows,
   useColumnSort,
   wrapCell,
 } from '../ui/table.js';
@@ -242,27 +242,29 @@ export function DeliveryChallans({
   const [transportDistanceKm, setTransportDistanceKm] = useState('');
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
 
-  /* The movement register's order is the SERVER's, not this screen's.
-   * `/api/delivery-challans` is a keyset register: its ORDER BY and its
-   * cursor predicate are one decision, so a sort applied here over the
-   * rows already loaded would be a sort of the page rather than of the
-   * register the moment the screen starts paging. Clicking the Date
-   * heading therefore re-reads with `?sort=`. `null` sends nothing at
-   * all, which is the register's own newest-first order. */
+  /* Sorted HERE, not by the server.
+   *
+   * `/api/delivery-challans` is keyset-capable and takes a `?sort=`, but
+   * this screen sends no `limit`, so it holds the whole register and the
+   * server has nothing left to decide. Asking for it again would blank
+   * the table, re-read every row and the contact list with it, and answer
+   * with the same rows in a different order — a round trip and an offline
+   * failure for work the browser can do on rows it already has. The
+   * server parameter is for the registers that genuinely page
+   * (installations, tax invoices), where the oldest row is on a page this
+   * screen has not fetched. */
   const [sort, toggleSort] = useColumnSort<'challanDate'>();
-  const sortParameter: RegisterSort | undefined =
-    sort === null ? undefined : sort.direction === 'asc' ? 'date_asc' : 'date_desc';
 
   const refreshList = useCallback(async () => {
-    setChallans(await api.listDeliveryChallans(organisationId, workId, sortParameter));
-  }, [api, organisationId, workId, sortParameter]);
+    setChallans(await api.listDeliveryChallans(organisationId, workId));
+  }, [api, organisationId, workId]);
 
   useEffect(() => {
     let cancelled = false;
     setChallans(null);
     setLoadError(null);
     Promise.all([
-      api.listDeliveryChallans(organisationId, workId, sortParameter),
+      api.listDeliveryChallans(organisationId, workId),
       // The consignee picker must never block the register: a caller who
       // may read challans but not contacts still gets the list.
       api.listContacts(organisationId).catch((): readonly Contact[] => []),
@@ -279,7 +281,7 @@ export function DeliveryChallans({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId, loadVersion, sortParameter]);
+  }, [api, organisationId, workId, loadVersion]);
 
   // The hash is the source of truth for which record is open, so a
   // pasted `#/delivery-challans/<id>` loads it and the back button
@@ -343,8 +345,13 @@ export function DeliveryChallans({
   );
 
   const rows = useMemo(
-    () => (filter === 'all' ? scoped : scoped.filter((row) => row.movement === filter)),
-    [scoped, filter],
+    () =>
+      sortRows(
+        filter === 'all' ? scoped : scoped.filter((row) => row.movement === filter),
+        sort,
+        { challanDate: (row) => row.challanDate },
+      ),
+    [scoped, filter, sort],
   );
 
   /* One open draft per Work is the rule the server enforces; here it is

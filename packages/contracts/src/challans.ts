@@ -1,6 +1,10 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { GstinSchema } from './masters.js';
-import { NextCursorSchema, withKeysetQuery, withRegisterSort } from './pagination.js';
+import {
+  NextCursorSchema,
+  SortedNextCursorSchema,
+  withSortedKeysetQuery,
+} from './pagination.js';
 import {
   DateOnlySchema,
   DecimalStringSchema,
@@ -351,18 +355,16 @@ export type DeliveryChallanRegisterEntry = Static<
  * Pattern rather than `format: 'uuid'`, for the reason `pagination.ts`
  * states about cursors: the check must not depend on which formats the
  * serving ajv instance happens to have registered. */
-export const DeliveryChallanRegisterQuerySchema = withRegisterSort(
-  withKeysetQuery(
-    Type.Object(
-      {
-        work: Type.Optional(
-          Type.String({
-            pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-          }),
-        ),
-      },
-      { additionalProperties: false },
-    ),
+export const DeliveryChallanRegisterQuerySchema = withSortedKeysetQuery(
+  Type.Object(
+    {
+      work: Type.Optional(
+        Type.String({
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        }),
+      ),
+    },
+    { additionalProperties: false },
   ),
 );
 
@@ -375,7 +377,9 @@ export const DeliveryChallanRegisterQuerySchema = withRegisterSort(
 export const DeliveryChallanRegisterResponseSchema = Type.Object(
   {
     challans: Type.Array(DeliveryChallanRegisterEntrySchema),
-    nextCursor: NextCursorSchema,
+    /* Sort-tagged: this register sorts, so its cursor carries the order
+     * it was minted under and cannot be replayed under the other one. */
+    nextCursor: SortedNextCursorSchema,
   },
   { additionalProperties: false },
 );

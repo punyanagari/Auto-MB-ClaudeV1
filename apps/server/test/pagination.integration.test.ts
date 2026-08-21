@@ -579,6 +579,70 @@ describe.each(SORTABLE_REGISTERS)('$name sorted', ({ url, key }) => {
 
     expect(response.statusCode, response.body).toBe(400);
   });
+
+  /*
+   * The crossed pairing, and why it cannot be allowed to answer 200.
+   *
+   * A bare row id says nothing about which order it was a position in,
+   * and the two orders give it opposite meanings. Replay a descending
+   * walk's cursor under `date_asc` and the predicate seeks the OTHER side
+   * of that row: the answer is a well-formed page of rows the client has
+   * already read, or has skipped past, with no error and nothing about it
+   * looking wrong. A clerk paging a register of issued documents would
+   * simply not be shown some of them.
+   *
+   * So the cursor carries its sort, and a request that pairs it with the
+   * other one is refused exactly as a nonexistent cursor is.
+   */
+  it('mints a cursor that carries the sort it was taken under', async () => {
+    const descending = await readPage(`${url}?limit=1`, key);
+    const ascending = await readPage(`${url}?sort=date_asc&limit=1`, key);
+
+    expect(descending.nextCursor).not.toBeNull();
+    expect(ascending.nextCursor).not.toBeNull();
+    // Same register, same position, different order: the two cursors must
+    // not be interchangeable strings.
+    expect(ascending.nextCursor).not.toEqual(descending.nextCursor);
+  });
+
+  it.each([
+    ['a descending cursor replayed ascending', '', 'sort=date_asc&'],
+    ['an ascending cursor replayed descending', 'sort=date_asc&', 'sort=date_desc&'],
+    ['an ascending cursor replayed with no sort at all', 'sort=date_asc&', ''],
+  ])('refuses %s', async (_name, minted, replayed) => {
+    const first = await readPage(`${url}?${minted}limit=1`, key);
+    expect(first.nextCursor).not.toBeNull();
+
+    const crossed = await authed(owner, {
+      method: 'GET',
+      url: `${url}?${replayed}limit=1&cursor=${first.nextCursor ?? ''}`,
+    });
+    const nonexistent = await authed(owner, {
+      method: 'GET',
+      url: `${url}?${replayed}limit=1&cursor=${randomUUID()}`,
+    });
+
+    expect(crossed.statusCode, crossed.body).toBe(400);
+    // Indistinguishable from a cursor that names no row: same status,
+    // same code, same sentence (the requestId differs per request).
+    const strip = ({ requestId: _, ...rest }: Record<string, unknown>) => rest;
+    expect(strip(crossed.json())).toEqual(strip(nonexistent.json()));
+    expect(crossed.json<{ code: string }>().code).toBe('CURSOR_INVALID');
+  });
+
+  it('accepts its own cursor replayed under the sort that minted it', async () => {
+    // The other half of the rule: tagging must not break the walk it
+    // exists to protect.
+    for (const sort of ['', 'sort=date_asc&'] as const) {
+      const first = await readPage(`${url}?${sort}limit=1`, key);
+      const second = await readPage(
+        `${url}?${sort}limit=1&cursor=${first.nextCursor ?? ''}`,
+        key,
+      );
+      expect(second.ids).toHaveLength(1);
+      expect(second.ids).not.toEqual(first.ids);
+    }
+  });
 });
 
 describe('the approvals queue', () => {

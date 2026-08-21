@@ -2289,6 +2289,13 @@ retires on the § 4 iteration pipeline, like § 16.
 
 ### 30. Register sorting — APPROVED
 
+**Owner ruling of 2026-08-21, corrections round 4, item 22.** An
+app-side divergence from the frozen mock: the mock's registers carry no
+sort affordance, and this adds one to their column headings. It is
+recorded here in place of a mock commit, on the owner's instruction, and
+retires on the § 4 iteration pipeline the moment the mock grows one of its
+own — at which point the mock wins.
+
 A register is kept in the order the office keeps it in — newest first
 almost everywhere — and that stays the order it opens in. What it gains
 is the ability to answer the two other questions the same rows can
@@ -2304,37 +2311,65 @@ before anything is clicked, and until something is, no heading claims a
 sort. Adding a sortable heading therefore changes no screen until it is
 used.
 
-**Where the sort happens depends on whether the screen pages.** A screen
-holding the whole list sorts it in the view (`sortRows` in
-`apps/web/src/ui/table.tsx`). A screen that pages asks the SERVER, with
-an optional `?sort=date_asc` on the register's own route: sorting the
-pages fetched so far and calling that the register is wrong in the exact
-case the sort was asked for, because the oldest row is on the last page.
-The parameter is additive and optional — omitting it is the register
-byte-for-byte as it was — and its ORDER BY and its keyset predicate turn
-round together, because a predicate left seeking the other way does not
-fail, it quietly loses or repeats rows at each page boundary.
+**Where the sort happens depends on whether the SCREEN pages — not on
+whether the route can.** A screen holding the whole list sorts it in the
+view (`sortRows` in `apps/web/src/ui/table.tsx`): the browser has the
+rows, so asking the server again would blank the table, spend a round
+trip, fail offline, and hand back the same rows in a different order. A
+screen that pages asks the SERVER, with an optional `?sort=date_asc` on
+the register's own route, because sorting the pages fetched so far and
+calling that the register is wrong in the exact case the sort was asked
+for: the oldest row is on the last page. Three rules hold that parameter
+together.
+
+- It is additive and optional. Omitting it is the register byte-for-byte
+  as it was.
+- Its ORDER BY and its keyset predicate turn round together, because a
+  predicate left seeking the other way does not fail — it quietly loses or
+  repeats rows at each page boundary.
+- Its cursor carries the sort it was minted under. A bare row id means
+  "the rows before this one" in one order and "the rows after it" in the
+  other, so a cursor replayed under the other sort would answer 200 with
+  the far side of its own row — a skip nothing about the answer reveals.
+  A crossed pairing is refused as `CURSOR_INVALID`.
 
 **Sorted surfaces.** Works (LOA letter date, contract value) · Delivery
-challans (challan date, server) · Issue challans (challan date) · Tax
-invoices (invoice date, server) · Installations (installed on, server) ·
-Purchase orders (PO date, value, expected date) · Payments — advances
-(amount) and payables (due date, amount, outstanding) · Quotations (date,
-valid until, total).
+challans (challan date) · Issue challans (challan date) · Tax invoices
+(invoice date, **server**) · Installations (installed on, **server**
+across Works; in the view when narrowed to one Work, whose list is
+unpaginated) · Purchase orders (PO date, value, expected date) · Payments
+— advances (amount) and payables (due date, amount, outstanding) ·
+Quotations (date, valid until, total).
+
+**Not offered offline.** Reversing a register that pages is a new read,
+so with no connection it can only be answered from a cached entry for
+that exact sort. The screen shows its load failure and its retry rather
+than re-drawing the previous order under the new heading — descending
+rows under an ascending arrow is a worse answer than an honest failure.
 
 **Deliberately not sorted.** Document-detail line tables and micro-tables:
 a document's line order IS the document, and reordering an issued
 challan's lines on screen would misrepresent the paper. Money columns on
-the three paged registers: the Delivery Challan register's value is a
-per-page lateral sum of its lines rather than a column a cursor could
-seek on, and a tax invoice's taxable value is NULL while it is a draft,
-which as a leading keyset key makes the whole row comparison NULL and
-drops every draft after the first page. Installed quantity: quantities in
-different units do not compare. Tenders, which is a card list rather than
-a column table and has no heading to click — giving it a sort control
-would be new furniture the frozen mock does not carry.
+the registers that page: a tax invoice's taxable value is NULL while it is
+a draft, which as a leading keyset key makes the whole row comparison NULL
+and drops every draft after the first page. The Delivery Challan
+register's value column, whose figure is a per-page lateral sum of the
+challan's lines rather than a stored column. Installed quantity:
+quantities in different units do not compare. Tenders, which is a card
+list rather than a column table and has no heading to click — giving it a
+sort control would be new furniture the frozen mock does not carry, so it
+waits for a mock that has one.
 
 ### 31. Unavailable choices stay visible — APPROVED
+
+**Owner ruling of 2026-08-21, corrections round 4, item 26.** An
+app-side divergence from the frozen mock: the mock draws each screen in
+one state and says nothing about what a control does when its data
+condition is unmet, so the disabled-with-a-reason state is built here in
+the mock's own grammar — its `select`, its `Button`, its `Hint` — without
+new visual language. Recorded here in place of a mock commit, on the
+owner's instruction, and retires on the § 4 iteration pipeline if the mock
+later states the unavailable state itself.
 
 A choice the product could offer, but cannot offer YET because of a DATA
 condition, stays on the screen: visible, disabled, and saying what would
@@ -2355,11 +2390,19 @@ tooltip is a pointer affordance: a touch screen has no hover, a disabled
 control is not in the tab order so keyboard focus never reaches it, and a
 name that exists only in a tooltip is a name the axe gate counts as
 absent. On an `<option>` the reason rides in the option's own text, which
-is its entire accessible name. On a control with a hint slot the reason
-replaces the hint. On a button it is `ui/unavailable.tsx`'s
-`UnavailableAction` — a disabled button with the reason beneath it, bound
-by `aria-describedby` and repeated as a `title` for a mouse already
-hovering.
+is its entire accessible name. On a `select` it is
+`ui/unavailable.tsx`'s `useUnavailableControl`, which disables the control
+and binds it to the `Hint` below by `aria-describedby` — the two are one
+announcement rather than two neighbours. On a button it is the same
+module's `UnavailableAction`.
+
+**A reason must be true of THIS record, in the state it is in.** It never
+names a control the reader cannot see (a reason that says "generate the
+PDF first" is wrong for a member without the permission to generate one),
+and it never asserts a history the document may not have (an unsigned
+challan has usually not been to the signing queue at all). Where the
+honest sentence would be one the status chip beside it already gives, the
+choice keeps its absence instead — see the exclusions below.
 
 **PERMISSION is the exception, and it is not a small one.** A choice
 withheld because the caller's membership does not carry the right stays
@@ -2372,13 +2415,24 @@ permission half keeps hiding the control outright.
 **Also not converted, and why.** An action whose absence is already
 explained by state shown beside it: a per-row Withdraw on a row whose
 status chip already reads "cancelled" is not a hidden choice, and a
-disabled duplicate of that sentence is noise. A per-row Remove hidden
-while a form holds one line: the last line cannot be removed and a
-disabled control on every single-line form is clutter. Loading, empty,
-retry and "Load more" branches, which are states rather than choices.
-Mutually exclusive relabellings of the same values, which omit nothing.
-Fields locked because the LOA parse produced their value, which are
-settled under their own ruling.
+disabled duplicate of that sentence is noise. This covers the document
+actions on a draft or cancelled record — a draft challan has no PDF and
+no signed copy, will have neither while it stays a draft, and says
+"Draft" at the top of the screen. A per-row Remove hidden while a form
+holds one line: the last line cannot be removed and a disabled control on
+every single-line form is clutter. Loading, empty, retry and "Load more"
+branches, which are states rather than choices. Mutually exclusive
+relabellings of the same values, which omit nothing. Fields locked
+because the LOA parse produced their value, which are settled under their
+own ruling.
+
+**An empty list and an unreadable one are different sentences.** Where a
+picker's roster is fetched with its failure swallowed, an empty array
+means both "there are none" and "it could not be read", and the two
+demand opposite actions: the first sends the operator to Masters to
+create a contact, the second is a reload. A picker that cannot tell them
+apart must not claim either, so the roster is carried as `null` on
+failure and the reason names which case it is.
 
 ## Settled information architecture
 

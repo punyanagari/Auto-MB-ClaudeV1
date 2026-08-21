@@ -30,6 +30,38 @@ import { Button } from './button.js';
  * about DATA — no consignee yet, no client contact yet, no priced line
  * yet — which every member of the organisation may know about.
  */
+/**
+ * The same rule for a control that is not a button — a `select` whose
+ * options cannot be offered yet, most of them.
+ *
+ * Returns the props to spread on the control and the id to put on the
+ * `Hint` beneath it. The two are handed out together on purpose: a
+ * disabled control and a nearby sentence are two things a screen reader
+ * announces separately, and `aria-describedby` is what makes them one.
+ * The `Hint` primitive takes an `id` but does not mint one, so this does.
+ *
+ * `reason` is null when the condition is met and the control is live, in
+ * which case nothing is disabled and nothing is described — the caller
+ * still renders its ordinary hint under the returned id, which is
+ * harmless and keeps the markup the same shape in both states.
+ */
+export function useUnavailableControl(reason: string | null): {
+  readonly control: {
+    readonly disabled: boolean;
+    readonly 'aria-describedby'?: string;
+  };
+  readonly hintId: string;
+} {
+  const hintId = useId();
+  return {
+    control:
+      reason === null
+        ? { disabled: false }
+        : { disabled: true, 'aria-describedby': hintId },
+    hintId,
+  };
+}
+
 export function UnavailableAction({
   reason,
   className,

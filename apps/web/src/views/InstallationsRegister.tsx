@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import type { InstallationRegisterEntry, RegisterSort } from '@auto-mb/contracts';
+import type { InstallationRegisterEntry } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
@@ -13,6 +13,7 @@ import {
   DataTable,
   SortHeader,
   numericCell,
+  registerSortParameter,
   sortRows,
   useColumnSort,
   wrapCell,
@@ -106,16 +107,19 @@ export function InstallationsRegister({
   }>({ from: '', to: '' });
   const [loadVersion, retry] = useReload();
 
-  /* This register PAGES, so its order is the server's. A sort applied
-   * over the rows already loaded would order the pages fetched so far and
-   * present that as the register — the oldest record is on the last page,
-   * which is exactly the one an oldest-first sort is asked for. Clicking
-   * the heading therefore re-reads from the first page with `?sort=`.
-   * `null` sends nothing, which is the register's own newest-first
-   * order. */
+  /* Across Works this register PAGES, so its order is the server's: a
+   * sort applied over the rows already loaded would order the pages
+   * fetched so far and present that as the register, and the oldest
+   * record is on the last page — exactly the one an oldest-first sort is
+   * asked for. Narrowed to one Work it reads that Work's own unpaginated
+   * list, which takes no `sort`, so there the heading sorts in the view
+   * and costs no round trip (see the render below).
+   *
+   * `registerSortParameter` maps descending to `undefined`, so the FIRST
+   * click on the heading — which asks for the order already on screen —
+   * does not blank the register to re-read it. */
   const [sort, toggleSort] = useColumnSort<'installedOn'>();
-  const sortParameter: RegisterSort | undefined =
-    sort === null ? undefined : sort.direction === 'asc' ? 'date_asc' : 'date_desc';
+  const sortParameter = workId === null ? registerSortParameter(sort) : undefined;
 
   const fetchPage = useCallback(
     (cursor?: string) =>
@@ -128,9 +132,21 @@ export function InstallationsRegister({
       }),
     [api, organisationId, dateWindow, sortParameter],
   );
+  /* Which read the rows on screen came from.
+   *
+   * `loadMore` is an async continuation of a read that may already be
+   * obsolete: flip the sort while a page is in flight and the response
+   * carries rows from the OLD order, plus a cursor minted under it. Both
+   * are poison — the rows append to a differently-ordered list, and the
+   * cursor then walks the rest of the register from a position the new
+   * order never had. The ref is bumped by the same effect that starts a
+   * fresh read, and a continuation whose stamp no longer matches is
+   * dropped rather than merged. */
+  const readStamp = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    readStamp.current += 1;
     setInstallations(null);
     setWorkFilter(null);
     setNextCursor(null);
@@ -193,13 +209,19 @@ export function InstallationsRegister({
 
   async function loadMore(): Promise<void> {
     if (nextCursor === null) return;
+    const stamp = readStamp.current;
     setPending(true);
     setLoadError(null);
     try {
       const page = await fetchPage(nextCursor);
+      // The sort or the date window changed while this page was in
+      // flight: these rows belong to a register that is no longer on
+      // screen, and so does the cursor they came with.
+      if (readStamp.current !== stamp) return;
       setInstallations((current) => [...(current ?? []), ...page.installations]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
+      if (readStamp.current !== stamp) return;
       setLoadError(
         errorMessage(
           cause,

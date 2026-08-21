@@ -1,5 +1,5 @@
-import type { RegisterSort } from '@auto-mb/contracts';
-import type { TransactionSql } from '@auto-mb/db';
+import { ASCENDING_CURSOR_TAG, type RegisterSort } from '@auto-mb/contracts';
+import type { Fragment, TransactionSql } from '@auto-mb/db';
 import { httpError } from './http.js';
 
 /**
@@ -55,30 +55,91 @@ export function sqlLimit(limit: number | undefined): number | null {
 }
 
 /**
- * The ORDER BY tail and the keyset direction for a register the caller
- * may read either way round (`?sort=date_asc`).
+ * Everything a sortable register's SQL needs to be read either way round:
+ * the ORDER BY, the whole keyset predicate that has to match it, and the
+ * cursor with its sort tag taken off.
  *
- * The two travel together on purpose. Turning only the ORDER BY round
- * leaves the predicate seeking in the old direction, which does not fail:
- * it silently returns the wrong rows at every page boundary. So the one
- * call answers both, and each register's SQL spends the `ascending` flag
- * on choosing between a `>` and a `<` comparison of the same tuple.
+ * ## One call, because these cannot be decided separately
  *
- * `columns` is route source text — a literal array written beside the
- * query — and the only thing the caller decides is which of two fixed
- * suffixes is appended to it. Nothing from the request reaches the
- * statement: `sort` has already been narrowed to one of two literals by
- * the querystring schema, and is compared here rather than interpolated.
+ * Turning only the ORDER BY round leaves the predicate seeking the old
+ * way, which does not fail — it silently returns the wrong rows at every
+ * page boundary. And a cursor is meaningless without the order it was
+ * minted in: the same row id means "the rows before this one" under one
+ * sort and "the rows after it" under the other, so replaying a cursor
+ * from one walk under the other sort answers 200 with the far side of the
+ * register — a skip the client cannot detect, because nothing about the
+ * answer looks wrong. The tag the cursor carries makes the crossed
+ * pairing visible, and it is refused here, with the SAME error a
+ * nonexistent cursor gets so the two stay indistinguishable.
+ *
+ * The route states its key tuple ONCE, here; {@link predicate} and the
+ * ORDER BY are both derived from it, so the two cannot drift apart the
+ * way a tuple written twice in the route's SQL could.
+ *
+ * ## Every spliced value is route source text
+ *
+ * `table`, `alias` and `columns` are literals written beside the query,
+ * and the comparison operator is one of two characters chosen by
+ * comparing `sort` — which the querystring schema has already narrowed to
+ * one of two literals. Nothing from the request is interpolated; the
+ * cursor row id stays a bound parameter.
+ *
+ * The operator is spliced rather than bound because an OR of two
+ * inequalities selected by a bound flag is not a seekable predicate: with
+ * the operator decided at execution time the planner cannot turn it into
+ * a range scan on the register's index, so a paginated read degrades to a
+ * filtered scan of every row the caller may see. One inequality with a
+ * constant operator seeks.
  */
-export function registerOrder(
+export function registerKeyset(
   sort: RegisterSort | undefined,
-  columns: readonly string[],
-): { readonly ascending: boolean; readonly orderBy: string } {
+  cursor: string | undefined,
+  keys: {
+    /** The register's table, which the cursor row's sort key is read
+     * back from (see the file comment on why it never leaves the
+     * database). */
+    readonly table: string;
+    /** The alias the register's query gives that table. */
+    readonly alias: string;
+    /** The key tuple, outermost first, ending in the unique `id`. */
+    readonly columns: readonly string[];
+  },
+): {
+  readonly orderBy: string;
+  /** The bare row id, or undefined when no cursor was sent. The route
+   * must still prove it names a row the caller may see ({@link
+   * cursorRowId} / {@link workScopedCursorRowId}) before seeking on it. */
+  readonly cursor: string | undefined;
+  /** Stamps this sort onto the cursor handed back for the next page. */
+  readonly tag: (id: string | null) => string | null;
+  /** The whole keyset clause, over the proven cursor row id: true when
+   * there is no cursor, otherwise one tuple inequality against the
+   * cursor row's sort key. Spliced into the register's WHERE with
+   * `and ${seek.predicate(tx, cursor)}`. */
+  readonly predicate: (tx: TransactionSql, cursorRowId: string | null) => Fragment;
+} {
   const ascending = sort === 'date_asc';
   const suffix = ascending ? 'asc' : 'desc';
+  const comparison = ascending ? '>' : '<';
+  let bare: string | undefined;
+  if (cursor !== undefined) {
+    const tagged = cursor.endsWith(ASCENDING_CURSOR_TAG);
+    if (tagged !== ascending) throw cursorInvalid();
+    bare = tagged ? cursor.slice(0, -ASCENDING_CURSOR_TAG.length) : cursor;
+  }
+  const tuple = keys.columns.map((column) => `${keys.alias}.${column}`).join(', ');
+  const cursorKey = keys.columns.map((column) => `c.${column}`).join(', ');
   return {
-    ascending,
-    orderBy: columns.map((column) => `${column} ${suffix}`).join(', '),
+    orderBy: keys.columns
+      .map((column) => `${keys.alias}.${column} ${suffix}`)
+      .join(', '),
+    cursor: bare,
+    tag: (id) => (id === null || !ascending ? id : `${id}${ASCENDING_CURSOR_TAG}`),
+    predicate: (tx, cursorRowId) =>
+      tx`(${cursorRowId === null} or
+        (${tx.unsafe(tuple)}) ${tx.unsafe(comparison)} (
+          select ${tx.unsafe(cursorKey)} from ${tx.unsafe(keys.table)} c
+          where c.id = ${cursorRowId}))`,
   };
 }
 

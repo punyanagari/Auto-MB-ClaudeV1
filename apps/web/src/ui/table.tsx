@@ -309,6 +309,26 @@ export function useColumnSort<K extends string>(
 }
 
 /**
+ * The `?sort=` a paged register's route wants, for the column state its
+ * headings hold.
+ *
+ * Descending maps to `undefined`, not to `date_desc`. They mean the same
+ * thing to the server, but `undefined` is the request the screen has
+ * ALREADY made: mapping the first click on a Date heading to an explicit
+ * `date_desc` would blank the register and re-read it to receive the rows
+ * it is already showing, in the order it is already showing them. Only a
+ * genuine reversal costs a round trip.
+ *
+ * A register with more than one sortable column would need a key here as
+ * well; the routes offer their date column and nothing else (see
+ * `packages/contracts/src/pagination.ts` for why a money column cannot be
+ * a cursor key), so the direction is the whole of it.
+ */
+export function registerSortParameter(sort: ColumnSort | null): 'date_asc' | undefined {
+  return sort !== null && sort.direction === 'asc' ? 'date_asc' : undefined;
+}
+
+/**
  * A column heading that sorts its register.
  *
  * `aria-sort` rides the `th` (where the specification puts it, and where a

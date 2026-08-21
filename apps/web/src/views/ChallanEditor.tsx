@@ -15,6 +15,7 @@ import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
 import { DataTable, controlCell, numericCell, wrapCell } from '../ui/table.js';
 import { Field, FieldRow, ActionBar, FormError, FieldError, Hint } from '../ui/form.js';
+import { useUnavailableControl } from '../ui/unavailable.js';
 import { formatRate } from '../format.js';
 import { NumericInput } from '../ui/numeric-input.js';
 
@@ -307,7 +308,9 @@ export function ChallanEditor({
   const [state, setState] = useState<EditorState | null>(null);
   /** The draft exactly as it loaded; Cancel compares against it. */
   const [loadedState, setLoadedState] = useState<EditorState | null>(null);
-  const [consignees, setConsignees] = useState<readonly Contact[]>([]);
+  /** The consignee roster, or `null` when the contact master could not be
+   * read — which is a different sentence from "there are none". */
+  const [consignees, setConsignees] = useState<readonly Contact[] | null>([]);
   const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
   const [poLineChoices, setPoLineChoices] = useState<
     ReadonlyMap<string, readonly PoLineChoice[]>
@@ -323,6 +326,22 @@ export function ChallanEditor({
   const [overRemaining, setOverRemaining] = useState<ReadonlySet<string>>(new Set());
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [pending, setPending] = useState(false);
+  /* Three states, not two: a roster with contacts in it, an empty one,
+     and one that could not be READ. The last two are both an empty
+     select, and telling the operator to go and create a contact when the
+     truth is that the list failed to load sends them off to duplicate one
+     that already exists. Computed here rather than beside the picker
+     because the hook it feeds cannot sit after this component's loading
+     return. */
+  const consigneePickerUnavailable =
+    consignees === null
+      ? 'The contact master could not be read, so there is nothing to prefill from. Reload to try again — the consignee can still be typed out below.'
+      : consignees.length === 0 &&
+          workConsignees.filter((candidate) => candidate.active).length === 0
+        ? 'No consignee contact is on file yet — add one under Masters → Contacts and it will prefill here. The consignee can still be typed out below.'
+        : null;
+  const { control: consigneePickerControl, hintId: consigneePickerHintId } =
+    useUnavailableControl(consigneePickerUnavailable);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   /* The Work code only ever seeds a new draft's prefix, but it is not
    * stable: on reload or deep-link the workspace mounts this editor with
@@ -367,8 +386,14 @@ export function ChallanEditor({
         ? Promise.resolve(null)
         : api.getChallan(organisationId, challanId),
       // The picker is a convenience: an unavailable master list must not
-      // block manual consignee entry.
-      api.listContacts(organisationId, { role: 'consignee' }).catch(() => []),
+      // block manual consignee entry. `null` rather than `[]` on failure,
+      // because the picker below has to tell an empty roster from an
+      // unreadable one — "no consignee is on file yet" sends the operator
+      // to Masters to create one, and is a lie when the truth is that the
+      // list could not be fetched.
+      api
+        .listContacts(organisationId, { role: 'consignee' })
+        .catch((): readonly Contact[] | null => null),
       // R16: the Work's linked consignees are offered first; any active
       // consignee stays selectable below them.
       api.listWorkConsignees(organisationId, workId).catch(() => []),
@@ -707,6 +732,7 @@ export function ChallanEditor({
   // "All consignees" group is already active-only, and linking a retired
   // contact is refused with 409 CONTACT_RETIRED.
   const linkedConsignees = workConsignees.filter((candidate) => candidate.active);
+  const listedConsignees = consignees ?? [];
 
   // The column exists only while the Work has open purchase orders with
   // lines to receive against; without them the table reads exactly as it
@@ -800,12 +826,12 @@ export function ChallanEditor({
           <select
             id="consignee-picker"
             defaultValue=""
-            disabled={consignees.length === 0}
+            {...consigneePickerControl}
             onChange={(event) => {
               // The picker only PREFILLS the snapshot fields below —
               // the challan keeps its own free-text copy, and every
               // field stays editable after picking.
-              const chosen = [...linkedConsignees, ...consignees].find(
+              const chosen = [...linkedConsignees, ...listedConsignees].find(
                 (candidate) => candidate.id === event.target.value,
               );
               if (chosen === undefined) return;
@@ -829,7 +855,7 @@ export function ChallanEditor({
               </optgroup>
             )}
             <optgroup label="All consignees">
-              {consignees.map((candidate) => (
+              {listedConsignees.map((candidate) => (
                 <option key={`all-${candidate.id}`} value={candidate.id}>
                   {candidate.designation}
                   {candidate.address !== null ? ` — ${candidate.address}` : ''}
@@ -837,10 +863,9 @@ export function ChallanEditor({
               ))}
             </optgroup>
           </select>
-          <Hint>
-            {consignees.length === 0
-              ? 'No consignee contact is on file yet — add one under Masters → Contacts and it will prefill here. The consignee can still be typed out below.'
-              : 'Consignees linked to this Work are listed first; any active consignee can be picked. Picking copies the details into this challan; edits here never change the contact.'}
+          <Hint id={consigneePickerHintId}>
+            {consigneePickerUnavailable ??
+              'Consignees linked to this Work are listed first; any active consignee can be picked. Picking copies the details into this challan; edits here never change the contact.'}
           </Hint>
         </Field>
         <FieldRow>

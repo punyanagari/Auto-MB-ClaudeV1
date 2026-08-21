@@ -8,7 +8,7 @@ import type { Auth } from '../../auth.js';
 import { hasFullWorkScope } from '../../authz.js';
 import {
   keysetPage,
-  registerOrder,
+  registerKeyset,
   sqlLimit,
   workScopedCursorRowId,
 } from '../../pagination.js';
@@ -80,29 +80,31 @@ export function registerTaxInvoiceRegisterRoute(
         // work-scope predicate as well as the tenant: see
         // `workScopedCursorRowId` for the oracle an organisation-wide
         // cursor check leaves behind.
-        const cursor = await workScopedCursorRowId(tx, 'tax_invoices', query.cursor, {
-          userId: user.id,
-          full,
-        });
-        const invoicedFrom = query.invoicedFrom ?? null;
-        const invoicedTo = query.invoicedTo ?? null;
-        // `?sort=date_asc` reads the register oldest first. The ORDER BY
-        // and the direction of the keyset comparison are decided
-        // together, which is the invariant a sortable paginated register
-        // lives on: a predicate left seeking the other way does not
-        // error, it quietly returns the wrong rows at each boundary.
-        // Omitting `sort` is the newest-first register, unchanged.
+        // `?sort=date_asc` reads the register oldest first. The ORDER BY,
+        // the direction of the keyset comparison and the cursor's sort
+        // tag are decided together, which is the invariant a sortable
+        // paginated register lives on: a predicate left seeking the other
+        // way does not error, it quietly returns the wrong rows at each
+        // boundary, and a cursor replayed under the other sort answers
+        // the far side of its own row. Omitting `sort` is the
+        // newest-first register, unchanged.
         //
         // The date is the only key offered. `taxable_value` is NULL while
         // an invoice is a draft, and a NULL leading key makes the whole
         // row comparison NULL — every draft would vanish after the first
         // page. Sorting the register by value is a client-side sort of a
         // fully-loaded list, never a cursor key.
-        const { ascending, orderBy } = registerOrder(query.sort, [
-          'ti.invoice_date',
-          'ti.created_at',
-          'ti.id',
-        ]);
+        const seek = registerKeyset(query.sort, query.cursor, {
+          table: 'tax_invoices',
+          alias: 'ti',
+          columns: ['invoice_date', 'created_at', 'id'],
+        });
+        const cursor = await workScopedCursorRowId(tx, 'tax_invoices', seek.cursor, {
+          userId: user.id,
+          full,
+        });
+        const invoicedFrom = query.invoicedFrom ?? null;
+        const invoicedTo = query.invoicedTo ?? null;
         const rows = await tx<
           {
             id: string;
@@ -162,19 +164,15 @@ export function registerTaxInvoiceRegisterRoute(
               or ti.invoice_date >= ${invoicedFrom}::date)
             and (${invoicedTo}::date is null
               or ti.invoice_date <= ${invoicedTo}::date)
-            and (${cursor === null}
-              or (${ascending} and (ti.invoice_date, ti.created_at, ti.id) > (
-                select c2.invoice_date, c2.created_at, c2.id from tax_invoices c2
-                where c2.id = ${cursor}))
-              or (${!ascending} and (ti.invoice_date, ti.created_at, ti.id) < (
-                select c2.invoice_date, c2.created_at, c2.id from tax_invoices c2
-                where c2.id = ${cursor})))
-          order by ${tx.unsafe(orderBy)}
+            and ${seek.predicate(tx, cursor)}
+          order by ${tx.unsafe(seek.orderBy)}
           limit ${sqlLimit(query.limit)}
         `;
         const paged = keysetPage(rows, query.limit, (row) => row.id);
         return {
-          nextCursor: paged.nextCursor,
+          // Tagged with the sort it was minted under, so the next request
+          // cannot pair it with the other one.
+          nextCursor: seek.tag(paged.nextCursor),
           invoices: paged.rows.map((row) => ({
             id: row.id,
             workId: row.work_id,

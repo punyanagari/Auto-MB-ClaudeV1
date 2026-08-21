@@ -529,12 +529,12 @@ export interface ApiClient {
    * narrows it to one Work — the module's `?work=` deep link, pushed into
    * the request so the answer is that Work's movements rather than the
    * ones that happened to be on the page. */
+  /* No `sort`: this read sends no `limit`, so it receives the whole
+   * register and the Challans screen orders it in the view. The route's
+   * `?sort=` is for the registers that page. */
   readonly listDeliveryChallans: (
     organisationId: string,
     workId?: string | null,
-    /** Which way round the register reads its challan-date column.
-     * Omitted is newest first, exactly as before the parameter existed. */
-    sort?: RegisterSort,
   ) => Promise<readonly DeliveryChallanRegisterEntry[]>;
   /** The Challans module's issue register: every issue challan in the
    * organisation the caller may see, with the Work each belongs to. */
@@ -3106,13 +3106,11 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       );
       return payload.challans;
     },
-    async listDeliveryChallans(organisationId, workId = null, sort) {
-      const parameters = new URLSearchParams();
-      if (workId !== null) parameters.set('work', workId);
-      if (sort !== undefined) parameters.set('sort', sort);
-      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
+    async listDeliveryChallans(organisationId, workId = null) {
       const payload = await request<{ challans: DeliveryChallanRegisterEntry[] }>(
-        `/api/delivery-challans${suffix}`,
+        workId === null
+          ? '/api/delivery-challans'
+          : `/api/delivery-challans?work=${encodeURIComponent(workId)}`,
         { organisationId },
       );
       return payload.challans;

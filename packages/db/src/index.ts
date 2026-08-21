@@ -15,4 +15,4 @@ export * from './roles.js';
  *   which interface-typed domain values structurally lack even though
  *   serialization is JSON.stringify either way — hence the cast.
  */
-export type { Sql, TransactionSql } from 'postgres';
+export type { Fragment, Sql, TransactionSql } from 'postgres';

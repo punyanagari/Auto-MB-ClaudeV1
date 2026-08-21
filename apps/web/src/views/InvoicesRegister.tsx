@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Contact,
   CreditNote,
   EwayBill,
   GstRateMaster,
-  RegisterSort,
   TaxInvoiceDetailResponse,
   TaxInvoiceLineShape,
   TaxInvoiceRegisterEntry,
@@ -32,6 +31,7 @@ import {
   DataTable,
   SortHeader,
   numericCell,
+  registerSortParameter,
   useColumnSort,
   wrapCell,
 } from '../ui/table.js';
@@ -160,10 +160,20 @@ export function InvoicesRegister({
    *
    * Only the date sorts. `taxableValue` is null while an invoice is a
    * draft, and a null leading keyset key drops every draft after the
-   * first page — see `packages/contracts/src/pagination.ts`. */
+   * first page — see `packages/contracts/src/pagination.ts`.
+   *
+   * `registerSortParameter` maps descending to `undefined`, so the FIRST
+   * click on the heading — which asks for the order already on screen —
+   * does not blank the register to re-read it. */
   const [sort, toggleSort] = useColumnSort<'invoiceDate'>();
-  const sortParameter: RegisterSort | undefined =
-    sort === null ? undefined : sort.direction === 'asc' ? 'date_asc' : 'date_desc';
+  const sortParameter = registerSortParameter(sort);
+  /* Which read the rows on screen came from. `loadMore` is an async
+   * continuation of a read that may already be obsolete: flip the sort
+   * while a page is in flight and the response carries rows from the OLD
+   * order, plus a cursor minted under it. Appending those rows and
+   * installing that cursor would walk the rest of the register from a
+   * position the new order never had. */
+  const readStamp = useRef(0);
 
   const fetchPage = useCallback(
     (cursor?: string) =>
@@ -179,6 +189,7 @@ export function InvoicesRegister({
 
   useEffect(() => {
     let cancelled = false;
+    readStamp.current += 1;
     setInvoices(null);
     setNextCursor(null);
     setLoadError(null);
@@ -328,13 +339,19 @@ export function InvoicesRegister({
 
   async function loadMore(): Promise<void> {
     if (nextCursor === null) return;
+    const stamp = readStamp.current;
     setPending(true);
     setLoadError(null);
     try {
       const page = await fetchPage(nextCursor);
+      // The sort or the date window changed while this page was in
+      // flight: these rows belong to a register that is no longer on
+      // screen, and so does the cursor they came with.
+      if (readStamp.current !== stamp) return;
       setInvoices((current) => [...(current ?? []), ...page.invoices]);
       setNextCursor(page.nextCursor);
     } catch (cause) {
+      if (readStamp.current !== stamp) return;
       setLoadError(
         errorMessage(cause, 'The next page of tax invoices could not be loaded.'),
       );

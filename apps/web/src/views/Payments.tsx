@@ -22,6 +22,7 @@ import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
 import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FormError, FormNotice, Hint } from '../ui/form.js';
+import { useUnavailableControl } from '../ui/unavailable.js';
 import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
@@ -1214,7 +1215,10 @@ function NewVendorInvoiceForm({
   const [section, setSection] = useState<'' | '194C' | '194J'>('');
   const [payeeClass, setPayeeClass] = useState<'individual_huf' | 'other'>('other');
   const [purchaseOrderId, setPurchaseOrderId] = useState('');
-  const [orders, setOrders] = useState<readonly PurchaseOrder[]>([]);
+  /** This vendor's billable orders, or `null` while they are unknown —
+   * not yet read, or read and failed. `[]` means the read came back and
+   * matched nothing, which is a different sentence. */
+  const [orders, setOrders] = useState<readonly PurchaseOrder[] | null>(null);
 
   /* The orders this vendor could have billed for (migration 0109): issued
      or closed, since a draft has ordered nothing. The picker is a
@@ -1230,17 +1234,25 @@ function NewVendorInvoiceForm({
        — either way the operator is refused for a value they were shown as
        unset. */
     setPurchaseOrderId('');
-    if (vendor === '') {
-      setOrders([]);
-      return;
-    }
+    /* Cleared BEFORE the refetch, not only when the new vendor has none.
+       Leaving the previous vendor's orders in state while the next
+       vendor's read is in flight offers the operator a list of orders
+       belonging to somebody else — and if the read then fails, it leaves
+       them there permanently. */
+    setOrders(null);
+    if (vendor === '') return;
     let cancelled = false;
     /* Narrowed at the SERVER, not in the browser: the register grows
        without limit and this control needs at most a page of it. `issued`
        is the status a bill is normally raised against; a closed order can
        take a second invoice, and the operator reaches that one from the
        order itself rather than from a dropdown of every order this
-       organisation has ever placed. */
+       organisation has ever placed.
+       ponytail: the route has no vendor filter, so this reads one page of
+       the register and matches the vendor here — a vendor whose order is
+       older than that page finds an empty picker, which is why the hint
+       below says "recently issued" rather than claiming they have none.
+       Upgrade path is a `?vendor=` on /api/purchase-orders. */
     api
       .listPurchaseOrders(organisationId, { status: 'issued', limit: 100 })
       .then((result) => {
@@ -1250,12 +1262,29 @@ function NewVendorInvoiceForm({
         );
       })
       .catch(() => {
-        // The picker simply is not offered; the invoice still records.
+        // Stays null: unknown, not empty. The picker says so, and the
+        // invoice still records without a link.
       });
     return () => {
       cancelled = true;
     };
   }, [api, organisationId, vendor]);
+
+  /* Four states the operator can tell apart, where there used to be two.
+     No vendor chosen yet; the read failed or has not landed; the read
+     landed and this vendor has no RECENTLY issued order — which is not
+     the same claim as "has none", because only a page of the register was
+     read; and orders to choose from. */
+  const orderPickerUnavailable =
+    vendor === ''
+      ? 'Choose the vendor first; their purchase orders are read from the register once they are named.'
+      : orders === null
+        ? 'The purchase orders could not be read, so there is nothing to link to. Reload to try again — the invoice records either way.'
+        : orders.length === 0
+          ? 'None of the recently issued purchase orders is for this vendor. If theirs is an older one, open it under Purchase orders and record the invoice from there — the link is optional here.'
+          : null;
+  const { control: orderPickerControl, hintId: orderPickerHintId } =
+    useUnavailableControl(orderPickerUnavailable);
 
   const ready = vendor !== '' && number.trim() !== '' && amount.trim() !== '';
 
@@ -1382,23 +1411,22 @@ function NewVendorInvoiceForm({
           id="invoice-purchase-order"
           className="input"
           value={purchaseOrderId}
-          disabled={orders.length === 0}
+          {...orderPickerControl}
           onChange={(event) => {
             setPurchaseOrderId(event.target.value);
           }}
         >
           <option value="">No purchase order</option>
-          {orders.map((order) => (
+          {(orders ?? []).map((order) => (
             <option key={order.id} value={order.id}>
               {order.poNumber ?? 'Draft'}
               {order.workCode !== null ? ` — ${order.workCode}` : ' — outside any LOA'}
             </option>
           ))}
         </select>
-        <Hint>
-          {orders.length === 0
-            ? 'This vendor has no open purchase order to record the invoice against. Raise one under Purchase orders first, or leave the invoice unlinked.'
-            : 'A purchase order does not close until one of its vendor invoices is recorded here with its PDF uploaded.'}
+        <Hint id={orderPickerHintId}>
+          {orderPickerUnavailable ??
+            'A purchase order does not close until one of its vendor invoices is recorded here with its PDF uploaded.'}
         </Hint>
       </Field>
       <Actions>
