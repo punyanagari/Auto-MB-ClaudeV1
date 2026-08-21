@@ -2716,11 +2716,70 @@ operator then collapsed, so its inputs have to be React state first. The PAC for
 was converted that way.
 
 The surfaces that stayed flat, and why, so the list is not read as an oversight:
-the challan and issue-challan item tables, the Measurement Book's lines and the
-inspection-clause table all render rows whose API shape carries no schedule, so
-grouping them needs a contract change rather than a screen change; the
-post-creation payment-setup dialog is a dialog, and the summary row sticks against
-a shell header that a dialog does not have.
+the challan and issue-challan item tables and the Measurement Book's lines all
+render rows whose API shape carries no schedule, so grouping them needs a contract
+change rather than a screen change; the post-creation payment-setup dialog is a
+dialog, and the summary row sticks against a shell header that a dialog does not
+have. The inspection-clause table left this list on 2026-08-21 (§35 below): it is
+sectioned by what the item description SAYS rather than by schedule, which needs
+no contract change at all.
+
+### §35 Inspection clause: two lists, and a vendor with more than one address — APPROVED, owner ruling of 2026-08-21
+
+**The clause tab is two sections, not one list.** A 129-item schedule carries
+perhaps six inspected items, and railway schedules say which ones in the item text
+— "Inspection by RDSO", "RITES inspection at vendor's works". The tab now reads for
+that and splits the items accordingly:
+
+- **Matched items**, expanded on arrival: the description names an agency.
+- **Other items**, collapsed but present: everything else.
+
+The second section is not an afterthought and is never hidden outright, because an
+inspection clause sometimes lives in the tender text rather than in the item
+description. A screen that showed only the matched items would be capable of being
+wrong in a way nobody could see.
+
+The reading is FUZZY and it is a PROPOSAL. Fuzzy, because LOA schedules arrive as
+scanned PDFs typed by a dozen offices: the corpus already carries "Consingee" for
+consignee and runs whole phrases together where the source line-wrapped. The
+matcher strips everything that is not a letter or a digit and then looks for the
+agency's name and an inspection stem within a bounded edit distance, so
+"inspectionbyRDSO", "Inspection by R.D.S.O." and "Insepction by RDSO" all read the
+same (`apps/web/src/lib/inspection-clause-match.ts`, unit-tested over those exact
+variants). A proposal, because the agency select stays EMPTY until an operator
+chooses: a match writes a hint under the control ("Description reads RDSO") and
+nothing else. Mapping an item is what makes a despatch legitimate, and a machine
+reading of item text is not that decision.
+
+**The premises is a vendor and one of its addresses.** It used to be free text,
+retyped per item and differently each time, until the placing request went to the
+wrong works. The clause now names a vendor-role contact and one of that vendor's
+saved addresses, with the free text kept as the fallback it always was — half of
+these premises are sub-vendors with no master row, and refusing them would be a
+worse failure than an untidy field. The two are alternatives, and the database
+refuses the pair.
+
+The clause reads the address LIVE and the call COPIES it. That difference is the
+whole of the rule-7 posture here: a clause is configuration, so an address
+corrected in the master should reach the next call raised under it; a call is a
+record of a request that went out, so it snapshots the vendor's name and the
+address text and keeps them when the master is renamed or the address retired.
+
+**A contact keeps more than one address.** Masters gains an address list per
+contact — label, address, pincode, locality, state code, retire and reactivate,
+and which one is primary. The contact's own address fields are the PRIMARY address
+and the database keeps them equal to it, so every screen that already prefilled
+from a contact keeps working and now means "the primary address" precisely. Where
+an operator may need a different one, a chooser appears, and only when there is
+something to choose:
+
+- the Work challan editor's consignee prefill, and the standalone challan's
+  consignee — both offer the list when the contact keeps more than one;
+- the inspection clause's vendor, above.
+
+Retiring an address never touches a document that copied it, and a retired address
+is refused for a new one. That is the same sentence the Contacts register has
+carried since the master existed, applied one level down.
 
 ## Focus, keyboard and navigation
 

@@ -154,6 +154,12 @@ export const SaveStandaloneChallanRequestSchema = Type.Object(
     challanDate: DateOnlySchema,
     prefix: PrefixSchema,
     consigneeContactId: UuidSchema,
+    /** Which of the consignee's addresses this movement goes to
+     * (migration 0116). Omitted takes the primary one, which is what
+     * every challan raised before the address list took. The chosen text
+     * is COPIED onto the challan's own consignee snapshot: retiring or
+     * editing the address afterwards changes nothing here. */
+    consigneeAddressId: Type.Optional(UuidSchema),
     items: Type.Array(ChallanItemInputSchema, { minItems: 1 }),
     ...challanStatutoryFields,
   },

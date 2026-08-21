@@ -569,6 +569,87 @@ describe('standalone Delivery Challans', () => {
     });
   });
 
+  it('copies the chosen address onto the challan and keeps the copy when the master moves', async () => {
+    // The second address a consignee keeps (migration 0116). The one the
+    // contact form gave it is the primary; this is the other one, and
+    // choosing it must change WHICH text the challan copies without
+    // changing that it copies.
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${secondConsigneeContactId}/addresses`,
+      organisationId,
+      payload: { label: 'Site store', address: 'Gate 3, Yard Road, Manmad' },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    const siteStoreId = second.json<{ id: string }>().id;
+
+    const draft = await authed(owner, {
+      method: 'POST',
+      url: '/api/delivery-challans',
+      organisationId,
+      payload: {
+        challanDate: await organisationToday(),
+        prefix: 'SDC',
+        consigneeContactId: secondConsigneeContactId,
+        consigneeAddressId: siteStoreId,
+        items: [{ description: 'Clamp', unit: 'Nos', quantity: '2', rate: '40.00' }],
+      },
+    });
+    expect(draft.statusCode, draft.body).toBe(201);
+    const drafted = draft.json<ChallanDetailResponse>();
+    expect(drafted.challan.consignee.address).toBe('Gate 3, Yard Road, Manmad');
+
+    // Rule 7, through the new control: edit the address in the master and
+    // retire it, and the draft still says what it copied.
+    const edited = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${secondConsigneeContactId}/addresses/${siteStoreId}`,
+      organisationId,
+      payload: { label: 'Site store', address: 'Gate 9, Yard Road, Manmad' },
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${secondConsigneeContactId}/addresses/${siteStoreId}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+
+    const reread = await authed(owner, {
+      method: 'GET',
+      url: `/api/challans/${drafted.challan.id}`,
+      organisationId,
+    });
+    expect(reread.statusCode, reread.body).toBe(200);
+    expect(reread.json<ChallanDetailResponse>().challan.consignee.address).toBe(
+      'Gate 3, Yard Road, Manmad',
+    );
+
+    // A retired address is refused for a NEW challan, which is the other
+    // half of the same rule: history keeps it, the picker does not.
+    const afterRetire = await authed(owner, {
+      method: 'PUT',
+      url: `/api/delivery-challans/${drafted.challan.id}`,
+      organisationId,
+      payload: {
+        challanDate: await organisationToday(),
+        prefix: 'SDC',
+        consigneeContactId: secondConsigneeContactId,
+        consigneeAddressId: siteStoreId,
+        items: [{ description: 'Clamp', unit: 'Nos', quantity: '2', rate: '40.00' }],
+      },
+    });
+    expect(afterRetire.statusCode, afterRetire.body).toBe(409);
+    expect(afterRetire.json<{ code: string }>().code).toBe('CONTACT_ADDRESS_RETIRED');
+
+    const removed = await authed(owner, {
+      method: 'DELETE',
+      url: `/api/challans/${drafted.challan.id}`,
+      organisationId,
+    });
+    expect(removed.statusCode, removed.body).toBe(204);
+  });
+
   it('allows one open draft per consignee, and another consignee its own', async () => {
     const repeat = await authed(owner, {
       method: 'POST',

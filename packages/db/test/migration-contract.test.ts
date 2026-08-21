@@ -114,6 +114,10 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // this census by construction, and its own `it` block below asserts
   // that it replaced the guard rather than adding a second one.
   '0111_railway_measurements.sql': 4,
+  // The address list's own `updated_at` touch and the mirror that keeps
+  // `contacts` equal to the primary address, plus one vendor-role guard
+  // wired onto both inspection tables (0116).
+  '0116_contact_addresses_and_inspection_vendor.sql': 4,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -3589,5 +3593,136 @@ describe('the railway measurement and its gate (0111)', () => {
     expect(sql).not.toContain('SECURITY DEFINER');
     expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(3);
     expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(3);
+  });
+});
+
+describe('the contact address list and the inspection vendor (0116)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(
+        migrationsDirectory,
+        '0116_contact_addresses_and_inspection_vendor.sql',
+      ),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that adds a trigger to a live table', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('holds the address list in the ADR-0010 policy shape with no DELETE', () => {
+    expect(sql).toContain('CREATE POLICY contact_addresses_tenant_policy');
+    expect(sql).toContain('ALTER TABLE contact_addresses FORCE ROW LEVEL SECURITY;');
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON contact_addresses TO auto_mb_app;',
+    );
+    // Addresses retire, like every other master row: a challan may have
+    // copied one, and the register has to keep explaining that text.
+    expect(sql).not.toContain('DELETE ON contact_addresses TO auto_mb_app');
+    expect(sql).toContain(
+      'USING (organisation_id = (SELECT app_private.current_organisation_id()))',
+    );
+  });
+
+  it('enables row security only after the backfill has run', () => {
+    // The copy reads `contacts` and writes the child; enabling the policy
+    // first would make the backfill silently insert nothing, which is a
+    // migration that appears to succeed and loses every address.
+    const backfill = sql.indexOf('INSERT INTO contact_addresses (');
+    const enable = sql.indexOf(
+      'ALTER TABLE contact_addresses ENABLE ROW LEVEL SECURITY',
+    );
+    expect(backfill).toBeGreaterThan(0);
+    expect(enable).toBeGreaterThan(backfill);
+  });
+
+  it('admits one primary per contact and never a retired one', () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX contact_addresses_one_primary\s+ON contact_addresses \(organisation_id, contact_id\)\s+WHERE is_primary;/,
+    );
+    expect(sql).toContain('contact_addresses_retired_is_never_primary_check');
+    expect(sql).toContain('active OR NOT is_primary');
+  });
+
+  it('carries the three-column key a document needs to prove an address belongs to its contact', () => {
+    // Contact BEFORE id, so this one index leads with
+    // (organisation_id, contact_id) and covers the parent key and both
+    // citing keys at once.
+    expect(sql).toContain('UNIQUE (organisation_id, contact_id, id)');
+    for (const table of ['inspection_clauses', 'inspection_calls']) {
+      expect(sql, table).toContain(
+        `ADD CONSTRAINT ${table}_vendor_address_fkey\n    FOREIGN KEY (organisation_id, vendor_contact_id, vendor_address_id)\n    REFERENCES contact_addresses(organisation_id, contact_id, id)`,
+      );
+      // MATCH SIMPLE does not fire while any column is NULL, so the
+      // CHECK is what makes the key above enforceable at all.
+      expect(sql, table).toContain(
+        `${table}_vendor_address_needs_contact_check CHECK (\n    vendor_address_id IS NULL OR vendor_contact_id IS NOT NULL\n  )`,
+      );
+      // Both citing keys lead with (organisation_id, vendor_contact_id),
+      // so one index over the pair covers them for the FK census.
+      expect(sql, table).toContain(
+        `CREATE INDEX ${table}_vendor_idx\n  ON ${table} (organisation_id, vendor_contact_id, vendor_address_id);`,
+      );
+    }
+  });
+
+  it('keeps the clause joining live and the call snapshotting', () => {
+    // The clause is configuration: one premises, never both.
+    expect(sql).toContain(
+      'inspection_clauses_one_premises_check CHECK (\n    vendor_address_id IS NULL OR vendor_premises IS NULL\n  )',
+    );
+    // The call is a record: naming a vendor obliges it to carry the
+    // copied name and the copied text, so nothing has to re-read the
+    // master to say where the agency was sent.
+    expect(sql).toContain(
+      'inspection_calls_vendor_snapshot_check CHECK (\n    vendor_contact_id IS NULL\n    OR (vendor_name IS NOT NULL AND vendor_premises IS NOT NULL)\n  )',
+    );
+    // 0082 bounded the premises at 200 as a typed name; a copied master
+    // address runs to the parent column's own thousand.
+    expect(sql).toContain('DROP CONSTRAINT inspection_calls_vendor_premises_check;');
+    expect(sql).toContain('length(vendor_premises) BETWEEN 1 AND 1000');
+  });
+
+  it('mirrors the primary address onto the contact without recursing or over-writing', () => {
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.mirror_contact_primary_address()',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER contact_addresses_mirror_primary\nAFTER INSERT OR UPDATE ON contact_addresses',
+    );
+    // Only when the answer changes: an ordinary edit of a NON-primary
+    // address must not touch `contacts` and so must not be able to trip
+    // its duplicate-designation unique index.
+    expect(sql).toContain('IS DISTINCT FROM');
+    // A contact whose last primary went away says so, rather than keeping
+    // the address it happened to hold last.
+    expect(sql).toContain('SELECT NULL::text, NULL::text, NULL::text, NULL::text');
+  });
+
+  it('takes its refusals from its own 23Y block, and only one rule', () => {
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    expect(codes.length).toBeGreaterThanOrEqual(1);
+    expect([...new Set(codes)]).toEqual(['23Y01']);
+    // ONE function raising it, wired onto both inspection tables: for an
+    // operator "the inspection vendor must be a vendor" is one refusal,
+    // and two functions would be two sentences that could drift.
+    expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(2);
+    expect(sql).toContain(
+      'CREATE TRIGGER inspection_clauses_guard_vendor_role\nBEFORE INSERT OR UPDATE ON inspection_clauses',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER inspection_calls_guard_vendor_role\nBEFORE INSERT OR UPDATE ON inspection_calls',
+    );
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    expect(sql).not.toContain('SECURITY DEFINER');
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(2);
   });
 });

@@ -228,6 +228,10 @@ export function DeliveryChallans({
   const [challanDate, setChallanDate] = useState(todayIso);
   const [prefix, setPrefix] = useState('DC');
   const [consigneeContactId, setConsigneeContactId] = useState('');
+  /** Which of the consignee's addresses this movement goes to (migration
+   * 0116). Empty means the primary one, which is what every standalone
+   * challan drafted before the address list existed used. */
+  const [consigneeAddressId, setConsigneeAddressId] = useState('');
   const [lines, setLines] = useState<readonly LineDraft[]>([{ ...EMPTY_LINE }]);
   const [movementReason, setMovementReason] = useState<'' | MovementReason>('');
   const [vehicleNumber, setVehicleNumber] = useState('');
@@ -238,6 +242,10 @@ export function DeliveryChallans({
   const refreshList = useCallback(async () => {
     setChallans(await api.listDeliveryChallans(organisationId, workId));
   }, [api, organisationId, workId]);
+
+  const consigneeAddresses = (
+    contacts.find((contact) => contact.id === consigneeContactId)?.addresses ?? []
+  ).filter((address) => address.active);
 
   useEffect(() => {
     let cancelled = false;
@@ -372,6 +380,7 @@ export function DeliveryChallans({
     setChallanDate(todayIso());
     setPrefix('DC');
     setConsigneeContactId('');
+    setConsigneeAddressId('');
     setLines([{ ...EMPTY_LINE }]);
     setMovementReason('');
     setVehicleNumber('');
@@ -565,6 +574,10 @@ export function DeliveryChallans({
                     challanDate,
                     prefix,
                     consigneeContactId,
+                    // Omitted takes the consignee's primary address, which
+                    // is what every standalone challan took before the
+                    // address list existed.
+                    ...(consigneeAddressId === '' ? {} : { consigneeAddressId }),
                     items: lines.map((line) => ({
                       description: line.description.trim(),
                       unit: line.unit.trim(),
@@ -607,6 +620,9 @@ export function DeliveryChallans({
                     value={consigneeContactId}
                     onChange={(event) => {
                       setConsigneeContactId(event.target.value);
+                      // A different consignee has a different address
+                      // list, so the choice cannot survive the change.
+                      setConsigneeAddressId('');
                     }}
                   >
                     <option value="">Choose a contact…</option>
@@ -617,6 +633,31 @@ export function DeliveryChallans({
                     ))}
                   </select>
                 </Field>
+                {/* Offered only when the consignee keeps more than one
+                    address (migration 0116): a single-address contact has
+                    nothing to choose between. The server copies whichever
+                    is chosen onto the challan's own snapshot. */}
+                {consigneeAddresses.length > 1 && (
+                  <Field>
+                    <label htmlFor="standalone-consignee-address">
+                      Delivery address
+                    </label>
+                    <select
+                      id="standalone-consignee-address"
+                      value={consigneeAddressId}
+                      onChange={(event) => {
+                        setConsigneeAddressId(event.target.value);
+                      }}
+                    >
+                      <option value="">Primary address</option>
+                      {consigneeAddresses.map((address) => (
+                        <option key={address.id} value={address.id}>
+                          {address.label ?? address.address}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
                 <Field>
                   <label htmlFor="standalone-date">Challan date</label>
                   <input

@@ -134,6 +134,8 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listContacts: vi.fn().mockResolvedValue([]),
     saveContact: vi.fn(),
     setContactActive: vi.fn(),
+    saveContactAddress: vi.fn(),
+    setContactAddressActive: vi.fn(),
     listWorkConsignees: vi.fn().mockResolvedValue([]),
     linkWorkConsignee: vi.fn(),
     unlinkWorkConsignee: vi.fn(),

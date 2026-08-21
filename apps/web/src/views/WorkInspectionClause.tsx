@@ -3,6 +3,8 @@ import { AlertTriangle, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import {
   INSPECTION_AGENCIES,
   INSPECTION_CLAUSE_AGENCIES,
+  type Contact,
+  type ContactAddress,
   type InspectionAgency,
   type InspectionChecklistField,
   type InspectionClauseAgency,
@@ -11,12 +13,14 @@ import {
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { todayIso } from '../format.js';
+import { proposeInspectionAgency } from '../lib/inspection-clause-match.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
 import { Actions, Field, FormError, FormNotice, Hint } from '../ui/form.js';
+import { ScheduleSection, useScheduleAccordion } from '../ui/schedule-section.js';
 import { controlCell, wrapCell } from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { NumericInput } from '../ui/numeric-input.js';
@@ -55,6 +59,27 @@ const AGENCY_LABELS: Record<InspectionClauseAgency, string> = {
   consignee: 'Consignee',
 };
 
+/** The two sections the item list is split into, and the ids the
+ * accordion keys its open/shut state on. `matched` is first, so the
+ * accordion's own default — first section open, the rest shut — is
+ * exactly the behaviour the owner asked for. */
+const MATCHED = 'matched';
+const OTHER = 'other';
+const SECTION_IDS = [MATCHED, OTHER];
+
+/** The addresses a vendor currently offers: live ones only, primary
+ * first — the order the masters route already returns them in, filtered
+ * rather than re-sorted so the picker and the register agree. */
+function liveAddresses(vendor: Contact | undefined): readonly ContactAddress[] {
+  return (vendor?.addresses ?? []).filter((address) => address.active);
+}
+
+/** What an address is called in a one-line picker: its own label where
+ * the operator gave it one, the address text otherwise. */
+function addressLabel(address: ContactAddress): string {
+  return address.label ?? address.address;
+}
+
 interface WorkInspectionClauseProps {
   readonly api: ApiClient;
   readonly organisationId: string;
@@ -75,6 +100,12 @@ export function WorkInspectionClause({
 }: WorkInspectionClauseProps) {
   const [config, setConfig] = useState<WorkInspectionConfig | null>(null);
   const [rows, setRows] = useState<readonly InspectionClauseRow[]>([]);
+  /** Vendor-role contacts, with their address lists. The premises picker
+   * offers these; a sub-vendor with no master row is still typed in, the
+   * way 0082 has always allowed. A failed load leaves the list empty and
+   * the free-text field is what remains, so the screen degrades to what
+   * it was rather than to nothing. */
+  const [vendors, setVendors] = useState<readonly Contact[]>([]);
   const [agency, setAgency] = useState<InspectionAgency>('RDSO');
   const [fields, setFields] = useState<readonly InspectionChecklistField[]>([]);
   /** True while this Work is being held to the ORGANISATION's default list
@@ -102,6 +133,14 @@ export function WorkInspectionClause({
     setConfig(null);
     setLoadError(null);
     api
+      .listContacts(organisationId, { role: 'vendor' })
+      .then((loaded) => {
+        if (!cancelled) setVendors(loaded);
+      })
+      .catch(() => {
+        if (!cancelled) setVendors([]);
+      });
+    api
       .getWorkInspectionConfig(organisationId, workId)
       .then((loaded) => {
         if (cancelled) return;
@@ -116,6 +155,11 @@ export function WorkInspectionClause({
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion, adopt]);
+
+  // Before the early returns, because it is a hook: two sections, the
+  // matched one open on arrival and the rest shut, which is what
+  // `useScheduleAccordion` already does with the first id it is given.
+  const accordion = useScheduleAccordion(SECTION_IDS);
 
   if (loadError !== null) {
     return (
@@ -145,6 +189,207 @@ export function WorkInspectionClause({
 
   const callable = rows.filter((row) => row.agency === agency);
 
+  // THE TWO LISTS. An item whose description names an agency is one the
+  // operator came here to map; everything else is shown too — collapsed —
+  // because a clause sometimes lives in the tender text rather than in
+  // the item, and hiding those items outright would make the screen
+  // capable of being wrong in a way nobody could see.
+  const proposals = new Map(
+    rows.map((row) => [row.workItemId, proposeInspectionAgency(row.description)]),
+  );
+  const matched = rows.filter((row) => proposals.get(row.workItemId) != null);
+  const others = rows.filter((row) => proposals.get(row.workItemId) == null);
+
+  const vendorOf = (contactId: string | null): Contact | undefined =>
+    contactId === null
+      ? undefined
+      : vendors.find((candidate) => candidate.id === contactId);
+
+  /** Picking a vendor proposes its PRIMARY address, which is the one
+   * every other picker in the product defaults to, and clears the free
+   * text — the two are alternatives, and the database refuses the pair. */
+  const chooseVendor = (row: InspectionClauseRow, contactId: string) => {
+    if (contactId === '') {
+      update(row.workItemId, { vendorContactId: null, vendorAddressId: null });
+      return;
+    }
+    const live = liveAddresses(vendorOf(contactId));
+    update(row.workItemId, {
+      vendorContactId: contactId,
+      vendorAddressId: live[0]?.id ?? null,
+      ...(live[0] === undefined ? {} : { vendorPremises: null }),
+    });
+  };
+
+  const premisesCell = (row: InspectionClauseRow) => {
+    const live = liveAddresses(vendorOf(row.vendorContactId));
+    return (
+      <td className={controlCell}>
+        <select
+          aria-label={`Inspection vendor for ${row.itemNumber}`}
+          disabled={!canModify || pending}
+          value={row.vendorContactId ?? ''}
+          onChange={(event) => {
+            chooseVendor(row, event.target.value);
+          }}
+        >
+          <option value="">Not a saved vendor</option>
+          {vendors.map((vendor) => (
+            <option key={vendor.id} value={vendor.id}>
+              {vendor.designation}
+            </option>
+          ))}
+        </select>
+        {row.vendorContactId !== null && live.length > 0 && (
+          <select
+            aria-label={`Inspection address for ${row.itemNumber}`}
+            disabled={!canModify || pending}
+            value={row.vendorAddressId ?? ''}
+            onChange={(event) => {
+              const chosen = event.target.value;
+              update(row.workItemId, {
+                vendorAddressId: chosen === '' ? null : chosen,
+                ...(chosen === '' ? {} : { vendorPremises: null }),
+              });
+            }}
+          >
+            <option value="">Type the premises instead</option>
+            {live.map((address) => (
+              <option key={address.id} value={address.id}>
+                {addressLabel(address)}
+                {address.isPrimary ? ' (primary)' : ''}
+              </option>
+            ))}
+          </select>
+        )}
+        {row.vendorAddressId === null && (
+          <input
+            aria-label={`Vendor premises for ${row.itemNumber}`}
+            className="w-56"
+            disabled={!canModify || pending}
+            value={row.vendorPremises ?? ''}
+            onChange={(event) => {
+              update(row.workItemId, {
+                vendorPremises: event.target.value === '' ? null : event.target.value,
+              });
+            }}
+          />
+        )}
+      </td>
+    );
+  };
+
+  const clauseRow = (row: InspectionClauseRow) => {
+    const proposal = proposals.get(row.workItemId) ?? null;
+    return (
+      <tr key={row.workItemId}>
+        <td className={wrapCell}>
+          <span className="font-mono text-xs text-muted-foreground">
+            {row.itemNumber}
+          </span>
+          <span className="block font-medium">{row.description}</span>
+        </td>
+        <td className={controlCell}>
+          <select
+            aria-label={`Inspection agency for ${row.itemNumber}`}
+            disabled={!canModify || pending}
+            value={row.agency ?? ''}
+            onChange={(event) => {
+              const value = event.target.value;
+              update(row.workItemId, {
+                agency: value === '' ? null : (value as InspectionClauseAgency),
+                // Clearing the agency, or moving it to the consignee,
+                // clears the gate with it: the server and the 0082 CHECK
+                // both refuse the pair.
+                ...(value === 'RDSO' || value === 'RITES'
+                  ? {}
+                  : { gatesDispatch: false }),
+              });
+            }}
+          >
+            <option value="">Map agency</option>
+            {INSPECTION_CLAUSE_AGENCIES.map((option) => (
+              <option key={option} value={option}>
+                {AGENCY_LABELS[option]}
+              </option>
+            ))}
+          </select>
+          {/* The proposal, stated and never applied. The select above is
+              still empty until somebody chooses, because mapping an item
+              is what makes a despatch legitimate and a machine reading of
+              the item text is not that decision. */}
+          {proposal !== null && row.agency === null && (
+            <Hint>Description reads {proposal}.</Hint>
+          )}
+        </td>
+        <td className="text-right">
+          <NumericInput
+            aria-label={`Inspection quantity for ${row.itemNumber}`}
+            className="w-24 text-right font-mono tabular-nums"
+            disabled={!canModify || pending}
+            value={row.inspectionQuantity ?? ''}
+            onChange={(event) => {
+              update(row.workItemId, {
+                inspectionQuantity:
+                  event.target.value === '' ? null : event.target.value,
+              });
+            }}
+          />
+        </td>
+        <td className="text-right font-mono tabular-nums">
+          {row.manufacturedQuantity}
+        </td>
+        {premisesCell(row)}
+        <td>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={row.gatesDispatch}
+              disabled={
+                !canGate || pending || (row.agency !== 'RDSO' && row.agency !== 'RITES')
+              }
+              onChange={(event) => {
+                update(row.workItemId, { gatesDispatch: event.target.checked });
+              }}
+            />
+            Certificate required
+          </label>
+        </td>
+        <td>
+          {row.agency !== null &&
+          (row.vendorAddressId !== null || row.vendorPremises !== null) ? (
+            <Badge variant="success">Mapped</Badge>
+          ) : (
+            <Badge variant="destructive">
+              <AlertTriangle className="size-3" />
+              Incomplete
+            </Badge>
+          )}
+        </td>
+      </tr>
+    );
+  };
+
+  const clauseTable = (section: readonly InspectionClauseRow[], caption: string) => (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-sm">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr className="border-b text-left text-xs text-muted-foreground">
+            <th scope="col">Item</th>
+            <th scope="col">Inspection agency</th>
+            <th scope="col">Inspection qty</th>
+            <th scope="col">OEM manufactured</th>
+            <th scope="col">Inspection vendor and premises</th>
+            <th scope="col">Gates despatch</th>
+            <th scope="col">Mapping</th>
+          </tr>
+        </thead>
+        <tbody>{section.map(clauseRow)}</tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       {actionError !== null && <FormError>{actionError}</FormError>}
@@ -170,122 +415,56 @@ export function WorkInspectionClause({
             Open Inspection
           </a>
         </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
-            <caption className="sr-only">
-              Inspection clause mapping, one row per schedule item
-            </caption>
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th scope="col">Item</th>
-                <th scope="col">Inspection agency</th>
-                <th scope="col">Inspection qty</th>
-                <th scope="col">OEM manufactured</th>
-                <th scope="col">Vendor premises</th>
-                <th scope="col">Gates despatch</th>
-                <th scope="col">Mapping</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.workItemId}>
-                  <td className={wrapCell}>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {row.itemNumber}
-                    </span>
-                    <span className="block font-medium">{row.description}</span>
-                  </td>
-                  <td className={controlCell}>
-                    <select
-                      aria-label={`Inspection agency for ${row.itemNumber}`}
-                      disabled={!canModify || pending}
-                      value={row.agency ?? ''}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        update(row.workItemId, {
-                          agency:
-                            value === '' ? null : (value as InspectionClauseAgency),
-                          // Clearing the agency, or moving it to the
-                          // consignee, clears the gate with it: the server
-                          // and the 0082 CHECK both refuse the pair.
-                          ...(value === 'RDSO' || value === 'RITES'
-                            ? {}
-                            : { gatesDispatch: false }),
-                        });
-                      }}
-                    >
-                      <option value="">Map agency</option>
-                      {INSPECTION_CLAUSE_AGENCIES.map((option) => (
-                        <option key={option} value={option}>
-                          {AGENCY_LABELS[option]}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="text-right">
-                    <NumericInput
-                      aria-label={`Inspection quantity for ${row.itemNumber}`}
-                      className="w-24 text-right font-mono tabular-nums"
-                      disabled={!canModify || pending}
-                      value={row.inspectionQuantity ?? ''}
-                      onChange={(event) => {
-                        update(row.workItemId, {
-                          inspectionQuantity:
-                            event.target.value === '' ? null : event.target.value,
-                        });
-                      }}
-                    />
-                  </td>
-                  <td className="text-right font-mono tabular-nums">
-                    {row.manufacturedQuantity}
-                  </td>
-                  <td>
-                    <input
-                      aria-label={`Vendor premises for ${row.itemNumber}`}
-                      className="w-56"
-                      disabled={!canModify || pending}
-                      value={row.vendorPremises ?? ''}
-                      onChange={(event) => {
-                        update(row.workItemId, {
-                          vendorPremises:
-                            event.target.value === '' ? null : event.target.value,
-                        });
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <label className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={row.gatesDispatch}
-                        disabled={
-                          !canGate ||
-                          pending ||
-                          (row.agency !== 'RDSO' && row.agency !== 'RITES')
-                        }
-                        onChange={(event) => {
-                          update(row.workItemId, {
-                            gatesDispatch: event.target.checked,
-                          });
-                        }}
-                      />
-                      Certificate required
-                    </label>
-                  </td>
-                  <td>
-                    {row.agency !== null && row.vendorPremises !== null ? (
-                      <Badge variant="success">Mapped</Badge>
-                    ) : (
-                      <Badge variant="destructive">
-                        <AlertTriangle className="size-3" />
-                        Incomplete
-                      </Badge>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* TWO LISTS, not one. The matched section is open on
+            arrival because it is the six items on a 129-item schedule an
+            operator came here for; the rest are shut but present, because
+            an inspection clause sometimes lives in the tender text rather
+            than in the item description and a screen that hid them would
+            be wrong in a way nobody could see. */}
+        <div className="px-4 pb-2">
+          <ScheduleSection
+            heading="Matched items"
+            title="Description names RDSO or RITES"
+            itemCount={matched.length}
+            expanded={accordion.isExpanded(MATCHED)}
+            onToggle={() => {
+              accordion.toggle(MATCHED);
+            }}
+            headingLevel={3}
+          >
+            {matched.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-muted-foreground">
+                No item description on this Work names RDSO or RITES. Map from the other
+                items below.
+              </p>
+            ) : (
+              clauseTable(
+                matched,
+                'Items whose description names an inspecting agency, one row per item',
+              )
+            )}
+          </ScheduleSection>
+          <ScheduleSection
+            heading="Other items"
+            title="Map from the tender text"
+            itemCount={others.length}
+            expanded={accordion.isExpanded(OTHER)}
+            onToggle={() => {
+              accordion.toggle(OTHER);
+            }}
+            headingLevel={3}
+          >
+            {others.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-muted-foreground">
+                Every item on this Work names an agency in its description.
+              </p>
+            ) : (
+              clauseTable(
+                others,
+                'Items whose description names no agency, one row per item',
+              )
+            )}
+          </ScheduleSection>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
           <p className="text-xs text-muted-foreground">
@@ -307,6 +486,8 @@ export function WorkInspectionClause({
                         workItemId: row.workItemId,
                         agency: row.agency,
                         inspectionQuantity: row.inspectionQuantity,
+                        vendorContactId: row.vendorContactId,
+                        vendorAddressId: row.vendorAddressId,
                         vendorPremises: row.vendorPremises,
                         gatesDispatch: row.gatesDispatch,
                       })),
@@ -540,12 +721,20 @@ export function WorkInspectionClause({
                     disabled={pending || chosen.length === 0}
                     onClick={() =>
                       void act(async () => {
+                        // The call takes its premises from the first item
+                        // offered, whole: vendor, address and free text
+                        // travel together because the server refuses a
+                        // half-stated pair, and the call SNAPSHOTS what it
+                        // resolves them to.
+                        const source = callable.find((row) =>
+                          chosen.includes(row.workItemId),
+                        );
                         await api.createInspectionCall(organisationId, workId, {
                           agency,
                           requestedOn,
-                          vendorPremises:
-                            callable.find((row) => chosen.includes(row.workItemId))
-                              ?.vendorPremises ?? null,
+                          vendorContactId: source?.vendorContactId ?? null,
+                          vendorAddressId: source?.vendorAddressId ?? null,
+                          vendorPremises: source?.vendorPremises ?? null,
                           items: chosen.map((workItemId) => {
                             const row = callable.find(
                               (candidate) => candidate.workItemId === workItemId,

@@ -152,6 +152,13 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
     'INSPECTION_CALL_NOT_FOUND',
     'The inspection call was not found in this organisation.',
   ],
+  // Migration 0116's own block. The route refuses a non-vendor contact
+  // first, in a sentence naming it; this is the arm that holds when the
+  // contact loses its vendor role between the check and the write.
+  '23Y01': [
+    'INSPECTION_VENDOR_INVALID',
+    'The inspection vendor must be a contact carrying the vendor role.',
+  ],
 };
 
 function rethrowWriteRefusal(error: unknown): never {
@@ -180,6 +187,9 @@ interface CallRow {
   certificate_date: string | null;
   certificate_valid_until: string | null;
   certificate_live: boolean;
+  vendor_contact_id: string | null;
+  vendor_address_id: string | null;
+  vendor_name: string | null;
   vendor_premises: string | null;
   cancellation_reason: string | null;
   created_at: Date;
@@ -241,6 +251,9 @@ function toCall(
     certificateDate: row.certificate_date,
     certificateValidUntil: row.certificate_valid_until,
     certificateLive: row.certificate_live,
+    vendorContactId: row.vendor_contact_id,
+    vendorAddressId: row.vendor_address_id,
+    vendorName: row.vendor_name,
     vendorPremises: row.vendor_premises,
     cancellationReason: row.cancellation_reason,
     advisoryIssuedChallans: advisory.map((challan) => ({
@@ -305,6 +318,7 @@ async function loadCalls(
              ic.status, ic.certificate_valid_until,
              (select app_private.organisation_today(${organisationId}))
            ) as certificate_live,
+           ic.vendor_contact_id, ic.vendor_address_id, ic.vendor_name,
            ic.vendor_premises, ic.cancellation_reason, ic.created_at
     from inspection_calls ic
     join works w on w.id = ic.work_id
@@ -679,6 +693,14 @@ export function registerInspectionRoutes(
             and (${kept.length === 0} or work_item_id <> all(${kept}::uuid[]))
         `;
         const written = clauses.filter((clause) => clause.agency !== null);
+        // The premises of every mapped item, proved against the contacts
+        // master before a single row is written: a half-written mapping
+        // would leave the gate configured from two states at once, which
+        // is the reason this whole save is a whole-table replace.
+        const premises = new Map<string, ResolvedPremises>();
+        for (const clause of written) {
+          premises.set(clause.workItemId, await resolvePremises(tx, clause));
+        }
         if (written.length > 0) {
           // One statement, not one per row: the house pattern
           // (`insert into … select … from unnest(...)`), because this runs
@@ -694,28 +716,33 @@ export function registerInspectionRoutes(
           await tx`
             insert into inspection_clauses (
               organisation_id, work_id, work_item_id, agency,
-              inspection_quantity, vendor_premises, gates_dispatch,
-              created_by_user_id
+              inspection_quantity, vendor_contact_id, vendor_address_id,
+              vendor_premises, gates_dispatch, created_by_user_id
             )
             select ${organisationId}, ${workId}, clause.work_item_id,
                    clause.agency, clause.inspection_quantity,
+                   clause.vendor_contact_id, clause.vendor_address_id,
                    clause.vendor_premises, clause.gates_dispatch, ${user.id}
             from unnest(
               ${written.map((clause) => clause.workItemId)}::uuid[],
               ${written.map((clause) => String(clause.agency))}::text[],
               ${written.map((clause) => clause.inspectionQuantity)}::text[]::quantity_amount[],
-              ${written.map((clause) => normaliseText(clause.vendorPremises))}::text[],
+              ${written.map((clause) => premises.get(clause.workItemId)?.vendorContactId ?? null)}::text[]::uuid[],
+              ${written.map((clause) => premises.get(clause.workItemId)?.vendorAddressId ?? null)}::text[]::uuid[],
+              ${written.map((clause) => premises.get(clause.workItemId)?.vendorPremises ?? null)}::text[],
               ${written.map((clause) => String(clause.gatesDispatch))}::text[]::boolean[]
             ) as clause(
-              work_item_id, agency, inspection_quantity, vendor_premises,
-              gates_dispatch
+              work_item_id, agency, inspection_quantity, vendor_contact_id,
+              vendor_address_id, vendor_premises, gates_dispatch
             )
             on conflict (organisation_id, work_item_id) do update
             set agency = excluded.agency,
                 inspection_quantity = excluded.inspection_quantity,
+                vendor_contact_id = excluded.vendor_contact_id,
+                vendor_address_id = excluded.vendor_address_id,
                 vendor_premises = excluded.vendor_premises,
                 gates_dispatch = excluded.gates_dispatch
-          `;
+          `.catch(rethrowWriteRefusal);
         }
         await audit(
           tx,
@@ -1021,15 +1048,24 @@ export function registerInspectionRoutes(
         `;
         if (!claimed) throw new Error('inspection call counter returned no row');
 
+        // THE PREMISES SNAPSHOT. The call is a record of a request that
+        // went out, so the vendor's NAME and the ADDRESS TEXT are copied
+        // here and the ids are kept only as provenance: renaming the
+        // vendor or retiring the address afterwards must not rewrite what
+        // the agency was sent (AGENTS.md rule 7).
+        const premises = await resolvePremises(tx, body);
         const [call] = await tx<{ id: string }[]>`
           insert into inspection_calls (
             organisation_id, work_id, sequence_number, agency, requested_on,
+            vendor_contact_id, vendor_address_id, vendor_name,
             vendor_premises, created_by_user_id
           )
           values (
             ${organisationId}, ${workId}, ${Number(claimed.sequence_number)},
             ${body.agency}, ${body.requestedOn},
-            ${normaliseText(body.vendorPremises)}, ${user.id}
+            ${premises.vendorContactId}, ${premises.vendorAddressId},
+            ${premises.vendorName},
+            ${premises.vendorAddress ?? premises.vendorPremises}, ${user.id}
           )
           returning id
         `.catch(rethrowWriteRefusal);
@@ -1525,6 +1561,129 @@ function normaliseText(value: string | null): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/** Where an inspection is held, as the caller stated it (migration 0116). */
+interface PremisesInput {
+  readonly vendorContactId?: string | null;
+  readonly vendorAddressId?: string | null;
+  readonly vendorPremises: string | null;
+}
+
+/** The same, proved against the masters and ready to store. */
+interface ResolvedPremises {
+  readonly vendorContactId: string | null;
+  readonly vendorAddressId: string | null;
+  /** The vendor's designation as it reads NOW. The clause discards it
+   * (configuration joins live); the call snapshots it. */
+  readonly vendorName: string | null;
+  /** The chosen master address, or the typed free text. Never both — the
+   * 0116 CHECKs refuse the pair on the clause, and the call's snapshot
+   * CHECK refuses a vendor with no text at all. */
+  readonly vendorAddress: string | null;
+  readonly vendorPremises: string | null;
+}
+
+/**
+ * Proves an inspection premises against the contacts master.
+ *
+ * Three refusals, all of them things the database also refuses — the
+ * route says them first so the operator reads a sentence rather than a
+ * constraint name, and the database says them again so a writer arriving
+ * another way, or a role revoked between the check and the write, cannot
+ * slip past (`23Y01` and the composite foreign key).
+ */
+async function resolvePremises(
+  tx: TransactionSql,
+  input: PremisesInput,
+): Promise<ResolvedPremises> {
+  const contactId = input.vendorContactId ?? null;
+  const addressId = input.vendorAddressId ?? null;
+  const free = normaliseText(input.vendorPremises);
+
+  if (contactId === null) {
+    if (addressId !== null) {
+      throw httpError(
+        400,
+        'CONTACT_ADDRESS_INVALID',
+        'Name the vendor whose address this is, or clear the address.',
+      );
+    }
+    return {
+      vendorContactId: null,
+      vendorAddressId: null,
+      vendorName: null,
+      vendorAddress: null,
+      vendorPremises: free,
+    };
+  }
+
+  const [vendor] = await tx<
+    { designation: string; is_vendor: boolean; active: boolean }[]
+  >`
+    select designation, is_vendor, active from contacts where id = ${contactId}
+  `;
+  if (!vendor) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+  if (!vendor.is_vendor) {
+    throw httpError(
+      409,
+      'INSPECTION_VENDOR_INVALID',
+      'Inspections are held at a vendor’s premises — give this contact the vendor role, or pick another.',
+    );
+  }
+  if (!vendor.active) {
+    throw httpError(
+      409,
+      'CONTACT_RETIRED',
+      'This vendor is retired — reactivate it or pick another.',
+    );
+  }
+
+  if (addressId === null) {
+    // A named vendor with no address chosen still needs somewhere to send
+    // the agency, and free text beside a master vendor is exactly what
+    // 0082's sub-vendor case looks like.
+    return {
+      vendorContactId: contactId,
+      vendorAddressId: null,
+      vendorName: vendor.designation,
+      vendorAddress: null,
+      vendorPremises: free,
+    };
+  }
+  if (free !== null) {
+    throw httpError(
+      400,
+      'CONTACT_ADDRESS_INVALID',
+      'Choose a saved address or type the premises, not both.',
+    );
+  }
+
+  const [address] = await tx<{ address: string; active: boolean }[]>`
+    select address, active from contact_addresses
+    where id = ${addressId} and contact_id = ${contactId}
+  `;
+  if (!address) {
+    throw httpError(
+      404,
+      'CONTACT_ADDRESS_NOT_FOUND',
+      'No such address on this vendor.',
+    );
+  }
+  if (!address.active) {
+    throw httpError(
+      409,
+      'CONTACT_ADDRESS_RETIRED',
+      'That address is retired — reactivate it or pick another.',
+    );
+  }
+  return {
+    vendorContactId: contactId,
+    vendorAddressId: addressId,
+    vendorName: vendor.designation,
+    vendorAddress: address.address,
+    vendorPremises: null,
+  };
+}
+
 /** An evidence row on a call that is still open, with the caller's reach
  * over its Work proven. The parent call is locked, not merely read: the
  * upload and a concurrent close must not both believe the checklist was
@@ -1575,6 +1734,10 @@ async function readWorkConfig(tx: TransactionSql, workId: string) {
       manufactured_quantity: string;
       agency: InspectionClauseAgency | null;
       inspection_quantity: string | null;
+      vendor_contact_id: string | null;
+      vendor_name: string | null;
+      vendor_address_id: string | null;
+      vendor_address: string | null;
       vendor_premises: string | null;
       gates_dispatch: boolean;
     }[]
@@ -1590,15 +1753,23 @@ async function readWorkConfig(tx: TransactionSql, workId: string) {
              as manufactured_quantity,
            c.agency,
            c.inspection_quantity::text as inspection_quantity,
+           -- Joined LIVE, not snapshotted: a clause is configuration, so
+           -- an address corrected in the master should reach the next
+           -- call raised under it. The call is where the copy happens.
+           c.vendor_contact_id, v.designation as vendor_name,
+           c.vendor_address_id, va.address as vendor_address,
            c.vendor_premises,
            coalesce(c.gates_dispatch, false) as gates_dispatch
     from work_items wi
     left join inspection_clauses c on c.work_item_id = wi.id
+    left join contacts v on v.id = c.vendor_contact_id
+    left join contact_addresses va on va.id = c.vendor_address_id
     left join delivery_challan_items dci on dci.work_item_id = wi.id
     left join delivery_challans dc on dc.id = dci.delivery_challan_id
     where wi.work_id = ${workId} and wi.deleted_at is null
-    group by wi.id, c.agency, c.inspection_quantity, c.vendor_premises,
-             c.gates_dispatch
+    group by wi.id, c.agency, c.inspection_quantity, c.vendor_contact_id,
+             v.designation, c.vendor_address_id, va.address,
+             c.vendor_premises, c.gates_dispatch
     order by wi.item_number
   `;
   // Both scopes in one read: the Work's own rows where it has them, and
@@ -1632,6 +1803,10 @@ async function readWorkConfig(tx: TransactionSql, workId: string) {
         manufacturedQuantity: row.manufactured_quantity,
         agency: row.agency,
         inspectionQuantity: row.inspection_quantity,
+        vendorContactId: row.vendor_contact_id,
+        vendorName: row.vendor_name,
+        vendorAddressId: row.vendor_address_id,
+        vendorAddress: row.vendor_address,
         vendorPremises: row.vendor_premises,
         gatesDispatch: row.gates_dispatch,
       })),

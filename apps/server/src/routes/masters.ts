@@ -1,6 +1,7 @@
 import {
   CanonicalItemListResponseSchema,
   CanonicalItemSchema,
+  ContactAddressSchema,
   ContactListResponseSchema,
   ContactSchema,
   CreateGstRateRequestSchema,
@@ -11,6 +12,7 @@ import {
   LocationMasterListResponseSchema,
   LocationMasterSchema,
   SaveCanonicalItemRequestSchema,
+  SaveContactAddressRequestSchema,
   SaveContactRequestSchema,
   SaveLocationMasterRequestSchema,
   SaveSignatoryRequestSchema,
@@ -22,6 +24,7 @@ import {
   WorkConsigneeListResponseSchema,
   type CanonicalItem,
   type Contact,
+  type ContactAddress,
   type GstRateMaster,
   type LocationMaster,
   type Signatory,
@@ -103,8 +106,55 @@ interface ContactRow {
   created_at: Date;
 }
 
-function toContact(row: ContactRow): Contact {
+/** One row of the address list (migration 0116). */
+interface ContactAddressRow {
+  id: string;
+  contact_id: string;
+  label: string | null;
+  address: string;
+  pincode: string | null;
+  locality: string | null;
+  state_code: string | null;
+  is_primary: boolean;
+  sort_order: number;
+  active: boolean;
+}
+
+const CONTACT_ADDRESS_COLUMNS = `
+  id, contact_id, label, address, pincode, locality, state_code, is_primary,
+  sort_order, active
+`;
+
+/** Primary first, then live addresses in the operator's order, then the
+ * retired ones — the order every picker renders and the order the
+ * register reads. Written once here rather than in each query's ORDER BY
+ * so the two cannot disagree about which address is offered first. */
+const CONTACT_ADDRESS_ORDER = `
+  is_primary desc, active desc, sort_order, lower(coalesce(label, '')), id
+`;
+
+function toContactAddress(row: ContactAddressRow): ContactAddress {
   return {
+    id: row.id,
+    label: row.label,
+    address: row.address,
+    pincode: row.pincode,
+    locality: row.locality,
+    stateCode: row.state_code,
+    isPrimary: row.is_primary,
+    sortOrder: Number(row.sort_order),
+    active: row.active,
+  };
+}
+
+function toContact(
+  row: ContactRow,
+  addresses: readonly ContactAddressRow[] = [],
+): Contact {
+  return {
+    addresses: addresses
+      .filter((address) => address.contact_id === row.id)
+      .map(toContactAddress),
     id: row.id,
     designation: row.designation,
     contactPerson: row.contact_person,
@@ -144,6 +194,78 @@ const CONTACT_COLUMNS = `
 // for the contractor itself and must prove them identically (its values
 // are printed on every generated document, and its bank accounts are the
 // ones money arrives in), so the set is shared rather than duplicated.
+
+/** The address list of a set of contacts, in picker order. */
+async function loadContactAddresses(
+  tx: TransactionSql,
+  contactIds: readonly string[],
+): Promise<ContactAddressRow[]> {
+  if (contactIds.length === 0) return [];
+  return tx<ContactAddressRow[]>`
+    select ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)}
+    from contact_addresses
+    where contact_id = any(${contactIds}::uuid[])
+    order by contact_id, ${tx.unsafe(CONTACT_ADDRESS_ORDER)}
+  `;
+}
+
+/**
+ * Keeps the contact's PRIMARY address row equal to the four address
+ * fields the contact form just wrote (migration 0116).
+ *
+ * The database mirrors in the other direction — primary row onto
+ * `contacts` — so this is the same fact written from the other end, and
+ * the trigger sees the two already agreeing and does nothing. Both
+ * directions exist because both surfaces write: the contact form has
+ * carried an address since 0013 and the v1 importer writes through the
+ * 0028 compatibility view, while the address list below is where a
+ * second address can only come from.
+ *
+ * A contact whose address is cleared keeps its address ROWS — they may
+ * be cited by an inspection clause — but stops having a primary one, so
+ * nothing offers an address the contact no longer claims.
+ */
+async function syncPrimaryAddress(
+  tx: TransactionSql,
+  organisationId: string,
+  userId: string,
+  contactId: string,
+  fields: {
+    address: string | null;
+    pincode: string | null;
+    locality: string | null;
+    stateCode: string | null;
+  },
+): Promise<void> {
+  if (fields.address === null) {
+    await tx`
+      update contact_addresses set is_primary = false
+      where organisation_id = ${organisationId}
+        and contact_id = ${contactId}
+        and is_primary
+    `;
+    return;
+  }
+  const updated = await tx`
+    update contact_addresses
+    set address = ${fields.address}, pincode = ${fields.pincode},
+        locality = ${fields.locality}, state_code = ${fields.stateCode}
+    where organisation_id = ${organisationId}
+      and contact_id = ${contactId}
+      and is_primary
+  `;
+  if (updated.count > 0) return;
+  await tx`
+    insert into contact_addresses (
+      organisation_id, contact_id, address, pincode, locality, state_code,
+      is_primary, created_by_user_id
+    )
+    values (
+      ${organisationId}, ${contactId}, ${fields.address}, ${fields.pincode},
+      ${fields.locality}, ${fields.stateCode}, true, ${userId}
+    )
+  `;
+}
 
 // --- Canonical items (migration 0078) ---------------------------------------
 
@@ -443,8 +565,8 @@ export function registerMasterRoutes(
     },
     async ({ request, tenant }) => {
       const { includeRetired = false, role } = request.query;
-      const rows = await tenant(
-        async (tx) => tx<ContactRow[]>`
+      const { rows, addresses } = await tenant(async (tx) => {
+        const listed = await tx<ContactRow[]>`
           select ${tx.unsafe(CONTACT_COLUMNS)}
           from contacts
           where (active or ${includeRetired})
@@ -452,9 +574,16 @@ export function registerMasterRoutes(
             and (is_vendor or ${role !== 'vendor'})
             and (is_client or ${role !== 'client'})
           order by lower(designation), lower(coalesce(address, ''))
-        `,
-      );
-      return { contacts: rows.map(toContact) };
+        `;
+        return {
+          rows: listed,
+          addresses: await loadContactAddresses(
+            tx,
+            listed.map((contact) => contact.id),
+          ),
+        };
+      });
+      return { contacts: rows.map((row) => toContact(row, addresses)) };
     },
   );
 
@@ -549,7 +678,16 @@ export function registerMasterRoutes(
           row.id,
           { designation: body.designation, roles },
         );
-        return toContact(row);
+        // The address list's first row, written from the same four fields
+        // the contact just stored, so a contact created with an address
+        // starts with a primary one to offer.
+        await syncPrimaryAddress(tx, organisationId, user.id, row.id, {
+          address: body.address ?? null,
+          pincode: body.pincode ?? null,
+          locality,
+          stateCode: body.stateCode ?? null,
+        });
+        return toContact(row, await loadContactAddresses(tx, [row.id]));
       });
       return reply.status(201).send(contact);
     },
@@ -650,10 +788,258 @@ export function registerMasterRoutes(
           ...(body.isVendor !== undefined ? { isVendor: body.isVendor } : {}),
           ...(body.isClient !== undefined ? { isClient: body.isClient } : {}),
         });
-        return toContact(row);
+        await syncPrimaryAddress(tx, organisationId, user.id, id, {
+          address: body.address ?? null,
+          pincode: body.pincode ?? null,
+          locality,
+          stateCode: body.stateCode ?? null,
+        });
+        return toContact(row, await loadContactAddresses(tx, [id]));
       });
     },
   );
+
+  // --- The address list (migration 0116) ------------------------------------
+  //
+  // A contact keeps more than one address, and one of them is primary.
+  // Everything else in this product prefills from the primary — the
+  // database mirrors it onto `contacts` — so these routes exist for the
+  // second address onward and for moving which one is first.
+  //
+  // Retire, never delete, exactly like the parent: a challan may have
+  // copied this address, and the register has to keep being able to say
+  // where that text came from. Retiring rewrites no document.
+
+  const ContactAddressParamsSchema = Type.Object(
+    {
+      id: Type.String({
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      }),
+      addressId: Type.String({
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      }),
+    },
+    { additionalProperties: false },
+  );
+
+  async function requireContact(tx: TransactionSql, contactId: string): Promise<void> {
+    const [row] = await tx<{ id: string }[]>`
+      select id from contacts where id = ${contactId}
+    `;
+    if (!row) throw httpError(404, 'CONTACT_NOT_FOUND', 'No such contact.');
+  }
+
+  /** Making an address primary is a MOVE: whatever held the flag gives it
+   * up first, because the partial unique index admits one per contact and
+   * setting before clearing would collide with the row being replaced. */
+  async function claimPrimary(
+    tx: TransactionSql,
+    organisationId: string,
+    contactId: string,
+    addressId: string,
+  ): Promise<void> {
+    await tx`
+      update contact_addresses set is_primary = false
+      where organisation_id = ${organisationId}
+        and contact_id = ${contactId}
+        and is_primary
+        and id <> ${addressId}
+    `;
+    await tx`
+      update contact_addresses set is_primary = true
+      where organisation_id = ${organisationId} and id = ${addressId}
+    `;
+  }
+
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/masters/contacts/:id/addresses',
+      schema: {
+        params: IdParamsSchema,
+        body: SaveContactAddressRequestSchema,
+        response: { 201: ContactAddressSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, reply, user, organisationId, tenant }) => {
+      const { id: contactId } = request.params;
+      const body = request.body;
+      const saved = await tenant(async (tx) => {
+        await requireContact(tx, contactId);
+        // The FIRST address of a contact is primary whether or not the
+        // form said so: a contact with addresses and no primary one would
+        // advertise no address at all, and every picker defaults to the
+        // primary.
+        const [existing] = await tx<{ live: string }[]>`
+          select count(*)::text as live from contact_addresses
+          where organisation_id = ${organisationId}
+            and contact_id = ${contactId} and is_primary
+        `;
+        const primary = (body.isPrimary ?? false) || existing?.live === '0';
+        const [row] = await tx<ContactAddressRow[]>`
+          insert into contact_addresses (
+            organisation_id, contact_id, label, address, pincode, locality,
+            state_code, sort_order, created_by_user_id
+          )
+          values (
+            ${organisationId}, ${contactId}, ${body.label ?? null},
+            ${body.address.trim()}, ${body.pincode ?? null},
+            ${body.locality?.trim() ?? null}, ${body.stateCode ?? null},
+            ${body.sortOrder ?? 0}, ${user.id}
+          )
+          returning ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)}
+        `;
+        if (!row) throw new Error('contact address insert returned no row');
+        if (primary) await claimPrimary(tx, organisationId, contactId, row.id);
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'contact_address.created',
+          'contact_addresses',
+          row.id,
+          { contactId, primary },
+        );
+        const [reread] = await tx<ContactAddressRow[]>`
+          select ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)} from contact_addresses
+          where id = ${row.id}
+        `;
+        return toContactAddress(reread ?? row);
+      });
+      return reply.status(201).send(saved);
+    },
+  );
+
+  tenantRoute(
+    {
+      method: 'PUT',
+      url: '/api/masters/contacts/:id/addresses/:addressId',
+      schema: {
+        params: ContactAddressParamsSchema,
+        body: SaveContactAddressRequestSchema,
+        response: { 200: ContactAddressSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id: contactId, addressId } = request.params;
+      const body = request.body;
+      return tenant(async (tx) => {
+        const [row] = await tx<ContactAddressRow[]>`
+          update contact_addresses
+          set label = ${body.label ?? null}, address = ${body.address.trim()},
+              pincode = ${body.pincode ?? null},
+              locality = ${body.locality?.trim() ?? null},
+              state_code = ${body.stateCode ?? null},
+              sort_order = ${body.sortOrder ?? 0}
+          where organisation_id = ${organisationId}
+            and id = ${addressId} and contact_id = ${contactId}
+          returning ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)}
+        `;
+        if (!row) {
+          throw httpError(
+            404,
+            'CONTACT_ADDRESS_NOT_FOUND',
+            'No such address on this contact.',
+          );
+        }
+        if (body.isPrimary === true && !row.is_primary) {
+          if (!row.active) {
+            throw httpError(
+              409,
+              'CONTACT_ADDRESS_RETIRED',
+              'A retired address cannot be the primary one — reactivate it first.',
+            );
+          }
+          await claimPrimary(tx, organisationId, contactId, addressId);
+        }
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'contact_address.updated',
+          'contact_addresses',
+          addressId,
+          { contactId },
+        );
+        const [reread] = await tx<ContactAddressRow[]>`
+          select ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)} from contact_addresses
+          where id = ${addressId}
+        `;
+        return toContactAddress(reread ?? row);
+      });
+    },
+  );
+
+  for (const active of [false, true]) {
+    tenantRoute(
+      {
+        method: 'POST',
+        url: `/api/masters/contacts/:id/addresses/:addressId/${
+          active ? 'reactivate' : 'retire'
+        }`,
+        schema: {
+          params: ContactAddressParamsSchema,
+          response: { 200: ContactAddressSchema, ...errorResponses },
+        },
+        role: 'writer',
+      },
+      async ({ request, user, organisationId, tenant }) => {
+        const { id: contactId, addressId } = request.params;
+        return tenant(async (tx) => {
+          // Retiring the primary address gives up the flag in the same
+          // statement — the 0116 CHECK refuses a retired primary — and
+          // the next live address inherits it below, so the contact does
+          // not silently stop advertising an address it still keeps.
+          const [row] = await tx<ContactAddressRow[]>`
+            update contact_addresses
+            set active = ${active}, is_primary = is_primary and ${active}
+            where organisation_id = ${organisationId}
+              and id = ${addressId} and contact_id = ${contactId}
+            returning ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)}
+          `;
+          if (!row) {
+            throw httpError(
+              404,
+              'CONTACT_ADDRESS_NOT_FOUND',
+              'No such address on this contact.',
+            );
+          }
+          if (!active) {
+            const [heir] = await tx<{ id: string }[]>`
+              select id from contact_addresses
+              where organisation_id = ${organisationId}
+                and contact_id = ${contactId}
+                and active
+                and not exists (
+                  select 1 from contact_addresses p
+                  where p.organisation_id = ${organisationId}
+                    and p.contact_id = ${contactId} and p.is_primary
+                )
+              order by sort_order, lower(coalesce(label, '')), id
+              limit 1
+            `;
+            if (heir) await claimPrimary(tx, organisationId, contactId, heir.id);
+          }
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            `contact_address.${active ? 'reactivated' : 'retired'}`,
+            'contact_addresses',
+            addressId,
+            { contactId },
+          );
+          const [reread] = await tx<ContactAddressRow[]>`
+            select ${tx.unsafe(CONTACT_ADDRESS_COLUMNS)} from contact_addresses
+            where id = ${addressId}
+          `;
+          return toContactAddress(reread ?? row);
+        });
+      },
+    );
+  }
 
   registerActiveToggle<ContactRow, Contact>({
     path: '/api/masters/contacts',
@@ -724,10 +1110,10 @@ export function registerMasterRoutes(
     },
     async ({ request, user, tenant }) => {
       const { id: workId } = request.params;
-      const rows = await tenant(async (tx) => {
+      const { rows, addresses } = await tenant(async (tx) => {
         await assertWorkAccess(tx, user.id, workId);
         await requireWork(tx, workId);
-        return tx<ContactRow[]>`
+        const listed = await tx<ContactRow[]>`
             select c.id, c.designation, c.contact_person, c.address, c.phone,
                    c.email, c.gstin, c.pincode, c.state_code, c.locality,
                    c.division_code,
@@ -739,8 +1125,15 @@ export function registerMasterRoutes(
             where wc.work_id = ${workId}
             order by lower(c.designation), lower(coalesce(c.address, ''))
           `;
+        return {
+          rows: listed,
+          addresses: await loadContactAddresses(
+            tx,
+            listed.map((contact) => contact.id),
+          ),
+        };
       });
-      return { consignees: rows.map(toContact) };
+      return { consignees: rows.map((row) => toContact(row, addresses)) };
     },
   );
 

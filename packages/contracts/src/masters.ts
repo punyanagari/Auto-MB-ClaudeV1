@@ -62,6 +62,58 @@ const PanSchema = Type.String({
   maxLength: 10,
 });
 
+// --- The address list (migration 0116) --------------------------------------
+//
+// A contact keeps more than one address: a vendor with a works at one town
+// and a registered office at another, a railway consignee with a stores
+// depot beside its headquarters. One of them is PRIMARY, and the primary
+// is mirrored onto the contact's own `address`/`pincode`/`locality`/
+// `stateCode` fields by the database — so every document flow that
+// already prefills from those fields keeps working and now means "the
+// primary address" exactly.
+//
+// Documents still snapshot: choosing a different address changes WHICH
+// text is copied onto the record, never what an already-issued record
+// says. Retiring an address rewrites nothing.
+
+export const ContactAddressSchema = Type.Object(
+  {
+    id: UuidSchema,
+    /** What the operator calls this place — "Works, Hosur". Optional,
+     * because a one-address contact needs no name to be unambiguous. */
+    label: Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()]),
+    address: Type.String({ minLength: 3, maxLength: 1000 }),
+    pincode: Type.Union([Type.String({ pattern: '^[0-9]{6}$' }), Type.Null()]),
+    locality: Type.Union([Type.String({ minLength: 2, maxLength: 100 }), Type.Null()]),
+    stateCode: Type.Union([Type.String({ pattern: '^[0-9]{2}$' }), Type.Null()]),
+    /** The one every picker offers first, and the one mirrored onto the
+     * contact. At most one per contact, and never a retired row. */
+    isPrimary: Type.Boolean(),
+    sortOrder: Type.Integer({ minimum: 0 }),
+    active: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+export type ContactAddress = Static<typeof ContactAddressSchema>;
+
+/** Create and full update share this shape. `isPrimary` is a MOVE, not a
+ * field: sending it true demotes whichever address held it, and the
+ * server refuses to leave a live contact with none. Retiring the primary
+ * promotes the next active address rather than failing. */
+export const SaveContactAddressRequestSchema = Type.Object(
+  {
+    label: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+    address: Type.String({ minLength: 3, maxLength: 1000 }),
+    pincode: Type.Optional(Type.String({ pattern: '^[0-9]{6}$' })),
+    locality: Type.Optional(Type.String({ minLength: 2, maxLength: 100 })),
+    stateCode: Type.Optional(Type.String({ pattern: '^[0-9]{2}$' })),
+    isPrimary: Type.Optional(Type.Boolean()),
+    sortOrder: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
+export type SaveContactAddressRequest = Static<typeof SaveContactAddressRequestSchema>;
+
 export const ContactSchema = Type.Object(
   {
     id: UuidSchema,
@@ -120,6 +172,15 @@ export const ContactSchema = Type.Object(
      * payment at 20% (migration 0080). Backfilled from the GSTIN, whose
      * characters 3-12 are the holder PAN. */
     pan: Type.Union([PanSchema, Type.Null()]),
+    /** Every address this contact keeps, primary first, retired ones last
+     * (migration 0116). The four address fields above remain the PRIMARY
+     * address, mirrored by the database, so a reader that only wants "the
+     * address" needs nothing from this list.
+     *
+     * Optional on the wire like the bank block above, so a reader that
+     * predates 0116 omits it rather than reporting an empty list it never
+     * stored. */
+    addresses: Type.Optional(Type.Array(ContactAddressSchema)),
     active: Type.Boolean(),
     createdAt: Type.String({ format: 'date-time' }),
   },

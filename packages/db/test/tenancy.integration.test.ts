@@ -88,6 +88,10 @@ const TENANT_TABLES = [
   // (0028). consignee_masters is a VIEW over contacts since 0028 â€” views
   // are compatibility surfaces, not tenant tables; RLS lives on contacts.
   'contacts',
+  // A contact's address list (0116). A master like its parent: it retires
+  // by flag and holds no DELETE, because a document may have copied one
+  // of its rows.
+  'contact_addresses',
   'work_consignees',
   'location_masters',
   'unit_masters',
@@ -888,6 +892,22 @@ async function seedTenantGraph(
       returning id
     `;
     if (!consigneeContact) throw new Error('seed contact insert returned no row');
+    /* The contact's address list (0116). TWO rows, because the no-context
+       assertion counts at least two per organisation, and because the
+       second one is the case the table exists for: a contact keeping more
+       than one address. Only the first is primary — the partial unique
+       index admits one, and the mirror writes it onto the contact. */
+    await tx`
+      insert into contact_addresses (
+        organisation_id, contact_id, label, address, is_primary, sort_order,
+        created_by_user_id
+      )
+      values
+        (${organisationId}, ${consigneeContact.id}, 'Division office',
+         'Integration division office', true, 0, ${userId}),
+        (${organisationId}, ${consigneeContact.id}, 'Goods shed',
+         ${`Goods shed ${workCode}`}, false, 1, ${userId})
+    `;
     await tx`
       insert into work_consignees (
         organisation_id, work_id, contact_id, created_by_user_id

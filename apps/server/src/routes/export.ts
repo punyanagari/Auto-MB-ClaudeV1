@@ -17,6 +17,18 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v35 (PLACEHOLDER — the coordinator assigns the final number at
+ * merge, because four packs of this wave each add a section and only one
+ * of them can be v35): a contact's ADDRESS LIST (migration 0116) joins
+ * the package.
+ *
+ * It travels for the reason the contacts section itself travels: the
+ * primary address is mirrored onto `contacts`, so a restore without this
+ * section would come back with every contact holding exactly one address
+ * and every second address — the vendor's works, the consignee's goods
+ * shed — silently gone. An inspection clause citing one would restore
+ * pointing at nothing.
+ *
  * export-v34: the railway's own measurement (0111) joins the package —
  * the document IWRCMS raises its On-Account Bill from, its per-line
  * verdicts, and the manual confirmations that stood in for a reading
@@ -457,7 +469,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v34';
+export const EXPORT_FORMAT_VERSION = 'export-v35';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -985,6 +997,14 @@ const SECTIONS: readonly ExportSection[] = [
   // of this export; contacts supersedes it, so the format became part of
   // the current export with the procurement/statutory set.
   { key: 'contacts', sql: `select * from contacts order by created_at, id` },
+  // The addresses each contact keeps (0116). Ordered by contact then by
+  // the operator's own arrangement, so a restored file reads the way the
+  // register does.
+  {
+    key: 'contactAddresses',
+    sql: `select * from contact_addresses
+          order by contact_id, sort_order, id`,
+  },
   {
     key: 'workConsignees',
     sql: `select * from work_consignees order by created_at, id`,
