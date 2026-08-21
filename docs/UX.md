@@ -2513,7 +2513,6 @@ authority of § 18 and migration 0094, for that section's reason. A member
 without it sees the register and not the upload panel, rather than an
 upload panel that answers 403.
 
-
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
