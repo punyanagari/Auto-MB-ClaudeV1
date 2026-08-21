@@ -49,13 +49,22 @@ const HEAD = [
  * stay in step down the page; the prose cells that genuinely need two
  * lines say so with `wrapCell`, which is every one of them in this tree.
  *
+ * These defaults compile to descendant selectors (`.tbl td`, 0-1-1), so a
+ * bare utility on the cell itself (0-1-0) loses to them — `wrapCell`'s
+ * `whitespace-normal` never took effect, and with `overflow-wrap:anywhere`
+ * still shrinking the column's min-content the unwrappable text painted
+ * straight across its neighbours. Every default a cell may override
+ * therefore exempts its opt-out class via zero-specificity `:where()`, and
+ * any other per-cell override must carry `!` (as `numericCell` does).
+ *
  * Hover is the mock's `[data-slot="table-row"]` — `bg-accent/35`, a faint
  * teal wash rather than the old neutral one. */
 const CELLS = [
   '[&_td]:border-b [&_td]:border-border [&_td]:p-2',
-  '[&_td]:text-left [&_td]:align-middle [&_td]:font-normal [&_td]:whitespace-nowrap',
+  '[&_td]:text-left [&_td:not(:where(.align-top))]:align-middle [&_td]:font-normal',
+  '[&_td:not(:where(.whitespace-normal))]:whitespace-nowrap',
   '[&_tbody_th]:border-b [&_tbody_th]:border-border [&_tbody_th]:p-2',
-  '[&_tbody_th]:text-left [&_tbody_th]:align-middle [&_tbody_th]:font-medium',
+  '[&_tbody_th]:text-left [&_tbody_th:not(:where(.align-top))]:align-middle [&_tbody_th]:font-medium',
   '[&_tfoot_th]:border-b [&_tfoot_th]:border-border [&_tfoot_th]:p-2',
   '[&_tfoot_th]:text-left [&_tfoot_th]:align-middle [&_tfoot_th]:font-medium',
   '[&>:last-child>tr:last-child>td]:border-b-0',
