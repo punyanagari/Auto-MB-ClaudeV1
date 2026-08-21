@@ -6,7 +6,12 @@ import {
 import type { Sql } from '@auto-mb/db';
 import type { Auth } from '../../auth.js';
 import { hasFullWorkScope } from '../../authz.js';
-import { keysetPage, sqlLimit, workScopedCursorRowId } from '../../pagination.js';
+import {
+  keysetPage,
+  registerOrder,
+  sqlLimit,
+  workScopedCursorRowId,
+} from '../../pagination.js';
 import { errorResponses } from '../shared.js';
 import type { AppInstance } from '../../app-instance.js';
 import { createTenantRouteRegistrar } from '../../tenant-route.js';
@@ -81,6 +86,23 @@ export function registerTaxInvoiceRegisterRoute(
         });
         const invoicedFrom = query.invoicedFrom ?? null;
         const invoicedTo = query.invoicedTo ?? null;
+        // `?sort=date_asc` reads the register oldest first. The ORDER BY
+        // and the direction of the keyset comparison are decided
+        // together, which is the invariant a sortable paginated register
+        // lives on: a predicate left seeking the other way does not
+        // error, it quietly returns the wrong rows at each boundary.
+        // Omitting `sort` is the newest-first register, unchanged.
+        //
+        // The date is the only key offered. `taxable_value` is NULL while
+        // an invoice is a draft, and a NULL leading key makes the whole
+        // row comparison NULL — every draft would vanish after the first
+        // page. Sorting the register by value is a client-side sort of a
+        // fully-loaded list, never a cursor key.
+        const { ascending, orderBy } = registerOrder(query.sort, [
+          'ti.invoice_date',
+          'ti.created_at',
+          'ti.id',
+        ]);
         const rows = await tx<
           {
             id: string;
@@ -140,11 +162,14 @@ export function registerTaxInvoiceRegisterRoute(
               or ti.invoice_date >= ${invoicedFrom}::date)
             and (${invoicedTo}::date is null
               or ti.invoice_date <= ${invoicedTo}::date)
-            and (${cursor === null} or
-              (ti.invoice_date, ti.created_at, ti.id) < (
+            and (${cursor === null}
+              or (${ascending} and (ti.invoice_date, ti.created_at, ti.id) > (
                 select c2.invoice_date, c2.created_at, c2.id from tax_invoices c2
                 where c2.id = ${cursor}))
-          order by ti.invoice_date desc, ti.created_at desc, ti.id desc
+              or (${!ascending} and (ti.invoice_date, ti.created_at, ti.id) < (
+                select c2.invoice_date, c2.created_at, c2.id from tax_invoices c2
+                where c2.id = ${cursor})))
+          order by ${tx.unsafe(orderBy)}
           limit ${sqlLimit(query.limit)}
         `;
         const paged = keysetPage(rows, query.limit, (row) => row.id);

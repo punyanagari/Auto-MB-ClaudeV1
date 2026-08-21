@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { NextCursorSchema, withKeysetQuery } from './pagination.js';
+import { NextCursorSchema, withKeysetQuery, withRegisterSort } from './pagination.js';
 import { LocationKindSchema } from './masters.js';
 import { SerialOriginSchema } from './serials.js';
 import {
@@ -270,13 +270,15 @@ export type InstallationRegisterEntry = Static<typeof InstallationRegisterEntryS
  * a Work's own records are read on the Work, and a register that hid
  * cancelled records would report what still stands rather than what was
  * recorded. Both bounds are inclusive; either may be sent alone. */
-export const InstallationRegisterQuerySchema = withKeysetQuery(
-  Type.Object(
-    {
-      installedFrom: Type.Optional(DateOnlySchema),
-      installedTo: Type.Optional(DateOnlySchema),
-    },
-    { additionalProperties: false },
+export const InstallationRegisterQuerySchema = withRegisterSort(
+  withKeysetQuery(
+    Type.Object(
+      {
+        installedFrom: Type.Optional(DateOnlySchema),
+        installedTo: Type.Optional(DateOnlySchema),
+      },
+      { additionalProperties: false },
+    ),
   ),
 );
 

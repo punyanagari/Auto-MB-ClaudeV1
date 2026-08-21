@@ -103,13 +103,15 @@ describe('the Delivery Challan register', () => {
       { workId: WORK_ID },
     );
     await screen.findByRole('link', { name: 'DC/1' });
-    expect(api.listDeliveryChallans).toHaveBeenCalledWith(ORG_ID, WORK_ID);
+    // The third argument is the register's sort, which is `undefined`
+    // until a heading is clicked — the register's own newest-first order.
+    expect(api.listDeliveryChallans).toHaveBeenCalledWith(ORG_ID, WORK_ID, undefined);
   });
 
   it('reads the whole register when no Work is named', async () => {
     const { api } = renderRegister();
     await screen.findByRole('link', { name: 'DC/1' });
-    expect(api.listDeliveryChallans).toHaveBeenCalledWith(ORG_ID, null);
+    expect(api.listDeliveryChallans).toHaveBeenCalledWith(ORG_ID, null, undefined);
   });
 
   it('names which of the three movements each row is', async () => {

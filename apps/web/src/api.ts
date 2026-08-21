@@ -291,6 +291,7 @@ import type {
   CancelEwayBillRequest,
   CancelStatutoryDocumentRequest,
   RecordManualStatutoryCancellationRequest,
+  RegisterSort,
 } from '@auto-mb/contracts';
 import { isOffline } from './lib/offline.js';
 
@@ -531,6 +532,9 @@ export interface ApiClient {
   readonly listDeliveryChallans: (
     organisationId: string,
     workId?: string | null,
+    /** Which way round the register reads its challan-date column.
+     * Omitted is newest first, exactly as before the parameter existed. */
+    sort?: RegisterSort,
   ) => Promise<readonly DeliveryChallanRegisterEntry[]>;
   /** The Challans module's issue register: every issue challan in the
    * organisation the caller may see, with the Work each belongs to. */
@@ -1084,6 +1088,9 @@ export interface ApiClient {
       readonly limit?: number;
       readonly installedFrom?: string;
       readonly installedTo?: string;
+      /** Which way round the register reads its date column. Omitted is
+       * newest first, exactly as before the parameter existed. */
+      readonly sort?: RegisterSort;
     },
   ) => Promise<InstallationRegisterResponse>;
   readonly recordWorkInstallation: (
@@ -1915,6 +1922,9 @@ export interface ApiClient {
       readonly limit?: number;
       readonly invoicedFrom?: string;
       readonly invoicedTo?: string;
+      /** Which way round the register reads its date column. Omitted is
+       * newest first, exactly as before the parameter existed. */
+      readonly sort?: RegisterSort;
     },
   ) => Promise<TaxInvoiceRegisterResponse>;
   readonly createWorkTaxInvoice: (
@@ -3096,11 +3106,13 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       );
       return payload.challans;
     },
-    async listDeliveryChallans(organisationId, workId = null) {
+    async listDeliveryChallans(organisationId, workId = null, sort) {
+      const parameters = new URLSearchParams();
+      if (workId !== null) parameters.set('work', workId);
+      if (sort !== undefined) parameters.set('sort', sort);
+      const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       const payload = await request<{ challans: DeliveryChallanRegisterEntry[] }>(
-        workId === null
-          ? '/api/delivery-challans'
-          : `/api/delivery-challans?work=${encodeURIComponent(workId)}`,
+        `/api/delivery-challans${suffix}`,
         { organisationId },
       );
       return payload.challans;
@@ -3954,6 +3966,7 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       if (options.installedTo !== undefined) {
         parameters.set('installedTo', options.installedTo);
       }
+      if (options.sort !== undefined) parameters.set('sort', options.sort);
       const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       return request<InstallationRegisterResponse>(`/api/installations${suffix}`, {
         organisationId,
@@ -4963,6 +4976,7 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       if (options.invoicedTo !== undefined) {
         parameters.set('invoicedTo', options.invoicedTo);
       }
+      if (options.sort !== undefined) parameters.set('sort', options.sort);
       const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       return request<TaxInvoiceRegisterResponse>(`/api/tax-invoices${suffix}`, {
         organisationId,

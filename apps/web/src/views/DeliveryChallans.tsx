@@ -7,6 +7,7 @@ import type {
   DeliveryChallanRegisterEntry,
   EwayBill,
   MovementReason,
+  RegisterSort,
 } from '@auto-mb/contracts';
 import { type ApiClient } from '../api.js';
 import { formatDate, formatInr, formatRate, todayIso } from '../format.js';
@@ -16,7 +17,13 @@ import { useAction, useReload } from '../lib/view-state.js';
 import { challanHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -235,16 +242,27 @@ export function DeliveryChallans({
   const [transportDistanceKm, setTransportDistanceKm] = useState('');
   const [ewayBills, setEwayBills] = useState<readonly EwayBill[]>([]);
 
+  /* The movement register's order is the SERVER's, not this screen's.
+   * `/api/delivery-challans` is a keyset register: its ORDER BY and its
+   * cursor predicate are one decision, so a sort applied here over the
+   * rows already loaded would be a sort of the page rather than of the
+   * register the moment the screen starts paging. Clicking the Date
+   * heading therefore re-reads with `?sort=`. `null` sends nothing at
+   * all, which is the register's own newest-first order. */
+  const [sort, toggleSort] = useColumnSort<'challanDate'>();
+  const sortParameter: RegisterSort | undefined =
+    sort === null ? undefined : sort.direction === 'asc' ? 'date_asc' : 'date_desc';
+
   const refreshList = useCallback(async () => {
-    setChallans(await api.listDeliveryChallans(organisationId, workId));
-  }, [api, organisationId, workId]);
+    setChallans(await api.listDeliveryChallans(organisationId, workId, sortParameter));
+  }, [api, organisationId, workId, sortParameter]);
 
   useEffect(() => {
     let cancelled = false;
     setChallans(null);
     setLoadError(null);
     Promise.all([
-      api.listDeliveryChallans(organisationId, workId),
+      api.listDeliveryChallans(organisationId, workId, sortParameter),
       // The consignee picker must never block the register: a caller who
       // may read challans but not contacts still gets the list.
       api.listContacts(organisationId).catch((): readonly Contact[] => []),
@@ -261,7 +279,7 @@ export function DeliveryChallans({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, workId, loadVersion]);
+  }, [api, organisationId, workId, loadVersion, sortParameter]);
 
   // The hash is the source of truth for which record is open, so a
   // pasted `#/delivery-challans/<id>` loads it and the back button
@@ -466,7 +484,13 @@ export function DeliveryChallans({
                   <th scope="col">Number</th>
                   <th scope="col">Movement</th>
                   <th scope="col">Work / consignee</th>
-                  <th scope="col">Date</th>
+                  <SortHeader sortKey="challanDate" sort={sort} onSort={toggleSort}>
+                    Date
+                  </SortHeader>
+                  {/* Value is deliberately NOT sortable here. The column
+                      is a per-page lateral sum of the challan's lines, so
+                      it is not a column the cursor could seek on; sorting
+                      it would sort the page and call it the register. */}
                   <th scope="col" className={numericCell}>
                     Value
                   </th>

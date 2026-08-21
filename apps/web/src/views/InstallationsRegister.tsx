@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import type { InstallationRegisterEntry } from '@auto-mb/contracts';
+import type { InstallationRegisterEntry, RegisterSort } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { errorMessage } from '../lib/load-failure.js';
@@ -9,7 +9,14 @@ import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
 import { DateField } from '../ui/date-field.js';
 import { PageHeader } from '../ui/page-header.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  sortRows,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { WorkLink } from '../ui/work-link.js';
 
@@ -99,6 +106,17 @@ export function InstallationsRegister({
   }>({ from: '', to: '' });
   const [loadVersion, retry] = useReload();
 
+  /* This register PAGES, so its order is the server's. A sort applied
+   * over the rows already loaded would order the pages fetched so far and
+   * present that as the register — the oldest record is on the last page,
+   * which is exactly the one an oldest-first sort is asked for. Clicking
+   * the heading therefore re-reads from the first page with `?sort=`.
+   * `null` sends nothing, which is the register's own newest-first
+   * order. */
+  const [sort, toggleSort] = useColumnSort<'installedOn'>();
+  const sortParameter: RegisterSort | undefined =
+    sort === null ? undefined : sort.direction === 'asc' ? 'date_asc' : 'date_desc';
+
   const fetchPage = useCallback(
     (cursor?: string) =>
       api.listInstallations(organisationId, {
@@ -106,8 +124,9 @@ export function InstallationsRegister({
         ...(cursor !== undefined ? { cursor } : {}),
         ...(dateWindow.from !== '' ? { installedFrom: dateWindow.from } : {}),
         ...(dateWindow.to !== '' ? { installedTo: dateWindow.to } : {}),
+        ...(sortParameter !== undefined ? { sort: sortParameter } : {}),
       }),
-    [api, organisationId, dateWindow],
+    [api, organisationId, dateWindow, sortParameter],
   );
 
   useEffect(() => {
@@ -285,7 +304,9 @@ export function InstallationsRegister({
                     <th scope="col" className={numericCell}>
                       Quantity
                     </th>
-                    <th scope="col">Installed on</th>
+                    <SortHeader sortKey="installedOn" sort={sort} onSort={toggleSort}>
+                      Installed on
+                    </SortHeader>
                     <th scope="col">Location</th>
                     <th scope="col" className={numericCell}>
                       Serials
@@ -294,7 +315,18 @@ export function InstallationsRegister({
                   </tr>
                 </thead>
                 <tbody>
-                  {installations.map((row) => (
+                  {/* Narrowed to one Work the screen reads that Work's own
+                      unpaginated list, which takes no `sort` — so the
+                      heading sorts it here. Across Works it is the paged
+                      register above, already ordered by the server, and
+                      re-sorting it would be a no-op over rows that are
+                      already in the asked-for order. */}
+                  {(workFilter === null
+                    ? installations
+                    : sortRows(installations, sort, {
+                        installedOn: (row) => row.installedOn,
+                      })
+                  ).map((row) => (
                     <tr key={row.id}>
                       <th scope="row">
                         <WorkLink

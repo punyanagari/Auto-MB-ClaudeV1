@@ -4,6 +4,7 @@ import type {
   CreditNote,
   EwayBill,
   GstRateMaster,
+  RegisterSort,
   TaxInvoiceDetailResponse,
   TaxInvoiceLineShape,
   TaxInvoiceRegisterEntry,
@@ -27,7 +28,13 @@ import { DateField } from '../ui/date-field.js';
 import { FormError, FormNotice } from '../ui/form.js';
 import { DownloadButton } from '../ui/download-button.js';
 import { PageHeader } from '../ui/page-header.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { WorkLink } from '../ui/work-link.js';
 import { DirectInvoiceForm } from './work-tax-invoices/DirectInvoiceForm.js';
@@ -144,6 +151,20 @@ export function InvoicesRegister({
    * Operable) is the real gate, exactly as the challan register trusts it. */
   const [openWorkActive, setOpenWorkActive] = useState(true);
 
+  /* This register PAGES, so its order is the server's. Sorting the rows
+   * already loaded would order the pages fetched so far and call that the
+   * register — the oldest invoice is on the last page, which is the one
+   * an oldest-first sort is asked for. Clicking the heading re-reads from
+   * the first page with `?sort=`; `null` sends nothing, which is the
+   * register's own newest-first order.
+   *
+   * Only the date sorts. `taxableValue` is null while an invoice is a
+   * draft, and a null leading keyset key drops every draft after the
+   * first page — see `packages/contracts/src/pagination.ts`. */
+  const [sort, toggleSort] = useColumnSort<'invoiceDate'>();
+  const sortParameter: RegisterSort | undefined =
+    sort === null ? undefined : sort.direction === 'asc' ? 'date_asc' : 'date_desc';
+
   const fetchPage = useCallback(
     (cursor?: string) =>
       api.listTaxInvoices(organisationId, {
@@ -151,8 +172,9 @@ export function InvoicesRegister({
         ...(cursor !== undefined ? { cursor } : {}),
         ...(dateWindow.from !== '' ? { invoicedFrom: dateWindow.from } : {}),
         ...(dateWindow.to !== '' ? { invoicedTo: dateWindow.to } : {}),
+        ...(sortParameter !== undefined ? { sort: sortParameter } : {}),
       }),
-    [api, organisationId, dateWindow],
+    [api, organisationId, dateWindow, sortParameter],
   );
 
   useEffect(() => {
@@ -432,7 +454,9 @@ export function InvoicesRegister({
                   <tr>
                     <th scope="col">Number</th>
                     <th scope="col">Buyer</th>
-                    <th scope="col">Date</th>
+                    <SortHeader sortKey="invoiceDate" sort={sort} onSort={toggleSort}>
+                      Date
+                    </SortHeader>
                     <th scope="col" className={numericCell}>
                       Taxable value
                     </th>

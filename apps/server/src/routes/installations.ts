@@ -22,6 +22,7 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import {
   cursorRowId,
   keysetPage,
+  registerOrder,
   sqlLimit,
   workScopedCursorRowId,
 } from '../pagination.js';
@@ -304,6 +305,16 @@ export function registerInstallationRoutes(
         });
         const installedFrom = query.installedFrom ?? null;
         const installedTo = query.installedTo ?? null;
+        // `?sort=date_asc` reads the register oldest first. One call
+        // decides the ORDER BY and the direction of the keyset
+        // comparison, so the seek can never point the other way from the
+        // ordering — the failure that drops rows at a page boundary
+        // rather than erroring. Omitting `sort` is unchanged.
+        const { ascending, orderBy } = registerOrder(query.sort, [
+          'i.installed_on',
+          'i.created_at',
+          'i.id',
+        ]);
         const rows = await tx<
           {
             id: string;
@@ -345,11 +356,14 @@ export function registerInstallationRoutes(
             -- The date window, both bounds inclusive and either omittable.
             and (${installedFrom}::date is null or i.installed_on >= ${installedFrom}::date)
             and (${installedTo}::date is null or i.installed_on <= ${installedTo}::date)
-            and (${cursor === null} or
-              (i.installed_on, i.created_at, i.id) < (
+            and (${cursor === null}
+              or (${ascending} and (i.installed_on, i.created_at, i.id) > (
                 select c.installed_on, c.created_at, c.id from installations c
                 where c.id = ${cursor}))
-          order by i.installed_on desc, i.created_at desc, i.id desc
+              or (${!ascending} and (i.installed_on, i.created_at, i.id) < (
+                select c.installed_on, c.created_at, c.id from installations c
+                where c.id = ${cursor})))
+          order by ${tx.unsafe(orderBy)}
           limit ${sqlLimit(query.limit)}
         `;
         const paged = keysetPage(rows, query.limit, (row) => row.id);

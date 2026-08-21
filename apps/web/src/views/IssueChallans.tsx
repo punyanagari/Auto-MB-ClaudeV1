@@ -7,7 +7,13 @@ import { errorMessage } from '../lib/load-failure.js';
 import { useReload } from '../lib/view-state.js';
 import { issueChallanHash, navigateOnClick } from '../lib/workspace-routes.js';
 import { StatusChip } from '../ui/chip.js';
-import { DataTable, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  sortRows,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 
 /**
@@ -56,6 +62,14 @@ export function IssueChallans({
   const [challans, setChallans] = useState<readonly Row[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, retry] = useReload();
+  /* Both reads hand back the whole list, so the oldest-first question is
+   * answered here rather than by a round trip. The register carries no
+   * money column, so its date is the only orderable key. */
+  const [sort, toggleSort] = useColumnSort<'challanDate'>();
+  const shown =
+    challans === null
+      ? null
+      : sortRows(challans, sort, { challanDate: (challan) => challan.challanDate });
 
   useEffect(() => {
     let cancelled = false;
@@ -111,13 +125,15 @@ export function IssueChallans({
               <tr>
                 <th scope="col">Number</th>
                 <th scope="col">Movement</th>
-                <th scope="col">Date</th>
+                <SortHeader sortKey="challanDate" sort={sort} onSort={toggleSort}>
+                  Date
+                </SortHeader>
                 <th scope="col">Issued to</th>
                 <th scope="col">Status</th>
               </tr>
             </thead>
             <tbody>
-              {challans.map((challan) => (
+              {(shown ?? challans).map((challan) => (
                 <tr key={challan.id}>
                   <th scope="row">
                     {/* A real link, so an issue challan can be

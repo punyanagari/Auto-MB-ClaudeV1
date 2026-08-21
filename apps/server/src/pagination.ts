@@ -1,3 +1,4 @@
+import type { RegisterSort } from '@auto-mb/contracts';
 import type { TransactionSql } from '@auto-mb/db';
 import { httpError } from './http.js';
 
@@ -51,6 +52,34 @@ import { httpError } from './http.js';
  * template: `limit ${sqlLimit(query.limit)}`. */
 export function sqlLimit(limit: number | undefined): number | null {
   return limit === undefined ? null : limit + 1;
+}
+
+/**
+ * The ORDER BY tail and the keyset direction for a register the caller
+ * may read either way round (`?sort=date_asc`).
+ *
+ * The two travel together on purpose. Turning only the ORDER BY round
+ * leaves the predicate seeking in the old direction, which does not fail:
+ * it silently returns the wrong rows at every page boundary. So the one
+ * call answers both, and each register's SQL spends the `ascending` flag
+ * on choosing between a `>` and a `<` comparison of the same tuple.
+ *
+ * `columns` is route source text — a literal array written beside the
+ * query — and the only thing the caller decides is which of two fixed
+ * suffixes is appended to it. Nothing from the request reaches the
+ * statement: `sort` has already been narrowed to one of two literals by
+ * the querystring schema, and is compared here rather than interpolated.
+ */
+export function registerOrder(
+  sort: RegisterSort | undefined,
+  columns: readonly string[],
+): { readonly ascending: boolean; readonly orderBy: string } {
+  const ascending = sort === 'date_asc';
+  const suffix = ascending ? 'asc' : 'desc';
+  return {
+    ascending,
+    orderBy: columns.map((column) => `${column} ${suffix}`).join(', '),
+  };
 }
 
 /** Splits an over-fetched result set into the page and the cursor for the

@@ -44,6 +44,7 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import {
   cursorRowId,
   keysetPage,
+  registerOrder,
   sqlLimit,
   workScopedCursorRowId,
 } from '../pagination.js';
@@ -1752,6 +1753,17 @@ export function registerChallanRoutes(
           query.cursor,
           { userId: user.id, full },
         );
+        // `?sort=date_asc` reads the register oldest first. The ORDER BY
+        // and the keyset comparison below are decided by ONE call, so the
+        // seek can never be left pointing the other way from the
+        // ordering — the failure that loses rows at a page boundary
+        // instead of erroring. Omitting `sort` is the register's own
+        // newest-first order, unchanged.
+        const { ascending, orderBy } = registerOrder(query.sort, [
+          'dc.challan_date',
+          'dc.created_at',
+          'dc.id',
+        ]);
         const rows = await tx<
           {
             id: string;
@@ -1802,11 +1814,14 @@ export function registerChallanRoutes(
             -- and discloses nothing. Served by delivery_challans_work_idx
             -- (organisation_id, work_id, status, challan_date DESC, id).
             and (${query.work === undefined} or dc.work_id = ${query.work ?? null})
-            and (${cursor === null} or
-              (dc.challan_date, dc.created_at, dc.id) < (
+            and (${cursor === null}
+              or (${ascending} and (dc.challan_date, dc.created_at, dc.id) > (
                 select c.challan_date, c.created_at, c.id from delivery_challans c
                 where c.id = ${cursor}))
-          order by dc.challan_date desc, dc.created_at desc, dc.id desc
+              or (${!ascending} and (dc.challan_date, dc.created_at, dc.id) < (
+                select c.challan_date, c.created_at, c.id from delivery_challans c
+                where c.id = ${cursor})))
+          order by ${tx.unsafe(orderBy)}
           limit ${sqlLimit(query.limit)}
         `;
         const paged = keysetPage(rows, query.limit, (row) => row.id);

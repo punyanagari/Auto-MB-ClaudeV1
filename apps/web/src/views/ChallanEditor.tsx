@@ -791,55 +791,58 @@ export function ChallanEditor({
             )}
           </Field>
         </FieldRow>
-        {consignees.length > 0 && (
-          <Field>
-            <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
-            <select
-              id="consignee-picker"
-              defaultValue=""
-              onChange={(event) => {
-                // The picker only PREFILLS the snapshot fields below —
-                // the challan keeps its own free-text copy, and every
-                // field stays editable after picking.
-                const chosen = [...linkedConsignees, ...consignees].find(
-                  (candidate) => candidate.id === event.target.value,
-                );
-                if (chosen === undefined) return;
-                setState({
-                  ...state,
-                  name: chosen.designation,
-                  address: chosen.address ?? '',
-                  phone: chosen.phone ?? '',
-                });
-              }}
-            >
-              <option value="">Manual entry</option>
-              {linkedConsignees.length > 0 && (
-                <optgroup label="Linked to this Work">
-                  {linkedConsignees.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.designation}
-                      {candidate.address !== null ? ` — ${candidate.address}` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="All consignees">
-                {consignees.map((candidate) => (
-                  <option key={`all-${candidate.id}`} value={candidate.id}>
+        {/* The picker stays put with no consignee contacts on file. It
+            used to vanish, so the only visible way to address a challan
+            was to type the consignee out every time — with nothing saying
+            that a contact master exists and would prefill it. */}
+        <Field>
+          <label htmlFor="consignee-picker">Prefill consignee from contacts</label>
+          <select
+            id="consignee-picker"
+            defaultValue=""
+            disabled={consignees.length === 0}
+            onChange={(event) => {
+              // The picker only PREFILLS the snapshot fields below —
+              // the challan keeps its own free-text copy, and every
+              // field stays editable after picking.
+              const chosen = [...linkedConsignees, ...consignees].find(
+                (candidate) => candidate.id === event.target.value,
+              );
+              if (chosen === undefined) return;
+              setState({
+                ...state,
+                name: chosen.designation,
+                address: chosen.address ?? '',
+                phone: chosen.phone ?? '',
+              });
+            }}
+          >
+            <option value="">Manual entry</option>
+            {linkedConsignees.length > 0 && (
+              <optgroup label="Linked to this Work">
+                {linkedConsignees.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
                     {candidate.designation}
                     {candidate.address !== null ? ` — ${candidate.address}` : ''}
                   </option>
                 ))}
               </optgroup>
-            </select>
-            <Hint>
-              Consignees linked to this Work are listed first; any active consignee can
-              be picked. Picking copies the details into this challan; edits here never
-              change the contact.
-            </Hint>
-          </Field>
-        )}
+            )}
+            <optgroup label="All consignees">
+              {consignees.map((candidate) => (
+                <option key={`all-${candidate.id}`} value={candidate.id}>
+                  {candidate.designation}
+                  {candidate.address !== null ? ` — ${candidate.address}` : ''}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+          <Hint>
+            {consignees.length === 0
+              ? 'No consignee contact is on file yet — add one under Masters → Contacts and it will prefill here. The consignee can still be typed out below.'
+              : 'Consignees linked to this Work are listed first; any active consignee can be picked. Picking copies the details into this challan; edits here never change the contact.'}
+          </Hint>
+        </Field>
         <FieldRow>
           <Field>
             <label htmlFor="consignee-name">Consignee name</label>

@@ -15,7 +15,14 @@ import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
 import { StatusChip } from '../ui/chip.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
+import {
+  DataTable,
+  SortHeader,
+  numericCell,
+  sortRows,
+  useColumnSort,
+  wrapCell,
+} from '../ui/table.js';
 import { Field, FieldRow, Actions, FormError, Hint } from '../ui/form.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { Disclosure } from '../ui/disclosure.js';
@@ -243,39 +250,44 @@ function HeaderFields({
 }) {
   return (
     <>
-      {clients.length > 0 && (
-        <Field>
-          <label htmlFor={`${idPrefix}-contact`}>Client contact (optional)</label>
-          <select
-            id={`${idPrefix}-contact`}
-            value={state.customerContactId}
-            onChange={(event) => {
-              const chosen = clients.find(
-                (candidate) => candidate.id === event.target.value,
-              );
-              onChange({
-                ...state,
-                customerContactId: event.target.value,
-                // Picking prefills the addressee; clearing keeps the text —
-                // the free-text copy is the record either way.
-                ...(chosen !== undefined ? { addressedTo: chosen.designation } : {}),
-              });
-            }}
-          >
-            <option value="">Free-text addressee</option>
-            {clients.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.designation}
-                {candidate.gstin !== null ? ` — ${candidate.gstin}` : ''}
-              </option>
-            ))}
-          </select>
-          <Hint>
-            Picking a client links and prefills the addressee below; the text stays
-            editable, and a stranger can be quoted with no contact at all.
-          </Hint>
-        </Field>
-      )}
+      {/* The picker stays put when the organisation has no client
+          contact yet. Hiding it meant a quotation could only ever be
+          addressed as free text, with nothing on screen saying that
+          LINKING one to a contact is a thing this screen does — so the
+          link went unused rather than unavailable. */}
+      <Field>
+        <label htmlFor={`${idPrefix}-contact`}>Client contact (optional)</label>
+        <select
+          id={`${idPrefix}-contact`}
+          disabled={clients.length === 0}
+          value={state.customerContactId}
+          onChange={(event) => {
+            const chosen = clients.find(
+              (candidate) => candidate.id === event.target.value,
+            );
+            onChange({
+              ...state,
+              customerContactId: event.target.value,
+              // Picking prefills the addressee; clearing keeps the text —
+              // the free-text copy is the record either way.
+              ...(chosen !== undefined ? { addressedTo: chosen.designation } : {}),
+            });
+          }}
+        >
+          <option value="">Free-text addressee</option>
+          {clients.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              {candidate.designation}
+              {candidate.gstin !== null ? ` — ${candidate.gstin}` : ''}
+            </option>
+          ))}
+        </select>
+        <Hint>
+          {clients.length === 0
+            ? 'This organisation has no client contact to link yet — add one under Masters → Contacts. A stranger can still be quoted as free text below.'
+            : 'Picking a client links and prefills the addressee below; the text stays editable, and a stranger can be quoted with no contact at all.'}
+        </Hint>
+      </Field>
       <Field>
         <label htmlFor={`${idPrefix}-addressed-to`}>Addressed to</label>
         <input
@@ -454,10 +466,24 @@ export function Quotations({
     };
   }, [quotations]);
 
+  /* The screen holds the whole register, so the three orderable
+     questions are answered here. A draft that has been neither priced nor
+     given a validity has no total and no `validUntil`; those rows sink to
+     the bottom in both directions rather than posing as the smallest or
+     the soonest. The total is a decimal string read as a number for
+     COMPARISON only — nothing is summed. */
+  const [sort, toggleSort] = useColumnSort<'bqDate' | 'validUntil' | 'totalAmount'>();
+
   const rows = useMemo(() => {
     const list = quotations ?? [];
-    return filter === 'all' ? list : list.filter((row) => row.status === filter);
-  }, [quotations, filter]);
+    const filtered =
+      filter === 'all' ? list : list.filter((row) => row.status === filter);
+    return sortRows(filtered, sort, {
+      bqDate: (row) => row.bqDate,
+      validUntil: (row) => row.validUntil,
+      totalAmount: (row) => (row.totalAmount === null ? null : Number(row.totalAmount)),
+    });
+  }, [quotations, filter, sort]);
 
   const quotation = detail?.budgetaryQuotation ?? null;
   const numberLabel = quotation?.bqNumber ?? 'this draft';
@@ -539,11 +565,20 @@ export function Quotations({
                   <th scope="col">Number</th>
                   <th scope="col">Addressed to</th>
                   <th scope="col">Subject</th>
-                  <th scope="col">Date</th>
-                  <th scope="col">Valid until</th>
-                  <th scope="col" className={numericCell}>
+                  <SortHeader sortKey="bqDate" sort={sort} onSort={toggleSort}>
+                    Date
+                  </SortHeader>
+                  <SortHeader sortKey="validUntil" sort={sort} onSort={toggleSort}>
+                    Valid until
+                  </SortHeader>
+                  <SortHeader
+                    className={numericCell}
+                    sortKey="totalAmount"
+                    sort={sort}
+                    onSort={toggleSort}
+                  >
                     Total
-                  </th>
+                  </SortHeader>
                   <th scope="col">Status</th>
                 </tr>
               </thead>

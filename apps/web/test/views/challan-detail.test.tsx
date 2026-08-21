@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { type ApiClient } from '../../src/api.js';
 import { Approvals } from '../../src/views/Approvals.js';
@@ -503,7 +510,11 @@ describe('Correction flow (issued Delivery Challan)', () => {
     renderDetail(api);
 
     expect(await screen.findByText('DCW-1-CN-01')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Open PDF' })).toBeTruthy();
+    // Scoped to the notice's own row: the challan's action bar above
+    // carries an Open PDF of its own, disabled while the challan has no
+    // render (UX.md § 31), so the name is no longer unique on the page.
+    const noticeRow = screen.getByRole('row', { name: /DCW-1-CN-01/ });
+    expect(within(noticeRow).getByRole('button', { name: 'Open PDF' })).toBeTruthy();
   });
 
   it('renders a correction request in the approvals queue with its type and document', async () => {

@@ -2287,6 +2287,99 @@ catalog, so the two cannot drift into saying different things.
 **When the mock grows a settlement screen, the mock wins.** This entry
 retires on the § 4 iteration pipeline, like § 16.
 
+### 30. Register sorting — APPROVED
+
+A register is kept in the order the office keeps it in — newest first
+almost everywhere — and that stays the order it opens in. What it gains
+is the ability to answer the two other questions the same rows can
+answer: which contract is the largest, and which document is the oldest.
+
+**The affordance is the column heading.** A sortable heading is a button
+inside its own `th`, carrying the column's name, a direction arrow, and
+`aria-sort` on the cell. Clicking a new column sorts it DESCENDING —
+largest value, latest date, which is the answer usually wanted — and
+clicking the sorted column again flips it to ascending. There is no third
+"unsorted" click: the register's own default order is what is on screen
+before anything is clicked, and until something is, no heading claims a
+sort. Adding a sortable heading therefore changes no screen until it is
+used.
+
+**Where the sort happens depends on whether the screen pages.** A screen
+holding the whole list sorts it in the view (`sortRows` in
+`apps/web/src/ui/table.tsx`). A screen that pages asks the SERVER, with
+an optional `?sort=date_asc` on the register's own route: sorting the
+pages fetched so far and calling that the register is wrong in the exact
+case the sort was asked for, because the oldest row is on the last page.
+The parameter is additive and optional — omitting it is the register
+byte-for-byte as it was — and its ORDER BY and its keyset predicate turn
+round together, because a predicate left seeking the other way does not
+fail, it quietly loses or repeats rows at each page boundary.
+
+**Sorted surfaces.** Works (LOA letter date, contract value) · Delivery
+challans (challan date, server) · Issue challans (challan date) · Tax
+invoices (invoice date, server) · Installations (installed on, server) ·
+Purchase orders (PO date, value, expected date) · Payments — advances
+(amount) and payables (due date, amount, outstanding) · Quotations (date,
+valid until, total).
+
+**Deliberately not sorted.** Document-detail line tables and micro-tables:
+a document's line order IS the document, and reordering an issued
+challan's lines on screen would misrepresent the paper. Money columns on
+the three paged registers: the Delivery Challan register's value is a
+per-page lateral sum of its lines rather than a column a cursor could
+seek on, and a tax invoice's taxable value is NULL while it is a draft,
+which as a leading keyset key makes the whole row comparison NULL and
+drops every draft after the first page. Installed quantity: quantities in
+different units do not compare. Tenders, which is a card list rather than
+a column table and has no heading to click — giving it a sort control
+would be new furniture the frozen mock does not carry.
+
+### 31. Unavailable choices stay visible — APPROVED
+
+A choice the product could offer, but cannot offer YET because of a DATA
+condition, stays on the screen: visible, disabled, and saying what would
+have to be true. It is not removed.
+
+**Why.** Removing it teaches the operator that the feature does not
+exist, which is the one thing that is definitely false. They go looking
+for it in another module, or ask whether it was ever built. The condition
+is nearly always something they can fix in a minute somewhere else, and
+naming it is the whole difference between a dead end and a next step. The
+worked case: the Measurement Book kind dropdown dropped "Record" until
+the Work had a consignee, so record Measurement Books read as a thing
+this product does not do. It is now offered as `Record — assign a
+consignee to this Work first`.
+
+**The mechanics.** The reason is VISIBLE text, not only a `title`. A
+tooltip is a pointer affordance: a touch screen has no hover, a disabled
+control is not in the tab order so keyboard focus never reaches it, and a
+name that exists only in a tooltip is a name the axe gate counts as
+absent. On an `<option>` the reason rides in the option's own text, which
+is its entire accessible name. On a control with a hint slot the reason
+replaces the hint. On a button it is `ui/unavailable.tsx`'s
+`UnavailableAction` — a disabled button with the reason beneath it, bound
+by `aria-describedby` and repeated as a `title` for a mouse already
+hovering.
+
+**PERMISSION is the exception, and it is not a small one.** A choice
+withheld because the caller's membership does not carry the right stays
+HIDDEN. A disabled control naming the permission it wants publishes the
+permission matrix to every member who cannot use it, which is a worse
+failure than a missing button. Where a gate is a conjunction of both — a
+draft-status test AND a `can*` test — only the data half converts, and the
+permission half keeps hiding the control outright.
+
+**Also not converted, and why.** An action whose absence is already
+explained by state shown beside it: a per-row Withdraw on a row whose
+status chip already reads "cancelled" is not a hidden choice, and a
+disabled duplicate of that sentence is noise. A per-row Remove hidden
+while a form holds one line: the last line cannot be removed and a
+disabled control on every single-line form is clutter. Loading, empty,
+retry and "Load more" branches, which are states rather than choices.
+Mutually exclusive relabellings of the same values, which omit nothing.
+Fields locked because the LOA parse produced their value, which are
+settled under their own ruling.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

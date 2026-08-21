@@ -14,6 +14,7 @@ import { formatInr, formatRate, formatTimestampDate, todayIso } from '../format.
 import { openPdf } from '../lib/openPdf.js';
 import { formatMinorUnits, parseDecimalMinorUnits } from '../loa-payload.js';
 import { Button } from '../ui/button.js';
+import { UnavailableAction } from '../ui/unavailable.js';
 import { StatusChip } from '../ui/chip.js';
 import { Card } from '../ui/card.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
@@ -577,7 +578,11 @@ export function ChallanDetail({
             {challan.renderedAvailable ? 'Re-generate PDF' : 'Generate PDF'}
           </Button>
         )}
-        {challan.renderedAvailable && (
+        {/* Offered even with nothing to open, saying what is missing.
+            Hiding it left the Generate button beside a gap, so whether a
+            generated PDF could be re-opened at all was a thing the
+            operator had to discover by generating one. */}
+        {challan.renderedAvailable ? (
           <Button
             variant="outline"
             disabled={pending}
@@ -592,6 +597,13 @@ export function ChallanDetail({
           >
             Open PDF
           </Button>
+        ) : (
+          <UnavailableAction
+            variant="outline"
+            reason="Generate the PDF first — there is nothing stored to open yet."
+          >
+            Open PDF
+          </UnavailableAction>
         )}
         {/* SEND FOR SIGNING (0091, ADR-0012). Only on an issued challan
             that has a render — the signature covers stored bytes, so
@@ -616,7 +628,7 @@ export function ChallanDetail({
             Send for signing
           </Button>
         )}
-        {challan.signedCopyAvailable && (
+        {challan.signedCopyAvailable ? (
           <Button
             variant="outline"
             disabled={pending}
@@ -631,6 +643,16 @@ export function ChallanDetail({
           >
             Open signed copy
           </Button>
+        ) : (
+          /* A signed copy is a real thing this document can carry, and an
+             operator waiting on one needs to see that it is not here yet
+             rather than that it does not exist. */
+          <UnavailableAction
+            variant="outline"
+            reason="No signed copy yet — this challan has not come back from the signing queue."
+          >
+            Open signed copy
+          </UnavailableAction>
         )}
         <Button variant="outline" onClick={onBack}>
           Back to Work

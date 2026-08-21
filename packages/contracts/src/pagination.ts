@@ -1,4 +1,4 @@
-import { Type, type TSchema } from '@sinclair/typebox';
+import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import { UuidSchema } from './primitives.js';
 
 /**
@@ -74,4 +74,37 @@ export function withKeysetQuery<T extends TSchema>(schema: T) {
   return Type.Composite([schema, KeysetQuerySchema], {
     additionalProperties: false,
   });
+}
+
+/**
+ * Which way round a register reads its date column.
+ *
+ * The registers a clerk scrolls are kept newest first, and that stays the
+ * default: `sort` is OPTIONAL, and omitting it is byte-for-byte the
+ * request the route answered before this existed. Sending `date_asc`
+ * turns the ORDER BY and the keyset predicate round TOGETHER — the one
+ * invariant a paginated sort has to hold, because a predicate that
+ * disagrees with its ordering loses or repeats rows at the page boundary
+ * rather than failing outright.
+ *
+ * Only the date column is offered. The registers' money columns are
+ * either derived per page (the Delivery Challan register sums its lines
+ * in a lateral join) or nullable while a document is a draft, and a
+ * leading keyset key that is NULL makes the whole row comparison NULL —
+ * which silently drops every draft after the first page. Sorting a
+ * register by value is therefore a client-side sort of a register the
+ * view holds in full, never a cursor key. See `apps/web/src/ui/table.tsx`.
+ */
+export const REGISTER_SORTS = ['date_desc', 'date_asc'] as const;
+export const RegisterSortSchema = Type.Union(
+  REGISTER_SORTS.map((sort) => Type.Literal(sort)),
+);
+export type RegisterSort = Static<typeof RegisterSortSchema>;
+
+/** Adds the optional `sort` parameter to a register's querystring. */
+export function withRegisterSort<T extends TSchema>(schema: T) {
+  return Type.Composite(
+    [schema, Type.Object({ sort: Type.Optional(RegisterSortSchema) })],
+    { additionalProperties: false },
+  );
 }
