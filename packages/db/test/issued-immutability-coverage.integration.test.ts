@@ -640,6 +640,28 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'pbg_requirement_source',
     'gst_basis',
     'gst_rate',
+    // Which way the NEXT Measurement Book on this Work is filed for the
+    // railway (0113). A preference, not a fact about the award: it is set
+    // by flipping a draft and is meant to move.
+    'mb_way_default',
+  ],
+
+  // The opening billing position of a pre-system Work (0114). Its guard
+  // freezes the recorded bill and everything read out of it the moment
+  // the row is written, for 0111's reason about its own bytes — the point
+  // of extracting a fact was that nobody gets to assert it. What is left
+  // mutable is the measurement sheet, which is uploaded afterwards, and
+  // the lock, which is the one state this row has.
+  work_billing_baselines: [
+    'id',
+    'updated_at',
+    'measurement_object_key',
+    'measurement_filename',
+    'measurement_sha256',
+    'measurement_size_bytes',
+    'measurement_extraction',
+    'locked_at',
+    'locked_by_user_id',
   ],
 
   // A supersession record (0071) is written whole when a Work is

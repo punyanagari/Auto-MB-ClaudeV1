@@ -236,10 +236,17 @@ export function multiplyDecimalStrings(a: string, b: string): string {
  * snapshotted amounts make this choice permanent per MB.
  */
 function roundToPaise(value: ScaledDecimal): bigint {
-  if (value.scale <= 2) {
-    return rescale(value, 2).units;
+  return roundScaled(value, 2);
+}
+
+/** The same commercial rounding at an arbitrary scale. Money rounds at 2;
+ * the railway's coefficient QUANTITY also rounds at 2 but is not money, so
+ * the rule is stated once and parameterised rather than copied. */
+function roundScaled(value: ScaledDecimal, scale: number): bigint {
+  if (value.scale <= scale) {
+    return rescale(value, scale).units;
   }
-  const divisor = 10n ** BigInt(value.scale - 2);
+  const divisor = 10n ** BigInt(value.scale - scale);
   const quotient = value.units / divisor;
   const remainder = value.units % divisor;
   const absRemainder = remainder < 0n ? -remainder : remainder;
@@ -247,6 +254,23 @@ function roundToPaise(value: ScaledDecimal): bigint {
     return quotient + (value.units < 0n ? -1n : 1n);
   }
   return quotient;
+}
+
+/**
+ * Rounds a plain decimal string to `scale` fractional digits, half away
+ * from zero, returned at exactly that scale.
+ *
+ * Exported for the coefficient rendering (migration 0113). The railway's
+ * own sheets print a SCALED quantity rounded to at most two decimals and
+ * then multiply that figure by the rate, so reproducing their arithmetic
+ * needs the rounding as a first-class step rather than as a side effect of
+ * formatting.
+ */
+export function roundDecimalString(value: string, scale: number): string {
+  if (!Number.isInteger(scale) || scale < 0) {
+    throw new Error(`roundDecimalString: scale must be a non-negative integer`);
+  }
+  return formatScaled({ units: roundScaled(parseDecimal(value), scale), scale });
 }
 
 /** Formats an exact paise count as a decimal string with exactly 2 fraction digits. */

@@ -238,6 +238,10 @@ import type {
   PacCertificateListResponse,
   RecordPacCertificateRequest,
   CreateMeasurementBookRequest,
+  MbWay,
+  SetBillingBaselineLinesRequest,
+  SetWorkDeductionsRequest,
+  WorkBillingBaselineResponse,
   MeasurementBookDetailResponse,
   ReceivedRailwayBill,
   RailwayMeasurementResponse,
@@ -1316,6 +1320,63 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
     body: SetMbMeasuredQuantitiesRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  /** The opening billing position of a Work whose history predates this
+   * product (migration 0114). The upload is the last railway bill; the
+   * four `recorded` figures are for a bill this product cannot read, and
+   * a readable one refuses them. */
+  readonly getWorkBillingBaseline: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly uploadBillingBaselineBill: (
+    organisationId: string,
+    workId: string,
+    file: File,
+    filename: string,
+    recorded?: {
+      billNumber: string;
+      billDate: string;
+      billAmount: string;
+      lastMbSequenceNumber: number;
+    },
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly uploadBillingBaselineMeasurement: (
+    organisationId: string,
+    billingBaselineId: string,
+    file: File,
+    filename: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly setBillingBaselineLines: (
+    organisationId: string,
+    billingBaselineId: string,
+    body: SetBillingBaselineLinesRequest,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly confirmBillingBaselineLine: (
+    organisationId: string,
+    billingBaselineId: string,
+    itemNumber: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly lockBillingBaseline: (
+    organisationId: string,
+    billingBaselineId: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly deleteBillingBaseline: (
+    organisationId: string,
+    billingBaselineId: string,
+  ) => Promise<void>;
+  readonly setWorkDeductions: (
+    organisationId: string,
+    workId: string,
+    body: SetWorkDeductionsRequest,
+  ) => Promise<WorkBillingBaselineResponse>;
+  /** Flips a DRAFT Measurement Book between the two ways a railway sheet
+   * is filed, and makes the choice the Work's sticky default (migration
+   * 0113). Presentation only: no line moves and no amount changes. */
+  readonly setMeasurementBookWay: (
+    organisationId: string,
+    measurementBookId: string,
+    way: MbWay,
   ) => Promise<MeasurementBookDetailResponse>;
   readonly finalizeMeasurementBook: (
     organisationId: string,
@@ -4290,6 +4351,76 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       return request<MeasurementBookDetailResponse>(
         `/api/measurement-books/${measurementBookId}/sources`,
         { method: 'PUT', body, organisationId },
+      );
+    },
+    async getWorkBillingBaseline(organisationId, workId) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/works/${workId}/billing-baseline`,
+        { organisationId },
+      );
+    },
+    async uploadBillingBaselineBill(organisationId, workId, file, filename, recorded) {
+      const query = new URLSearchParams({ filename });
+      if (recorded !== undefined) {
+        query.set('billNumber', recorded.billNumber);
+        query.set('billDate', recorded.billDate);
+        query.set('billAmount', recorded.billAmount);
+        query.set('lastMbSequenceNumber', String(recorded.lastMbSequenceNumber));
+      }
+      return uploadPdf<WorkBillingBaselineResponse>(
+        `/api/works/${workId}/billing-baseline?${query.toString()}`,
+        organisationId,
+        file,
+      );
+    },
+    async uploadBillingBaselineMeasurement(
+      organisationId,
+      billingBaselineId,
+      file,
+      filename,
+    ) {
+      const query = new URLSearchParams({ filename });
+      return uploadPdf<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/measurement?${query.toString()}`,
+        organisationId,
+        file,
+      );
+    },
+    async setBillingBaselineLines(organisationId, billingBaselineId, body) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/lines`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async confirmBillingBaselineLine(organisationId, billingBaselineId, itemNumber) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/lines/confirm`,
+        { method: 'POST', body: { itemNumber }, organisationId },
+      );
+    },
+    async lockBillingBaseline(organisationId, billingBaselineId) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/lock`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async deleteBillingBaseline(organisationId, billingBaselineId) {
+      await request<void>(`/api/billing-baselines/${billingBaselineId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async setWorkDeductions(organisationId, workId, body) {
+      return request<WorkBillingBaselineResponse>(`/api/works/${workId}/deductions`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async setMeasurementBookWay(organisationId, measurementBookId, way) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/way`,
+        { method: 'PUT', body: { way }, organisationId },
       );
     },
     async finalizeMeasurementBook(organisationId, measurementBookId) {

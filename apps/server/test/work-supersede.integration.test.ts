@@ -57,6 +57,25 @@ const migrationsDirectory = path.resolve(
   'migrations',
 );
 const supersedeMigration = path.join(migrationsDirectory, '0071_work_supersession.sql');
+const guardRestatement = path.join(
+  migrationsDirectory,
+  '0114_work_billing_baseline.sql',
+);
+
+/** The soft-delete guard as the schema at head actually holds it: 0071
+ * wrote it, 0114 § 9 restated it (last writer wins, the founder-grant
+ * discipline), so the comparison below reads the restatement. Extracting
+ * the function body keeps the register census from counting `FROM … t`
+ * text that belongs to anything else in the restating file. */
+async function latestSoftDeleteGuard(): Promise<string> {
+  const restated = await readFile(guardRestatement, 'utf8');
+  const body =
+    /CREATE (?:OR REPLACE )?FUNCTION app_private\.guard_work_soft_delete\(\)[\s\S]*?\n\$\$;/.exec(
+      restated,
+    );
+  if (body !== null) return body[0];
+  return readFile(supersedeMigration, 'utf8');
+}
 
 const runId = randomBytes(5).toString('hex');
 const ownerEmail = `sup-owner-${runId}@integration.test`;
@@ -970,9 +989,9 @@ describe('the eligibility census', () => {
   });
 
   it('keeps the migration guard and the server list saying the same thing', async () => {
-    const guard = await readFile(supersedeMigration, 'utf8');
+    const guard = await latestSoftDeleteGuard();
     for (const { register } of DOWNSTREAM_REGISTERS) {
-      expect(guard, `${register} must appear in the 0071 soft-delete guard`).toContain(
+      expect(guard, `${register} must appear in the soft-delete guard`).toContain(
         `FROM ${register} t`,
       );
     }
@@ -992,12 +1011,12 @@ describe('the eligibility census', () => {
     // not, the screen would refuse a supersede the database would allow —
     // or worse, the reverse. Both predicates are read out and compared as
     // normalised text.
-    const guard = await readFile(supersedeMigration, 'utf8');
+    const guard = await latestSoftDeleteGuard();
     const sqlClause =
       /AND t\.entity_type <> 'work_supersede'\s*\n\s*AND t\.status IN \(([^)]*)\)/.exec(
         guard,
       );
-    expect(sqlClause, 'the 0071 guard must qualify approval_requests').not.toBeNull();
+    expect(sqlClause, 'the guard must qualify approval_requests').not.toBeNull();
 
     const source = await readFile(
       fileURLToPath(new URL('../src/work-supersede.ts', import.meta.url)),
@@ -1012,5 +1031,17 @@ describe('the eligibility census', () => {
       [...raw.matchAll(/'(\w+)'/g)].map((match) => match[1] as string).sort();
     expect(statuses(sqlClause?.[1] ?? '')).toEqual(statuses(tsClause?.[1] ?? ''));
     expect(statuses(sqlClause?.[1] ?? '')).toEqual(['approved', 'pending']);
+
+    // The second predicated register, held to the same bar: only a
+    // LOCKED opening baseline blocks, in both layers (0114 § 9).
+    expect(
+      guard,
+      'the guard must qualify work_billing_baselines to locked rows',
+    ).toMatch(/FROM work_billing_baselines t\s[\s\S]*?locked_at IS NOT NULL/);
+    expect(
+      source,
+      'the server census must qualify work_billing_baselines to locked rows',
+    ).toContain("'work_billing_baselines'");
+    expect(source).toContain('locked_at is not null');
   });
 });

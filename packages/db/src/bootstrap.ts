@@ -139,6 +139,12 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // it said and there is no annotation to make about a line.
   imported_invoices: 'SELECT, INSERT, UPDATE',
   imported_invoice_lines: 'SELECT, INSERT',
+  // The opening billing position of a pre-system Work (0114). Full
+  // privileges: an unlocked baseline is a form being filled in, and its
+  // guards — not the grant — are what stop a locked one from moving.
+  work_billing_baselines: 'SELECT, INSERT, UPDATE, DELETE',
+  work_billing_baseline_lines: 'SELECT, INSERT, UPDATE, DELETE',
+  work_deduction_entries: 'SELECT, INSERT, UPDATE, DELETE',
   // The company document library (0079). The credential takes UPDATE for
   // archiving and renaming and no DELETE, because a bid that cited it has
   // to stay explicable; its versions are stored evidence, so they are

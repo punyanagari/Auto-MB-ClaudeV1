@@ -129,6 +129,11 @@ const TENANT_TABLES = [
   // precedes its lines, which name it with a composite tenant reference.
   'imported_invoices',
   'imported_invoice_lines',
+  // The opening billing position of a Work whose history predates this
+  // product (0114).
+  'work_billing_baselines',
+  'work_billing_baseline_lines',
+  'work_deduction_entries',
   // The procurement wave and the tax facts that ride with it (0033).
   'purchase_orders',
   'purchase_order_lines',
@@ -1043,6 +1048,42 @@ async function seedTenantGraph(
       )
       values (${organisationId}, ${pacCertificate.id}, ${work.id},
               ${workItem.id}, '1.000')
+    `;
+
+    // The opening billing position of a pre-system Work (0114), seeded
+    // HERE — before the Measurement Book below is finalized — because
+    // 0114's own insert guard refuses a baseline on a Work that has
+    // numbered a book in this system, which is exactly the rule this
+    // fixture would otherwise trip over. Ordering it this way keeps the
+    // guard intact and still puts a row of each of the three tables into
+    // both organisations, which is what the isolation census counts.
+    const [billingBaseline] = await tx<{ id: string }[]>`
+      insert into work_billing_baselines (
+        organisation_id, work_id, bill_object_key, bill_filename, bill_sha256,
+        bill_media_type, bill_size_bytes, bill_source, bill_number, bill_date,
+        bill_amount, last_mb_sequence_number, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id},
+        ${`${organisationId}/billingbaseline/${work.id}.pdf`}, 'bill.pdf',
+        ${'d'.repeat(64)}, 'application/pdf', 2048, 'recorded', 'B-1',
+        '2026-01-02', '100.00', 1, ${userId}
+      )
+      returning id
+    `;
+    if (!billingBaseline)
+      throw new Error('seed billing baseline insert returned no row');
+    await tx`
+      insert into work_billing_baseline_lines (
+        organisation_id, work_billing_baseline_id, work_id, work_item_id
+      )
+      values (${organisationId}, ${billingBaseline.id}, ${work.id}, ${workItem.id})
+    `;
+    await tx`
+      insert into work_deduction_entries (
+        organisation_id, work_id, head, amount, recorded_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'retention', '10.00', ${userId})
     `;
 
     // Milestone 8 phase 2 Measurement Book tables: a draft claiming the

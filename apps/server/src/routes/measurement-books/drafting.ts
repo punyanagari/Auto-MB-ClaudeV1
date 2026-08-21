@@ -2,7 +2,9 @@ import {
   CreateMeasurementBookRequestSchema,
   MeasurementBookDetailResponseSchema,
   MeasurementBookListResponseSchema,
+  SetMeasurementBookWayRequestSchema,
   type MbHasMergedRecordsDetails,
+  type MbWay,
   type MeasurementBookKind,
 } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
@@ -128,9 +130,15 @@ export function registerMeasurementBookDraftingRoutes(
         await requireWriterRole(tx, user.id);
         await assertWorkAccess(tx, user.id, workId);
         const [work] = await tx<
-          { status: string; letter_date: string; today: string }[]
+          {
+            status: string;
+            letter_date: string;
+            today: string;
+            mb_way_default: MbWay;
+          }[]
         >`
             select w.status, w.letter_date::text as letter_date,
+                   w.mb_way_default,
                    (now() at time zone o.timezone)::date::text as today
             from works w
             join organisations o on o.id = w.organisation_id
@@ -273,11 +281,14 @@ export function registerMeasurementBookDraftingRoutes(
         const [row] = await tx<{ id: string }[]>`
             insert into measurement_books (
               organisation_id, work_id, mb_date, kind, consignee_contact_id,
-              created_by_user_id
+              mb_way, created_by_user_id
             )
             values (
               ${organisationId}, ${workId}, ${body.mbDate}, ${kind},
-              ${body.consigneeContactId ?? null}, ${user.id}
+              ${body.consigneeContactId ?? null},
+              -- The Work's sticky default (migration 0113), read under
+              -- the lock this statement already holds on the works row.
+              ${work.mb_way_default}, ${user.id}
             )
             returning id
           `.catch((error: unknown) => {
@@ -347,6 +358,85 @@ export function registerMeasurementBookDraftingRoutes(
   // provenance — which source came from which record — is written into
   // a constrained tenant table. Audit JSON stays human-readable evidence,
   // but operational un-merge never depends on its mutable shape.
+
+  /**
+   * The "use coefficient" flip (migration 0113; owner ruling, corrections
+   * item 24).
+   *
+   * PRESENTATION, and the route is shaped to say so: no line moves, no
+   * amount is recomputed, and the response is the same detail every other
+   * draft read returns. What changes is which quantity the preview and
+   * the PDF print, and what the railway's own copy will be matched
+   * against later.
+   *
+   * DRAFT ONLY, and stated twice — here with a named 409, and in the
+   * database by 0113's restatement of 0024's finalized-immutability
+   * guard, which now carries `mb_way` in its frozen row. A finalized
+   * book's way is part of what it states.
+   *
+   * The Work's sticky default moves with it, in the same transaction.
+   * That is the whole of "sticky per work": an operator who files this
+   * Work the coefficient way says so once, and the books after this one
+   * start there.
+   */
+  tenantRoute(
+    {
+      method: 'PUT',
+      url: '/api/measurement-books/:id/way',
+      schema: {
+        params: IdParamsSchema,
+        body: SetMeasurementBookWayRequestSchema,
+        response: { 200: MeasurementBookDetailResponseSchema, ...errorResponses },
+      },
+      role: 'writer',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const { way } = request.body;
+      return tenant(async (tx) => {
+        const [book] = await tx<
+          { id: string; work_id: string; status: string; mb_way: MbWay }[]
+        >`
+          select id, work_id, status, mb_way from measurement_books
+          where id = ${id}
+          for update
+        `;
+        if (!book) {
+          throw httpError(
+            404,
+            'MEASUREMENT_BOOK_NOT_FOUND',
+            'No such Measurement Book.',
+          );
+        }
+        await assertWorkAccess(tx, user.id, book.work_id);
+        if (book.status !== 'draft') {
+          throw httpError(
+            409,
+            'MB_STATUS_CONFLICT',
+            'Only a draft Measurement Book can change the way it is filed; a finalized one records the way its sheet went to the railway.',
+          );
+        }
+        if (book.mb_way !== way) {
+          await tx`
+            update measurement_books set mb_way = ${way} where id = ${id}
+          `;
+          await tx`
+            update works set mb_way_default = ${way} where id = ${book.work_id}
+          `;
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'measurement_book.way_set',
+            'measurement_books',
+            id,
+            { workId: book.work_id, from: book.mb_way, to: way },
+          );
+        }
+        return readDetail(tx, id);
+      });
+    },
+  );
 
   tenantRoute(
     {
