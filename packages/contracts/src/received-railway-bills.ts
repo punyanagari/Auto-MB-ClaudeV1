@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { MbWaySchema } from './measurement-books.js';
 import {
   PdfSignatureReportSchema,
   StoredPdfSignatureStatusSchema,
@@ -193,6 +194,14 @@ const RailwayMeasurementLineSchema = Type.Object(
     /** One sentence naming what differs on this line. Never a remedy —
      * the remedy catalog owns those. */
     detail: Type.Union([Type.String(), Type.Null()]),
+    /** WHICH WAY the railway transcribed this line's figure, detected by
+     * comparing the printed total against both arithmetics (owner ruling,
+     * corrections item 24): `coefficient` for the stage-weighted quantity,
+     * `physical` for the unweighted one. Null on a line that matched
+     * neither, on the two structural refusals, and on every line of an
+     * unreadable document — where a person confirmed the agreement and no
+     * machine read a figure to detect a way from. */
+    way: Type.Union([MbWaySchema, Type.Null()]),
     /** Who confirmed this line by hand, and when, on an unreadable
      * document. Null on every line of a document the parser read: a
      * matched line needs no confirmation and a mismatched one may not

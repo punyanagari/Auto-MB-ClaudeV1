@@ -144,6 +144,67 @@ function isQuantityCell(text: string): boolean {
 
 const REASON_LABEL = 'Reason for Reduction :';
 
+/**
+ * A `Reason for Reduction` long enough to wrap, put back together.
+ *
+ * TRAP 5, and it is the one that silently shortens a claim rather than
+ * failing to read it. The remark cell is the widest on the sheet and a
+ * compound one overflows: MB-3 item A/07 prints
+ *
+ * ```
+ * Reason for Reduction : Prepaid 70% for 13 Nos and 20% for 02 Nos Now to   Now to pay   100.0%
+ * Pay 70% for 05 Nos
+ * ```
+ *
+ * Read a line at a time, that item's remark ends at "Now to" — which is
+ * not a truncation the reader can see, because "Prepaid 70% for 13 Nos
+ * and 20% for 02 Nos" is a perfectly well-formed claim. It is simply a
+ * different one from what the railway wrote, and every consumer
+ * downstream would believe it: the 0111 matcher would refuse a document
+ * that agrees, and migration 0114's proposal would offer 13 units where
+ * the sheet says 18.
+ *
+ * THE RULE IS THE COLUMN, and it is narrow on purpose. A continuation is
+ * a non-blank line at column 0 immediately after the reason line, and
+ * nothing else on this sheet starts at column 0 — every other line of an
+ * item block is indented, and the three headings that are not
+ * (`SCHEDULE`, `Item No. :`, `Group :`) are excluded by name. Across the
+ * three committed corpus sheets this welds exactly two lines, both of
+ * them the tail of a compound remark, and leaves 300-odd others alone.
+ */
+const REASON_CONTINUATION_STOP =
+  /^(?:SCHEDULE\s|Item No\. :|Group :|Total\b|Reason for Reduction :)/;
+
+function weldWrappedReasons(lines: readonly string[]): readonly string[] {
+  const welded: string[] = [];
+  for (const line of lines) {
+    const previous = welded.at(-1);
+    if (
+      previous !== undefined &&
+      previous.startsWith(REASON_LABEL) &&
+      line.trim() !== '' &&
+      !line.startsWith(' ') &&
+      !line.startsWith('\t') &&
+      !REASON_CONTINUATION_STOP.test(line)
+    ) {
+      // SPLICED INTO THE REMARK CELL, not appended to the line. The
+      // reason line carries a `Now to pay 100.0%` column of its own to
+      // the right of the remark, and the reader takes the remark as the
+      // FIRST `-layout` cell — so a continuation stuck on the end of the
+      // line would land in that other column and be read as part of it.
+      // The insertion point is the first two-space gap after the label,
+      // which is where the remark cell ends.
+      const gap = previous.slice(REASON_LABEL.length).search(/ {2,}/);
+      const at = gap === -1 ? previous.length : REASON_LABEL.length + gap;
+      welded[welded.length - 1] =
+        `${previous.slice(0, at)} ${line.trim()}${previous.slice(at)}`;
+      continue;
+    }
+    welded.push(line);
+  }
+  return welded;
+}
+
 interface OpenItem {
   readonly itemNumber: string;
   quantity: string | null;
@@ -207,7 +268,7 @@ export function parseRailwayMeasurement(rawText: string): ParsedRailwayMeasureme
   let schedule: string | null = null;
   let open: OpenItem | null = null;
 
-  for (const line of layoutText.split(/\r?\n/)) {
+  for (const line of weldWrappedReasons(layoutText.split(/\r?\n/))) {
     const scheduleHeading = SCHEDULE_HEADING.exec(line);
     if (scheduleHeading?.[1] !== undefined) {
       if (open !== null) items.push(closed(open));

@@ -220,7 +220,16 @@ describe('the schema at head names all three shapes', () => {
     // `delivery_challan_items.quantity` and `installations.quantity`
     // inside a trigger, so a different precision here would be a silent
     // rounding difference on a comparison that decides what is billed.
-    expect(adopted.length).toBe(114);
+    //
+    // 0114 adds twelve, all on the opening billing position of a
+    // pre-system Work: the recorded bill's own amount, the four stage
+    // quantities and the amount of a baseline line, the same five again
+    // as the machine's un-overwritten proposal, and the deduction
+    // entry's amount. They are the figures the Measurement Book engine
+    // adds to its prior-cumulative memory and the receivables position
+    // is summed from, so a different precision here would be a rounding
+    // difference on numbers that decide what is billed next.
+    expect(adopted.length).toBe(126);
   });
 
   it('types every digest column as sha256_hex', () => {
@@ -257,7 +266,12 @@ describe('the schema at head names all three shapes', () => {
     // railway's own measurement sheet — the document the gate on a
     // received bill reads, so the bytes a verdict was computed over stay
     // identifiable.
-    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(37);
+    // 39 after 0114 adds two — the digests of the last railway bill an
+    // imported Work was paid on and of the measurement sheet that bill
+    // was raised from, which are the two documents its opening position
+    // rests on and therefore the two a reviewer has to be able to
+    // identify.
+    expect(columns.filter((column) => column.type === 'sha256_hex').length).toBe(39);
   });
 
   it('refuses a value the digest domain does not admit', async () => {

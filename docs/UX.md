@@ -2434,6 +2434,143 @@ create a contact, the second is a reload. A picker that cannot tell them
 apart must not claim either, so the roster is carried as `null` on
 failure and the reason names which case it is.
 
+### 32. The "Use coefficient" toggle on a Measurement Book draft
+
+**Status: application-first, owner ruling of 2026-08-21 (live-testing
+corrections item 24; migration 0113).**
+
+**No mock citation, and none is possible** — the mock draws no Measurement
+Book detail at all, which is the same position § 29 is in and for the same
+reason. What lands is one checkbox and one `Hint` inside the existing
+`Field` grammar, plus a sentence of plain text on a finalized book. No new
+visual language, so § Design contract 4 covers it.
+
+**What the toggle decides, stated in the words the toggle itself uses.**
+Indian Railways files a Measurement Book two ways. The COEFFICIENT way
+records the physical quantity multiplied by the payment stage's
+percentage and pays that figure at 100% — 3 Nos at 70% is written as 2.1
+— and it is this organisation's own practice and the way every document
+in the committed settlement corpus is written. The PHYSICAL way records
+what was measured and applies the percentage when the bill is computed.
+
+**It is a rendering and the screen says so.** The amounts, the line
+totals and the book's total are identical whichever way is chosen; only
+the quantity column changes meaning, and a coefficient sheet gains a
+`Payable` column reading 100%, which is what IWRCMS prints beside its own
+`Reason for Reduction` text. The hint says the total is the same either
+way in as many words, because an operator flipping a checkbox beside a
+money column deserves to be told that the money does not move before
+they discover it.
+
+**Default on, sticky per Work, flippable per draft.** New Works and new
+books start on the coefficient way — the owner's ruling and the corpus
+agree — and flipping a draft also sets the Work's default, so the choice
+is made once rather than on every book. A book that has to go out the
+other way flips itself without disturbing the Work.
+
+**Draft only, and a finalized book states rather than offers.** Once
+numbered, the way is part of what the book says: the railway's own copy
+was typed from that sheet, and the measurement match (§ 29) is read
+against it. So a finalized book prints "Filed the coefficient way" as
+text with no control, the route answers `MB_STATUS_CONFLICT`, and
+migration 0113 puts the column in the finalized-immutability guard's
+frozen row.
+
+**The quantity columns on this screen stay PHYSICAL in both ways, and
+that is deliberate.** The draft's supplied and installed cells are
+editable measured quantities (§ 27b, migration 0106) — what an operator
+types there is what was measured on site, never a scaled figure — so
+scaling them would ask somebody to type into a column that is not the one
+they are answering. The coefficient rendering belongs to the DOCUMENT,
+and the draft PDF preview beside the toggle is where it is read.
+
+**When the mock grows a Measurement Book screen, the mock wins.**
+
+### 33. The opening billing position — the panel above the Measurement Books
+
+**Status: application-first, owner ruling of 2026-08-21 (live-testing
+corrections item 23; migration 0114).**
+
+**No mock citation, and none is possible** — the mock draws no settlement
+chain at all, which is the position § 29 records for the railway
+measurement panel. This is the same shape of answer: a `.data-surface`
+panel on the Work's Measurement tab, in the grammar already there — the
+`DataTable`, the dot-plus-label `StatusChip`, the file `Field` with its
+`Hint`, the shared `EmptyState` / `LoadingState` / `ErrorState`. No new
+visual language, so § Design contract 4 covers it.
+
+**A PANEL AND NOT A TAB, deliberately.** A new Work tab is a change to
+navigation, which § Design contract 1 reserves to the mock; a panel
+inside an existing screen is what § 29 established as the way to land
+settlement behaviour the mock cannot express. It sits ABOVE the
+Measurement Books workspace because it is the state those books count
+from: on an imported Work, reading the register before reading the
+opening position tells you a Work that has been billed for four years is
+at MB-01.
+
+**It only appears on a Work that has one to state.** A Work born in this
+product has no opening position — its history is the Measurement Books
+below — so the panel offers the upload only where no book has ever been
+numbered, and otherwise says nothing at all.
+
+**Four steps, in the order the operator meets them.**
+
+| Step                      | What the panel draws                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Upload the last bill**  | A file `Field`. On a bill this product can read, its number, date and amount appear as read facts.           |
+| **Upload the last sheet** | A second file `Field`, optional. Fills the per-item proposal.                                                |
+| **State and confirm**     | The line table: proposed figures beside stated ones, a `Confirm item …` button on each, and a running count. |
+| **Lock**                  | One action, offered only when the count is complete.                                                         |
+
+**A bill the product cannot read is recorded, not refused.** When the
+server answers that the uploaded bill's own text cannot be read — a scan,
+most often — the panel reveals four fields (number, date, amount, the
+measurement sequence the bill settles) and the operator types them off
+the document in front of them; the row then says a person did. The fields
+appear only after the server has said so, and withdraw again if the next
+upload turns out readable, because typed figures beside a readable bill
+are two claims about one document and the server refuses them.
+
+**The proposal is drawn beside the stated figure, never instead of it.**
+What a parser read and what a person accepted are two statements, and a
+screen that showed only the second could not answer "did anybody change
+this?" — which is the first question anyone asks of a figure that turns
+out wrong. The railway's own remark is printed on the line too, so the
+proposal can be argued with rather than only accepted.
+
+**Editing a line clears its confirmation, and the screen shows that
+happening.** The confirmation was a statement about the figures that were
+there; carrying it across an edit would put a member's name on a number
+they never saw. The five figure cells edit in place while the baseline is
+a draft — this is the hand-entry path for a Work whose sheet is lost, and
+the correction path over a proposal that read wrongly — and one `Save
+stated lines` action states the changed lines together; an emptied cell
+is an unstated one and keeps its stored figure.
+
+**No "confirm all".** § 29's rule, restated for the same reason: the
+confirmation is an act per line with an author, and one control that
+signed a hundred lines would be the single click the model refuses.
+
+**The lock is drawn as what it is.** Its confirmation dialog says the two
+things that change: the Work's Measurement Book numbering resumes at the
+railway's own sequence plus one, and every book raised afterwards counts
+its prior quantities from these figures. After it, the panel is a record —
+no controls, and the deductions beside it go read-only with it.
+
+**The receivables position reads gross to net in one place.** Billed to
+date, the deductions summed, and the net — all three computed on the
+server, because a net receivable computed in a browser is a second net
+receivable.
+
+**The bill's own total is shown beside the proposed sum and is not
+compared to it.** The two are on different tax bases — IWRCMS prints its
+bill amount GST-inclusive — so the screen puts them side by side for a
+person to reconcile rather than asserting an equality that would be
+wrong.
+
+**When the mock grows a settlement screen, the mock wins.** This entry
+retires on the § 4 iteration pipeline, like § 16 and § 29.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
