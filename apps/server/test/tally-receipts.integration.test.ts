@@ -977,6 +977,23 @@ describe("the coordinator's review of #180", () => {
           .json<ImportedPaymentList>()
           .payments.some((row) => row.tallyGuid === 'guid-conforming'),
       ).toBe(false);
+
+      // AND THE SCOPE READS IT THE SAME WAY. The clerk holds no
+      // assignment on any Work, so before the withdrawal this receipt was
+      // out of their reach; now that no live Work claims it, it is in the
+      // queue and the queue is readable by every member — which is the
+      // point of a queue.
+      const clerkSees = await authed(clerk, {
+        method: 'GET',
+        url: '/api/imported-payments?linked=unlinked',
+        organisationId,
+      });
+      expect(clerkSees.statusCode, clerkSees.body).toBe(200);
+      expect(
+        clerkSees
+          .json<ImportedPaymentList>()
+          .payments.some((row) => row.tallyGuid === 'guid-conforming'),
+      ).toBe(true);
     } finally {
       await admin.begin(async (tx) => {
         await tx.unsafe(`set local session_replication_role = 'replica'`);

@@ -401,7 +401,7 @@ export function registerTallyReceiptRoutes(
           const [row] = await tx<{ id: string }[]>`
             select p.id from imported_payments p
             where p.id = ${seek.cursor}
-              and (p.work_id is null or ${full} or exists (
+              and (not ${linkedInEffect} or ${full} or exists (
                 select 1 from work_assignments wa
                 where wa.work_id = p.work_id and wa.user_id = ${user.id}
               ))
@@ -419,11 +419,18 @@ export function registerTallyReceiptRoutes(
         const limit = query.limit ?? PAGE_LIMIT;
         // One predicate, written once and composed into both statements —
         // the page and its totals must not be able to disagree about
-        // which register they are describing. A receipt with no Work is
-        // readable by every member: it is the manual-link queue, and a
-        // queue only its future owner can see is not a queue.
+        // which register they are describing.
+        //
+        // THE SCOPE READS THE SAME "LINKED IN EFFECT" AS EVERYTHING ELSE.
+        // A receipt no live Work claims is readable by every member: it
+        // is the manual-link queue, and a queue only its future owner can
+        // see is not a queue. That covers the receipt whose Work was
+        // WITHDRAWN as well as the one that never had one — the row is
+        // nobody's Work now, and hiding it from everyone but the members
+        // who were assigned to a contract that no longer exists would
+        // bury it exactly when somebody needs to re-point it.
         const filters = tx`
-          (p.work_id is null or ${full} or exists (
+          (not ${linkedInEffect} or ${full} or exists (
             select 1 from work_assignments wa
             where wa.work_id = p.work_id and wa.user_id = ${user.id}
           ))
