@@ -1061,6 +1061,14 @@ pre-aggregates four evidence tables, and `routes/dashboard.ts` records the
 whole invoice and payroll history are read at month end by one or two
 people. They do not belong on the loader every sign-in waits for.
 
+The same argument applied a second time is why that screen is now TABBED
+(§ 38, owner ruling of 2026-08-22): the management summary and the
+works-analysis reports are different month-end questions, and neither
+should be the price of asking the other. `/api/mis/summary` is read on the
+Accounts and Payroll tabs and nowhere else; the tiles described above sit
+on Accounts, and the Tally export moved to the Tally tab beside the two
+Tally surfaces it belongs with.
+
 **Both doors stay on the rail, and the refusal is at the screen.**
 Employees is the only module in this build whose rail entry is hidden by
 authority (§ 15), and the reason there is specific: a register of salaries
@@ -1113,6 +1121,15 @@ That is a recorded decision rather than a limitation nobody noticed: wiring
 six different filter shapes into the export is one querystring schema and
 one WHERE fragment per register, and it will be done when an operator asks
 for a filtered workbook rather than pre-emptively.
+
+**The works-analysis reports are the first place an operator asked, and
+§ 38 records the answer.** Their column chips and the division picker
+travel into the PDF and the workbook through the document routes' own
+`columns` and `division` parameters. That is not a reversal of the posture
+above: a REGISTER export is the register, and a filter is a way of looking
+at it, while a REPORT is a document somebody prints and hands over — one
+carrying columns the screen never showed is a different document from the
+one that was read. The registers are unchanged.
 
 **The audit register is the one export whose filters travel**, and it is not
 an inconsistency. Its window is clamped by the organisation's retention
@@ -2977,13 +2994,13 @@ than opening a new one. Built in the mock's grammar with its existing
 components — `PageHeader`, `Card`, `DataTable`, `Field`, `Button`,
 `DownloadButton`, the three shared states — and no new visual language.
 
-**No new rail lamp.** The three reports live on the Reports screen, under
-the management summary, at the `#/reports` address § 19 already gave it.
-That is the whole navigation change: none. A fourth lamp for "the other
-reports" would have made an operator choose between two doors that answer
-the same question, and § 19's own argument for a separate Reports screen
-covers these three exactly — month-end reads by one or two people, not
-something the sign-in loader should wait for.
+**No new rail lamp.** The three reports live on the Reports screen, on its
+first tab, at the `#/reports` address § 19 already gave it. That is the
+whole navigation change: none. A fourth lamp for "the other reports" would
+have made an operator choose between two doors that answer the same
+question, and § 19's own argument for a separate Reports screen covers
+these three exactly — month-end reads by one or two people, not something
+the sign-in loader should wait for.
 
 **Each report loads and fails on its own, and the management summary no
 longer carries the screen.** Before this, a load failure on `/api/mis/summary`
@@ -2991,15 +3008,142 @@ returned early and blanked everything below it. That was invisible while the
 summary was the only thing there; with three more reports under it, the
 member who most needs "what is still to supply on my Works" — an
 assigned-scope member, whom the summary refuses outright — reached a blank
-page. The summary's refusal now prints where it belongs and the reports
-render beside it.
+page. The summary's refusal now prints on the tab that reads it, and the
+reports are a tab of their own that never makes that read at all.
+
+#### ONE REPORT AT A TIME — owner ruling of 2026-08-22
+
+**Status: APPROVED, owner ruling of 2026-08-22.** The first shape of this
+section drew all three reports at once, under the month-end tiles and the
+three month-by-month registers, on one scroll. That was wrong in four ways
+and only one of them was the length:
+
+- an operator who came for the receivables ageing paid for a portfolio-wide
+  read across every active Work's schedule, twice, plus a proposal scan of
+  every unmapped description — on every arrival at `#/reports`;
+- an operator who came for one Work's pending position scrolled past the
+  organisation's tax position to reach it;
+- neither could link anybody to what they were looking at, because the
+  whole screen was one address;
+- and the columns were fixed, so the purchase officer ordering material
+  read eleven columns of which four were the question they had.
+
+So the screen is TABBED — **Work analysis · Accounts · Payroll · Tally** —
+and the works-analysis tab is a SELECTOR:
+
+```
+#/reports                              the report picker; reads nothing
+#/reports/analysis/work/<workId>       one Work's position
+#/reports/analysis/division            every division
+#/reports/analysis/division/<code>     one division (`none` = unsettled)
+#/reports/analysis/mapped-item         the portfolio's item position
+#/reports/accounts                     output tax and receivables ageing
+#/reports/payroll                      payroll cost
+#/reports/tally                        the Tally surfaces and the export
+```
+
+**Path segments, not `?tab=`.** Every SECTION in this build is a segment —
+the Work page's tab, the Masters category, the Challan and Payments
+registers — and the one query string the fragment carries, § 40's
+`?focus=extension` on a Work address, is an INTENT rather than a
+destination: something to do on arrival, which the shell consumes and
+forgets. A tab is a place, so it is spelled the way every other place here
+is. One serializer, one grammar.
+
+**The RUN is part of the address, and that is what makes it lazy.**
+`#/reports` makes exactly one read, the Work list its own picker needs.
+Everything else waits for Run, and Run is a navigation: the report that
+comes back is the one the address names, so a configured report can be
+bookmarked, sent to somebody, and reached by Back. A half-formed fragment
+— a Work analysis naming no Work, a report name that does not exist —
+degrades to the picker rather than to the Dashboard, which is the courtesy
+an unknown Work section already gets.
+
+**The tab strip is real links and sticks under the shell header.** The same
+44px underline rail the Work page uses (`views/WorkDetail.tsx`), addressed
+rather than toggled, and it raises `--sticky-inset` for the panel below it
+exactly as a schedule summary does (`ui/schedule-section.tsx`) — otherwise
+a table's pinned heading would park behind the tabs it scrolled under.
+
+**The grouping proposals are reachable from the item analysis and from
+nowhere else.** They were a permanent fourth card that scanned every
+unmapped description on every visit. A proposal is only actionable beside
+the unmapped rows it would combine, so it renders under that result.
+
+**The division picker is filled by the report itself.** This schema has no
+division master — a division is DERIVED from a Work's consignee contacts,
+which is the whole of the sub-section above — so the picker offers "Every
+division" until the report has been run once, and the headings it found
+after that. Inventing a division register to populate a dropdown would be
+a whole master for a `<select>`.
+
+#### The columns are the operator's, and they travel
+
+**Chips, not a column menu.** One row of `aria-pressed` toggles per report,
+in the pattern `ui/tab-rail` and the inspection agency pills already use —
+`role="group"`, never a `tablist` without the roving-tabindex to match
+(`test/a11y-invariants`). The default set is what an operator ORDERING
+MATERIAL wants: sanctioned, supplied, and what is still pending. The
+execution and billing positions start off and are one tap away.
+
+**A chip names a column HEADER, and the header is the vocabulary all three
+surfaces already share** — the screen's `<th>`, the PDF's heading and the
+workbook's. `WORKS_ANALYSIS_COLUMNS` in the contract is the list, the
+document routes take a `columns` parameter of the same words, and
+`selectColumns` drops the heading, every row cell and the total cell
+together, positionally. That last part is the whole risk: a heading removed
+without its cells slides every figure one column left, which reads as
+plausible data rather than as a fault.
+
+**The identity columns cannot be dropped.** Item, Description, Bill and
+Agency are absent from the chip list, so an empty set is a report of what
+each row IS rather than a blank page. The Work report chips its quantity
+and value tables only — its inspection and payment tables answer different
+questions with their own vocabulary, and thirty toggles is a wall rather
+than a control.
+
+**This is the exception § 19 said would be built when an operator asked.**
+§ 19 records that a REGISTER export is the whole register under the
+caller's scope and deliberately ignores the screen's filters, "when an
+operator asks for a filtered workbook rather than pre-emptively". The
+operator asked, and a report is not a register: a PDF carrying eleven
+columns of which the screen showed five is a different document from the
+one being read. The division report's chosen heading travels the same way,
+for the same reason, and the report-wide totals become that division's own
+rather than the portfolio's — a total the rows on the page do not add to is
+the one arithmetic error a reader cannot catch by looking.
+
+**Responsive hiding survives underneath.** A column the operator kept can
+still be dropped by a narrow viewport: the chip says what is WANTED and the
+breakpoint says what FITS, and the two are different questions.
+
+#### The other three tabs
+
+**Accounts** carries the month-end tiles, output tax by month and
+receivables ageing. **Payroll** carries the payroll cost register. Both
+read `/api/mis/summary` and neither is read on any other tab, which is the
+whole point of the split. The summary's refusal for an assigned-scope
+member is unchanged and prints on the tab that made the read — § 19 argues
+why the summary refuses where these reports narrow, and both are still
+right. The payroll section stays ABSENT rather than empty for a member
+without the authority.
+
+**Tally** hosts the two Tally surfaces that already exist, as LINKS: the
+ledger census (§ 37, `#/tally-masters`) and the voucher import on the
+billing history it reconciles (§ 39, `#/historical-invoices`). Neither is
+moved nor embedded — two screens in two places disagreeing about the same
+rows is the failure that avoids. The owner's Tally XML export moves here
+from the bottom of the old stacked page, and one line says the
+accountant's export pack lands on this tab when that wave ships.
 
 #### What is on the screen
 
 | Element                 | Taken from                                                             |
 | ----------------------- | ---------------------------------------------------------------------- |
-| The three reports       | `Card` + `CardHeader`, as every panel on Reports uses them             |
-| Work selector           | `Field` with a bare `<select>`, the Receivables filter-bar pattern     |
+| Tab strip               | The Work page's section rail, as links rather than local state         |
+| The report selector     | `Field` with bare `<select>`s, the Receivables filter-bar pattern      |
+| Column chips            | `aria-pressed` buttons in a `role="group"`, the `ui/tab-rail` pattern  |
+| Each report             | `Card` + `CardHeader`, as every panel on Reports uses them             |
 | Every table             | `DataTable` with the `sr-only` caption `test/a11y-invariants` requires |
 | Section totals          | `<tfoot>`, so a total is announced as the table's summary              |
 | Document controls       | `Button` for the PDF and the shared `DownloadButton` for the workbook  |
@@ -3007,7 +3151,8 @@ render beside it.
 | Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState`                             |
 
 **No chip words and no lamps are added.** None of these figures has a
-status: a pending quantity is a number, and a division is a heading.
+status: a pending quantity is a number, and a division is a heading. The
+column chips are controls, not status vocabulary.
 
 #### Four decisions a reviewer should be able to disagree with
 

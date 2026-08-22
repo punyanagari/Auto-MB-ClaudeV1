@@ -2,8 +2,10 @@
  * `state-coverage-inventory.test.ts` both read. Not a suite of its own —
  * the runner's `include` is `*.{test,spec}.{ts,tsx}`. */
 import type { ReactElement } from 'react';
+import type { WorksAnalysisReport } from '@auto-mb/contracts';
 import { vi } from 'vitest';
 import { RequestFailedError, type ApiClient } from '../../src/api.js';
+import type { MisTab } from '../../src/lib/workspace-routes.js';
 import { AccountSecurity } from '../../src/views/AccountSecurity.js';
 import { RailwayBillPanel } from '../../src/views/RailwayBillPanel.js';
 import { RailwayMeasurementPanel } from '../../src/views/RailwayMeasurementPanel.js';
@@ -122,6 +124,41 @@ export interface StateCase {
 }
 
 const noop = (): void => undefined;
+
+/** The Reports screen at one of its tabs. Every part of its state is an
+ * address in the running application, so the cases hand it the address
+ * they cover rather than driving the tab strip. */
+function misProps(api: ApiClient, tab: MisTab): React.ComponentProps<typeof Mis> {
+  return {
+    api,
+    organisationId: ORG_ID,
+    isOwner: true,
+    tab,
+    report: null,
+    selection: null,
+    onOpenTab: noop,
+    onRunReport: noop,
+    onOpenTallyCensus: noop,
+    onOpenHistoricalInvoices: noop,
+  };
+}
+
+/** The works-analysis surface with a report already run, or with none —
+ * which is the difference between an address that names a report and the
+ * bare `#/reports`. */
+function analysisProps(
+  api: ApiClient,
+  report: WorksAnalysisReport | null = null,
+  selection: string | null = null,
+): React.ComponentProps<typeof WorksAnalysis> {
+  return {
+    api,
+    organisationId: ORG_ID,
+    runReport: report,
+    runSelection: selection,
+    onRun: noop,
+  };
+}
 
 export const STATE_CASES: readonly StateCase[] = [
   {
@@ -815,34 +852,63 @@ export const STATE_CASES: readonly StateCase[] = [
   {
     view: 'Mis.tsx',
     name: 'the management summary',
+    // The Accounts tab, because that is where the month-end read is made
+    // now: the Reports screen is tabbed and the analysis tab makes no
+    // summary read at all.
     loads: ['misSummary'],
-    render: (api) => <Mis api={api} organisationId={ORG_ID} isOwner />,
+    render: (api) => <Mis {...misProps(api, 'accounts')} />,
     retry: /Retry the summary/,
     empty: {
       notApplicable:
         'the summary always renders: the ageing table carries all five buckets whatever the data, so there is no whole-page empty state. Its output-tax and payroll sections carry their own EmptyStates.',
     },
   },
-  /* The works-analysis reports, one case per independent load. They are
-   * four cards on one screen and they fail separately on purpose: an
-   * operator wanting the division position should get it whether or not
-   * the item master is in a state to answer, so each retry names the
-   * outage it clears rather than four controls all saying "Try again". */
+  {
+    view: 'Mis.tsx',
+    name: 'the payroll register',
+    // The same read behind a second tab. Listed separately because the
+    // tab is a separate arrival: a payroll reader who lands here must get
+    // the wait, the failure and its retry without visiting Accounts.
+    loads: ['misSummary'],
+    render: (api) => <Mis {...misProps(api, 'payroll')} />,
+    retry: /Retry the summary/,
+    empty: {
+      notApplicable:
+        'the payroll section is ABSENT rather than empty for a member without the authority — the server answers null and the tab names the authority — and an owner with no finalized run gets its own EmptyState inside the card.',
+    },
+  },
+  /* The works-analysis reports, one case per independent load. Nothing on
+   * this screen reads until Run, so each case is rendered with the report
+   * it covers already RUN — which is what an address carrying that report
+   * does. They still fail separately on purpose: an operator wanting the
+   * division position should get it whether or not the item master is in
+   * a state to answer, so each retry names the outage it clears. */
+  {
+    view: 'WorksAnalysis.tsx',
+    name: 'the Work picker',
+    // The one read made before Run: a selector with nothing to select is
+    // not a selector.
+    loads: ['listWorks'],
+    render: (api) => <WorksAnalysis {...analysisProps(api)} />,
+    retry: /Retry the Work list/,
+    empty: { text: /No Work has been recorded yet/ },
+  },
   {
     view: 'WorksAnalysis.tsx',
     name: 'the per-Work analysis',
-    // The Work list, not the analysis: the picker is what the card waits
-    // for, and with no Work chosen the analysis read never runs.
-    loads: ['listWorks'],
-    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    loads: ['workAnalysis'],
+    render: (api) => <WorksAnalysis {...analysisProps(api, 'work', WORK_ID)} />,
     retry: /Retry the Work analysis/,
-    empty: { text: /No Work has been recorded yet/ },
+    empty: {
+      notApplicable:
+        'a Work analysis is about one named Work and always draws its four sections; the sections that can be empty — inspection, payment — carry their own EmptyStates.',
+    },
   },
   {
     view: 'WorksAnalysis.tsx',
     name: 'the division analysis',
     loads: ['divisionAnalysis'],
-    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    render: (api) => <WorksAnalysis {...analysisProps(api, 'division')} />,
     retry: /Retry the division analysis/,
     empty: { text: /No active Work carries a pending quantity/ },
   },
@@ -850,15 +916,17 @@ export const STATE_CASES: readonly StateCase[] = [
     view: 'WorksAnalysis.tsx',
     name: 'the cross-Work item analysis',
     loads: ['mappedItemAnalysis'],
-    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    render: (api) => <WorksAnalysis {...analysisProps(api, 'mapped-item')} />,
     retry: /Retry the item analysis/,
     empty: { text: /No schedule line maps to an item master yet/ },
   },
   {
     view: 'WorksAnalysis.tsx',
     name: 'the grouping proposals',
+    // Reached from the item analysis result, which is the only place a
+    // proposal is actionable.
     loads: ['itemGroupProposals'],
-    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    render: (api) => <WorksAnalysis {...analysisProps(api, 'mapped-item')} />,
     retry: /Retry the grouping proposals/,
     empty: { text: /No two unmapped descriptions differ/ },
   },

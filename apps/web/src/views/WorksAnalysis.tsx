@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
-import { FileText } from 'lucide-react';
-import type {
-  CombinedPendingRow,
-  CombinedPendingTotals,
-  DivisionAnalysisResponse,
-  ItemGroupProposal,
-  ItemGroupProposalsResponse,
-  MappedItemAnalysisResponse,
-  Work,
-  WorkAnalysisResponse,
-  WorksAnalysisReport,
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { FileText, Play } from 'lucide-react';
+import {
+  defaultWorksAnalysisColumns,
+  WORKS_ANALYSIS_COLUMNS,
+  WORKS_ANALYSIS_REPORTS,
+  type CombinedPendingRow,
+  type CombinedPendingTotals,
+  type DivisionAnalysisResponse,
+  type ItemGroupProposal,
+  type ItemGroupProposalsResponse,
+  type MappedItemAnalysisResponse,
+  type Work,
+  type WorkAnalysisItem,
+  type WorkAnalysisResponse,
+  type WorksAnalysisReport,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
+import { cn } from '../lib/cn.js';
 import { formatInr, formatRate } from '../format.js';
 import { describeRefusal } from '../lib/load-failure.js';
 import { openPdf } from '../lib/openPdf.js';
@@ -24,7 +29,7 @@ import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 
 /**
- * Works analysis: three reports under the Reports screen.
+ * Works analysis: ONE report at a time, chosen and then run.
  *
  * `packages/contracts/src/works-analysis.ts` states what every figure means
  * and which sources are in it. NOTHING ON THIS SCREEN ADDS ANYTHING UP:
@@ -33,27 +38,46 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
  * `AGENTS.md` rule 5's, and it matters more here than anywhere else in the
  * product, because these tables exist to be totalled.
  *
- * ## Three cards, three loads
+ * ## Nothing is read until Run
  *
- * Each report loads and fails on its own. They read different ledgers and an
- * operator wants the division position whether or not the item master is in
- * a state to answer, so one refusal must not blank the other two — which is
- * the failure the management summary above them has, where a single load
- * carries the whole screen.
+ * The first shape of this screen drew all three reports at once, on mount.
+ * Two of them are portfolio-wide reads across every active Work's schedule
+ * — the heaviest in the product — and an operator who opened Reports to
+ * check one Work paid for all three every time. So the screen is a
+ * SELECTOR: report type, the picker that report needs, the columns to
+ * carry, and a Run control. The reads start when Run is pressed and not
+ * before, and the empty state above them says so in one sentence.
  *
- * ## Column priority
+ * The run is part of the ADDRESS (`lib/workspace-routes.ts`), not state
+ * inside this component. That is what makes a configured report something
+ * an operator can bookmark and send to somebody else, and what makes Back
+ * retrace the reports they ran rather than leaving the screen entirely.
  *
- * The pending tables are eleven columns wide, which no phone renders. The
- * ones an operator ordering material can lose first — the sanctioned,
- * supplied and installed positions, which are context for the pending
- * figure rather than the figure — hide below `lg`; the rate spread and the
- * line counts hide below `md`. What survives at every width is the item,
- * the unit, what is pending, and what it is worth.
+ * ## The columns are the operator's
+ *
+ * The pending tables are thirteen columns wide, which no phone renders and
+ * no purchase officer wants. The chips choose which of them travel — to
+ * the table on screen AND into the PDF and the workbook, through the
+ * document routes' `columns` parameter. § 19 records that a REGISTER
+ * export deliberately ignores the screen's filters; this is a report
+ * rather than a register, and a file that carried columns the screen did
+ * not show would be a different document from the one being read.
+ *
+ * Responsive hiding survives underneath: a column the operator kept can
+ * still be dropped by a narrow viewport, because the chips say what is
+ * WANTED and the breakpoint says what FITS.
  */
 
 interface WorksAnalysisProps {
   readonly api: ApiClient;
   readonly organisationId: string;
+  /** The report that has been run, from the address. Null before Run. */
+  readonly runReport: WorksAnalysisReport | null;
+  /** What that report is about: the Work id, the division code (`none` for
+   * the Works whose consignees name no division), or null. */
+  readonly runSelection: string | null;
+  /** Runs the configured report by making it the address. */
+  readonly onRun: (report: WorksAnalysisReport, selection: string | null) => void;
 }
 
 /** The three report names, so a document control cannot name one the server
@@ -64,12 +88,375 @@ const REPORT_LABEL: Readonly<Record<WorksAnalysisReport, string>> = {
   'mapped-item': 'Item analysis',
 };
 
-export function WorksAnalysis({ api, organisationId }: WorksAnalysisProps) {
+const REPORT_DESCRIPTION: Readonly<Record<WorksAnalysisReport, string>> = {
+  work: 'One Work, item by item: what is sanctioned, what has been supplied and installed, what is still to supply, install and inspect, and what has been billed against it.',
+  division:
+    'Pending quantities combined across the active Works of each railway division, so one order can cover a division.',
+  'mapped-item':
+    'Pending quantities combined per item master, across every active Work. The whole portfolio’s ordering position for one product.',
+};
+
+/** The division the report files a Work under when its consignees name none
+ * or name more than one. Shared with `routes/works-analysis.ts`, which
+ * narrows the exported document on the same token; a real division code is
+ * `^[0-9]{2,5}$` and cannot collide with it. */
+const NO_DIVISION = 'none';
+
+/* --- columns ---------------------------------------------------------- */
+
+/**
+ * One column of a report table.
+ *
+ * `header` is the chip vocabulary and the document's own heading — the
+ * three surfaces name a column with the same words, which is what lets a
+ * chosen set travel in a URL a person can read.
+ */
+interface ReportColumn<Row> {
+  readonly header: string;
+  readonly numeric?: boolean;
+  /** Hidden below this breakpoint whatever the chips say: the chip is what
+   * the operator WANTS, the breakpoint is what the screen FITS. */
+  readonly hide?: 'md' | 'lg';
+  readonly cell: (row: Row) => ReactNode;
+  /** The `tfoot` cell, on the tables that carry a total. */
+  readonly total?: ReactNode;
+}
+
+function columnClass<Row>(column: ReportColumn<Row>): string {
+  return cn(
+    column.numeric === true && numericCell,
+    column.hide === 'md' && 'hidden md:table-cell',
+    column.hide === 'lg' && 'hidden lg:table-cell',
+  );
+}
+
+function chosenColumns<Row>(
+  columns: readonly ReportColumn<Row>[],
+  chosen: ReadonlySet<string>,
+): readonly ReportColumn<Row>[] {
+  return columns.filter((column) => chosen.has(column.header));
+}
+
+/**
+ * The chip row: tap to include, tap again to leave out.
+ *
+ * `aria-pressed` toggles inside a `role="group"`, the pattern `ui/tab-rail`
+ * and the inspection agency pills already use and the one
+ * `test/a11y-invariants` will accept without a roving tabindex.
+ */
+function ColumnChips({
+  report,
+  chosen,
+  onToggle,
+}: {
+  readonly report: WorksAnalysisReport;
+  readonly chosen: ReadonlySet<string>;
+  readonly onToggle: (header: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="m-0 text-sm font-medium">Columns</p>
+      <div
+        role="group"
+        aria-label="Columns to include"
+        className="flex flex-wrap items-center gap-1"
+      >
+        {WORKS_ANALYSIS_COLUMNS[report].map((column) => {
+          const on = chosen.has(column.header);
+          return (
+            <button
+              key={column.header}
+              type="button"
+              aria-pressed={on}
+              onClick={() => {
+                onToggle(column.header);
+              }}
+              className={cn(
+                'h-7 rounded-md px-2.5 text-xs font-medium transition-colors',
+                on
+                  ? 'bg-primary text-primary-foreground'
+                  : 'border border-border text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {column.header}
+            </button>
+          );
+        })}
+      </div>
+      <Hint>
+        The columns you keep are the columns the PDF and the workbook carry. Item and
+        description always travel.
+      </Hint>
+    </div>
+  );
+}
+
+/* --- the selector ------------------------------------------------------ */
+
+export function WorksAnalysis({
+  api,
+  organisationId,
+  runReport,
+  runSelection,
+  onRun,
+}: WorksAnalysisProps) {
+  const [works, setWorks] = useState<readonly Work[] | null>(null);
+  const [worksError, setWorksError] = useState<string | null>(null);
+  const [worksVersion, retryWorks] = useReload();
+
+  const [report, setReport] = useState<WorksAnalysisReport>(runReport ?? 'work');
+  const [workId, setWorkId] = useState(
+    runReport === 'work' ? (runSelection ?? '') : '',
+  );
+  const [division, setDivision] = useState(
+    runReport === 'division' ? (runSelection ?? '') : '',
+  );
+  const [columns, setColumns] = useState<ReadonlySet<string>>(
+    () => new Set(defaultWorksAnalysisColumns(runReport ?? 'work')),
+  );
+  /** The divisions the last division run found, so the picker offers the
+   * headings that exist rather than a list of codes typed by hand. Empty
+   * until that report has been run once — this schema has no division
+   * master, and inventing one to populate a select would be a whole
+   * register for a dropdown. */
+  const [divisionOptions, setDivisionOptions] = useState<readonly string[]>([]);
+
+  /* The address is the source of truth for what is RUN. Following it here
+     keeps the selector describing the report on screen after a Back press
+     or a shared link, instead of showing the last thing this component was
+     asked to run. */
+  useEffect(() => {
+    if (runReport === null) return;
+    setReport(runReport);
+    setColumns(new Set(defaultWorksAnalysisColumns(runReport)));
+    if (runReport === 'work') setWorkId(runSelection ?? '');
+    if (runReport === 'division') setDivision(runSelection ?? '');
+  }, [runReport, runSelection]);
+
+  /* The Work picker's own list, and the only read this screen makes before
+     Run: a selector with nothing to select is not a selector. It is a
+     register list, not a portfolio roll-up, and it is what the Work
+     analysis is chosen from. */
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listWorks(organisationId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setWorks(loaded);
+        setWorkId((current) => (current === '' ? (loaded[0]?.id ?? '') : current));
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setWorksError(describeRefusal(cause, 'The Work list').message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, organisationId, worksVersion]);
+
+  const toggle = useCallback((header: string) => {
+    setColumns((current) => {
+      const next = new Set(current);
+      if (!next.delete(header)) next.add(header);
+      return next;
+    });
+  }, []);
+
+  /* The chips belong to the report being CONFIGURED. Where that is not the
+     report on screen — the operator has changed the type but not pressed
+     Run — the result keeps the defaults of what it actually is, rather
+     than being filtered by another report's vocabulary. */
+  const shownColumns =
+    runReport === null || runReport === report
+      ? columns
+      : new Set(defaultWorksAnalysisColumns(runReport));
+
+  const canRun = report !== 'work' || workId !== '';
+
   return (
     <>
-      <WorkAnalysisCard api={api} organisationId={organisationId} />
-      <DivisionAnalysisCard api={api} organisationId={organisationId} />
-      <MappedItemAnalysisCard api={api} organisationId={organisationId} />
+      <Card className="flex flex-col gap-4">
+        <CardHeader>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-base leading-snug font-medium">Report</h2>
+            <p className="text-sm text-muted-foreground">
+              {REPORT_DESCRIPTION[report]} Every figure is the server’s.
+            </p>
+          </div>
+        </CardHeader>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field>
+            <label htmlFor="works-analysis-report">Report type</label>
+            <select
+              id="works-analysis-report"
+              value={report}
+              onChange={(event) => {
+                const next = event.target.value as WorksAnalysisReport;
+                setReport(next);
+                setColumns(new Set(defaultWorksAnalysisColumns(next)));
+              }}
+            >
+              {WORKS_ANALYSIS_REPORTS.map((name) => (
+                <option key={name} value={name}>
+                  {REPORT_LABEL[name]}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {report === 'work' && (
+            <Field>
+              <label htmlFor="works-analysis-work">Work</label>
+              <select
+                id="works-analysis-work"
+                value={workId}
+                disabled={works === null}
+                onChange={(event) => {
+                  setWorkId(event.target.value);
+                }}
+              >
+                {works === null && <option value="">Loading…</option>}
+                {(works ?? []).map((work) => (
+                  <option key={work.id} value={work.id}>
+                    {work.workCode} — {work.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {report === 'division' && (
+            <Field>
+              <label htmlFor="works-analysis-division">Railway division</label>
+              <select
+                id="works-analysis-division"
+                value={division}
+                onChange={(event) => {
+                  setDivision(event.target.value);
+                }}
+              >
+                <option value="">Every division</option>
+                {divisionOptions.map((code) => (
+                  <option key={code} value={code}>
+                    {code === NO_DIVISION
+                      ? 'No division on record'
+                      : `Division ${code}`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+        </div>
+
+        <ColumnChips report={report} chosen={columns} onToggle={toggle} />
+
+        {/* The picker's own wait, announced. A disabled select reading
+            "Loading…" is a visual cue only, and every load on this screen
+            owes an operator using a screen reader the same sentence. */}
+        {worksError === null && works === null && (
+          <p role="status" className="m-0 text-sm text-muted-foreground">
+            Loading Works…
+          </p>
+        )}
+
+        {worksError !== null && (
+          <ErrorState onRetry={retryWorks} retryLabel="Retry the Work list">
+            {worksError}
+          </ErrorState>
+        )}
+
+        {worksError === null && report === 'work' && works?.length === 0 && (
+          <EmptyState>
+            No Work has been recorded yet. A Work analysis is a report on one contract.
+          </EmptyState>
+        )}
+
+        <div>
+          <Button
+            type="button"
+            disabled={!canRun}
+            onClick={() => {
+              onRun(
+                report,
+                report === 'work'
+                  ? workId
+                  : report === 'division' && division !== ''
+                    ? division
+                    : null,
+              );
+            }}
+          >
+            <Play aria-hidden="true" className="size-4" />
+            Run report
+          </Button>
+        </div>
+      </Card>
+
+      {runReport === null ? (
+        <EmptyState>
+          No report has been run. Choose a report type above, pick the columns you want,
+          and run it — nothing is read until you do.
+        </EmptyState>
+      ) : (
+        <RunResult
+          api={api}
+          organisationId={organisationId}
+          report={runReport}
+          selection={runSelection}
+          columns={shownColumns}
+          onDivisions={setDivisionOptions}
+        />
+      )}
+    </>
+  );
+}
+
+function RunResult({
+  api,
+  organisationId,
+  report,
+  selection,
+  columns,
+  onDivisions,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly report: WorksAnalysisReport;
+  readonly selection: string | null;
+  readonly columns: ReadonlySet<string>;
+  readonly onDivisions: (codes: readonly string[]) => void;
+}) {
+  if (report === 'work') {
+    // The address guarantees a Work id on this report, so the picker's
+    // empty state above is the only place "no Work" is answered.
+    return selection === null ? null : (
+      <WorkAnalysisCard
+        api={api}
+        organisationId={organisationId}
+        workId={selection}
+        columns={columns}
+      />
+    );
+  }
+  if (report === 'division') {
+    return (
+      <DivisionAnalysisCard
+        api={api}
+        organisationId={organisationId}
+        division={selection}
+        columns={columns}
+        onDivisions={onDivisions}
+      />
+    );
+  }
+  return (
+    <>
+      <MappedItemAnalysisCard
+        api={api}
+        organisationId={organisationId}
+        columns={columns}
+      />
       <ItemGroupProposalsCard api={api} organisationId={organisationId} />
     </>
   );
@@ -78,20 +465,29 @@ export function WorksAnalysis({ api, organisationId }: WorksAnalysisProps) {
 /** The two document controls every report carries: the page to read and the
  * workbook to work in. A PDF is OPENED and a workbook is SAVED — the
  * distinction `lib/download.ts` records, applied here rather than
- * re-argued. */
+ * re-argued. Both carry the chosen columns, and the division report carries
+ * the chosen division, so the file is the report on the screen. */
 function ReportDocuments({
   api,
   organisationId,
   report,
   workId,
+  division,
+  columns,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly report: WorksAnalysisReport;
   readonly workId?: string;
+  readonly division?: string;
+  readonly columns: ReadonlySet<string>;
 }) {
   const { pending, notice, actionError, act } = useAction();
-  const options = workId === undefined ? {} : { workId };
+  const options = {
+    ...(workId === undefined ? {} : { workId }),
+    ...(division === undefined ? {} : { division }),
+    columns: [...columns],
+  };
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3">
@@ -126,36 +522,103 @@ function ReportDocuments({
   );
 }
 
+/** One table, drawn from the columns the operator kept. The leading
+ * identity column is passed separately because it never leaves. */
+function ReportTable<Row>({
+  caption,
+  rows,
+  rowKey,
+  identity,
+  columns,
+  identityTotal,
+  identityWrap,
+}: {
+  readonly caption: string;
+  readonly rows: readonly Row[];
+  readonly rowKey: (row: Row) => string;
+  readonly identity: {
+    readonly header: string;
+    readonly cell: (row: Row) => ReactNode;
+    /** The second, always-present column: a description or a group name. */
+    readonly second?: {
+      readonly header: string;
+      readonly cell: (row: Row) => ReactNode;
+    };
+  };
+  readonly columns: readonly ReportColumn<Row>[];
+  /** The `tfoot` row header, where the table carries a total. */
+  readonly identityTotal?: ReactNode;
+  readonly identityWrap?: boolean;
+}) {
+  return (
+    <DataTable>
+      <caption className="sr-only">{caption}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{identity.header}</th>
+          {identity.second !== undefined && (
+            <th scope="col">{identity.second.header}</th>
+          )}
+          {columns.map((column) => (
+            <th key={column.header} scope="col" className={columnClass(column)}>
+              {column.header}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={rowKey(row)}>
+            <th scope="row" className={identityWrap === true ? wrapCell : undefined}>
+              {identity.cell(row)}
+            </th>
+            {identity.second !== undefined && (
+              <td className={wrapCell}>{identity.second.cell(row)}</td>
+            )}
+            {columns.map((column) => (
+              <td key={column.header} className={columnClass(column)}>
+                {column.cell(row)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+      {identityTotal !== undefined && (
+        <tfoot>
+          <tr>
+            <th scope="row" colSpan={identity.second === undefined ? 1 : 2}>
+              {identityTotal}
+            </th>
+            {columns.map((column) => (
+              <td key={column.header} className={columnClass(column)}>
+                {column.total ?? null}
+              </td>
+            ))}
+          </tr>
+        </tfoot>
+      )}
+    </DataTable>
+  );
+}
+
 /* --- report A: one Work ---------------------------------------------- */
 
-function WorkAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
-  const [works, setWorks] = useState<readonly Work[] | null>(null);
-  const [workId, setWorkId] = useState<string>('');
+function WorkAnalysisCard({
+  api,
+  organisationId,
+  workId,
+  columns,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly workId: string;
+  readonly columns: ReadonlySet<string>;
+}) {
   const [analysis, setAnalysis] = useState<WorkAnalysisResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, retry] = useReload();
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .listWorks(organisationId)
-      .then((loaded) => {
-        if (cancelled) return;
-        setWorks(loaded);
-        // The first Work rather than an empty select: a report screen that
-        // opens showing nothing reads as a report screen with no data.
-        setWorkId((current) => (current === '' ? (loaded[0]?.id ?? '') : current));
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setLoadError(describeRefusal(cause, 'The Work list').message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, organisationId, loadVersion]);
-
-  useEffect(() => {
-    if (workId === '') return;
     let cancelled = false;
     setAnalysis(null);
     setLoadError(null);
@@ -179,49 +642,23 @@ function WorkAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
       <CardHeader>
         <div className="flex flex-col gap-1">
           <h2 className="text-base leading-snug font-medium">Work analysis</h2>
-          <p className="text-sm text-muted-foreground">
-            One Work, item by item: what is sanctioned, what has been supplied and
-            installed, what is still to supply, install and inspect, and what has been
-            billed against it. Every figure is the server’s.
-          </p>
+          {analysis !== null && (
+            <p className="text-sm text-muted-foreground">
+              {analysis.work.workCode} — {analysis.work.title}
+            </p>
+          )}
         </div>
       </CardHeader>
 
-      <Field>
-        <label htmlFor="works-analysis-work">Work</label>
-        <select
-          id="works-analysis-work"
-          value={workId}
-          disabled={works === null}
-          onChange={(event) => {
-            setWorkId(event.target.value);
-          }}
-        >
-          {works === null && <option value="">Loading…</option>}
-          {(works ?? []).map((work) => (
-            <option key={work.id} value={work.id}>
-              {work.workCode} — {work.title}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      {/* Each card names its own retry. Four cards sharing "Try again"
-          would give an operator four identical controls and no way to
-          tell which outage they are answering. */}
+      {/* Each report names its own retry, so an operator answering an
+          outage knows which read they are re-running. */}
       {loadError !== null && (
         <ErrorState onRetry={retry} retryLabel="Retry the Work analysis">
           {loadError}
         </ErrorState>
       )}
 
-      {loadError === null && works !== null && works.length === 0 && (
-        <EmptyState>
-          No Work has been recorded yet. A Work analysis is a report on one contract.
-        </EmptyState>
-      )}
-
-      {loadError === null && workId !== '' && analysis === null && (
+      {loadError === null && analysis === null && (
         <LoadingState label="the Work analysis" rows={6} columns={6} />
       )}
 
@@ -232,10 +669,11 @@ function WorkAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
             organisationId={organisationId}
             report="work"
             workId={analysis.work.id}
+            columns={columns}
           />
           <WorkFacts analysis={analysis} />
-          <WorkQuantityTable analysis={analysis} />
-          <WorkValueTable analysis={analysis} />
+          <WorkQuantityTable analysis={analysis} columns={columns} />
+          <WorkValueTable analysis={analysis} columns={columns} />
           <WorkInspectionTable analysis={analysis} />
           <WorkPaymentTable analysis={analysis} />
         </>
@@ -279,78 +717,76 @@ function WorkFacts({ analysis }: { readonly analysis: WorkAnalysisResponse }) {
   );
 }
 
-function WorkQuantityTable({ analysis }: { readonly analysis: WorkAnalysisResponse }) {
+function WorkQuantityTable({
+  analysis,
+  columns,
+}: {
+  readonly analysis: WorkAnalysisResponse;
+  readonly columns: ReadonlySet<string>;
+}) {
+  const all: readonly ReportColumn<WorkAnalysisItem>[] = [
+    { header: 'Unit', hide: 'md', cell: (item) => item.unitCode },
+    {
+      header: 'Rate',
+      numeric: true,
+      hide: 'lg',
+      cell: (item) => formatRate(item.rate),
+    },
+    {
+      header: 'Sanctioned',
+      numeric: true,
+      hide: 'lg',
+      cell: (item) => item.sanctionedQuantity,
+    },
+    {
+      header: 'Supplied',
+      numeric: true,
+      hide: 'lg',
+      cell: (item) => item.deliveredQuantity,
+    },
+    {
+      header: 'Installed',
+      numeric: true,
+      hide: 'lg',
+      cell: (item) => item.installedQuantity,
+    },
+    {
+      header: 'Pending to supply',
+      numeric: true,
+      cell: (item) => item.pendingSupplyQuantity,
+    },
+    {
+      header: 'Pending to install',
+      numeric: true,
+      cell: (item) => item.pendingInstallQuantity,
+    },
+    {
+      header: 'Supplied, not installed',
+      numeric: true,
+      hide: 'md',
+      cell: (item) => item.suppliedNotInstalledQuantity,
+    },
+    {
+      header: 'Installed above sanction',
+      numeric: true,
+      hide: 'md',
+      cell: (item) => item.installedAboveSanctionedQuantity,
+    },
+  ];
   return (
     <section aria-label="Quantity position">
       <h3 className="m-0 text-sm font-medium">Quantity position</h3>
-      <DataTable>
-        <caption className="sr-only">
-          Quantity position per item: sanctioned, supplied, installed, pending to
-          supply, pending to install, and supplied but not installed
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Item</th>
-            <th scope="col">Description</th>
-            <th className="hidden md:table-cell" scope="col">
-              Unit
-            </th>
-            <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-              Rate
-            </th>
-            <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-              Sanctioned
-            </th>
-            <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-              Supplied
-            </th>
-            <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-              Installed
-            </th>
-            <th className={numericCell} scope="col">
-              Pending to supply
-            </th>
-            <th className={numericCell} scope="col">
-              Pending to install
-            </th>
-            <th className={`${numericCell} hidden md:table-cell`} scope="col">
-              Supplied, not installed
-            </th>
-            <th className={`${numericCell} hidden md:table-cell`} scope="col">
-              Installed above sanction
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {analysis.items.map((item) => (
-            <tr key={item.workItemId}>
-              <th scope="row">{item.itemNumber}</th>
-              <td className={wrapCell}>{item.description}</td>
-              <td className="hidden md:table-cell">{item.unitCode}</td>
-              <td className={`${numericCell} hidden lg:table-cell`}>
-                {formatRate(item.rate)}
-              </td>
-              <td className={`${numericCell} hidden lg:table-cell`}>
-                {item.sanctionedQuantity}
-              </td>
-              <td className={`${numericCell} hidden lg:table-cell`}>
-                {item.deliveredQuantity}
-              </td>
-              <td className={`${numericCell} hidden lg:table-cell`}>
-                {item.installedQuantity}
-              </td>
-              <td className={numericCell}>{item.pendingSupplyQuantity}</td>
-              <td className={numericCell}>{item.pendingInstallQuantity}</td>
-              <td className={`${numericCell} hidden md:table-cell`}>
-                {item.suppliedNotInstalledQuantity}
-              </td>
-              <td className={`${numericCell} hidden md:table-cell`}>
-                {item.installedAboveSanctionedQuantity}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </DataTable>
+      <ReportTable
+        caption="Quantity position per item: sanctioned, supplied, installed, pending to supply, pending to install, and supplied but not installed"
+        rows={analysis.items}
+        rowKey={(item) => item.workItemId}
+        identity={{
+          header: 'Item',
+          cell: (item) => item.itemNumber,
+          second: { header: 'Description', cell: (item) => item.description },
+        }}
+        columns={chosenColumns(all, columns)}
+      />
       {/* No quantity total: this column holds several units, and a sum
           across units is a number no heading repairs. The value table
           below is where the totals belong. */}
@@ -362,99 +798,90 @@ function WorkQuantityTable({ analysis }: { readonly analysis: WorkAnalysisRespon
   );
 }
 
-function WorkValueTable({ analysis }: { readonly analysis: WorkAnalysisResponse }) {
+function WorkValueTable({
+  analysis,
+  columns,
+}: {
+  readonly analysis: WorkAnalysisResponse;
+  readonly columns: ReadonlySet<string>;
+}) {
   const { totals } = analysis;
+  const all: readonly ReportColumn<WorkAnalysisItem>[] = [
+    {
+      header: 'Sanctioned',
+      numeric: true,
+      hide: 'lg',
+      cell: (item) => formatInr(item.sanctionedValue),
+      total: formatInr(totals.sanctionedValue),
+    },
+    {
+      header: 'Supplied',
+      numeric: true,
+      hide: 'lg',
+      cell: (item) => formatInr(item.deliveredValue),
+      total: formatInr(totals.deliveredValue),
+    },
+    {
+      header: 'Installed',
+      numeric: true,
+      hide: 'lg',
+      cell: (item) => formatInr(item.installedValue),
+      total: formatInr(totals.installedValue),
+    },
+    {
+      header: 'Pending to supply',
+      numeric: true,
+      cell: (item) => formatInr(item.pendingSupplyValue),
+      total: <strong>{formatInr(totals.pendingSupplyValue)}</strong>,
+    },
+    {
+      header: 'Pending to install',
+      numeric: true,
+      cell: (item) => formatInr(item.pendingInstallValue),
+      total: <strong>{formatInr(totals.pendingInstallValue)}</strong>,
+    },
+    {
+      header: 'Supplied, not installed',
+      numeric: true,
+      hide: 'md',
+      cell: (item) => formatInr(item.suppliedNotInstalledValue),
+      total: formatInr(totals.suppliedNotInstalledValue),
+    },
+    {
+      header: 'Billed',
+      numeric: true,
+      hide: 'md',
+      cell: (item) => formatInr(item.billedValue),
+      total: formatInr(totals.billedValue),
+    },
+    {
+      header: 'Unbilled executed',
+      numeric: true,
+      // A dash, never a zero: an item resolving through no payment-matrix
+      // row has no percentage to bill at, which is a different answer
+      // from "nothing is owed".
+      cell: (item) =>
+        item.unbilledExecutedValue === null
+          ? '—'
+          : formatInr(item.unbilledExecutedValue),
+      total: <strong>{formatInr(totals.unbilledExecutedValue)}</strong>,
+    },
+  ];
   return (
     <section aria-label="Value position">
       <h3 className="m-0 text-sm font-medium">Value position</h3>
-      <DataTable>
-        <caption className="sr-only">
-          Value position per item: sanctioned, supplied, installed, pending to supply,
-          pending to install, billed, and unbilled executed value
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Item</th>
-            <th scope="col">Description</th>
-            <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-              Sanctioned
-            </th>
-            <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-              Supplied
-            </th>
-            <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-              Installed
-            </th>
-            <th className={numericCell} scope="col">
-              Pending to supply
-            </th>
-            <th className={numericCell} scope="col">
-              Pending to install
-            </th>
-            <th className={`${numericCell} hidden md:table-cell`} scope="col">
-              Billed
-            </th>
-            <th className={numericCell} scope="col">
-              Unbilled executed
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {analysis.items.map((item) => (
-            <tr key={item.workItemId}>
-              <th scope="row">{item.itemNumber}</th>
-              <td className={wrapCell}>{item.description}</td>
-              <td className={`${numericCell} hidden lg:table-cell`}>
-                {formatInr(item.sanctionedValue)}
-              </td>
-              <td className={`${numericCell} hidden lg:table-cell`}>
-                {formatInr(item.deliveredValue)}
-              </td>
-              <td className={`${numericCell} hidden lg:table-cell`}>
-                {formatInr(item.installedValue)}
-              </td>
-              <td className={numericCell}>{formatInr(item.pendingSupplyValue)}</td>
-              <td className={numericCell}>{formatInr(item.pendingInstallValue)}</td>
-              <td className={`${numericCell} hidden md:table-cell`}>
-                {formatInr(item.billedValue)}
-              </td>
-              <td className={numericCell}>
-                {item.unbilledExecutedValue === null
-                  ? '—'
-                  : formatInr(item.unbilledExecutedValue)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <th scope="row" colSpan={2}>
-              Total
-            </th>
-            <td className={`${numericCell} hidden lg:table-cell`}>
-              {formatInr(totals.sanctionedValue)}
-            </td>
-            <td className={`${numericCell} hidden lg:table-cell`}>
-              {formatInr(totals.deliveredValue)}
-            </td>
-            <td className={`${numericCell} hidden lg:table-cell`}>
-              {formatInr(totals.installedValue)}
-            </td>
-            <td className={numericCell}>
-              <strong>{formatInr(totals.pendingSupplyValue)}</strong>
-            </td>
-            <td className={numericCell}>
-              <strong>{formatInr(totals.pendingInstallValue)}</strong>
-            </td>
-            <td className={`${numericCell} hidden md:table-cell`}>
-              {formatInr(totals.billedValue)}
-            </td>
-            <td className={numericCell}>
-              <strong>{formatInr(totals.unbilledExecutedValue)}</strong>
-            </td>
-          </tr>
-        </tfoot>
-      </DataTable>
+      <ReportTable
+        caption="Value position per item: sanctioned, supplied, installed, pending to supply, pending to install, billed, and unbilled executed value"
+        rows={analysis.items}
+        rowKey={(item) => item.workItemId}
+        identity={{
+          header: 'Item',
+          cell: (item) => item.itemNumber,
+          second: { header: 'Description', cell: (item) => item.description },
+        }}
+        columns={chosenColumns(all, columns)}
+        identityTotal="Total"
+      />
     </section>
   );
 }
@@ -661,11 +1088,88 @@ function rateText(low: string, high: string): string {
   return low === high ? formatRate(low) : `${formatRate(low)} – ${formatRate(high)}`;
 }
 
+function pendingColumns(
+  total: CombinedPendingTotals | undefined,
+): readonly ReportColumn<CombinedPendingRow>[] {
+  return [
+    {
+      header: 'Group',
+      hide: 'lg',
+      cell: (row) =>
+        row.groupName ?? (row.canonicalItemId === null ? 'Not mapped' : '—'),
+    },
+    { header: 'Unit', cell: (row) => row.unitCode },
+    {
+      header: 'Rate',
+      numeric: true,
+      hide: 'md',
+      cell: (row) => rateText(row.rateLow, row.rateHigh),
+    },
+    // Never totalled: one Work appears under many rows, so a sum here
+    // would count that Work once per product.
+    { header: 'Works', numeric: true, hide: 'md', cell: (row) => row.workCount },
+    {
+      header: 'Lines',
+      numeric: true,
+      hide: 'lg',
+      cell: (row) => row.lineCount,
+      ...(total === undefined ? {} : { total: String(total.lineCount) }),
+    },
+    {
+      header: 'Sanctioned',
+      numeric: true,
+      hide: 'lg',
+      cell: (row) => row.sanctionedQuantity,
+    },
+    {
+      header: 'Supplied',
+      numeric: true,
+      hide: 'lg',
+      cell: (row) => row.deliveredQuantity,
+    },
+    {
+      header: 'Installed',
+      numeric: true,
+      hide: 'lg',
+      cell: (row) => row.installedQuantity,
+    },
+    {
+      header: 'Pending to supply',
+      numeric: true,
+      cell: (row) => row.pendingSupplyQuantity,
+    },
+    {
+      header: 'Pending supply value',
+      numeric: true,
+      cell: (row) => formatInr(row.pendingSupplyValue),
+      ...(total === undefined
+        ? {}
+        : { total: <strong>{formatInr(total.pendingSupplyValue)}</strong> }),
+    },
+    {
+      header: 'Pending to install',
+      numeric: true,
+      hide: 'md',
+      cell: (row) => row.pendingInstallQuantity,
+    },
+    {
+      header: 'Pending install value',
+      numeric: true,
+      hide: 'md',
+      cell: (row) => formatInr(row.pendingInstallValue),
+      ...(total === undefined
+        ? {}
+        : { total: <strong>{formatInr(total.pendingInstallValue)}</strong> }),
+    },
+  ];
+}
+
 function PendingTable({
   caption,
   rows,
   total,
   empty,
+  columns,
 }: {
   readonly caption: string;
   readonly rows: readonly CombinedPendingRow[];
@@ -673,107 +1177,25 @@ function PendingTable({
    * table whose rows do not add up to the figure under them. */
   readonly total?: CombinedPendingTotals;
   readonly empty: string;
+  readonly columns: ReadonlySet<string>;
 }) {
   if (rows.length === 0) return <EmptyState>{empty}</EmptyState>;
   return (
-    <DataTable>
-      <caption className="sr-only">{caption}</caption>
-      <thead>
-        <tr>
-          <th scope="col">Item</th>
-          <th className="hidden lg:table-cell" scope="col">
-            Group
-          </th>
-          <th scope="col">Unit</th>
-          <th className={`${numericCell} hidden md:table-cell`} scope="col">
-            Rate
-          </th>
-          <th className={`${numericCell} hidden md:table-cell`} scope="col">
-            Works
-          </th>
-          <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-            Sanctioned
-          </th>
-          <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-            Supplied
-          </th>
-          <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-            Installed
-          </th>
-          <th className={numericCell} scope="col">
-            Pending to supply
-          </th>
-          <th className={numericCell} scope="col">
-            Pending supply value
-          </th>
-          <th className={`${numericCell} hidden md:table-cell`} scope="col">
-            Pending to install
-          </th>
-          <th className={`${numericCell} hidden md:table-cell`} scope="col">
-            Pending install value
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={`${row.canonicalItemId ?? row.label}:${row.unitCode}`}>
-            <th className={wrapCell} scope="row">
-              {row.label}
-            </th>
-            <td className="hidden lg:table-cell">
-              {row.groupName ?? (row.canonicalItemId === null ? 'Not mapped' : '—')}
-            </td>
-            <td>{row.unitCode}</td>
-            <td className={`${numericCell} hidden md:table-cell`}>
-              {rateText(row.rateLow, row.rateHigh)}
-            </td>
-            <td className={`${numericCell} hidden md:table-cell`}>{row.workCount}</td>
-            <td className={`${numericCell} hidden lg:table-cell`}>
-              {row.sanctionedQuantity}
-            </td>
-            <td className={`${numericCell} hidden lg:table-cell`}>
-              {row.deliveredQuantity}
-            </td>
-            <td className={`${numericCell} hidden lg:table-cell`}>
-              {row.installedQuantity}
-            </td>
-            <td className={numericCell}>{row.pendingSupplyQuantity}</td>
-            <td className={numericCell}>{formatInr(row.pendingSupplyValue)}</td>
-            <td className={`${numericCell} hidden md:table-cell`}>
-              {row.pendingInstallQuantity}
-            </td>
-            <td className={`${numericCell} hidden md:table-cell`}>
-              {formatInr(row.pendingInstallValue)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-      {total !== undefined && (
-        <tfoot>
-          <tr>
-            {/* The count is a LABELLED fact in the row header rather than a
-                figure under the Works column: one Work appears under many
-                rows, so a sum there would count it once per product. */}
-            <th scope="row" colSpan={3}>
-              Total · {total.rowCount} row(s), {total.lineCount} line(s)
-            </th>
-            <td className={`${numericCell} hidden md:table-cell`} />
-            <td className={`${numericCell} hidden md:table-cell`} />
-            <td className={`${numericCell} hidden lg:table-cell`} />
-            <td className={`${numericCell} hidden lg:table-cell`} />
-            <td className={`${numericCell} hidden lg:table-cell`} />
-            <td className={numericCell} />
-            <td className={numericCell}>
-              <strong>{formatInr(total.pendingSupplyValue)}</strong>
-            </td>
-            <td className={`${numericCell} hidden md:table-cell`} />
-            <td className={`${numericCell} hidden md:table-cell`}>
-              <strong>{formatInr(total.pendingInstallValue)}</strong>
-            </td>
-          </tr>
-        </tfoot>
-      )}
-    </DataTable>
+    <ReportTable
+      caption={caption}
+      rows={rows}
+      rowKey={(row) => `${row.canonicalItemId ?? row.label}:${row.unitCode}`}
+      identity={{ header: 'Item', cell: (row) => row.label }}
+      identityWrap
+      columns={chosenColumns(pendingColumns(total), columns)}
+      {...(total === undefined
+        ? {}
+        : {
+            // The count is a LABELLED fact in the row header rather than a
+            // figure under the Works column, for the reason above.
+            identityTotal: `Total · ${String(total.rowCount)} row(s), ${String(total.lineCount)} line(s)`,
+          })}
+    />
   );
 }
 
@@ -789,7 +1211,19 @@ function GroupingHint() {
   );
 }
 
-function DivisionAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
+function DivisionAnalysisCard({
+  api,
+  organisationId,
+  division,
+  columns,
+  onDivisions,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly division: string | null;
+  readonly columns: ReadonlySet<string>;
+  readonly onDivisions: (codes: readonly string[]) => void;
+}) {
   const [analysis, setAnalysis] = useState<DivisionAnalysisResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, retry] = useReload();
@@ -801,7 +1235,12 @@ function DivisionAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
     api
       .divisionAnalysis(organisationId)
       .then((loaded) => {
-        if (!cancelled) setAnalysis(loaded);
+        if (cancelled) return;
+        setAnalysis(loaded);
+        /* The picker's options come from the report itself: this schema
+           has no division master, and the codes that matter are exactly
+           the ones a Work's consignees produced. */
+        onDivisions(loaded.divisions.map((entry) => entry.divisionCode ?? NO_DIVISION));
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
@@ -811,7 +1250,17 @@ function DivisionAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, loadVersion, onDivisions]);
+
+  /* Narrowed on the response, exactly as `routes/works-analysis.ts`
+     narrows the document: one read groups every division, and the choice
+     is which heading to read. */
+  const shown =
+    division === null
+      ? (analysis?.divisions ?? [])
+      : (analysis?.divisions ?? []).filter(
+          (entry) => (entry.divisionCode ?? NO_DIVISION) === division,
+        );
 
   return (
     <Card className="flex flex-col gap-4">
@@ -819,15 +1268,19 @@ function DivisionAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
         <div className="flex flex-col gap-1">
           <h2 className="text-base leading-snug font-medium">Division analysis</h2>
           <p className="text-sm text-muted-foreground">
-            Pending quantities combined across the active Works of each railway
-            division, so one order can cover a division. A Work’s division is derived
-            from the division codes on its own consignee contacts; a Work whose
-            consignees carry more than one is listed under “no division on record”
-            rather than filed under a guess.
+            A Work’s division is derived from the division codes on its own consignee
+            contacts; a Work whose consignees carry more than one is listed under “no
+            division on record” rather than filed under a guess.
           </p>
         </div>
       </CardHeader>
-      <ReportDocuments api={api} organisationId={organisationId} report="division" />
+      <ReportDocuments
+        api={api}
+        organisationId={organisationId}
+        report="division"
+        columns={columns}
+        {...(division === null ? {} : { division })}
+      />
       <GroupingHint />
       {loadError !== null && (
         <ErrorState onRetry={retry} retryLabel="Retry the division analysis">
@@ -837,35 +1290,37 @@ function DivisionAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
       {loadError === null && analysis === null && (
         <LoadingState label="the division analysis" rows={6} columns={6} />
       )}
-      {analysis?.divisions.length === 0 && (
+      {analysis !== null && shown.length === 0 && (
         <EmptyState>
-          No active Work carries a pending quantity. Everything sanctioned has been
-          supplied and installed.
+          {division === null
+            ? 'No active Work carries a pending quantity. Everything sanctioned has been supplied and installed.'
+            : 'Nothing is pending in that division. Run the report across every division to see where the pending position is.'}
         </EmptyState>
       )}
-      {analysis?.divisions.map((division) => (
+      {shown.map((entry) => (
         <section
-          key={division.divisionCode ?? 'none'}
+          key={entry.divisionCode ?? 'none'}
           aria-label={
-            division.divisionCode === null
+            entry.divisionCode === null
               ? 'No division on record'
-              : `Division ${division.divisionCode}`
+              : `Division ${entry.divisionCode}`
           }
         >
           <h3 className="m-0 text-sm font-medium">
-            {division.divisionCode === null
+            {entry.divisionCode === null
               ? 'No division on record'
-              : `Division ${division.divisionCode}`}
+              : `Division ${entry.divisionCode}`}
           </h3>
           <p className="m-0 text-sm text-muted-foreground">
-            {division.works.length} Work(s):{' '}
-            {division.works.map((work) => work.workCode).join(', ') || '—'}
+            {entry.works.length} Work(s):{' '}
+            {entry.works.map((work) => work.workCode).join(', ') || '—'}
           </p>
           <PendingTable
-            caption={`Pending quantities combined across the Works of ${division.divisionCode ?? 'no recorded division'}`}
-            rows={division.rows}
-            total={division.totals}
+            caption={`Pending quantities combined across the Works of ${entry.divisionCode ?? 'no recorded division'}`}
+            rows={entry.rows}
+            total={entry.totals}
             empty="Nothing is pending across this division’s Works."
+            columns={columns}
           />
         </section>
       ))}
@@ -873,7 +1328,15 @@ function DivisionAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
   );
 }
 
-function MappedItemAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
+function MappedItemAnalysisCard({
+  api,
+  organisationId,
+  columns,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly columns: ReadonlySet<string>;
+}) {
   const [analysis, setAnalysis] = useState<MappedItemAnalysisResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, retry] = useReload();
@@ -911,7 +1374,12 @@ function MappedItemAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
           </p>
         </div>
       </CardHeader>
-      <ReportDocuments api={api} organisationId={organisationId} report="mapped-item" />
+      <ReportDocuments
+        api={api}
+        organisationId={organisationId}
+        report="mapped-item"
+        columns={columns}
+      />
       <GroupingHint />
       {loadError !== null && (
         <ErrorState onRetry={retry} retryLabel="Retry the item analysis">
@@ -930,6 +1398,7 @@ function MappedItemAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
               rows={mapped}
               total={analysis.mappedTotals}
               empty="No schedule line maps to an item master yet. Master items and their alternative wordings are recorded on the Masters screen."
+              columns={columns}
             />
           </section>
           <section aria-label="Not mapped to an item master">
@@ -944,6 +1413,7 @@ function MappedItemAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
               rows={unmapped}
               total={analysis.unmappedTotals}
               empty="Every live schedule line maps to an item master."
+              columns={columns}
             />
           </section>
         </>
@@ -963,8 +1433,13 @@ function MappedItemAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
  * control the Masters screen uses — so a confirmed group persists exactly
  * where every other mapping lives, and starts combining in the report above
  * on the next load. There is no third state.
+ *
+ * It renders UNDER the item analysis and only when that report has been
+ * run, because a proposal is only actionable beside the unmapped rows it
+ * would combine. On the old stacked screen it was a permanent fourth card
+ * that read every schedule line on every visit to Reports.
  */
-function ItemGroupProposalsCard({ api, organisationId }: WorksAnalysisProps) {
+function ItemGroupProposalsCard({ api, organisationId }: WorksAnalysisPropsBase) {
   const [proposals, setProposals] = useState<ItemGroupProposalsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, retry] = useReload();
@@ -1060,6 +1535,11 @@ function ItemGroupProposalsCard({ api, organisationId }: WorksAnalysisProps) {
       ))}
     </Card>
   );
+}
+
+interface WorksAnalysisPropsBase {
+  readonly api: ApiClient;
+  readonly organisationId: string;
 }
 
 function ProposalForm({

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Download } from 'lucide-react';
-import type { MisSummaryResponse } from '@auto-mb/contracts';
+import { Download, ExternalLink } from 'lucide-react';
+import type { MisSummaryResponse, WorksAnalysisReport } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
+import { cn } from '../lib/cn.js';
 import { formatCompactInr, formatInr, todayIso } from '../format.js';
 import { downloadFile } from '../lib/download.js';
 import { describeRefusal } from '../lib/load-failure.js';
+import { navigateOnClick, type MisTab } from '../lib/workspace-routes.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
@@ -17,13 +19,32 @@ import { DataTable, numericCell } from '../ui/table.js';
 import { WorksAnalysis } from './WorksAnalysis.js';
 
 /**
- * The management summary (migration 0095).
+ * Reports: four registers behind one address.
  *
- * Three registers the landing dashboard does not carry, and deliberately
- * only three — `packages/contracts/src/mis.ts` argues which and why. It is
- * a separate screen rather than a fourth panel on the Dashboard because
- * these are month-end roll-ups over the whole invoice and payroll history,
- * and the Dashboard is the screen every session opens with.
+ * This screen was one enormous scroll — the month-end tiles, three
+ * month-by-month registers, the Tally export and three full portfolio
+ * analyses, every one of them loaded on every visit. Four things were
+ * wrong with that and only one of them was the length: an operator who
+ * came for the receivables ageing paid for the whole schedule of every
+ * active Work, an operator who came for one Work's position had to scroll
+ * past the organisation's tax position to find it, and neither could link
+ * anybody to what they were looking at.
+ *
+ * So it is TABBED, and the tab is an address (`lib/workspace-routes.ts`):
+ *
+ *   * **Work analysis** — the selector-driven single report. Reads
+ *     nothing until Run; see `views/WorksAnalysis.tsx`.
+ *   * **Accounts** — output tax by month and receivables ageing, with the
+ *     month-end tiles above them.
+ *   * **Payroll** — payroll cost by month.
+ *   * **Tally** — the ways into the two Tally surfaces that already
+ *     exist, and the export.
+ *
+ * The management summary read (`/api/mis/summary`) serves Accounts and
+ * Payroll and is made only on those two tabs. That is the whole point of
+ * the split: `packages/contracts/src/mis.ts` argues these are month-end
+ * roll-ups, and a month-end roll-up should not be the price of opening a
+ * report about one Work.
  *
  * NOTHING ON THIS SCREEN ADDS ANYTHING UP. Every figure is a decimal
  * string summed by PostgreSQL and printed through `formatInr`; the tiles
@@ -31,9 +52,12 @@ import { WorksAnalysis } from './WorksAnalysis.js';
  * which is the rule `views/Receivables.tsx` records for the same reason.
  *
  * The payroll section is ABSENT rather than empty for a member without the
- * payroll authority: the server answers `payrollCost: null`, and the
- * screen says which authority would fill it instead of drawing a table of
- * zeroes that would read as "nobody is paid anything".
+ * payroll authority: the server answers `payrollCost: null`, and the tab
+ * says which authority would fill it instead of drawing a table of zeroes
+ * that would read as "nobody is paid anything". The Accounts tab carries
+ * the summary's own refusal for an assigned-scope member, unchanged — the
+ * works-analysis reports beside it NARROW instead, which is the
+ * distinction `docs/UX.md` § 38 argues.
  */
 
 interface MisProps {
@@ -41,6 +65,16 @@ interface MisProps {
   readonly organisationId: string;
   /** Owner-only, and so is the Tally export it gates. */
   readonly isOwner: boolean;
+  readonly tab: MisTab;
+  /** The works-analysis report that has been run, from the address. */
+  readonly report: WorksAnalysisReport | null;
+  readonly selection: string | null;
+  readonly onOpenTab: (tab: MisTab) => void;
+  readonly onRunReport: (report: WorksAnalysisReport, selection: string | null) => void;
+  /** Where the Tally tab's two doors lead. Real hrefs, so a middle click
+   * opens them in a tab exactly as the address promises. */
+  readonly onOpenTallyCensus: () => void;
+  readonly onOpenHistoricalInvoices: () => void;
 }
 
 const AGEING_LABELS: Record<string, string> = {
@@ -50,6 +84,13 @@ const AGEING_LABELS: Record<string, string> = {
   '61-90': '61–90 days',
   '90+': 'Over 90 days',
 };
+
+const TABS: readonly (readonly [MisTab, string])[] = [
+  ['analysis', 'Work analysis'],
+  ['accounts', 'Accounts'],
+  ['payroll', 'Payroll'],
+  ['tally', 'Tally'],
+];
 
 /** The month key as a reader's month. Built from the string rather than
  * through a `Date`, because `'2026-05'` parsed as a date is midnight UTC
@@ -93,14 +134,30 @@ export function financialYearStart(today: string): string {
   return `${String(month < 4 ? year - 1 : year)}-04-01`;
 }
 
-export function Mis({ api, organisationId, isOwner }: MisProps) {
+export function Mis({
+  api,
+  organisationId,
+  isOwner,
+  tab,
+  report,
+  selection,
+  onOpenTab,
+  onRunReport,
+  onOpenTallyCensus,
+  onOpenHistoricalInvoices,
+}: MisProps) {
   const [summary, setSummary] = useState<MisSummaryResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryable, setRetryable] = useState(true);
   const [loadVersion, retry] = useReload();
-  const { pending, notice, actionError, act } = useAction();
+
+  /* The month-end read is made on the two tabs that show it and nowhere
+     else. Before this it ran on every arrival at Reports, including the
+     arrivals that only wanted a Work's pending position. */
+  const needsSummary = tab === 'accounts' || tab === 'payroll';
 
   useEffect(() => {
+    if (!needsSummary) return;
     let cancelled = false;
     setSummary(null);
     setLoadError(null);
@@ -118,52 +175,115 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, loadVersion, needsSummary]);
 
-  const header = (
-    <PageHeader
-      className="mb-0"
-      eyebrow="Administration"
-      title="Reports"
-      titleId="mis-title"
-      description="Output tax, receivables ageing and payroll cost, month by month, across the whole organisation."
-    />
-  );
+  /* The summary's states, rendered by both tabs that read it. A refusal is
+     a wall rather than an outage — an assigned-scope member is told which
+     authority opens it — so it prints as a persistent alert with no retry,
+     exactly as it did on the stacked screen. */
+  const summaryState =
+    loadError !== null ? (
+      retryable ? (
+        <ErrorState onRetry={retry} retryLabel="Retry the summary">
+          {loadError}
+        </ErrorState>
+      ) : (
+        <p role="alert" className="m-0 text-sm font-medium text-destructive">
+          {loadError}
+        </p>
+      )
+    ) : summary === null ? (
+      <LoadingState label="the management summary" rows={6} columns={4} />
+    ) : null;
 
-  /* The works-analysis reports are their own reads with their own
-     authority, so they render whatever the management summary did.
-     Before this, an assigned-scope member — refused the summary outright —
-     reached a blank Reports screen, and the report that answers "what is
-     still to supply on my Works" is exactly the one they can be served. */
-  const analysis = <WorksAnalysis api={api} organisationId={organisationId} />;
+  return (
+    <section aria-labelledby="mis-title" className="flex flex-col gap-5">
+      <PageHeader
+        className="mb-0"
+        eyebrow="Administration"
+        title="Reports"
+        titleId="mis-title"
+        description="One report at a time: a Work’s position, the month-end registers, and the Tally handover."
+      />
 
-  if (loadError !== null) {
-    return (
-      <section aria-labelledby="mis-title" className="flex flex-col gap-5">
-        {header}
-        {retryable ? (
-          <ErrorState onRetry={retry} retryLabel="Retry the summary">
-            {loadError}
-          </ErrorState>
-        ) : (
-          <p role="alert" className="m-0 text-sm font-medium text-destructive">
-            {loadError}
-          </p>
+      {/* The Work page's own section rail (`views/WorkDetail.tsx`): a 44px
+          underline tab on a horizontally scrollable rule, weight rather
+          than colour carrying the active state. Sticky under the shell
+          header, and it raises `--sticky-inset` for the panel below so a
+          table's pinned heading stacks under the tabs instead of behind
+          them — the reservation `ui/schedule-section.tsx` established. */}
+      <nav
+        className="sticky top-[var(--header-h)] z-2 -mt-1 flex max-w-full items-center gap-1 overflow-x-auto border-b border-border bg-background"
+        aria-label="Report sections"
+      >
+        {TABS.map(([key, label]) => {
+          const current = tab === key;
+          return (
+            <a
+              key={key}
+              href={`#/reports${key === 'analysis' ? '' : `/${key}`}`}
+              className={cn(
+                '-mb-px inline-flex h-11 shrink-0 items-center border-b-2 border-transparent px-3',
+                'text-sm whitespace-nowrap no-underline transition-colors',
+                current
+                  ? 'border-primary font-medium text-foreground'
+                  : 'font-normal text-muted-foreground hover:text-foreground',
+              )}
+              aria-current={current ? 'page' : undefined}
+              onClick={navigateOnClick(() => {
+                onOpenTab(key);
+              })}
+            >
+              {label}
+            </a>
+          );
+        })}
+      </nav>
+
+      <div
+        className="flex flex-col gap-5"
+        style={
+          {
+            '--sticky-inset': 'calc(var(--header-h) + var(--reports-tabs-h))',
+          } as React.CSSProperties
+        }
+      >
+        {tab === 'analysis' && (
+          <WorksAnalysis
+            api={api}
+            organisationId={organisationId}
+            runReport={report}
+            runSelection={selection}
+            onRun={onRunReport}
+          />
         )}
-        {analysis}
-      </section>
-    );
-  }
 
-  if (summary === null) {
-    return (
-      <section aria-labelledby="mis-title" className="flex flex-col gap-5">
-        {header}
-        <LoadingState label="the management summary" rows={6} columns={4} />
-        {analysis}
-      </section>
-    );
-  }
+        {tab === 'accounts' && <AccountsTab summary={summary} state={summaryState} />}
+
+        {tab === 'payroll' && <PayrollTab summary={summary} state={summaryState} />}
+
+        {tab === 'tally' && (
+          <TallyTab
+            api={api}
+            organisationId={organisationId}
+            isOwner={isOwner}
+            onOpenCensus={onOpenTallyCensus}
+            onOpenHistoricalInvoices={onOpenHistoricalInvoices}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AccountsTab({
+  summary,
+  state,
+}: {
+  readonly summary: MisSummaryResponse | null;
+  readonly state: React.ReactNode;
+}) {
+  if (summary === null) return <>{state}</>;
 
   const latest = summary.outputTax[0];
   const overdue = summary.receivablesAgeing.find((bucket) => bucket.bucket === '90+');
@@ -173,12 +293,7 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
   );
 
   return (
-    <section aria-labelledby="mis-title" className="flex flex-col gap-5">
-      {header}
-
-      {notice !== null && <FormNotice>{notice}</FormNotice>}
-      {actionError !== null && <FormError>{actionError}</FormError>}
-
+    <>
       {/* The hairline tile grid the mock's dashboard uses. Every figure
           here is one the server sent; nothing is summed on this side. */}
       <section
@@ -339,67 +454,153 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
           </tbody>
         </DataTable>
       </Card>
+    </>
+  );
+}
 
+function PayrollTab({
+  summary,
+  state,
+}: {
+  readonly summary: MisSummaryResponse | null;
+  readonly state: React.ReactNode;
+}) {
+  if (summary === null) return <>{state}</>;
+  return (
+    <Card className="flex flex-col gap-4">
+      <CardHeader>
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base leading-snug font-medium">Payroll cost</h2>
+          <p className="text-sm text-muted-foreground">
+            Finalized runs only, by the month they pay for.
+          </p>
+        </div>
+      </CardHeader>
+      {summary.payrollCost === null ? (
+        <p className="m-0 text-sm text-muted-foreground">
+          Your membership does not carry the payroll authority, which is what this
+          section reads. The rest of this page is unaffected; an owner grants the
+          authority on the Members screen.
+        </p>
+      ) : summary.payrollCost.length === 0 ? (
+        <EmptyState>
+          No payroll run has been finalized yet. A run is prepared and finalized from
+          the Employees register.
+        </EmptyState>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">
+            Payroll cost by month with runs, headcount, gross pay, deductions and net
+            pay
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Month</th>
+              <th scope="col" className={numericCell}>
+                Runs
+              </th>
+              <th scope="col" className={numericCell}>
+                Employees
+              </th>
+              <th scope="col" className={numericCell}>
+                Gross
+              </th>
+              <th scope="col" className={numericCell}>
+                Deductions
+              </th>
+              <th scope="col" className={numericCell}>
+                Net paid
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.payrollCost.map((month) => (
+              <tr key={month.month}>
+                <th scope="row">{monthLabel(month.month)}</th>
+                <td className={numericCell}>{month.runCount}</td>
+                <td className={numericCell}>{month.headcount}</td>
+                <td className={numericCell}>{formatInr(month.grossPay)}</td>
+                <td className={numericCell}>{formatInr(month.deductions)}</td>
+                <td className={numericCell}>{formatInr(month.netPay)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * The Tally tab: the doors, not a rebuild.
+ *
+ * Two Tally surfaces already exist and each is where its own work
+ * belongs — the ledger census is a register of somebody else's masters
+ * (`views/TallyMasters.tsx`, § 37) and the voucher import sits on the
+ * billing history it reconciles (`views/HistoricalInvoices.tsx`, § 39).
+ * Neither is moved or embedded: they are LINKED, because the alternative
+ * is two screens in two places disagreeing about the same rows.
+ */
+function TallyTab({
+  api,
+  organisationId,
+  isOwner,
+  onOpenCensus,
+  onOpenHistoricalInvoices,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly isOwner: boolean;
+  readonly onOpenCensus: () => void;
+  readonly onOpenHistoricalInvoices: () => void;
+}) {
+  const { pending, notice, actionError, act } = useAction();
+  return (
+    <>
       <Card className="flex flex-col gap-4">
         <CardHeader>
           <div className="flex flex-col gap-1">
-            <h2 className="text-base leading-snug font-medium">Payroll cost</h2>
+            <h2 className="text-base leading-snug font-medium">Tally surfaces</h2>
             <p className="text-sm text-muted-foreground">
-              Finalized runs only, by the month they pay for.
+              What this application and TallyPrime each hold, and the two places they
+              meet. Both open in their own screens — nothing here is a second copy of
+              them.
             </p>
           </div>
         </CardHeader>
-        {summary.payrollCost === null ? (
-          <p className="m-0 text-sm text-muted-foreground">
-            Your membership does not carry the payroll authority, which is what this
-            section reads. The rest of this page is unaffected; an owner grants the
-            authority on the Members screen.
-          </p>
-        ) : summary.payrollCost.length === 0 ? (
-          <EmptyState>
-            No payroll run has been finalized yet. A run is prepared and finalized from
-            the Employees register.
-          </EmptyState>
-        ) : (
-          <DataTable>
-            <caption className="sr-only">
-              Payroll cost by month with runs, headcount, gross pay, deductions and net
-              pay
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Month</th>
-                <th scope="col" className={numericCell}>
-                  Runs
-                </th>
-                <th scope="col" className={numericCell}>
-                  Employees
-                </th>
-                <th scope="col" className={numericCell}>
-                  Gross
-                </th>
-                <th scope="col" className={numericCell}>
-                  Deductions
-                </th>
-                <th scope="col" className={numericCell}>
-                  Net paid
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.payrollCost.map((month) => (
-                <tr key={month.month}>
-                  <th scope="row">{monthLabel(month.month)}</th>
-                  <td className={numericCell}>{month.runCount}</td>
-                  <td className={numericCell}>{month.headcount}</td>
-                  <td className={numericCell}>{formatInr(month.grossPay)}</td>
-                  <td className={numericCell}>{formatInr(month.deductions)}</td>
-                  <td className={numericCell}>{formatInr(month.netPay)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
-        )}
+        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+          <li className="flex flex-col gap-1">
+            <a
+              href="#/tally-masters"
+              className="inline-flex w-fit items-center gap-1.5 text-sm font-medium"
+              onClick={navigateOnClick(onOpenCensus)}
+            >
+              Tally ledger census
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+            </a>
+            <span className="text-sm text-muted-foreground">
+              This organisation’s chart of accounts as TallyPrime holds it, imported
+              from the company’s own masters.
+            </span>
+          </li>
+          <li className="flex flex-col gap-1">
+            <a
+              href="#/historical-invoices"
+              className="inline-flex w-fit items-center gap-1.5 text-sm font-medium"
+              onClick={navigateOnClick(onOpenHistoricalInvoices)}
+            >
+              Tally voucher import
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+            </a>
+            <span className="text-sm text-muted-foreground">
+              Sales vouchers imported from TallyPrime, on the billing-history register
+              they reconcile against.
+            </span>
+          </li>
+        </ul>
+        <p className="m-0 text-sm text-muted-foreground">
+          The accountant’s export pack lands on this tab when that wave ships.
+        </p>
       </Card>
 
       {isOwner && (
@@ -419,6 +620,8 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
               </p>
             </div>
           </CardHeader>
+          {notice !== null && <FormNotice>{notice}</FormNotice>}
+          {actionError !== null && <FormError>{actionError}</FormError>}
           <form
             className="flex flex-wrap items-end gap-3"
             onSubmit={(event) => {
@@ -459,8 +662,6 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
           </form>
         </Card>
       )}
-
-      {analysis}
-    </section>
+    </>
   );
 }

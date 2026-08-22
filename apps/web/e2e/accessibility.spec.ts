@@ -2290,12 +2290,16 @@ test('the audit register and the management summary pass the axe scan', async ({
   await expectNoAxeViolations(page, 'audit event detail');
   await page.keyboard.press('Escape');
 
-  /* The management summary: three dense numeric tables and a tile row.
-     Every figure is monospace and right-aligned, and the ageing table
-     always draws all five bands — including the zero ones, which is the
-     contrast state a table of only populated rows would never reach. */
-  await page.goto('/#/reports');
-  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  /* The month-end registers, now behind their own tabs. Two dense numeric
+     tables and a tile row on Accounts; the ageing table always draws all
+     five bands — including the zero ones, which is the contrast state a
+     table of only populated rows would never reach — and the payroll
+     register is its own arrival.
+
+     Scanned per TAB rather than once for the screen: each tab swaps the
+     whole panel, so a contrast or labelling fault on one is invisible
+     from any other. */
+  await page.goto('/#/reports/accounts');
   await expect(
     page.getByRole('heading', { name: 'Output tax by month' }),
   ).toBeVisible();
@@ -2303,7 +2307,22 @@ test('the audit register and the management summary pass the axe scan', async ({
   await expect(
     page.getByRole('rowheader', { name: 'Over 90 days', exact: true }),
   ).toBeVisible();
-  await expectNoAxeViolations(page, 'management summary');
+  await expectNoAxeViolations(page, 'reports — accounts');
+
+  // The tab strip is real links, so this is a navigation and not a
+  // repaint: the address changes and Back would come back here.
+  await page
+    .getByRole('navigation', { name: 'Report sections' })
+    .getByRole('link', { name: 'Payroll' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Payroll cost' })).toBeVisible();
+  await expectNoAxeViolations(page, 'reports — payroll');
+
+  await page.goto('/#/reports/tally');
+  await expect(page.getByRole('heading', { name: 'Tally surfaces' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Tally ledger census/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Export Tally XML/ })).toBeVisible();
+  await expectNoAxeViolations(page, 'reports — tally');
 });
 
 test('the works-analysis reports pass the axe scan', async ({ page }) => {
@@ -2312,6 +2331,7 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
      empty works register by default — right for every other screen, and
      wrong for the one screen whose first control is a Work selector, so it
      is overridden here rather than for everybody. */
+  const workId = '5b6c1d2e-3f40-4a51-8b62-7c8d9e0f1a2b';
   await page.route('**/api/works', (route) =>
     route.fulfill({
       status: 200,
@@ -2319,7 +2339,7 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
       body: JSON.stringify({
         works: [
           {
-            id: '5b6c1d2e-3f40-4a51-8b62-7c8d9e0f1a2b',
+            id: workId,
             workCode: 'SIG-2026-11',
             title: 'Signalling and telecom at Alpha yard',
           },
@@ -2327,10 +2347,21 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
       }),
     }),
   );
-  await page.goto('/#/reports');
 
-  /* Five dense numeric tables and a form, all on one screen, and every one
-     of them a place where meaning can come to rest on presentation alone:
+  /* The selector, before anything has been run: a report-type select, the
+     Work picker, a row of column chips and the Run control. It is scanned
+     on its own because it is the state the screen OPENS in, and because
+     the chips are `aria-pressed` toggles whose two states have to be
+     distinguishable without colour. */
+  await page.goto('/#/reports');
+  await expect(page.getByRole('combobox', { name: 'Report type' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Columns to include' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Run report' })).toBeVisible();
+  await expectNoAxeViolations(page, 'reports — report picker');
+
+  /* One report at a time from here, each at its own address, and every
+     one of them a place where meaning can come to rest on presentation
+     alone:
 
      a DASH stands for "not knowable" in three different columns — an item
      with no payment-matrix row, a bill with no railway figure yet, an item
@@ -2348,6 +2379,7 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
      and the proposal form is a form — three inputs, a submit, and a
      warning that appears only when the members disagree about their unit,
      which is the one control on this screen that writes anything. */
+  await page.goto(`/#/reports/analysis/work/${workId}`);
   await expect(page.getByRole('heading', { name: 'Work analysis' })).toBeVisible();
   // A/3 heads a row in both the quantity and the value table, which is the
   // point of the two tables; the first is enough to prove the load.
@@ -2358,6 +2390,7 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Payment position' })).toBeVisible();
   await expectNoAxeViolations(page, 'work analysis');
 
+  await page.goto('/#/reports/analysis/division');
   await expect(page.getByRole('heading', { name: 'Division analysis' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Division 100' })).toBeVisible();
   // The ambiguous group: a Work whose consignees name two divisions is
@@ -2367,18 +2400,39 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
   ).toBeVisible();
   await expectNoAxeViolations(page, 'division analysis');
 
+  // The picker narrows to one heading, and the address follows it. A
+  // division with nothing pending would say so rather than showing the
+  // portfolio again.
+  await page.goto('/#/reports/analysis/division/100');
+  await expect(page.getByRole('heading', { name: 'Division 100' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'No division on record' }),
+  ).toBeHidden();
+  await expectNoAxeViolations(page, 'division analysis — one division');
+
+  /* The item analysis, and the grouping proposals under it: they are
+     reachable from this result and from nowhere else, because a proposal
+     is only actionable beside the unmapped rows it would combine. */
+  await page.goto('/#/reports/analysis/mapped-item');
   await expect(page.getByRole('heading', { name: 'Item analysis' })).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Not mapped to an item master' }),
   ).toBeVisible();
-  await expectNoAxeViolations(page, 'item analysis');
-
   await expect(
     page.getByRole('heading', { name: 'Proposed item groups' }),
   ).toBeVisible();
   await expect(page.getByText('units differ: m, kg')).toBeVisible();
   await expect(page.getByLabel('Item name').first()).toBeVisible();
-  await expectNoAxeViolations(page, 'item group proposals');
+  await expectNoAxeViolations(page, 'item analysis and its proposals');
+
+  /* A column left out leaves the table. The chip is the operator's own
+     choice of what the report carries, and the same set travels into the
+     PDF and the workbook. */
+  const table = page.getByRole('table', { name: /Pending quantities combined per/ });
+  await expect(table.getByRole('columnheader', { name: 'Rate' })).toBeVisible();
+  await page.getByRole('button', { name: 'Rate', exact: true }).click();
+  await expect(table.getByRole('columnheader', { name: 'Rate' })).toBeHidden();
+  await expectNoAxeViolations(page, 'item analysis — a column left out');
 });
 
 test('the signing kiosk settings pass the axe scan', async ({ page }) => {

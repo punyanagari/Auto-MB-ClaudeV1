@@ -282,8 +282,11 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'members' };
     case 'audit':
       return { name: 'audit' };
+    // The rail opens Reports on its first tab with nothing run: the
+    // portfolio reads are the heaviest in the product and the screen asks
+    // which one before making any of them.
     case 'mis':
-      return { name: 'mis' };
+      return { name: 'mis', tab: 'analysis', report: null, selection: null };
     case 'settings':
       return { name: 'settings' };
   }

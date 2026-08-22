@@ -1438,6 +1438,68 @@ describe('the documents', () => {
     expect(extra.json<{ code: string }>().code).toBe('WORK_NOT_APPLICABLE');
   });
 
+  it('carries the operator’s chosen columns into the workbook', async () => {
+    // docs/UX.md § 38: the chips on the screen are the columns the FILE
+    // carries, because a report is a document somebody hands over and one
+    // showing columns the screen never did is a different document.
+    const response = await authed(owner, {
+      method: 'GET',
+      url:
+        `/api/reports/analysis/work/report.xlsx?workId=${ids.work1}` +
+        '&columns=Unit,Pending%20to%20supply',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const flat = readXlsxRows(response.rawPayload).map((row) => row.cells.join('|'));
+    const heading = flat.find((line) => line.startsWith('Item|Description|'));
+    expect(heading).toBeDefined();
+    expect(heading).toContain('Pending to supply');
+    // A column the operator left out is gone from the headings, and the
+    // identity columns are there whatever was asked for.
+    expect(heading).not.toContain('|Rate|');
+    expect(heading?.startsWith('Item|Description|')).toBe(true);
+  });
+
+  it('narrows the division workbook to the heading on the screen', async () => {
+    const every = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/analysis/division/report.xlsx',
+      organisationId,
+    });
+    // A section heading, not the document title or a total row: those
+    // also begin with the word.
+    const sectionHeading = /^Division [0-9]+$/;
+    const everyFlat = readXlsxRows(every.rawPayload).map((row) => row.cells.join('|'));
+    expect(
+      everyFlat.filter((line) => sectionHeading.test(line)).length,
+    ).toBeGreaterThan(0);
+
+    const one = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/analysis/division/report.xlsx?division=100',
+      organisationId,
+    });
+    expect(one.statusCode, one.body).toBe(200);
+    const oneFlat = readXlsxRows(one.rawPayload).map((row) => row.cells.join('|'));
+    expect(oneFlat.filter((line) => sectionHeading.test(line))).toEqual([
+      'Division 100',
+    ]);
+    // The narrowed file must not keep the portfolio total under one
+    // division's rows: a total the rows do not add to is the arithmetic
+    // error a reader cannot catch by looking.
+    expect(oneFlat.some((line) => line.startsWith('No division on record'))).toBe(
+      false,
+    );
+
+    const wrong = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/analysis/mapped-item/report.xlsx?division=100',
+      organisationId,
+    });
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json<{ code: string }>().code).toBe('DIVISION_NOT_APPLICABLE');
+  });
+
   it('refuses an unknown report name at the schema, before the tenant transaction', async () => {
     const response = await authed(owner, {
       method: 'GET',

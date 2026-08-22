@@ -152,10 +152,41 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * file proves is not in the initial payload — and no dependency was
  * added.
  *
+ * RAISED TO 119,800 by the Reports restructure (docs/UX.md § 38, owner
+ * ruling of 2026-08-22). What crossed the line is ROUTING again, which is
+ * the one kind of growth this chunk exists to carry: the Reports screen
+ * went from one address to eight — four tabs, and the works-analysis
+ * report plus its Work or division inside the analysis tab — so
+ * `lib/workspace-routes.ts` gained a serialiser case and a parser for
+ * them. Whose half is whose, on the convention above:
+ *
+ *   119,250  the line the works-analysis reports left
+ *   119,628  measured on this branch before merging, so the restructure
+ *            itself costs about 380 bytes — eight addresses where there
+ *            was one
+ *   119,450  the line the dashboard redesign left while this branch was
+ *            in flight
+ *   119,760  measured after merging it, which this raise has to hold
+ *
+ * The near miss worth recording, because the next person will reach for
+ * it: the parser needs the three report names, and importing
+ * `WORKS_ANALYSIS_REPORTS` from `@auto-mb/contracts` to get them measured
+ * +44 kB gzip. That barrel is every TypeBox schema in the product, and
+ * one runtime import from it drags the whole set into the chunk that
+ * decides where to go. The names are written out in the parser instead —
+ * a type import, which is erased — and `test/workspace-routes.test.ts`
+ * holds the copy to the contract, exactly as it does for the Work tabs.
+ *
+ * The screen itself is NOT in the initial payload: it is `views/Mis.tsx`,
+ * which has a chunk of its own, and the second assertion in this file
+ * proves all fifty-two views still do. No dependency was added, and the
+ * restructure makes the screen READ less — the three portfolio reports
+ * now wait for a Run instead of firing on every arrival.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_450;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_800;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

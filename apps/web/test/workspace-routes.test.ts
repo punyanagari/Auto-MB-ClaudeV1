@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { WORKS_ANALYSIS_REPORTS } from '@auto-mb/contracts';
 import {
   challanHash,
   challansHash,
@@ -7,6 +8,7 @@ import {
   parseWorkspaceHash,
   workHash,
   workspaceHashOf,
+  WORKS_ANALYSIS_REPORT_NAMES,
   WORK_TAB_NAMES,
   type WorkspaceRoute,
 } from '../src/lib/workspace-routes.js';
@@ -76,7 +78,15 @@ const EVERY_VIEW_KIND: readonly WorkspaceRoute[] = [
   { view: { name: 'signing' } },
   { view: { name: 'notifications' } },
   { view: { name: 'audit' } },
-  { view: { name: 'mis' } },
+  { view: { name: 'mis', tab: 'analysis', report: null, selection: null } },
+  { view: { name: 'mis', tab: 'accounts', report: null, selection: null } },
+  { view: { name: 'mis', tab: 'payroll', report: null, selection: null } },
+  { view: { name: 'mis', tab: 'tally', report: null, selection: null } },
+  { view: { name: 'mis', tab: 'analysis', report: 'work', selection: WORK_ID } },
+  { view: { name: 'mis', tab: 'analysis', report: 'division', selection: null } },
+  { view: { name: 'mis', tab: 'analysis', report: 'division', selection: '100' } },
+  { view: { name: 'mis', tab: 'analysis', report: 'division', selection: 'none' } },
+  { view: { name: 'mis', tab: 'analysis', report: 'mapped-item', selection: null } },
   { view: { name: 'settings' } },
 ];
 
@@ -104,6 +114,18 @@ describe('workspace hash routes', () => {
      nothing else in the suite would notice. */
   it('parses exactly the tabs the Work page renders', () => {
     expect([...WORK_TAB_NAMES].sort()).toEqual([...WORK_TABS].sort());
+  });
+
+  /* The same duplication for the same reason, one layer out: the parser
+     writes the three report names rather than importing them, because one
+     runtime import from the contracts barrel puts every TypeBox schema in
+     the product into the initial chunk — measured at +44 kB gzip, over a
+     ratchet of 119 kB (`scripts/check-bundle-size.mjs`). A test file pays
+     no such price, so this is where the two lists are held together. */
+  it('parses exactly the reports the contract defines', () => {
+    expect([...WORKS_ANALYSIS_REPORT_NAMES].sort()).toEqual(
+      [...WORKS_ANALYSIS_REPORTS].sort(),
+    );
   });
 
   it('treats the empty and root fragments as the Dashboard', () => {
@@ -180,6 +202,44 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('#/challans/delivery/not-a-uuid')).toBeNull();
     expect(parseWorkspaceHash(`#/challans/delivery/${WORK_ID}/extra`)).toBeNull();
     expect(parseWorkspaceHash('#/issue-challans/extra')).toBeNull();
+  });
+
+  /* The Reports screen. Its whole state is its address — the tab, the
+     report that has been RUN, and what that report is about — because a
+     configured report is worth linking to and none of these reads should
+     happen on an arrival that did not ask for them. */
+  it('addresses each Reports tab, and the bare address runs nothing', () => {
+    expect(parseWorkspaceHash('#/reports')).toEqual({
+      view: { name: 'mis', tab: 'analysis', report: null, selection: null },
+    });
+    expect(parseWorkspaceHash('#/reports/accounts')).toEqual({
+      view: { name: 'mis', tab: 'accounts', report: null, selection: null },
+    });
+    expect(parseWorkspaceHash('#/reports/tally')).toEqual({
+      view: { name: 'mis', tab: 'tally', report: null, selection: null },
+    });
+    expect(parseWorkspaceHash(`#/reports/analysis/work/${WORK_ID}`)).toEqual({
+      view: { name: 'mis', tab: 'analysis', report: 'work', selection: WORK_ID },
+    });
+    expect(parseWorkspaceHash('#/reports/analysis/division/100')).toEqual({
+      view: { name: 'mis', tab: 'analysis', report: 'division', selection: '100' },
+    });
+  });
+
+  it('degrades a half-formed Reports fragment to the report picker', () => {
+    const picker = {
+      view: { name: 'mis', tab: 'analysis', report: null, selection: null },
+    };
+    // A Work analysis with no Work named is not a configured report, and
+    // an unknown report name is not one either. Both keep the screen the
+    // operator asked for rather than dropping them on the Dashboard.
+    expect(parseWorkspaceHash('#/reports/analysis/work')).toEqual(picker);
+    expect(parseWorkspaceHash('#/reports/analysis/work/not-a-uuid')).toEqual(picker);
+    expect(parseWorkspaceHash('#/reports/analysis/nonsense')).toEqual(picker);
+    expect(parseWorkspaceHash('#/reports/analysis')).toEqual(picker);
+    // A tab this screen does not have is a fragment nothing can honour.
+    expect(parseWorkspaceHash('#/reports/nonsense')).toBeNull();
+    expect(parseWorkspaceHash('#/reports/accounts/extra')).toBeNull();
   });
 
   it('builds the link helpers views render as hrefs', () => {

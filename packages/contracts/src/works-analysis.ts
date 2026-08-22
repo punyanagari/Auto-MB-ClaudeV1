@@ -520,10 +520,112 @@ export type ItemGroupProposalsResponse = Static<
 export const WORKS_ANALYSIS_REPORTS = ['work', 'division', 'mapped-item'] as const;
 export type WorksAnalysisReport = (typeof WORKS_ANALYSIS_REPORTS)[number];
 
-/** `workId` is required by the `work` report and refused by the other two,
- * which are portfolio-wide and have no Work to be about. */
+/**
+ * The columns an operator may leave out of a report, named by their column
+ * HEADER.
+ *
+ * The header is the one vocabulary the screen, the PDF and the workbook
+ * already share — `works-analysis-document.ts` builds every table from
+ * `{ header }` descriptors and the screen prints the same words in its
+ * `<th>`s — so a chosen column set travels as a list of headings rather
+ * than as a third set of machine names nobody can read in a URL.
+ *
+ * Only the columns listed here can be dropped. The identity columns —
+ * Item, Description, Bill, Agency, Month — are deliberately absent: a
+ * report without the thing each row IS is not a narrower report, it is an
+ * unreadable one. The server enforces that by dropping only headers it
+ * finds in this list.
+ *
+ * `byDefault` is the set an operator ORDERING MATERIAL wants: what is
+ * sanctioned, what has been supplied, and what is still pending. The
+ * execution and billing positions are context for that figure rather than
+ * the figure, so they start off and are one tap away.
+ */
+export interface WorksAnalysisColumn {
+  readonly header: string;
+  readonly byDefault: boolean;
+}
+
+/**
+ * The Work report chips the QUANTITY and VALUE tables only.
+ *
+ * Its inspection and payment tables answer different questions with their
+ * own vocabulary, and a chip row long enough to cover all four would be a
+ * wall of thirty toggles rather than a control. Nothing in those two
+ * tables shares a heading with anything here, so they are never touched.
+ */
+const WORK_COLUMNS: readonly WorksAnalysisColumn[] = [
+  { header: 'Unit', byDefault: true },
+  { header: 'Rate', byDefault: true },
+  { header: 'Sanctioned', byDefault: true },
+  { header: 'Supplied', byDefault: true },
+  { header: 'Installed', byDefault: false },
+  { header: 'Pending to supply', byDefault: true },
+  { header: 'Pending to install', byDefault: true },
+  { header: 'Supplied, not installed', byDefault: false },
+  { header: 'Installed above sanction', byDefault: false },
+  { header: 'Billed', byDefault: false },
+  { header: 'Unbilled executed', byDefault: false },
+];
+
+/** The combined pending table, which the division and item reports both
+ * draw. One list, because they are the same table under two groupings. */
+const PENDING_COLUMN_CHOICES: readonly WorksAnalysisColumn[] = [
+  { header: 'Group', byDefault: true },
+  { header: 'Unit', byDefault: true },
+  { header: 'Rate', byDefault: true },
+  { header: 'Works', byDefault: true },
+  { header: 'Lines', byDefault: false },
+  { header: 'Sanctioned', byDefault: true },
+  { header: 'Supplied', byDefault: true },
+  { header: 'Installed', byDefault: false },
+  { header: 'Pending to supply', byDefault: true },
+  { header: 'Pending supply value', byDefault: true },
+  { header: 'Pending to install', byDefault: true },
+  { header: 'Pending install value', byDefault: true },
+];
+
+export const WORKS_ANALYSIS_COLUMNS: Readonly<
+  Record<WorksAnalysisReport, readonly WorksAnalysisColumn[]>
+> = {
+  work: WORK_COLUMNS,
+  division: PENDING_COLUMN_CHOICES,
+  'mapped-item': PENDING_COLUMN_CHOICES,
+};
+
+/** The headings a report opens with, for the screen's chips and for the
+ * document when the caller names none. */
+export function defaultWorksAnalysisColumns(
+  report: WorksAnalysisReport,
+): readonly string[] {
+  return WORKS_ANALYSIS_COLUMNS[report]
+    .filter((column) => column.byDefault)
+    .map((column) => column.header);
+}
+
+/**
+ * `workId` is required by the `work` report and refused by the other two,
+ * which are portfolio-wide and have no Work to be about.
+ *
+ * `columns` is the operator's chosen headings, comma-separated, and
+ * `division` narrows the division report to one heading. Both exist so the
+ * exported file is the report the operator is looking at: § 19 records
+ * that a REGISTER export deliberately ignores the screen's filters and
+ * says so, and that the exception would be built when an operator asked
+ * for it. This is a report rather than a register, the operator asked, and
+ * a PDF carrying eleven columns of which the screen showed five is a
+ * different document from the one on the screen.
+ *
+ * A heading the report does not carry is ignored rather than refused: the
+ * chip vocabulary is shared, but a stale bookmark naming a retired column
+ * should still produce the report.
+ */
 export const WorksAnalysisDocumentQuerySchema = Type.Object(
-  { workId: Type.Optional(UuidSchema) },
+  {
+    workId: Type.Optional(UuidSchema),
+    columns: Type.Optional(Type.String({ maxLength: 1000 })),
+    division: Type.Optional(Type.String({ maxLength: 50 })),
+  },
   { additionalProperties: false },
 );
 export type WorksAnalysisDocumentQuery = Static<

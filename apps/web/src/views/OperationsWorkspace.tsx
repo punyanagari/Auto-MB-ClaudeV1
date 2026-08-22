@@ -1894,8 +1894,37 @@ export function OperationsWorkspace({
               <AuditTrail api={api} organisationId={organisation.id} />
             )}
 
+            {/* Every part of the Reports screen's state is its address:
+                the tab, the works-analysis report that has been run, and
+                what that report is about. So each control here is a plain
+                navigation rather than a `setState`, and Back retraces the
+                reports the operator ran. */}
             {view.name === 'mis' && (
-              <Mis api={api} organisationId={organisation.id} isOwner={isOwner} />
+              <Mis
+                api={api}
+                organisationId={organisation.id}
+                isOwner={isOwner}
+                tab={view.tab}
+                report={view.report}
+                selection={view.selection}
+                onOpenTab={(tab) => {
+                  navigate({
+                    name: 'mis',
+                    tab,
+                    report: view.report,
+                    selection: view.selection,
+                  });
+                }}
+                onRunReport={(report, selection) => {
+                  navigate({ name: 'mis', tab: 'analysis', report, selection });
+                }}
+                onOpenTallyCensus={() => {
+                  navigate({ name: 'tally-masters' });
+                }}
+                onOpenHistoricalInvoices={() => {
+                  navigate({ name: 'historical-invoices', workId: null });
+                }}
+              />
             )}
           </Suspense>
         </main>

@@ -6,6 +6,7 @@ import type {
 } from '@auto-mb/contracts';
 import {
   renderWorksAnalysisHtml,
+  selectColumns,
   toDivisionDocument,
   toMappedItemDocument,
   toWorkDocument,
@@ -315,6 +316,57 @@ describe('the works-analysis sheet', () => {
     // assertions are on the CELL, not on the end of the line.
     expect(flat).toMatch(/^A\/1\|Rack <42U> & cover\|10000\.00\|.*\|0\.00\|—\|*$/m);
     expect(flat).toMatch(/^WA\/1\/B\/1\|submitted\|5000\.00\|—\|/m);
+  });
+});
+
+describe('the operator’s chosen columns', () => {
+  it('drops a heading from the headings, the rows and the total together', () => {
+    const full = toWorkDocument(WORK);
+    const value = (document: typeof full) =>
+      document.tables.find((table) => table.heading === 'Value position');
+    const before = value(full);
+    const billedAt = before?.columns.findIndex((column) => column.header === 'Billed');
+    expect(billedAt).toBeGreaterThan(-1);
+
+    const kept = new Set(
+      (before?.columns ?? [])
+        .map((column) => column.header)
+        .filter((header) => header !== 'Billed'),
+    );
+    const after = value(selectColumns(full, 'work', kept));
+
+    // Positional, and that is the whole risk: a heading removed without
+    // its cells slides every figure one column left, which reads as
+    // plausible data rather than as a fault.
+    expect(after?.columns.map((column) => column.header)).not.toContain('Billed');
+    expect(after?.columns).toHaveLength((before?.columns.length ?? 0) - 1);
+    expect(after?.rows[0]).toHaveLength((before?.rows[0]?.length ?? 0) - 1);
+    expect(after?.total).toHaveLength((before?.total?.length ?? 0) - 1);
+    for (const [index, column] of (after?.columns ?? []).entries()) {
+      const source = before?.columns.findIndex((one) => one.header === column.header);
+      expect(after?.rows[0]?.[index]).toBe(before?.rows[0]?.[source ?? -1]);
+      expect(after?.total?.[index]).toBe(before?.total?.[source ?? -1]);
+    }
+  });
+
+  it('never drops an identity column, whatever the caller asks for', () => {
+    // The chip vocabulary is the only thing that can be dropped, so an
+    // empty set is a report of nothing but the columns that say what each
+    // row IS — not a blank page.
+    const stripped = selectColumns(toWorkDocument(WORK), 'work', new Set());
+    const quantity = stripped.tables.find(
+      (table) => table.heading === 'Quantity position',
+    );
+    expect(quantity?.columns.map((column) => column.header)).toEqual([
+      'Item',
+      'Description',
+    ]);
+    // The Work report's chips cover its quantity and value tables only, so
+    // its payment table comes through untouched.
+    const payment = stripped.tables.find(
+      (table) => table.heading === 'Payment position',
+    );
+    expect(payment?.columns.map((column) => column.header)).toContain('Outstanding');
   });
 });
 
