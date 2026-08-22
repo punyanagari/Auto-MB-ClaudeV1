@@ -711,6 +711,14 @@ const PRODUCTION_ITEMS = {
       manufactured: true,
       serialPrefix: 'IPDB6',
       serialControlled: true,
+      /* Item 31 (0117): one item of each kind, because the rail lists one
+         kind at a time and the scan opens on the OEM side. The product's
+         locks are BOTH set — its job card above has minted units — so the
+         edit form's named refusals are the disabled controls the scan
+         checks the contrast of, not hypothetical ones. */
+      role: 'oem',
+      serialSeriesLocked: true,
+      flagsLocked: true,
       specifications: [{ attribute: 'Display size', value: '1200 × 600 mm' }],
       active: true,
       createdAt: '2026-08-01T00:00:00.000Z',
@@ -724,6 +732,10 @@ const PRODUCTION_ITEMS = {
       manufactured: false,
       serialPrefix: null,
       serialControlled: true,
+      role: 'sub',
+      serialSeriesLocked: false,
+      // Consumed into IPDB6-00130 above, so its flags are settled too.
+      flagsLocked: true,
       specifications: [],
       active: true,
       createdAt: '2026-08-01T00:00:00.000Z',

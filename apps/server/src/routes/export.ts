@@ -28,9 +28,24 @@ const errorResponses = {
  * pointing at nothing.
  *
  * Numbered 38 by coordinator allocation: versions are monotonic with the
- * order packages MERGE, not the order they are branched (the two notes
- * below say the same) — v36 went to the Zoho register that landed first,
- * and v37 is taken by the pack merging ahead of this one.
+ * order packages MERGE, not the order they are branched (the notes
+ * below say the same) — v36 went to the Zoho register and v37 to the
+ * production-item kinds that landed first.
+ *
+ * ---------------------------------------------------------------------
+ * export-v37: what kind of catalogue entry a production item is (0117)
+ * rides along. The `productionItems` section takes `select *`, so
+ * `item_role` travels without an edit here — what moves the version is
+ * the format, not the query: a v36 package restored into a 0117 schema
+ * would land every item on the column's default and file the agency's
+ * own products as parts, so a reader has to be able to tell the two
+ * shapes apart by the string alone. No new section, no manifest change.
+ *
+ * NUMBERED 37 AT MERGE, not when this pack was written: it was branched
+ * claiming 35, and 0114's and 0115's packages landed on main first and
+ * took 35 and 36. Same rule as the two notes below — export versions are
+ * monotonic with the order packages MERGE, and `export-format.ts` moves
+ * with this one.
  *
  * ---------------------------------------------------------------------
  * export-v36: the historical Zoho Books register (0115) joins the package

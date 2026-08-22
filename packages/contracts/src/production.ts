@@ -38,6 +38,21 @@ const ProductionSpecificationSchema = Type.Object(
 );
 export type ProductionSpecification = Static<typeof ProductionSpecificationSchema>;
 
+/**
+ * What an item IS in the catalogue (migration 0117).
+ *
+ * `oem` is a product the agency sells; it is the only kind the catalogue
+ * rail lists. `sub` is a part or a sub-assembly, reached through a bill
+ * of material or the rail's own filter. Deliberately NOT the same fact
+ * as `manufactured`: a sub-assembly welded in-house is manufactured and
+ * is still not a product, which is the whole reason the column exists.
+ */
+export const ProductionItemRoleSchema = Type.Union([
+  Type.Literal('oem'),
+  Type.Literal('sub'),
+]);
+export type ProductionItemRole = Static<typeof ProductionItemRoleSchema>;
+
 export const ProductionItemSchema = Type.Object(
   {
     id: UuidSchema,
@@ -67,6 +82,17 @@ export const ProductionItemSchema = Type.Object(
      * component. Independent of holding a prefix: a bought-in card
      * carries the supplier's serials, which are scanned, not minted. */
     serialControlled: Type.Boolean(),
+    role: ProductionItemRoleSchema,
+    /** Whether the serial series has already minted a unit, so it can no
+     * longer move (migration 0084's guard). Carried on the read because
+     * the edit form must state the refusal on a disabled control rather
+     * than discover it on submit. */
+    serialSeriesLocked: Type.Boolean(),
+    /** Whether units, job cards or consumptions reference this item, so
+     * `manufactured` and `serialControlled` can no longer flip
+     * (migration 0117). Implied by `serialSeriesLocked`, and stated
+     * separately because the two refusals read differently. */
+    flagsLocked: Type.Boolean(),
     specifications: Type.Array(ProductionSpecificationSchema, { maxItems: 50 }),
     active: Type.Boolean(),
     createdAt: Type.String({ format: 'date-time' }),
@@ -92,6 +118,18 @@ export const SaveProductionItemRequestSchema = Type.Object(
       }),
     ),
     serialControlled: Type.Optional(Type.Boolean()),
+    /** Optional for the reason the column has a default: a caller that
+     * has no opinion gets the pre-0117 reading of the catalogue. On
+     * CREATE, absent means `manufactured ? 'oem' : 'sub'`, which is the
+     * split the rail drew before the column existed; on UPDATE, absent
+     * leaves the kind alone. */
+    role: Type.Optional(ProductionItemRoleSchema),
+    /** Optional with the same reading as `role`, and for the same
+     * reason: absent means the caller has no opinion, so on CREATE the
+     * list starts empty and on UPDATE the stored list is left exactly as
+     * it is. An empty array is a DIFFERENT request — it clears the list
+     * — so a form that saves one field must not send `[]` to mean "I did
+     * not touch the specifications". */
     specifications: Type.Optional(
       Type.Array(ProductionSpecificationSchema, { maxItems: 50 }),
     ),
