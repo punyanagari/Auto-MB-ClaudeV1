@@ -21,7 +21,7 @@ import {
   withTenant,
 } from '@auto-mb/db';
 import { removeOrganisationResidue } from '@auto-mb/db/testing';
-import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
+import { expectPinnedExportVersion } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 
 /**
@@ -1494,7 +1494,7 @@ describe('export and timeline', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const exported = response.json<Record<string, unknown[]>>();
-    expect(exported.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
+    expectPinnedExportVersion(exported.formatVersion);
     expect(exported.measurementBooks?.length).toBeGreaterThanOrEqual(6);
     expect(exported.measurementBookLines?.length).toBeGreaterThanOrEqual(5);
     expect(exported.mbSources?.length).toBeGreaterThanOrEqual(5);

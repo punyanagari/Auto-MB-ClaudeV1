@@ -339,7 +339,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     requestIdHeader: 'x-request-id',
     genReqId: (request) =>
       request.headers['x-request-id']?.toString() ?? crypto.randomUUID(),
-    disableRequestLogging: false,
+    // `disableRequestLogging` is deliberately NOT passed. Fastify 5 defaults
+    // it to false — request logging on — so naming it bought nothing, and
+    // merely NAMING it (whatever the value) emits FSTDEP023 once per
+    // process. Every test file builds an app, so that deprecation notice was
+    // two lines per worker and the single largest block of noise in the
+    // server suite's output. If request logging ever has to be turned off,
+    // Fastify 5 wants `logController`, not this option.
     // A request that never finishes holds a pool slot forever; see
     // SERVER_LIMITS for why these two numbers are what they are.
     requestTimeout: options.limits?.requestTimeoutMs ?? SERVER_LIMITS.requestTimeoutMs,

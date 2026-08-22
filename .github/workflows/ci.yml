@@ -13,9 +13,9 @@ on:
     #
     # Caveat for whoever configures branch protection: a workflow skipped
     # by paths-ignore reports NO status at all rather than a passing one,
-    # so `verify` must not be a required check unless a docs-only pull
-    # request is expected to sit unmergeable. Require `census` instead —
-    # it always runs.
+    # so no job of THIS workflow — `cheap-gates` or `verify` — may be a
+    # required check unless a docs-only pull request is expected to sit
+    # unmergeable. Require `census` instead: it always runs.
     paths-ignore:
       - 'docs/**'
       - '**.md'
@@ -119,7 +119,57 @@ jobs:
       - name: Accessibility smoke
         run: pnpm --filter @auto-mb/web test:e2e
 
+  # Everything that needs no database, no integration suite and no browser,
+  # in front of everything that does.
+  #
+  # The whole of `pnpm verify` used to be one twenty-minute step, so a
+  # missing Prettier newline and a missing foreign-key index were both
+  # discovered at minute nineteen, after the PostgreSQL service, the Poppler
+  # install and the full suite had been paid for. These gates answer in
+  # about two minutes and are the ones a change most often trips.
+  #
+  # THE TRADEOFF, stated plainly: a green run now waits for this job before
+  # the heavy one starts, so a fully-passing pull request costs roughly two
+  # minutes more end to end. A run that fails a cheap gate — the common case
+  # for the failures this split targets — stops in two minutes instead of
+  # ten to twenty. The `needs:` ordering is what buys the second, and it is
+  # judged worth the first.
+  #
+  # `pnpm verify` (verify:cheap + verify:heavy) still exists unchanged for
+  # local use; the two jobs run its two halves, so nothing is checked twice
+  # and nothing is dropped.
+  cheap-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Proves shell scripts parse and follow shellcheck's static rules;
+      # does not prove runtime behaviour on a cloud VM. Globbed via
+      # git ls-files so new scripts cannot escape the gate.
+      - name: Shell lint
+        run: |
+          git ls-files '*.sh' | xargs bash -n
+          git ls-files '*.sh' | xargs shellcheck
+      # Proves the compose file is structurally valid with default
+      # interpolation; does not prove the services boot.
+      - name: Compose config validation
+        run: docker compose config --quiet
+      # Formatting, lint (with security rules), typecheck, migration-file
+      # validation, the source-scan censuses, the export-version sentinel,
+      # the dead-code and secret scans, and the web bundle budget. The
+      # bundle budget needs the web bundle, which is a four-second Vite
+      # build — cheap enough to earn its place here rather than waiting for
+      # the full workspace build.
+      - name: Cheap gates
+        run: pnpm verify:cheap
+
   verify:
+    # Gated on the cheap lane: a change that cannot pass Prettier has no
+    # business booting PostgreSQL.
+    needs: cheap-gates
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -173,23 +223,41 @@ jobs:
               exit 1
               ;;
           esac
-      # Proves shell scripts parse and follow shellcheck's static rules;
-      # does not prove runtime behaviour on a cloud VM. Globbed via
-      # git ls-files so new scripts cannot escape the gate.
-      - name: Shell lint
+      - name: Build
+        run: pnpm build
+      # Two lanes, deliberately arranged.
+      #
+      # The web, worker, contracts, documents and LOA-parser suites never
+      # open a database connection, so nothing they do can contend with the
+      # PostgreSQL service. They run in the BACKGROUND of the database lane
+      # and cost close to nothing in wall time.
+      #
+      # `@auto-mb/db` and `@auto-mb/server` stay serial WITH EACH OTHER
+      # (--workspace-concurrency=1). Running those two together against one
+      # cluster is the known contention flake — hook timeouts in packages/db
+      # and unrelated-looking failures in apps/server — and this split must
+      # not reintroduce it to save a minute.
+      #
+      # The background lane's output is captured and printed inside a
+      # collapsed group afterwards rather than interleaved, so a failure is
+      # still readable.
+      - name: Test lanes (no-database in parallel, database serial)
         run: |
-          git ls-files '*.sh' | xargs bash -n
-          git ls-files '*.sh' | xargs shellcheck
-      # Proves the compose file is structurally valid with default
-      # interpolation; does not prove the services boot.
-      - name: Compose config validation
-        run: docker compose config --quiet
-      # `pnpm verify` includes formatting, lint (with security rules),
-      # typecheck, the web production bundle build, tests against the live
-      # PostgreSQL service, migration validation, architecture checks,
-      # config parse checks, and the secret scan.
-      - name: Verify
-        run: pnpm verify
+          set +e
+          pnpm test:nodb > "$RUNNER_TEMP/nodb-tests.log" 2>&1 &
+          nodb_pid=$!
+          pnpm test:db
+          db_status=$?
+          wait "$nodb_pid"
+          nodb_status=$?
+          set -e
+          echo "::group::Suites that need no database"
+          cat "$RUNNER_TEMP/nodb-tests.log"
+          echo "::endgroup::"
+          if [ "$db_status" -ne 0 ] || [ "$nodb_status" -ne 0 ]; then
+            echo "::error::database lane exit ${db_status}, no-database lane exit ${nodb_status}"
+            exit 1
+          fi
 
   # Boots the PRODUCTION topology from scratch on every change: real
   # image builds, fresh volumes, the role/grant bootstrap, and the

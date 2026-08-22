@@ -15,7 +15,7 @@ import type {
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { removeOrganisationResidue } from '@auto-mb/db/testing';
-import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
+import { expectPinnedExportVersion } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 
 const adminUrl =
@@ -672,7 +672,7 @@ describe('organisation export (Milestone 4)', () => {
       deliveryChallans: { status: string; issued_snapshot: unknown }[];
       auditEvents: { action: string }[];
     }>();
-    expect(exported.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
+    expectPinnedExportVersion(exported.formatVersion);
     expect(exported.organisation.id).toBe(organisationId);
     expect(exported.works.length).toBeGreaterThanOrEqual(1);
     const issued = exported.deliveryChallans.find(

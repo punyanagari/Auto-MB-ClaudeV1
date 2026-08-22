@@ -20,7 +20,7 @@ import {
   removeOrganisationResidue,
 } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
-import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
+import { expectPinnedExportVersion } from './helpers/export-format.js';
 
 /**
  * Defect liability periods over HTTP (migration 0099).
@@ -1114,7 +1114,7 @@ describe('the recovery export', () => {
       workWarrantyTerms: { work_id: string }[];
       installationWarranties: { dlp_expires_on: string; status: string }[];
     }>();
-    expect(exported.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
+    expectPinnedExportVersion(exported.formatVersion);
     expect(exported.workWarrantyTerms.map((row) => row.work_id)).toContain(workId);
     expect(exported.installationWarranties.length).toBeGreaterThan(0);
     // The expiry travels as a stored legal date, which is what makes the

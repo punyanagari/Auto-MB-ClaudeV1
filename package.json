@@ -21,10 +21,16 @@
     "architecture:check": "node scripts/check-architecture.mjs",
     "config:check": "node scripts/check-config.mjs",
     "comments:check": "node scripts/check-comment-refs.mjs",
+    "export:check": "node scripts/check-export-sentinel.mjs",
+    "preflight": "node scripts/preflight.mjs",
     "bundle:check": "node apps/web/scripts/check-bundle-size.mjs",
     "deadcode:check": "knip --no-config-hints",
     "security:secrets": "secretlint \"**/*\"",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm bundle:check && pnpm test && pnpm db:check && pnpm architecture:check && pnpm config:check && pnpm comments:check && pnpm deadcode:check && pnpm security:secrets"
+    "test:nodb": "pnpm --filter @auto-mb/web --filter @auto-mb/worker --filter @auto-mb/contracts --filter @auto-mb/documents --filter @auto-mb/loa-parser -r --if-present test",
+    "test:db": "pnpm --workspace-concurrency=1 --filter @auto-mb/db --filter @auto-mb/server -r --if-present test",
+    "verify:cheap": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm db:check && pnpm architecture:check && pnpm config:check && pnpm comments:check && pnpm export:check && pnpm deadcode:check && pnpm security:secrets && pnpm --filter @auto-mb/web build && pnpm bundle:check",
+    "verify:heavy": "pnpm build && pnpm test",
+    "verify": "pnpm verify:cheap && pnpm verify:heavy"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

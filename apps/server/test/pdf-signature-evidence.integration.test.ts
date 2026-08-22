@@ -8,7 +8,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { LoaDocumentDetail } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
-import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
+import { expectPinnedExportVersion } from './helpers/export-format.js';
 import { buildApp } from '../src/app.js';
 import { createFileSystemStorage, loadTrustAnchors } from '@auto-mb/documents';
 import { runQueuedJobs } from './helpers/worker-jobs.js';
@@ -358,7 +358,7 @@ describe('signature verdicts are stored with the document', () => {
         signature_verdict: { status: string } | null;
       }[];
     }>();
-    expect(body.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
+    expectPinnedExportVersion(body.formatVersion);
     const document = body.loaDocuments.find((entry) => entry.id === detail.id);
     // The export is the incident procedure's evidence snapshot; a document
     // exported without the verdict relied on when it was accepted is

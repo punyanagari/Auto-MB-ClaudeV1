@@ -10,7 +10,7 @@ import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/
 import { removeOrganisationResidue } from '@auto-mb/db/testing';
 import { buildApp } from '../src/app.js';
 import { configureMfaEnforcement } from '../src/mfa-policy.js';
-import { EXPECTED_EXPORT_VERSION } from './helpers/export-format.js';
+import { expectPinnedExportVersion } from './helpers/export-format.js';
 
 /**
  * The platform controls over HTTP (migration 0096).
@@ -513,7 +513,7 @@ describe('the organisation export', () => {
     expect(settled.state, `the build failed: ${settled.failureReason ?? ''}`).toBe(
       'ready',
     );
-    expect(settled.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
+    expectPinnedExportVersion(settled.formatVersion);
     expect(settled.sha256).toMatch(/^[0-9a-f]{64}$/);
 
     const download = await app.inject({
@@ -524,7 +524,7 @@ describe('the organisation export', () => {
     expect(download.statusCode, download.body.slice(0, 200)).toBe(200);
     expect(download.headers['content-disposition']).toContain('attachment');
     const bundle = download.json<{ formatVersion: string; members: unknown[] }>();
-    expect(bundle.formatVersion).toBe(EXPECTED_EXPORT_VERSION);
+    expectPinnedExportVersion(bundle.formatVersion);
     expect(Array.isArray(bundle.members)).toBe(true);
 
     // THE WINDOW IS THIRTY DAYS, by the owner ruling of 2026-08-19. It
