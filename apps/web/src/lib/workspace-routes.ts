@@ -101,6 +101,13 @@ export type WorkspaceView =
    * `workId` is the mock's `?work=` deep link, taken the way every other
    * cross-Work register here takes it. */
   | { name: 'historical-invoices'; workId: string | null }
+  /** The Tally ledger census (0118) — this organisation's chart of
+   * accounts as TallyPrime holds it. One screen, no record page: a
+   * census row is a mirror of somebody else's master and there is
+   * nothing to open it onto. No `?work=` deep link either, because
+   * owner rulings 4 and 5 keep the work code as text and no row here
+   * reaches a Work. */
+  | { name: 'tally-masters' }
   /** Tenant-wide record search. The query is part of the route, so a
    * result set can be linked, bookmarked and reached by Back — the same
    * durability finding 28 gave every other view. */
@@ -339,6 +346,8 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return view.workId === null
         ? '#/historical-invoices'
         : `#/historical-invoices/${view.workId}`;
+    case 'tally-masters':
+      return '#/tally-masters';
     case 'search':
       // encodeURIComponent escapes '/' as %2F, and the parser splits the
       // raw fragment before decoding, so a query containing a slash stays
@@ -616,6 +625,8 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (!isRecordId(workId) || extra.length > 0) return null;
       return { view: { name: 'historical-invoices', workId } };
     }
+    case 'tally-masters':
+      return rest.length > 0 ? null : { view: { name: 'tally-masters' } };
     /* The retired standalone serial-lookup destination (`docs/UX.md`
        § `#/serials` merges into Global Search). Old links, bookmarks and
        anything still holding the fragment land on Search rather than on

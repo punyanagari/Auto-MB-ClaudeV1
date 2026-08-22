@@ -1,5 +1,6 @@
 import {
   Archive,
+  BookText,
   Boxes,
   ChartColumn,
   CircleCheckBig,
@@ -55,6 +56,7 @@ export type ModuleKey =
   | 'signing'
   | 'notifications'
   | 'imports'
+  | 'tally-masters'
   | 'employees'
   | 'maintenance'
   | 'masters'
@@ -191,6 +193,12 @@ export const NAVIGATION: readonly NavGroup[] = [
       // fill it eight hundred at a time. `Upload` is new to this rail —
       // checked against every icon already on it (docs/UX.md § 18).
       { key: 'imports', label: 'Imports', icon: Upload },
+      // The Tally ledger census (0118) sits directly beneath Imports,
+      // because it is the same act — pointing a file from another system
+      // at this one — and because what it fills is the Contacts register
+      // Masters owns, one lamp above. `BookText` is new to this rail and
+      // was checked against every icon already on it (docs/UX.md § 37).
+      { key: 'tally-masters', label: 'Tally census', icon: BookText },
       { key: 'members', label: 'Members', icon: Users },
       // The two screens migration 0095 adds. Both sit under
       // Administration and neither is drawn by the mock at fdfd610 —
@@ -264,6 +272,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'notifications' };
     case 'imports':
       return { name: 'imports' };
+    case 'tally-masters':
+      return { name: 'tally-masters' };
     case 'employees':
       return { name: 'employees' };
     case 'masters':
@@ -356,6 +366,8 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
       return 'notifications';
     case 'imports':
       return 'imports';
+    case 'tally-masters':
+      return 'tally-masters';
     // Everything the WORKS module owns: the register, one Work, and every
     // screen that is really a step inside one — LOA upload and review, the
     // challan and issue-challan editors, an opened challan.
@@ -470,6 +482,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Notifications';
     case 'imports':
       return 'Imports';
+    case 'tally-masters':
+      return 'Tally census';
     case 'employees':
       return 'Employees';
     case 'payroll':

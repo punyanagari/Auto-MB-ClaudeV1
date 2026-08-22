@@ -78,6 +78,13 @@ services:
     logging: *logging
     volumes:
       - clamav-db:/var/lib/clamav
+      # The image generates its own clamd.conf on first boot with a 25 MB
+      # INSTREAM ceiling, which is below several of this product's own
+      # upload caps and far below the 133 MB TallyPrime masters export —
+      # so that import would fail closed as SCAN_UNAVAILABLE every time.
+      # Mounting a config is the image's supported override; the file
+      # carries the reasoning and the post-deploy check.
+      - ./clamd.conf:/etc/clamav/clamd.conf:ro
     # clamdcheck.sh ships in the image and PINGs the daemon. The long
     # start period is the first-boot signature download, which is minutes,
     # not seconds — an interval short enough to be useful afterwards would
@@ -93,8 +100,11 @@ services:
         limits:
           # clamd holds the whole signature database in memory; below
           # ~1.5 GiB it is killed mid-scan and uploads fail closed.
+          # Raised from 2 GiB with the 256 MB stream ceiling in
+          # clamd.conf: the signature database is the floor, and a scan of
+          # a 133 MB masters export sits on top of it.
           cpus: '1.0'
-          memory: 2048M
+          memory: 2560M
         reservations:
           memory: 1024M
 

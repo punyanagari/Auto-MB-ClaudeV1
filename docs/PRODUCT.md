@@ -2575,6 +2575,46 @@ around. Every export is recorded permanently even after its file is gone:
 the row states that on a date a named member took the whole organisation
 away, which is a fact worth keeping whether or not the file still exists.
 
+### The Tally census: the chart of accounts the accounting system keeps
+
+The organisation has kept its books in TallyPrime since 2020 and continues
+to: Auto-MB is the record for the contract work, and Tally remains the
+general accounting books. Its `All Masters` export holds 4,327 ledger
+masters, and until they were readable in-system nothing here could name a
+trading party, a deduction head, or the security deposit the railway is
+holding against a work.
+
+**The census mirrors those masters and decides exactly one thing about
+them: what kind of ledger each is.** That is read from Tally's OWN
+reserved group ancestry — `Sundry Debtors` and `Sundry Creditors`, which
+exist in every Tally company file — rather than from this organisation's
+group names, so it stays correct when the accountant adds another purchase
+category. A ledger outside both trees whose own name carries a `PL-<n>`
+work code is an INSTRUMENT: the security deposits, FDRs, bank guarantees
+and tender EMDs, which the export already keys to the work they belong to.
+Everything else is `other`: tax heads, banks, expenses, capital.
+
+**Everything else it produces is a proposal a person has not confirmed.**
+A party ledger is matched to the contacts master on GSTIN first and then
+on an exact name, and an ambiguous match — two contacts answering to one
+name, or two masters sharing one name — proposes nothing at all. The work
+code is stored as TEXT and reaches no Work: most of the codes in the file
+name contracts that predate this system, and a Tally code never creates
+one. Nothing here creates a contact, links a contact, creates a Work or
+fabricates an instrument record.
+
+**The census is a mirror, not a register of issued documents, and it
+behaves like one.** The import is read twice against the same bytes — once
+to report what it would do, once to write — and the report is counts
+rather than 4,327 rows. Re-importing a fresher export refreshes the
+masters Tally has altered since the last import, leaves the rest exactly
+as they are, and lets a master the new export no longer names fall out of
+the census without destroying the row. There is no delete and no discard:
+a row says which import last saw it, and the census reads the latest one.
+
+Reading the census needs the writer role; importing needs the data-import
+authority.
+
 ## 9. Current non-goals and release boundaries
 
 - security-deposit deductions, price variation, and other bill maths not

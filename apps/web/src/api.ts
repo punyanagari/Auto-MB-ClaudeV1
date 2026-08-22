@@ -60,6 +60,10 @@ import type {
   ImportedInvoiceDetail,
   ImportedInvoiceImportMode,
   ImportedInvoiceImportResult,
+  TallyLedgerList,
+  TallyLedgerQuery,
+  TallyMasterImportMode,
+  TallyMasterImportResult,
   ImportedInvoiceList,
   RelinkImportedInvoice,
   ImportRowStatus,
@@ -2449,6 +2453,20 @@ export interface ApiClient {
     invoiceId: string,
     body: RelinkImportedInvoice,
   ) => Promise<ImportedInvoiceDetail>;
+  /** The Tally ledger census (0118): this organisation's chart of
+   * accounts as TallyPrime holds it. */
+  readonly listTallyLedgers: (
+    organisationId: string,
+    query?: TallyLedgerQuery,
+  ) => Promise<TallyLedgerList>;
+  /** Reads the All Masters export and answers what it would do.
+   * `preview` writes nothing; `commit` does the identical reading and
+   * then mirrors it. */
+  readonly importTallyMasters: (
+    organisationId: string,
+    file: File,
+    mode: TallyMasterImportMode,
+  ) => Promise<TallyMasterImportResult>;
   readonly discardImportedInvoice: (
     organisationId: string,
     invoiceId: string,
@@ -5739,6 +5757,37 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         `/api/imported-invoices/${invoiceId}/link`,
         { method: 'POST', body, organisationId },
       );
+    },
+    async listTallyLedgers(organisationId, query) {
+      const search = new URLSearchParams();
+      for (const [key, value] of Object.entries(query ?? {})) {
+        if (value !== undefined && value !== null && value !== '') {
+          search.set(key, String(value));
+        }
+      }
+      const suffix = search.size === 0 ? '' : `?${search.toString()}`;
+      return request<TallyLedgerList>(`/api/tally-masters/ledgers${suffix}`, {
+        organisationId,
+      });
+    },
+    async importTallyMasters(organisationId, file, mode) {
+      // The raw Blob, as every upload in this client sends one. The
+      // content type is `application/xml` and the bytes are UTF-16LE —
+      // the server parses the body as a Buffer for exactly that reason,
+      // because a string parser would decode Tally's encoding as UTF-8
+      // mojibake before anything could read the byte-order mark.
+      const query = uploadQuery({ mode, filename: file.name });
+      const response = await fetchImpl(`/api/tally-masters/import?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/xml',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as TallyMasterImportResult;
     },
     async discardImportedInvoice(organisationId, invoiceId, body) {
       return request<ImportedInvoiceDetail>(

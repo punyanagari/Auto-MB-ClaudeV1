@@ -528,8 +528,19 @@ const errorResponses = {
  * export-v11: an ITEMISED invoice's lines (0057) join the record —
  * without them such an invoice would export as a header with no
  * document.
+ *
+ * export-v39: the Tally ledger census (0118) joins the record. It is
+ * this organisation's own chart of accounts as another system holds it,
+ * and every Tally wave after T1 reaches its ledgers through it.
+ *
+ * RENUMBERED FROM v37 AT MERGE, deliberately rather than by letting the
+ * merge choose. This wave took v37 while `main` held v36; #164 landed v38
+ * in between, and the two constants — this one and the suite's expected
+ * value — sit in different files and auto-merge SILENTLY against each
+ * other. Taking v39 by hand, in both, is what the placeholder comment
+ * this replaces existed to force.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v38';
+export const EXPORT_FORMAT_VERSION = 'export-v39';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -800,6 +811,20 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'importedInvoiceLines',
     sql: `select * from imported_invoice_lines order by imported_invoice_id, position`,
     jsonbColumns: ['raw_row'],
+  },
+  {
+    // The Tally ledger census (0118). `source_fields` rides as stored
+    // jsonb for `raw_row`'s reason above: it is what the export said, and
+    // rebuilding it from the typed columns would hand back this schema's
+    // opinion of a Tally master instead of the master.
+    //
+    // Ordered by the GUID, which is the only key here that is stable
+    // across imports — `ledger_name` moves when somebody renames a ledger
+    // in Tally, and a package whose row order is not deterministic cannot
+    // be diffed against yesterday's.
+    key: 'tallyLedgers',
+    sql: `select * from tally_ledgers order by tally_guid`,
+    jsonbColumns: ['source_fields'],
   },
   {
     key: 'deliveryChallans',

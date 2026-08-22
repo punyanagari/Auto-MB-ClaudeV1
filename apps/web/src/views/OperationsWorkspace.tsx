@@ -193,6 +193,11 @@ const Notifications = lazy(() =>
 const Imports = lazy(() =>
   import('./Imports.js').then((module) => ({ default: module.Imports })),
 );
+const TallyMasters = lazy(() =>
+  import('./TallyMasters.js').then((module) => ({
+    default: module.TallyMasters,
+  })),
+);
 const HistoricalInvoices = lazy(() =>
   import('./HistoricalInvoices.js').then((module) => ({
     default: module.HistoricalInvoices,
@@ -1347,6 +1352,14 @@ export function OperationsWorkspace({
             )}
             {view.name === 'imports' && (
               <Imports
+                api={api}
+                organisationId={organisation.id}
+                canImport={canImport}
+              />
+            )}
+
+            {view.name === 'tally-masters' && (
+              <TallyMasters
                 api={api}
                 organisationId={organisation.id}
                 canImport={canImport}

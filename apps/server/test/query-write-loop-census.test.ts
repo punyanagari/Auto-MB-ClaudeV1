@@ -43,6 +43,11 @@ const ALLOWED: Record<string, { readonly writes: number; readonly reason: string
     reason:
       'Lease recovery branches to a DIFFERENT table per row (tax invoices, credit notes, e-way bills), so there is no single statement to batch into. The loop runs over rows returned by one lease-expiry UPDATE, in practice none or one.',
   },
+  'routes/tally-masters.ts': {
+    writes: 1,
+    reason:
+      'The loop is over CHUNKS, not rows: one upsert carries 500 ledger masters and a real export holds 4,327, which is well past what one statement should carry in placeholders. Batching further is what this already is — the alternative the rule exists to refuse, a statement per ledger, would be 4,327 round-trips instead of nine. Nothing else in the transaction holds a Work lock: the census reaches `works` nowhere.',
+  },
   'import/importer.ts': {
     writes: 7,
     reason:

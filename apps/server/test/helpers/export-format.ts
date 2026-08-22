@@ -18,4 +18,8 @@
  * suite EXPECTS, and bumping the server's own constant without bumping
  * this one is exactly the mistake the assertions exist to catch.
  */
-export const EXPECTED_EXPORT_VERSION = 'export-v38';
+// Renumbered from v37 to v39 at the merge with #164, together with
+// `EXPORT_FORMAT_VERSION` in `apps/server/src/routes/export.ts`, which
+// carries the reasoning. The two auto-merge silently against each other,
+// so they move by hand or not at all.
+export const EXPECTED_EXPORT_VERSION = 'export-v39';

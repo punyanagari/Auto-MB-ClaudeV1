@@ -143,6 +143,12 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // it said and there is no annotation to make about a line.
   imported_invoices: 'SELECT, INSERT, UPDATE',
   imported_invoice_lines: 'SELECT, INSERT',
+  // The Tally ledger census (0118). UPDATE because the census MIRRORS a
+  // file the organisation is still editing: importing a fresher export
+  // refreshes the masters Tally has altered. No DELETE — a master the
+  // newest export no longer names is superseded by `last_seen_at`, not
+  // destroyed.
+  tally_ledgers: 'SELECT, INSERT, UPDATE',
   // The opening billing position of a pre-system Work (0114). Full
   // privileges: an unlocked baseline is a form being filled in, and its
   // guards — not the grant — are what stop a locked one from moving.

@@ -18,7 +18,23 @@ header {
 }
 
 # The API, including auth and document streaming.
+#
+# THE BODY CEILING IS STATED HERE AS WELL AS IN THE APPLICATION, and the
+# duplication is the point: Fastify buffers a raw upload body before the
+# route's own handler — and therefore before authentication — runs, so the
+# application's per-route `bodyLimit` bounds what it will PARSE but not
+# what an unauthenticated caller can make it hold. This cap is the arm
+# that refuses those bytes at the edge, before they reach the server at
+# all.
+#
+# 200 MB is the largest application cap (MAX_TALLY_UPLOAD_BYTES, 192 MB in
+# apps/server/src/upload-guards.ts) plus headroom for the request line and
+# headers, so the application's own named refusal is still the one a
+# legitimate over-size upload meets. Raise them together, this one first.
 handle /api/* {
+	request_body {
+		max_size 200MB
+	}
 	reverse_proxy server:3000
 }
 

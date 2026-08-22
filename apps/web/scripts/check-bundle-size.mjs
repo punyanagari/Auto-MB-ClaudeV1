@@ -86,10 +86,30 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * file proves it has a chunk of its own, as all fifty do — and no
  * dependency was added.
  *
+ * RAISED TO 119,200 when the Tally ledger census (0118) took the rail to
+ * twenty-nine modules. THE CENSUS IS THE SMALLER HALF OF THIS RISE and
+ * the number should say which half is whose:
+ *
+ *   119.00  the line the purchase-order register left
+ *   119.04  measured on this branch alone, before merging — so the
+ *           census itself costs about FORTY BYTES: a rail entry, its
+ *           `BookText` lamp, one arm each in the route serialiser, the
+ *           parser, the module map and the title map, two api-client
+ *           methods, and one `React.lazy` import. That is the smallest
+ *           shape a new module has.
+ *   119.15  measured after merging #164 and #166, which landed while
+ *           this wave was in flight and account for the other ~110
+ *           bytes. Neither moved this line, so it had to move once for
+ *           all three rather than three times.
+ *
+ * The view itself is NOT in the initial payload: the second assertion in
+ * this file proves it has a chunk of its own, as all fifty-two do, and no
+ * dependency was added.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_000;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_200;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

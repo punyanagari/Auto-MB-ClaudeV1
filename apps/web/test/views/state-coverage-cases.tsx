@@ -22,6 +22,7 @@ import { Warranties } from '../../src/views/Warranties.js';
 import { WorkWarranty } from '../../src/views/WorkWarranty.js';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
 import { HistoricalInvoices } from '../../src/views/HistoricalInvoices.js';
+import { TallyMasters } from '../../src/views/TallyMasters.js';
 import { WorkHistoricalInvoices } from '../../src/views/WorkHistoricalInvoices.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
@@ -362,6 +363,14 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry historical invoices/,
     empty: { text: /No historical invoice has been imported yet/ },
+  },
+  {
+    view: 'TallyMasters.tsx',
+    name: 'the Tally ledger census',
+    loads: ['listTallyLedgers'],
+    render: (api) => <TallyMasters api={api} organisationId={ORG_ID} canImport />,
+    retry: /Retry the Tally census/,
+    empty: { text: /No Tally masters have been brought in yet/ },
   },
   {
     view: 'WorkHistoricalInvoices.tsx',
