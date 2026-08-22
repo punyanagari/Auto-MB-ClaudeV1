@@ -606,9 +606,13 @@ BEGIN
   -- There is no hinge to exempt: the Work link, the discard and any other
   -- annotation this register might grow all arrive with their own route,
   -- their own audit event and their own column-scoped grant.
+  -- NAMED BY ITS OWN TABLE, because this one function guards three of
+  -- them: a refusal quoting a deduction line's id under the word
+  -- "payment" would send somebody looking for a receipt that does not
+  -- carry that id.
   RAISE EXCEPTION
-    'imported payment % records what a TallyPrime export said and is never edited or deleted',
-    OLD.id
+    '%.% records what a TallyPrime export said and is never edited or deleted',
+    TG_TABLE_NAME, OLD.id
     USING ERRCODE = '23T04';
 END
 $$;
