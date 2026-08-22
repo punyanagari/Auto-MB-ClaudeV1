@@ -1,5 +1,50 @@
+import type { WorksAnalysisReport } from '@auto-mb/contracts';
 import type { MastersTab } from '../views/Masters.js';
 import type { WorkTab } from '../views/WorkDetail.js';
+
+/**
+ * Which register of the Reports screen is showing.
+ *
+ * Four tabs, and they are ADDRESSES rather than local state for the reason
+ * the Challan registers are: a report an operator configured is worth
+ * linking to, and the analysis tab's whole point is that the configuration
+ * — report type and the Work or division it is about — survives a bookmark
+ * and a Back press.
+ *
+ * Path segments, not `?tab=`: this build's fragment carries no query string
+ * anywhere (`parseWorkspaceHash` splits on `/` and decodes), and the Work
+ * page and Masters both address a section as a segment. One serializer, one
+ * grammar.
+ */
+export type MisTab = 'analysis' | 'accounts' | 'payroll' | 'tally';
+
+const MIS_TABS = ['analysis', 'accounts', 'payroll', 'tally'] as const;
+
+function isMisTab(value: string): value is MisTab {
+  return (MIS_TABS as readonly string[]).includes(value);
+}
+
+/**
+ * The report names, written out rather than imported from the contract.
+ *
+ * `@auto-mb/contracts` is a barrel over every TypeBox schema in the
+ * product, and this module is in the INITIAL chunk — the bundle that
+ * decides where to go. Importing one runtime value from that barrel drags
+ * the whole schema set into it: measured at +44 kB gzip, over a ratchet of
+ * 119 kB. Types are erased and cost nothing, so `WorksAnalysisReport`
+ * above is imported and the three words are copied here.
+ *
+ * That is the duplication `WORK_TAB_NAMES` below already carries, and it
+ * is held the same way: `test/workspace-routes.test.ts` imports both lists
+ * and asserts they are the same set, so a fourth report added to the
+ * contract and not to this list fails there rather than becoming silently
+ * unaddressable.
+ */
+export const WORKS_ANALYSIS_REPORT_NAMES = ['work', 'division', 'mapped-item'] as const;
+
+function isWorksAnalysisReport(value: string): value is WorksAnalysisReport {
+  return (WORKS_ANALYSIS_REPORT_NAMES as readonly string[]).includes(value);
+}
 
 /** Which of the merged Challans module's two registers is showing. The
  * mock addresses them as `?type=delivery` and `?type=installation`
@@ -199,11 +244,30 @@ export type WorkspaceView =
    * by actor and action across every module, and is gated on the audit
    * authority AND full work scope. */
   | { name: 'audit' }
-  /** The management summary (0095): output tax by month, receivables
-   * ageing, payroll cost. Separate from the landing dashboard on purpose
-   * — see `packages/contracts/src/mis.ts` — because these are month-end
-   * roll-ups nobody needs on every sign-in. */
-  | { name: 'mis' }
+  /**
+   * The Reports screen (0095): four registers behind one address.
+   *
+   * Separate from the landing dashboard on purpose — see
+   * `packages/contracts/src/mis.ts` — because these are month-end roll-ups
+   * nobody needs on every sign-in.
+   *
+   * `report` is the works-analysis report that has been RUN, and null is
+   * the screen before anything is run. It is part of the address rather
+   * than state inside the view because these are the heaviest reads in the
+   * product: `#/reports` must load none of them, and a configured report
+   * must survive a link.
+   *
+   * `selection` is what that report is about — the Work for `work`, the
+   * railway division for `division` (`none` for the Works whose consignees
+   * name no division or name more than one), and null for `mapped-item`,
+   * which is about the whole portfolio.
+   */
+  | {
+      name: 'mis';
+      tab: MisTab;
+      report: WorksAnalysisReport | null;
+      selection: string | null;
+    }
   | { name: 'settings' };
 
 /** A parsed location: the view plus the tab state some views carry
@@ -403,8 +467,17 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/members';
     case 'audit':
       return '#/audit';
-    case 'mis':
-      return '#/reports';
+    case 'mis': {
+      // The bare address is the analysis tab with nothing run, which is
+      // what an operator typing "reports" means and what the rail lamp
+      // points at.
+      if (view.tab !== 'analysis') return `#/reports/${view.tab}`;
+      if (view.report === null) return '#/reports';
+      const base = `#/reports/analysis/${view.report}`;
+      return view.selection === null
+        ? base
+        : `${base}/${encodeURIComponent(view.selection)}`;
+    }
     case 'settings':
       return '#/settings';
   }
@@ -731,14 +804,47 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     case 'audit':
     case 'settings':
       return rest.length === 0 ? { view: { name: head } } : null;
-    // The management summary answers to `#/reports`, which is what an
-    // operator would type and what the rail calls it. `mis` is the
-    // internal name and never appears in an address.
+    // The Reports screen answers to `#/reports`, which is what an operator
+    // would type and what the rail calls it. `mis` is the internal name
+    // and never appears in an address.
     case 'reports':
-      return rest.length === 0 ? { view: { name: 'mis' } } : null;
+      return parseReportsHash(rest);
     default:
       return null;
   }
+}
+
+/** The Reports screen with nothing run — the bare `#/reports`, and where
+ * every half-formed reports fragment degrades to. Landing an operator on
+ * the report picker is the same courtesy an unknown Work section gets: the
+ * screen they asked for, without the configuration that made no sense. */
+const REPORTS_DEFAULT: WorkspaceRoute = {
+  view: { name: 'mis', tab: 'analysis', report: null, selection: null },
+};
+
+function parseReportsHash(segments: readonly string[]): WorkspaceRoute | null {
+  const [first, second, third, ...extra] = segments;
+  if (extra.length > 0) return null;
+  if (first === undefined) return REPORTS_DEFAULT;
+  if (!isMisTab(first)) return null;
+  if (first !== 'analysis') {
+    return second === undefined
+      ? { view: { name: 'mis', tab: first, report: null, selection: null } }
+      : null;
+  }
+  if (second === undefined || !isWorksAnalysisReport(second)) return REPORTS_DEFAULT;
+  const run = (selection: string | null): WorkspaceRoute => ({
+    view: { name: 'mis', tab: 'analysis', report: second, selection },
+  });
+  // A Work analysis with no Work named is not a configured report, so it
+  // degrades to the picker rather than to a card that would ask the
+  // server for nothing.
+  if (second === 'work') {
+    return third !== undefined && isRecordId(third) ? run(third) : REPORTS_DEFAULT;
+  }
+  // The division report runs across every division; a code narrows it.
+  if (second === 'division') return run(third ?? null);
+  return third === undefined ? run(null) : null;
 }
 
 function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {

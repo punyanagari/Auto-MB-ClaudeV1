@@ -1,9 +1,11 @@
-import type {
-  CombinedPendingRow,
-  CombinedPendingTotals,
-  DivisionAnalysisResponse,
-  MappedItemAnalysisResponse,
-  WorkAnalysisResponse,
+import {
+  WORKS_ANALYSIS_COLUMNS,
+  type CombinedPendingRow,
+  type CombinedPendingTotals,
+  type DivisionAnalysisResponse,
+  type MappedItemAnalysisResponse,
+  type WorkAnalysisResponse,
+  type WorksAnalysisReport,
 } from '@auto-mb/contracts';
 import { BASE_PDF_CSS, escapeHtml, type ChallanBranding } from './challan-html.js';
 import type { XlsxColumn, XlsxValue } from './xlsx.js';
@@ -468,6 +470,54 @@ export function toMappedItemDocument(
       },
     ],
     notes: [...GROUPING_NOTES, ...SHARED_NOTES],
+  };
+}
+
+/* --- the operator's chosen columns ------------------------------------ */
+
+/**
+ * The document with the columns the operator left out removed — from the
+ * headings, from every row, and from the totals alike.
+ *
+ * Positional, because an `AnalysisTable` is positional: a total is a row of
+ * cells indexed against `columns`, so dropping a heading without dropping
+ * the same index everywhere would slide every figure one column left. The
+ * one filter is computed per table and applied to all three.
+ *
+ * Only headers `WORKS_ANALYSIS_COLUMNS` lists for this report can be
+ * dropped. That is what keeps Item, Description, Bill and Agency on the
+ * page whatever the caller asks for, and it is why the Work report's
+ * inspection and payment tables come through untouched: nothing in them
+ * shares a heading with a chip.
+ */
+export function selectColumns(
+  document: AnalysisDocument,
+  report: WorksAnalysisReport,
+  keep: ReadonlySet<string>,
+): AnalysisDocument {
+  const droppable = new Set(
+    WORKS_ANALYSIS_COLUMNS[report].map((column) => column.header),
+  );
+  return {
+    ...document,
+    tables: document.tables.map((table) => {
+      const indices = table.columns
+        .map((column, index) =>
+          droppable.has(column.header) && !keep.has(column.header) ? -1 : index,
+        )
+        .filter((index) => index >= 0);
+      if (indices.length === table.columns.length) return table;
+      const pickCells = (cells: readonly XlsxValue[]): XlsxValue[] =>
+        indices.map((index) => cells[index] ?? null);
+      return {
+        ...table,
+        columns: indices
+          .map((index) => table.columns[index])
+          .filter((column): column is XlsxColumn => column !== undefined),
+        rows: table.rows.map(pickCells),
+        ...(table.total === undefined ? {} : { total: pickCells(table.total) }),
+      };
+    }),
   };
 }
 

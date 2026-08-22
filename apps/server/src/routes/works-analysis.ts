@@ -5,13 +5,16 @@ import {
   DivisionAnalysisResponseSchema,
   ItemGroupProposalsResponseSchema,
   MappedItemAnalysisResponseSchema,
+  defaultWorksAnalysisColumns,
   WORKS_ANALYSIS_REPORTS,
   WorkAnalysisResponseSchema,
   WorksAnalysisDocumentQuerySchema,
+  type CombinedPendingTotals,
   type DivisionAnalysisResponse,
   type ItemGroupProposalsResponse,
   type MappedItemAnalysisResponse,
   type WorkAnalysisResponse,
+  type WorksAnalysisDocumentQuery,
   type WorksAnalysisReport,
 } from '@auto-mb/contracts';
 import type { AppInstance } from '../app-instance.js';
@@ -28,6 +31,7 @@ import {
 } from '../works-analysis.js';
 import {
   renderWorksAnalysisHtml,
+  selectColumns,
   toDivisionDocument,
   toMappedItemDocument,
   toWorkDocument,
@@ -104,6 +108,73 @@ function scopeNote(fullScope: boolean): string {
  */
 function withScope(document: AnalysisDocument, scope: string): AnalysisDocument {
   return { ...document, scope };
+}
+
+/**
+ * The document under the operator's chosen columns.
+ *
+ * Absent parameter means every column, which is what a hand-typed URL and
+ * every existing caller mean by saying nothing. An EMPTY value is not the
+ * same request and is not treated as one — it would produce a page of
+ * nothing but identity columns — so it falls back to the report's own
+ * defaults rather than to a blank sheet.
+ */
+function withColumns(
+  document: AnalysisDocument,
+  report: WorksAnalysisReport,
+  columns: string | undefined,
+): AnalysisDocument {
+  if (columns === undefined) return document;
+  const chosen = columns
+    .split(',')
+    .map((header) => header.trim())
+    .filter((header) => header.length > 0);
+  return selectColumns(
+    document,
+    report,
+    new Set(chosen.length > 0 ? chosen : defaultWorksAnalysisColumns(report)),
+  );
+}
+
+/**
+ * The division report narrowed to one heading.
+ *
+ * Filtered on the RESPONSE rather than in SQL: the read already groups
+ * every division in one pass, the narrowing is a display choice the
+ * operator makes after seeing the list, and a second query shape would be
+ * a second place for the division derivation to be wrong. A code that
+ * matches nothing yields an empty document rather than a 404 — the honest
+ * answer to "what is pending in this division" can be "nothing".
+ *
+ * `none` addresses the Works whose consignees name no division or name
+ * more than one. A real code cannot collide with it: a railway division
+ * code is `^[0-9]{2,5}$` on the contact that carries it.
+ *
+ * The report-wide totals become the CHOSEN division's own. Nothing is
+ * added up here — with one division on the page the two figures are the
+ * same figure, and leaving the portfolio total under a single division's
+ * rows would print a total the rows do not add to, which is § 38's own
+ * "two tables, two totals" rule.
+ */
+const NO_DIVISION = 'none';
+
+const EMPTY_TOTALS: CombinedPendingTotals = {
+  rowCount: 0,
+  mappedRowCount: 0,
+  lineCount: 0,
+  pendingSupplyValue: '0.00',
+  pendingInstallValue: '0.00',
+};
+
+function narrowDivisions(
+  analysis: DivisionAnalysisResponse,
+  division: string | undefined,
+): DivisionAnalysisResponse {
+  if (division === undefined) return analysis;
+  const divisions = analysis.divisions.filter(
+    (entry) => (entry.divisionCode ?? NO_DIVISION) === division,
+  );
+  return { divisions, totals: divisions[0]?.totals ?? EMPTY_TOTALS };
 }
 
 export function registerWorksAnalysisRoutes(
@@ -201,8 +272,9 @@ export function registerWorksAnalysisRoutes(
     report: WorksAnalysisReport,
     userId: string,
     organisationId: string,
-    workId: string | undefined,
+    query: WorksAnalysisDocumentQuery,
   ): Promise<{ document: AnalysisDocument; suffix: string }> {
+    const { workId } = query;
     const full = await hasFullWorkScope(tx, userId);
     if (report === 'work') {
       if (workId === undefined) {
@@ -219,7 +291,7 @@ export function registerWorksAnalysisRoutes(
         // A per-Work report is about ONE named Work, so the portfolio scope
         // sentence would say nothing: the reader asked for this Work and
         // got this Work.
-        document: toWorkDocument(analysis),
+        document: withColumns(toWorkDocument(analysis), report, query.columns),
         suffix: `-${analysis.work.workCode.replaceAll('/', '-')}`,
       };
     }
@@ -230,11 +302,30 @@ export function registerWorksAnalysisRoutes(
         'This report covers the whole portfolio and is not about one Work.',
       );
     }
+    if (query.division !== undefined && report !== 'division') {
+      throw httpError(
+        400,
+        'DIVISION_NOT_APPLICABLE',
+        'Only the division analysis is grouped by railway division.',
+      );
+    }
     const document =
       report === 'division'
-        ? toDivisionDocument(await readDivisionAnalysis(tx, full, userId))
+        ? toDivisionDocument(
+            narrowDivisions(
+              await readDivisionAnalysis(tx, full, userId),
+              query.division,
+            ),
+          )
         : toMappedItemDocument(await readMappedItemAnalysis(tx, full, userId));
-    return { document: withScope(document, scopeNote(full)), suffix: '' };
+    return {
+      document: withColumns(
+        withScope(document, scopeNote(full)),
+        report,
+        query.columns,
+      ),
+      suffix: '',
+    };
   }
 
   tenantRoute(
@@ -258,7 +349,7 @@ export function registerWorksAnalysisRoutes(
           report,
           user.id,
           organisationId,
-          request.query.workId,
+          request.query,
         );
         const sheet = worksAnalysisSheet(built.document);
         await audit(
@@ -303,7 +394,7 @@ export function registerWorksAnalysisRoutes(
           report,
           user.id,
           organisationId,
-          request.query.workId,
+          request.query,
         );
         const [organisation] = await tx<
           {

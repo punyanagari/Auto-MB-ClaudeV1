@@ -178,6 +178,10 @@
    * it on its panel so the ledgers inside also clear the summary row. */
   --header-h: 4rem;
   --schedule-summary-h: 2.75rem;
+  /* The Reports screen's own tab rail, which sticks below the shell header
+   * and raises `--sticky-inset` for the panel under it, exactly as a
+   * schedule summary does. Same 44px as the Work page's section rail. */
+  --reports-tabs-h: 2.75rem;
   --sticky-inset: var(--header-h);
 
   /* Sticky table headings must be opaque so scrolled rows cannot read

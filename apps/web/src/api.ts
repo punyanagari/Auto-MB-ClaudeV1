@@ -811,11 +811,18 @@ export interface ApiClient {
   ) => Promise<ItemGroupProposalsResponse>;
   /** One works-analysis report as a PDF or an .xlsx workbook. `workId` is
    * required by the `work` report and refused by the other two. */
+  /** `columns` carries the operator's chosen headings into the document,
+   * and `division` narrows the division report to the heading on screen —
+   * so the file is the report being read rather than the whole of it. */
   readonly downloadWorksAnalysis: (
     organisationId: string,
     report: WorksAnalysisReport,
     format: 'pdf' | 'xlsx',
-    options?: { readonly workId?: string },
+    options?: {
+      readonly workId?: string;
+      readonly division?: string;
+      readonly columns?: readonly string[];
+    },
   ) => Promise<Blob>;
   /** Master data (pickers only): `save` with a null id creates, with an id
    * updates; `setActive` retires (false) or reactivates (true). */
@@ -3701,6 +3708,12 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     async downloadWorksAnalysis(organisationId, report, format, options = {}) {
       const query = new URLSearchParams();
       if (options.workId !== undefined) query.set('workId', options.workId);
+      if (options.division !== undefined) query.set('division', options.division);
+      // Comma-separated headings, which is what the schema takes: a
+      // repeated key would need array coercion on a querystring the
+      // route otherwise reads as flat strings.
+      if (options.columns !== undefined)
+        query.set('columns', options.columns.join(','));
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
       return downloadBlob(
         `/api/reports/analysis/${report}/report.${format}${suffix}`,

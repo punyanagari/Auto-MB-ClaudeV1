@@ -139,7 +139,12 @@ const SCREENS = [
   { hash: `#/loa/${DOC_ID}`, name: 'LOA review', ready: /Review loa-letter\.pdf/ },
   // The widest tables in the product: the works-analysis pending rows are
   // thirteen columns, which is precisely the shape this test exists for.
-  { hash: '#/reports', name: 'reports', ready: 'Reports' },
+  // The report is addressed directly, because Reports now opens on its
+  // picker and reads nothing until a report is run — so the bare address
+  // would prove only that a form fits.
+  { hash: '#/reports/analysis/mapped-item', name: 'item analysis', ready: 'Reports' },
+  // The month-end registers, which moved to their own tab.
+  { hash: '#/reports/accounts', name: 'reports — accounts', ready: 'Reports' },
 ] as const;
 
 test('no register makes the page scroll sideways', async ({ page }) => {
