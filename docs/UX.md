@@ -1921,12 +1921,26 @@ One Work-level cadence could not describe the letter, and a per-item one
 would ask the operator to type the same number against every item and let
 them disagree.
 
-**What the schedules screen offers.** Each schedule carries two fields:
-how many billing periods its maintenance is measured in, and the word the
-agency calls one of them ("quarter", "month", "year", "half-year",
-"visit"). Both move together — two values set the cycle, two blanks remove
-it, and a half-stated pair is refused (`AMC_CYCLE_INCOMPLETE`). The word
-is the word alone: "quarter", never "quarterly bill" or "1 quarter".
+**What the schedules screen offers.** A schedule carrying at least one
+AMC item carries two fields: how many billing periods its maintenance is
+measured in, and the word the agency calls one of them ("quarter",
+"month", "year", "half-year", "visit"). Both move together — two values
+set the cycle, two blanks remove it, and a half-stated pair is refused
+(`AMC_CYCLE_INCOMPLETE`). The word is the word alone: "quarter", never
+"quarterly bill" or "1 quarter". A `Hint` under the pair says what is
+being asked: "In how many instalments does the LOA bill this
+maintenance, and what does it call each one? A 5-year AMC billed
+half-yearly is 10 periods, each a half-year."
+
+**Only where maintenance is billed** (owner ruling of 2026-08-22,
+corrections). The item's `payment_category = 'AMC'` — the same
+discriminator the cadence route and the Measurement Book engine read —
+decides whether the fields appear at all. A supply-only schedule shows
+nothing here, not even the read-only "No maintenance billing cycle set."
+line: a cadence is not a fact that schedule can have, so an empty
+statement of it is noise on every schedule of every Work. This is not §
+31's disabled-with-a-reason case, which is for a choice the record could
+carry once a data condition is met.
 
 **No default is guessed.** A schedule with no cycle stated proposes
 nothing and bills exactly as it bills today. The owner's rulings default a
