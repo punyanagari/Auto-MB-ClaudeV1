@@ -7,7 +7,7 @@ import { exactRowsTotal } from '../loa-payload.js';
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { StatusChip } from '../ui/chip.js';
-import { FormError } from '../ui/form.js';
+import { FormError, Hint } from '../ui/form.js';
 import {
   ClampedText,
   ScheduleAccordionControls,
@@ -93,6 +93,10 @@ function AmcCycleEditor({
    * as null and would reach the server as "clear the cycle" — an answer
    * nobody asked for, and one that reads as success. */
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* A billing cadence only describes maintenance, so a schedule with no
+   * AMC item states nothing here — not even the read-only line. Same
+   * discriminator the server reads (`routes/amc-cycles.ts`). */
+  if (!schedule.items.some((item) => item.paymentCategory === 'AMC')) return null;
   if (!canModify) {
     return (
       <p className="text-muted-foreground">
@@ -154,6 +158,10 @@ function AmcCycleEditor({
       <Button type="submit" variant="outline" size="sm" disabled={pending}>
         Save cycle
       </Button>
+      <Hint className="basis-full">
+        In how many instalments does the LOA bill this maintenance, and what does it
+        call each one? A 5-year AMC billed half-yearly is 10 periods, each a half-year.
+      </Hint>
       {refusal !== null && <FormError>{refusal}</FormError>}
     </form>
   );
