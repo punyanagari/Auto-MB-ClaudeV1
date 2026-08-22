@@ -13,6 +13,7 @@ import {
   type Work,
   type WorkAnalysisItem,
   type WorkAnalysisResponse,
+  type WorksAnalysisOptionsResponse,
   type WorksAnalysisReport,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
@@ -23,6 +24,7 @@ import { openPdf } from '../lib/openPdf.js';
 import { useAction, useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
+import { Combobox, type ComboboxOption } from '../ui/combobox.js';
 import { DownloadButton } from '../ui/download-button.js';
 import { Field, FormError, FormNotice, Hint } from '../ui/form.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
@@ -211,15 +213,22 @@ export function WorksAnalysis({
   const [division, setDivision] = useState(
     runReport === 'division' ? (runSelection ?? '') : '',
   );
+  const [item, setItem] = useState(
+    runReport === 'mapped-item' ? (runSelection ?? '') : '',
+  );
   const [columns, setColumns] = useState<ReadonlySet<string>>(
     () => new Set(defaultWorksAnalysisColumns(runReport ?? 'work')),
   );
-  /** The divisions the last division run found, so the picker offers the
-   * headings that exist rather than a list of codes typed by hand. Empty
-   * until that report has been run once — this schema has no division
-   * master, and inventing one to populate a select would be a whole
-   * register for a dropdown. */
-  const [divisionOptions, setDivisionOptions] = useState<readonly string[]>([]);
+  /** What the two portfolio reports can be narrowed to, read from the
+   * server before either is run.
+   *
+   * The first cut filled the division picker FROM the division report, so
+   * an operator who wanted one division had to read every division first
+   * and there was no item picker at all. That is a picker that cannot be
+   * used to choose, and the owner rejected it. `/api/reports/analysis/
+   * options` is the cheap read that answers it instead: headings and item
+   * keys, no quantities. */
+  const [options, setOptions] = useState<WorksAnalysisOptionsResponse | null>(null);
 
   /* The address is the source of truth for what is RUN. Following it here
      keeps the selector describing the report on screen after a Back press
@@ -231,12 +240,14 @@ export function WorksAnalysis({
     setColumns(new Set(defaultWorksAnalysisColumns(runReport)));
     if (runReport === 'work') setWorkId(runSelection ?? '');
     if (runReport === 'division') setDivision(runSelection ?? '');
+    if (runReport === 'mapped-item') setItem(runSelection ?? '');
   }, [runReport, runSelection]);
 
-  /* The Work picker's own list, and the only read this screen makes before
-     Run: a selector with nothing to select is not a selector. It is a
-     register list, not a portfolio roll-up, and it is what the Work
-     analysis is chosen from. */
+  /* The pickers' own lists, and the only reads this screen makes before
+     Run: a selector with nothing to select is not a selector. Both are
+     register-shaped rather than portfolio roll-ups — the Work list, and
+     the headings and item keys the two portfolio reports can be narrowed
+     to. Neither reads a challan, an installation or a rupee. */
   useEffect(() => {
     let cancelled = false;
     api
@@ -248,6 +259,18 @@ export function WorksAnalysis({
       })
       .catch((cause: unknown) => {
         if (!cancelled) setWorksError(describeRefusal(cause, 'The Work list').message);
+      });
+    api
+      .worksAnalysisOptions(organisationId)
+      .then((loaded) => {
+        if (!cancelled) setOptions(loaded);
+      })
+      .catch(() => {
+        /* A picker that could not load its choices leaves the report
+           runnable across the whole portfolio, which is what it did
+           before this existed. Failing the screen over a dropdown would
+           take away the report as well as the narrowing. */
+        if (!cancelled) setOptions({ divisions: [], items: [] });
       });
     return () => {
       cancelled = true;
@@ -272,6 +295,34 @@ export function WorksAnalysis({
       : new Set(defaultWorksAnalysisColumns(runReport));
 
   const canRun = report !== 'work' || workId !== '';
+
+  /* A Work row is its CODE and as much of the title as the row fits. The
+     code is what the operator knows and what the paperwork carries; the
+     title is there to confirm the choice, not to be read to the end. */
+  const workOptions: readonly ComboboxOption[] = (works ?? []).map((work) => ({
+    value: work.id,
+    code: work.workCode,
+    label: work.title,
+  }));
+
+  /* "Every division" and "Every item" are options rather than a separate
+     control, because they are what the report answers when nothing is
+     chosen — the same empty value the address carries as no segment. */
+  const divisionOptions: readonly ComboboxOption[] = [
+    { value: '', label: 'Every division' },
+    ...(options?.divisions ?? []).map((code) => ({
+      value: code ?? NO_DIVISION,
+      label: code === null ? 'No division on record' : `Division ${code}`,
+    })),
+  ];
+
+  const itemOptions: readonly ComboboxOption[] = [
+    { value: '', label: 'Every item' },
+    ...(options?.items ?? []).map((entry) => ({
+      value: entry.key,
+      label: entry.mapped ? entry.label : `${entry.label} (not mapped)`,
+    })),
+  ];
 
   return (
     <>
@@ -308,43 +359,41 @@ export function WorksAnalysis({
           {report === 'work' && (
             <Field>
               <label htmlFor="works-analysis-work">Work</label>
-              <select
+              <Combobox
                 id="works-analysis-work"
                 value={workId}
                 disabled={works === null}
-                onChange={(event) => {
-                  setWorkId(event.target.value);
-                }}
-              >
-                {works === null && <option value="">Loading…</option>}
-                {(works ?? []).map((work) => (
-                  <option key={work.id} value={work.id}>
-                    {work.workCode} — {work.title}
-                  </option>
-                ))}
-              </select>
+                options={workOptions}
+                onChange={setWorkId}
+                placeholder={works === null ? 'Loading…' : 'Type a code or a title'}
+                noMatchLabel="No Work matches that code or title."
+              />
             </Field>
           )}
 
           {report === 'division' && (
             <Field>
               <label htmlFor="works-analysis-division">Railway division</label>
-              <select
+              <Combobox
                 id="works-analysis-division"
                 value={division}
-                onChange={(event) => {
-                  setDivision(event.target.value);
-                }}
-              >
-                <option value="">Every division</option>
-                {divisionOptions.map((code) => (
-                  <option key={code} value={code}>
-                    {code === NO_DIVISION
-                      ? 'No division on record'
-                      : `Division ${code}`}
-                  </option>
-                ))}
-              </select>
+                options={divisionOptions}
+                onChange={setDivision}
+                noMatchLabel="No division matches that."
+              />
+            </Field>
+          )}
+
+          {report === 'mapped-item' && (
+            <Field>
+              <label htmlFor="works-analysis-item">Item</label>
+              <Combobox
+                id="works-analysis-item"
+                value={item}
+                options={itemOptions}
+                onChange={setItem}
+                noMatchLabel="No item matches that."
+              />
             </Field>
           )}
         </div>
@@ -377,14 +426,9 @@ export function WorksAnalysis({
             type="button"
             disabled={!canRun}
             onClick={() => {
-              onRun(
-                report,
-                report === 'work'
-                  ? workId
-                  : report === 'division' && division !== ''
-                    ? division
-                    : null,
-              );
+              const chosen =
+                report === 'work' ? workId : report === 'division' ? division : item;
+              onRun(report, chosen === '' ? null : chosen);
             }}
           >
             <Play aria-hidden="true" className="size-4" />
@@ -405,7 +449,6 @@ export function WorksAnalysis({
           report={runReport}
           selection={runSelection}
           columns={shownColumns}
-          onDivisions={setDivisionOptions}
         />
       )}
     </>
@@ -418,14 +461,12 @@ function RunResult({
   report,
   selection,
   columns,
-  onDivisions,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly report: WorksAnalysisReport;
   readonly selection: string | null;
   readonly columns: ReadonlySet<string>;
-  readonly onDivisions: (codes: readonly string[]) => void;
 }) {
   if (report === 'work') {
     // The address guarantees a Work id on this report, so the picker's
@@ -446,7 +487,6 @@ function RunResult({
         organisationId={organisationId}
         division={selection}
         columns={columns}
-        onDivisions={onDivisions}
       />
     );
   }
@@ -455,9 +495,16 @@ function RunResult({
       <MappedItemAnalysisCard
         api={api}
         organisationId={organisationId}
+        item={selection}
         columns={columns}
       />
-      <ItemGroupProposalsCard api={api} organisationId={organisationId} />
+      {/* The proposals are about the UNMAPPED descriptions the whole
+          portfolio holds. Narrowed to one item they would be a list of
+          one thing that cannot be grouped with itself, so they render
+          under the portfolio-wide run and not under a narrowed one. */}
+      {selection === null && (
+        <ItemGroupProposalsCard api={api} organisationId={organisationId} />
+      )}
     </>
   );
 }
@@ -473,6 +520,7 @@ function ReportDocuments({
   report,
   workId,
   division,
+  item,
   columns,
 }: {
   readonly api: ApiClient;
@@ -480,12 +528,14 @@ function ReportDocuments({
   readonly report: WorksAnalysisReport;
   readonly workId?: string;
   readonly division?: string;
+  readonly item?: string;
   readonly columns: ReadonlySet<string>;
 }) {
   const { pending, notice, actionError, act } = useAction();
   const options = {
     ...(workId === undefined ? {} : { workId }),
     ...(division === undefined ? {} : { division }),
+    ...(item === undefined ? {} : { item }),
     columns: [...columns],
   };
   return (
@@ -1216,13 +1266,11 @@ function DivisionAnalysisCard({
   organisationId,
   division,
   columns,
-  onDivisions,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly division: string | null;
   readonly columns: ReadonlySet<string>;
-  readonly onDivisions: (codes: readonly string[]) => void;
 }) {
   const [analysis, setAnalysis] = useState<DivisionAnalysisResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1235,12 +1283,7 @@ function DivisionAnalysisCard({
     api
       .divisionAnalysis(organisationId)
       .then((loaded) => {
-        if (cancelled) return;
-        setAnalysis(loaded);
-        /* The picker's options come from the report itself: this schema
-           has no division master, and the codes that matter are exactly
-           the ones a Work's consignees produced. */
-        onDivisions(loaded.divisions.map((entry) => entry.divisionCode ?? NO_DIVISION));
+        if (!cancelled) setAnalysis(loaded);
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
@@ -1250,7 +1293,7 @@ function DivisionAnalysisCard({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion, onDivisions]);
+  }, [api, organisationId, loadVersion]);
 
   /* Narrowed on the response, exactly as `routes/works-analysis.ts`
      narrows the document: one read groups every division, and the choice
@@ -1331,22 +1374,31 @@ function DivisionAnalysisCard({
 function MappedItemAnalysisCard({
   api,
   organisationId,
+  item,
   columns,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
+  /** One item group's key, or null for the whole portfolio. */
+  readonly item: string | null;
   readonly columns: ReadonlySet<string>;
 }) {
   const [analysis, setAnalysis] = useState<MappedItemAnalysisResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadVersion, retry] = useReload();
 
+  /* Narrowed by the SERVER rather than by filtering the response here,
+     which is the difference between this and the division report: a
+     division group arrives with its own totals already summed, and one
+     item's do not exist until somebody adds the rows up. Nothing on this
+     screen adds anything up (AGENTS.md rule 5), so the read takes the key
+     and the totals come back this item's own. */
   useEffect(() => {
     let cancelled = false;
     setAnalysis(null);
     setLoadError(null);
     api
-      .mappedItemAnalysis(organisationId)
+      .mappedItemAnalysis(organisationId, item ?? undefined)
       .then((loaded) => {
         if (!cancelled) setAnalysis(loaded);
       })
@@ -1358,7 +1410,7 @@ function MappedItemAnalysisCard({
     return () => {
       cancelled = true;
     };
-  }, [api, organisationId, loadVersion]);
+  }, [api, organisationId, item, loadVersion]);
 
   const mapped = (analysis?.rows ?? []).filter((row) => row.canonicalItemId !== null);
   const unmapped = (analysis?.rows ?? []).filter((row) => row.canonicalItemId === null);
@@ -1369,8 +1421,9 @@ function MappedItemAnalysisCard({
         <div className="flex flex-col gap-1">
           <h2 className="text-base leading-snug font-medium">Item analysis</h2>
           <p className="text-sm text-muted-foreground">
-            Pending quantities combined per item master, across every active Work. This
-            is the whole portfolio’s ordering position for one product.
+            {item === null
+              ? 'Pending quantities combined per item master, across every active Work. This is the whole portfolio’s ordering position for one product.'
+              : 'One item, across every active Work. The totals below are this item’s own.'}
           </p>
         </div>
       </CardHeader>
@@ -1379,6 +1432,7 @@ function MappedItemAnalysisCard({
         organisationId={organisationId}
         report="mapped-item"
         columns={columns}
+        {...(item === null ? {} : { item })}
       />
       <GroupingHint />
       {loadError !== null && (
@@ -1389,33 +1443,48 @@ function MappedItemAnalysisCard({
       {loadError === null && analysis === null && (
         <LoadingState label="the item analysis" rows={6} columns={6} />
       )}
+      {/* A chosen key is EITHER a master item or one unmapped
+          description, never both, so a narrowed report draws the one
+          section its rows are in. Both empty means the key matches
+          nothing — a stale bookmark, or an item that has since been
+          fully supplied. */}
+      {analysis !== null && item !== null && analysis.rows.length === 0 && (
+        <EmptyState>
+          Nothing is pending on that item. Run the report across every item to see where
+          the pending position is.
+        </EmptyState>
+      )}
       {analysis !== null && (
         <>
-          <section aria-label="Mapped items">
-            <h3 className="m-0 text-sm font-medium">Mapped items</h3>
-            <PendingTable
-              caption="Pending quantities combined per item master across every active Work"
-              rows={mapped}
-              total={analysis.mappedTotals}
-              empty="No schedule line maps to an item master yet. Master items and their alternative wordings are recorded on the Masters screen."
-              columns={columns}
-            />
-          </section>
-          <section aria-label="Not mapped to an item master">
-            <h3 className="m-0 text-sm font-medium">Not mapped to an item master</h3>
-            <p className="m-0 text-sm text-muted-foreground">
-              {analysis.unmappedLineCount} live schedule line(s) match no active master
-              item. They are listed one description at a time and combine with nothing,
-              because nothing has yet said they name the same product.
-            </p>
-            <PendingTable
-              caption="Pending quantities of schedule lines that map to no item master"
-              rows={unmapped}
-              total={analysis.unmappedTotals}
-              empty="Every live schedule line maps to an item master."
-              columns={columns}
-            />
-          </section>
+          {(item === null || mapped.length > 0) && (
+            <section aria-label="Mapped items">
+              <h3 className="m-0 text-sm font-medium">Mapped items</h3>
+              <PendingTable
+                caption="Pending quantities combined per item master across every active Work"
+                rows={mapped}
+                total={analysis.mappedTotals}
+                empty="No schedule line maps to an item master yet. Master items and their alternative wordings are recorded on the Masters screen."
+                columns={columns}
+              />
+            </section>
+          )}
+          {(item === null || unmapped.length > 0) && (
+            <section aria-label="Not mapped to an item master">
+              <h3 className="m-0 text-sm font-medium">Not mapped to an item master</h3>
+              <p className="m-0 text-sm text-muted-foreground">
+                {analysis.unmappedLineCount} live schedule line(s) match no active
+                master item. They are listed one description at a time and combine with
+                nothing, because nothing has yet said they name the same product.
+              </p>
+              <PendingTable
+                caption="Pending quantities of schedule lines that map to no item master"
+                rows={unmapped}
+                total={analysis.unmappedTotals}
+                empty="Every live schedule line maps to an item master."
+                columns={columns}
+              />
+            </section>
+          )}
         </>
       )}
     </Card>

@@ -261,8 +261,9 @@ export type WorkspaceView =
    *
    * `selection` is what that report is about — the Work for `work`, the
    * railway division for `division` (`none` for the Works whose consignees
-   * name no division or name more than one), and null for `mapped-item`,
-   * which is about the whole portfolio.
+   * name no division or name more than one), and the item group's key for
+   * `mapped-item`. Null on the two portfolio reports is the whole
+   * portfolio, which is what they answer when nothing is chosen.
    */
   | {
       name: 'mis';
@@ -870,9 +871,12 @@ function parseReportsHash(segments: readonly string[]): WorkspaceRoute | null {
   if (second === 'work') {
     return third !== undefined && isRecordId(third) ? run(third) : REPORTS_DEFAULT;
   }
-  // The division report runs across every division; a code narrows it.
-  if (second === 'division') return run(third ?? null);
-  return third === undefined ? run(null) : null;
+  // The division report runs across every division and the item report
+  // across every item; a code or an item key narrows either. The key can
+  // be a description, so it carries whatever characters a schedule line
+  // does — which is why every segment is encoded on the way out and
+  // decoded on the way in.
+  return run(third ?? null);
 }
 
 function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {

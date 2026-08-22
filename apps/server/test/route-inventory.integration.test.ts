@@ -158,6 +158,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     'the management summary: three aggregates whose arrays are one row per MONTH (capped by the route at 60) and one row per ageing band (five, always all five). Paging a summary would page the answer to a question that has one screen',
   ],
   [
+    'GET /api/reports/analysis/options',
+    "what the two portfolio reports on the Reports screen can be narrowed to: the railway division headings its own Works produce, and one row per item group its live schedule lines resolve to. Both feed a PICKER, and a picker is filtered by typing rather than paged — a second page of choices is a choice an operator cannot see. Bounded by the same two things the report itself is: the organisation's active Works and its item master",
+  ],
+  [
     'GET /api/reports/item-group-proposals',
     'the proposed item groups on the Reports screen: one row per normalised description that more than one WORDING resolves to, across the schedule lines the caller can see. It cannot be longer than the item analysis above it on the same screen, and it is a review queue an operator works through until it is empty — so a second page would be a page of work nobody has done yet rather than more of a register',
   ],

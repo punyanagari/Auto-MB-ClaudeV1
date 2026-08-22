@@ -7,6 +7,7 @@ import { errorMessage } from '../lib/load-failure.js';
 import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
+import { Combobox } from '../ui/combobox.js';
 import { Actions, Field, FieldRow, FormError, Hint } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
 import { ErrorState, LoadingState } from '../ui/state.js';
@@ -291,20 +292,18 @@ export function MaintenanceRequestForm({
         <FieldRow>
           <Field>
             <label htmlFor="maintenance-work">Work</label>
-            <select
+            <Combobox
               id="maintenance-work"
               value={workId}
-              onChange={(event) => {
-                setWorkId(event.currentTarget.value);
-              }}
-            >
-              <option value="">Select a Work</option>
-              {pickers.works.map((work) => (
-                <option key={work.id} value={work.id}>
-                  {work.code} · {work.title}
-                </option>
-              ))}
-            </select>
+              onChange={setWorkId}
+              placeholder="Select a Work"
+              options={pickers.works.map((work) => ({
+                value: work.id,
+                code: work.code,
+                label: work.title,
+              }))}
+              noMatchLabel="No Work matches that code or title."
+            />
           </Field>
           <Field>
             <label htmlFor="maintenance-station">Station / site</label>

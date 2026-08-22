@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Button } from '../src/ui/button.js';
+import { Combobox } from '../src/ui/combobox.js';
 import { PageHeader } from '../src/ui/page-header.js';
 import { Separator } from '../src/ui/separator.js';
 import { Sheet } from '../src/ui/sheet.js';
@@ -190,5 +191,176 @@ describe('Stat', () => {
     expect(screen.getByText('3').className).toContain('text-warning-foreground');
     /* The words still say it. Colour is never the whole message. */
     expect(screen.getByText('past due date')).toBeTruthy();
+  });
+});
+
+/*
+ * The searchable picker (§ 38, owner ruling of 2026-08-22).
+ *
+ * What is tested here is the contract a caller relies on and a `<select>`
+ * used to give for free: the list narrows to what was typed, the keyboard
+ * moves and takes, and the value a form reads is the option's value and
+ * never the text in the box. Every one of those is hand-written, because
+ * base-ui is not in this stack.
+ */
+function Picker({
+  onChange = () => undefined,
+  ...rest
+}: Partial<React.ComponentProps<typeof Combobox>> = {}) {
+  return (
+    <>
+      <label htmlFor="pick">Work</label>
+      <Combobox
+        id="pick"
+        value={rest.value ?? ''}
+        onChange={onChange}
+        options={[
+          { value: 'a', code: 'SIG-2026-11', label: 'Signalling at Alpha yard' },
+          { value: 'b', code: 'SIG-2026-14', label: 'Signalling at Beta yard' },
+          { value: 'c', code: 'TEL-2026-03', label: 'Telecom at Alpha yard' },
+        ]}
+        {...rest}
+      />
+    </>
+  );
+}
+
+function pickerInput(): HTMLInputElement {
+  return screen.getByRole('combobox', { name: 'Work' });
+}
+
+describe('Combobox', () => {
+  it('is a combobox with a listbox it names, and the list is shut until asked', () => {
+    render(<Picker />);
+    const input = pickerInput();
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+    // aria-controls resolves whether or not the popup is showing, which is
+    // why the list is `hidden` rather than unmounted.
+    const listId = input.getAttribute('aria-controls');
+    expect(listId).toBeTruthy();
+    expect(document.getElementById(listId ?? '')).not.toBeNull();
+    expect(screen.queryByRole('option')).toBeNull();
+  });
+
+  it('opens on focus and offers every option', () => {
+    render(<Picker />);
+    fireEvent.focus(pickerInput());
+    expect(pickerInput().getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('option')).toHaveLength(3);
+  });
+
+  it('narrows on the code AND on the title, because an operator remembers either', () => {
+    render(<Picker />);
+    const input = pickerInput();
+    fireEvent.focus(input);
+
+    fireEvent.change(input, { target: { value: 'tel' } });
+    expect(screen.getAllByRole('option').map((row) => row.textContent)).toEqual([
+      'TEL-2026-03Telecom at Alpha yard',
+    ]);
+
+    fireEvent.change(input, { target: { value: 'beta' } });
+    expect(screen.getAllByRole('option').map((row) => row.textContent)).toEqual([
+      'SIG-2026-14Signalling at Beta yard',
+    ]);
+  });
+
+  it('says so when nothing matches, rather than showing an empty box', () => {
+    render(<Picker />);
+    const input = pickerInput();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'zzz' } });
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('Nothing matches');
+  });
+
+  it('moves with the arrows and takes with Enter, naming the active row', () => {
+    const onChange = vi.fn();
+    render(<Picker onChange={onChange} />);
+    const input = pickerInput();
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    const first = screen.getAllByRole('option')[0];
+    expect(input.getAttribute('aria-activedescendant')).toBe(first?.id);
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(
+      screen.getAllByRole('option')[1]?.id,
+    );
+    fireEvent.keyDown(input, { key: 'End' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(
+      screen.getAllByRole('option')[2]?.id,
+    );
+    fireEvent.keyDown(input, { key: 'Home' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(first?.id);
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith('a');
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('takes a clicked row, and shows the chosen one when shut', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<Picker onChange={onChange} />);
+    fireEvent.focus(pickerInput());
+    // mousedown, not click: the pointer press is what would otherwise blur
+    // the input and close the popup out from under the pointer.
+    fireEvent.mouseDown(screen.getAllByRole('option')[2] as HTMLElement);
+    expect(onChange).toHaveBeenCalledWith('c');
+
+    rerender(<Picker onChange={onChange} value="c" />);
+    expect(pickerInput().value).toBe('TEL-2026-03 — Telecom at Alpha yard');
+  });
+
+  it('closes on Escape and keeps the value it had', () => {
+    const onChange = vi.fn();
+    render(<Picker onChange={onChange} value="b" />);
+    const input = pickerInput();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'tel' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.value).toBe('SIG-2026-14 — Signalling at Beta yard');
+  });
+
+  it('gives a form the VALUE, never the text in the box', () => {
+    render(
+      <form aria-label="Job card">
+        <Picker name="workId" value="b" />
+      </form>,
+    );
+    const form = screen.getByRole<HTMLFormElement>('form', { name: 'Job card' });
+    expect(new FormData(form).get('workId')).toBe('b');
+
+    // Half-typed text is not a submission: the box reverts to the chosen
+    // row the moment the popup closes, and Enter inside an open popup is
+    // swallowed rather than reaching the form.
+    const input = pickerInput();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'nonsense' } });
+    fireEvent.focusOut(input);
+    expect(input.value).toBe('SIG-2026-14 — Signalling at Beta yard');
+    expect(new FormData(form).get('workId')).toBe('b');
+  });
+
+  it('is empty, and therefore refusable by `required`, when nothing is chosen', () => {
+    render(<Picker required value="" />);
+    const input = pickerInput();
+    expect(input.required).toBe(true);
+    expect(input.value).toBe('');
+    expect(input.checkValidity()).toBe(false);
+  });
+
+  it('prints the code in mono and lets the title clip rather than wrap', () => {
+    render(<Picker />);
+    fireEvent.focus(pickerInput());
+    const row = screen.getAllByRole('option')[0] as HTMLElement;
+    expect(row.querySelector('.font-mono')?.textContent).toBe('SIG-2026-11');
+    expect(row.querySelector('.truncate')?.textContent).toBe(
+      'Signalling at Alpha yard',
+    );
   });
 });
