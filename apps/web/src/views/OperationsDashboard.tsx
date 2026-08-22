@@ -285,7 +285,7 @@ function SetupChecklist({
  * sorts, filters and pages — so the dashboard was spending its best space
  * repeating a screen one click away. It now answers four questions
  * instead, in the order an operator asks them (owner decision 2026-08-22,
- * `docs/UX.md` § 39):
+ * `docs/UX.md` § 40):
  *
  *   1. Where does the running portfolio stand?      — the four tiles
  *   2. Is anything on fire?                         — the attention strip

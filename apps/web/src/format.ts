@@ -204,7 +204,7 @@ export function formatServerPercent(value: string | null): string | null {
 /* `progressPercent` stood here: a browser-side division of two decimal
  * strings, clamped for a progress bar. Its only caller was the dashboard's
  * delivered-against-contract column, and the redesigned screen
- * (`docs/UX.md` § 39) takes both of its percentages from the server, which
+ * (`docs/UX.md` § 40) takes both of its percentages from the server, which
  * is where a ratio against a contract value belongs — each Work's GST
  * basis decides what its contract value is comparable with (migration
  * 0062) and the browser does not know it. Removed rather than left for the

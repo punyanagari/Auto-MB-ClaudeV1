@@ -642,6 +642,24 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Wait for the Tally import already running for this organisation to finish, then read the file again — two imports at once would leave the census describing neither export.',
   TALLY_LEDGER_IMMUTABLE:
     'Import a fresh All Masters export instead of editing a census row: the census mirrors what Tally holds, and which Tally master a row is about never changes.',
+  // ---- The Tally invoice cross-reference (0119) ----------------------------
+  //
+  // Separate codes from the masters ones above, and the reason is the
+  // remedy rather than the refusal: these two send an operator to export
+  // the SALES VOUCHERS, narrowed, and "export All Masters" would send them
+  // to re-run a different export entirely. The narrowing is the load-
+  // bearing half — the unfiltered voucher file is 3.18 GB and no upload
+  // route here will take it.
+  TALLY_VOUCHERS_UNREADABLE:
+    'Export the sales vouchers from TallyPrime — the Day Book narrowed to Sales, Credit Note and Debit Note, never the whole voucher file, which is far too large to upload — and send the XML it writes without opening or re-saving it, because the preview names the line of anything it cannot read and writes nothing.',
+  TALLY_VOUCHERS_TRUNCATED:
+    'Export the sales vouchers from TallyPrime again and wait for it to finish writing before uploading — the file that arrived stops partway through, so importing it would record a fraction of the billing history as though it were all of it.',
+  TALLY_INVOICE_LINK_NOT_FOUND:
+    'Open the correspondence from the historical invoice it belongs to; a link can outlive the screen that named it, and the invoice always lists the vouchers it carries.',
+  TALLY_DISPUTE_NOT_OPEN:
+    'Rule only on a correspondence the import flagged: where TallyPrime and Zoho state the same figure there is no disagreement to decide, and recording one would move the invoice in or out of the billed total for no reason.',
+  TALLY_INVOICE_LINK_IMMUTABLE:
+    'Discard the historical invoice and import the corrected export instead of editing what an export said: a record of a correspondence between two systems is not rewritten, and the register keeps both rows.',
   // ---- Defect liability periods (0099) ------------------------------------
   //
   // The module has no document to open and no number to quote, so every

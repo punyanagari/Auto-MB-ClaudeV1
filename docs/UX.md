@@ -3127,15 +3127,94 @@ bills sits beside the total saying so.
 **When the mock grows a reports page, the mock wins**, on § 19's own terms
 and the § 4 iteration pipeline.
 
-### 39. The dashboard stops listing Works and starts answering questions
+### 39. Two systems on one register — the Tally half of the billing history
+
+**Status: application-first, owner rulings of 2026-08-22 (Tally mapping
+census, questions 12, 21, 22, 23; migration 0119).** RENUMBERED FROM 38 AT
+THE MERGE, which is what the placeholder note § 37 carries exists to
+force: this wave took 38 as the next free number after § 37, the works
+analysis section landed 38 while it was in flight, and two sections
+sharing a number is the thing the note refuses. The renumber is by hand,
+here, rather than left to a merge that would have taken both silently.
+
+**No new screen.** § 34's Historical invoices register already answers
+"what have we billed this customer" for the Zoho years; this wave gives it
+the three years before Zoho and the reconciliation between the two. A
+second register for the same question under a different source would have
+made an operator ask which one to look at, which is precisely the state
+§ 34 was built to end. Everything below is one column, two lamps, one
+filter and a second upload panel, in the mock's existing grammar under
+AGENTS.md § Design contract 2 and 4.
+
+**The source column is a lamp, not a label, and it earns its width.** A
+row read from TallyPrime and a row read from Zoho Books are the same kind
+of record and are read the same way — but they answer differently when
+somebody asks where a figure came from, and a register that showed five
+years of billing without saying which system each year came from would
+invite exactly that question and answer none of it. Under the lamp, where
+the two systems both hold the invoice, the corresponding voucher's number
+is shown so an operator can open it in TallyPrime.
+
+**A voucher number is shown only where exactly one voucher corresponds.**
+One accounting entry often covers several bills; naming the first of three
+would name a real document and imply it was the only one. Where several
+correspond the cell says how many, which is the honest reading and the one
+that sends an operator to the import report rather than to the wrong
+voucher.
+
+**A disputed value is a lamp on the VALUE, not a state of the row.** The
+invoice is not in doubt — the figure is, because Tally and Zoho state
+different ones for it and neither is overwritten (ruling 21). The lamp sits
+in the money cell where the disagreement lives, and the header states what
+the billed total therefore leaves out, on the same terms § 34 already set
+for voided invoices. It says it in a sentence rather than leaving the
+arithmetic to be reverse-engineered from a number that will not add up.
+
+**Two upload panels, not one panel with a format toggle.** The two files
+are different exports of different systems, and what comes back from
+reading them answers different questions: the Zoho panel proposes which
+Work each invoice would be filed against, and the Tally panel reconciles
+two registers against each other. A toggle would have put both reports
+behind one control and made the operator remember which one they were
+looking at.
+
+**The narrowing instruction is the first thing the Tally panel says.**
+TallyPrime's whole voucher file is several gigabytes and this application
+will not accept it; narrowed to the three sales-side voucher types it is a
+manageable upload. Telling an operator that BEFORE they choose a file is
+what stops them waiting ten minutes for a refusal — and the refusal, when
+it comes another way, carries the same instruction rather than a generic
+"too large".
+
+**The Tally preview states its zeroes.** How many vouchers were cancelled
+and which, how many credit and debit notes were read and not imported, how
+many near-matches were refused for sharing a serial with an unrelated
+invoice, and how many invoices on the register this file has no voucher
+for — all of them, stated even when they are nought, on the terms § 37 set
+for the census: a count of what could not be used is worth more than a
+count of what could, and silence reads as absence of the problem rather
+than absence of the check.
+
+**The preview lists disputed and unmatched vouchers first**, then the
+rest, truncated. The half an operator is deciding about is never the half
+that gets cut — which is § 34's rule for the Zoho preview, applied to a
+different pair of halves.
+
+**Only the import is gated**, on § 34's terms exactly: reading the
+register carries the writer role, and pointing a file at it needs the
+data-import authority. A member without it sees both halves of the
+register and neither upload panel.
+
+### 40. The dashboard stops listing Works and starts answering questions
 
 **Status: application-first, owner decisions of 2026-08-22 (seven
-decisions R1–R7).** Numbered 39 at the MERGE, not when written. This was
+decisions R1–R7).** Numbered 40 at the MERGE, and numbered TWICE. It was
 drafted as § 38 with a note saying siblings might claim the number and
-that it would move rather than share; the works-analysis reports landed
-§ 38 first, so it moved, and every file citing it was swept in the same
-commit. § 37 records the same thing happening to itself, which is why the
-note was there.
+that it would move rather than share; the works-analysis reports took
+§ 38, so it became § 39, and the Tally invoice register took § 39 before
+this landed, so it became § 40. Every file citing it was swept both
+times. § 37 records the same thing happening to itself, which is why the
+note was there and why the sweep is a habit rather than a scramble.
 
 **No mock citation is possible and none is claimed.** The mock's
 `app/page` draws a five-tile stat row, a Work portfolio table and a

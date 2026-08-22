@@ -169,7 +169,8 @@ const PAGE_LIMIT = 100;
  * from the table by anybody who needs them.
  */
 const INVOICE_COLUMNS = `
-  i.id, i.zoho_invoice_id, i.invoice_number, i.invoice_date::text as invoice_date,
+  i.id, i.source, i.zoho_invoice_id, i.invoice_number,
+  i.invoice_date::text as invoice_date,
   i.customer_name, i.customer_gstin, i.place_of_supply, i.contact_id,
   i.contact_match_method, i.zoho_status, i.issued, i.irn, i.ack_number,
   i.ack_date::text as ack_date, i.reference_text, i.sub_total, i.total,
@@ -178,7 +179,41 @@ const INVOICE_COLUMNS = `
   w.work_code, (w.deleted_at is not null) as work_withdrawn,
   c.designation as contact_name,
   (select count(*)::int from imported_invoice_lines l
-    where l.imported_invoice_id = i.id) as line_count
+    where l.imported_invoice_id = i.id) as line_count,
+  -- The TallyPrime cross-reference (0119). Three facts in one lateral
+  -- rather than three correlated subqueries, because they are three
+  -- readings of the same rows: how many vouchers correspond, the one
+  -- voucher's own number where exactly one does, and whether the two
+  -- systems disagree about the value.
+  --
+  -- The voucher number is deliberately NULL where several correspond:
+  -- rendering the first of three would name one document and imply it
+  -- was the only one, which is worse than saying "3 vouchers".
+  t.voucher_count as tally_voucher_count,
+  case when t.voucher_count = 1 then t.voucher_number else null end
+    as tally_voucher_number,
+  coalesce(t.disputed, false) as disputed,
+  -- Ruled on, and ruled back IN. A 'tally_correct' ruling does not
+  -- restore the row, so it does not count as resolved for this purpose --
+  -- the register holds the figure that ruling rejected.
+  coalesce(t.dispute_resolved, false) as dispute_resolved
+`;
+
+/** The cross-reference read every statement above joins. Written once so
+ * the page and its totals cannot end up describing different links. */
+const TALLY_LINK_JOIN = `
+  left join lateral (
+    select count(*)::int as voucher_count,
+           min(tl.tally_voucher_number) as voucher_number,
+           bool_or(tl.disputed) as disputed,
+           bool_and(
+             not tl.disputed
+             or (tl.resolution is not null and tl.resolution <> 'tally_correct')
+           ) as dispute_resolved
+    from tally_invoice_links tl
+    where tl.organisation_id = i.organisation_id
+      and tl.imported_invoice_id = i.id
+  ) t on true
 `;
 
 /** The lines of one invoice. `raw_row` is absent for the reason above. */
@@ -190,7 +225,8 @@ const LINE_COLUMNS = `
 
 interface InvoiceRow {
   id: string;
-  zoho_invoice_id: string;
+  source: string;
+  zoho_invoice_id: string | null;
   invoice_number: string;
   invoice_date: string;
   customer_name: string;
@@ -205,7 +241,7 @@ interface InvoiceRow {
   ack_number: string | null;
   ack_date: string | null;
   reference_text: string | null;
-  sub_total: string;
+  sub_total: string | null;
   total: string;
   balance: string | null;
   round_off: string | null;
@@ -214,6 +250,10 @@ interface InvoiceRow {
   work_withdrawn: boolean;
   link_method: string | null;
   line_count: number;
+  tally_voucher_count: number;
+  tally_voucher_number: string | null;
+  disputed: boolean;
+  dispute_resolved: boolean;
   discarded_at: string | null;
   discard_reason: string | null;
   created_at: string;
@@ -241,6 +281,7 @@ interface LineRow {
 function toInvoice(row: InvoiceRow) {
   return {
     id: row.id,
+    source: row.source as 'zoho' | 'tally',
     zohoInvoiceId: row.zoho_invoice_id,
     invoiceNumber: row.invoice_number,
     invoiceDate: row.invoice_date,
@@ -265,10 +306,55 @@ function toInvoice(row: InvoiceRow) {
     workWithdrawn: row.work_withdrawn,
     linkMethod: row.link_method as 'pl_code' | 'loa_match' | 'manual' | null,
     lineCount: row.line_count,
+    tallyVoucherCount: row.tally_voucher_count,
+    tallyVoucherNumber: row.tally_voucher_number,
+    disputed: row.disputed,
+    disputeResolved: row.dispute_resolved,
     discardedAt:
       row.discarded_at === null ? null : new Date(row.discarded_at).toISOString(),
     discardReason: row.discard_reason,
     importedAt: new Date(row.created_at).toISOString(),
+  };
+}
+
+interface TallyLinkRow {
+  id: string;
+  tally_guid: string;
+  tally_voucher_type: string;
+  tally_voucher_date: string;
+  tally_voucher_number: string | null;
+  tally_reference: string | null;
+  tally_party_ledger: string;
+  tally_amount: string;
+  match_method: string;
+  match_evidence: string | null;
+  disputed: boolean;
+  component_tally_total: string | null;
+  component_invoice_total: string | null;
+  resolution: string | null;
+  resolved_at: string | null;
+}
+
+function toTallyLink(row: TallyLinkRow) {
+  return {
+    id: row.id,
+    tallyGuid: row.tally_guid,
+    voucherType: row.tally_voucher_type as 'Sales' | 'Credit Note' | 'Debit Note',
+    voucherDate: row.tally_voucher_date,
+    voucherNumber: row.tally_voucher_number,
+    reference: row.tally_reference,
+    partyLedger: row.tally_party_ledger,
+    amount: row.tally_amount,
+    matchMethod: row.match_method as
+      'origin' | 'exact_number' | 'serial_tolerant' | 'manual',
+    matchEvidence: row.match_evidence,
+    disputed: row.disputed,
+    componentTallyTotal: row.component_tally_total,
+    componentInvoiceTotal: row.component_invoice_total,
+    resolution: row.resolution as
+      'tally_correct' | 'zoho_correct' | 'accepted_gap' | null,
+    resolvedAt:
+      row.resolved_at === null ? null : new Date(row.resolved_at).toISOString(),
   };
 }
 
@@ -431,12 +517,49 @@ export function registerImportedInvoiceRoutes(
           and (${query.linked ?? null}::text is null
                or (${query.linked ?? null} = 'linked') = (i.work_id is not null))
           and (${fyFrom}::date is null or i.invoice_date between ${fyFrom} and ${fyTo})
+          and (${query.source ?? null}::text is null
+               or i.source = ${query.source ?? null})
+        `;
+        /* OWNER RULING 21: a disputed figure joins no sum. Written as an
+           EXISTS over the cross-reference rather than as a column on the
+           register, because that is where the disagreement lives (0119
+           § A) — and stated once here so the two statements below cannot
+           end up disagreeing about which invoices are out of the total. */
+        /* WHAT COSTS AN INVOICE ITS PLACE IN THE TOTAL is a disputed
+           correspondence the owner has NOT ruled back in — ruling 21 in
+           both halves. `zoho_correct` and `accepted_gap` restore the row;
+           `tally_correct` does not, because the figure this register
+           holds is Zoho's and that is the one the owner ruled against, so
+           counting it would report a number nobody believes. A row
+           carrying several disputed links needs every one of them ruled
+           back in, which is why this is an EXISTS over the ones that are
+           not rather than a NOT EXISTS over the ones that are. */
+        const disputedInvoice = tx`
+          exists (
+            select 1 from tally_invoice_links tl
+            where tl.organisation_id = i.organisation_id
+              and tl.imported_invoice_id = i.id
+              and tl.disputed
+              and (tl.resolution is null or tl.resolution = 'tally_correct')
+          )
+        `;
+        /* Every disputed correspondence, ruled on or not — the count the
+           screen reports beside the one above, so an operator can see
+           what is left to decide rather than only what it costs. */
+        const disputedAtAll = tx`
+          exists (
+            select 1 from tally_invoice_links tl
+            where tl.organisation_id = i.organisation_id
+              and tl.imported_invoice_id = i.id
+              and tl.disputed
+          )
         `;
         const rows = await tx<InvoiceRow[]>`
           select ${tx.unsafe(INVOICE_COLUMNS)}
           from imported_invoices i
           left join works w on w.id = i.work_id
           left join contacts c on c.id = i.contact_id
+          ${tx.unsafe(TALLY_LINK_JOIN)}
           where ${filters}
             -- The sort key is read and compared inside PostgreSQL, at the
             -- precision it stores, rather than being round-tripped through
@@ -451,12 +574,13 @@ export function registerImportedInvoiceRoutes(
         // totals the screen already has and does not redraw, so recounting
         // is an aggregate over every row the caller may see to answer a
         // question nobody re-asked.
-        /* Void invoices are out of the SUM and out of nothing else. Zoho's
-           Void is a cancelled document: it is part of the record, it stays
-           in the register and it is stored verbatim, but it billed nobody
-           anything. Adding it to "what we have billed" would overstate the
-           history by whatever was cancelled. Compared case-insensitively,
-           because that column is the export's own spelling. */
+        /* Zoho's Void is a cancelled document: it is part of the record,
+           it stays in the register and it is stored verbatim, but it
+           billed nobody anything, so adding it to "what we have billed"
+           would overstate the history by whatever was cancelled. Compared
+           case-insensitively, because that column is the export's own
+           spelling. A DISPUTED invoice is excluded from the same sum for
+           the parallel reason (ruling 21) — see the filter below. */
         const totalRows =
           cursor !== null
             ? []
@@ -465,14 +589,30 @@ export function registerImportedInvoiceRoutes(
                   invoice_count: number;
                   linked_count: number;
                   total_value: string;
+                  tally_sourced_count: number;
+                  disputed_count: number;
+                  disputed_unresolved_count: number;
                   earliest_date: string | null;
                   latest_date: string | null;
                 }[]
               >`
                 select count(*)::int as invoice_count,
                        count(i.work_id)::int as linked_count,
+                       count(*) filter (
+                         where i.source = 'tally')::int as tally_sourced_count,
+                       count(*) filter (
+                         where ${disputedAtAll})::int as disputed_count,
+                       count(*) filter (
+                         where ${disputedInvoice})::int as disputed_unresolved_count,
+                       /* Void invoices are out of the SUM and out of
+                          nothing else, and so are disputed ones — the
+                          first billed nobody anything and the second is
+                          a figure the two systems do not agree on
+                          (ruling 21). Both stay on the register, and the
+                          header says what the total leaves out. */
                        coalesce(sum(i.total) filter (
                          where lower(coalesce(i.zoho_status, '')) <> 'void'
+                           and not ${disputedInvoice}
                        ), 0)::text as total_value,
                        -- The span of the filtered register, so the
                        -- screen's financial-year filter offers every year
@@ -495,6 +635,9 @@ export function registerImportedInvoiceRoutes(
                   invoiceCount: totals.invoice_count,
                   linkedCount: totals.linked_count,
                   totalValue: totals.total_value,
+                  tallySourcedCount: totals.tally_sourced_count,
+                  disputedCount: totals.disputed_count,
+                  disputedUnresolvedCount: totals.disputed_unresolved_count,
                   earliestDate: totals.earliest_date,
                   latestDate: totals.latest_date,
                 },
@@ -526,12 +669,13 @@ export function registerImportedInvoiceRoutes(
           // that does not exist.
           await assertWorkAccess(tx, user.id, invoice.work_id);
         }
-        const lines = await tx<LineRow[]>`
-          select ${tx.unsafe(LINE_COLUMNS)} from imported_invoice_lines
-          where imported_invoice_id = ${id}
-          order by position
-        `;
-        return { invoice: toInvoice(invoice), lines: lines.map(toLine) };
+        // THE SHARED READING, not a second one assembled here. This route
+        // built its own `{ invoice, lines }` and was the one place that
+        // did not gain `tallyLinks` when the detail did — which surfaced
+        // as a 500 from response validation rather than as a missing
+        // field, because a response that fails its own schema is an
+        // internal error with nothing named.
+        return await readImportedInvoiceDetail(tx, id);
       });
     },
   );
@@ -665,6 +809,11 @@ export function registerImportedInvoiceRoutes(
             insert into imported_invoices ${tx(
               fresh.map(({ invoice, proposal, contact }) => ({
                 organisation_id: organisationId,
+                // Stated rather than left to the column default (0119),
+                // because the shape check ties it to `zoho_invoice_id`
+                // and a reader of this insert should see which half of
+                // the register it writes.
+                source: 'zoho',
                 zoho_invoice_id: invoice.zohoInvoiceId,
                 invoice_number: invoice.invoiceNumber,
                 invoice_date: invoice.invoiceDate,
@@ -1028,6 +1177,7 @@ async function readInvoice(tx: TransactionSql, id: string): Promise<InvoiceRow> 
     from imported_invoices i
     left join works w on w.id = i.work_id
     left join contacts c on c.id = i.contact_id
+    ${tx.unsafe(TALLY_LINK_JOIN)}
     where i.id = ${id}
   `;
   if (!row) {
@@ -1052,12 +1202,39 @@ async function readInvoiceForUpdate(
   return await readInvoice(tx, id);
 }
 
-async function readDetail(tx: TransactionSql, id: string) {
+/**
+ * One historical invoice, its lines, and the TallyPrime correspondences
+ * it carries (0119).
+ *
+ * EXPORTED because the Tally route's resolution act answers with it: a
+ * person rules on a disagreement and gets back the invoice as it now
+ * stands, including whether it has rejoined the billed total. Building a
+ * second reading of the same record there would let the two drift.
+ */
+export async function readImportedInvoiceDetail(tx: TransactionSql, id: string) {
   const invoice = await readInvoice(tx, id);
   const lines = await tx<LineRow[]>`
     select ${tx.unsafe(LINE_COLUMNS)} from imported_invoice_lines
     where imported_invoice_id = ${id}
     order by position
   `;
-  return { invoice: toInvoice(invoice), lines: lines.map(toLine) };
+  const links = await tx<TallyLinkRow[]>`
+    select id, tally_guid, tally_voucher_type,
+           tally_voucher_date::text as tally_voucher_date,
+           tally_voucher_number, tally_reference, tally_party_ledger,
+           tally_amount, match_method, match_evidence, disputed,
+           component_tally_total, component_invoice_total, resolution, resolved_at
+    from tally_invoice_links
+    where imported_invoice_id = ${id}
+    order by tally_voucher_date, tally_guid
+  `;
+  return {
+    invoice: toInvoice(invoice),
+    lines: lines.map(toLine),
+    tallyLinks: links.map(toTallyLink),
+  };
+}
+
+async function readDetail(tx: TransactionSql, id: string) {
+  return await readImportedInvoiceDetail(tx, id);
 }

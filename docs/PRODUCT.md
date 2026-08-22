@@ -2615,6 +2615,67 @@ a row says which import last saw it, and the census reads the latest one.
 Reading the census needs the writer role; importing needs the data-import
 authority.
 
+### The billing history both systems hold: Tally sales vouchers against the Zoho register
+
+Zoho Books held the invoicing from January 2023; TallyPrime held it from
+2020 and still holds the accounting books. The two therefore overlap for
+three years and Tally alone covers the three before that, and until both
+were readable together "what did we bill in 2021" had no answer inside
+this system and "does Tally agree with Zoho" had no answer anywhere.
+
+**Where both systems hold an invoice, Zoho is the record and the Tally
+voucher is provenance.** No second register row is created — the
+correspondence is recorded in a cross-reference and the invoice stays the
+one row it always was. That is not a tidiness preference: the two systems
+number the same document differently often enough that a rule of "import
+what each holds" would have produced two rows for one invoice and doubled
+what the register says was billed.
+
+**Where Tally alone holds it, the voucher joins the historical register**
+behind a source of `tally`. Such a row carries no Zoho identifier and no
+sub-total, because a Tally voucher states neither: it states a document
+total on the party line, and deriving a taxable value from the rest would
+be this register recomputing money another system stated. The register
+says "not stated" rather than saying a number nobody wrote down.
+
+**The correspondence is many-to-many, and the reconciliation follows it.**
+One accounting entry covers several bills and one bill is sometimes
+entered as several entries, so "do the two systems agree about this
+invoice" is a question about a GROUP of documents rather than a pair. The
+import sums each group on both sides and compares once. Where the two
+disagree, BOTH figures are imported and the invoice is flagged — and a
+disputed figure joins no total until it is ruled on, exactly as a voided
+invoice does not. The register's header says what its total leaves out.
+
+**Documents are tied together by number, and never by serial alone.**
+The comparison ignores case and punctuation, and reads the voucher's
+number, its reference and its bill allocations, because Tally numbers
+sales vouchers manually here and a third of them carry no number at all.
+Where no number matches, a renumbered document can still be recognised by
+its trailing serial — but only when the value, the GSTIN or the customer
+name confirms it. The survey found a real pair sharing a serial across two
+unrelated customers five months apart, and a matcher that trusted the
+serial by itself would have tied them together permanently.
+
+**Cancelled and optional vouchers are skipped and NAMED.** TallyPrime
+strips a cancelled voucher of its party, its number and its accounting
+legs, so a reader that demanded those would report them as unreadable —
+and an operator would have no way to tell a document Tally cancelled from
+one the import choked on. Credit and debit notes are read, counted and
+reported, and deliberately NOT imported: they reverse an invoice rather
+than raising one, and adding them to a register of invoices raised would
+overstate what was billed.
+
+**The intake is a filtered export, and the narrowing is the instruction
+rather than a workaround.** TallyPrime's full voucher file is over three
+gigabytes, 96 % of which is bookkeeping this product does not model. The
+sales-side vouchers are a fraction of it and go through the same upload,
+signature and malware chain as every other file this system accepts;
+`docs/OPERATIONS.md` carries the export steps. Importing needs the
+data-import authority, and the whole voucher GUID and edit counter are
+stored on every row so the one post-training re-read needs no sync
+machinery.
+
 ### Works analysis: what is still owed, and what is still owed to us
 
 The ledgers this product keeps could always answer "how far has this Work

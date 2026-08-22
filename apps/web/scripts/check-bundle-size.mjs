@@ -130,7 +130,7 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * RAISED TO 119,450 when the dashboard redesign gave a Work address its
  * first INTENT — `#/works/<id>/overview?focus=extension`, which the
  * completion panel uses to land an operator on the extension composer
- * rather than at the top of a long Overview (`docs/UX.md` § 39). Whose
+ * rather than at the top of a long Overview (`docs/UX.md` § 40). Whose
  * half is whose, on the convention the two raises above set:
  *
  *   119,250  the line the works-analysis reports left

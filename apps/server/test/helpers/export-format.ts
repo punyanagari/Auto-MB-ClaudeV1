@@ -18,8 +18,10 @@
  * suite EXPECTS, and bumping the server's own constant without bumping
  * this one is exactly the mistake the assertions exist to catch.
  */
-// Renumbered from v37 to v39 at the merge with #164, together with
-// `EXPORT_FORMAT_VERSION` in `apps/server/src/routes/export.ts`, which
-// carries the reasoning. The two auto-merge silently against each other,
-// so they move by hand or not at all.
-export const EXPECTED_EXPORT_VERSION = 'export-v39';
+// ⚠ PLACEHOLDER, WAVE T2 — v40, claimed on top of T1's v39 (#172,
+// merged). This constant and `EXPORT_FORMAT_VERSION` in
+// `apps/server/src/routes/export.ts` auto-merge silently against each
+// other, so the coordinator renumbers BOTH BY HAND at merge if another
+// wave landed a version in between. That is what happened to v37 in the
+// wave before this one; the note is what forces the check.
+export const EXPECTED_EXPORT_VERSION = 'export-v40';

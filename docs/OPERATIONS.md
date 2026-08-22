@@ -520,3 +520,86 @@ The v1 backup contains customer production data: it never enters the
 repository, agent workspaces, or fixtures. The importer's tests build
 synthetic SQLite fixtures; the optional real-backup smoke test runs only
 where an operator has placed a backup locally.
+
+## 11. TallyPrime exports (Tally migration waves)
+
+Two files are taken out of TallyPrime and uploaded through the product.
+Both are read twice against the same bytes — once to report what the
+import would do, once to write — and both go through the ordinary upload
+chain: the file-signature check, the malware scan, and the 192 MB body
+cap. Neither is read off the server's disk, and there is no route that
+would let one be.
+
+**The owner takes both exports on import day** (owner ruling 3). A stale
+export is never the input, and a second one is what the single
+post-training top-up re-read runs on.
+
+### The chart of accounts (wave T1, migration 0118)
+
+In TallyPrime: **Gateway of Tally → Import/Export → Export → Masters**,
+with _Type of masters_ set to **All Masters** and the format **XML**.
+Upload the file it writes, unchanged, on **Administration → Tally
+census**. It is about 133 MB for a 4,300-ledger company, which is well
+inside the cap.
+
+### The sales vouchers (wave T2, migration 0119)
+
+⚠ **NARROW THE EXPORT. Do not export every voucher.** TallyPrime's full
+`Transactions.xml` is **3.18 GB** for this company — over sixteen times
+the upload cap, and past the malware scanner's own limit — and 96 % of it
+is Payment, Journal, Purchase and Contra vouchers this product does not
+model and will not import. Narrowed to the three sales-side types it is
+**61 MB**, a third of the cap. The narrowing is the intake, not a
+workaround for it.
+
+In TallyPrime:
+
+1. **Gateway of Tally → Display More Reports → Day Book.**
+2. Set the period to the whole history: `F2` (Period), then the first
+   date the books cover through to today.
+3. `F4` (Change View / Voucher Type) → select **Sales**. Repeat the whole
+   export for **Credit Note** and for **Debit Note**: the import reads
+   all three, and it is idempotent, so uploading three files one after
+   another is the same as uploading one file holding all three.
+
+   ⚠ **Split by VOUCHER TYPE, never by period.** Splitting by type is
+   safe because only Sales vouchers are reconciled against the invoice
+   register at all. Splitting the SALES export into date ranges is not
+   equivalent: one accounting entry sometimes covers several bills and
+   one bill is sometimes entered as several entries, and the import
+   compares the two systems over the whole group. A narrowed file that
+   carries only part of a group would once have reported the missing
+   part as a disagreement. It no longer does — the import now reconciles
+   against the correspondences the register already holds, so a later
+   file COMPLETES an earlier one — but the whole-period Sales export is
+   still the shape to take, because it is the one that needs no earlier
+   import to have gone right.
+
+4. `Ctrl+E` (Export) → format **XML**, and export.
+5. Upload each file on **Documents → Historical invoices**, in the
+   "Bring in a TallyPrime sales voucher export" panel.
+
+If an unnarrowed Day Book export is uploaded anyway, the reader skips
+every other voucher type rather than refusing the file — but such a file
+will be rejected by the body cap first, with a refusal that repeats the
+narrowing instruction.
+
+**What the import does with them.** A voucher whose number, reference or
+bill allocation matches an invoice already on the historical register
+records a cross-reference and creates NO second register row: where both
+systems hold an invoice, Zoho is authoritative and the Tally voucher is
+provenance (ruling 23). A voucher nothing matches becomes a register row
+of its own behind the `tally` source. Cancelled and optional vouchers are
+skipped and named in the report (ruling 22); credit and debit notes are
+read, counted and not imported, because they reverse an invoice rather
+than raising one.
+
+**Read the disputed count before committing.** Where the two systems
+state different totals for a group of documents, both figures are
+imported and flagged, and a disputed figure joins no total until the
+owner rules on that row (ruling 21). The preview reports the number and
+the gap; the register shows the lamp afterwards.
+
+Both TallyPrime files contain customer production data: neither enters
+the repository, agent workspaces, or fixtures. The readers' tests build
+synthetic UTF-16 fixtures whose values belong to nobody.

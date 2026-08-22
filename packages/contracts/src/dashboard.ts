@@ -382,7 +382,7 @@ export const DashboardResponseSchema = Type.Object(
     signals: DashboardSignalsSchema,
     alerts: Type.Array(DashboardAlertSchema),
     /** Every Work the caller may see, whatever its status. The landing
-     * screen no longer LISTS them (`docs/UX.md` § 39 — the Works register
+     * screen no longer LISTS them (`docs/UX.md` § 40 — the Works register
      * is one click away in the rail and does the job better), but the
      * totals above are summed from these rows and the first-run checklist
      * keys off the array being empty, so it stays in the payload. */
