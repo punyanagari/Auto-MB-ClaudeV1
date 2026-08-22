@@ -66,10 +66,51 @@ For each material change:
 3. Propose the smallest implementation plan.
 4. Identify schema, tenancy, authorization, audit, migration, and operations effects.
 5. Add or update tests before claiming completion.
-6. Run the narrow checks while developing and `pnpm verify` before handoff.
-7. Review the final diff against the issue, not against the implementation plan alone.
+6. Run `pnpm preflight` before your first push.
+7. Run the narrow checks while developing and `pnpm verify` before handoff.
+8. Review the final diff against the issue, not against the implementation plan alone.
+
+`pnpm preflight` reads the files this branch changed against its merge base
+with `origin/main` and runs the gates those files can break: formatting and
+the pure source-scan censuses always, plus the standing database-shape
+censuses — migration contract and SQLSTATE uniqueness, the bootstrap
+privilege matrix, foreign-key index coverage, and the audit-timeline,
+error-remedies and write-loop censuses — when the change touches
+`packages/db` or any `.sql` file. It takes under a minute and needs no
+build. It exists because those gates were otherwise discovered one CI round
+at a time; it does not replace `pnpm verify`, which still owns lint,
+typecheck, build and the integration suites.
 
 High-risk work requires a fresh review pass: RLS, authentication, authorization, uploads, numbering, money, migrations, infrastructure, and issued-document changes.
+
+## Shared values across concurrent branches
+
+Some values are allocated by hand and shared by every branch in flight: the
+export package's format version, and the section numbers in `docs/UX.md`.
+Two branches that both take the next free number produce IDENTICAL lines,
+which git merges without a conflict. The collision is silent, and it has
+happened repeatedly — `export-v37`, then `export-v40`, then UX § 38.
+
+Do not claim a number on a feature branch. Hold a placeholder instead, and
+let the coordinator assign the concrete value at merge.
+
+- **Export format version.** Write `export-vNEXT` in BOTH
+  `apps/server/src/routes/export.ts` (`EXPORT_FORMAT_VERSION`) and
+  `apps/server/test/helpers/export-format.ts` (`EXPECTED_EXPORT_VERSION`).
+  The pinning suites treat the sentinel as "not assigned yet" and skip the
+  assertion. `pnpm export:check` fails when the sentinel is still present on
+  `main`, and when only one of the two files holds it; it passes on feature
+  branches, which is where the sentinel belongs. It runs in `pnpm preflight`
+  and in the CI cheap-gates lane.
+- **`docs/UX.md` section numbers.** Write the heading as `### NN. Title` and
+  leave `NN` literally as `NN`. Nothing mechanical can check this — a
+  section number is prose, and a placeholder is indistinguishable from a
+  typo to a scanner — so it is a convention rather than a gate. Cite the
+  section as `§ NN` in the same branch's prose so the coordinator's
+  find-and-replace at merge is one pass, not a hunt.
+
+Whoever merges the branch replaces every placeholder with the value that is
+actually free on `main` at that moment, in the same commit as the merge.
 
 ## Architecture boundaries
 

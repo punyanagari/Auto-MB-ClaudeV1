@@ -189,6 +189,7 @@ export async function runMigrations(
 
       const appliedById = new Map(applied.map((row) => [row.id, row.sha256]));
 
+      const newlyApplied: string[] = [];
       for (const migration of migrations) {
         const recordedHash = appliedById.get(migration.id);
         if (recordedHash !== undefined) {
@@ -215,7 +216,25 @@ export async function runMigrations(
           }
           throw error;
         }
-        console.log(`applied ${migration.fileName}`);
+        newlyApplied.push(migration.fileName);
+      }
+      // ONE line for the run, not one per file.
+      //
+      // A deploy applies a handful of migrations and the per-file trail was
+      // readable. The test suites apply the WHOLE series to a throwaway
+      // database, repeatedly: 2,763 "applied <file>" lines in one CI job,
+      // each with a vitest stdout header of its own, which is about 5,500
+      // lines and the largest single block in the log. Nothing is
+      // lost by summarising — a migration that fails throws with its own
+      // file name, and the ledger in `schema_migrations` is the record.
+      if (newlyApplied.length > 0) {
+        const first = newlyApplied[0];
+        const last = newlyApplied[newlyApplied.length - 1];
+        console.log(
+          newlyApplied.length === 1
+            ? `applied ${first}`
+            : `applied ${String(newlyApplied.length)} migrations, ${first} through ${last}`,
+        );
       }
     } finally {
       try {

@@ -13,9 +13,9 @@ on:
     #
     # Caveat for whoever configures branch protection: a workflow skipped
     # by paths-ignore reports NO status at all rather than a passing one,
-    # so `verify` must not be a required check unless a docs-only pull
-    # request is expected to sit unmergeable. Require `census` instead —
-    # it always runs.
+    # so no job of THIS workflow — `cheap-gates` or `verify` — may be a
+    # required check unless a docs-only pull request is expected to sit
+    # unmergeable. Require `census` instead: it always runs.
     paths-ignore:
       - 'docs/**'
       - '**.md'
@@ -119,7 +119,57 @@ jobs:
       - name: Accessibility smoke
         run: pnpm --filter @auto-mb/web test:e2e
 
+  # Everything that needs no database, no integration suite and no browser,
+  # in front of everything that does.
+  #
+  # The whole of `pnpm verify` used to be one twenty-minute step, so a
+  # missing Prettier newline and a missing foreign-key index were both
+  # discovered at minute nineteen, after the PostgreSQL service, the Poppler
+  # install and the full suite had been paid for. These gates answer in
+  # about two minutes and are the ones a change most often trips.
+  #
+  # THE TRADEOFF, stated plainly: a green run now waits for this job before
+  # the heavy one starts, so a fully-passing pull request costs roughly two
+  # minutes more end to end. A run that fails a cheap gate — the common case
+  # for the failures this split targets — stops in two minutes instead of
+  # ten to twenty. The `needs:` ordering is what buys the second, and it is
+  # judged worth the first.
+  #
+  # `pnpm verify` (verify:cheap + verify:heavy) still exists unchanged for
+  # local use; the two jobs run its two halves, so nothing is checked twice
+  # and nothing is dropped.
+  cheap-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Proves shell scripts parse and follow shellcheck's static rules;
+      # does not prove runtime behaviour on a cloud VM. Globbed via
+      # git ls-files so new scripts cannot escape the gate.
+      - name: Shell lint
+        run: |
+          git ls-files '*.sh' | xargs bash -n
+          git ls-files '*.sh' | xargs shellcheck
+      # Proves the compose file is structurally valid with default
+      # interpolation; does not prove the services boot.
+      - name: Compose config validation
+        run: docker compose config --quiet
+      # Formatting, lint (with security rules), typecheck, migration-file
+      # validation, the source-scan censuses, the export-version sentinel,
+      # the dead-code and secret scans, and the web bundle budget. The
+      # bundle budget needs the web bundle, which is a four-second Vite
+      # build — cheap enough to earn its place here rather than waiting for
+      # the full workspace build.
+      - name: Cheap gates
+        run: pnpm verify:cheap
+
   verify:
+    # Gated on the cheap lane: a change that cannot pass Prettier has no
+    # business booting PostgreSQL.
+    needs: cheap-gates
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -173,23 +223,42 @@ jobs:
               exit 1
               ;;
           esac
-      # Proves shell scripts parse and follow shellcheck's static rules;
-      # does not prove runtime behaviour on a cloud VM. Globbed via
-      # git ls-files so new scripts cannot escape the gate.
-      - name: Shell lint
+      # The PostgreSQL service container's own log is streamed into this
+      # job, and this suite's job is to prove that writes are REFUSED: every
+      # cross-tenant denial, every trigger that raises, every ceiling that
+      # holds, is one server-side `ERROR:` line plus its `STATEMENT:` and
+      # `CONTEXT:`. One run carried 1,108 such errors and 3,236 lines, all
+      # of them the sound of the system working.
+      #
+      # They are also redundant. A refusal that a test EXPECTS is asserted
+      # client-side; a refusal that a test does not expect fails that test,
+      # and vitest prints the whole PostgresError — SQLSTATE, message,
+      # detail — from the client. Nothing here is the only record of
+      # anything.
+      #
+      # To read the server's side of a confusing CI failure, delete this
+      # step and re-run: the container goes back to its defaults.
+      - name: Quieten the PostgreSQL service log (expected refusals only)
         run: |
-          git ls-files '*.sh' | xargs bash -n
-          git ls-files '*.sh' | xargs shellcheck
-      # Proves the compose file is structurally valid with default
-      # interpolation; does not prove the services boot.
-      - name: Compose config validation
-        run: docker compose config --quiet
-      # `pnpm verify` includes formatting, lint (with security rules),
-      # typecheck, the web production bundle build, tests against the live
-      # PostgreSQL service, migration validation, architecture checks,
-      # config parse checks, and the secret scan.
-      - name: Verify
-        run: pnpm verify
+          psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 \
+            -c "alter system set log_min_messages = 'fatal'" \
+            -c "alter system set log_min_error_statement = 'fatal'" \
+            -c "select pg_reload_conf()"
+      # Build and the whole test matrix, exactly as before the cheap/heavy
+      # split. `pnpm -r` already overlaps the packages at its default
+      # workspace concurrency, and that arrangement is what has been green.
+      #
+      # MEASURED AND REJECTED (this pull request, run 32590437616): running
+      # the database-free packages as a second lane in the background of the
+      # database lane, to overlap them explicitly. Attempt one failed two
+      # apps/server tests on 5s timeouts; attempt two failed those AND four
+      # apps/web tests, on 5s timeouts in BOTH lanes. A four-core runner
+      # already saturated by `pnpm -r` has no headroom for a second lane, and
+      # the suites express that as timeouts rather than as slowness. The
+      # explicit-lane experiment is not worth a flaky gate; the win in this
+      # workflow is the cheap-gates job above, not this step.
+      - name: Verify (build and the full test matrix)
+        run: pnpm verify:heavy
 
   # Boots the PRODUCTION topology from scratch on every change: real
   # image builds, fresh volumes, the role/grant bootstrap, and the

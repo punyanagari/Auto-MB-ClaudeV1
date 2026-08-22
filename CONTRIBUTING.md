@@ -17,6 +17,19 @@ This is initially a private product repository.
   (`chore/wave3-tranche-b-record`)
 - commits: small, intentional, and reviewable
 - no direct commits to protected `main`
+- run `pnpm preflight` before the first push
+
+`pnpm preflight` runs the gates the changed files can break — formatting and
+the source-scan censuses always, the database-shape censuses when the change
+touches `packages/db` or a `.sql` file — in under a minute and with no
+build. It is what stops CI from teaching those gates one round at a time.
+AGENTS.md § "Change workflow" describes the set; `pnpm verify` is still the
+gate before handoff.
+
+Branches in flight together must not claim a shared hand-allocated value
+(the export format version, `docs/UX.md` section numbers). Hold the
+placeholder AGENTS.md § "Shared values across concurrent branches"
+describes; the coordinator assigns the concrete value at merge.
 
 ## Pull requests
 

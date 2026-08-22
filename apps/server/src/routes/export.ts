@@ -545,21 +545,26 @@ const errorResponses = {
  * this organisation's own chart of accounts as another system holds it,
  * and every Tally wave after T1 reaches its ledgers through it.
  *
- * ⚠ PLACEHOLDER, WAVE T3. This constant and the suite's expected value in
+ * WAVE T3. This constant and the suite's expected value in
  * `apps/server/test/helpers/export-format.ts` sit in different files and
  * auto-merge SILENTLY against each other, so a wave that lands beside
  * this one takes the same number without a conflict. v40 was T2's
- * (merged); v41 is claimed here on that basis. THE COORDINATOR RENUMBERS
- * BOTH FILES BY HAND AT MERGE if anything landed in between — which is
- * exactly what happened to v37 two waves ago, and what this note exists
- * to force.
+ * (merged); v41 is claimed here on that basis. That is exactly what
+ * happened to v37 two waves ago.
+ *
+ * A branch with no allocation writes the SENTINEL `export-vNEXT` here and
+ * in the test helper instead of claiming a number. Two branches holding
+ * the sentinel cannot collide, and `scripts/check-export-sentinel.mjs` —
+ * run by `pnpm preflight` and the CI cheap-gates lane — fails if the
+ * sentinel survives onto main, which is what forces the coordinator to
+ * assign the concrete version at merge. The export-pinning suites treat
+ * the sentinel as "not pinned yet" (`expectPinnedExportVersion`).
  *
  * CHECKED AGAINST `main` WHEN THIS WAVE BRANCHED: it holds v40 and its
  * newest migration is 0119, so v41 and 0120 are both unclaimed. The UX
  * section was checked the same way — `main` holds § 40, so this wave
- * takes § 41 — and that file at least conflicts loudly when two waves
- * claim one number, which is why the version constants need the note and
- * it does not.
+ * takes § 41; see AGENTS.md for the `### NN.` placeholder convention that
+ * replaces that check with a placeholder the coordinator resolves.
  */
 export const EXPORT_FORMAT_VERSION = 'export-v41';
 
