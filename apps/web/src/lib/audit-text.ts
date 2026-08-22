@@ -72,6 +72,7 @@ const ACTION_LABELS: Record<string, string> = {
   'membership.updated': 'Member permissions changed',
   'audit_trail.exported': 'Audit trail exported',
   'register.exported': 'Register exported',
+  'works_analysis.exported': 'Works analysis exported',
   'tally_export.produced': 'Tally file produced',
 };
 

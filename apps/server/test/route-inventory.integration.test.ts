@@ -144,6 +144,10 @@ const UNPAGINATED_LISTS = new Map<string, string>([
     'the management summary: three aggregates whose arrays are one row per MONTH (capped by the route at 60) and one row per ageing band (five, always all five). Paging a summary would page the answer to a question that has one screen',
   ],
   [
+    'GET /api/reports/item-group-proposals',
+    'the proposed item groups on the Reports screen: one row per normalised description that more than one WORDING resolves to, across the schedule lines the caller can see. It cannot be longer than the item analysis rendered above it on the same screen — that read walks every one of those lines and is a single figure per master item — and it is a review queue an operator works through until it is empty, so a second page would be a page of work nobody has done yet rather than more of a register',
+  ],
+  [
     'GET /api/notification-channels',
     'two channels, WhatsApp and email, and the product has no third: the response is at most two rows and a page control over it would be furniture',
   ],

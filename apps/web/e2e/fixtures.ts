@@ -1136,6 +1136,353 @@ const MIS_SUMMARY = {
   ],
 };
 
+/* The works-analysis reports on the Reports screen.
+ *
+ * Shaped so the axe scan reaches the states that only appear with real
+ * data: an item with an inspection clause and one without, an item whose
+ * payment category resolves through no matrix row (its unbilled value is a
+ * dash, and a dash next to a column of figures is where meaning most easily
+ * comes to rest on presentation alone), a division that carries a code and
+ * one that does not, a combined row whose rate is a SPREAD, an unmapped row
+ * beside the mapped ones, and a proposal whose members disagree about their
+ * unit — which draws the warning. */
+const WORK_ANALYSIS_WORK_ID = '5b6c1d2e-3f40-4a51-8b62-7c8d9e0f1a2b';
+
+const WORK_ANALYSIS = {
+  work: {
+    id: WORK_ANALYSIS_WORK_ID,
+    workCode: 'SIG-2026-11',
+    title: 'Signalling and telecom at Alpha yard',
+    status: 'active',
+    contractValue: '4820000.00',
+    allowExcessDelivery: true,
+  },
+  divisionCode: '100',
+  divisionSource: 'consignee',
+  divisionCandidates: ['100'],
+  baselineLocked: true,
+  items: [
+    {
+      workItemId: 'a1a1a1a1-0000-4000-8000-000000000001',
+      itemNumber: 'A/1',
+      description: '42U floor-mounted equipment rack, powder coated',
+      unitCode: 'nos',
+      rate: '18500.000000',
+      sanctionedQuantity: '40.000',
+      sanctionedValue: '740000.00',
+      deliveredQuantity: '24.000',
+      deliveredValue: '444000.00',
+      installedQuantity: '18.000',
+      installedValue: '333000.00',
+      pendingSupplyQuantity: '16.000',
+      pendingSupplyValue: '296000.00',
+      pendingInstallQuantity: '22.000',
+      pendingInstallValue: '407000.00',
+      suppliedNotInstalledQuantity: '6.000',
+      suppliedNotInstalledValue: '111000.00',
+      installedAboveSanctionedQuantity: '0.000',
+      baselineSuppliedQuantity: '4.000',
+      baselineInstalledQuantity: '2.000',
+      inspectionAgency: 'RITES',
+      inspectionQuantity: '40.000',
+      inspectionCalledQuantity: '24.000',
+      inspectionPassedQuantity: '24.000',
+      pendingInspectionQuantity: '16.000',
+      pendingInspectionValue: '296000.00',
+      billedValue: '310000.00',
+      executedValue: '421900.00',
+      unbilledExecutedValue: '111900.00',
+    },
+    {
+      workItemId: 'a1a1a1a1-0000-4000-8000-000000000002',
+      itemNumber: 'A/2',
+      description: 'Signalling cable, 4 core armoured',
+      unitCode: 'm',
+      rate: '412.500000',
+      sanctionedQuantity: '2400.000',
+      sanctionedValue: '990000.00',
+      deliveredQuantity: '2400.000',
+      deliveredValue: '990000.00',
+      installedQuantity: '2460.000',
+      installedValue: '1014750.00',
+      pendingSupplyQuantity: '0.000',
+      pendingSupplyValue: '0.00',
+      pendingInstallQuantity: '0.000',
+      pendingInstallValue: '0.00',
+      suppliedNotInstalledQuantity: '0.000',
+      suppliedNotInstalledValue: '0.00',
+      installedAboveSanctionedQuantity: '60.000',
+      baselineSuppliedQuantity: '0.000',
+      baselineInstalledQuantity: '0.000',
+      inspectionAgency: 'RDSO',
+      inspectionQuantity: '2400.000',
+      inspectionCalledQuantity: '2400.000',
+      inspectionPassedQuantity: '2400.000',
+      pendingInspectionQuantity: '0.000',
+      pendingInspectionValue: '0.00',
+      billedValue: '990000.00',
+      executedValue: '990000.00',
+      unbilledExecutedValue: '0.00',
+    },
+    {
+      workItemId: 'a1a1a1a1-0000-4000-8000-000000000003',
+      itemNumber: 'A/3',
+      description: 'Miscellaneous site consumables',
+      unitCode: 'LS',
+      rate: '65000.000000',
+      sanctionedQuantity: '1.000',
+      sanctionedValue: '65000.00',
+      deliveredQuantity: '0.000',
+      deliveredValue: '0.00',
+      installedQuantity: '0.000',
+      installedValue: '0.00',
+      pendingSupplyQuantity: '1.000',
+      pendingSupplyValue: '65000.00',
+      pendingInstallQuantity: '1.000',
+      pendingInstallValue: '65000.00',
+      suppliedNotInstalledQuantity: '0.000',
+      suppliedNotInstalledValue: '0.00',
+      installedAboveSanctionedQuantity: '0.000',
+      baselineSuppliedQuantity: '0.000',
+      baselineInstalledQuantity: '0.000',
+      inspectionAgency: null,
+      inspectionQuantity: null,
+      inspectionCalledQuantity: '0.000',
+      inspectionPassedQuantity: '0.000',
+      pendingInspectionQuantity: null,
+      pendingInspectionValue: null,
+      billedValue: '0.00',
+      executedValue: null,
+      unbilledExecutedValue: null,
+    },
+  ],
+  totals: {
+    itemCount: 3,
+    sanctionedValue: '1795000.00',
+    deliveredValue: '1434000.00',
+    installedValue: '1347750.00',
+    pendingSupplyValue: '361000.00',
+    pendingInstallValue: '472000.00',
+    suppliedNotInstalledValue: '111000.00',
+    pendingInspectionValue: '296000.00',
+    billedValue: '1300000.00',
+    unbilledExecutedValue: '111900.00',
+    itemsWithoutMatrixRow: 1,
+  },
+  inspection: [
+    {
+      agency: 'RDSO',
+      itemCount: 1,
+      clauseQuantity: '2400.000',
+      calledQuantity: '2400.000',
+      passedQuantity: '2400.000',
+      pendingQuantity: '0.000',
+      pendingValue: '0.00',
+    },
+    {
+      agency: 'RITES',
+      itemCount: 1,
+      clauseQuantity: '40.000',
+      calledQuantity: '24.000',
+      passedQuantity: '24.000',
+      pendingQuantity: '16.000',
+      pendingValue: '296000.00',
+    },
+    {
+      agency: null,
+      itemCount: 1,
+      clauseQuantity: '0.000',
+      calledQuantity: '0.000',
+      passedQuantity: '0.000',
+      pendingQuantity: '0.000',
+      pendingValue: '0.00',
+    },
+  ],
+  bills: [
+    {
+      billId: 'b1b1b1b1-0000-4000-8000-000000000001',
+      billNumber: 'SIG-2026-11/B/1',
+      status: 'paid',
+      preparedAmount: '860000.00',
+      railwayBillAmount: '842000.00',
+      receivedTotal: '790000.00',
+      deductionTotal: '52000.00',
+      outstandingAmount: '0.00',
+    },
+    {
+      billId: 'b1b1b1b1-0000-4000-8000-000000000002',
+      billNumber: 'SIG-2026-11/B/2',
+      status: 'submitted',
+      preparedAmount: '440000.00',
+      railwayBillAmount: null,
+      receivedTotal: '0.00',
+      deductionTotal: '0.00',
+      outstandingAmount: null,
+    },
+  ],
+  payment: {
+    billCount: 2,
+    railwayTotal: '842000.00',
+    receivedTotal: '790000.00',
+    deductionTotal: '52000.00',
+    settledTotal: '842000.00',
+    outstandingTotal: '0.00',
+    indeterminateBills: 1,
+  },
+};
+
+const DIVISION_ANALYSIS = {
+  divisions: [
+    {
+      divisionCode: '100',
+      divisionSource: 'consignee',
+      works: [
+        {
+          id: WORK_ANALYSIS_WORK_ID,
+          workCode: 'SIG-2026-11',
+          title: 'Signalling and telecom at Alpha yard',
+          divisionSource: 'consignee',
+          divisionCandidates: ['100'],
+        },
+        {
+          id: '5b6c1d2e-3f40-4a51-8b62-7c8d9e0f1a2c',
+          workCode: 'SIG-2026-14',
+          title: 'Signalling at Beta yard',
+          divisionSource: 'consignee',
+          divisionCandidates: ['100'],
+        },
+      ],
+      rows: [
+        {
+          canonicalItemId: 'c1c1c1c1-0000-4000-8000-000000000001',
+          label: '42U equipment rack',
+          groupName: 'Racks and enclosures',
+          unitCode: 'nos',
+          rateLow: '18500.000000',
+          rateHigh: '19250.000000',
+          workCount: 2,
+          lineCount: 3,
+          sanctionedQuantity: '76.000',
+          deliveredQuantity: '24.000',
+          installedQuantity: '18.000',
+          pendingSupplyQuantity: '52.000',
+          pendingSupplyValue: '979000.00',
+          pendingInstallQuantity: '58.000',
+          pendingInstallValue: '1092500.00',
+        },
+        {
+          canonicalItemId: null,
+          label: 'Miscellaneous site consumables',
+          groupName: null,
+          unitCode: 'LS',
+          rateLow: '65000.000000',
+          rateHigh: '65000.000000',
+          workCount: 1,
+          lineCount: 1,
+          sanctionedQuantity: '1.000',
+          deliveredQuantity: '0.000',
+          installedQuantity: '0.000',
+          pendingSupplyQuantity: '1.000',
+          pendingSupplyValue: '65000.00',
+          pendingInstallQuantity: '1.000',
+          pendingInstallValue: '65000.00',
+        },
+      ],
+      totals: {
+        rowCount: 2,
+        mappedRowCount: 1,
+        pendingSupplyValue: '1044000.00',
+        pendingInstallValue: '1157500.00',
+      },
+    },
+    {
+      divisionCode: null,
+      divisionSource: 'ambiguous',
+      works: [
+        {
+          id: '5b6c1d2e-3f40-4a51-8b62-7c8d9e0f1a2d',
+          workCode: 'SIG-2026-21',
+          title: 'Signalling at Gamma yard',
+          divisionSource: 'ambiguous',
+          divisionCandidates: ['140', '250'],
+        },
+      ],
+      rows: [
+        {
+          canonicalItemId: 'c1c1c1c1-0000-4000-8000-000000000002',
+          label: 'Signalling cable, 4 core armoured',
+          groupName: 'Cables',
+          unitCode: 'm',
+          rateLow: '412.500000',
+          rateHigh: '412.500000',
+          workCount: 1,
+          lineCount: 1,
+          sanctionedQuantity: '1800.000',
+          deliveredQuantity: '400.000',
+          installedQuantity: '0.000',
+          pendingSupplyQuantity: '1400.000',
+          pendingSupplyValue: '577500.00',
+          pendingInstallQuantity: '1800.000',
+          pendingInstallValue: '742500.00',
+        },
+      ],
+      totals: {
+        rowCount: 1,
+        mappedRowCount: 1,
+        pendingSupplyValue: '577500.00',
+        pendingInstallValue: '742500.00',
+      },
+    },
+  ],
+  totals: {
+    rowCount: 3,
+    mappedRowCount: 2,
+    pendingSupplyValue: '1621500.00',
+    pendingInstallValue: '1900000.00',
+  },
+};
+
+const MAPPED_ITEM_ANALYSIS = {
+  rows: [
+    ...DIVISION_ANALYSIS.divisions[0]!.rows.filter(
+      (row) => row.canonicalItemId !== null,
+    ),
+    ...DIVISION_ANALYSIS.divisions[1]!.rows,
+    ...DIVISION_ANALYSIS.divisions[0]!.rows.filter(
+      (row) => row.canonicalItemId === null,
+    ),
+  ],
+  totals: DIVISION_ANALYSIS.totals,
+  unmappedLineCount: 1,
+};
+
+const ITEM_GROUP_PROPOSALS = {
+  proposals: [
+    {
+      key: 'signalling cable 4 core armoured',
+      proposedName: 'Signalling cable 4 core armoured',
+      aliases: ['Signalling cable, 4-core armoured'],
+      unitCodes: ['m'],
+      rateLow: '412.500000',
+      rateHigh: '418.000000',
+      lineCount: 4,
+      workCount: 2,
+    },
+    {
+      key: 'earthing strip 25x3 mm',
+      proposedName: 'Earthing strip 25x3 mm',
+      aliases: ['Earthing strip, 25x3mm'],
+      // Two units on one proposal: the state that draws the warning, and
+      // the reason a proposal is confirmed by a person and not by a rule.
+      unitCodes: ['m', 'kg'],
+      rateLow: '210.000000',
+      rateHigh: '240.000000',
+      lineCount: 2,
+      workCount: 2,
+    },
+  ],
+};
+
 /* The platform controls (0096). One configured flag and one untouched,
    because the row says something different in each case; one schedule and
    one completed run, so the history table is drawn rather than its empty
@@ -2336,6 +2683,23 @@ export async function mockWorkspace(
     route.fulfill(json(AUDIT_REGISTER)),
   );
   await page.route('**/api/mis/summary*', (route) => route.fulfill(json(MIS_SUMMARY)));
+  /* The works-analysis reports under Reports. The per-Work read is a
+     RegExp anchored on the id segment rather than a glob: a glob ending in
+     a wildcard would also swallow the document routes below it and answer
+     a workbook request with JSON, which is a fixture that makes a broken
+     download look like a working one. */
+  await page.route(/\/api\/reports\/work-analysis\/[0-9a-f-]+$/, (route) =>
+    route.fulfill(json(WORK_ANALYSIS)),
+  );
+  await page.route('**/api/reports/division-analysis', (route) =>
+    route.fulfill(json(DIVISION_ANALYSIS)),
+  );
+  await page.route('**/api/reports/mapped-item-analysis', (route) =>
+    route.fulfill(json(MAPPED_ITEM_ANALYSIS)),
+  );
+  await page.route('**/api/reports/item-group-proposals', (route) =>
+    route.fulfill(json(ITEM_GROUP_PROPOSALS)),
+  );
   /* The defect liability period (0099): the cross-Work register, and the
      Work-scoped read the Instruments tab makes.
 

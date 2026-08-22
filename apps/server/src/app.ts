@@ -66,6 +66,7 @@ import { registerRetentionRoutes } from './routes/retention.js';
 import { registerTimelineRoutes } from './routes/timeline.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerMisRoutes } from './routes/mis.js';
+import { registerWorksAnalysisRoutes } from './routes/works-analysis.js';
 import { registerSearchRoutes } from './routes/search.js';
 import { registerSerialRoutes } from './routes/serials.js';
 import { registerInstallationRoutes } from './routes/installations.js';
@@ -1152,6 +1153,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     );
     registerWorkCompletionRoutes(app, authInstance, database);
     registerWorkSupersedeRoutes(app, authInstance, database);
+    // Registered with the PDF-rendering routes rather than beside
+    // `registerMisRoutes`: the three works-analysis reports each render a
+    // document, so this module needs the same Gotenberg endpoint and the
+    // same object storage those routes take.
+    registerWorksAnalysisRoutes(app, authInstance, database, storage, gotenbergUrl);
   }
 
   return app;

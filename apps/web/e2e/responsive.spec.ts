@@ -137,6 +137,9 @@ const SCREENS = [
   { hash: '#/masters/locations', name: 'masters', ready: 'Masters' },
   { hash: '#/settings', name: 'settings', ready: 'Settings' },
   { hash: `#/loa/${DOC_ID}`, name: 'LOA review', ready: /Review loa-letter\.pdf/ },
+  // The widest tables in the product: the works-analysis pending rows are
+  // thirteen columns, which is precisely the shape this test exists for.
+  { hash: '#/reports', name: 'reports', ready: 'Reports' },
 ] as const;
 
 test('no register makes the page scroll sideways', async ({ page }) => {

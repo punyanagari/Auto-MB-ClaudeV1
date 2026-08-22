@@ -889,6 +889,33 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     downloadRegisterWorkbook: vi.fn<ApiClient['downloadRegisterWorkbook']>(),
     downloadAuditWorkbook: vi.fn<ApiClient['downloadAuditWorkbook']>(),
     downloadTallyExport: vi.fn<ApiClient['downloadTallyExport']>(),
+    // The works-analysis reports (Reports screen). Empty by default for
+    // the same reason as the reads above: a view that opens one renders
+    // its own empty state rather than hanging on an unresolved mock.
+    divisionAnalysis: vi.fn<ApiClient['divisionAnalysis']>().mockResolvedValue({
+      divisions: [],
+      totals: {
+        rowCount: 0,
+        mappedRowCount: 0,
+        pendingSupplyValue: '0.00',
+        pendingInstallValue: '0.00',
+      },
+    }),
+    mappedItemAnalysis: vi.fn<ApiClient['mappedItemAnalysis']>().mockResolvedValue({
+      rows: [],
+      totals: {
+        rowCount: 0,
+        mappedRowCount: 0,
+        pendingSupplyValue: '0.00',
+        pendingInstallValue: '0.00',
+      },
+      unmappedLineCount: 0,
+    }),
+    itemGroupProposals: vi
+      .fn<ApiClient['itemGroupProposals']>()
+      .mockResolvedValue({ proposals: [] }),
+    workAnalysis: vi.fn<ApiClient['workAnalysis']>(),
+    downloadWorksAnalysis: vi.fn<ApiClient['downloadWorksAnalysis']>(),
     // The platform controls (0096). Both lists answer empty by default,
     // for the reason the stock reads below do: a view that opens one
     // renders its own empty state rather than hanging on an unresolved
