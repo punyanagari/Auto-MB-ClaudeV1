@@ -41,6 +41,7 @@ import { errorMessage } from '../lib/load-failure.js';
 import { categoryLabelOf } from '../lib/payment-matrix.js';
 import { useReload } from '../lib/view-state.js';
 import { wayfindingOf, type Wayfind } from '../lib/wayfinding.js';
+import type { WorkFocus } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { Badge } from '../ui/badge.js';
 import { Card } from '../ui/card.js';
@@ -102,6 +103,12 @@ interface WorkDetailProps {
   readonly promptPaymentSetup?: boolean;
   /** The prompt is spent — saved or dismissed. */
   readonly onPaymentSetupClosed?: () => void;
+  /** What the ADDRESS asked this page to do beyond showing a section
+   * (`lib/workspace-routes.ts` `WorkFocus`). `'extension'` comes from the
+   * dashboard's completion panel and opens the extension composer where
+   * it lives, expanded and focused, instead of leaving the operator to
+   * find it most of a long Overview below the fold. */
+  readonly focus?: WorkFocus | undefined;
 }
 
 /** The Work page's areas. Eleven sections used to stack on one scroll; each
@@ -384,6 +391,7 @@ export function WorkDetail({
   onTabChange,
   promptPaymentSetup = false,
   onPaymentSetupClosed,
+  focus,
 }: WorkDetailProps) {
   const [detail, setDetail] = useState<WorkDetailResponse | null>(null);
   const [challans, setChallans] = useState<readonly Challan[] | null>(null);
@@ -1411,6 +1419,7 @@ export function WorkDetail({
             canModify={canCreateDocuments}
             canIssue={canIssueDocuments}
             canApprove={canApprove}
+            openComposer={focus === 'extension'}
           />
 
           <WorkConsignees

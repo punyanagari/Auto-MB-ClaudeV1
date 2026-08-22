@@ -3205,6 +3205,222 @@ register carries the writer role, and pointing a file at it needs the
 data-import authority. A member without it sees both halves of the
 register and neither upload panel.
 
+### 40. The dashboard stops listing Works and starts answering questions
+
+**Status: application-first, owner decisions of 2026-08-22 (seven
+decisions R1–R7).** Numbered 40 at the MERGE, and numbered TWICE. It was
+drafted as § 38 with a note saying siblings might claim the number and
+that it would move rather than share; the works-analysis reports took
+§ 38, so it became § 39, and the Tally invoice register took § 39 before
+this landed, so it became § 40. Every file citing it was swept both
+times. § 37 records the same thing happening to itself, which is why the
+note was there and why the sweep is a habit rather than a scramble.
+
+**No mock citation is possible and none is claimed.** The mock's
+`app/page` draws a five-tile stat row, a Work portfolio table and a
+seven-row alert list, and this screen keeps the first of those and
+replaces the other two. That puts it under AGENTS.md § Design contract 4
+and § Approved divergences 4 — a surface the mock does not cover, built
+inside the mock's own grammar. Every element is one the mock already
+ships:
+
+| Element                       | Taken from                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
+| The four-tile row             | `app/page`'s `.data-surface` stat panel, `Stat`, unchanged but for its cell count   |
+| Panel cards and their headers | `ui/card` plus the header/description block every register uses                     |
+| Lamps                         | the status dot of `components/shared.tsx`, always with a word beside it             |
+| Chart colour                  | `--chart-1` / `--chart-2`, the ramp `docs/DESIGN.md` records for exactly this       |
+| Mono tabular figures          | `.metric-value` and the numeric rules that govern every money column in the product |
+
+**R1 — the Works list is gone from the landing screen.** It was a
+truncated, unsortable copy of a register in the rail that sorts, filters
+and pages. Row 1 is now four tiles about the RUNNING portfolio — active
+Works, active contract value, executed percentage, receivable outstanding
+— and beneath them one line of red and amber lamps: completion dates
+inside thirty days, guarantees and certificates inside sixty, and issued
+documents still waiting on a signature. Each lamp reaches its answer; the
+signing queue is a register of its own, and the other two move the
+viewport to the panel on this screen that holds the detail.
+
+**The seven-row alert list goes with it, and this is the decision worth
+arguing.** What it said is said better one scope in: the receivables
+register carries every bill's settlement position, the invoice register
+carries the IRP reporting window, the challan register carries open
+drafts, and the Works register carries LOA letters awaiting review. What
+no register carried was a single line an operator could read in a second.
+The ranked `alerts` array stays in the API response — nothing about the
+server's severity ordering changed — so a later surface can render it
+without rebuilding it.
+
+**R2 — completion dates are a panel, not a row of a list**, because a
+completion date is the only deadline on this screen whose remedy is a
+document this product writes. Thirty days or less is a red lamp, the next
+thirty amber, and each row carries the days remaining, the date, and the
+executed percentage the extension will be argued from. "Request extension"
+opens the composer itself, at the address
+`#/works/<id>/overview?focus=extension` — the first and so far only
+INTENT a Work address carries. The composer expands and the proposed-date
+field takes focus; landing an operator at the top of an Overview whose
+composer is most of a page below the fold is a suggestion, not an action.
+The intent rides the address rather than being handed sideways between
+two screens, so it is linkable, bookmarkable and survives a reload, and a
+stale or malformed one degrades to the plain Work exactly as an
+unrecognised section already does.
+
+**What "prefilled" resolves to, stated because it is not what it sounds
+like.** The composer is prefilled with the WORK and shows its CURRENT
+completion date; the proposed date and the grounds are left empty on
+purpose. A proposal equal to the current date is not an extension, and
+the grounds are the whole substance of the letter — a landing screen
+guessing at either would be inventing a contract argument it cannot see.
+
+**The attention lamps state the PAST and the FUTURE separately.** A Work
+eleven days past its completion date and one reaching it in nine were
+counted together and reported with the milder of the two readings —
+"reaches its completion date within 30 days", which is false of the first
+and is the one an operator most needs to see. The same split applies to
+instruments, and there it closes a hole: the ninety-day strip is
+forward-only by design, so a guarantee that has ALREADY lapsed appears
+nowhere on it, and folded into "expires within 60 days" it was a
+countdown that had run out and did not say so. Expired instruments are
+now their own red lamp, and the strip's panel names them underneath its
+rail with a link each to the Work's Instruments tab — a count of a thing
+the screen never shows is not a statement.
+
+**"Waiting to be signed" means waiting.** The unsigned-document lamp
+counts `pending` and `claimed`, which is the open set migration 0091
+defines. A `failed` request is terminal — nothing is going to pick it up
+— and counting it there reported a document as queued when it had
+stopped, leaving an operator waiting for a kiosk that was never coming
+back to it. The signing queue is where a failure is surfaced and retried;
+if it earns a lamp it earns its own sentence, not this one widened.
+
+**R3 — billed against received, by month, over the trailing year.** Both
+series are GST-INCLUSIVE, which is the only reason they may share an axis:
+`billed` is submitted and superseded tax invoices net of issued credit
+notes, and `received` is what reached the bank. Measurement Book bill
+totals are deliberately in neither: a bill and the invoice raised against
+its measurement state the same measured value on two different bases, so
+adding them would double-count AND mix bases — the mistake `docs/PRODUCT.md`
+§ 5.2 names. There is one y-scale and there never will be two.
+
+**EVERY invoice, including the direct ones.** A tax invoice raised against
+a private customer belongs to no Work (migration 0039), and scoping the
+series to Works made a caption reading "the tax invoices this
+organisation submitted" false — an agency invoicing private customers
+beside its railway contracts watched a third of its billing vanish from
+its own landing screen. Direct invoices count for a full-scope member;
+they are withheld from a Work-scoped one, who has no claim on the
+organisation's private billing. **The two series are therefore not
+symmetrical, and the screen says so**: a receipt in this product is
+recorded against a prepared BILL, and a direct invoice has no bill, so
+money received against one is held nowhere and cannot join `received`.
+The gap between the series is an upper bound on what is owed, never a
+measurement of it — `signals.receivableOutstanding` is the measured
+figure and reads the settlement register.
+
+**A CUTOVER IS NOT A COLLAPSE.** An organisation that adopted this
+product part-way through the year has empty bars at the head of a
+trailing twelve, and an empty bar says "we billed nothing" in exactly the
+same shape whether that is true or whether the evidence is in the
+Historical invoices register (migration 0115). The server sends the first
+month it holds ANY billing evidence for, and the chart prints one
+sentence naming it and linking to that register — but only when that
+month is later than the first month drawn. Data-driven, not a hard-coded
+cutover date that would be wrong for the next organisation, and silent on
+a full year because a qualifier there is noise.
+
+**Every countdown on this screen answers to the ORGANISATION's calendar
+day.** `current_date` is the database session's day and is UTC on every
+deployment; an agency in IST crosses midnight five and a half hours
+earlier, so for that slice of every day a guarantee expiring tomorrow
+read as expiring in two days and a completion date that had arrived read
+as one day away. Every statement behind this screen joins the same
+`today` CTE — `(now() at time zone organisations.timezone)::date`, the
+reading `routes/mis.ts` already established — so the strip, the
+completion panel, the execution rows and the month spine cannot disagree
+about what day it is.
+
+**R4 — supply and installation as paired bars, not a stack.** A Work can
+be fully supplied and barely installed, and a stack would draw a total
+that means nothing; two bars on a common 0–100 axis let the eye read the
+GAP, which is material on site that nobody has put up yet. Rows are
+ordered by nearest completion date, and a Work inside thirty days carries
+a red lamp, a tinted row and the words "N days left" — the colour is
+never the message. The bars themselves stay in the two series colours in
+every row: repainting a bar by urgency would break the one thing a legend
+promises.
+
+**R5 — ninety days of dated obligations on one line.** Completion dates,
+instrument expiries and defect liability periods ending, positioned by
+how far off they are and coloured by proximity: red inside a fortnight,
+amber inside a month, neutral beyond. Deliberately NOT an SVG — every
+lamp is a link to its Work, and a focusable link inside an `<svg>` is a
+known way to lose keyboard order and accessible names. It is a list on a
+rail, in document order, soonest first, and each lamp carries the whole
+sentence as text. One lamp per Work for defect liability (the earliest
+live expiry inside the window; a large Work has hundreds of warranties
+and the register owns the rest) and one per instrument, because each
+instrument is a different document with a different bank.
+
+**R6 — the order is the order the questions are asked.** Tiles, then the
+attention line, then the completion panel beside the billing chart, then
+the execution bars, then the strip. At 1440px the tiles, the lamps and
+both row-2 panels are above the fold, which is the constraint that
+decided the panel heights; nothing red or amber is ever below it, because
+the lamps sit third from the top.
+
+**R7 — the tiles are the ACTIVE portfolio, and the value is the effective
+one.** `works.contract_value` is the column an amendment moves (migration
+0104), so there is nothing to add for variations and a second amended
+total would be a second answer that eventually disagrees with the Work's
+own screen. Completed and cancelled Works are excluded: their value never
+leaves a whole-register total, so the old headline drifted upward forever
+and stopped describing anything anybody could act on. The whole-register
+reading stays in `totals` for whatever still wants it.
+
+**And the numbers in one sentence share one basis.** The contract tile
+first read "₹45.2 L, of which executed ₹300 (0.0066%)", and the three
+figures in it did not agree: the two rupee amounts are the letters' own
+printed sums, and on a portfolio mixing GST-inclusive and GST-exclusive
+letters that sum is on no basis at all, while the percentage restates
+every term as taxable value before dividing — which
+`apps/server/src/executed-value.ts` argues is the only honest basis for a
+cross-Work ratio. Split rather than reconciled: the contract tile keeps
+the rupees an owner reads off the letters and says so, and the executed
+tile carries the ratio beside the two TAXABLE figures it is genuinely the
+quotient of, and says that. Neither tile now holds a number that
+disagrees with its neighbours.
+
+**A total that is not the organisation's says whose it is.** A member
+scoped to their assignments gets tiles summing their slice, and one line
+under the row says so. Without it the figures read as the organisation's
+and are quietly, plausibly wrong — the worst way for a number to be
+wrong. Full-scope members see no sentence; explaining that everything
+means everything is noise.
+
+**Accessibility, stated because two of the checks are not obvious.** The
+billing chart carries a table of every month's two figures: it is the
+screen-reader reading of the plot and the relief the palette needs, since
+`--chart-2` measures 2.55:1 against the light card and a figure that
+exists only as a fill is a figure some readers do not have. And nothing
+on this screen animates — no transitions, no entrance, no smooth scroll —
+so `prefers-reduced-motion` has nothing to switch off rather than
+something to remember to switch off.
+
+**Chart text is in CSS pixels, never in the `viewBox`.** A `viewBox`
+scaled to its column scales the text inside it too, so an 11px axis tick
+read as 11px on a desk monitor and as 5px at 320 — the width most of this
+panel's readers actually have, and a chart whose axis is unreadable there
+is a chart with no axis. The plot SVG therefore carries no text at all:
+the tick column and the month row are ordinary elements at ordinary
+sizes, positioned by percentage of the same box the bars are drawn in.
+The year is printed under January and under the first month of the
+series, so the left edge can always be dated; below 640px only every
+third month is labelled — plus the first and the last always, because the
+newest bar is the one a reader looks at first and an unlabelled right end
+makes them count backwards.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

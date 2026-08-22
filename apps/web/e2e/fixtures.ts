@@ -171,6 +171,81 @@ export const DASHBOARD = {
     openDrafts: 1,
     loaAwaitingReview: 1,
   },
+  /* The redesigned landing screen's own payload (`docs/UX.md` § 40). Every
+     figure is deliberately non-zero and non-round, so the dual-theme axe
+     gate scans real marks — bars with length, lamps in all three
+     proximities — rather than an empty state. */
+  signals: {
+    activeWorks: 1,
+    activeContractValue: '4520000.00',
+    activeBilledValue: '300.00',
+    activeContractTaxableValue: '3830508.47',
+    activeBilledTaxableValue: '254.24',
+    activeExecutedPercent: '0.0066',
+    receivableOutstanding: '3000.00',
+    receivableIndeterminate: 1,
+    completionsOverdue: 1,
+    completionsDue: 1,
+    instrumentsExpired: 1,
+    instrumentsExpiring: 2,
+    unsignedDocuments: 1,
+    assignedScopeOnly: false,
+    // Later than the first month of the twelve below, so the cutover
+    // sentence renders and the axe scan meets it.
+    billingSince: '2026-07',
+  },
+  completions: [
+    {
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      title: 'Signalling gear, CR Bhusawal',
+      dueOn: '2026-09-05',
+      dueInDays: 14,
+      executedPercent: '0.0066',
+    },
+  ],
+  monthlyBilling: [
+    { month: '2026-06', billed: '0.00', received: '0.00' },
+    { month: '2026-07', billed: '250000.00', received: '90000.00' },
+    { month: '2026-08', billed: '350000.00', received: '120000.00' },
+  ],
+  execution: [
+    {
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      title: 'Signalling gear, CR Bhusawal',
+      suppliedPercent: '32.0796',
+      installedPercent: '11.5000',
+      dueOn: '2026-09-05',
+      dueInDays: 14,
+    },
+  ],
+  deadlines: [
+    {
+      kind: 'completion',
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      label: 'Completion',
+      dueOn: '2026-09-05',
+      dueInDays: 14,
+    },
+    {
+      kind: 'instrument',
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      label: 'PBG BG/22',
+      dueOn: '2026-09-15',
+      dueInDays: 24,
+    },
+    {
+      kind: 'defect_liability',
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      label: 'Defect liability',
+      dueOn: '2026-11-01',
+      dueInDays: 71,
+    },
+  ],
   alerts: [
     {
       kind: 'instrument_expiring',
@@ -179,6 +254,18 @@ export const DASHBOARD = {
       workId: '33333333-3333-4333-8333-333333333333',
       workCode: 'PL270-CRB',
       dueInDays: 38,
+      settlement: null,
+    },
+    // A guarantee that has ALREADY lapsed. The ninety-day rail is
+    // forward-only and cannot draw one, so its panel names them
+    // underneath — and the axe scan has to meet that list rendered.
+    {
+      kind: 'instrument_expired',
+      severity: 'danger',
+      message: 'PBG BG/19 for PL270-CRB expired on 2026-07-30.',
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      dueInDays: -23,
       settlement: null,
     },
     {
