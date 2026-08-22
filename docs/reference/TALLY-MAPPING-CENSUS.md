@@ -568,7 +568,7 @@ Idempotency keys available, all present on 100 % of rows:
 | Voucher | `GUID` | Also `MASTERID`, `VOUCHERKEY`, `REMOTEID` attr |
 | Voucher edit detection | `ALTERID` | Increments on alteration; the natural incremental cursor |
 | Master | `GUID` + name | Ledger names are unique in Tally and are the join key used *inside* the file |
-| Deduction line | `(voucher GUID, ledger name)` | No line-level id exists; the pair is unique per voucher in practice |
+| Deduction line | `(voucher GUID, ledger name)` | No line-level id exists. "Unique per voucher in practice" was **wrong**: 40 real receipts book two legs to one ledger, and wave T3 folds them into one line with a leg count (ruling 25) |
 
 The import is a **one-shot cutover, not a sync** (ruling 2), run on an
 export the owner takes **on import day** (ruling 3) — this 19 Aug 2026
@@ -658,3 +658,5 @@ file stays what it is: the survey that prompted the question.
     **Ruled:** They join the historical register, which gains a source discriminator (`tally` / `zoho`). Where both systems hold the same invoice, **Zoho is authoritative and Tally is provenance**.
 24. Wave T3's import writes money rows. Does it take the `import` authority every other import here takes, or the `payments` authority as well? (Raised by the wave rather than by this census, and answered on the same terms.)
     **Ruled 23 Aug 2026:** BOTH. Pointing a file at a register is clerical; bringing in what a railway paid and what it withheld is a money decision, and `canManagePayments` is what gates those everywhere else. The consequence is intended: a member who can import invoices may find they cannot import receipts.
+25. § 5 calls `(voucher GUID, ledger name)` unique per voucher "in practice", and wave T3's dry run found **40 receipts booking two legs to one ledger** — two deductions under one head, usually against two bills in one payment advice. Refuse those vouchers, or fold the legs?
+    **Ruled 23 Aug 2026:** FOLD. The legs sum into the single line the key admits, and the line records how many legs it is. Lossless: this register holds a per-head amount per receipt and models no per-bill deduction split, so ₹60 + ₹40 and one line of ₹100 say the same thing about what the railway kept — and refusing 40 real receipts would have sent the owner to hand-edit vouchers for nothing.

@@ -483,13 +483,12 @@ describe('readTallyReceipts', () => {
 
   /* --- the coordinator's review of #180 ---------------------------------- */
 
-  it('refuses a voucher naming one deduction ledger twice (finding 2)', () => {
+  it('folds two legs naming one ledger into one line (owner ruling 25)', () => {
     // The line key is (voucher, ledger name) — the census's own, and
-    // migration 0120's unique index. Two legs naming one ledger are
-    // therefore ONE row: the second collides, the heads sum short of the
-    // stated total, and the deferred constraint refuses the whole
-    // transaction at COMMIT with nothing naming the voucher. Refused
-    // here, by name, before a byte is written.
+    // migration 0120's unique index — so two legs naming one ledger are
+    // ONE row. 40 real receipts do it, and the owner ruled the lossless
+    // way: the legs SUM, and `legCount` records that the export wrote
+    // two entries.
     const read = readTallyReceipts(
       envelope(
         voucher({
@@ -497,17 +496,67 @@ describe('readTallyReceipts', () => {
           legs: [
             { ledger: 'Northern Division', amount: '1000.00' },
             { ledger: 'State Bank Current A/c', amount: '-800.00' },
-            { ledger: 'CGST TDS 1%', amount: '-100.00' },
-            { ledger: 'CGST TDS 1%', amount: '-100.00' },
+            { ledger: 'CGST TDS 1%', amount: '-60.00' },
+            { ledger: 'CGST TDS 1%', amount: '-140.00' },
           ],
         }),
       ),
       CENSUS,
     );
-    expect(read.receipts).toHaveLength(0);
-    expect(read.refused[0]?.kind).toBe('duplicate_head_ledger');
-    expect(read.refused[0]?.voucher.voucherNumber).toBe('7001');
-    expect(read.refused[0]?.reason).toMatch(/CGST TDS 1%/);
+    expect(read.refused).toHaveLength(0);
+    expect(read.receipts).toHaveLength(1);
+    const lines = read.receipts[0]?.deductions ?? [];
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.tallyLedgerName).toBe('CGST TDS 1%');
+    expect(lines[0]?.amount).toBe('200.00');
+    // THE PROVENANCE. Without it the row would claim the voucher wrote
+    // one ₹200 entry where it wrote ₹60 and ₹140.
+    expect(lines[0]?.legCount).toBe(2);
+    // And the arithmetic is untouched: the fold sums legs, it does not
+    // change what the receipt says was deducted.
+    expect(read.receipts[0]?.deductionTotal).toBe('200.00');
+    expect(read.receipts[0]?.net).toBe('800.00');
+  });
+
+  it('keeps ruling 10 honest across a fold', () => {
+    // A silent leg folded with one that states a figure is NOT a silent
+    // line: the flag says the export stated nothing, and here it stated
+    // ₹100. It survives only where every folded leg was silent.
+    const mixed = readTallyReceipts(
+      envelope(
+        voucher({
+          legs: [
+            { ledger: 'Northern Division', amount: '1000.00' },
+            { ledger: 'State Bank Current A/c', amount: '-900.00' },
+            { ledger: 'Bill Copy' },
+            { ledger: 'Bill Copy', amount: '-100.00' },
+          ],
+        }),
+      ),
+      CENSUS,
+    );
+    const mixedLine = mixed.receipts[0]?.deductions[0];
+    expect(mixedLine?.amount).toBe('100.00');
+    expect(mixedLine?.amountMissing).toBe(false);
+    expect(mixedLine?.legCount).toBe(2);
+
+    const silent = readTallyReceipts(
+      envelope(
+        voucher({
+          legs: [
+            { ledger: 'Northern Division', amount: '1000.00' },
+            { ledger: 'State Bank Current A/c', amount: '-1000.00' },
+            { ledger: 'Bill Copy' },
+            { ledger: 'Bill Copy' },
+          ],
+        }),
+      ),
+      CENSUS,
+    );
+    const silentLine = silent.receipts[0]?.deductions[0];
+    expect(silentLine?.amount).toBe('0.00');
+    expect(silentLine?.amountMissing).toBe(true);
+    expect(silentLine?.legCount).toBe(2);
   });
 
   it('refuses a debit leg naming a ledger the census does not hold (finding 4)', () => {

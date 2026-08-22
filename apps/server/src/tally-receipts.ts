@@ -204,9 +204,16 @@ export interface ImportedDeductionLine {
    * figure — see `amountMissing`. */
   readonly amount: string;
   /** Ruling 10: the voucher named this head with no `AMOUNT` element at
-   * all. 74 real lines. */
+   * all. 74 real lines. On a folded line, true only where EVERY leg was
+   * silent. */
   readonly amountMissing: boolean;
   readonly plCode: string | null;
+  /** How many voucher legs this line is. 1 almost always; 2 or more on
+   * the 40 real receipts that book two legs to one ledger, which owner
+   * ruling 25 folds into the single line the schema keys. Kept as
+   * provenance: the amount is the sum, and this says the export wrote it
+   * as several entries. */
+  readonly legCount: number;
 }
 
 /** A receipt this wave will import, with everything it needs decided. */
@@ -260,7 +267,6 @@ export type TallyReceiptRefusalKind =
   | 'customer_as_head'
   | 'no_bank_line'
   | 'uncensused_ledger'
-  | 'duplicate_head_ledger'
   | 'zero_gross'
   | 'unbalanced';
 
@@ -394,27 +400,6 @@ export function readTallyReceipts(
       continue;
     }
 
-    // ONE LEDGER, ONE LINE. The line key is (voucher, ledger name) — the
-    // census's own § 5 key and migration 0120's unique index — so two
-    // legs naming one ledger are ONE row: the second collides on
-    // `on conflict do nothing`, the heads sum short of the stated total,
-    // and the deferred constraint refuses the whole transaction at COMMIT
-    // with nothing naming the voucher. Refused here instead, by name.
-    const seenLedgers = new Set<string>();
-    const duplicate = headLines.find((entry) => {
-      if (seenLedgers.has(entry.ledger)) return true;
-      seenLedgers.add(entry.ledger);
-      return false;
-    });
-    if (duplicate !== undefined) {
-      refused.push({
-        voucher,
-        kind: 'duplicate_head_ledger',
-        reason: `This receipt books two deduction lines to ${duplicate.ledger}, and a receipt holds one line per ledger. Combine them in TallyPrime, or book the second to its own head, and export again.`,
-      });
-      continue;
-    }
-
     const customerCredits = credits.filter((entry) =>
       isCustomerLedger(ledgers.get(entry.ledger)),
     );
@@ -511,7 +496,24 @@ export function readTallyReceipts(
     let netPaise = roundOffPaise;
     for (const entry of bankLines) netPaise -= toPaise(entry.amount ?? '0');
 
-    const deductions: ImportedDeductionLine[] = [];
+    /* --- the heads, FOLDED BY LEDGER (owner ruling 25, 23 Aug 2026) ------
+       40 real receipts book two legs to one ledger — two deductions under
+       one head, usually against two bills inside one payment advice. The
+       line key is (voucher, ledger name), so those two legs are ONE row,
+       and the wave first refused such a voucher rather than guessing.
+       The owner ruled the other way, and the ruling is the lossless one:
+       the legs SUM into the single line the schema keys.
+
+       Nothing is lost that this register models. It holds a per-head
+       amount per receipt and models no per-bill deduction split, so two
+       legs of ₹60 and ₹40 and one line of ₹100 say the same thing about
+       what the railway kept. `legCount` records that the fold happened,
+       so the provenance still says the voucher wrote two entries.
+
+       THE ARITHMETIC IS UNTOUCHED: `deductionPaise` sums every LEG, fold
+       or no fold, so `gross = net + Σ heads` reconciles exactly as it did
+       and the folding cannot hide a receipt that does not balance. */
+    const folded = new Map<string, ImportedDeductionLine>();
     let deductionPaise = 0n;
     let securityDepositPlCode: string | null = null;
     let securityDepositCodeAmbiguous = false;
@@ -526,12 +528,21 @@ export function readTallyReceipts(
       // ledger NAME spells the code five ways and `tally-masters.ts`
       // argues at length why the two patterns are deliberately different.
       const plCode = facts?.plCode ?? readPlCode(entry.ledger).code;
-      deductions.push({
+      const already = folded.get(entry.ledger);
+      folded.set(entry.ledger, {
         head,
         tallyLedgerName: entry.ledger,
-        amount,
-        amountMissing: entry.amount === null,
-        plCode,
+        amount:
+          already === undefined
+            ? amount
+            : paiseText(toPaise(already.amount) + toPaise(amount)),
+        // RULING 10 SURVIVES THE FOLD, and only where it is still true:
+        // the flag says the EXPORT stated no figure, so a fold of one
+        // silent leg and one that states ₹100 is not a silent line. It
+        // stays set only when every folded leg was silent.
+        amountMissing: (already?.amountMissing ?? true) && entry.amount === null,
+        plCode: already?.plCode ?? plCode,
+        legCount: (already?.legCount ?? 0) + 1,
       });
       if (head === 'security_deposit' && plCode !== null) {
         // No real receipt splits security deposit across two works. If
@@ -543,6 +554,7 @@ export function readTallyReceipts(
         securityDepositPlCode ??= plCode;
       }
     }
+    const deductions = [...folded.values()];
 
     if (grossPaise !== netPaise + deductionPaise) {
       refused.push({

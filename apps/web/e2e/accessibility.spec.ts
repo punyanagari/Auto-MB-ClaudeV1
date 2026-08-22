@@ -2715,6 +2715,10 @@ test('the railway receipts register passes the axe scan', async ({ page }) => {
   ).toBeVisible();
   // Ruling 10, labelled on the line it happened to.
   await expect(page.getByText('no amount stated in Tally').first()).toBeVisible();
+  // Ruling 25: two Tally entries, one line here, and the line says so —
+  // otherwise somebody comparing the screen to the accounting system
+  // counts one entry too few.
+  await expect(page.getByText('2 entries, summed').first()).toBeVisible();
   // Ruling 17's queue, in the register rather than on a screen of its own.
   await expect(page.getByText('None proposed').first()).toBeVisible();
   await expectNoAxeViolations(page, 'railway receipts register');

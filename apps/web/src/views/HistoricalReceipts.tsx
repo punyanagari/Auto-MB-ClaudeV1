@@ -132,6 +132,11 @@ function Heads({ payment }: { readonly payment: ImportedPayment }) {
           <span className="font-mono tabular-nums">{formatInr(line.amount)}</span>
           <span className="text-muted-foreground">
             {line.tallyLedgerName}
+            {/* THE FOLD, SAID OUT LOUD (ruling 25). The voucher booked
+                this head more than once and the amount beside it is the
+                sum; an operator comparing the screen to TallyPrime would
+                otherwise count entries and find one too few. */}
+            {line.legCount > 1 && ` — ${String(line.legCount)} entries, summed`}
             {/* RULING 10, said out loud on the line it happened to. A
                 nil somebody typed and a nil this reader invented are not
                 the same fact, and the register must never let one read

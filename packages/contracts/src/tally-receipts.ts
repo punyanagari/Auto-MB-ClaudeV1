@@ -86,8 +86,13 @@ export const ImportedPaymentDeductionSchema = Type.Object(
      * which is what makes the bucket honest. */
     tallyLedgerName: Type.String({ minLength: 1, maxLength: 300 }),
     amount: NonNegativeMoneyStringSchema,
-    /** Ruling 10: the export named this head and stated no figure. */
+    /** Ruling 10: the export named this head and stated no figure. On a
+     * folded line, true only where every leg was silent. */
     amountMissing: Type.Boolean(),
+    /** How many voucher legs this line is (ruling 25). More than one on
+     * the receipts that book two deductions to one ledger, whose amounts
+     * are summed into the single line the register keys. */
+    legCount: Type.Integer({ minimum: 1 }),
     /** The v1 work code the ledger name carries, where it carries exactly
      * one. The security-deposit heads are already keyed to it, which is
      * the first route to a Work. */

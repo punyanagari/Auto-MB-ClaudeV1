@@ -2714,6 +2714,15 @@ dropped the line would lose the fact that the head was named, and one
 that treated the blank as a typed zero would state something the export
 does not. The line carries a flag and the import report counts them.
 
+**One head twice on one receipt becomes one line, summed.** A voucher
+sometimes books two deductions to the same head — usually against two
+bills inside one payment advice — and a receipt here holds one line per
+head. The amounts are added and the line records that it is two entries,
+which loses nothing: what is kept per head per receipt is the same money
+either way, and this register has never modelled a per-bill split of a
+deduction. The screen says so on the line, so anybody comparing it to
+the accounting system counts the same rupees rather than the same rows.
+
 **Which Work a receipt is about is a proposal, in a fixed order.** The
 security-deposit head's own work code first — those ledgers are already
 keyed per work and no receipt splits security deposit across two — then

@@ -453,6 +453,20 @@ CREATE TABLE imported_payment_deductions (
 
   amount money_amount NOT NULL CHECK (amount >= 0),
 
+  -- HOW MANY VOUCHER LEGS THIS LINE IS (owner ruling 25, 23 Aug 2026).
+  --
+  -- 40 real receipts book TWO legs to one ledger — two deductions under
+  -- one head, usually against two bills inside one payment advice. The
+  -- key below is (payment, ledger name), so those legs are one row, and
+  -- the ruling is that they SUM into it rather than refusing the voucher:
+  -- lossless, because this table holds a per-head amount per receipt and
+  -- models no per-bill deduction split.
+  --
+  -- This is the provenance that keeps the fold honest. Without it the row
+  -- would say the export wrote one ₹100 entry where it wrote ₹60 and ₹40,
+  -- and nothing could tell the two apart afterwards.
+  leg_count integer NOT NULL DEFAULT 1 CHECK (leg_count >= 1),
+
   -- RULING 10 (§ C). The head was named on the voucher with no `AMOUNT`
   -- element at all — 88 such lines across 77 real receipts. Imported as
   -- 0.00 and FLAGGED, so the reconciliation report can list them and
@@ -473,7 +487,10 @@ CREATE TABLE imported_payment_deductions (
     REFERENCES imported_payments (organisation_id, id),
 
   -- The census's own line key (§ 5): no line-level identifier exists in
-  -- the export, and the pair is unique per voucher in practice. It is
+  -- the export. The census called the pair "unique per voucher in
+  -- practice" and the real file disagrees — 40 receipts book two legs to
+  -- one ledger — so the reader FOLDS those legs into this one row
+  -- (ruling 25) and `leg_count` above records that it did. The key is
   -- also what makes a re-import of one receipt idempotent at the line
   -- level rather than only at the voucher level.
   UNIQUE (organisation_id, imported_payment_id, tally_ledger_name),

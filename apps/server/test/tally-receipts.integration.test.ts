@@ -203,6 +203,8 @@ function envelope(...vouchers: string[]): Buffer {
  *                    17's manual-link queue
  *   guid-roundoff    a credited round-off, folded into the net (ruling 16)
  *   guid-nil-head    a head named with no AMOUNT at all (ruling 10)
+ *   guid-folded      two legs on one ledger, summed into one line
+ *                    (ruling 25)
  *   guid-two-party   credits two customers — refused (ruling 20)
  *   guid-cust-head   debits a customer as if it were a head (ruling 19)
  *   guid-bank-party  a loan drawdown: wave T4's
@@ -256,6 +258,16 @@ function exportBytes(): Buffer {
         { ledger: 'Fixture Bank Current A/c', amount: '-900.00' },
         { ledger: 'CGST TDS 1%', amount: '-100.00' },
         { ledger: 'Bill Copy' },
+      ],
+    }),
+    voucher({
+      guid: 'guid-folded',
+      number: 'R-126',
+      legs: [
+        { ledger: 'Fixture Division West', amount: '1000.00' },
+        { ledger: 'Fixture Bank Current A/c', amount: '-800.00' },
+        { ledger: 'CGST TDS 1%', amount: '-60.00' },
+        { ledger: 'CGST TDS 1%', amount: '-140.00' },
       ],
     }),
     voucher({
@@ -548,9 +560,9 @@ describe('previewing the receipt export', () => {
     const result = response.json<TallyReceiptImportResult>();
 
     expect(result.mode).toBe('preview');
-    expect(result.voucherCount).toBe(9);
-    expect(result.receiptCount).toBe(8);
-    expect(result.importableCount).toBe(4);
+    expect(result.voucherCount).toBe(10);
+    expect(result.receiptCount).toBe(9);
+    expect(result.importableCount).toBe(5);
     // Wave T4's two populations, counted rather than silent.
     expect(result.bankPartyCount).toBe(1);
     expect(result.noDeductionCount).toBe(1);
@@ -567,18 +579,18 @@ describe('previewing the receipt export', () => {
     expect(result.roundOffTotal).toBe('-0.37');
     // Ruling 17: one receipt reaches a Work, three do not.
     expect(result.workLinkedCount).toBe(1);
-    expect(result.unlinkedCount).toBe(3);
+    expect(result.unlinkedCount).toBe(4);
     expect(result.invoiceLinkCount).toBe(1);
 
-    expect(result.grossTotal).toBe('1006999.63');
-    expect(result.netTotal).toBe('886699.63');
-    expect(result.deductionTotal).toBe('120300.00');
+    expect(result.grossTotal).toBe('1007999.63');
+    expect(result.netTotal).toBe('887499.63');
+    expect(result.deductionTotal).toBe('120500.00');
     // The head breakdown, which is the point of the wave. Every head is
     // reported including the two that are empty.
     expect(
       Object.fromEntries(result.heads.map((row) => [row.head, row.amount])),
     ).toStrictEqual({
-      gst_tds: '20300.00',
+      gst_tds: '20500.00',
       income_tax_tds: '20000.00',
       security_deposit: '50000.00',
       retention: '0.00',
@@ -596,10 +608,11 @@ describe('committing the receipt export', () => {
     const response = await importReceipts(exportBytes(), 'commit');
     expect(response.statusCode, response.body).toBe(200);
     const result = response.json<TallyReceiptImportResult>();
-    expect(result.importedPaymentCount).toBe(4);
-    // Six heads on the conforming receipt, one each on the unlinked and
-    // the rounded one, two on the one carrying a head with no amount.
-    expect(result.importedDeductionCount).toBe(10);
+    expect(result.importedPaymentCount).toBe(5);
+    // Six heads on the conforming receipt, one each on the unlinked, the
+    // rounded and the folded ones, two on the one carrying a head with no
+    // amount — the folded receipt's two legs being ONE row is the point.
+    expect(result.importedDeductionCount).toBe(11);
     expect(result.importedInvoiceLinkCount).toBe(1);
 
     const [row] = await admin<
@@ -651,6 +664,20 @@ describe('committing the receipt export', () => {
       'PL-4242',
     );
 
+    // RULING 25, in the database: two legs, one row, the sum, and the
+    // leg count that says the export wrote two.
+    const [foldedLine] = await admin<
+      { amount: string; leg_count: number; tally_ledger_name: string }[]
+    >`
+      select d.amount, d.leg_count, d.tally_ledger_name
+      from imported_payment_deductions d
+      join imported_payments p on p.id = d.imported_payment_id
+      where p.tally_guid = 'guid-folded'
+    `;
+    expect(foldedLine?.tally_ledger_name).toBe('CGST TDS 1%');
+    expect(foldedLine?.amount).toBe('200.00');
+    expect(foldedLine?.leg_count).toBe(2);
+
     // Ruling 10, in the database rather than only in the report.
     const [nil] = await admin<{ amount: string; amount_missing: boolean }[]>`
       select d.amount, d.amount_missing
@@ -701,12 +728,12 @@ describe('committing the receipt export', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const page = response.json<ImportedPaymentList>();
-    expect(page.payments).toHaveLength(4);
-    expect(page.totals?.count).toBe(4);
-    expect(page.totals?.gross).toBe('1006999.63');
-    expect(page.totals?.deductionTotal).toBe('120300.00');
+    expect(page.payments).toHaveLength(5);
+    expect(page.totals?.count).toBe(5);
+    expect(page.totals?.gross).toBe('1007999.63');
+    expect(page.totals?.deductionTotal).toBe('120500.00');
     // Ruling 17's queue, counted on the register the operator reads.
-    expect(page.totals?.unlinkedCount).toBe(3);
+    expect(page.totals?.unlinkedCount).toBe(4);
     expect(
       page.totals?.heads.find((head) => head.head === 'liquidated_damages')?.amount,
     ).toBe('29000.00');
@@ -719,7 +746,7 @@ describe('committing the receipt export', () => {
       url: '/api/imported-payments?linked=unlinked',
       organisationId,
     });
-    expect(linked.json<ImportedPaymentList>().payments).toHaveLength(3);
+    expect(linked.json<ImportedPaymentList>().payments).toHaveLength(4);
 
     const conforming = page.payments.find((row) => row.tallyGuid === 'guid-conforming');
     expect(conforming?.workCode).toBe('PL-4242');
@@ -733,7 +760,7 @@ describe('committing the receipt export', () => {
     expect(response.statusCode, response.body).toBe(200);
     const result = response.json<TallyReceiptImportResult>();
     expect(result.importedPaymentCount).toBe(0);
-    expect(result.alreadyReadCount).toBe(4);
+    expect(result.alreadyReadCount).toBe(5);
     expect(await counts()).toStrictEqual(before);
   });
 });
@@ -895,10 +922,10 @@ describe("the coordinator's review of #180", () => {
 
   it('maps a deferred refusal that escapes at COMMIT to its named code (finding 2)', async () => {
     // The route's per-statement catches cannot see a constraint that
-    // fires when the transaction ends. Proved through the wire: a
-    // duplicate head ledger is refused by the READER now, so the
-    // deferred arm is attacked directly and its mapping is asserted on
-    // the code the route answers with rather than on a 500.
+    // fires when the transaction ends. No import can reach it any more —
+    // the reader folds same-ledger legs (ruling 25) rather than letting
+    // them collide — so the deferred arm is attacked directly, which is
+    // what proves it still refuses rather than being decoration.
     const [payment] = await admin<{ id: string }[]>`
       select id from imported_payments
       where organisation_id = ${organisationId} and tally_guid = 'guid-conforming'

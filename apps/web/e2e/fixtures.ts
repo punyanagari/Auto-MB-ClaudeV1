@@ -2003,6 +2003,7 @@ const IMPORTED_PAYMENT_REGISTER = {
               amount: '50000.00',
               amountMissing: false,
               plCode: 'PL-270',
+              legCount: 1,
             },
             {
               id: `9999999${String(index)}-9999-4999-8999-999999999992`,
@@ -2011,6 +2012,7 @@ const IMPORTED_PAYMENT_REGISTER = {
               amount: '29000.00',
               amountMissing: false,
               plCode: null,
+              legCount: 1,
             },
             {
               id: `9999999${String(index)}-9999-4999-8999-999999999993`,
@@ -2019,6 +2021,8 @@ const IMPORTED_PAYMENT_REGISTER = {
               amount: '41000.00',
               amountMissing: false,
               plCode: null,
+              // Two entries in Tally, one line here (ruling 25).
+              legCount: 2,
             },
             // Ruling 10: named on the voucher with no figure at all.
             {
@@ -2028,6 +2032,7 @@ const IMPORTED_PAYMENT_REGISTER = {
               amount: '0.00',
               amountMissing: true,
               plCode: null,
+              legCount: 1,
             },
           ]
         : [
@@ -2038,6 +2043,7 @@ const IMPORTED_PAYMENT_REGISTER = {
               amount: '100.00',
               amountMissing: false,
               plCode: null,
+              legCount: 1,
             },
           ],
     invoiceLinks:

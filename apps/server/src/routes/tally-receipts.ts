@@ -267,11 +267,12 @@ async function readPayments(
       tally_ledger_name: string;
       amount: string;
       amount_missing: boolean;
+      leg_count: number;
       pl_code: string | null;
     }[]
   >`
     select id, imported_payment_id, head, tally_ledger_name, amount,
-           amount_missing, pl_code
+           amount_missing, leg_count, pl_code
     from imported_payment_deductions
     where imported_payment_id = any(${tx.array(ids)}::uuid[])
     order by tally_ledger_name
@@ -324,6 +325,7 @@ async function readPayments(
         tallyLedgerName: line.tally_ledger_name,
         amount: line.amount,
         amountMissing: line.amount_missing,
+        legCount: line.leg_count,
         plCode: line.pl_code,
       })),
     invoiceLinks: links
@@ -879,6 +881,7 @@ export function registerTallyReceiptRoutes(
                 tally_ledger_name: line.tallyLedgerName,
                 amount: line.amount,
                 amount_missing: line.amountMissing,
+                leg_count: line.legCount,
                 pl_code: line.plCode,
               }));
             });
