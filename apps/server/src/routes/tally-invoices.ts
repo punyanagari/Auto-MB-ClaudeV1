@@ -419,6 +419,10 @@ export function registerTallyInvoiceRoutes(
         if (commit) {
           /* --- the pre-Zoho half becomes register rows (ruling 23) ---- */
           const linkRows: Record<string, unknown>[] = [];
+          /** The ids this route minted, in `judged` order, so the origin
+           * links and the per-invoice audit events below both pair without
+           * depending on anything the database returns. */
+          const numberedIds: string[] = [];
 
           if (judged.length > 0) {
             const now = new Date().toISOString();
@@ -492,6 +496,8 @@ export function registerTallyInvoiceRoutes(
               );
             }
 
+            numberedIds.push(...numbered.map((row) => row.id));
+
             for (let index = 0; index < numbered.length; index += CHUNK) {
               const rows = await tx<{ id: string }[]>`
                 insert into imported_invoices ${tx(numbered.slice(index, index + CHUNK))}
@@ -507,7 +513,7 @@ export function registerTallyInvoiceRoutes(
             // this route MINTED, so the pairing depends on nothing the
             // database returns.
             judged.forEach(({ voucher }, index) => {
-              const invoiceId = numbered[index]?.id;
+              const invoiceId = numberedIds[index];
               if (invoiceId === undefined) return;
               linkRows.push({
                 organisation_id: organisationId,
@@ -573,12 +579,59 @@ export function registerTallyInvoiceRoutes(
             importedLinkCount += rows.length;
           }
 
-          // ONE AUDIT EVENT FOR THE IMPORT, not one per voucher. A
-          // cross-reference row is not a document somebody filed, and
-          // 736 audit events per import would bury the timeline that
-          // answers what a person did. The register rows this import
-          // CREATES are a different matter — they are invoices — so each
-          // gets its own event, on the terms `imported-invoices.ts` sets.
+          // ONE AUDIT EVENT PER REGISTER ROW THIS IMPORT CREATED, on the
+          // terms `imported-invoices.ts` sets and under the SAME action
+          // and entity type: such a row is an invoice, and "where did
+          // this invoice come from" has to be answerable from the invoice
+          // rather than only from whoever ran the import. The Tally
+          // voucher's own GUID rides in the payload, which is what makes
+          // the answer specific.
+          //
+          // Written as an INSERT … SELECT over two unnested arrays rather
+          // than through the driver's row helper, for the reason the Zoho
+          // importer gives: `test/audit-timeline-census.test.ts` reads
+          // this server's source for the action and entity type of every
+          // `audit_events` write, and it can only read them where the two
+          // literals sit side by side.
+          const auditIds: string[] = [];
+          const auditDetails: string[] = [];
+          judged.forEach(({ voucher, proposal }, index) => {
+            const invoiceId = numberedIds[index];
+            if (invoiceId === undefined) return;
+            auditIds.push(invoiceId);
+            auditDetails.push(
+              JSON.stringify({
+                filename,
+                source: 'tally',
+                tallyGuid: voucher.guid,
+                tallyAlterId: voucher.alterId,
+                invoiceNumber: voucher.voucherNumber ?? voucher.reference,
+                workId: proposal?.workId ?? null,
+                linkMethod: proposal?.method ?? null,
+              }),
+            );
+          });
+          if (auditIds.length > 0) {
+            await tx`
+              insert into audit_events (
+                organisation_id, actor_user_id, action, entity_type,
+                entity_id, details
+              )
+              select ${organisationId}, ${user.id},
+                     'imported_invoice.imported', 'imported_invoices',
+                     v.entity_id::uuid, v.details::jsonb
+              from unnest(
+                ${tx.array(auditIds)}::uuid[],
+                ${tx.array(auditDetails)}::text[]
+              ) as v(entity_id, details)
+            `;
+          }
+
+          // AND ONE FOR THE IMPORT ITSELF, not one per voucher. A
+          // cross-reference row is not a document somebody filed, and 736
+          // audit events per import would bury the timeline that answers
+          // what a person did. The file, the counts and the guard's own
+          // refusals are the act.
           await audit(
             tx,
             organisationId,
@@ -725,9 +778,11 @@ export function registerTallyInvoiceRoutes(
           invoicesWithNoVoucherCount: candidates.filter(
             (invoice) => !linkedInvoiceIds.has(invoice.id),
           ).length,
-          alreadyReadCount: read.vouchers.filter(
-            (voucher) => heldAny.has(voucher.guid) || heldOrigin.has(voucher.guid),
-          ).length,
+          // `heldOrigin` is a subset of `heldAny`, so this is the one
+          // question: did a previous import of this export already deal
+          // with the voucher, by either route.
+          alreadyReadCount: read.vouchers.filter((voucher) => heldAny.has(voucher.guid))
+            .length,
           importedInvoiceCount,
           importedLinkCount,
           vouchers,

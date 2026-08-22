@@ -483,15 +483,17 @@ describe('committing', () => {
     // and no sub-total — neither is a thing a Tally voucher states.
     const [tallyRow] = await admin<
       {
+        id: string;
         source: string;
         zoho_invoice_id: string | null;
         sub_total: string | null;
         total: string;
       }[]
     >`
-      select source, zoho_invoice_id, sub_total, total from imported_invoices
+      select id, source, zoho_invoice_id, sub_total, total from imported_invoices
       where organisation_id = ${organisationId} and invoice_number = 'P0100900'
     `;
+    const tallyRowId = tallyRow?.id;
     expect(tallyRow?.source).toBe('tally');
     expect(tallyRow?.zoho_invoice_id).toBeNull();
     expect(tallyRow?.sub_total).toBeNull();
@@ -515,6 +517,32 @@ describe('committing', () => {
     `;
     expect(serial?.match_method).toBe('serial_tolerant');
     expect(serial?.match_evidence).toBe('P0700002');
+
+    // A REGISTER ROW THIS IMPORT CREATED IS AN INVOICE, and it carries
+    // its own audit event under the same action the Zoho importer writes
+    // — so "where did this invoice come from" is answerable from the
+    // invoice rather than only from whoever ran the import. The Tally
+    // voucher's GUID rides in the payload, which is what makes the answer
+    // specific rather than "a Tally file, once".
+    const [event] = await admin<
+      { entity_id: string; details: Record<string, unknown> }[]
+    >`
+      select entity_id, details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'imported_invoice.imported'
+        and details->>'tallyGuid' = 'guid-pre-zoho'
+    `;
+    expect(event?.entity_id).toBe(tallyRowId);
+    expect(event?.details['source']).toBe('tally');
+    expect(event?.details['filename']).toBe('Vouchers.xml');
+
+    // And ONE event for the import itself, not one per link.
+    const [summary] = await admin<{ count: number }[]>`
+      select count(*)::int as count from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'tally_invoice_link.imported'
+    `;
+    expect(summary?.count).toBe(1);
   });
 
   it('takes a disputed figure out of the register’s billed total (ruling 21)', async () => {
