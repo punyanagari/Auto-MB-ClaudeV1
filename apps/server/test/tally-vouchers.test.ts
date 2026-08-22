@@ -310,6 +310,24 @@ describe('readTallyVouchers', () => {
     expect(read.vouchers[0]?.amount).toBe('0.00');
   });
 
+  it('refuses a voucher with more legs than it keeps rather than valuing a truncated set', () => {
+    // A CEILING ON A MONEY PATH REFUSES. Keeping the first hundred legs of
+    // a longer voucher would produce a figure that is not the document's,
+    // quietly, and only for the vouchers nobody looked at.
+    const many = Array.from({ length: 120 }, (_, index) => ({
+      ledger: `Head ${String(index)}`,
+      amount: '1.00',
+    }));
+    const read = readTallyVouchers(envelope(voucher({ number: 'Z1', legs: many })));
+    expect(read.vouchers).toEqual([]);
+    expect(read.refusals[0]?.reason).toMatch(/more than 100 accounting lines/);
+    // And the ceiling is per voucher, not per file: the next one reads.
+    const both = readTallyVouchers(
+      envelope(voucher({ number: 'Z2', legs: many }), voucher({ number: 'Z3' })),
+    );
+    expect(both.vouchers.map((entry) => entry.voucherNumber)).toEqual(['Z3']);
+  });
+
   it('still refuses a LIVE voucher with no party ledger', () => {
     const read = readTallyVouchers(
       envelope(voucher({ number: 'Y1', party: '', legs: [] })),

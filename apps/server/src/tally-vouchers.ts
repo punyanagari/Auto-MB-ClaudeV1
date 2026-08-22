@@ -318,6 +318,9 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
   let entryLedger = '';
   let entryAmount: string | null = null;
   let inEntry = false;
+  /** The voucher declared more accounting legs than this reader keeps. Its
+   * VALUE would then be read off a truncated set — see `closeEntry`. */
+  let tooManyEntries = false;
 
   const refuse = (reason: string): void => {
     if (refusals.length < MAX_REFUSALS) {
@@ -334,7 +337,16 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
     if (!inEntry) return;
     inEntry = false;
     if (entryLedger.length === 0) return;
-    if (entries.length >= MAX_ENTRIES) return;
+    // A CEILING ON A MONEY PATH REFUSES; IT DOES NOT TRUNCATE. The
+    // voucher's value is read off these legs, so silently keeping the
+    // first hundred of a longer voucher would produce a figure that is
+    // not the document's — quietly, and only for the vouchers nobody
+    // looked at. The flag is raised here and `finishVoucher` names the
+    // voucher; the real maximum on a sales-side voucher is six.
+    if (entries.length >= MAX_ENTRIES) {
+      tooManyEntries = true;
+      return;
+    }
     entries.push({ ledger: entryLedger, amount: entryAmount });
   };
 
@@ -359,6 +371,12 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
     if (guid.length > 80) {
       refuse(
         'This voucher’s GUID is longer than this register stores (80 characters), so it is not a Tally GUID.',
+      );
+      return;
+    }
+    if (tooManyEntries) {
+      refuse(
+        `This voucher carries more than ${String(MAX_ENTRIES)} accounting lines, which is more than this reader keeps — so its value cannot be read from them.`,
       );
       return;
     }
@@ -498,6 +516,7 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
       billReferences = [];
       sourceFields = {};
       inEntry = false;
+      tooManyEntries = false;
       entryLedger = '';
       entryAmount = null;
       // A voucher written as `<VOUCHER …/>` — Tally does not, but a
