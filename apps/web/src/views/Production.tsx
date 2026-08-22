@@ -14,6 +14,7 @@ import {
 import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
+import { Combobox } from '../ui/combobox.js';
 import { StatusChip } from '../ui/chip.js';
 import { Actions, Field, FieldRow, FormError } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
@@ -562,21 +563,23 @@ function JobCardForm({
         {source === 'work' ? (
           <Field>
             <label htmlFor="job-card-work">Work</label>
-            <select
+            {/* `required` still refuses an empty submit: the combobox's
+                visible text is the CHOSEN row's, and reverts to empty
+                whenever nothing is chosen, so half-typed text can never
+                stand in for a Work. */}
+            <Combobox
               id="job-card-work"
               required
               value={chosenWorkId}
-              onChange={(event) => {
-                setChosenWorkId(event.currentTarget.value);
-              }}
-            >
-              <option value="">Choose a Work</option>
-              {works.map((work) => (
-                <option key={work.id} value={work.id}>
-                  {work.workCode} · {work.title}
-                </option>
-              ))}
-            </select>
+              onChange={setChosenWorkId}
+              placeholder="Choose a Work"
+              options={works.map((work) => ({
+                value: work.id,
+                code: work.workCode,
+                label: work.title,
+              }))}
+              noMatchLabel="No Work matches that code or title."
+            />
           </Field>
         ) : (
           <Field>

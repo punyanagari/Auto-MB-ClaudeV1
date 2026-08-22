@@ -224,6 +224,24 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('#/reports/analysis/division/100')).toEqual({
       view: { name: 'mis', tab: 'analysis', report: 'division', selection: '100' },
     });
+    expect(parseWorkspaceHash('#/reports/analysis/mapped-item')).toEqual({
+      view: { name: 'mis', tab: 'analysis', report: 'mapped-item', selection: null },
+    });
+  });
+
+  /* The item key is a canonical item's uuid OR a normalised schedule-line
+     description, so the segment carries whatever characters a description
+     does — a slash, a comma, a space. Encoded on the way out and decoded
+     on the way in, which is what makes a narrowed item report a link
+     somebody can send. */
+  it('round-trips an item key through the address, punctuation and all', () => {
+    const key = 'cable, 4 core armoured 1.5 sq/mm';
+    const route = {
+      view: { name: 'mis', tab: 'analysis', report: 'mapped-item', selection: key },
+    } as const;
+    const hash = workspaceHashOf(route);
+    expect(hash).toBe(`#/reports/analysis/mapped-item/${encodeURIComponent(key)}`);
+    expect(parseWorkspaceHash(hash)).toEqual(route);
   });
 
   it('degrades a half-formed Reports fragment to the report picker', () => {

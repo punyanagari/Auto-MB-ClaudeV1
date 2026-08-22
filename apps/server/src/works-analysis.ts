@@ -11,6 +11,7 @@ import type {
   WorkAnalysisResponse,
   WorksAnalysisDivisionSource,
   WorksAnalysisInspectionAgency,
+  WorksAnalysisOptionsResponse,
 } from '@auto-mb/contracts';
 import { paiseText, toPaise } from './money.js';
 
@@ -663,6 +664,37 @@ const VISIBLE_WORK = `($1::boolean or exists (
   where wa.work_id = w.id and wa.user_id = $2))`;
 
 /**
+ * The item-master mapping, written ONCE.
+ *
+ * `routes/masters.ts`'s comparison, verbatim in meaning: a line counts
+ * against a canonical item when its normalised description equals that
+ * item's name or one of its aliases, compared lowercased and trimmed,
+ * against ACTIVE items only. `limit 1` under a deterministic order settles
+ * the one case that comparison leaves open — two items claiming the same
+ * alias — rather than double-counting the line under both.
+ *
+ * Joined onto a relation aliased `p` carrying a `key` column. The item
+ * PICKER runs the same join over the bare schedule lines, without the
+ * challan, installation and baseline joins it does not need, and a second
+ * spelling of this comparison would be a second place for the report and
+ * its own picker to disagree about what an item is.
+ */
+const CANONICAL_MATCH = `
+  left join lateral (
+    select item.id, item.name, item.group_name
+    from canonical_items item
+    where item.active
+      and (lower(btrim(item.name)) = p.key
+           or exists (
+             select 1 from unnest(item.aliases) alias
+             where lower(btrim(alias)) = p.key
+           ))
+    order by lower(btrim(item.name))
+    limit 1
+  ) ci on true
+`;
+
+/**
  * Every live schedule line of every ACTIVE Work, with its cumulative
  * position and the canonical item it maps to.
  *
@@ -673,14 +705,11 @@ const VISIBLE_WORK = `($1::boolean or exists (
  * The per-Work report has no such filter — it is asked about one named Work,
  * whatever its status.
  *
- * The mapping join is `routes/masters.ts`'s, verbatim in meaning: a line
- * counts against a canonical item when its normalised description equals
- * that item's name or one of its aliases, compared lowercased and trimmed,
- * against ACTIVE items only. `limit 1` under a deterministic order settles
- * the one case that comparison leaves open — two items claiming the same
- * alias — rather than double-counting the line under both.
+ * The mapping is `CANONICAL_MATCH` above.
  */
-const PENDING_LINES_CTE = `
+/** The live schedule lines themselves, which the item PICKER reads on
+ * their own — no challan, no installation, no baseline. */
+const LINES_CTE = `
   lines as (
     select wi.id as work_item_id, wi.work_id,
            lower(btrim(coalesce(wi.effective_description, wi.description))) as key,
@@ -692,7 +721,11 @@ const PENDING_LINES_CTE = `
     from work_items wi
     join works w on w.id = wi.work_id and w.deleted_at is null
     where wi.deleted_at is null and w.status = 'active' and ${VISIBLE_WORK}
-  ),
+  )
+`;
+
+const PENDING_LINES_CTE = `
+  ${LINES_CTE},
   delivered as (
     select dci.work_item_id, sum(dci.quantity) as quantity
     from delivery_challan_items dci
@@ -728,18 +761,7 @@ const PENDING_LINES_CTE = `
     select p.*, ci.id as canonical_item_id, ci.name as canonical_name,
            ci.group_name
     from positions p
-    left join lateral (
-      select item.id, item.name, item.group_name
-      from canonical_items item
-      where item.active
-        and (lower(btrim(item.name)) = p.key
-             or exists (
-               select 1 from unnest(item.aliases) alias
-               where lower(btrim(alias)) = p.key
-             ))
-      order by lower(btrim(item.name))
-      limit 1
-    ) ci on true
+    ${CANONICAL_MATCH}
   )
 `;
 
@@ -767,6 +789,7 @@ const PENDING_GROUP_KEY = `coalesce(m.canonical_item_id::text, m.key)`;
 
 const PENDING_ROW_SELECT = `
   select m.canonical_item_id::text as canonical_item_id,
+         ${PENDING_GROUP_KEY} as item_key,
          coalesce(m.canonical_name, min(m.description)) as label,
          m.group_name,
          m.unit_code,
@@ -789,6 +812,7 @@ const PENDING_ROW_SELECT = `
 
 interface PendingRow {
   canonical_item_id: string | null;
+  item_key: string;
   label: string;
   group_name: string | null;
   unit_code: string;
@@ -808,6 +832,7 @@ interface PendingRow {
 function toPendingRow(row: PendingRow): CombinedPendingRow {
   return {
     canonicalItemId: row.canonical_item_id,
+    itemKey: row.item_key,
     label: row.label,
     groupName: row.group_name,
     unitCode: row.unit_code,
@@ -987,13 +1012,31 @@ export async function readMappedItemAnalysis(
   tx: TransactionSql,
   fullScope: boolean,
   userId: string,
+  /**
+   * One item group's key, and the report is about that group alone.
+   *
+   * Applied to the RESULT rather than in SQL, for the reason
+   * `routes/works-analysis.ts` narrows the division report on the
+   * response: one statement groups the whole portfolio in a pass, the
+   * narrowing is a choice made after seeing what there is, and a second
+   * query shape would be a second place for the grouping to be wrong. A
+   * key matching nothing yields an empty report rather than a 404 — the
+   * honest answer to "what is pending on this item" can be "nothing".
+   *
+   * The totals are then this group's own, recomputed by `sumRows` in exact
+   * paise. Leaving the portfolio totals under one item's rows would print
+   * a figure the rows do not add to, which is § 38's "two tables, two
+   * totals" rule.
+   */
+  item?: string,
 ): Promise<MappedItemAnalysisResponse> {
   const parameters: (boolean | string)[] = [fullScope, userId];
   const rows = (await tx.unsafe(
     MAPPED_ITEM_ROWS_SQL,
     parameters,
   )) as unknown as PendingRow[];
-  const all = rows.map(toPendingRow);
+  const found = rows.map(toPendingRow);
+  const all = item === undefined ? found : found.filter((row) => row.itemKey === item);
   const mapped = all.filter((row) => row.canonicalItemId !== null);
   const unmapped = all.filter((row) => row.canonicalItemId === null);
   const unmappedTotals = sumRows(unmapped);
@@ -1009,6 +1052,77 @@ export async function readMappedItemAnalysis(
     // second statement over the same CTEs: two readings of one figure can
     // disagree, and the cheaper one to delete is the second query.
     unmappedLineCount: unmappedTotals.lineCount,
+  };
+}
+
+/* --- what the two portfolio reports can be narrowed to ---------------- */
+
+/**
+ * The division headings that exist, one row each.
+ *
+ * The derivation is `WORK_DIVISION_SQL`'s and `DIVISION_ROWS_SQL`'s, said
+ * in the same expression: a Work carrying exactly one distinct consignee
+ * division code is that division's, and everything else — none, or more
+ * than one — is the null heading the report calls "no division on record".
+ * A picker offering a heading the report does not draw, or missing one it
+ * does, would be worse than no picker.
+ *
+ * Reads `works`, `work_consignees` and `contacts` and nothing else: no
+ * schedule line, no challan, no money.
+ */
+const DIVISION_OPTIONS_SQL = `
+  select distinct (case when cardinality(codes) = 1 then codes[1] end) as division_code
+  from (
+    select array_remove(array_agg(distinct c.division_code), null) as codes
+    from works w
+    left join work_consignees wc on wc.work_id = w.id
+    left join contacts c on c.id = wc.contact_id
+    where w.deleted_at is null and w.status = 'active' and ${VISIBLE_WORK}
+    group by w.id
+  ) per_work
+  order by 1 nulls last
+`;
+
+/**
+ * The item groups that exist, one row each — the same keys and the same
+ * labels `PENDING_ROW_SELECT` produces, and produced by the same mapping.
+ *
+ * The unit is deliberately NOT in the grouping here, though it is in the
+ * report: a master item quantified in two units is two ROWS of one item,
+ * and the picker narrows to the item.
+ */
+const ITEM_OPTIONS_SQL = `
+  with ${LINES_CTE}
+  select coalesce(ci.id::text, p.key) as key,
+         coalesce(ci.name, min(p.description)) as label,
+         (ci.id is not null) as mapped
+  from lines p
+  ${CANONICAL_MATCH}
+  group by coalesce(ci.id::text, p.key), ci.id, ci.name
+  order by (ci.id is null), label
+`;
+
+export async function readWorksAnalysisOptions(
+  tx: TransactionSql,
+  fullScope: boolean,
+  userId: string,
+): Promise<WorksAnalysisOptionsResponse> {
+  const parameters: (boolean | string)[] = [fullScope, userId];
+  const [divisions, items] = await Promise.all([
+    tx.unsafe(DIVISION_OPTIONS_SQL, parameters) as unknown as Promise<
+      { division_code: string | null }[]
+    >,
+    tx.unsafe(ITEM_OPTIONS_SQL, parameters) as unknown as Promise<
+      { key: string; label: string; mapped: boolean }[]
+    >,
+  ]);
+  return {
+    divisions: divisions.map((row) => row.division_code),
+    items: items.map((row) => ({
+      key: row.key,
+      label: row.label,
+      mapped: row.mapped,
+    })),
   };
 }
 

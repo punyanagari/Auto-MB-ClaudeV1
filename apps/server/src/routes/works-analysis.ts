@@ -4,17 +4,20 @@ import type { ObjectStorage } from '@auto-mb/documents';
 import {
   DivisionAnalysisResponseSchema,
   ItemGroupProposalsResponseSchema,
+  MappedItemAnalysisQuerySchema,
   MappedItemAnalysisResponseSchema,
   defaultWorksAnalysisColumns,
   WORKS_ANALYSIS_REPORTS,
   WorkAnalysisResponseSchema,
   WorksAnalysisDocumentQuerySchema,
+  WorksAnalysisOptionsResponseSchema,
   type CombinedPendingTotals,
   type DivisionAnalysisResponse,
   type ItemGroupProposalsResponse,
   type MappedItemAnalysisResponse,
   type WorkAnalysisResponse,
   type WorksAnalysisDocumentQuery,
+  type WorksAnalysisOptionsResponse,
   type WorksAnalysisReport,
 } from '@auto-mb/contracts';
 import type { AppInstance } from '../app-instance.js';
@@ -28,6 +31,7 @@ import {
   readItemGroupProposals,
   readMappedItemAnalysis,
   readWorkAnalysis,
+  readWorksAnalysisOptions,
 } from '../works-analysis.js';
 import {
   renderWorksAnalysisHtml,
@@ -226,12 +230,48 @@ export function registerWorksAnalysisRoutes(
       method: 'GET',
       url: '/api/reports/mapped-item-analysis',
       schema: {
+        querystring: MappedItemAnalysisQuerySchema,
         response: { 200: MappedItemAnalysisResponseSchema, ...errorResponses },
       },
     },
-    async ({ user, tenant }): Promise<MappedItemAnalysisResponse> =>
+    async ({ request, user, tenant }): Promise<MappedItemAnalysisResponse> =>
       tenant(async (tx) =>
-        readMappedItemAnalysis(tx, await hasFullWorkScope(tx, user.id), user.id),
+        /* `item` narrows to one item group, AFTER the scope flag is read
+           and inside the organisation-scoped transaction — it chooses
+           among rows the caller may already see and can therefore neither
+           widen the read nor reach another tenant's. Same shape as the
+           division parameter on the document routes below. */
+        readMappedItemAnalysis(
+          tx,
+          await hasFullWorkScope(tx, user.id),
+          user.id,
+          request.query.item,
+        ),
+      ),
+  );
+
+  /**
+   * What the two portfolio reports can be narrowed to, before either is
+   * run.
+   *
+   * One read for both pickers rather than two endpoints: the analysis tab
+   * needs the division headings and the item groups at the same moment —
+   * the operator has not yet said which report they want — and a screen
+   * that made two round trips to draw two dropdowns would be answering the
+   * same question twice. Narrows to the caller's assignments exactly as
+   * the reports do.
+   */
+  tenantRoute(
+    {
+      method: 'GET',
+      url: '/api/reports/analysis/options',
+      schema: {
+        response: { 200: WorksAnalysisOptionsResponseSchema, ...errorResponses },
+      },
+    },
+    async ({ user, tenant }): Promise<WorksAnalysisOptionsResponse> =>
+      tenant(async (tx) =>
+        readWorksAnalysisOptions(tx, await hasFullWorkScope(tx, user.id), user.id),
       ),
   );
 
@@ -309,6 +349,13 @@ export function registerWorksAnalysisRoutes(
         'Only the division analysis is grouped by railway division.',
       );
     }
+    if (query.item !== undefined && report !== 'mapped-item') {
+      throw httpError(
+        400,
+        'ITEM_NOT_APPLICABLE',
+        'Only the item analysis is grouped by item.',
+      );
+    }
     const document =
       report === 'division'
         ? toDivisionDocument(
@@ -317,7 +364,12 @@ export function registerWorksAnalysisRoutes(
               query.division,
             ),
           )
-        : toMappedItemDocument(await readMappedItemAnalysis(tx, full, userId));
+        : toMappedItemDocument(
+            // The item narrowing is the READ's, not a second filter here:
+            // it is the same function the screen calls, so the file and
+            // the screen carry one item's rows AND one item's totals.
+            await readMappedItemAnalysis(tx, full, userId, query.item),
+          );
     return {
       document: withColumns(
         withScope(document, scopeNote(full)),

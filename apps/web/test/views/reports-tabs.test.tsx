@@ -222,7 +222,10 @@ describe('Reports — running one report', () => {
     });
     const { onRunReport } = renderReports(api);
 
-    await screen.findByRole('option', { name: /SIG-2026-11/ });
+    // The Work picker is a combobox, so what proves the list arrived is
+    // the chosen row showing in the box — its options live in a popup
+    // that is shut until somebody asks for it.
+    await screen.findByDisplayValue(/SIG-2026-11/);
     fireEvent.click(screen.getByRole('button', { name: 'Run report' }));
 
     expect(onRunReport).toHaveBeenCalledWith('work', WORK_ID);
@@ -256,6 +259,154 @@ describe('Reports — running one report', () => {
     // arrival at Reports.
     expect(screen.queryByRole('heading', { name: 'Proposed item groups' })).toBeNull();
     expect(api.itemGroupProposals).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * The three pickers, after the owner's live-testing findings of
+ * 2026-08-22: a Work picker that opened a wall of full titles, a division
+ * tab with no way to choose a division, and an item tab with no way to
+ * choose an item.
+ *
+ * The division and item choices come from `/api/reports/analysis/options`
+ * — a read the screen makes BEFORE anything is run — rather than from a
+ * report that has already been read once. That is the owner-rejected
+ * shape, and the assertion below is what keeps it rejected.
+ */
+const OPTIONS = {
+  divisions: ['100', null],
+  items: [
+    { key: 'c1c1c1c1-0000-4000-8000-000000000001', label: '42U rack', mapped: true },
+    { key: 'cable, 4 core', label: 'Cable, 4 core', mapped: false },
+  ],
+};
+
+/** The rows one picker offers, read out of the popup it names.
+ *
+ * Scoped through `aria-controls` rather than by `getAllByRole('option')`,
+ * because the report-type control beside it is a native `<select>` and its
+ * own `<option>`s carry the same role. */
+function pickerOptions(name: string): readonly string[] {
+  const input = screen.getByRole('combobox', { name });
+  fireEvent.focus(input);
+  const list = document.getElementById(input.getAttribute('aria-controls') ?? '');
+  return [...(list?.querySelectorAll('[role="option"]') ?? [])].map(
+    (row) => row.textContent ?? '',
+  );
+}
+
+describe('Reports — choosing what a report is about', () => {
+  it('offers the divisions before any division report has been read', async () => {
+    const api = stubApi({
+      worksAnalysisOptions: vi.fn().mockResolvedValue(OPTIONS),
+    });
+    const { onRunReport } = renderReports(api);
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Report type' }), {
+      target: { value: 'division' },
+    });
+    await waitFor(() => {
+      expect(api.worksAnalysisOptions).toHaveBeenCalledWith(ORG_ID);
+    });
+    // The heavy report itself is still unread: the picker is filled by the
+    // cheap options read, not by running the report first.
+    expect(api.divisionAnalysis).not.toHaveBeenCalled();
+
+    await screen.findByRole('combobox', { name: 'Railway division' });
+    expect(pickerOptions('Railway division')).toEqual([
+      'Every division',
+      'Division 100',
+      'No division on record',
+    ]);
+
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Division 100' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run report' }));
+    expect(onRunReport).toHaveBeenCalledWith('division', '100');
+  });
+
+  it('runs one item, and the read and the documents both carry its key', async () => {
+    const downloadWorksAnalysis = vi.fn().mockResolvedValue(new Blob(['x']));
+    const api = stubApi({
+      worksAnalysisOptions: vi.fn().mockResolvedValue(OPTIONS),
+      downloadWorksAnalysis,
+    });
+    const { onRunReport } = renderReports(api);
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Report type' }), {
+      target: { value: 'mapped-item' },
+    });
+    await waitFor(() => {
+      expect(api.worksAnalysisOptions).toHaveBeenCalledWith(ORG_ID);
+    });
+    expect(pickerOptions('Item')).toEqual([
+      'Every item',
+      '42U rack',
+      'Cable, 4 core (not mapped)',
+    ]);
+
+    fireEvent.mouseDown(screen.getByRole('option', { name: '42U rack' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run report' }));
+    expect(onRunReport).toHaveBeenCalledWith(
+      'mapped-item',
+      'c1c1c1c1-0000-4000-8000-000000000001',
+    );
+  });
+
+  it('narrows the item read and the exported file to the item the address names', async () => {
+    const downloadWorksAnalysis = vi.fn().mockResolvedValue(new Blob(['x']));
+    const api = stubApi({
+      worksAnalysisOptions: vi.fn().mockResolvedValue(OPTIONS),
+      downloadWorksAnalysis,
+    });
+    renderReports(api, { report: 'mapped-item', selection: 'cable, 4 core' });
+
+    await waitFor(() => {
+      expect(api.mappedItemAnalysis).toHaveBeenCalledWith(ORG_ID, 'cable, 4 core');
+    });
+    // The grouping proposals are about the portfolio's unmapped
+    // descriptions; one item cannot be grouped with itself.
+    expect(api.itemGroupProposals).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Export \.xlsx/ }));
+    await waitFor(() => {
+      expect(downloadWorksAnalysis).toHaveBeenCalled();
+    });
+    expect(downloadWorksAnalysis.mock.calls.at(-1)?.[3]).toMatchObject({
+      item: 'cable, 4 core',
+    });
+  });
+
+  it('reads the whole portfolio when no item is named', async () => {
+    const api = stubApi({
+      worksAnalysisOptions: vi.fn().mockResolvedValue(OPTIONS),
+    });
+    renderReports(api, { report: 'mapped-item', selection: null });
+
+    await waitFor(() => {
+      expect(api.mappedItemAnalysis).toHaveBeenCalledWith(ORG_ID, undefined);
+    });
+    // The proposals belong to the portfolio-wide run, and their heading
+    // renders through their own loading state, so the read is the anchor.
+    await waitFor(() => {
+      expect(api.itemGroupProposals).toHaveBeenCalled();
+    });
+  });
+
+  it('leaves the report runnable when the choices cannot be read', async () => {
+    const api = stubApi({
+      worksAnalysisOptions: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+    const { onRunReport } = renderReports(api);
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Report type' }), {
+      target: { value: 'division' },
+    });
+    await waitFor(() => {
+      expect(api.worksAnalysisOptions).toHaveBeenCalledWith(ORG_ID);
+    });
+    expect(pickerOptions('Railway division')).toEqual(['Every division']);
+    fireEvent.click(screen.getByRole('button', { name: 'Run report' }));
+    expect(onRunReport).toHaveBeenCalledWith('division', null);
   });
 });
 

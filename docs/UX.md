@@ -1123,9 +1123,9 @@ one WHERE fragment per register, and it will be done when an operator asks
 for a filtered workbook rather than pre-emptively.
 
 **The works-analysis reports are the first place an operator asked, and
-§ 38 records the answer.** Their column chips and the division picker
-travel into the PDF and the workbook through the document routes' own
-`columns` and `division` parameters. That is not a reversal of the posture
+§ 38 records the answer.** Their column chips and their division and item
+pickers travel into the PDF and the workbook through the document routes'
+own `columns`, `division` and `item` parameters. That is not a reversal of the posture
 above: a REGISTER export is the register, and a filter is a way of looking
 at it, while a REPORT is a document somebody prints and hands over — one
 carrying columns the screen never showed is a different document from the
@@ -3037,6 +3037,7 @@ and the works-analysis tab is a SELECTOR:
 #/reports/analysis/division            every division
 #/reports/analysis/division/<code>     one division (`none` = unsettled)
 #/reports/analysis/mapped-item         the portfolio's item position
+#/reports/analysis/mapped-item/<key>   one item across the portfolio
 #/reports/accounts                     output tax and receivables ageing
 #/reports/payroll                      payroll cost
 #/reports/tally                        the Tally surfaces and the export
@@ -3070,12 +3071,92 @@ nowhere else.** They were a permanent fourth card that scanned every
 unmapped description on every visit. A proposal is only actionable beside
 the unmapped rows it would combine, so it renders under that result.
 
-**The division picker is filled by the report itself.** This schema has no
-division master — a division is DERIVED from a Work's consignee contacts,
-which is the whole of the sub-section above — so the picker offers "Every
-division" until the report has been run once, and the headings it found
-after that. Inventing a division register to populate a dropdown would be
-a whole master for a `<select>`.
+#### THE PICKERS — owner ruling of 2026-08-22, from live testing
+
+Three findings, all about choosing what a report is about.
+
+**The Work picker is a searchable combobox, and so is every other Work
+picker in the product.** Live testing reported this one as "a huge plain
+dropdown — every work's full title, giant text", which is what a
+`<select>` over the Works register is: one option per contract, each of
+them a sentence, at the browser's own type scale, scrolled past looking
+for a code. `ui/combobox.tsx` replaces it — an input that FILTERS as you
+type, over a compact list whose row is the WORK CODE in mono followed by
+as much of the title as the row fits and an ellipsis where it stops. The
+code is what an operator knows and what the paperwork carries; the title
+confirms the choice rather than being read to the end. Filtering matches
+the code AND the title, because an operator remembers one or the other.
+
+The ruling is that the fix is the PRIMITIVE, not this screen: "apply this
+same logic everywhere". Five controls were converted together — the
+Reports picker, the correspondence composer's "Related Work", the site
+material request, the production job card, and the receivables register's
+Work filter — and `test/work-picker-census.test.ts` counts the source so
+that a sixth added later cannot quietly be a `<select>` again. Short fixed
+vocabularies (a status, a priority, a financial year) stay native selects:
+a text box in front of five words is worse than the platform control, not
+better.
+
+It is the ARIA combobox with a listbox popup, spelled out rather than
+imported — `aria-expanded` with the `aria-controls` this repo's
+`test/a11y-invariants` requires, `aria-activedescendant` on the active
+row, Up/Down, Home/End, Enter and Escape. The input keeps focus
+throughout, so nothing is re-parented and no focus is stolen. Form
+semantics survive: `name` emits a hidden input carrying the VALUE, so a
+`FormData` read is identical to what the `<select>` produced, and
+`required` rides the visible input, which is empty exactly when nothing is
+chosen — the text reverts to the chosen row whenever the popup closes, and
+Enter inside an open popup never reaches the form, so half-typed text is
+never a submission.
+
+**The division picker is filled by the SERVER, before any report is run.**
+The first cut filled it from the division report — "Every division" until
+that report had been run once, and the headings it found after that — on
+the argument that this schema has no division master and inventing one to
+populate a dropdown would be a whole register for a `<select>`. The owner
+rejected it, and the rejection is right: an operator who wants one
+division should not have to read every division first, which is exactly
+the portfolio-wide read this tab exists to avoid.
+
+`GET /api/reports/analysis/options` is the answer, and it is deliberately
+cheap: a distinct over the consignee-derived heading of every visible
+active Work, and the item keys of its live schedule lines under the same
+item-master mapping the report uses. No challan, no installation, no
+baseline, no rupee. It narrows to the caller's assignments exactly as the
+reports do, so a picker never offers a heading the report would then
+refuse. Still no division master, and still no register invented for a
+dropdown — the derivation is read where it already lives.
+
+**The item analysis can be narrowed to one item.** The candidates are the
+canonical items and the distinct pending descriptions the report groups
+on, from the same options read; the value is the group's KEY, which is a
+canonical item's uuid where there is one and the normalised description
+where there is not. `CombinedPendingRow` carries that key out
+(`itemKey`) rather than letting the client re-derive `lower(btrim(…))` in
+a second language.
+
+The narrowing is a parameter on the READ (`?item=`) and on both document
+routes, applied after authorisation and inside the organisation-scoped
+transaction — it chooses among rows the caller may already see and can
+neither widen the read nor reach another tenant's. That differs from the
+division narrowing, which the screen does on the response, and the
+difference is arithmetic: a division group arrives with its own totals
+already summed, and one item's do not exist until somebody adds the rows
+up. Nothing on this screen adds anything up, so the server does it and the
+totals come back that item's own. A key matching nothing yields an empty
+report rather than a 404 — the honest answer to "what is pending on this
+item" can be "nothing".
+
+A chosen key is either a master item or one unmapped description and never
+both, so a narrowed report draws the one section its rows are in. The
+grouping proposals render only under the portfolio-wide run: one item
+cannot be grouped with itself.
+
+**A chosen division or item joins the ADDRESS**, on the same segment
+grammar as everything else here. An item key can be a description, so it
+carries whatever characters a schedule line does — encoded on the way out
+and decoded on the way in, which is what makes a narrowed item report a
+link somebody can send.
 
 #### The columns are the operator's, and they travel
 
@@ -3108,10 +3189,11 @@ caller's scope and deliberately ignores the screen's filters, "when an
 operator asks for a filtered workbook rather than pre-emptively". The
 operator asked, and a report is not a register: a PDF carrying eleven
 columns of which the screen showed five is a different document from the
-one being read. The division report's chosen heading travels the same way,
-for the same reason, and the report-wide totals become that division's own
-rather than the portfolio's — a total the rows on the page do not add to is
-the one arithmetic error a reader cannot catch by looking.
+one being read. The division report's chosen heading and the item report's
+chosen item travel the same way, for the same reason, and the report-wide
+totals become that division's or that item's own rather than the
+portfolio's — a total the rows on the page do not add to is the one
+arithmetic error a reader cannot catch by looking.
 
 **Responsive hiding survives underneath.** A column the operator kept can
 still be dropped by a narrow viewport: the chip says what is WANTED and the
@@ -3141,7 +3223,7 @@ accountant's export pack lands on this tab when that wave ships.
 | Element                 | Taken from                                                             |
 | ----------------------- | ---------------------------------------------------------------------- |
 | Tab strip               | The Work page's section rail, as links rather than local state         |
-| The report selector     | `Field` with bare `<select>`s, the Receivables filter-bar pattern      |
+| The report selector     | `Field` with a bare `<select>` for the type, `ui/combobox` for what    |
 | Column chips            | `aria-pressed` buttons in a `role="group"`, the `ui/tab-rail` pattern  |
 | Each report             | `Card` + `CardHeader`, as every panel on Reports uses them             |
 | Every table             | `DataTable` with the `sr-only` caption `test/a11y-invariants` requires |

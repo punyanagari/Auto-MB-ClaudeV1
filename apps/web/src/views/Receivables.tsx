@@ -13,6 +13,7 @@ import { useReload } from '../lib/view-state.js';
 import { navigateOnClick, workHash } from '../lib/workspace-routes.js';
 import { Button } from '../ui/button.js';
 import { Card } from '../ui/card.js';
+import { Combobox } from '../ui/combobox.js';
 import { StatusChip } from '../ui/chip.js';
 import { PageHeader } from '../ui/page-header.js';
 import { Sheet } from '../ui/sheet.js';
@@ -257,6 +258,7 @@ export function Receivables({ api, organisationId, onOpenWork }: ReceivablesProp
               <Filter
                 id="receivables-work"
                 label="Work"
+                searchable
                 value={work}
                 options={[
                   { value: ALL, label: 'All Works' },
@@ -379,39 +381,51 @@ export function Receivables({ api, organisationId, onOpenWork }: ReceivablesProp
   );
 }
 
-/** One filter select. Three of them sit in a row on this screen, so the
- * label/select pairing is written once rather than three times. */
+/** One filter control. Three of them sit in a row on this screen, so the
+ * label/control pairing is written once rather than three times.
+ *
+ * `searchable` swaps the `<select>` for `ui/combobox`, and exactly one
+ * filter takes it: the Work. Statuses and financial years are a handful
+ * of fixed words and a native select reads them faster than a text box
+ * would; the Work list is as long as the organisation's portfolio, which
+ * is the list § 38's owner ruling is about. */
 function Filter({
   id,
   label,
   value,
   options,
   onChange,
+  searchable = false,
 }: {
   readonly id: string;
   readonly label: string;
   readonly value: string;
   readonly options: readonly { readonly value: string; readonly label: string }[];
   readonly onChange: (value: string) => void;
+  readonly searchable?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <label className="sr-only" htmlFor={id}>
         {label}
       </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => {
-          onChange(event.currentTarget.value);
-        }}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {searchable ? (
+        <Combobox id={id} value={value} options={options} onChange={onChange} />
+      ) : (
+        <select
+          id={id}
+          value={value}
+          onChange={(event) => {
+            onChange(event.currentTarget.value);
+          }}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

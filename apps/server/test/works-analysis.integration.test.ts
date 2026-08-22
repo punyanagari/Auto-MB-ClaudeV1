@@ -12,6 +12,7 @@ import type {
   ItemGroupProposalsResponse,
   MappedItemAnalysisResponse,
   WorkAnalysisResponse,
+  WorksAnalysisOptionsResponse,
 } from '@auto-mb/contracts';
 import { buildApp } from '../src/app.js';
 import { readXlsxRows } from '../src/xlsx.js';
@@ -1212,6 +1213,164 @@ describe('the cross-Work item analysis', () => {
     // The unmapped line count is the unmapped table's own line total, and
     // is derived from the rows rather than counted by a second statement.
     expect(analysis.unmappedLineCount).toBe(analysis.unmappedTotals.lineCount);
+  });
+});
+
+describe('narrowing the item analysis to one item', () => {
+  async function items(
+    jar: CookieJar,
+    item?: string,
+  ): Promise<MappedItemAnalysisResponse> {
+    const response = await authed(jar, {
+      method: 'GET',
+      url:
+        item === undefined
+          ? '/api/reports/mapped-item-analysis'
+          : `/api/reports/mapped-item-analysis?item=${encodeURIComponent(item)}`,
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json<MappedItemAnalysisResponse>();
+  }
+
+  it('carries the grouping key out, so the picker and the report name one thing', async () => {
+    const whole = await items(owner);
+    const racks = whole.rows.find((row) => row.label === '42U Rack');
+    const cable = whole.rows.find((row) => row.label === 'Cable');
+    // A mapped row is keyed on its canonical item; an unmapped one on the
+    // normalised description, which is what the grouping used.
+    expect(racks?.itemKey).toBe(racks?.canonicalItemId);
+    expect(cable?.itemKey).toBe('cable');
+  });
+
+  it('narrows a mapped item, and the totals come back that item’s own', async () => {
+    const whole = await items(owner);
+    const racks = whole.rows.find((row) => row.label === '42U Rack');
+    expect(racks).toBeDefined();
+
+    const one = await items(owner, racks?.itemKey);
+    expect(one.rows.map((row) => row.label)).toEqual(['42U Rack']);
+    // Not the portfolio's: the rows on the page have to add to the figure
+    // under them (§ 38, "two tables, two totals").
+    expect(one.mappedTotals.pendingSupplyValue).toBe(racks?.pendingSupplyValue);
+    expect(one.mappedTotals.rowCount).toBe(1);
+    expect(one.unmappedTotals.rowCount).toBe(0);
+    expect(one.unmappedLineCount).toBe(0);
+    expect(one.totals.pendingSupplyValue).not.toBe(whole.totals.pendingSupplyValue);
+  });
+
+  it('narrows an unmapped description by its normalised key', async () => {
+    const one = await items(owner, 'cable');
+    expect(one.rows.map((row) => row.label)).toEqual(['Cable']);
+    expect(one.mappedTotals.rowCount).toBe(0);
+    expect(one.unmappedTotals.rowCount).toBe(1);
+    expect(one.unmappedTotals.pendingSupplyValue).toBe('7750.00');
+  });
+
+  it('answers an unknown key with nothing rather than a 404', async () => {
+    // "What is pending on this item" can honestly be "nothing" — a stale
+    // bookmark, or an item since fully supplied.
+    const none = await items(owner, 'no such item');
+    expect(none.rows).toEqual([]);
+    expect(none.totals.rowCount).toBe(0);
+    expect(none.totals.pendingSupplyValue).toBe('0.00');
+  });
+
+  it('narrows inside the caller’s scope, never outside it', async () => {
+    const scopedRows = await items(scoped);
+    const racks = scopedRows.rows.find((row) => row.label === '42U Rack');
+    // The assigned member sees WORK-1's two lines; naming the item cannot
+    // reach the Work they are not assigned to.
+    const one = await items(scoped, racks?.itemKey);
+    expect(one.rows[0]?.lineCount).toBe(2);
+    expect(one.rows[0]?.pendingSupplyQuantity).toBe('6.000');
+
+    const outside = await authed(outsider, {
+      method: 'GET',
+      url: `/api/reports/mapped-item-analysis?item=${encodeURIComponent(racks?.itemKey ?? '')}`,
+      organisationId: otherOrganisationId,
+    });
+    expect(outside.statusCode, outside.body).toBe(200);
+    expect(outside.json<MappedItemAnalysisResponse>().rows).toEqual([]);
+  });
+
+  it('carries the chosen item into the workbook, and refuses it on another report', async () => {
+    const one = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/analysis/mapped-item/report.xlsx?item=cable',
+      organisationId,
+    });
+    expect(one.statusCode, one.body).toBe(200);
+    const flat = readXlsxRows(one.rawPayload).map((row) => row.cells.join('|'));
+    expect(flat.some((line) => line.includes('Cable'))).toBe(true);
+    expect(flat.some((line) => line.includes('42U Rack'))).toBe(false);
+
+    const wrong = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/analysis/division/report.xlsx?item=cable',
+      organisationId,
+    });
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json<{ code: string }>().code).toBe('ITEM_NOT_APPLICABLE');
+  });
+});
+
+describe('what the two portfolio reports can be narrowed to', () => {
+  async function options(
+    jar: CookieJar,
+    org = organisationId,
+  ): Promise<WorksAnalysisOptionsResponse> {
+    const response = await authed(jar, {
+      method: 'GET',
+      url: '/api/reports/analysis/options',
+      organisationId: org,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json<WorksAnalysisOptionsResponse>();
+  }
+
+  it('offers the division headings the report actually draws', async () => {
+    const [choices, report] = await Promise.all([
+      options(owner),
+      divisionAnalysis(owner),
+    ]);
+    // The picker's list and the report's headings are one set, or the
+    // picker offers a heading nothing answers to.
+    expect([...choices.divisions].sort()).toEqual(
+      [...report.divisions.map((division) => division.divisionCode)].sort(),
+    );
+    expect(choices.divisions).toContain('100');
+    // The Works whose consignees name none or name more than one.
+    expect(choices.divisions).toContain(null);
+  });
+
+  it('offers the item keys the report actually groups on', async () => {
+    const choices = await options(owner);
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/mapped-item-analysis',
+      organisationId,
+    });
+    const report = response.json<MappedItemAnalysisResponse>();
+    // The report draws one row per item AND unit; the picker offers one
+    // row per item, because narrowing is to the item.
+    expect([...choices.items.map((entry) => entry.key)].sort()).toEqual(
+      [...new Set(report.rows.map((row) => row.itemKey))].sort(),
+    );
+    const racks = choices.items.find((entry) => entry.label === '42U Rack');
+    expect(racks?.mapped).toBe(true);
+    expect(choices.items.find((entry) => entry.label === 'Cable')?.mapped).toBe(false);
+  });
+
+  it('narrows to an assigned member’s own Works, and shows another organisation nothing', async () => {
+    const mine = await options(scoped);
+    const report = await divisionAnalysis(scoped);
+    expect([...mine.divisions].sort()).toEqual(
+      [...report.divisions.map((division) => division.divisionCode)].sort(),
+    );
+
+    const outside = await options(outsider, otherOrganisationId);
+    expect(outside).toEqual({ divisions: [], items: [] });
   });
 });
 
