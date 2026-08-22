@@ -223,41 +223,21 @@ jobs:
               exit 1
               ;;
           esac
-      - name: Build
-        run: pnpm build
-      # Two lanes, deliberately arranged.
+      # Build and the whole test matrix, exactly as before the cheap/heavy
+      # split. `pnpm -r` already overlaps the packages at its default
+      # workspace concurrency, and that arrangement is what has been green.
       #
-      # The web, worker, contracts, documents and LOA-parser suites never
-      # open a database connection, so nothing they do can contend with the
-      # PostgreSQL service. They run in the BACKGROUND of the database lane
-      # and cost close to nothing in wall time.
-      #
-      # `@auto-mb/db` and `@auto-mb/server` stay serial WITH EACH OTHER
-      # (--workspace-concurrency=1). Running those two together against one
-      # cluster is the known contention flake — hook timeouts in packages/db
-      # and unrelated-looking failures in apps/server — and this split must
-      # not reintroduce it to save a minute.
-      #
-      # The background lane's output is captured and printed inside a
-      # collapsed group afterwards rather than interleaved, so a failure is
-      # still readable.
-      - name: Test lanes (no-database in parallel, database serial)
-        run: |
-          set +e
-          pnpm test:nodb > "$RUNNER_TEMP/nodb-tests.log" 2>&1 &
-          nodb_pid=$!
-          pnpm test:db
-          db_status=$?
-          wait "$nodb_pid"
-          nodb_status=$?
-          set -e
-          echo "::group::Suites that need no database"
-          cat "$RUNNER_TEMP/nodb-tests.log"
-          echo "::endgroup::"
-          if [ "$db_status" -ne 0 ] || [ "$nodb_status" -ne 0 ]; then
-            echo "::error::database lane exit ${db_status}, no-database lane exit ${nodb_status}"
-            exit 1
-          fi
+      # MEASURED AND REJECTED (this pull request, run 32590437616): running
+      # the database-free packages as a second lane in the background of the
+      # database lane, to overlap them explicitly. Attempt one failed two
+      # apps/server tests on 5s timeouts; attempt two failed those AND four
+      # apps/web tests, on 5s timeouts in BOTH lanes. A four-core runner
+      # already saturated by `pnpm -r` has no headroom for a second lane, and
+      # the suites express that as timeouts rather than as slowness. The
+      # explicit-lane experiment is not worth a flaky gate; the win in this
+      # workflow is the cheap-gates job above, not this step.
+      - name: Verify (build and the full test matrix)
+        run: pnpm verify:heavy
 
   # Boots the PRODUCTION topology from scratch on every change: real
   # image builds, fresh volumes, the role/grant bootstrap, and the
