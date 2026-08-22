@@ -83,13 +83,11 @@ function ReportDocuments({
   organisationId,
   report,
   workId,
-  disabled,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly report: WorksAnalysisReport;
   readonly workId?: string;
-  readonly disabled?: boolean;
 }) {
   const { pending, notice, actionError, act } = useAction();
   const options = workId === undefined ? {} : { workId };
@@ -99,7 +97,7 @@ function ReportDocuments({
         <Button
           type="button"
           variant="outline"
-          disabled={pending || disabled === true}
+          disabled={pending}
           onClick={() => {
             void act(
               () =>
@@ -113,15 +111,13 @@ function ReportDocuments({
           <FileText aria-hidden="true" className="size-4" />
           {REPORT_LABEL[report]} PDF
         </Button>
-        {disabled !== true && (
-          <DownloadButton
-            label="Export .xlsx"
-            filename={`${report}-analysis.xlsx`}
-            fetchBlob={() =>
-              api.downloadWorksAnalysis(organisationId, report, 'xlsx', options)
-            }
-          />
-        )}
+        <DownloadButton
+          label="Export .xlsx"
+          filename={`${report}-analysis.xlsx`}
+          fetchBlob={() =>
+            api.downloadWorksAnalysis(organisationId, report, 'xlsx', options)
+          }
+        />
       </div>
       {notice !== null && <FormNotice>{notice}</FormNotice>}
       {actionError !== null && <FormError>{actionError}</FormError>}
