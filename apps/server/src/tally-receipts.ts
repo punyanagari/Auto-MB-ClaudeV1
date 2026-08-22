@@ -36,6 +36,16 @@
  * CENSUS rather than pattern-matching ledger names, and an import run
  * before the masters import is refused with that as the remedy.
  *
+ * A LEDGER THE CENSUS DOES NOT HOLD REFUSES ITS VOUCHER, rather than
+ * defaulting to the `other` bucket. The case that settles it is a SECOND
+ * BANK ACCOUNT missing from the census: it is not a bank to this reader,
+ * so the money that reached it would book as a deduction, the receipt
+ * would still balance — `gross = net + Σ heads` holds either way — and
+ * the register would say the railway withheld money it had actually
+ * paid. Nothing downstream could notice. The census and the vouchers are
+ * one day's two exports (ruling 3), so the remedy is a fresh masters
+ * export and the refusal names the ledger.
+ *
  * The alternative was matching names: `/tds/i` catches CGST TDS and
  * income-tax TDS alike and would have merged two statutory heads that are
  * reclaimed from two different authorities. Ancestry cannot make that
@@ -155,11 +165,11 @@ export const isRoundOffLedger = (ledger: string): boolean => {
 /**
  * Which of 0114's heads a deduction ledger books to.
  *
- * A ledger the census does not hold books to `other` rather than
- * refusing the receipt: the two files are exports of one company taken on
- * one day, so a ledger in the vouchers and not in the masters means the
- * masters export is older — and the import says how many such lines it
- * saw rather than misfiling them silently.
+ * Only ever asked about a ledger the census HOLDS: a leg naming one it
+ * does not refuses its whole voucher before this is reached, because a
+ * ledger with no group answers none of the three questions this reader
+ * asks of a leg. The `facts` parameter is still optional so the rule
+ * stays total, and an absent one falls to the bucket.
  */
 export function deductionHead(
   ledger: string,
@@ -222,8 +232,6 @@ export interface TallyReceipt {
   /** The work code the security-deposit head names, where it names
    * exactly one. Ruling 17's first route. */
   readonly securityDepositPlCode: string | null;
-  /** How many deduction lines named a ledger the census does not hold. */
-  readonly uncensusedLedgerLines: number;
 }
 
 /** Why a receipt is not this wave's to import. Not a refusal: a bank-party
@@ -237,10 +245,30 @@ export interface TallyReceiptSkip {
   readonly reason: TallyReceiptSkipReason;
 }
 
+/**
+ * Why one receipt was refused, as a value rather than as a sentence.
+ *
+ * The sentence is what an operator reads and the kind is what the import
+ * report counts, and they are separate for the reason every census in
+ * this repository is: a count derived by matching a sentence breaks the
+ * day somebody improves the wording.
+ */
+export type TallyReceiptRefusalKind =
+  | 'no_customer_credit'
+  | 'two_party'
+  | 'credited_head'
+  | 'customer_as_head'
+  | 'no_bank_line'
+  | 'uncensused_ledger'
+  | 'duplicate_head_ledger'
+  | 'zero_gross'
+  | 'unbalanced';
+
 /** A receipt refused BY NAME, with the line its voucher opened on, in both
  * the preview and the commit. */
 export interface TallyReceiptRefusal {
   readonly voucher: TallyVoucherRecord;
+  readonly kind: TallyReceiptRefusalKind;
   readonly reason: string;
 }
 
@@ -338,6 +366,55 @@ export function readTallyReceipts(
       continue;
     }
 
+    // A DEBIT LEG NAMING A LEDGER THE CENSUS DOES NOT HOLD REFUSES THE
+    // VOUCHER, and this is the arm the coordinator's finding 4 is about.
+    //
+    // Every question this reader asks of a leg — is it a bank, is it a
+    // customer, which head is it — is answered by the ledger's GROUP, and
+    // a ledger the census does not carry answers none of them. The old
+    // reading defaulted such a leg to the `other` bucket, which is
+    // exactly wrong on the case that matters: a SECOND BANK ACCOUNT
+    // missing from the census is not a bank to this reader, so the money
+    // that reached it was booked as a deduction. The receipt still
+    // balanced — `gross = net + Σ heads` holds either way — so nothing
+    // downstream could notice, and the register would have said the
+    // railway withheld money it had actually paid.
+    //
+    // The remedy is a fresh masters export, which is the same day's file
+    // (ruling 3), so the refusal names the ledger and says so.
+    const uncensused = [...debits, ...missing].find(
+      (entry) => !ledgers.has(entry.ledger),
+    );
+    if (uncensused !== undefined) {
+      refused.push({
+        voucher,
+        kind: 'uncensused_ledger',
+        reason: `This receipt names the ledger ${uncensused.ledger}, which the current Tally census does not hold — so nothing here can say whether it is a bank, a customer or a deduction head. Import the All Masters export taken with these vouchers, then read this file again.`,
+      });
+      continue;
+    }
+
+    // ONE LEDGER, ONE LINE. The line key is (voucher, ledger name) — the
+    // census's own § 5 key and migration 0120's unique index — so two
+    // legs naming one ledger are ONE row: the second collides on
+    // `on conflict do nothing`, the heads sum short of the stated total,
+    // and the deferred constraint refuses the whole transaction at COMMIT
+    // with nothing naming the voucher. Refused here instead, by name.
+    const seenLedgers = new Set<string>();
+    const duplicate = headLines.find((entry) => {
+      if (seenLedgers.has(entry.ledger)) return true;
+      seenLedgers.add(entry.ledger);
+      return false;
+    });
+    if (duplicate !== undefined) {
+      refused.push({
+        voucher,
+        kind: 'duplicate_head_ledger',
+        reason: `This receipt books two deduction lines to ${duplicate.ledger}, and a receipt holds one line per ledger. Combine them in TallyPrime, or book the second to its own head, and export again.`,
+      });
+      continue;
+    }
+
     const customerCredits = credits.filter((entry) =>
       isCustomerLedger(ledgers.get(entry.ledger)),
     );
@@ -348,6 +425,7 @@ export function readTallyReceipts(
     if (customerCredits.length === 0) {
       refused.push({
         voucher,
+        kind: 'no_customer_credit',
         reason:
           'This receipt carries deductions but credits no customer ledger, so there is nobody it can be filed as a payment from.',
       });
@@ -360,6 +438,7 @@ export function readTallyReceipts(
     if (customerCredits.length > 1) {
       refused.push({
         voucher,
+        kind: 'two_party',
         reason:
           'This receipt credits more than one customer ledger with its deductions pooled across them. Split it into one receipt per customer in TallyPrime and export again.',
       });
@@ -372,6 +451,7 @@ export function readTallyReceipts(
     if (strayCredits.length > 0) {
       refused.push({
         voucher,
+        kind: 'credited_head',
         reason: `This receipt credits ${strayCredits[0]?.ledger ?? 'a ledger'}, which is not a customer — a release netted against a collection is not a payment with deductions, and this wave does not model it.`,
       });
       continue;
@@ -387,6 +467,7 @@ export function readTallyReceipts(
     if (customerHeads.length > 0) {
       refused.push({
         voucher,
+        kind: 'customer_as_head',
         reason: `This receipt debits the customer ledger ${customerHeads[0]?.ledger ?? ''} as if it were a deduction head. Whether that is a correction or an inter-division adjustment is the owner's to say.`,
       });
       continue;
@@ -394,6 +475,7 @@ export function readTallyReceipts(
     if (bankLines.length === 0) {
       refused.push({
         voucher,
+        kind: 'no_bank_line',
         reason:
           'This receipt names no bank ledger, so there is no figure for what actually reached the bank.',
       });
@@ -407,6 +489,19 @@ export function readTallyReceipts(
        rounding error inside the comparison that decides whether a receipt
        reconciles at all. */
     const grossPaise = toPaise(customerCredits[0]?.amount ?? '0');
+    // A RECEIPT OF NOTHING IS NOT A RECEIPT. `gross_amount > 0` is a
+    // CHECK on the header, and a degenerate correction voucher — every
+    // leg zero — reconciles perfectly on the way to meeting it
+    // mid-commit, where it would name a constraint rather than a
+    // voucher.
+    if (grossPaise <= 0n) {
+      refused.push({
+        voucher,
+        kind: 'zero_gross',
+        reason: `This receipt credits ${paiseText(grossPaise)} to ${customerCredits[0]?.ledger ?? 'its customer'}, so it records no money arriving. A correction voucher is not a payment.`,
+      });
+      continue;
+    }
     // RULING 16. Signed: a debited round-off raises the net, a credited
     // one lowers it, and either way `gross = net + Σ heads` stays exact.
     // Without the fold, 125 real receipts miss by a paisa and every one
@@ -418,12 +513,12 @@ export function readTallyReceipts(
 
     const deductions: ImportedDeductionLine[] = [];
     let deductionPaise = 0n;
-    let uncensusedLedgerLines = 0;
     let securityDepositPlCode: string | null = null;
     let securityDepositCodeAmbiguous = false;
     for (const entry of headLines) {
+      // Present, always: a leg naming a ledger the census does not hold
+      // refused the whole voucher above.
       const facts = ledgers.get(entry.ledger);
-      if (facts === undefined) uncensusedLedgerLines += 1;
       const head = deductionHead(entry.ledger, facts);
       const amount = entry.amount === null ? '0.00' : magnitude(entry.amount);
       deductionPaise += toPaise(amount);
@@ -452,6 +547,7 @@ export function readTallyReceipts(
     if (grossPaise !== netPaise + deductionPaise) {
       refused.push({
         voucher,
+        kind: 'unbalanced',
         reason: `This receipt does not reconcile: ${paiseText(grossPaise)} credited against ${paiseText(netPaise)} to the bank and ${paiseText(deductionPaise)} of deductions. Nothing is imported from a voucher whose own arithmetic this reader cannot reproduce.`,
       });
       continue;
@@ -478,7 +574,6 @@ export function readTallyReceipts(
       securityDepositPlCode: securityDepositCodeAmbiguous
         ? null
         : securityDepositPlCode,
-      uncensusedLedgerLines,
     });
   }
 

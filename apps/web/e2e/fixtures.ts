@@ -1987,6 +1987,7 @@ const IMPORTED_PAYMENT_REGISTER = {
     contactName: index === 0 ? 'Central Railway, Bhusawal' : null,
     workId,
     workCode: workId === null ? null : 'PL-270',
+    workWithdrawn: false,
     workLinkMethod: workId === null ? null : 'sd_ledger',
     gross: index === 0 ? '1000000.00' : '5000.00',
     net: index === 0 ? '880000.00' : '4900.00',

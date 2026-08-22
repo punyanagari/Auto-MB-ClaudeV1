@@ -330,11 +330,16 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   // let an annotation veto a correction.
   //
   // The receipt survives the withdrawal rather than stranding, and it
-  // does so UNLINKED-IN-EFFECT: nothing here may edit an imported
-  // payment, so the row keeps pointing at a withdrawn Work and the
-  // register reads it exactly as it reads one that never had a Work. The
-  // wave that adds the manual-link route is the one that can re-point it
-  // at the successor.
+  // does so UNLINKED IN EFFECT — which the register enforces rather than
+  // merely intending. Nothing here may edit an imported payment, so the
+  // row keeps naming the withdrawn Work; `routes/tally-receipts.ts`
+  // therefore reads "has a Work" as "names a Work that is still live",
+  // once, and every reading follows from it: the receipt rejoins the
+  // manual-link queue, counts in `unlinkedCount`, is excluded by
+  // `linked=linked`, and renders as `CODE (withdrawn)` instead of a link
+  // to a Work that is gone — the shape `imported-invoices.ts` took for
+  // the same case. The wave that adds the manual-link route is the one
+  // that can re-point it at the successor.
   imported_payments:
     'a railway receipt another system recorded before this Work existed here; its Work link is a proposal, not a document issued from the Work',
   imported_payment_deductions:

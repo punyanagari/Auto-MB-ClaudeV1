@@ -198,6 +198,9 @@ const CENSUS = new Map<string, TallyLedgerFacts>([
   ledger('Bill Copy', ['Contractual Deductions', 'Indirect Expenses']),
   ledger('Contracual Deduction', ['Contractual Deductions', 'Indirect Expenses']),
   ledger('Round Off', ['Indirect Expenses']),
+  // The real export files every surcharge ledger under an assessment-year
+  // group; see the finding-9 case below.
+  ledger('Surcharge on IT', ['TDS & SAT AY 23-24', 'Income Tax Provisions']),
 ]);
 
 describe('readTallyReceipts', () => {
@@ -312,21 +315,24 @@ describe('readTallyReceipts', () => {
     expect(read.receipts[0]?.deductionTotal).toBe('100.00');
   });
 
-  it('books a ledger the census does not hold to other, and counts it', () => {
+  it('books a censused head with no 0114 counterpart to the other bucket', () => {
+    // RULING 15's bucket is for a ledger the census HOLDS and 0114 has no
+    // head for. A ledger the census does not hold at all is a different
+    // thing entirely and refuses the voucher — see the finding-4 case.
     const read = readTallyReceipts(
       envelope(
         voucher({
           legs: [
             { ledger: 'Northern Division', amount: '1000.00' },
             { ledger: 'State Bank Current A/c', amount: '-900.00' },
-            { ledger: 'Some Head Added Last Week', amount: '-100.00' },
+            { ledger: 'Bill Copy', amount: '-100.00' },
           ],
         }),
       ),
       CENSUS,
     );
     expect(read.receipts[0]?.deductions[0]?.head).toBe('other');
-    expect(read.receipts[0]?.uncensusedLedgerLines).toBe(1);
+    expect(read.receipts[0]?.deductions[0]?.tallyLedgerName).toBe('Bill Copy');
   });
 
   it('leaves bank-party receipts and plain collections to wave T4', () => {
@@ -473,6 +479,105 @@ describe('readTallyReceipts', () => {
     expect(read.voucherCount).toBe(3);
     expect(read.receiptCount).toBe(1);
     expect(read.refusals).toHaveLength(0);
+  });
+
+  /* --- the coordinator's review of #180 ---------------------------------- */
+
+  it('refuses a voucher naming one deduction ledger twice (finding 2)', () => {
+    // The line key is (voucher, ledger name) — the census's own, and
+    // migration 0120's unique index. Two legs naming one ledger are
+    // therefore ONE row: the second collides, the heads sum short of the
+    // stated total, and the deferred constraint refuses the whole
+    // transaction at COMMIT with nothing naming the voucher. Refused
+    // here, by name, before a byte is written.
+    const read = readTallyReceipts(
+      envelope(
+        voucher({
+          number: '7001',
+          legs: [
+            { ledger: 'Northern Division', amount: '1000.00' },
+            { ledger: 'State Bank Current A/c', amount: '-800.00' },
+            { ledger: 'CGST TDS 1%', amount: '-100.00' },
+            { ledger: 'CGST TDS 1%', amount: '-100.00' },
+          ],
+        }),
+      ),
+      CENSUS,
+    );
+    expect(read.receipts).toHaveLength(0);
+    expect(read.refused[0]?.kind).toBe('duplicate_head_ledger');
+    expect(read.refused[0]?.voucher.voucherNumber).toBe('7001');
+    expect(read.refused[0]?.reason).toMatch(/CGST TDS 1%/);
+  });
+
+  it('refuses a debit leg naming a ledger the census does not hold (finding 4)', () => {
+    // THE MULTI-BANK CASE, which is what makes this a defect rather than
+    // tidiness: a second bank account absent from the census is not a
+    // bank to this reader, so it became an `other` deduction — the
+    // receipt still balanced, and the register quietly said the railway
+    // had withheld money it actually paid.
+    const read = readTallyReceipts(
+      envelope(
+        voucher({
+          number: '7002',
+          legs: [
+            { ledger: 'Northern Division', amount: '1000.00' },
+            { ledger: 'State Bank Current A/c', amount: '-500.00' },
+            { ledger: 'Second Bank Not In The Census', amount: '-400.00' },
+            { ledger: 'CGST TDS 1%', amount: '-100.00' },
+          ],
+        }),
+      ),
+      CENSUS,
+    );
+    expect(read.receipts).toHaveLength(0);
+    expect(read.refused[0]?.kind).toBe('uncensused_ledger');
+    expect(read.refused[0]?.reason).toMatch(/Second Bank Not In The Census/);
+  });
+
+  it('refuses a receipt that credits nothing (finding 5)', () => {
+    // `gross_amount > 0` is a CHECK on the header. A degenerate
+    // correction voucher — everything zero — reconciles perfectly and is
+    // not a payment of anything, and meeting that CHECK mid-commit would
+    // name a constraint rather than a voucher.
+    const read = readTallyReceipts(
+      envelope(
+        voucher({
+          number: '7003',
+          // `-0.00` is a debit of nothing — Tally's sign convention with
+          // a zero magnitude, which is what a correction voucher writes.
+          legs: [
+            { ledger: 'Northern Division', amount: '0.00' },
+            { ledger: 'State Bank Current A/c', amount: '-0.00' },
+            { ledger: 'CGST TDS 1%', amount: '-0.00' },
+          ],
+        }),
+      ),
+      CENSUS,
+    );
+    expect(read.receipts).toHaveLength(0);
+    expect(read.refused[0]?.kind).toBe('zero_gross');
+  });
+
+  it('maps the income-tax surcharge by its own group (finding 9)', () => {
+    // The real export files all three surcharge ledgers UNDER a
+    // `TDS & SAT AY <year>` group, so the assessment-year prefix already
+    // reaches them and no head of their own is needed. The census's
+    // § 4.4 wording implied a separate head and is corrected; this is the
+    // assertion that keeps the reading honest.
+    const read = readTallyReceipts(
+      envelope(
+        voucher({
+          legs: [
+            { ledger: 'Northern Division', amount: '1000.00' },
+            { ledger: 'State Bank Current A/c', amount: '-900.00' },
+            { ledger: 'Surcharge on IT', amount: '-100.00' },
+          ],
+        }),
+      ),
+      CENSUS,
+    );
+    expect(read.receipts[0]?.deductions[0]?.head).toBe('income_tax_tds');
   });
 
   it('counts cancelled and optional receipts rather than importing them (ruling 22)', () => {

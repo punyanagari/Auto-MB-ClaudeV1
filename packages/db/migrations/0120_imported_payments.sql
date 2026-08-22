@@ -196,8 +196,8 @@ SET LOCAL statement_timeout = '5min';
 --   Tables created                3
 --   Tables altered                0
 --   Functions created             3
---   Triggers created              5 (4 plain, 1 deferred constraint)
---   Indexes created               7
+--   Triggers created              6 (4 plain, 2 deferred constraint)
+--   Indexes created               5 (plus the UNIQUE constraints' own)
 --   RLS policies created          3
 
 -- ═════════════════════════════════════════════════════════════════════
@@ -378,11 +378,21 @@ GRANT SELECT, INSERT ON imported_payments TO auto_mb_app;
 CREATE INDEX imported_payments_date_idx
   ON imported_payments (organisation_id, tally_voucher_date DESC, id);
 
--- The manual-link queue (§ D). Partial, because the linked half is the
--- bulk of the register and an index over it would be the table.
-CREATE INDEX imported_payments_unlinked_idx
-  ON imported_payments (organisation_id, tally_voucher_date DESC, id)
-  WHERE work_id IS NULL;
+-- NO PARTIAL INDEX FOR THE MANUAL-LINK QUEUE, and the reason is what the
+-- queue actually IS.
+--
+-- `WHERE work_id IS NULL` looks like the queue and is not: a receipt
+-- whose Work was later WITHDRAWN (0071's supersession) belongs in the
+-- queue too — nothing may edit an imported payment, so the row keeps
+-- pointing at a Work that is gone — and an index predicate reads only
+-- this table's own columns, so it cannot know that. An index answering a
+-- narrower question than the register asks is worse than none: it invites
+-- a future reader to use it and quietly return the wrong rows.
+--
+-- The register's queue filter is therefore an anti-join against `works`,
+-- served by `imported_payments_date_idx` above and by the primary key on
+-- the other side. 755 real receipts is not a scan worth an index that
+-- cannot be correct.
 
 -- What has been received against one Work, which is the question the
 -- Work's own screens ask. Doubles as the composite foreign key's index,
@@ -707,12 +717,27 @@ LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
+  v_payment uuid;
+  v_organisation uuid;
   v_stated money_amount;
   v_summed money_amount;
 BEGIN
+  -- FIRED FROM BOTH SIDES, because one side alone leaves a hole. From a
+  -- LINE, it catches a header whose lines do not add up to what it
+  -- states. From the HEADER, it catches a header with NO lines at all —
+  -- which the line-side trigger cannot see, having never fired. Both
+  -- events find the same payment; only the column carrying its id
+  -- differs.
+  IF TG_TABLE_NAME = 'imported_payments' THEN
+    v_payment := NEW.id;
+  ELSE
+    v_payment := NEW.imported_payment_id;
+  END IF;
+  v_organisation := NEW.organisation_id;
+
   SELECT p.deduction_total INTO v_stated
   FROM imported_payments p
-  WHERE p.organisation_id = NEW.organisation_id AND p.id = NEW.imported_payment_id;
+  WHERE p.organisation_id = v_organisation AND p.id = v_payment;
 
   -- The payment is gone: another statement in this transaction refused
   -- it, or it never existed. The foreign key is what says so, and it says
@@ -721,13 +746,13 @@ BEGIN
 
   SELECT coalesce(sum(d.amount), 0) INTO v_summed
   FROM imported_payment_deductions d
-  WHERE d.organisation_id = NEW.organisation_id
-    AND d.imported_payment_id = NEW.imported_payment_id;
+  WHERE d.organisation_id = v_organisation
+    AND d.imported_payment_id = v_payment;
 
   IF v_summed <> v_stated THEN
     RAISE EXCEPTION
       'imported payment % states % of deductions and its heads sum to %; gross = net + heads is the one arithmetic this register keeps',
-      NEW.imported_payment_id, v_stated, v_summed
+      v_payment, v_stated, v_summed
       USING ERRCODE = '23T05';
   END IF;
 
@@ -736,9 +761,26 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.check_imported_payment_heads() IS
-  'Holds a receipt''s stated deduction total against the heads it is the total of — the cross-row half of gross = net + heads, which the row CHECK cannot see. Deferred, because the header is written before its lines.';
+  'Holds a receipt''s stated deduction total against the heads it is the total of — the cross-row half of gross = net + heads, which the row CHECK cannot see. Deferred, because the header is written before its lines, and fired from BOTH tables: the line side catches lines that do not add up, the header side catches a header that never got any.';
 
 CREATE CONSTRAINT TRIGGER imported_payment_heads_sum_check
 AFTER INSERT ON imported_payment_deductions
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION app_private.check_imported_payment_heads();
+
+-- THE HEADER-SIDE ARM, and it is not symmetry for its own sake.
+--
+-- A payment inserted with `deduction_total = 500.00` and no deduction
+-- lines at all satisfies every CHECK on its own row — gross = net +
+-- deduction_total holds — and the line-side trigger above never fires,
+-- because there are no lines to fire it. The register would then hold a
+-- receipt asserting five hundred rupees of deductions with nothing
+-- saying what they were, which is the one thing the `other` bucket and
+-- the stored ledger name exist to make impossible.
+--
+-- This wave imports no zero-deduction receipt (§ E: they are wave T4's),
+-- so a header with no lines is never a shape a legitimate import writes.
+CREATE CONSTRAINT TRIGGER imported_payments_heads_present_check
+AFTER INSERT ON imported_payments
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION app_private.check_imported_payment_heads();

@@ -88,16 +88,29 @@ import { audit, errorResponses, requireTrimmed, writeRefusals } from './shared.j
  * `canManagePayments` is what gates money decisions everywhere else in
  * this application, so it gates this one too, on top of `import`.
  *
- * Flagged in the pull request as an authority choice rather than made
- * silently: it is strictly narrower than the import authority alone, so a
- * member who could import invoices may find they cannot import receipts.
+ * RULED BY THE OWNER, 23 Aug 2026, after the choice was put to them
+ * rather than made silently: the dual gate STANDS. It is strictly
+ * narrower than the import authority alone — a member who can import
+ * invoices may find they cannot import receipts — and that is the
+ * intended consequence, because what this route writes is money.
  *
- * ## Work scope
+ * ## Work scope: THE IMPORT IS ORG-WIDE AND THE VIEW IS SCOPED
  *
- * The Work PROPOSAL is scoped, and the candidates are narrowed rather
- * than the proposals filtered afterwards — `imported-invoices.ts`'s rule,
- * for its reason: that is the difference between "this member cannot link
- * to that Work" and "this member is told that Work exists".
+ * `imported-invoices.ts` narrows the Work CANDIDATES to the member's own
+ * scope, and this route deliberately does not — the coordinator's finding
+ * 8 on #180, and the difference is what the two acts are. Filing an
+ * invoice against a Work is one operator's annotation; an import states
+ * which contract a railway PAID against, and that fact cannot depend on
+ * who happened to upload the file. Scoped candidates meant two members
+ * importing the same export wrote two different registers, silently and
+ * indistinguishably afterwards.
+ *
+ * So the resolution reads every live Work in the organisation, and the
+ * scope lands where it belongs — on what is SHOWN. The preview carries a
+ * work CODE and never a work id, so a proposal reaching a Work this
+ * member cannot open renders as a bare code with nothing to click, and
+ * the register beside it stays scoped row by row: the receipt does not
+ * appear for them until they hold the Work.
  */
 
 /**
@@ -161,29 +174,6 @@ const HEAD_ORDER: readonly ImportedDeductionHead[] = [
   'other',
 ];
 
-/** Live Works this member may see, for the proposal. Narrowed here rather
- * than after the fact — see the header. */
-async function candidateWorks(
-  tx: TransactionSql,
-  userId: string,
-): Promise<WorkCandidate[]> {
-  const full = await hasFullWorkScope(tx, userId);
-  const rows = await tx<{ id: string; work_code: string; letter_number: string }[]>`
-    select w.id, w.work_code, w.letter_number
-    from works w
-    where w.deleted_at is null
-      and (${full} or exists (
-        select 1 from work_assignments wa
-        where wa.work_id = w.id and wa.user_id = ${userId}
-      ))
-  `;
-  return rows.map((row) => ({
-    id: row.id,
-    workCode: row.work_code,
-    letterNumber: row.letter_number,
-  }));
-}
-
 /** What one receipt would be filed against, and by which of ruling 17's
  * three routes. */
 interface WorkProposal {
@@ -246,6 +236,7 @@ async function readPayments(
       contact_name: string | null;
       work_id: string | null;
       work_code: string | null;
+      work_withdrawn: boolean;
       work_link_method: string | null;
       gross_amount: string;
       net_amount: string;
@@ -257,7 +248,8 @@ async function readPayments(
     select p.id, p.tally_guid, p.tally_voucher_number,
            p.tally_voucher_date::text as tally_voucher_date, p.tally_narration,
            p.counterparty_ledger, p.contact_id, c.designation as contact_name,
-           p.work_id, w.work_code, p.work_link_method,
+           p.work_id, w.work_code,
+           (w.deleted_at is not null) as work_withdrawn, p.work_link_method,
            p.gross_amount, p.net_amount, p.deduction_total, p.round_off_amount,
            p.created_at
     from imported_payments p
@@ -314,6 +306,11 @@ async function readPayments(
     contactName: row.contact_name,
     workId: row.work_id,
     workCode: row.work_code,
+    // FINDING 7: the Work was withdrawn after this receipt was filed
+    // against it. The row still names it — nothing may edit an imported
+    // payment — so the register says so rather than rendering a link to a
+    // Work that is gone, and counts the receipt in the manual-link queue.
+    workWithdrawn: row.work_withdrawn,
     workLinkMethod: row.work_link_method as ImportedPayment['workLinkMethod'],
     gross: row.gross_amount,
     net: row.net_amount,
@@ -370,6 +367,27 @@ export function registerTallyReceiptRoutes(
           await assertWorkAccess(tx, user.id, query.work);
         }
         const full = await hasFullWorkScope(tx, user.id);
+        // LINKED IN EFFECT, STATED ONCE — the coordinator's finding 7.
+        //
+        // A Work can be WITHDRAWN after a receipt was filed against it
+        // (0071's supersession), and nothing here may edit an imported
+        // payment, so the row keeps pointing at it. Read naively, that
+        // receipt is "linked": it drops out of the manual-link queue, out
+        // of `unlinkedCount`, and into a Work cell rendering a link to a
+        // 404 — which is precisely the state ruling 17's queue exists to
+        // surface. So every reading of "has a Work" in this route is this
+        // expression, and a receipt whose Work is withdrawn is unlinked
+        // in effect: it rejoins the queue, and the register says
+        // `CODE (withdrawn)` where it would have said a link — the same
+        // shape `imported-invoices.ts` took for the same reason (#167).
+        const linkedInEffect = tx`(
+          p.work_id is not null
+          and exists (
+            select 1 from works w
+            where w.organisation_id = p.organisation_id
+              and w.id = p.work_id and w.deleted_at is null
+          )
+        )`;
         const seek = registerKeyset(undefined, query.cursor, {
           table: 'imported_payments',
           alias: 'p',
@@ -411,7 +429,7 @@ export function registerTallyReceiptRoutes(
           ))
           and (${query.work ?? null}::uuid is null or p.work_id = ${query.work ?? null})
           and (${query.linked ?? null}::text is null
-               or (${query.linked ?? null} = 'linked') = (p.work_id is not null))
+               or (${query.linked ?? null} = 'linked') = ${linkedInEffect})
         `;
 
         const page = await tx<{ id: string }[]>`
@@ -451,7 +469,7 @@ export function registerTallyReceiptRoutes(
                    coalesce(sum(p.net_amount), 0)::money_amount::text as net,
                    coalesce(sum(p.deduction_total), 0)::money_amount::text
                      as deduction_total,
-                   count(*) filter (where p.work_id is null)::text as unlinked
+                   count(*) filter (where not ${linkedInEffect})::text as unlinked
             from imported_payments p
             where ${filters}
           `;
@@ -532,226 +550,298 @@ export function registerTallyReceiptRoutes(
       await assertNotMalware(malwareScanner, bytes);
 
       const commit = request.query.mode === 'commit';
-      return await tenant(async (tx) => {
-        // ONE IMPORT PER ORGANISATION AT A TIME, refusing rather than
-        // queueing — the masters and invoice imports' argument exactly,
-        // plus one of its own: the "one voucher imports at most one
-        // payment" rule this route checks in application code is only
-        // race-free under it, and 0120's unique index is the arm that
-        // holds if it is ever not. Transaction-scoped, so it is released
-        // by the commit or the rollback with nothing to unwind.
-        const [lock] = await tx<{ taken: boolean }[]>`
+      // THE MAPPER WRAPS THE WHOLE TRANSACTION, NOT ONLY THE STATEMENTS.
+      //
+      // 0120's head-sum check is a DEFERRED constraint trigger, so it
+      // fires at COMMIT — which happens when this callback returns, after
+      // every `.catch(rethrowWriteRefusal)` inside it has gone out of
+      // scope. A 23T05 raised there escaped raw and reached the client as
+      // an unmapped 500 with no remedy, which is precisely the shape the
+      // named-refusal discipline exists to prevent. Mapping here as well
+      // costs one try/catch and closes the only door the per-statement
+      // catches cannot see through.
+      try {
+        return await tenant(async (tx) => {
+          // ONE IMPORT PER ORGANISATION AT A TIME, refusing rather than
+          // queueing — the masters and invoice imports' argument exactly,
+          // plus one of its own: the "one voucher imports at most one
+          // payment" rule this route checks in application code is only
+          // race-free under it, and 0120's unique index is the arm that
+          // holds if it is ever not. Transaction-scoped, so it is released
+          // by the commit or the rollback with nothing to unwind.
+          const [lock] = await tx<{ taken: boolean }[]>`
           select pg_try_advisory_xact_lock(
             hashtextextended(${`tally-receipts:${organisationId}`}, 0)
           ) as taken
         `;
-        if (lock?.taken !== true) {
-          throw httpError(
-            409,
-            'TALLY_IMPORT_IN_PROGRESS',
-            'Another Tally receipt import is running for this organisation. Wait for it to finish, then read the file again.',
-          );
-        }
+          if (lock?.taken !== true) {
+            throw httpError(
+              409,
+              'TALLY_IMPORT_IN_PROGRESS',
+              'Another Tally receipt import is running for this organisation. Wait for it to finish, then read the file again.',
+            );
+          }
 
-        // THE LEDGER CENSUS, WHICH IS WHAT SAYS WHICH LEG IS WHICH.
-        // Deleted masters are excluded: a ledger Tally has since deleted
-        // is not one this import should classify a live voucher by.
-        const ledgerRows = await tx<
-          {
-            ledger_name: string;
-            group_path: string[];
-            classification: string;
-            pl_code: string | null;
-            proposed_contact_id: string | null;
-            proposed_contact_method: string | null;
-          }[]
-        >`
+          // THE LEDGER CENSUS, WHICH IS WHAT SAYS WHICH LEG IS WHICH.
+          //
+          // THE LATEST IMPORT ONLY, in the shape migration 0118 § pins for
+          // every wave that joins this table: `last_seen_at = (select
+          // max(last_seen_at) …)`, never the table unfiltered. A row a
+          // later masters import stopped naming describes a master Tally no
+          // longer has, and classifying today's voucher by it is exactly
+          // the failure the column exists to prevent — most sharply when a
+          // ledger NAME is reused: the stale row would answer "bank" for a
+          // name the current chart of accounts gives to something else.
+          //
+          // Deleted masters are excluded on top of that: a ledger Tally
+          // itself marked deleted is not one to classify a live voucher by.
+          const latestCensus = tx`(select max(last_seen_at) from tally_ledgers)`;
+          const ledgerRows = await tx<
+            {
+              ledger_name: string;
+              group_path: string[];
+              classification: string;
+              pl_code: string | null;
+              proposed_contact_id: string | null;
+              proposed_contact_method: string | null;
+            }[]
+          >`
           select ledger_name, group_path, classification, pl_code,
                  proposed_contact_id, proposed_contact_method
           from tally_ledgers
           where not tally_is_deleted
+            and last_seen_at = ${latestCensus}
         `;
-        // A PRECONDITION, NOT A ROW CONDITION, and therefore the one
-        // file-level refusal this route makes. Without the census every
-        // bank line reads as a deduction head and every receipt in the
-        // file would be refused for not reconciling — a hundred confusing
-        // refusals in place of one true sentence.
-        if (ledgerRows.length === 0) {
-          throw httpError(
-            409,
-            'TALLY_LEDGER_CENSUS_REQUIRED',
-            'The Tally ledger census has not been imported yet, and it is what says whether a voucher line is a bank, a customer or a deduction head. Import the All Masters export on Administration → Tally census first, then read this file again.',
-          );
-        }
-        const ledgers = new Map<string, TallyLedgerFacts>(
-          ledgerRows.map((row) => [
-            row.ledger_name,
-            {
-              name: row.ledger_name,
-              groupPath: row.group_path,
-              classification: row.classification,
-              plCode: row.pl_code,
-              proposedContactId: row.proposed_contact_id,
-              proposedContactMethod:
-                row.proposed_contact_method as TallyLedgerFacts['proposedContactMethod'],
-            },
-          ]),
-        );
-
-        let read;
-        try {
-          read = readTallyReceipts(bytes, ledgers);
-        } catch (cause: unknown) {
-          if (cause instanceof TallyImportError) {
-            // The two codes are written out as LITERALS rather than
-            // passed through as `cause.code`, and the error-remedy census
-            // in `apps/server/test/error-remedies.test.ts` is why: it
-            // reads this server's source for the codes each route can
-            // answer with, and a code that only appears as a variable is
-            // invisible to it.
-            if (cause.code === 'TALLY_EXPORT_TRUNCATED') {
-              throw httpError(400, 'TALLY_RECEIPTS_TRUNCATED', cause.message);
-            }
-            throw httpError(400, 'TALLY_RECEIPTS_UNREADABLE', cause.message);
+          // A PRECONDITION, NOT A ROW CONDITION, and therefore the one
+          // file-level refusal this route makes. Without the census every
+          // bank line reads as a deduction head and every receipt in the
+          // file would be refused for not reconciling — a hundred confusing
+          // refusals in place of one true sentence.
+          if (ledgerRows.length === 0) {
+            throw httpError(
+              409,
+              'TALLY_LEDGER_CENSUS_REQUIRED',
+              'The Tally ledger census has not been imported yet, and it is what says whether a voucher line is a bank, a customer or a deduction head. Import the All Masters export on Administration → Tally census first, then read this file again.',
+            );
           }
-          throw cause;
-        }
-        if (read.receiptCount === 0) {
-          throw httpError(
-            400,
-            'TALLY_RECEIPTS_UNREADABLE',
-            'That export declares no Receipt vouchers. In TallyPrime, export the Day Book narrowed to Receipt rather than a different register.',
+          const ledgers = new Map<string, TallyLedgerFacts>(
+            ledgerRows.map((row) => [
+              row.ledger_name,
+              {
+                name: row.ledger_name,
+                groupPath: row.group_path,
+                classification: row.classification,
+                plCode: row.pl_code,
+                proposedContactId: row.proposed_contact_id,
+                proposedContactMethod:
+                  row.proposed_contact_method as TallyLedgerFacts['proposedContactMethod'],
+              },
+            ]),
           );
-        }
 
-        // What a previous import already brought in, keyed on the voucher
-        // GUID — the idempotency key ruling 2 stores on every row.
-        const guids = [...new Set(read.receipts.map((r) => r.voucher.guid))];
-        const held = await tx<{ tally_guid: string }[]>`
+          let read;
+          try {
+            read = readTallyReceipts(bytes, ledgers);
+          } catch (cause: unknown) {
+            if (cause instanceof TallyImportError) {
+              // The two codes are written out as LITERALS rather than
+              // passed through as `cause.code`, and the error-remedy census
+              // in `apps/server/test/error-remedies.test.ts` is why: it
+              // reads this server's source for the codes each route can
+              // answer with, and a code that only appears as a variable is
+              // invisible to it.
+              if (cause.code === 'TALLY_EXPORT_TRUNCATED') {
+                throw httpError(400, 'TALLY_RECEIPTS_TRUNCATED', cause.message);
+              }
+              throw httpError(400, 'TALLY_RECEIPTS_UNREADABLE', cause.message);
+            }
+            throw cause;
+          }
+          if (read.receiptCount === 0) {
+            throw httpError(
+              400,
+              'TALLY_RECEIPTS_UNREADABLE',
+              'That export declares no Receipt vouchers. In TallyPrime, export the Day Book narrowed to Receipt rather than a different register.',
+            );
+          }
+
+          // What a previous import already brought in, keyed on the voucher
+          // GUID — the idempotency key ruling 2 stores on every row.
+          const guids = [...new Set(read.receipts.map((r) => r.voucher.guid))];
+          const held = await tx<{ tally_guid: string }[]>`
           select tally_guid from imported_payments
           where tally_guid = any(${tx.array(guids)}::text[])
         `;
-        const heldGuids = new Set(held.map((row) => row.tally_guid));
+          const heldGuids = new Set(held.map((row) => row.tally_guid));
 
-        const works = await candidateWorks(tx, user.id);
-        const worksByCode = new Map(
-          works.map((work) => [squeeze(work.workCode), work]),
-        );
+          // FINDING 8: THE PROPOSAL IS RESOLVED ORG-WIDE, AND ONLY THE
+          // REPORT IS SCOPED.
+          //
+          // An import writes a fact about money — which contract the
+          // railway paid against — and that fact cannot depend on which
+          // Works the member running the import happens to be assigned to.
+          // Scoping the CANDIDATES meant two members importing the same
+          // file wrote different registers: the receipt whose
+          // security-deposit head names a Work outside the operator's scope
+          // landed unlinked for them and linked for the owner, silently,
+          // with no way to tell the two apart afterwards.
+          //
+          // So the resolution reads every live Work in the organisation,
+          // and the SCOPE is applied where it belongs — to what the
+          // operator is shown, and the preview is what shows it: it carries
+          // a work CODE and never a work id, so a proposal reaching a Work
+          // this member may not open renders as a bare code with nothing to
+          // click. The register beside it stays scoped row by row, so the
+          // receipt itself does not appear for them until they are assigned
+          // the Work — which is the difference between "this member cannot
+          // reach that Work" and "this member's import wrote less".
+          const works = await tx<
+            { id: string; work_code: string; letter_number: string }[]
+          >`
+          select id, work_code, letter_number
+          from works where deleted_at is null
+        `.then((rows) =>
+            rows.map((row) => ({
+              id: row.id,
+              workCode: row.work_code,
+              letterNumber: row.letter_number,
+            })),
+          );
+          const worksByCode = new Map(
+            works.map((work) => [squeeze(work.workCode), work]),
+          );
 
-        // THE REGISTER AS IT STANDS, live rows only — the same reading
-        // 0115's partial unique index takes. A discarded invoice is one
-        // the operator withdrew; tying a receipt to it would file money
-        // against evidence that has been taken off the record.
-        const registerRows = await tx<
-          { id: string; invoice_number: string; work_id: string | null }[]
-        >`
+          // THE REGISTER AS IT STANDS, live rows only — the same reading
+          // 0115's partial unique index takes. A discarded invoice is one
+          // the operator withdrew; tying a receipt to it would file money
+          // against evidence that has been taken off the record.
+          const registerRows = await tx<
+            { id: string; invoice_number: string; work_id: string | null }[]
+          >`
           select id, invoice_number, work_id
           from imported_invoices
           where discarded_at is null
         `;
-        const invoicesByNumber = new Map<
-          string,
-          { id: string; workId: string | null }[]
-        >();
-        for (const row of registerRows) {
-          const key = squeeze(row.invoice_number);
-          if (key.length < 3) continue;
-          const bucket = invoicesByNumber.get(key);
-          const entry = { id: row.id, workId: row.work_id };
-          if (bucket === undefined) invoicesByNumber.set(key, [entry]);
-          else bucket.push(entry);
-        }
-        /** Which Work an invoice is filed against, indexed once for the
-         * whole file: ruling 17's second route reads it per receipt, and
-         * scanning the register for each one is the register times the
-         * file. */
-        const workByInvoiceId = new Map(
-          registerRows.map((row) => [row.id, row.work_id]),
-        );
-
-        /* --- what each receipt would do -------------------------------- */
-
-        interface Judged {
-          readonly receipt: TallyReceipt;
-          readonly proposal: WorkProposal | null;
-          readonly links: readonly {
-            readonly invoiceId: string;
-            readonly reference: string;
-          }[];
-          readonly unmatchedReferences: number;
-        }
-        const fresh = read.receipts.filter(
-          (receipt) => !heldGuids.has(receipt.voucher.guid),
-        );
-        const judged: Judged[] = fresh.map((receipt) => {
-          const links: { invoiceId: string; reference: string }[] = [];
-          let unmatchedReferences = 0;
-          const seen = new Set<string>();
-          for (const reference of receipt.billReferences) {
-            const key = squeeze(reference);
-            // A one- or two-character "bill number" matches half a
-            // register; the invoice importers drop the same keys.
-            const hits = key.length < 3 ? [] : (invoicesByNumber.get(key) ?? []);
-            if (hits.length === 0) {
-              unmatchedReferences += 1;
-              continue;
-            }
-            for (const hit of hits) {
-              if (seen.has(hit.id)) continue;
-              seen.add(hit.id);
-              links.push({ invoiceId: hit.id, reference });
-            }
+          const invoicesByNumber = new Map<
+            string,
+            { id: string; workId: string | null }[]
+          >();
+          for (const row of registerRows) {
+            const key = squeeze(row.invoice_number);
+            if (key.length < 3) continue;
+            const bucket = invoicesByNumber.get(key);
+            const entry = { id: row.id, workId: row.work_id };
+            if (bucket === undefined) invoicesByNumber.set(key, [entry]);
+            else bucket.push(entry);
           }
-          const invoiceWorkIds = [...seen]
-            .map((id) => workByInvoiceId.get(id) ?? null)
-            .filter((id): id is string => id !== null);
-          return {
-            receipt,
-            proposal: proposeWork(receipt, worksByCode, works, invoiceWorkIds),
-            links,
-            unmatchedReferences,
-          };
-        });
+          /** Which Work an invoice is filed against, indexed once for the
+           * whole file: ruling 17's second route reads it per receipt, and
+           * scanning the register for each one is the register times the
+           * file. */
+          const workByInvoiceId = new Map(
+            registerRows.map((row) => [row.id, row.work_id]),
+          );
 
-        let importedPaymentCount = 0;
-        let importedDeductionCount = 0;
-        let importedInvoiceLinkCount = 0;
+          /* --- what each receipt would do -------------------------------- */
 
-        if (commit && judged.length > 0) {
-          /** The ids minted here, in `judged` order, so the deduction
-           * lines and the allocations pair with their payment without
-           * depending on anything the database returns. A plain multi-row
-           * insert happens to return rows in order and PostgreSQL does
-           * not promise it; these are money rows, and pairing them by an
-           * ordering nobody guarantees is the kind of bug that shows up
-           * years later as one receipt wearing another's deductions. */
-          const paymentIds = judged.map(() => randomUUID());
+          interface Judged {
+            readonly receipt: TallyReceipt;
+            readonly proposal: WorkProposal | null;
+            readonly links: readonly {
+              readonly invoiceId: string;
+              readonly reference: string;
+            }[];
+            readonly unmatchedReferences: number;
+            readonly ambiguousReferences: number;
+          }
+          const fresh = read.receipts.filter(
+            (receipt) => !heldGuids.has(receipt.voucher.guid),
+          );
+          const judged: Judged[] = fresh.map((receipt) => {
+            const links: { invoiceId: string; reference: string }[] = [];
+            let unmatchedReferences = 0;
+            let ambiguousReferences = 0;
+            const seen = new Set<string>();
+            for (const reference of receipt.billReferences) {
+              const key = squeeze(reference);
+              // A one- or two-character "bill number" matches half a
+              // register; the invoice importers drop the same keys.
+              const hits = key.length < 3 ? [] : (invoicesByNumber.get(key) ?? []);
+              if (hits.length === 0) {
+                unmatchedReferences += 1;
+                continue;
+              }
+              // AMBIGUITY LINKS NOTHING — finding 6, and the same rule
+              // `proposeWorkLink` keeps one level up. `squeeze` removes
+              // punctuation, so `123/A` and `123-A` are one key: two real
+              // invoices, one reference, and no way to tell which was
+              // settled. Linking BOTH would file one payment against two
+              // bills and double what the register says was received
+              // against them; linking the first would pick by whatever
+              // order the read came back in. So neither is linked, and the
+              // count says how often it happened rather than leaving the
+              // silence to be discovered in a reconciliation.
+              if (hits.length > 1) {
+                ambiguousReferences += 1;
+                continue;
+              }
+              for (const hit of hits) {
+                if (seen.has(hit.id)) continue;
+                seen.add(hit.id);
+                links.push({ invoiceId: hit.id, reference });
+              }
+            }
+            const invoiceWorkIds = [...seen]
+              .map((id) => workByInvoiceId.get(id) ?? null)
+              .filter((id): id is string => id !== null);
+            return {
+              receipt,
+              proposal: proposeWork(receipt, worksByCode, works, invoiceWorkIds),
+              links,
+              unmatchedReferences,
+              ambiguousReferences,
+            };
+          });
 
-          const paymentRows = judged.map(({ receipt, proposal }, index) => ({
-            id: paymentIds[index] as string,
-            organisation_id: organisationId,
-            tally_guid: receipt.voucher.guid,
-            tally_alterid: receipt.voucher.alterId,
-            tally_voucher_number: receipt.voucher.voucherNumber,
-            tally_voucher_date: receipt.voucher.date,
-            tally_narration: receipt.voucher.narration,
-            tally_party_ledger: receipt.voucher.partyLedger,
-            counterparty_ledger: receipt.counterpartyLedger,
-            contact_id: receipt.contactId,
-            contact_match_method: receipt.contactMatchMethod,
-            work_id: proposal?.workId ?? null,
-            work_link_method: proposal?.method ?? null,
-            gross_amount: receipt.gross,
-            net_amount: receipt.net,
-            deduction_total: receipt.deductionTotal,
-            round_off_amount: receipt.roundOff,
-            source_fields: tx.json(receipt.voucher.sourceFields as never),
-            source_filename: filename,
-            imported_by_user_id: user.id,
-          }));
+          let importedPaymentCount = 0;
+          let importedDeductionCount = 0;
+          let importedInvoiceLinkCount = 0;
 
-          for (let index = 0; index < paymentRows.length; index += CHUNK) {
-            const rows = await tx<{ id: string }[]>`
+          if (commit && judged.length > 0) {
+            /** The ids minted here, in `judged` order, so the deduction
+             * lines and the allocations pair with their payment without
+             * depending on anything the database returns. A plain multi-row
+             * insert happens to return rows in order and PostgreSQL does
+             * not promise it; these are money rows, and pairing them by an
+             * ordering nobody guarantees is the kind of bug that shows up
+             * years later as one receipt wearing another's deductions. */
+            const paymentIds = judged.map(() => randomUUID());
+
+            const paymentRows = judged.map(({ receipt, proposal }, index) => ({
+              id: paymentIds[index] as string,
+              organisation_id: organisationId,
+              tally_guid: receipt.voucher.guid,
+              tally_alterid: receipt.voucher.alterId,
+              tally_voucher_number: receipt.voucher.voucherNumber,
+              tally_voucher_date: receipt.voucher.date,
+              tally_narration: receipt.voucher.narration,
+              tally_party_ledger: receipt.voucher.partyLedger,
+              counterparty_ledger: receipt.counterpartyLedger,
+              contact_id: receipt.contactId,
+              contact_match_method: receipt.contactMatchMethod,
+              work_id: proposal?.workId ?? null,
+              work_link_method: proposal?.method ?? null,
+              gross_amount: receipt.gross,
+              net_amount: receipt.net,
+              deduction_total: receipt.deductionTotal,
+              round_off_amount: receipt.roundOff,
+              source_fields: tx.json(receipt.voucher.sourceFields as never),
+              source_filename: filename,
+              imported_by_user_id: user.id,
+            }));
+
+            for (let index = 0; index < paymentRows.length; index += CHUNK) {
+              const rows = await tx<{ id: string }[]>`
               insert into imported_payments ${tx(paymentRows.slice(index, index + CHUNK))}
               -- A re-import adds the receipts that are missing and
               -- collides on the ones that are not, which is what makes
@@ -759,242 +849,253 @@ export function registerTallyReceiptRoutes(
               on conflict (organisation_id, tally_guid) do nothing
               returning id
             `.catch(rethrowWriteRefusal);
-            importedPaymentCount += rows.length;
-          }
-          // WHICH PAYMENTS ACTUALLY LANDED. A re-import under a race can
-          // collide on the unique key, and writing that payment's heads
-          // against an id no row carries would fail the foreign key
-          // mid-commit with nothing named. So the children are written
-          // for the ids that exist.
-          const landed = await tx<{ id: string }[]>`
+              importedPaymentCount += rows.length;
+            }
+            // WHICH PAYMENTS ACTUALLY LANDED. A re-import under a race can
+            // collide on the unique key, and writing that payment's heads
+            // against an id no row carries would fail the foreign key
+            // mid-commit with nothing named. So the children are written
+            // for the ids that exist.
+            const landed = await tx<{ id: string }[]>`
             select id from imported_payments
             where id = any(${tx.array(paymentIds)}::uuid[])
           `;
-          const landedIds = new Set(landed.map((row) => row.id));
+            const landedIds = new Set(landed.map((row) => row.id));
 
-          const deductionRows = judged.flatMap(({ receipt }, index) => {
-            const paymentId = paymentIds[index] as string;
-            if (!landedIds.has(paymentId)) return [];
-            return receipt.deductions.map((line) => ({
-              organisation_id: organisationId,
-              imported_payment_id: paymentId,
-              head: line.head,
-              tally_ledger_name: line.tallyLedgerName,
-              amount: line.amount,
-              amount_missing: line.amountMissing,
-              pl_code: line.plCode,
-            }));
-          });
-          for (let index = 0; index < deductionRows.length; index += CHUNK) {
-            const rows = await tx<{ id: string }[]>`
+            const deductionRows = judged.flatMap(({ receipt }, index) => {
+              const paymentId = paymentIds[index] as string;
+              if (!landedIds.has(paymentId)) return [];
+              return receipt.deductions.map((line) => ({
+                organisation_id: organisationId,
+                imported_payment_id: paymentId,
+                head: line.head,
+                tally_ledger_name: line.tallyLedgerName,
+                amount: line.amount,
+                amount_missing: line.amountMissing,
+                pl_code: line.plCode,
+              }));
+            });
+            for (let index = 0; index < deductionRows.length; index += CHUNK) {
+              const rows = await tx<{ id: string }[]>`
               insert into imported_payment_deductions ${tx(deductionRows.slice(index, index + CHUNK))}
               on conflict (organisation_id, imported_payment_id, tally_ledger_name)
                 do nothing
               returning id
             `.catch(rethrowWriteRefusal);
-            importedDeductionCount += rows.length;
-          }
+              importedDeductionCount += rows.length;
+            }
 
-          const linkRows = judged.flatMap(({ links }, index) => {
-            const paymentId = paymentIds[index] as string;
-            if (!landedIds.has(paymentId)) return [];
-            return links.map((link) => ({
-              organisation_id: organisationId,
-              imported_payment_id: paymentId,
-              imported_invoice_id: link.invoiceId,
-              tally_bill_reference: link.reference.slice(0, 200).trim(),
-              // NO AMOUNT. TallyPrime states a per-bill figure only on
-              // some allocations, and this reader does not keep it — see
-              // 0120 § 3: null means the export stated none, and putting
-              // the receipt's own total here would be inventing it.
-              amount: null,
-              match_method: 'exact_number',
-            }));
-          });
-          for (let index = 0; index < linkRows.length; index += CHUNK) {
-            const rows = await tx<{ id: string }[]>`
+            const linkRows = judged.flatMap(({ links }, index) => {
+              const paymentId = paymentIds[index] as string;
+              if (!landedIds.has(paymentId)) return [];
+              return links.map((link) => ({
+                organisation_id: organisationId,
+                imported_payment_id: paymentId,
+                imported_invoice_id: link.invoiceId,
+                tally_bill_reference: link.reference.slice(0, 200).trim(),
+                // NO AMOUNT. TallyPrime states a per-bill figure only on
+                // some allocations, and this reader does not keep it — see
+                // 0120 § 3: null means the export stated none, and putting
+                // the receipt's own total here would be inventing it.
+                amount: null,
+                match_method: 'exact_number',
+              }));
+            });
+            for (let index = 0; index < linkRows.length; index += CHUNK) {
+              const rows = await tx<{ id: string }[]>`
               insert into imported_payment_invoice_links ${tx(linkRows.slice(index, index + CHUNK))}
               on conflict (organisation_id, imported_payment_id, imported_invoice_id)
                 do nothing
               returning id
             `.catch(rethrowWriteRefusal);
-            importedInvoiceLinkCount += rows.length;
-          }
-
-          // ONE AUDIT EVENT FOR THE IMPORT, not one per receipt. A
-          // receipt is not a document somebody filed here, and 755 events
-          // per import would bury the timeline that answers what a person
-          // did. The file, the counts and the refusals are the act.
-          await audit(
-            tx,
-            organisationId,
-            user.id,
-            'imported_payment.imported',
-            'imported_payments',
-            null,
-            {
-              filename,
-              voucherCount: read.voucherCount,
-              receiptCount: read.receiptCount,
-              paymentCount: importedPaymentCount,
-              deductionCount: importedDeductionCount,
-              invoiceLinkCount: importedInvoiceLinkCount,
-              refusedCount: read.refused.length,
-              skippedCount: read.skipped.length,
-              unlinkedCount: judged.filter(({ proposal }) => proposal === null).length,
-            },
-          );
-        }
-
-        /* --- the report ------------------------------------------------ */
-
-        const workCodeById = new Map(works.map((work) => [work.id, work.workCode]));
-        const judgedByGuid = new Map(
-          judged.map((entry) => [entry.receipt.voucher.guid, entry]),
-        );
-
-        const receipts: TallyReceiptProposal[] = [];
-        const headTotals = new Map<
-          ImportedDeductionHead,
-          { paise: bigint; lines: number }
-        >();
-        let grossPaise = 0n;
-        let netPaise = 0n;
-        let deductionPaise = 0n;
-        let roundOffPaise = 0n;
-        let roundOffLineCount = 0;
-        let missingAmountLineCount = 0;
-        let uncensusedLedgerLineCount = 0;
-        let invoiceLinkCount = 0;
-        let unmatchedBillReferenceCount = 0;
-
-        for (const receipt of read.receipts) {
-          const entry = judgedByGuid.get(receipt.voucher.guid);
-          const alreadyRead = entry === undefined;
-          if (!alreadyRead) {
-            grossPaise += toPaise(receipt.gross);
-            netPaise += toPaise(receipt.net);
-            deductionPaise += toPaise(receipt.deductionTotal);
-            roundOffPaise += toPaise(receipt.roundOff);
-            roundOffLineCount += receipt.roundOffLineCount;
-            uncensusedLedgerLineCount += receipt.uncensusedLedgerLines;
-            invoiceLinkCount += entry.links.length;
-            unmatchedBillReferenceCount += entry.unmatchedReferences;
-            for (const line of receipt.deductions) {
-              const bucket = headTotals.get(line.head) ?? { paise: 0n, lines: 0 };
-              headTotals.set(line.head, {
-                paise: bucket.paise + toPaise(line.amount),
-                lines: bucket.lines + 1,
-              });
-              if (line.amountMissing) missingAmountLineCount += 1;
+              importedInvoiceLinkCount += rows.length;
             }
-          }
-          const proposal = entry?.proposal ?? null;
-          receipts.push({
-            tallyGuid: receipt.voucher.guid,
-            voucherNumber: receipt.voucher.voucherNumber,
-            voucherDate: receipt.voucher.date,
-            counterpartyLedger: receipt.counterpartyLedger,
-            gross: receipt.gross,
-            net: receipt.net,
-            deductionTotal: receipt.deductionTotal,
-            outcome: alreadyRead ? 'already_read' : 'imported',
-            reason: null,
-            workCode:
-              proposal === null ? null : (workCodeById.get(proposal.workId) ?? null),
-            workLinkMethod: proposal?.method ?? null,
-            invoiceLinkCount: entry?.links.length ?? 0,
-            missingAmountCount: receipt.deductions.filter((line) => line.amountMissing)
-              .length,
-            heads: receipt.deductions.map((line) => ({
-              head: line.head,
-              tallyLedgerName: line.tallyLedgerName,
-              amount: line.amount,
-              amountMissing: line.amountMissing,
-            })),
-          });
-        }
-        for (const skip of read.skipped) {
-          receipts.push({
-            tallyGuid: skip.voucher.guid,
-            voucherNumber: skip.voucher.voucherNumber,
-            voucherDate: skip.voucher.date,
-            counterpartyLedger: skip.voucher.partyLedger,
-            gross: '0.00',
-            net: '0.00',
-            deductionTotal: '0.00',
-            outcome: 'skipped',
-            reason:
-              skip.reason === 'bank_party'
-                ? 'The party is a bank, so this is a loan drawdown, a deposit or EMD refund, or an FDR maturity rather than a collection. Wave T4 reads these.'
-                : 'This receipt carries no deduction at all — a plain collection, an advance or a refund. Wave T4 reads these.',
-            workCode: null,
-            workLinkMethod: null,
-            invoiceLinkCount: 0,
-            missingAmountCount: 0,
-            heads: [],
-          });
-        }
-        for (const refusal of read.refused) {
-          receipts.push({
-            tallyGuid: refusal.voucher.guid,
-            voucherNumber: refusal.voucher.voucherNumber,
-            voucherDate: refusal.voucher.date,
-            counterpartyLedger: refusal.voucher.partyLedger,
-            gross: '0.00',
-            net: '0.00',
-            deductionTotal: '0.00',
-            outcome: 'refused',
-            reason: refusal.reason.slice(0, 300),
-            workCode: null,
-            workLinkMethod: null,
-            invoiceLinkCount: 0,
-            missingAmountCount: 0,
-            heads: [],
-          });
-        }
 
-        return {
-          mode: request.query.mode,
-          filename,
-          voucherCount: read.voucherCount,
-          receiptCount: read.receiptCount,
-          cancelledCount: read.cancelled.length,
-          optionalCount: read.optional.length,
-          bankPartyCount: read.skipped.filter((skip) => skip.reason === 'bank_party')
-            .length,
-          noDeductionCount: read.skipped.filter(
-            (skip) => skip.reason === 'no_deduction',
-          ).length,
-          importableCount: judged.length,
-          alreadyReadCount: read.receipts.length - judged.length,
-          refusedCount: read.refused.length,
-          workLinkedCount: judged.filter(({ proposal }) => proposal !== null).length,
-          unlinkedCount: judged.filter(({ proposal }) => proposal === null).length,
-          matchedContactCount: judged.filter(
-            ({ receipt }) => receipt.contactId !== null,
-          ).length,
-          invoiceLinkCount,
-          unmatchedBillReferenceCount,
-          missingAmountLineCount,
-          roundOffLineCount,
-          roundOffTotal: paiseText(roundOffPaise),
-          uncensusedLedgerLineCount,
-          grossTotal: paiseText(grossPaise),
-          netTotal: paiseText(netPaise),
-          deductionTotal: paiseText(deductionPaise),
-          heads: HEAD_ORDER.map((head) => ({
-            head,
-            amount: paiseText(headTotals.get(head)?.paise ?? 0n),
-            lineCount: headTotals.get(head)?.lines ?? 0,
-          })),
-          importedPaymentCount,
-          importedDeductionCount,
-          importedInvoiceLinkCount,
-          receipts,
-          refusals: read.refusals.map((refusal) => ({ ...refusal })),
-        };
-      });
+            // ONE AUDIT EVENT FOR THE IMPORT, not one per receipt. A
+            // receipt is not a document somebody filed here, and 755 events
+            // per import would bury the timeline that answers what a person
+            // did. The file, the counts and the refusals are the act.
+            await audit(
+              tx,
+              organisationId,
+              user.id,
+              'imported_payment.imported',
+              'imported_payments',
+              null,
+              {
+                filename,
+                voucherCount: read.voucherCount,
+                receiptCount: read.receiptCount,
+                paymentCount: importedPaymentCount,
+                deductionCount: importedDeductionCount,
+                invoiceLinkCount: importedInvoiceLinkCount,
+                refusedCount: read.refused.length,
+                skippedCount: read.skipped.length,
+                unlinkedCount: judged.filter(({ proposal }) => proposal === null)
+                  .length,
+              },
+            );
+          }
+
+          /* --- the report ------------------------------------------------ */
+
+          const workCodeById = new Map(works.map((work) => [work.id, work.workCode]));
+          const judgedByGuid = new Map(
+            judged.map((entry) => [entry.receipt.voucher.guid, entry]),
+          );
+
+          const receipts: TallyReceiptProposal[] = [];
+          const headTotals = new Map<
+            ImportedDeductionHead,
+            { paise: bigint; lines: number }
+          >();
+          let grossPaise = 0n;
+          let netPaise = 0n;
+          let deductionPaise = 0n;
+          let roundOffPaise = 0n;
+          let roundOffLineCount = 0;
+          let missingAmountLineCount = 0;
+          let invoiceLinkCount = 0;
+          let unmatchedBillReferenceCount = 0;
+          let ambiguousBillReferenceCount = 0;
+
+          for (const receipt of read.receipts) {
+            const entry = judgedByGuid.get(receipt.voucher.guid);
+            const alreadyRead = entry === undefined;
+            if (!alreadyRead) {
+              grossPaise += toPaise(receipt.gross);
+              netPaise += toPaise(receipt.net);
+              deductionPaise += toPaise(receipt.deductionTotal);
+              roundOffPaise += toPaise(receipt.roundOff);
+              roundOffLineCount += receipt.roundOffLineCount;
+              invoiceLinkCount += entry.links.length;
+              unmatchedBillReferenceCount += entry.unmatchedReferences;
+              ambiguousBillReferenceCount += entry.ambiguousReferences;
+              for (const line of receipt.deductions) {
+                const bucket = headTotals.get(line.head) ?? { paise: 0n, lines: 0 };
+                headTotals.set(line.head, {
+                  paise: bucket.paise + toPaise(line.amount),
+                  lines: bucket.lines + 1,
+                });
+                if (line.amountMissing) missingAmountLineCount += 1;
+              }
+            }
+            const proposal = entry?.proposal ?? null;
+            receipts.push({
+              tallyGuid: receipt.voucher.guid,
+              voucherNumber: receipt.voucher.voucherNumber,
+              voucherDate: receipt.voucher.date,
+              counterpartyLedger: receipt.counterpartyLedger,
+              gross: receipt.gross,
+              net: receipt.net,
+              deductionTotal: receipt.deductionTotal,
+              outcome: alreadyRead ? 'already_read' : 'imported',
+              reason: null,
+              workCode:
+                proposal === null ? null : (workCodeById.get(proposal.workId) ?? null),
+              workLinkMethod: proposal?.method ?? null,
+              invoiceLinkCount: entry?.links.length ?? 0,
+              missingAmountCount: receipt.deductions.filter(
+                (line) => line.amountMissing,
+              ).length,
+              heads: receipt.deductions.map((line) => ({
+                head: line.head,
+                tallyLedgerName: line.tallyLedgerName,
+                amount: line.amount,
+                amountMissing: line.amountMissing,
+              })),
+            });
+          }
+          for (const skip of read.skipped) {
+            receipts.push({
+              tallyGuid: skip.voucher.guid,
+              voucherNumber: skip.voucher.voucherNumber,
+              voucherDate: skip.voucher.date,
+              counterpartyLedger: skip.voucher.partyLedger,
+              gross: '0.00',
+              net: '0.00',
+              deductionTotal: '0.00',
+              outcome: 'skipped',
+              reason:
+                skip.reason === 'bank_party'
+                  ? 'The party is a bank, so this is a loan drawdown, a deposit or EMD refund, or an FDR maturity rather than a collection. Wave T4 reads these.'
+                  : 'This receipt carries no deduction at all — a plain collection, an advance or a refund. Wave T4 reads these.',
+              workCode: null,
+              workLinkMethod: null,
+              invoiceLinkCount: 0,
+              missingAmountCount: 0,
+              heads: [],
+            });
+          }
+          for (const refusal of read.refused) {
+            receipts.push({
+              tallyGuid: refusal.voucher.guid,
+              voucherNumber: refusal.voucher.voucherNumber,
+              voucherDate: refusal.voucher.date,
+              counterpartyLedger: refusal.voucher.partyLedger,
+              gross: '0.00',
+              net: '0.00',
+              deductionTotal: '0.00',
+              outcome: 'refused',
+              reason: refusal.reason.slice(0, 300),
+              workCode: null,
+              workLinkMethod: null,
+              invoiceLinkCount: 0,
+              missingAmountCount: 0,
+              heads: [],
+            });
+          }
+
+          return {
+            mode: request.query.mode,
+            filename,
+            voucherCount: read.voucherCount,
+            receiptCount: read.receiptCount,
+            cancelledCount: read.cancelled.length,
+            optionalCount: read.optional.length,
+            bankPartyCount: read.skipped.filter((skip) => skip.reason === 'bank_party')
+              .length,
+            noDeductionCount: read.skipped.filter(
+              (skip) => skip.reason === 'no_deduction',
+            ).length,
+            importableCount: judged.length,
+            alreadyReadCount: read.receipts.length - judged.length,
+            refusedCount: read.refused.length,
+            workLinkedCount: judged.filter(({ proposal }) => proposal !== null).length,
+            unlinkedCount: judged.filter(({ proposal }) => proposal === null).length,
+            matchedContactCount: judged.filter(
+              ({ receipt }) => receipt.contactId !== null,
+            ).length,
+            invoiceLinkCount,
+            unmatchedBillReferenceCount,
+            ambiguousBillReferenceCount,
+            missingAmountLineCount,
+            roundOffLineCount,
+            roundOffTotal: paiseText(roundOffPaise),
+            // FINDING 4: every one of these refused its voucher rather
+            // than booking to the `other` bucket, so this counts vouchers
+            // and the remedy is one fresh masters export.
+            uncensusedLedgerRefusalCount: read.refused.filter(
+              (refusal) => refusal.kind === 'uncensused_ledger',
+            ).length,
+            grossTotal: paiseText(grossPaise),
+            netTotal: paiseText(netPaise),
+            deductionTotal: paiseText(deductionPaise),
+            heads: HEAD_ORDER.map((head) => ({
+              head,
+              amount: paiseText(headTotals.get(head)?.paise ?? 0n),
+              lineCount: headTotals.get(head)?.lines ?? 0,
+            })),
+            importedPaymentCount,
+            importedDeductionCount,
+            importedInvoiceLinkCount,
+            receipts,
+            refusals: read.refusals.map((refusal) => ({ ...refusal })),
+          };
+        });
+      } catch (cause: unknown) {
+        rethrowWriteRefusal(cause);
+      }
     },
   );
 }

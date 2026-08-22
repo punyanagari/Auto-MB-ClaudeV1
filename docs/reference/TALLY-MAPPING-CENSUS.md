@@ -465,7 +465,7 @@ Mapping the deduction heads onto migration 0114's five closed heads:
 | 0114 head | Tally source | Deduction lines |
 | --- | --- | ---: |
 | `gst_tds` | `GST- TDS` group (CGST/SGST/IGST TDS) | 1,173 |
-| `income_tax_tds` | `Tds on Railway Bills` + `TDS & SAT AY <year>` groups + the IT surcharge head | 793 |
+| `income_tax_tds` | `Tds on Railway Bills` + `TDS & SAT AY <year>` groups (~~+ the IT surcharge head~~ — see below) | 793 |
 | `security_deposit` | `Railway Security Deposits` group (`SD <Division> PL-<code>`) | 536 |
 | `retention` | **nothing** — no ledger in the file contains "retention" | 0 |
 | `liquidated_damages` | the `Contracual Deduction` ledger (sic), by the owner's ruling of 23 Aug 2026 on question 14 | 240 |
@@ -479,6 +479,17 @@ legal 23, water cess 20, and 12 more with ≤7 lines each (including five
 lines where a railway customer ledger itself appears on the debit side,
 and one `Withheld with <Division> PL-<code>` under `Deposits (Asset)` —
 the closest thing left in the file to a retention head).
+
+**The IT surcharge is not a head of its own** — corrected 23 Aug 2026,
+when wave T3 checked the export for it. All three surcharge ledgers
+(`@12% Surcharge on IT`, `Surcharge @12% on IT`, `Surcharge @12% IT AY
+<year>`) sit UNDER a `TDS & SAT AY <year>` group, so the assessment-year
+groups already carry them and the "+" above described a head that does
+not exist. Nothing in the mapping changes; the wording did.
+
+Two of those assessment-year groups sit under `Income Tax Provisions`
+(a liability) and the rest under `TDS & SAT Paid Asset`, which is why the
+group NAME rather than its root is what the mapping matches on.
 
 **Line counts differ slightly between this census and T3's dry run** —
 1,173 GST TDS here against 1,169 there, 536 security deposit against 543
@@ -645,3 +656,5 @@ file stays what it is: the survey that prompted the question.
     **Ruled:** Skipped, and counted by voucher number in the import report.
 23. Tally holds sales from FY 2020-21 while Zoho begins Jan 2023; do the 370 pre-Zoho Tally invoices (₹47.49 crore) belong in the historical register too, or does billing history start at Zoho?
     **Ruled:** They join the historical register, which gains a source discriminator (`tally` / `zoho`). Where both systems hold the same invoice, **Zoho is authoritative and Tally is provenance**.
+24. Wave T3's import writes money rows. Does it take the `import` authority every other import here takes, or the `payments` authority as well? (Raised by the wave rather than by this census, and answered on the same terms.)
+    **Ruled 23 Aug 2026:** BOTH. Pointing a file at a register is clerical; bringing in what a railway paid and what it withheld is a money decision, and `canManagePayments` is what gates those everywhere else. The consequence is intended: a member who can import invoices may find they cannot import receipts.

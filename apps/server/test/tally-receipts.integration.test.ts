@@ -348,27 +348,44 @@ async function counts(): Promise<{
 /** A census row, written directly: the masters import is proved next door
  * in `tally-masters.integration.test.ts`, and what is under test here is
  * what the receipts do with what it holds. */
-async function seedLedger(spec: {
+interface LedgerSpec {
   readonly name: string;
   readonly groupPath: readonly string[];
   readonly classification?: string;
   readonly plCode?: string;
   readonly contactId?: string;
-}): Promise<void> {
-  await admin`
-    insert into tally_ledgers (
-      organisation_id, tally_guid, ledger_name, parent_group, group_path,
-      classification, pl_code, proposed_contact_id, proposed_contact_method,
-      source_filename, imported_by_user_id
-    )
-    values (
-      ${organisationId}, ${`guid-${spec.name}`}, ${spec.name},
-      ${spec.groupPath[0] ?? ''}, ${admin.array([...spec.groupPath])}::text[],
-      ${spec.classification ?? 'other'}, ${spec.plCode ?? null},
-      ${spec.contactId ?? null}, ${spec.contactId === undefined ? null : 'name'},
-      'Masters.xml', ${ownerUserId}
-    )
-  `;
+}
+
+/**
+ * The census, written the way an import writes it: EVERY ROW IN ONE
+ * TRANSACTION.
+ *
+ * That is not tidiness. `last_seen_at` defaults to `now()`, which is the
+ * TRANSACTION timestamp, and the route reads the latest census as
+ * `last_seen_at = (select max(last_seen_at) …)` — 0118's pinned rule. Rows
+ * seeded one statement at a time therefore carry a dozen different stamps
+ * and only the last one is "the census", which is exactly the shape a real
+ * masters import never produces and a fixture produces by accident.
+ */
+async function seedCensus(ledgers: readonly LedgerSpec[]): Promise<void> {
+  await admin.begin(async (tx) => {
+    for (const spec of ledgers) {
+      await tx`
+        insert into tally_ledgers (
+          organisation_id, tally_guid, ledger_name, parent_group, group_path,
+          classification, pl_code, proposed_contact_id, proposed_contact_method,
+          source_filename, imported_by_user_id
+        )
+        values (
+          ${organisationId}, ${`guid-${spec.name}`}, ${spec.name},
+          ${spec.groupPath[0] ?? ''}, ${tx.array([...spec.groupPath])}::text[],
+          ${spec.classification ?? 'other'}, ${spec.plCode ?? null},
+          ${spec.contactId ?? null}, ${spec.contactId === undefined ? null : 'name'},
+          'Masters.xml', ${ownerUserId}
+        )
+      `;
+    }
+  });
 }
 
 beforeAll(async () => {
@@ -476,51 +493,50 @@ describe('the ledger census is a precondition', () => {
     expect(response.json<{ code: string }>().code).toBe('TALLY_LEDGER_CENSUS_REQUIRED');
 
     // Now the census exists, and every later test in this file reads it.
-    await seedLedger({
-      name: 'Fixture Division West',
-      groupPath: ['Railway Authority', 'Sundry Debtors', 'Current Assets'],
-      classification: 'customer',
-    });
-    await seedLedger({
-      name: 'Fixture Division East',
-      groupPath: ['Railway Authority', 'Sundry Debtors', 'Current Assets'],
-      classification: 'customer',
-    });
-    await seedLedger({
-      name: 'Fixture Bank Current A/c',
-      groupPath: ['Bank Accounts', 'Current Assets'],
-    });
-    await seedLedger({
-      name: 'SD Fixture West PL-4242',
-      groupPath: ['Railway Security Deposits', 'Current Assets'],
-      classification: 'instrument',
-      plCode: 'PL-4242',
-    });
-    await seedLedger({
-      name: 'TDS on Railway Bills AY 24-25',
-      groupPath: ['Tds on Railway Bills', 'Current Assets'],
-    });
-    await seedLedger({
-      name: 'CGST TDS 1%',
-      groupPath: ['GST- TDS', 'Duties & Taxes', 'Current Liabilities'],
-    });
-    await seedLedger({
-      name: 'SGST TDS 1%',
-      groupPath: ['GST- TDS', 'Duties & Taxes', 'Current Liabilities'],
-    });
-    await seedLedger({
-      name: 'Bill Copy',
-      groupPath: ['Contractual Deductions', 'Indirect Expenses'],
-    });
-    await seedLedger({
-      name: 'Contracual Deduction',
-      groupPath: ['Contractual Deductions', 'Indirect Expenses'],
-    });
-    await seedLedger({ name: 'Fixture Round Off', groupPath: ['Indirect Expenses'] });
-    await seedLedger({
-      name: 'Fixture Unsecured Loan',
-      groupPath: ['Unsecured Loan', 'Loans (Liability)'],
-    });
+    await seedCensus([
+      {
+        name: 'Fixture Division West',
+        groupPath: ['Railway Authority', 'Sundry Debtors', 'Current Assets'],
+        classification: 'customer',
+      },
+      {
+        name: 'Fixture Division East',
+        groupPath: ['Railway Authority', 'Sundry Debtors', 'Current Assets'],
+        classification: 'customer',
+      },
+      {
+        name: 'Fixture Bank Current A/c',
+        groupPath: ['Bank Accounts', 'Current Assets'],
+      },
+      {
+        name: 'SD Fixture West PL-4242',
+        groupPath: ['Railway Security Deposits', 'Current Assets'],
+        classification: 'instrument',
+        plCode: 'PL-4242',
+      },
+      {
+        name: 'TDS on Railway Bills AY 24-25',
+        groupPath: ['Tds on Railway Bills', 'Current Assets'],
+      },
+      {
+        name: 'CGST TDS 1%',
+        groupPath: ['GST- TDS', 'Duties & Taxes', 'Current Liabilities'],
+      },
+      {
+        name: 'SGST TDS 1%',
+        groupPath: ['GST- TDS', 'Duties & Taxes', 'Current Liabilities'],
+      },
+      { name: 'Bill Copy', groupPath: ['Contractual Deductions', 'Indirect Expenses'] },
+      {
+        name: 'Contracual Deduction',
+        groupPath: ['Contractual Deductions', 'Indirect Expenses'],
+      },
+      { name: 'Fixture Round Off', groupPath: ['Indirect Expenses'] },
+      {
+        name: 'Fixture Unsecured Loan',
+        groupPath: ['Unsecured Loan', 'Loans (Liability)'],
+      },
+    ]);
   });
 });
 
@@ -719,6 +735,257 @@ describe('committing the receipt export', () => {
     expect(result.importedPaymentCount).toBe(0);
     expect(result.alreadyReadCount).toBe(4);
     expect(await counts()).toStrictEqual(before);
+  });
+});
+
+describe("the coordinator's review of #180", () => {
+  it('classifies by the LATEST census only (finding 1)', async () => {
+    // A ledger NAME reused after a re-import is the case: the stale row
+    // says `Reused Ledger Name` is a bank, the current export says
+    // nothing about it at all. Reading the table unfiltered would net the
+    // money to a bank that is no longer in the chart of accounts; reading
+    // the latest census leaves the ledger uncensused, which refuses the
+    // voucher by name (finding 4).
+    await admin`
+      insert into tally_ledgers (
+        organisation_id, tally_guid, ledger_name, parent_group, group_path,
+        classification, source_filename, imported_by_user_id, last_seen_at
+      )
+      values (
+        ${organisationId}, ${`guid-stale-${runId}`}, 'Reused Ledger Name',
+        'Bank Accounts', ${admin.array(['Bank Accounts', 'Current Assets'])}::text[],
+        'other', 'Masters-old.xml', ${ownerUserId}, now() - interval '2 days'
+      )
+    `;
+    const response = await importReceipts(
+      envelope(
+        voucher({
+          guid: `guid-stale-census-${runId}`,
+          number: 'R-201',
+          legs: [
+            { ledger: 'Fixture Division West', amount: '1000.00' },
+            { ledger: 'Fixture Bank Current A/c', amount: '-900.00' },
+            { ledger: 'Reused Ledger Name', amount: '-100.00' },
+          ],
+        }),
+      ),
+      'preview',
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const result = response.json<TallyReceiptImportResult>();
+    expect(result.importableCount).toBe(0);
+    expect(result.uncensusedLedgerRefusalCount).toBe(1);
+    expect(
+      result.receipts.find((row) => row.voucherNumber === 'R-201')?.reason,
+    ).toMatch(/Reused Ledger Name/);
+  });
+
+  it('links no invoice where one reference matches two (finding 6)', async () => {
+    // `squeeze` removes punctuation, so `123/A` and `123-A` are one key.
+    // Linking both would file one payment against two bills; linking the
+    // first would pick by read order. Neither happens.
+    for (const number of ['INV-123/A', 'INV-123-A']) {
+      await admin`
+        insert into imported_invoices (
+          organisation_id, source, zoho_invoice_id, invoice_number, invoice_date,
+          customer_name, sub_total, total, raw_row, imported_by_user_id
+        )
+        values (
+          ${organisationId}, 'zoho', ${`z-${number}-${runId}`}, ${number},
+          '2024-04-01', 'Fixture Division West', '1.00', '1.00', '{}'::jsonb,
+          ${ownerUserId}
+        )
+      `;
+    }
+    const response = await importReceipts(
+      envelope(
+        voucher({
+          guid: `guid-ambiguous-${runId}`,
+          number: 'R-202',
+          legs: [
+            {
+              ledger: 'Fixture Division West',
+              amount: '1000.00',
+              bill: 'INV 123 A',
+            },
+            { ledger: 'Fixture Bank Current A/c', amount: '-900.00' },
+            { ledger: 'CGST TDS 1%', amount: '-100.00' },
+          ],
+        }),
+      ),
+      'preview',
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const result = response.json<TallyReceiptImportResult>();
+    expect(result.ambiguousBillReferenceCount).toBe(1);
+    expect(result.invoiceLinkCount).toBe(0);
+    expect(
+      result.receipts.find((row) => row.voucherNumber === 'R-202')?.invoiceLinkCount,
+    ).toBe(0);
+  });
+
+  it('resolves the Work org-wide, whoever runs the import (finding 8)', async () => {
+    // The clerk holds no assignment on the fixture Work, so the old
+    // scoped resolution wrote a receipt with no Work for them and a
+    // linked one for the owner — the same file, two registers. The clerk
+    // is granted both authorities here and nothing else: the proposal
+    // must reach the same Work, and the report must name its CODE with
+    // no id to open.
+    await admin`
+      update organisation_memberships
+      set can_import_data = true, can_manage_payments = true
+      where organisation_id = ${organisationId} and role <> 'owner'
+    `;
+    try {
+      const response = await importReceipts(
+        envelope(
+          voucher({
+            guid: `guid-scope-${runId}`,
+            number: 'R-203',
+            legs: [
+              { ledger: 'Fixture Division West', amount: '1000.00' },
+              { ledger: 'Fixture Bank Current A/c', amount: '-900.00' },
+              { ledger: 'SD Fixture West PL-4242', amount: '-100.00' },
+            ],
+          }),
+        ),
+        'preview',
+        clerk,
+      );
+      expect(response.statusCode, response.body).toBe(200);
+      const result = response.json<TallyReceiptImportResult>();
+      const row = result.receipts.find((entry) => entry.voucherNumber === 'R-203');
+      expect(result.workLinkedCount).toBe(1);
+      expect(row?.workCode).toBe('PL-4242');
+      expect(row?.workLinkMethod).toBe('sd_ledger');
+    } finally {
+      // Handed back exactly as it was found: the wall below proves a
+      // writer holding NEITHER authority is refused, and a fixture that
+      // left the grant behind would prove it against the wrong member.
+      await admin`
+        update organisation_memberships
+        set can_import_data = false, can_manage_payments = false
+        where organisation_id = ${organisationId} and role <> 'owner'
+      `;
+    }
+  });
+
+  it('refuses a header whose heads are missing entirely, at commit (finding 3)', async () => {
+    // The row CHECK is satisfied — gross = net + deduction_total — and
+    // the line-side trigger never fires, having no lines to fire it. The
+    // header-side arm is what refuses a receipt asserting deductions with
+    // nothing saying what they were.
+    await expect(
+      admin.begin(async (tx) => {
+        await tx`
+          insert into imported_payments (
+            organisation_id, tally_guid, tally_voucher_date, tally_party_ledger,
+            counterparty_ledger, gross_amount, net_amount, deduction_total,
+            source_filename, imported_by_user_id
+          )
+          values (
+            ${organisationId}, ${`guid-headless-${runId}`}, '2024-05-12',
+            'Fixture Division West', 'Fixture Division West',
+            1000.00, 900.00, 100.00, 'headless.xml', ${ownerUserId}
+          )
+        `;
+      }),
+    ).rejects.toThrow(/gross = net \+ heads/);
+  });
+
+  it('maps a deferred refusal that escapes at COMMIT to its named code (finding 2)', async () => {
+    // The route's per-statement catches cannot see a constraint that
+    // fires when the transaction ends. Proved through the wire: a
+    // duplicate head ledger is refused by the READER now, so the
+    // deferred arm is attacked directly and its mapping is asserted on
+    // the code the route answers with rather than on a 500.
+    const [payment] = await admin<{ id: string }[]>`
+      select id from imported_payments
+      where organisation_id = ${organisationId} and tally_guid = 'guid-conforming'
+    `;
+    await expect(
+      admin.begin(async (tx) => {
+        await tx`
+          insert into imported_payment_deductions (
+            organisation_id, imported_payment_id, head, tally_ledger_name, amount
+          )
+          values (
+            ${organisationId}, ${payment?.id ?? ''}, 'other', 'An Extra Head', 1.00
+          )
+        `;
+      }),
+    ).rejects.toThrow(/gross = net \+ heads/);
+  });
+
+  it('treats a receipt on a withdrawn Work as unlinked in effect (finding 7)', async () => {
+    const before = await authed(owner, {
+      method: 'GET',
+      url: '/api/imported-payments',
+      organisationId,
+    });
+    const beforeUnlinked =
+      before.json<ImportedPaymentList>().totals?.unlinkedCount ?? 0;
+
+    // WITHDRAWN PAST THE GUARD, deliberately. 0071 admits a soft delete
+    // only through an approved supersession citing a live request, and
+    // driving that whole flow here would prove the approval module rather
+    // than this register. Replica mode is the same door
+    // `removeOrganisationResidue` uses on the same guards, and it is
+    // `set local`, so it cannot leak onto a pooled connection.
+    await admin.begin(async (tx) => {
+      await tx.unsafe(`set local session_replication_role = 'replica'`);
+      await tx`
+        update works set deleted_at = now()
+        where organisation_id = ${organisationId} and id = ${workId}
+      `;
+    });
+    try {
+      const after = await authed(owner, {
+        method: 'GET',
+        url: '/api/imported-payments',
+        organisationId,
+      });
+      const page = after.json<ImportedPaymentList>();
+      // The queue grew by the receipt whose Work was withdrawn.
+      expect(page.totals?.unlinkedCount).toBe(beforeUnlinked + 1);
+      const conforming = page.payments.find(
+        (row) => row.tallyGuid === 'guid-conforming',
+      );
+      // It still NAMES the Work — nothing edits an imported payment —
+      // and the register says the Work is gone.
+      expect(conforming?.workId).toBe(workId);
+      expect(conforming?.workWithdrawn).toBe(true);
+
+      const queue = await authed(owner, {
+        method: 'GET',
+        url: '/api/imported-payments?linked=unlinked',
+        organisationId,
+      });
+      expect(
+        queue
+          .json<ImportedPaymentList>()
+          .payments.some((row) => row.tallyGuid === 'guid-conforming'),
+      ).toBe(true);
+
+      const linked = await authed(owner, {
+        method: 'GET',
+        url: '/api/imported-payments?linked=linked',
+        organisationId,
+      });
+      expect(
+        linked
+          .json<ImportedPaymentList>()
+          .payments.some((row) => row.tallyGuid === 'guid-conforming'),
+      ).toBe(false);
+    } finally {
+      await admin.begin(async (tx) => {
+        await tx.unsafe(`set local session_replication_role = 'replica'`);
+        await tx`
+          update works set deleted_at = null
+          where organisation_id = ${organisationId} and id = ${workId}
+        `;
+      });
+    }
   });
 });
 

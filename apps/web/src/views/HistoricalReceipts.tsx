@@ -439,9 +439,14 @@ export function HistoricalReceipts({
                   </span>{' '}
                   fold into what was received rather than becoming a head.{' '}
                   <span className="font-mono tabular-nums">
-                    {String(preview.uncensusedLedgerLineCount)}
+                    {String(preview.uncensusedLedgerRefusalCount)}
                   </span>{' '}
-                  line(s) name a ledger the census does not hold and book to Other.
+                  receipt(s) name a ledger the current census does not hold and are
+                  refused until a fresh masters export is imported.{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(preview.ambiguousBillReferenceCount)}
+                  </span>{' '}
+                  bill reference(s) match more than one invoice and settle none.
                 </p>
 
                 <DataTable>
@@ -608,6 +613,22 @@ export function HistoricalReceipts({
                       <td className={wrapCell}>
                         {row.workId === null ? (
                           <span className="text-muted-foreground">None proposed</span>
+                        ) : row.workWithdrawn ? (
+                          /* THE WORK WAS WITHDRAWN AFTER THIS RECEIPT WAS
+                             FILED against it, and the row still names it
+                             because nothing edits an imported payment. A
+                             link would open a Work that is gone, so the
+                             code is drawn as text and the receipt counts
+                             in the queue above — the historical invoice
+                             register's own answer to the same case. */
+                          <>
+                            <span className="font-mono tabular-nums">
+                              {row.workCode} (withdrawn)
+                            </span>
+                            <span className="block text-muted-foreground">
+                              back in the queue for a Work
+                            </span>
+                          </>
                         ) : (
                           <>
                             <WorkLink

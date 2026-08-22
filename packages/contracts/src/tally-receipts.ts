@@ -128,6 +128,11 @@ export const ImportedPaymentSchema = Type.Object(
     contactName: Type.Union([Type.String({ maxLength: 300 }), Type.Null()]),
     workId: Type.Union([UuidSchema, Type.Null()]),
     workCode: Type.Union([Type.String({ maxLength: 40 }), Type.Null()]),
+    /** The Work this receipt names was WITHDRAWN after it was filed
+     * (0071). The row still names it — nothing edits an imported payment
+     * — so the register renders the code without a link and counts the
+     * receipt as unlinked, which is what ruling 17's queue means. */
+    workWithdrawn: Type.Boolean(),
     workLinkMethod: Type.Union([ImportedPaymentWorkLinkMethodSchema, Type.Null()]),
     /** What the railway settled, what reached the bank, and what the
      * difference was. `gross = net + deductionTotal`, always. */
@@ -312,10 +317,17 @@ export const TallyReceiptImportResultSchema = Type.Object(
      * total folded. */
     roundOffLineCount: Type.Integer({ minimum: 0 }),
     roundOffTotal: SignedMoneyStringSchema,
-    /** Deduction lines naming a ledger the ledger census (0118) does not
-     * hold, which book to `other` and are reported rather than silent:
-     * they are the lines a stale census would misfile. */
-    uncensusedLedgerLineCount: Type.Integer({ minimum: 0 }),
+    /** Receipts refused because a leg named a ledger the CURRENT census
+     * (0118, latest import) does not hold. Such a leg answers none of the
+     * three questions this import asks — bank, customer or head — and a
+     * second bank account missing from the census would otherwise book as
+     * a deduction on a receipt that still balanced. The remedy is one
+     * fresh masters export, so the count is worth its own line. */
+    uncensusedLedgerRefusalCount: Type.Integer({ minimum: 0 }),
+    /** Bill allocations whose reference matched MORE THAN ONE live
+     * invoice on the register. Ambiguity links nothing — the rule every
+     * proposal in this product keeps — and the count says how often. */
+    ambiguousBillReferenceCount: Type.Integer({ minimum: 0 }),
     /** What the file totals, whether or not it is committed. */
     grossTotal: NonNegativeMoneyStringSchema,
     netTotal: NonNegativeMoneyStringSchema,
