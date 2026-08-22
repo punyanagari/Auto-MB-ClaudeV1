@@ -33,13 +33,26 @@ import { paiseText, toPaise } from './money.js';
  * reports, across every Work at once, where opening a book per Work would be
  * hundreds of round trips to answer one screen.
  *
- * The two agree by construction where they overlap, because the clamps are
- * the same ones written out cumulatively: supply is never clamped (the
+ * The two agree by construction, and the agreement is structural rather
+ * than arithmetic luck. What an item has been BILLED is read from the
+ * finalized books' own stored lines — the amount and the per-stage
+ * quantities both — and what is still to bill is computed only on the
+ * LEFTOVER quantities, each rounded once, the way `computeStageAmounts`
+ * rounds a book's own delta. Executed is then billed plus leftover.
+ *
+ * Computing the whole entitlement from the cumulative quantity and
+ * subtracting what was billed looks equivalent and is not: three books
+ * billing one metre each at 0.334 round to 0.33 apiece and have billed
+ * 0.99, while `round(3 x 0.334, 2)` is 1.00, so the subtraction leaves a
+ * penny outstanding on a fully billed item that no book could ever raise.
+ * Sharing the books' rounding basis makes a fully billed item read exactly
+ * zero.
+ *
+ * The clamps are the books' own: supply is never clamped (the
  * excess-delivery toggle is the only ceiling and it lives on the challan),
- * installation and PAC are clamped to the sanctioned quantity, and every
- * stage amount is `round(quantity x rate x percent / 100, 2)` — PostgreSQL's
- * `round(numeric, 2)` and `roundDecimalString` both round half away from
- * zero, so the two arithmetics cannot drift.
+ * installation and PAC are clamped to the sanctioned quantity, and the
+ * final-bill stage is excluded entirely because a book earns it only when
+ * it is the FINAL book — a manual act, not a quantity threshold.
  */
 
 /* --- report A: one Work ---------------------------------------------- */
@@ -97,27 +110,64 @@ export const WORK_ITEM_POSITION_SQL = `
       on b.id = l.work_billing_baseline_id
     where b.work_id = $1 and b.locked_at is not null
   ),
+  -- What the finalized books have billed: the amount AND the per-stage
+  -- quantities they billed it on. The quantities are what make the
+  -- entitlement below share the books' own rounding basis.
   billed as (
-    select l.work_item_id, sum(l.line_total) as amount
+    select l.work_item_id,
+           sum(l.line_total) as amount,
+           sum(l.delta_supplied) as supplied,
+           sum(l.delta_installed) as installed,
+           sum(l.delta_pac) as pac
     from measurement_book_lines l
     join measurement_books mb on mb.id = l.measurement_book_id
     where mb.work_id = $1 and mb.status = 'finalized'
     group by l.work_item_id
   ),
+  -- The inspection position, on the DISPATCH GATE's own arithmetic.
+  --
+  -- c.agency = cl.agency is the join inspection_dispatch_shortfall makes,
+  -- and the reason it gives: a RITES certificate does not answer an RDSO
+  -- clause. Without it an item reads as covered by a certificate its own
+  -- clause never asked for.
+  --
+  -- certified additionally passes the shared
+  -- app_private.inspection_certificate_live, against the ORGANISATION's
+  -- today ($2) rather than UTC's — at 04:00 IST those are different days,
+  -- and the difference decides whether a lorry may leave. called is the
+  -- wider figure: what an agency has been offered, expired or not.
   called as (
     select ci.work_item_id,
            sum(ci.quantity) as called,
-           coalesce(sum(ci.quantity) filter (where c.status = 'closed'), 0) as passed
+           coalesce(sum(ci.quantity) filter (
+             where app_private.inspection_certificate_live(
+               c.status, c.certificate_valid_until,
+               (select app_private.organisation_today($2))
+             )
+           ), 0) as certified
     from inspection_call_items ci
     join inspection_calls c on c.id = ci.inspection_call_id
-    where ci.work_id = $1 and c.status <> 'cancelled'
+    join inspection_clauses cl on cl.work_item_id = ci.work_item_id
+    where ci.work_id = $1
+      and c.status <> 'cancelled'
+      and c.agency = cl.agency
     group by ci.work_item_id
   ),
   position as (
     select it.*,
            cl.agency, cl.inspection_quantity,
+           coalesce(cl.gates_dispatch, false) as gates_dispatch,
            coalesce(cd.called, 0)::numeric(18,3) as called_quantity,
-           coalesce(cd.passed, 0)::numeric(18,3) as passed_quantity,
+           coalesce(cd.certified, 0)::numeric(18,3) as certified_quantity,
+           -- What the books have already billed, per stage, PLUS the locked
+           -- baseline's opening position: together, the quantity a next
+           -- book would start from.
+           (coalesce(bd.supplied, 0) + coalesce(bl.prior_supplied, 0))
+             ::numeric(18,3) as billed_supplied,
+           (coalesce(bd.installed, 0) + coalesce(bl.prior_installed, 0))
+             ::numeric(18,3) as billed_installed,
+           (coalesce(bd.pac, 0) + coalesce(bl.prior_pac, 0))
+             ::numeric(18,3) as billed_pac,
            coalesce(bl.prior_supplied, 0)::numeric(18,3) as baseline_supplied,
            coalesce(bl.prior_installed, 0)::numeric(18,3) as baseline_installed,
            (coalesce(dv.quantity, 0) + coalesce(bl.prior_supplied, 0))::numeric(18,3)
@@ -174,36 +224,66 @@ export const WORK_ITEM_POSITION_SQL = `
          greatest(p.installed - p.sanctioned, 0)::numeric(18,3)::text
            as installed_above_sanctioned_quantity,
          p.agency,
-         p.inspection_quantity::text as inspection_quantity,
+         p.gates_dispatch,
+         p.inspection_quantity::text as inspection_lot_size,
          p.called_quantity::text as inspection_called_quantity,
-         p.passed_quantity::text as inspection_passed_quantity,
-         case when p.inspection_quantity is null then null
-              else greatest(p.inspection_quantity - p.called_quantity, 0)
+         p.certified_quantity::text as inspection_certified_quantity,
+         -- What still needs a live certificate before the whole sanctioned
+         -- quantity could be despatched. Measured against SANCTION, not
+         -- against the lot size: 0082 states outright that the lot size is
+         -- a hint the gate never reads, and an item whose contract inspects
+         -- in tens does not have ten left to inspect.
+         --
+         -- Null for a clause-less item, and null for a consignee clause:
+         -- that inspection happens after arrival, can never gate despatch,
+         -- and raises no calls to be covered by, so any figure here would
+         -- be the sanctioned quantity dressed up as a backlog.
+         case when p.agency is null or p.agency = 'consignee' then null
+              else greatest(p.sanctioned - p.certified_quantity, 0)
                      ::numeric(18,3)::text
          end as pending_inspection_quantity,
-         case when p.inspection_quantity is null then null
+         case when p.agency is null or p.agency = 'consignee' then null
               else round(
-                greatest(p.inspection_quantity - p.called_quantity, 0) * p.rate, 2
+                greatest(p.sanctioned - p.certified_quantity, 0) * p.rate, 2
               )::numeric(18,2)::text
          end as pending_inspection_value,
          p.billed_amount::text as billed_value,
-         -- Stage amounts, line-rounded then summed (rule R13), on the
-         -- cumulative quantities: supply unclamped, installation and PAC
-         -- clamped to sanction exactly as \`clampToSanctioned\` clamps each
-         -- book's delta.
+         -- What a NEXT Measurement Book would bill: the stage quantities the
+         -- books have not yet taken, each rounded once, exactly as
+         -- \`computeStageAmounts\` rounds a book's own delta (rule R13).
+         --
+         -- The leftover is the subject rather than the cumulative
+         -- entitlement, and the difference is a rounding ghost. Three books
+         -- billing one metre each at 0.334 round to 0.33 apiece and have
+         -- billed 0.99; \`round(3 x 0.334, 2)\` is 1.00, so re-deriving the
+         -- whole entitlement and subtracting leaves a penny outstanding on
+         -- a fully billed item that no book could ever raise. Computed this
+         -- way, a fully billed item reads exactly zero because its leftover
+         -- quantities are exactly zero.
+         --
+         -- Supply is unclamped (the excess-delivery toggle is the only
+         -- ceiling and it lives on the challan); installation and PAC clamp
+         -- to sanction, as \`clampToSanctioned\` clamps each book's delta.
+         -- The FINAL-BILL stage is absent: \`computeStageAmounts\` earns it
+         -- only on the final book, which is a manual act rather than a
+         -- quantity threshold, so nothing here can honestly claim it.
          case when p.pct_supply is null then null else (
-             round(p.delivered * p.rate * p.pct_supply / 100, 2)
-           + round(least(p.installed, p.sanctioned) * p.rate
-                     * p.pct_installation / 100, 2)
-           + round(least(p.certified, p.sanctioned) * p.rate * p.pct_pac / 100, 2)
-         )::text end as executed_value,
-         case when p.pct_supply is null then null else greatest((
-             round(p.delivered * p.rate * p.pct_supply / 100, 2)
-           + round(least(p.installed, p.sanctioned) * p.rate
-                     * p.pct_installation / 100, 2)
-           + round(least(p.certified, p.sanctioned) * p.rate * p.pct_pac / 100, 2)
-           - p.billed_amount
-         ), 0)::numeric(18,2)::text end as unbilled_executed_value
+             round(greatest(p.delivered - p.billed_supplied, 0)
+                     * p.rate * p.pct_supply / 100, 2)
+           + round(greatest(least(p.installed, p.sanctioned) - p.billed_installed, 0)
+                     * p.rate * p.pct_installation / 100, 2)
+           + round(greatest(least(p.certified, p.sanctioned) - p.billed_pac, 0)
+                     * p.rate * p.pct_pac / 100, 2)
+         )::numeric(18,2)::text end as unbilled_executed_value,
+         case when p.pct_supply is null then null else (
+             p.billed_amount
+           + round(greatest(p.delivered - p.billed_supplied, 0)
+                     * p.rate * p.pct_supply / 100, 2)
+           + round(greatest(least(p.installed, p.sanctioned) - p.billed_installed, 0)
+                     * p.rate * p.pct_installation / 100, 2)
+           + round(greatest(least(p.certified, p.sanctioned) - p.billed_pac, 0)
+                     * p.rate * p.pct_pac / 100, 2)
+         )::numeric(18,2)::text end as executed_value
   from position p
   order by p.item_number
 `;
@@ -230,9 +310,10 @@ interface WorkItemPositionRow {
   supplied_not_installed_value: string;
   installed_above_sanctioned_quantity: string;
   agency: WorksAnalysisInspectionAgency | null;
-  inspection_quantity: string | null;
+  gates_dispatch: boolean;
+  inspection_lot_size: string | null;
   inspection_called_quantity: string;
-  inspection_passed_quantity: string;
+  inspection_certified_quantity: string;
   pending_inspection_quantity: string | null;
   pending_inspection_value: string | null;
   billed_value: string;
@@ -278,12 +359,12 @@ const WORK_INSPECTION_SQL = `
   with rows as (${WORK_ITEM_POSITION_SQL})
   select agency,
          count(*)::text as item_count,
-         coalesce(sum(inspection_quantity::numeric), 0)::numeric(18,3)::text
-           as clause_quantity,
+         coalesce(sum(inspection_lot_size::numeric), 0)::numeric(18,3)::text
+           as lot_size_total,
          coalesce(sum(inspection_called_quantity::numeric), 0)::numeric(18,3)::text
            as called_quantity,
-         coalesce(sum(inspection_passed_quantity::numeric), 0)::numeric(18,3)::text
-           as passed_quantity,
+         coalesce(sum(inspection_certified_quantity::numeric), 0)::numeric(18,3)::text
+           as certified_quantity,
          coalesce(sum(pending_inspection_quantity::numeric), 0)::numeric(18,3)::text
            as pending_quantity,
          coalesce(sum(pending_inspection_value::numeric), 0)::numeric(18,2)::text
@@ -319,18 +400,29 @@ const WORK_BILLS_SQL = `
   order by p.bill_number
 `;
 
+/**
+ * The Work's payment totals.
+ *
+ * Received and deducted are UNCONDITIONED. Money that arrived is a fact and
+ * money the railway kept is a fact, and neither stops being one because the
+ * railway has not yet stated a figure for the bill — a filter there
+ * under-reports cash the organisation actually holds. The first cut carried
+ * that filter and it was wrong in principle even where 0067's guard makes it
+ * a no-op in practice.
+ *
+ * OUTSTANDING is the one figure that genuinely depends on the railway's
+ * amount, and it needs no filter: the view already answers NULL for a bill
+ * whose measurement is not closed, and `sum` skips nulls. `indeterminateBills`
+ * is what says how many bills are in that state, and the documents say so
+ * beside the total.
+ */
 const WORK_PAYMENT_TOTALS_SQL = `
   select count(*)::text as bill_count,
          coalesce(sum(p.railway_bill_amount), 0)::numeric(18,2)::text as railway_total,
-         coalesce(sum(p.received_total)
-                    filter (where p.railway_bill_amount is not null),
-                  0)::numeric(18,2)::text as received_total,
-         coalesce(sum(p.deduction_total)
-                    filter (where p.railway_bill_amount is not null),
-                  0)::numeric(18,2)::text as deduction_total,
-         coalesce(sum(p.received_total + p.deduction_total)
-                    filter (where p.railway_bill_amount is not null),
-                  0)::numeric(18,2)::text as settled_total,
+         coalesce(sum(p.received_total), 0)::numeric(18,2)::text as received_total,
+         coalesce(sum(p.deduction_total), 0)::numeric(18,2)::text as deduction_total,
+         coalesce(sum(p.received_total + p.deduction_total), 0)::numeric(18,2)::text
+           as settled_total,
          coalesce(sum(p.outstanding_amount), 0)::numeric(18,2)::text
            as outstanding_total,
          count(*) filter (where p.railway_bill_amount is null)::text
@@ -392,6 +484,10 @@ function divisionOf(codes: readonly string[] | null): {
 export async function readWorkAnalysis(
   tx: TransactionSql,
   workId: string,
+  /** Passed to `app_private.organisation_today` so "is this certificate
+   * live" is decided against the organisation's day, exactly as the
+   * dispatch gate decides it. */
+  organisationId: string,
 ): Promise<WorkAnalysisResponse | null> {
   const [work] = await tx<
     {
@@ -409,10 +505,12 @@ export async function readWorkAnalysis(
   `;
   if (work === undefined) return null;
 
-  const items = (await tx.unsafe(WORK_ITEM_POSITION_SQL, [
-    workId,
-  ])) as unknown as WorkItemPositionRow[];
-  const [totals] = (await tx.unsafe(WORK_TOTALS_SQL, [workId])) as unknown as {
+  const scope: string[] = [workId, organisationId];
+  const items = (await tx.unsafe(
+    WORK_ITEM_POSITION_SQL,
+    scope,
+  )) as unknown as WorkItemPositionRow[];
+  const [totals] = (await tx.unsafe(WORK_TOTALS_SQL, scope)) as unknown as {
     item_count: string;
     sanctioned_value: string;
     delivered_value: string;
@@ -425,12 +523,12 @@ export async function readWorkAnalysis(
     unbilled_executed_value: string;
     items_without_matrix_row: string;
   }[];
-  const inspection = (await tx.unsafe(WORK_INSPECTION_SQL, [workId])) as unknown as {
+  const inspection = (await tx.unsafe(WORK_INSPECTION_SQL, scope)) as unknown as {
     agency: WorksAnalysisInspectionAgency | null;
     item_count: string;
-    clause_quantity: string;
+    lot_size_total: string;
     called_quantity: string;
-    passed_quantity: string;
+    certified_quantity: string;
     pending_quantity: string;
     pending_value: string;
   }[];
@@ -489,9 +587,9 @@ export async function readWorkAnalysis(
     inspection: inspection.map((row): WorkAnalysisInspectionGroup => ({
       agency: row.agency,
       itemCount: Number(row.item_count),
-      clauseQuantity: row.clause_quantity,
+      lotSizeTotal: row.lot_size_total,
       calledQuantity: row.called_quantity,
-      passedQuantity: row.passed_quantity,
+      certifiedQuantity: row.certified_quantity,
       pendingQuantity: row.pending_quantity,
       pendingValue: row.pending_value,
     })),
@@ -540,9 +638,10 @@ function toWorkAnalysisItem(row: WorkItemPositionRow): WorkAnalysisItem {
     baselineSuppliedQuantity: row.baseline_supplied_quantity,
     baselineInstalledQuantity: row.baseline_installed_quantity,
     inspectionAgency: row.agency,
-    inspectionQuantity: row.inspection_quantity,
+    gatesDispatch: row.gates_dispatch,
+    inspectionLotSize: row.inspection_lot_size,
     inspectionCalledQuantity: row.inspection_called_quantity,
-    inspectionPassedQuantity: row.inspection_passed_quantity,
+    inspectionCertifiedQuantity: row.inspection_certified_quantity,
     pendingInspectionQuantity: row.pending_inspection_quantity,
     pendingInspectionValue: row.pending_inspection_value,
     billedValue: row.billed_value,
@@ -774,16 +873,6 @@ const MAPPED_ITEM_ROWS_SQL = `
   order by (m.canonical_item_id is null), label, m.unit_code
 `;
 
-/** How many live schedule lines match no active canonical item. The count
- * the item-master screen puts above its table, asked here so the report can
- * say how much of the portfolio the grouping does not yet cover. */
-const UNMAPPED_LINES_SQL = `
-  with ${PENDING_LINES_CTE}
-  select count(*) filter (where m.canonical_item_id is null)::text
-           as unmapped_line_count
-  from mapped m
-`;
-
 export async function readDivisionAnalysis(
   tx: TransactionSql,
   fullScope: boolean,
@@ -879,13 +968,16 @@ interface DivisionWork {
 function sumRows(rows: readonly CombinedPendingRow[]): CombinedPendingTotals {
   let supply = 0n;
   let install = 0n;
+  let lines = 0;
   for (const row of rows) {
     supply += toPaise(row.pendingSupplyValue);
     install += toPaise(row.pendingInstallValue);
+    lines += row.lineCount;
   }
   return {
     rowCount: rows.length,
     mappedRowCount: rows.filter((row) => row.canonicalItemId !== null).length,
+    lineCount: lines,
     pendingSupplyValue: paiseText(supply),
     pendingInstallValue: paiseText(install),
   };
@@ -901,14 +993,22 @@ export async function readMappedItemAnalysis(
     MAPPED_ITEM_ROWS_SQL,
     parameters,
   )) as unknown as PendingRow[];
-  const [unmapped] = (await tx.unsafe(UNMAPPED_LINES_SQL, parameters)) as unknown as {
-    unmapped_line_count: string;
-  }[];
-  const mappedRows = rows.map(toPendingRow);
+  const all = rows.map(toPendingRow);
+  const mapped = all.filter((row) => row.canonicalItemId !== null);
+  const unmapped = all.filter((row) => row.canonicalItemId === null);
+  const unmappedTotals = sumRows(unmapped);
   return {
-    rows: mappedRows,
-    totals: sumRows(mappedRows),
-    unmappedLineCount: Number(unmapped?.unmapped_line_count ?? '0'),
+    rows: all,
+    // Each table totals its own rows, because the screen and both documents
+    // draw them as two tables and a total the rows above it do not add up
+    // to is the one arithmetic error a reader cannot catch by looking.
+    mappedTotals: sumRows(mapped),
+    unmappedTotals,
+    totals: sumRows(all),
+    // Derived from the rows already in hand rather than counted again by a
+    // second statement over the same CTEs: two readings of one figure can
+    // disagree, and the cheaper one to delete is the second query.
+    unmappedLineCount: unmappedTotals.lineCount,
   };
 }
 

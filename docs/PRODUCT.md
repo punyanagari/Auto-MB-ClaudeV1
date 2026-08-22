@@ -2630,12 +2630,17 @@ workbook.**
 **Per Work, item by item.** Sanctioned quantity (the LOA quantity as
 amendments have left it), supplied, installed, pending to supply, pending
 to install, supplied-but-not-installed, and — where an inspection clause
-exists — its quantity, what has been offered on calls, what has passed, and
-what is still to inspect, split by RITES and RDSO. Every row carries its
-unit, its accepted rate and its value, and the sections total. Beside them:
-what finalized Measurement Books have BILLED for each item, and what the
-payment matrix entitles the item to for what is already supplied and
-installed but has not reached a bill.
+exists — what has been offered on calls, what a LIVE certificate of that
+clause's own agency covers, and what still needs cover before the whole
+sanctioned quantity could be despatched, split by RITES and RDSO. That last
+figure is the dispatch gate's own arithmetic rather than the clause's lot
+size: the lot size is the contract's inspecting lot, offered when a call is
+raised, and the gate never reads it. Every row carries its unit, its
+accepted rate and its value, and the sections total. Beside them: what
+finalized Measurement Books have BILLED for each item, and what a next book
+would bill for what is already supplied and installed — computed on the
+quantities those books have not yet taken, rounded as they round, so a fully
+billed item reads exactly zero rather than a rounding penny.
 
 **Per railway division.** Works are grouped by division and their pending
 positions combined, so one order can cover a division. There is no client
@@ -2670,7 +2675,16 @@ items would produce a per-item "amount paid" that no document supports.
 
 An item whose payment category resolves through no matrix row reports a
 dash rather than a zero, as does a bill whose measurement is not closed:
-"nothing is owed" and "we cannot say yet" are different answers.
+"nothing is owed" and "we cannot say yet" are different answers. The
+final-bill stage is excluded from every executed figure, because a
+Measurement Book earns it only when it is the final book — a manual act, not
+a quantity threshold — and the documents say so rather than leaving the gap
+against a contract total to be discovered.
+
+Money received and money deducted count on every bill, including one the
+railway has not yet priced. Only the outstanding figure excludes those,
+because there is no outstanding amount to state against a bill nobody has
+priced, and the reports say how many bills are in that state.
 
 The per-Work report is scoped like every Work-addressed read — an assigned
 member reads their own Works and a guessed id answers 404. The two

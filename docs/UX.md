@@ -3011,18 +3011,46 @@ status: a pending quantity is a number, and a division is a heading.
 
 #### Four decisions a reviewer should be able to disagree with
 
-**A dash, never a zero, wherever a figure is not knowable.** Three columns
+**A dash, never a zero, wherever a figure is not knowable.** Four columns
 carry one: an item whose payment category resolves through no matrix row
 has no percentage to bill at, a bill whose measurement is not closed has no
-railway figure yet, and an item with no inspection clause has no clause
-quantity. Printing `0.00` in any of those would answer "nothing is owed" to
-a question that was "we cannot say yet", and the two are not the same
-sentence to somebody deciding whether to chase a payment.
+railway figure yet, an item with no inspection clause has no lot size, and a
+`consignee` clause has no pending-to-inspect position at all — that
+inspection happens after arrival and can never gate a despatch. Printing
+`0.00` in any of those would answer "nothing is owed" to a question that was
+"we cannot say yet", and the two are not the same sentence to somebody
+deciding whether to chase a payment.
+
+**Pending to inspect is measured against SANCTION and a LIVE certificate,
+not against the clause's lot size.** The lot size is shown, because an
+operator raising a call wants it, and it is labelled as what migration 0082
+says it is: the contract's inspecting lot, offered as the raise-a-call
+default, which "the dispatch gate never reads". What the report measures
+instead is the gate's own arithmetic — the quantity a live certificate _of
+the clause's own agency_ covers, through the same
+`app_private.inspection_certificate_live` the gate asks and against the
+organisation's today — subtracted from the sanctioned quantity. That is the
+answer to the question an operator actually has: how much still needs cover
+before the whole quantity can leave. Called and certified are shown as
+separate columns because the difference between them is the difference
+between "an agency has seen it" and "a lorry may leave", and only the second
+opens a gate.
 
 **Quantities are not totalled; values are.** The quantity columns span
 several units, and a column footer adding metres to pieces is a number that
 is wrong in a way no heading repairs. The tables that carry totals are the
 value tables, and the quantity table says under itself why it has none.
+
+**Two tables, two totals, and the count in the footer is LINES.** The item
+analysis draws mapped and unmapped rows as separate tables, and each totals
+its own rows — a table shown its neighbour's total is a table whose rows do
+not add up to the figure under it, which is the one arithmetic error a
+reader cannot catch by looking. The count beside each total is the schedule
+LINES under those rows, not the row count: a row is a master item and a line
+is a schedule entry, and one row of three lines is exactly what the item
+catalogue exists to produce. The Works column is never totalled, because one
+Work appears under many rows and summing it would count that Work once per
+product.
 
 **The rate of a combined row is a SPREAD, not an average.** Two Works of one
 division rarely carry the same accepted rate for the same product. The row
@@ -3032,13 +3060,16 @@ never makes a total wrong. An average would have invented a rate no contract
 carries.
 
 **The portfolio reports NARROW for an assigned-scope member rather than
-refusing, and the document says so.** § 19 records the opposite decision for
-the management summary, and both are right: a management summary of a slice
-of the portfolio is a management summary that is wrong, while "what is still
-pending on the Works I run" is a complete answer to a real question. The
-first line of the exported workbook and of the PDF states which of the two
-scopes produced it, so a file on a desk cannot be mistaken for the
-organisation's whole position.
+refusing, and the document says so ABOVE the tables.** § 19 records the
+opposite decision for the management summary, and both are right: a
+management summary of a slice of the portfolio is a management summary that
+is wrong, while "what is still pending on the Works I run" is a complete
+answer to a real question. The scope sentence is printed directly under the
+header of both the PDF and the workbook — not among the footnotes — because
+the misreading it prevents, a narrowed file taken for the organisation's
+whole position, happens at the top of page one and not at the bottom of the
+last. The per-Work report carries no such line: it is about one named Work,
+and the reader asked for that Work.
 
 #### Grouping is propose-and-prove
 
@@ -3077,10 +3108,21 @@ because a printed page is the only place a reader can learn them: locked
 opening baselines are INCLUDED in the supplied, installed and billed
 positions; historical and imported invoices are EXCLUDED from every payment
 figure, being display-only history with disputed entries rather than the
-bill ledger; and payment is reported per BILL and never per item, because a
+bill ledger; payment is reported per BILL and never per item, because a
 receipt settles a bill and a bill closes a Measurement Book covering many
 items — apportioning one across those items would produce a per-item
-"amount paid" that no document supports.
+"amount paid" that no document supports; and the FINAL-BILL stage is absent
+from every executed figure, because a Measurement Book earns that stage only
+when it is the final book, which is a manual act rather than a quantity
+threshold. Against a contract total, that last one is the gap a reader
+should expect, so the document names it rather than leaving it to be found.
+
+Money received and money deducted count on EVERY bill, including one the
+railway has not yet priced: cash that arrived is a fact and a deduction is
+money the railway kept, and neither stops being one for want of a railway
+figure. Only OUTSTANDING excludes such a bill, because for a bill nobody has
+priced there is no outstanding amount to state — and the count of those
+bills sits beside the total saying so.
 
 **When the mock grows a reports page, the mock wins**, on § 19's own terms
 and the § 4 iteration pipeline.

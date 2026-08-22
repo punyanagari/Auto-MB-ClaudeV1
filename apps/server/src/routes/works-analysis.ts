@@ -92,8 +92,18 @@ function scopeNote(fullScope: boolean): string {
     : 'This report covers only the Works you are assigned to. It is not the organisation’s whole position.';
 }
 
-function withNote(document: AnalysisDocument, note: string): AnalysisDocument {
-  return { ...document, notes: [note, ...document.notes] };
+/**
+ * The scope sentence goes in `scope`, not into the notes.
+ *
+ * `docs/UX.md` § 38 promises the reader is told which scope produced the
+ * file. A sentence buried under the footnotes of a landscape page nobody
+ * scrolls to does not keep that promise: the failure it exists to prevent
+ * is a narrowed report being read as the organisation's whole position, and
+ * that misreading happens at the top of page one. Both renderers print
+ * `scope` directly under the header, above the first table.
+ */
+function withScope(document: AnalysisDocument, scope: string): AnalysisDocument {
+  return { ...document, scope };
 }
 
 export function registerWorksAnalysisRoutes(
@@ -114,11 +124,11 @@ export function registerWorksAnalysisRoutes(
         response: { 200: WorkAnalysisResponseSchema, ...errorResponses },
       },
     },
-    async ({ request, user, tenant }): Promise<WorkAnalysisResponse> =>
+    async ({ request, user, organisationId, tenant }): Promise<WorkAnalysisResponse> =>
       tenant(async (tx) => {
         const { workId } = request.params;
         await assertWorkAccess(tx, user.id, workId);
-        const analysis = await readWorkAnalysis(tx, workId);
+        const analysis = await readWorkAnalysis(tx, workId, organisationId);
         if (analysis === null) {
           throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
         }
@@ -190,8 +200,10 @@ export function registerWorksAnalysisRoutes(
     tx: TransactionSql,
     report: WorksAnalysisReport,
     userId: string,
+    organisationId: string,
     workId: string | undefined,
   ): Promise<{ document: AnalysisDocument; suffix: string }> {
+    const full = await hasFullWorkScope(tx, userId);
     if (report === 'work') {
       if (workId === undefined) {
         throw httpError(
@@ -201,9 +213,12 @@ export function registerWorksAnalysisRoutes(
         );
       }
       await assertWorkAccess(tx, userId, workId);
-      const analysis = await readWorkAnalysis(tx, workId);
+      const analysis = await readWorkAnalysis(tx, workId, organisationId);
       if (analysis === null) throw httpError(404, 'WORK_NOT_FOUND', 'No such Work.');
       return {
+        // A per-Work report is about ONE named Work, so the portfolio scope
+        // sentence would say nothing: the reader asked for this Work and
+        // got this Work.
         document: toWorkDocument(analysis),
         suffix: `-${analysis.work.workCode.replaceAll('/', '-')}`,
       };
@@ -215,12 +230,11 @@ export function registerWorksAnalysisRoutes(
         'This report covers the whole portfolio and is not about one Work.',
       );
     }
-    const full = await hasFullWorkScope(tx, userId);
     const document =
       report === 'division'
         ? toDivisionDocument(await readDivisionAnalysis(tx, full, userId))
         : toMappedItemDocument(await readMappedItemAnalysis(tx, full, userId));
-    return { document: withNote(document, scopeNote(full)), suffix: '' };
+    return { document: withScope(document, scopeNote(full)), suffix: '' };
   }
 
   tenantRoute(
@@ -239,7 +253,13 @@ export function registerWorksAnalysisRoutes(
       const { report } = request.params;
       const descriptor = DOCUMENTS[report];
       const { bytes, suffix } = await tenant(async (tx) => {
-        const built = await buildDocument(tx, report, user.id, request.query.workId);
+        const built = await buildDocument(
+          tx,
+          report,
+          user.id,
+          organisationId,
+          request.query.workId,
+        );
         const sheet = worksAnalysisSheet(built.document);
         await audit(
           tx,
@@ -278,7 +298,13 @@ export function registerWorksAnalysisRoutes(
       const { report } = request.params;
       const descriptor = DOCUMENTS[report];
       const { document, suffix, branding } = await tenant(async (tx) => {
-        const built = await buildDocument(tx, report, user.id, request.query.workId);
+        const built = await buildDocument(
+          tx,
+          report,
+          user.id,
+          organisationId,
+          request.query.workId,
+        );
         const [organisation] = await tx<
           {
             address: string | null;

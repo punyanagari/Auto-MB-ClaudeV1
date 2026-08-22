@@ -100,6 +100,9 @@ interface Ids {
   work2: string;
   work3: string;
   work4: string;
+  work5: string;
+  bill5: string;
+  e1: string;
   a1: string;
   a2: string;
   a3: string;
@@ -112,6 +115,9 @@ const ids: Ids = {
   work2: randomUUID(),
   work3: randomUUID(),
   work4: randomUUID(),
+  work5: randomUUID(),
+  bill5: randomUUID(),
+  e1: randomUUID(),
   a1: randomUUID(),
   a2: randomUUID(),
   a3: randomUUID(),
@@ -126,6 +132,10 @@ interface CookieJar {
 let owner: CookieJar;
 let scoped: CookieJar;
 let outsider: CookieJar;
+/** Whether the database allowed a receipt against a bill with no closed
+ * measurement. If it refuses, the case the unconditioned totals exist for
+ * cannot arise, and the test says which of the two it proved. */
+let indeterminateReceiptSeeded = false;
 
 function extractCookies(setCookie: string | string[] | undefined): string {
   const raw = setCookie === undefined ? [] : ([] as string[]).concat(setCookie);
@@ -283,6 +293,71 @@ async function insertIssuedChallan(
       sequence_number = ${sequence}, issued_snapshot = '{}'::jsonb,
       issued_at = now(), issued_by_user_id = ${ownerUserId}
     where id = ${challanId}
+  `;
+}
+
+/**
+ * One inspection call, walked through its real lifecycle: created as
+ * `requested`, scheduled with its inward letter, given its certificate
+ * document, and only then closed. Migration 0082 refuses every shortcut,
+ * so the fixture takes the long way rather than writing a row the product
+ * could never produce.
+ *
+ * `validUntil` null is a certificate that never expires; a past date is one
+ * that has, which is the case `inspection_certificate_live` exists for.
+ */
+async function insertClosedCall(
+  sequence: number,
+  agency: 'RITES' | 'RDSO',
+  workItemId: string,
+  quantity: string,
+  validUntil: string | null,
+): Promise<void> {
+  const callId = randomUUID();
+  await admin`
+    insert into inspection_calls (
+      id, organisation_id, work_id, sequence_number, agency,
+      status, requested_on, created_by_user_id
+    )
+    values (
+      ${callId}, ${organisationId}, ${ids.work1}, ${sequence}, ${agency},
+      'requested', '2025-05-12', ${ownerUserId}
+    )
+  `;
+  await admin`
+    insert into inspection_call_items (
+      organisation_id, inspection_call_id, work_id, work_item_id, quantity
+    )
+    values (${organisationId}, ${callId}, ${ids.work1}, ${workItemId}, ${quantity})
+  `;
+  await admin`
+    update inspection_calls set
+      status = 'scheduled',
+      agency_call_number = ${`${agency}-CALL-${String(sequence)}`},
+      call_letter_received_on = '2025-05-13'
+    where id = ${callId}
+  `;
+  await admin`
+    insert into inspection_call_documents (
+      organisation_id, inspection_call_id, kind, label, mandatory, position,
+      object_key, original_filename, sha256, size_bytes,
+      uploaded_by_user_id, uploaded_at
+    )
+    values (
+      ${organisationId}, ${callId}, 'certificate',
+      ${`${agency} certificate`}, true, 1,
+      ${`${organisationId}/ic/${callId}.pdf`}, 'certificate.pdf',
+      ${'b'.repeat(64)}, 2048, ${ownerUserId}, now()
+    )
+  `;
+  await admin`
+    update inspection_calls set
+      status = 'closed',
+      certificate_number = ${`${agency}-CERT-${String(sequence)}`},
+      certificate_date = '2025-05-18',
+      certificate_valid_until = ${validUntil},
+      closed_at = now(), closed_by_user_id = ${ownerUserId}
+    where id = ${callId}
   `;
 }
 
@@ -541,52 +616,19 @@ beforeAll(async () => {
       (${organisationId}, ${ids.work1}, ${ids.a1}, 'RITES', 10.000, ${ownerUserId}),
       (${organisationId}, ${ids.work1}, ${ids.a2}, 'RDSO', 5.000, ${ownerUserId})
   `;
-  // A call is CREATED as requested and closed by a later update — the
-  // lifecycle migration 0082 enforces, so the fixture walks it rather than
-  // writing a closed row the product could never produce.
-  const callId = randomUUID();
-  await admin`
-    insert into inspection_calls (
-      id, organisation_id, work_id, sequence_number, agency,
-      status, requested_on, created_by_user_id
-    )
-    values (
-      ${callId}, ${organisationId}, ${ids.work1}, 1,
-      'RITES', 'requested', '2025-05-12', ${ownerUserId}
-    )
-  `;
-  await admin`
-    insert into inspection_call_items (
-      organisation_id, inspection_call_id, work_id, work_item_id, quantity
-    )
-    values (${organisationId}, ${callId}, ${ids.work1}, ${ids.a1}, 4.000)
-  `;
-  await admin`
-    update inspection_calls set
-      status = 'scheduled', agency_call_number = 'RITES-CALL-1',
-      call_letter_received_on = '2025-05-13'
-    where id = ${callId}
-  `;
-  // A call closes only with its certificate on file (0082's guard).
-  await admin`
-    insert into inspection_call_documents (
-      organisation_id, inspection_call_id, kind, label, mandatory, position,
-      object_key, original_filename, sha256, size_bytes,
-      uploaded_by_user_id, uploaded_at
-    )
-    values (
-      ${organisationId}, ${callId}, 'certificate', 'RITES certificate', true, 1,
-      ${`${organisationId}/ic/${callId}.pdf`}, 'certificate.pdf',
-      ${'b'.repeat(64)}, 2048, ${ownerUserId}, now()
-    )
-  `;
-  await admin`
-    update inspection_calls set
-      status = 'closed', certificate_number = 'RITES-CERT-1',
-      certificate_date = '2025-05-18', closed_at = now(),
-      closed_by_user_id = ${ownerUserId}
-    where id = ${callId}
-  `;
+  // A/1's own RITES cover: closed, no expiry, so the certificate is LIVE
+  // and covers 4 of its 10.
+  await insertClosedCall(1, 'RITES', ids.a1, '4.000', null);
+  // The SAME quantity offered to the WRONG agency. A/1's clause names
+  // RITES, so an RDSO certificate answers nothing about it — the dispatch
+  // gate joins `ic.agency = c.agency` and so must the report. Without that
+  // filter A/1 reads as 7 certified against a clause RDSO never saw.
+  await insertClosedCall(2, 'RDSO', ids.a1, '3.000', null);
+  // A/2's clause is RDSO and its certificate EXPIRED before today, so the
+  // quantity was called but is no longer covered. `inspection_certificate_live`
+  // is what the gate asks; a report that counted it would say a lorry may
+  // leave when the gate would stop it.
+  await insertClosedCall(3, 'RDSO', ids.a2, '5.000', '2025-06-30');
 
   // WORK-4's locked opening baseline: four supplied and 400.00 billed
   // before this product ever saw the Work.
@@ -635,6 +677,106 @@ beforeAll(async () => {
       ${['42U Rack,']}, ${ownerUserId}
     )
   `;
+
+  /* WORK-5: the rounding ghost, in the smallest shape that produces one.
+     Three metres at 0.334 each, billed one metre at a time on three
+     finalized Measurement Books. Each book rounds its own stage amount, as
+     `computeStageAmounts` does — round(1 x 0.334, 2) = 0.33 — so the books
+     have billed 0.99 in total. Re-deriving the entitlement from the
+     CUMULATIVE quantity instead gives round(3 x 0.334, 2) = 1.00, and the
+     penny of difference is a ghost: it says a fully-billed item still has
+     something to bill, and no Measurement Book could ever bill it. */
+  const schedule5 = await insertWork(ids.work5, 'WA-FIVE', 'Rounding ghost');
+  await insertItem(
+    ids.e1,
+    ids.work5,
+    schedule5,
+    'E/1',
+    'Bonding wire',
+    'm',
+    '3.000',
+    '0.334',
+    'SUPPLY',
+  );
+  await admin`
+    insert into payment_matrices (
+      organisation_id, work_id, category, pct_supply, pct_installation,
+      pct_pac, pct_final_bill, created_by_user_id
+    )
+    values (
+      ${organisationId}, ${ids.work5}, 'SUPPLY', 100.00, 0.00, 0.00, 0.00,
+      ${ownerUserId}
+    )
+  `;
+  await insertIssuedChallan(ids.work5, 'WA/FIVE/001', 1, [
+    { workItemId: ids.e1, quantity: '3.000', rate: '0.334', amount: '1.00' },
+  ]);
+  for (const book of [1, 2, 3]) {
+    const bookId = randomUUID();
+    await admin`
+      insert into measurement_books (
+        id, organisation_id, work_id, status, mb_date, created_by_user_id
+      )
+      values (
+        ${bookId}, ${organisationId}, ${ids.work5}, 'draft', '2025-07-01',
+        ${ownerUserId}
+      )
+    `;
+    await admin`
+      insert into measurement_book_lines (
+        organisation_id, measurement_book_id, work_id, work_item_id,
+        item_number, description, unit_code, resolved_category,
+        pct_supply, pct_installation, pct_pac, pct_final_bill,
+        effective_rate, delta_supplied, prior_supplied,
+        amount_supply, amount_installation, amount_pac, amount_final_bill,
+        line_total, remark
+      )
+      values (
+        ${organisationId}, ${bookId}, ${ids.work5}, ${ids.e1},
+        'E/1', 'Bonding wire', 'm', 'SUPPLY',
+        100.00, 0.00, 0.00, 0.00,
+        0.334, 1.000, ${book - 1},
+        0.33, 0.00, 0.00, 0.00, 0.33, 'Supply stage billed at 100%.'
+      )
+    `;
+    await admin`
+      update measurement_books set
+        status = 'finalized', mb_number = ${`WA-FIVE-MB-0${String(book)}`},
+        sequence_number = ${book}, total_amount = 0.33,
+        remark_template_version = 'test', finalized_at = now(),
+        finalized_by_user_id = ${ownerUserId}
+      where id = ${bookId}
+    `;
+  }
+
+  /* A bill with NO closed measurement, carrying a receipt.
+     `bill_settlement_positions` cannot state an outstanding figure for it —
+     the railway has named no amount — but the money that arrived is a fact
+     regardless, and a report that filtered it out would under-report cash
+     received. Seeded directly because the route would not offer this
+     order of events; if the database refuses it, the test says so. */
+  await admin`
+    insert into bills (
+      id, organisation_id, work_id, bill_number, status, lines_snapshot,
+      total_amount, prepared_by_user_id, submitted_at
+    )
+    values (
+      ${ids.bill5}, ${organisationId}, ${ids.work5}, 1,
+      'submitted', '[]'::jsonb, 1.00, ${ownerUserId}, now()
+    )
+  `;
+  indeterminateReceiptSeeded = await admin`
+    insert into bill_payments (
+      organisation_id, bill_id, received_on, received_amount,
+      recorded_by_user_id
+    )
+    values (
+      ${organisationId}, ${ids.bill5}, '2025-08-01', 0.75, ${ownerUserId}
+    )
+  `.then(
+    () => true,
+    () => false,
+  );
 
   // The scoped member is assigned WORK-1 only.
   await admin`
@@ -723,31 +865,54 @@ describe('the per-Work analysis', () => {
     expect(analysis.totals.itemsWithoutMatrixRow).toBe(1);
   });
 
-  it('reports the inspection position per item and per agency', async () => {
+  it('counts only certificates of the clause’s own agency, and only live ones', async () => {
+    const analysis = await workAnalysis(ids.work1);
+    const [a1, a2] = analysis.items;
+
+    // A/1's clause names RITES. One live RITES certificate covers 4; the
+    // RDSO call for 3 answers a clause RDSO never saw and must not count.
+    expect(a1?.inspectionAgency).toBe('RITES');
+    expect(a1?.inspectionCalledQuantity).toBe('4.000');
+    expect(a1?.inspectionCertifiedQuantity).toBe('4.000');
+
+    // A/2's RDSO certificate expired, so 5 was called and 0 is covered.
+    // This is the difference between "an agency has seen it" and "a lorry
+    // may leave", and the gate only accepts the second.
+    expect(a2?.inspectionAgency).toBe('RDSO');
+    expect(a2?.inspectionCalledQuantity).toBe('5.000');
+    expect(a2?.inspectionCertifiedQuantity).toBe('0.000');
+  });
+
+  it('measures pending-to-inspect against sanction, not against the lot size', async () => {
     const analysis = await workAnalysis(ids.work1);
     const [a1, a2, a3] = analysis.items;
 
-    expect(a1?.inspectionAgency).toBe('RITES');
-    expect(a1?.inspectionQuantity).toBe('10.000');
-    expect(a1?.inspectionCalledQuantity).toBe('4.000');
-    expect(a1?.inspectionPassedQuantity).toBe('4.000');
+    // The clause quantity is a LOT SIZE hint (0082: "the gate never reads
+    // it"), reported as such and never used as a target.
+    expect(a1?.inspectionLotSize).toBe('10.000');
+    expect(a1?.gatesDispatch).toBe(false);
+
+    // What remains to inspect before the whole sanctioned quantity could be
+    // despatched: sanctioned 10 less the 4 a live RITES certificate covers.
     expect(a1?.pendingInspectionQuantity).toBe('6.000');
     expect(a1?.pendingInspectionValue).toBe('6000.00');
-
-    expect(a2?.inspectionAgency).toBe('RDSO');
-    expect(a2?.inspectionCalledQuantity).toBe('0.000');
+    // A/2: sanctioned 5, nothing live, so all 5 remain — even though 5 was
+    // called. The old lot-size arithmetic answered 0 here and was wrong.
     expect(a2?.pendingInspectionQuantity).toBe('5.000');
+    expect(a2?.pendingInspectionValue).toBe('6000.00');
 
-    // No clause at all is null, not a zero clause quantity.
+    // No clause at all is null throughout, not a zero.
     expect(a3?.inspectionAgency).toBeNull();
-    expect(a3?.inspectionQuantity).toBeNull();
+    expect(a3?.inspectionLotSize).toBeNull();
     expect(a3?.pendingInspectionQuantity).toBeNull();
 
     const rites = analysis.inspection.find((group) => group.agency === 'RITES');
     const rdso = analysis.inspection.find((group) => group.agency === 'RDSO');
     const none = analysis.inspection.find((group) => group.agency === null);
+    expect(rites?.certifiedQuantity).toBe('4.000');
     expect(rites?.pendingQuantity).toBe('6.000');
     expect(rites?.pendingValue).toBe('6000.00');
+    expect(rdso?.certifiedQuantity).toBe('0.000');
     expect(rdso?.pendingQuantity).toBe('5.000');
     expect(none?.itemCount).toBe(1);
     expect(analysis.totals.pendingInspectionValue).toBe('12000.00');
@@ -803,6 +968,55 @@ describe('the per-Work analysis', () => {
         where work_id = ${ids.work3} and contact_id = ${extra}
       `;
     }
+  });
+
+  it('leaves no rounding ghost on a fully billed item', async () => {
+    const analysis = await workAnalysis(ids.work5);
+    const [e1] = analysis.items;
+
+    // Three books billed one metre each at 0.334, rounding to 0.33 apiece.
+    expect(e1?.billedValue).toBe('0.99');
+    expect(e1?.deliveredQuantity).toBe('3.000');
+    // Everything delivered has been billed, so there is nothing left to
+    // bill — exactly nothing. Re-deriving from the cumulative quantity
+    // gives round(3 x 0.334, 2) = 1.00 and leaves a penny that no
+    // Measurement Book could ever raise.
+    expect(e1?.unbilledExecutedValue).toBe('0.00');
+    // Executed is what the books billed plus what a next book would bill,
+    // so it agrees with the books rather than with an independent
+    // re-derivation.
+    expect(e1?.executedValue).toBe('0.99');
+    expect(analysis.totals.unbilledExecutedValue).toBe('0.00');
+  });
+
+  it('counts money received even when the railway has stated no figure', async () => {
+    const analysis = await workAnalysis(ids.work5);
+    if (!indeterminateReceiptSeeded) {
+      /* MEASURED, not assumed: `app_private.guard_bill_payment_write`
+         refuses a receipt against a bill whose Measurement Book is not
+         closed by a verified railway bill — "there is no settled amount to
+         measure against". So the case the old filter was written for
+         cannot arise today, and dropping the filter changes no figure.
+
+         The filter still had to go. It said the report would hide money if
+         the case ever did arise, and the guard above is a rule about
+         RECORDING a receipt, not a promise about what a report may count.
+         This branch is the standing check on that: if the guard is ever
+         relaxed, the assertion below starts running for real. */
+      expect(analysis.payment.receivedTotal).toBe('0.00');
+      expect(analysis.payment.indeterminateBills).toBe(1);
+      return;
+    }
+    // Money that arrived is a fact whether or not the railway has named an
+    // amount. Only OUTSTANDING is unknowable for such a bill.
+    expect(analysis.payment.receivedTotal).toBe('0.75');
+    expect(analysis.payment.settledTotal).toBe('0.75');
+    expect(analysis.payment.outstandingTotal).toBe('0.00');
+    expect(analysis.payment.indeterminateBills).toBe(1);
+    const [bill] = analysis.bills;
+    expect(bill?.receivedTotal).toBe('0.75');
+    expect(bill?.railwayBillAmount).toBeNull();
+    expect(bill?.outstandingAmount).toBeNull();
   });
 
   it('answers 404 for a Work the caller may not see, without confirming it exists', async () => {
@@ -969,6 +1183,36 @@ describe('the cross-Work item analysis', () => {
     expect(cable?.pendingSupplyValue).toBe('7750.00');
     expect(analysis.unmappedLineCount).toBeGreaterThan(0);
   });
+
+  it('totals the mapped and unmapped tables separately, and counts LINES not rows', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/mapped-item-analysis',
+      organisationId,
+    });
+    const analysis = response.json<MappedItemAnalysisResponse>();
+    const mapped = analysis.rows.filter((row) => row.canonicalItemId !== null);
+    const unmapped = analysis.rows.filter((row) => row.canonicalItemId === null);
+
+    // Each table totals its own rows. A mapped total that swept the
+    // unmapped rows in would put a figure under a table that does not add
+    // up to it.
+    expect(analysis.mappedTotals.rowCount).toBe(mapped.length);
+    expect(analysis.unmappedTotals.rowCount).toBe(unmapped.length);
+    expect(analysis.totals.rowCount).toBe(analysis.rows.length);
+
+    // The Lines column totals LINES. `rowCount` under a column of line
+    // counts is a different number wearing the same heading.
+    const lines = (rows: readonly { lineCount: number }[]): number =>
+      rows.reduce((sum, row) => sum + row.lineCount, 0);
+    expect(analysis.mappedTotals.lineCount).toBe(lines(mapped));
+    expect(analysis.unmappedTotals.lineCount).toBe(lines(unmapped));
+    expect(analysis.mappedTotals.lineCount).not.toBe(analysis.mappedTotals.rowCount);
+
+    // The unmapped line count is the unmapped table's own line total, and
+    // is derived from the rows rather than counted by a second statement.
+    expect(analysis.unmappedLineCount).toBe(analysis.unmappedTotals.lineCount);
+  });
 });
 
 describe('the grouping proposals', () => {
@@ -1046,6 +1290,108 @@ describe('the grouping proposals', () => {
     expect(
       proposals.json<ItemGroupProposalsResponse>().proposals.map((one) => one.key),
     ).not.toContain('cable 4 core');
+  });
+
+  it('keeps the proposed wording as an alias when the operator renames the group', async () => {
+    // Two wordings that fold together, on two Works, neither mapped.
+    const nameA = `Trough, RCC ${runId}`;
+    const nameB = `Trough RCC ${runId}`;
+    for (const [workId, itemNumber, description] of [
+      [ids.work2, `T1-${runId}`, nameA],
+      [ids.work3, `T2-${runId}`, nameB],
+    ] as const) {
+      const [schedule] = await admin<{ id: string }[]>`
+        select id from work_schedules where work_id = ${workId} limit 1
+      `;
+      await insertItem(
+        randomUUID(),
+        workId,
+        schedule?.id ?? '',
+        itemNumber,
+        description,
+        'm',
+        '10.000',
+        '90.00',
+        'SUPPLY',
+      );
+    }
+
+    // The operator confirms under a name of their OWN, which is neither
+    // wording. Both original wordings must survive as aliases, or the very
+    // lines the proposal was raised about stop mapping the moment it is
+    // accepted — the group would confirm and immediately mean nothing.
+    const chosen = `RCC cable trough ${runId}`;
+    const confirmed = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/canonical-items',
+      organisationId,
+      payload: {
+        name: chosen,
+        groupName: 'Troughs',
+        defaultUnit: 'm',
+        aliases: [nameA, nameB],
+      },
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+
+    const analysis = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/mapped-item-analysis',
+      organisationId,
+    });
+    const row = analysis
+      .json<MappedItemAnalysisResponse>()
+      .rows.find((one) => one.label === chosen);
+    expect(row?.canonicalItemId).not.toBeNull();
+    expect(row?.lineCount).toBe(2);
+    expect(row?.workCount).toBe(2);
+  });
+
+  it('accepts a wording longer than a catalogue name', async () => {
+    // `work_items.description` has no upper bound, so a schedule line can
+    // be far longer than a master item's 200-character name. The ALIAS is
+    // the half that must hold it verbatim: the mapping compares the whole
+    // description, so a truncated alias would never match again.
+    const long = `${'Reinforced cement concrete cable trough with cover, '.repeat(6)}${runId}`;
+    expect(long.length).toBeGreaterThan(300);
+    const [schedule] = await admin<{ id: string }[]>`
+      select id from work_schedules where work_id = ${ids.work2} limit 1
+    `;
+    await insertItem(
+      randomUUID(),
+      ids.work2,
+      schedule?.id ?? '',
+      `L1-${runId}`,
+      long,
+      'm',
+      '4.000',
+      '25.00',
+      'SUPPLY',
+    );
+
+    const confirmed = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/canonical-items',
+      organisationId,
+      payload: {
+        name: `Long trough ${runId}`,
+        groupName: 'Troughs',
+        defaultUnit: 'm',
+        aliases: [long],
+      },
+    });
+    expect(confirmed.statusCode, confirmed.body).toBe(201);
+
+    const analysis = await authed(owner, {
+      method: 'GET',
+      url: '/api/reports/mapped-item-analysis',
+      organisationId,
+    });
+    const row = analysis
+      .json<MappedItemAnalysisResponse>()
+      .rows.find((one) => one.label === `Long trough ${runId}`);
+    expect(row?.lineCount).toBe(1);
+    expect(row?.pendingSupplyValue).toBe('100.00');
   });
 });
 

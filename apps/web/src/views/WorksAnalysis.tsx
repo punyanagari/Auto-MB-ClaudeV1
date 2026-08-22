@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 import type {
   CombinedPendingRow,
+  CombinedPendingTotals,
   DivisionAnalysisResponse,
   ItemGroupProposal,
   ItemGroupProposalsResponse,
@@ -467,6 +468,13 @@ function WorkInspectionTable({
   return (
     <section aria-label="Inspection position">
       <h3 className="m-0 text-sm font-medium">Inspection position</h3>
+      <Hint>
+        Certified is what a live certificate of the clause’s own agency covers — the
+        dispatch gate’s own figure, so a RITES certificate never answers an RDSO clause
+        and an expired one covers nothing. Pending to inspect is the sanctioned quantity
+        less that. The lot size is the contract’s inspecting lot, offered when a call is
+        raised; the gate never reads it.
+      </Hint>
       {clauses.length === 0 ? (
         <EmptyState>
           No item on this Work carries an inspection clause. Clauses are set on the
@@ -475,22 +483,25 @@ function WorkInspectionTable({
       ) : (
         <DataTable>
           <caption className="sr-only">
-            Inspection position per item: agency, clause quantity, called, passed, and
-            pending to inspect
+            Inspection position per item: agency, whether it gates despatch, lot size,
+            called, certified under a live certificate, and pending to inspect
           </caption>
           <thead>
             <tr>
               <th scope="col">Item</th>
               <th scope="col">Description</th>
               <th scope="col">Agency</th>
-              <th className={`${numericCell} hidden md:table-cell`} scope="col">
-                Clause quantity
+              <th className="hidden lg:table-cell" scope="col">
+                Gates despatch
               </th>
               <th className={`${numericCell} hidden lg:table-cell`} scope="col">
+                Lot size
+              </th>
+              <th className={`${numericCell} hidden md:table-cell`} scope="col">
                 Called
               </th>
-              <th className={`${numericCell} hidden lg:table-cell`} scope="col">
-                Passed
+              <th className={numericCell} scope="col">
+                Certified (live)
               </th>
               <th className={numericCell} scope="col">
                 Pending to inspect
@@ -506,15 +517,16 @@ function WorkInspectionTable({
                 <th scope="row">{item.itemNumber}</th>
                 <td className={wrapCell}>{item.description}</td>
                 <td>{item.inspectionAgency}</td>
-                <td className={`${numericCell} hidden md:table-cell`}>
-                  {item.inspectionQuantity ?? '—'}
+                <td className="hidden lg:table-cell">
+                  {item.gatesDispatch ? 'Yes' : 'No'}
                 </td>
                 <td className={`${numericCell} hidden lg:table-cell`}>
+                  {item.inspectionLotSize ?? '—'}
+                </td>
+                <td className={`${numericCell} hidden md:table-cell`}>
                   {item.inspectionCalledQuantity}
                 </td>
-                <td className={`${numericCell} hidden lg:table-cell`}>
-                  {item.inspectionPassedQuantity}
-                </td>
+                <td className={numericCell}>{item.inspectionCertifiedQuantity}</td>
                 <td className={numericCell}>{item.pendingInspectionQuantity ?? '—'}</td>
                 <td className={numericCell}>
                   {item.pendingInspectionValue === null
@@ -527,18 +539,16 @@ function WorkInspectionTable({
           <tfoot>
             {analysis.inspection.map((group) => (
               <tr key={group.agency ?? 'none'}>
-                <th scope="row" colSpan={3}>
+                <th scope="row" colSpan={4}>
                   {group.agency ?? 'No clause'} · {group.itemCount} item(s)
                 </th>
-                <td className={`${numericCell} hidden md:table-cell`}>
-                  {group.clauseQuantity}
-                </td>
                 <td className={`${numericCell} hidden lg:table-cell`}>
+                  {group.lotSizeTotal}
+                </td>
+                <td className={`${numericCell} hidden md:table-cell`}>
                   {group.calledQuantity}
                 </td>
-                <td className={`${numericCell} hidden lg:table-cell`}>
-                  {group.passedQuantity}
-                </td>
+                <td className={numericCell}>{group.certifiedQuantity}</td>
                 <td className={numericCell}>{group.pendingQuantity}</td>
                 <td className={numericCell}>{formatInr(group.pendingValue)}</td>
               </tr>
@@ -659,7 +669,9 @@ function PendingTable({
 }: {
   readonly caption: string;
   readonly rows: readonly CombinedPendingRow[];
-  readonly total?: { readonly supply: string; readonly install: string };
+  /** This table's OWN totals. A table shown its neighbour's total is a
+   * table whose rows do not add up to the figure under them. */
+  readonly total?: CombinedPendingTotals;
   readonly empty: string;
 }) {
   if (rows.length === 0) return <EmptyState>{empty}</EmptyState>;
@@ -739,8 +751,11 @@ function PendingTable({
       {total !== undefined && (
         <tfoot>
           <tr>
+            {/* The count is a LABELLED fact in the row header rather than a
+                figure under the Works column: one Work appears under many
+                rows, so a sum there would count it once per product. */}
             <th scope="row" colSpan={3}>
-              Total
+              Total · {total.rowCount} row(s), {total.lineCount} line(s)
             </th>
             <td className={`${numericCell} hidden md:table-cell`} />
             <td className={`${numericCell} hidden md:table-cell`} />
@@ -749,11 +764,11 @@ function PendingTable({
             <td className={`${numericCell} hidden lg:table-cell`} />
             <td className={numericCell} />
             <td className={numericCell}>
-              <strong>{formatInr(total.supply)}</strong>
+              <strong>{formatInr(total.pendingSupplyValue)}</strong>
             </td>
             <td className={`${numericCell} hidden md:table-cell`} />
             <td className={`${numericCell} hidden md:table-cell`}>
-              <strong>{formatInr(total.install)}</strong>
+              <strong>{formatInr(total.pendingInstallValue)}</strong>
             </td>
           </tr>
         </tfoot>
@@ -849,10 +864,7 @@ function DivisionAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
           <PendingTable
             caption={`Pending quantities combined across the Works of ${division.divisionCode ?? 'no recorded division'}`}
             rows={division.rows}
-            total={{
-              supply: division.totals.pendingSupplyValue,
-              install: division.totals.pendingInstallValue,
-            }}
+            total={division.totals}
             empty="Nothing is pending across this division’s Works."
           />
         </section>
@@ -916,10 +928,7 @@ function MappedItemAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
             <PendingTable
               caption="Pending quantities combined per item master across every active Work"
               rows={mapped}
-              total={{
-                supply: analysis.totals.pendingSupplyValue,
-                install: analysis.totals.pendingInstallValue,
-              }}
+              total={analysis.mappedTotals}
               empty="No schedule line maps to an item master yet. Master items and their alternative wordings are recorded on the Masters screen."
             />
           </section>
@@ -933,6 +942,7 @@ function MappedItemAnalysisCard({ api, organisationId }: WorksAnalysisProps) {
             <PendingTable
               caption="Pending quantities of schedule lines that map to no item master"
               rows={unmapped}
+              total={analysis.unmappedTotals}
               empty="Every live schedule line maps to an item master."
             />
           </section>
@@ -981,17 +991,30 @@ function ItemGroupProposalsCard({ api, organisationId }: WorksAnalysisProps) {
 
   const confirm = useCallback(
     (proposal: ItemGroupProposal, name: string, groupName: string, unit: string) => {
+      /* EVERY wording in the group becomes an alias except the one the
+         operator settled on as the name — including the proposed name
+         itself when they renamed it.
+
+         Sending `proposal.aliases` alone was a silent hole: the mapping
+         matches a description against the name or an alias, so a group
+         confirmed under a name of the operator's own left the proposed
+         wording matching nothing. The group would confirm and immediately
+         stop combining the very lines it was raised about, and the
+         proposal would come back on the next load. */
+      const wordings = [proposal.proposedName, ...proposal.aliases].filter(
+        (wording) => wording.trim().toLowerCase() !== name.trim().toLowerCase(),
+      );
       void act(
         async () => {
           await api.saveCanonicalItem(organisationId, null, {
             name,
             groupName,
             defaultUnit: unit,
-            aliases: proposal.aliases,
+            aliases: wordings,
           });
           retry();
         },
-        `“${name}” is now an item master, and its ${String(proposal.aliases.length)} other wording(s) are its aliases.`,
+        `“${name}” is now an item master, and its ${String(wordings.length)} other wording(s) are its aliases.`,
       );
     },
     [act, api, organisationId, retry],
@@ -1095,13 +1118,17 @@ function ProposalForm({
       <div className="flex flex-wrap items-end gap-3">
         <Field>
           <label htmlFor={nameId}>Item name</label>
+          {/* A master item's name is capped at 200 in the database, and a
+              schedule description has no ceiling at all — so the prefill is
+              trimmed to fit and the FULL wording travels as an alias, which
+              is the half the mapping actually reads. */}
           <input
             id={nameId}
             name={nameId}
             required
             minLength={2}
             maxLength={200}
-            defaultValue={proposal.proposedName}
+            defaultValue={proposal.proposedName.slice(0, 200)}
           />
         </Field>
         <Field>

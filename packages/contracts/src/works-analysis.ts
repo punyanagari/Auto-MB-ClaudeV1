@@ -114,13 +114,44 @@ const WorkAnalysisItemSchema = Type.Object(
     baselineInstalledQuantity: NonNegativeDecimalStringSchema,
 
     inspectionAgency: Type.Union([InspectionAgencySchema, Type.Null()]),
-    /** Null where the item carries no clause, or a clause with no
-     * quantity. Zero would claim the clause covers nothing. */
-    inspectionQuantity: Type.Union([NonNegativeDecimalStringSchema, Type.Null()]),
-    /** Offered on inspection calls that were not cancelled. */
+    /**
+     * The contract LOT SIZE, where the clause names one.
+     *
+     * Reported because an operator raising a call wants it, and named for
+     * what it is. Migration 0082 is explicit that it is a hint the
+     * raise-a-call form defaults to and that "the dispatch gate never reads
+     * it", so nothing here treats it as a target: an item whose lot size is
+     * 10 is not an item with 10 left to inspect.
+     */
+    inspectionLotSize: Type.Union([NonNegativeDecimalStringSchema, Type.Null()]),
+    /** Whether this clause interlocks despatch. A clause that does not gate
+     * still has an inspection position; nothing is blocked by it. */
+    gatesDispatch: Type.Boolean(),
+    /** Offered on calls of the clause's OWN agency that were not cancelled.
+     * A RITES call answers nothing about an RDSO clause, which is the join
+     * `inspection_dispatch_shortfall` makes and this read repeats. */
     inspectionCalledQuantity: NonNegativeDecimalStringSchema,
-    /** Offered on calls that closed with a certificate. */
-    inspectionPassedQuantity: NonNegativeDecimalStringSchema,
+    /**
+     * What a LIVE certificate of the clause's own agency covers — the
+     * dispatch gate's own `certified` figure, through the shared
+     * `app_private.inspection_certificate_live`, resolved against the
+     * organisation's today rather than UTC's.
+     *
+     * The difference from `inspectionCalledQuantity` is the difference
+     * between "an agency has seen it" and "a lorry may leave": a call whose
+     * certificate has expired counts in the first and not the second.
+     */
+    inspectionCertifiedQuantity: NonNegativeDecimalStringSchema,
+    /**
+     * How much still needs a live certificate before the whole sanctioned
+     * quantity could be despatched: sanctioned less certified, floored at
+     * zero.
+     *
+     * Null where the item carries no clause, and null for a `consignee`
+     * clause — that inspection happens after arrival, can never gate
+     * despatch (0082's CHECK), and raises no calls to be covered by, so a
+     * figure here would be the sanctioned quantity dressed up as a backlog.
+     */
     pendingInspectionQuantity: Type.Union([
       NonNegativeDecimalStringSchema,
       Type.Null(),
@@ -130,14 +161,36 @@ const WorkAnalysisItemSchema = Type.Object(
     /** Billed: finalized Measurement Book lines plus the locked baseline's
      * opening amount. An exact figure from stored snapshots. */
     billedValue: NonNegativeMoneyStringSchema,
-    /** Executed: the payment-matrix entitlement of what is delivered,
-     * installed and PAC-certified, at this item's own percentages. Null
-     * where the item's payment category resolves through no matrix row —
-     * there is then no percentage to bill at, and a zero would read as
-     * "nothing owed" rather than "the matrix is incomplete". */
-    executedValue: Type.Union([NonNegativeMoneyStringSchema, Type.Null()]),
-    /** Executed minus billed, floored at zero. Null for the same reason. */
+    /**
+     * What a next Measurement Book would bill: the payment-matrix
+     * entitlement of the quantities the books have NOT yet taken, stage by
+     * stage, each rounded the way `computeStageAmounts` rounds a book's own
+     * delta.
+     *
+     * Computed from the leftover rather than by re-deriving the whole
+     * entitlement from the cumulative quantity and subtracting. The two
+     * differ by a rounding ghost: three books billing one metre each at
+     * 0.334 round to 0.33 apiece and have billed 0.99, while
+     * `round(3 x 0.334, 2)` is 1.00 — so the re-derivation leaves a penny
+     * outstanding on a fully billed item that no Measurement Book could
+     * ever raise. Sharing the books' own rounding basis makes a fully
+     * billed item read exactly zero.
+     *
+     * Null where the item's payment category resolves through no matrix row
+     * — there is then no percentage to bill at, and a zero would read as
+     * "nothing owed" rather than "the matrix is incomplete".
+     */
     unbilledExecutedValue: Type.Union([NonNegativeMoneyStringSchema, Type.Null()]),
+    /**
+     * Billed plus unbilled: everything this item has earned so far.
+     *
+     * The SUPPLY, INSTALLATION and PAC stages only. The final-bill stage is
+     * excluded because `computeStageAmounts` earns it only on the FINAL
+     * Measurement Book — a manual act, not a quantity threshold — so
+     * nothing here can honestly say it is owed yet. Both documents say so
+     * in their notes.
+     */
+    executedValue: Type.Union([NonNegativeMoneyStringSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -167,9 +220,11 @@ const WorkAnalysisInspectionGroupSchema = Type.Object(
   {
     agency: Type.Union([InspectionAgencySchema, Type.Null()]),
     itemCount: Type.Integer(),
-    clauseQuantity: NonNegativeDecimalStringSchema,
+    /** The lot sizes summed. A hint's total is still only a hint; it is
+     * here so the column has a footer, not as a target. */
+    lotSizeTotal: NonNegativeDecimalStringSchema,
     calledQuantity: NonNegativeDecimalStringSchema,
-    passedQuantity: NonNegativeDecimalStringSchema,
+    certifiedQuantity: NonNegativeDecimalStringSchema,
     pendingQuantity: NonNegativeDecimalStringSchema,
     pendingValue: NonNegativeMoneyStringSchema,
   },
@@ -330,6 +385,16 @@ const CombinedPendingTotalsSchema = Type.Object(
   {
     rowCount: Type.Integer(),
     mappedRowCount: Type.Integer(),
+    /**
+     * The schedule LINES under these rows, which is what the Lines column
+     * totals to.
+     *
+     * `rowCount` is a different number wearing the same heading: a row is a
+     * master item and a line is a schedule entry, and one row of three
+     * lines makes them disagree — which is precisely the row an item
+     * catalogue exists to produce.
+     */
+    lineCount: Type.Integer(),
     pendingSupplyValue: NonNegativeMoneyStringSchema,
     pendingInstallValue: NonNegativeMoneyStringSchema,
   },
@@ -372,10 +437,20 @@ export type DivisionAnalysisResponse = Static<typeof DivisionAnalysisResponseSch
 export const MappedItemAnalysisResponseSchema = Type.Object(
   {
     rows: Type.Array(CombinedPendingRowSchema),
+    /**
+     * The mapped and unmapped rows total SEPARATELY, because the screen and
+     * both documents draw them as two tables. A single total under the
+     * mapped table that had swept the unmapped rows in would be a figure
+     * the rows above it do not add up to — the one arithmetic error a
+     * reader cannot catch by looking.
+     */
+    mappedTotals: CombinedPendingTotalsSchema,
+    unmappedTotals: CombinedPendingTotalsSchema,
+    /** Both together, for the report's own header. */
     totals: CombinedPendingTotalsSchema,
-    /** Live schedule lines matching no active canonical item. They appear
-     * in `rows` one description at a time; this is the count the screen
-     * puts above the proposals. */
+    /** Live schedule lines matching no active canonical item — the same
+     * figure as `unmappedTotals.lineCount`, carried here because the screen
+     * prints it above the proposals rather than in a table footer. */
     unmappedLineCount: Type.Integer(),
   },
   { additionalProperties: false },

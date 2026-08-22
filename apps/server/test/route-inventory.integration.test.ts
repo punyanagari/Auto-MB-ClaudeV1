@@ -128,6 +128,20 @@ const UNBOUND_ROUTES = new Set([
  * `bills` array is still unbounded and still grows per Work — recorded
  * here, in the same breath as the dashboard, so the removal is a fact
  * this file states rather than one it lost.
+ *
+ * `GET /api/reports/division-analysis` and
+ * `GET /api/reports/mapped-item-analysis` are the same case and are
+ * recorded here for the same reason: each names its totals beside its rows,
+ * so the shape rule reads them as details rather than lists and the map
+ * below cannot hold them. Both ARE unbounded reads, and the argument for
+ * leaving them so is that they are bounded by the SCHEDULE rather than by
+ * activity. A register grows every time somebody issues a document; these
+ * grow only when a Work is awarded with more items in it, and they SHRINK
+ * as those items are delivered — a fully supplied item leaves the pending
+ * reports altogether. Many schedule lines collapse into one row per master
+ * item and unit, and both reports are read whole because "what do we order
+ * for this division" is a question about every row at once. Paging either
+ * would page the order an operator is about to place.
  */
 const UNPAGINATED_LISTS = new Map<string, string>([
   // --- Bounded by the organisation's configuration ------------------------
@@ -145,7 +159,7 @@ const UNPAGINATED_LISTS = new Map<string, string>([
   ],
   [
     'GET /api/reports/item-group-proposals',
-    'the proposed item groups on the Reports screen: one row per normalised description that more than one WORDING resolves to, across the schedule lines the caller can see. It cannot be longer than the item analysis rendered above it on the same screen — that read walks every one of those lines and is a single figure per master item — and it is a review queue an operator works through until it is empty, so a second page would be a page of work nobody has done yet rather than more of a register',
+    'the proposed item groups on the Reports screen: one row per normalised description that more than one WORDING resolves to, across the schedule lines the caller can see. It cannot be longer than the item analysis above it on the same screen, and it is a review queue an operator works through until it is empty — so a second page would be a page of work nobody has done yet rather than more of a register',
   ],
   [
     'GET /api/notification-channels',

@@ -40,6 +40,17 @@ export interface AnalysisTable {
 export interface AnalysisDocument {
   readonly title: string;
   readonly subtitle: string;
+  /**
+   * Which scope produced this file, printed directly under the header and
+   * above the first table.
+   *
+   * Not a footnote. `docs/UX.md` § 38 promises a reader is told, and the
+   * misreading it prevents — a report narrowed to one member's assignments
+   * taken for the organisation's whole position — happens at the top of
+   * page one, not at the bottom of the last. Absent on the per-Work report,
+   * which is about one named Work and has no scope to qualify.
+   */
+  readonly scope?: string;
   /** Label/value pairs printed above the tables — the report's own
    * identity, so a page found on a desk says what it is about. */
   readonly facts: readonly (readonly [string, string])[];
@@ -176,14 +187,15 @@ export function toWorkDocument(analysis: WorkAnalysisResponse): AnalysisDocument
       },
       {
         heading: 'Inspection position',
-        note: 'Items carrying an inspection clause. Pending to inspect is the clause quantity less what has been offered on calls that were not cancelled.',
+        note: 'Items carrying an inspection clause. Certified is what a LIVE certificate of the clause’s own agency covers — the dispatch gate’s own figure. Pending to inspect is the sanctioned quantity less that, which is what still needs cover before the whole quantity could be despatched. The lot size is the contract’s inspecting lot and is a hint the gate never reads.',
         columns: [
           { header: 'Item' },
           { header: 'Description' },
           { header: 'Agency' },
-          { header: 'Clause quantity', ...QUANTITY },
+          { header: 'Gates despatch' },
+          { header: 'Lot size', ...QUANTITY },
           { header: 'Called', ...QUANTITY },
-          { header: 'Passed', ...QUANTITY },
+          { header: 'Certified (live)', ...QUANTITY },
           { header: 'Pending to inspect', ...QUANTITY },
           { header: 'Pending value', ...QUANTITY },
         ],
@@ -193,9 +205,12 @@ export function toWorkDocument(analysis: WorkAnalysisResponse): AnalysisDocument
             item.itemNumber,
             item.description,
             item.inspectionAgency,
-            item.inspectionQuantity ?? '—',
+            item.gatesDispatch ? 'Yes' : 'No',
+            item.inspectionLotSize ?? '—',
             item.inspectionCalledQuantity,
-            item.inspectionPassedQuantity,
+            item.inspectionCertifiedQuantity,
+            // A consignee clause inspects after arrival and can never gate,
+            // so it has no pending-to-inspect position at all.
             item.pendingInspectionQuantity ?? '—',
             item.pendingInspectionValue ?? '—',
           ]),
@@ -206,18 +221,18 @@ export function toWorkDocument(analysis: WorkAnalysisResponse): AnalysisDocument
         columns: [
           { header: 'Agency' },
           { header: 'Items', ...QUANTITY },
-          { header: 'Clause quantity', ...QUANTITY },
+          { header: 'Lot size total', ...QUANTITY },
           { header: 'Called', ...QUANTITY },
-          { header: 'Passed', ...QUANTITY },
+          { header: 'Certified (live)', ...QUANTITY },
           { header: 'Pending to inspect', ...QUANTITY },
           { header: 'Pending value', ...QUANTITY },
         ],
         rows: analysis.inspection.map((group) => [
           group.agency ?? 'No clause',
           String(group.itemCount),
-          group.clauseQuantity,
+          group.lotSizeTotal,
           group.calledQuantity,
-          group.passedQuantity,
+          group.certifiedQuantity,
           group.pendingQuantity,
           group.pendingValue,
         ]),
@@ -280,6 +295,13 @@ export function toWorkDocument(analysis: WorkAnalysisResponse): AnalysisDocument
         : []),
       'Pending to supply is the sanctioned quantity less what has been delivered on issued challans. The excess-delivery toggle lifts the delivery cap only; it does not change this figure.',
       'Pending to install is the sanctioned quantity less what has been installed. Installation carries no database ceiling, so any overrun is reported in its own column rather than hidden by the subtraction.',
+      'Executed and unbilled cover the SUPPLY, INSTALLATION and PAC stages only. The final-bill stage is excluded: a Measurement Book earns it only when it is the FINAL book, which is a manual act rather than a quantity threshold, so no figure here can honestly claim it yet. Against a contract total, that is the gap you should expect.',
+      'Unbilled executed is computed on the quantities the finalized books have not yet billed, each rounded once as those books round their own. It therefore reads exactly zero for a fully billed item, rather than the penny a re-derivation from the cumulative quantity would leave behind.',
+      ...(analysis.payment.indeterminateBills > 0
+        ? [
+            'Received and deducted count every bill, including those awaiting a railway figure: money that arrived and money the railway kept are facts either way. Only OUTSTANDING excludes them, because for a bill the railway has not priced there is no outstanding amount to state.',
+          ]
+        : []),
       ...SHARED_NOTES,
     ],
   };
@@ -330,6 +352,16 @@ function pendingRowCells(row: CombinedPendingRow): XlsxValue[] {
   ];
 }
 
+/**
+ * A section total, positional against `PENDING_COLUMNS`.
+ *
+ * The Lines cell carries the LINE total, not the row count. They are
+ * different numbers — a row is a master item, a line is a schedule entry,
+ * and one row of three lines separates them — so a row count under a column
+ * of line counts is the kind of wrong figure that looks right. The Works
+ * cell stays blank on purpose: one Work appears under many rows, so summing
+ * that column would count it once per product.
+ */
 function pendingTotalCells(label: string, totals: CombinedPendingTotals): XlsxValue[] {
   return [
     label,
@@ -337,7 +369,7 @@ function pendingTotalCells(label: string, totals: CombinedPendingTotals): XlsxVa
     null,
     null,
     null,
-    String(totals.rowCount),
+    String(totals.lineCount),
     null,
     null,
     null,
@@ -410,6 +442,7 @@ export function toMappedItemDocument(
     subtitle: 'Pending quantities combined per item master, across every active Work',
     facts: [
       ['Master items with a pending position', String(mapped.length)],
+      ['Mapped lines', String(analysis.mappedTotals.lineCount)],
       ['Unmapped lines', String(analysis.unmappedLineCount)],
       ['Pending to supply', analysis.totals.pendingSupplyValue],
       ['Pending to install', analysis.totals.pendingInstallValue],
@@ -419,7 +452,9 @@ export function toMappedItemDocument(
         heading: 'Mapped items',
         columns: PENDING_COLUMNS,
         rows: mapped.map(pendingRowCells),
-        total: pendingTotalCells('Mapped total', analysis.totals),
+        // This table's OWN total. Using the report-wide one would put a
+        // figure under a table whose rows do not add up to it.
+        total: pendingTotalCells('Mapped total', analysis.mappedTotals),
         emptyMessage:
           'No schedule line maps to an item master yet. The item master screen is where a master item and its alternative wordings are recorded.',
       },
@@ -428,6 +463,7 @@ export function toMappedItemDocument(
         note: 'One row per distinct description. These do not combine with anything, because nothing has yet said that they name the same product.',
         columns: PENDING_COLUMNS,
         rows: unmapped.map(pendingRowCells),
+        total: pendingTotalCells('Unmapped total', analysis.unmappedTotals),
         emptyMessage: 'Every live schedule line maps to an item master.',
       },
     ],
@@ -463,6 +499,8 @@ export function worksAnalysisSheet(document: AnalysisDocument): {
   };
 
   rows.push(line([document.title, document.subtitle]));
+  // The scope sentence leads, above the facts and every table.
+  if (document.scope !== undefined) rows.push(line([document.scope]));
   for (const [label, value] of document.facts) rows.push(line([label, value]));
 
   for (const table of document.tables) {
@@ -569,6 +607,7 @@ ${BASE_PDF_CSS}
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .empty { color: #55635c; font-style: italic; }
   .note { font-size: 9px; color: #55635c; margin: 0 0 0.2rem; }
+  .scope { margin: 0.5rem 0 0; font-weight: bold; }
   .facts { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 0.4rem 0 0.8rem; }
   .facts div { min-width: 120px; }
   .notes { margin-top: 1rem; font-size: 9px; color: #55635c; }
@@ -599,6 +638,11 @@ ${BASE_PDF_CSS}
     <p>${escapeHtml(document.subtitle)}</p>
   </div>
 </header>
+${
+  document.scope === undefined
+    ? ''
+    : `<p class="scope">${escapeHtml(document.scope)}</p>`
+}
 <section class="facts">
 ${document.facts
   .map(

@@ -70,9 +70,10 @@ const WORK: WorkAnalysisResponse = {
       baselineSuppliedQuantity: '0.000',
       baselineInstalledQuantity: '0.000',
       inspectionAgency: 'RITES',
-      inspectionQuantity: '10.000',
-      inspectionCalledQuantity: '4.000',
-      inspectionPassedQuantity: '4.000',
+      gatesDispatch: true,
+      inspectionLotSize: '10.000',
+      inspectionCalledQuantity: '7.000',
+      inspectionCertifiedQuantity: '4.000',
       pendingInspectionQuantity: '6.000',
       pendingInspectionValue: '6000.00',
       billedValue: '0.00',
@@ -97,9 +98,9 @@ const WORK: WorkAnalysisResponse = {
     {
       agency: 'RITES',
       itemCount: 1,
-      clauseQuantity: '10.000',
-      calledQuantity: '4.000',
-      passedQuantity: '4.000',
+      lotSizeTotal: '10.000',
+      calledQuantity: '7.000',
+      certifiedQuantity: '4.000',
       pendingQuantity: '6.000',
       pendingValue: '6000.00',
     },
@@ -163,6 +164,7 @@ const DIVISION: DivisionAnalysisResponse = {
       totals: {
         rowCount: 1,
         mappedRowCount: 1,
+        lineCount: 3,
         pendingSupplyValue: '14800.00',
         pendingInstallValue: '21000.00',
       },
@@ -171,6 +173,7 @@ const DIVISION: DivisionAnalysisResponse = {
   totals: {
     rowCount: 1,
     mappedRowCount: 1,
+    lineCount: 3,
     pendingSupplyValue: '14800.00',
     pendingInstallValue: '21000.00',
   },
@@ -197,7 +200,22 @@ const MAPPED: MappedItemAnalysisResponse = {
       pendingInstallValue: '7750.00',
     },
   ],
-  totals: DIVISION.totals,
+  // Each table's own total, so a reader can add the rows above it up.
+  mappedTotals: DIVISION.totals,
+  unmappedTotals: {
+    rowCount: 1,
+    mappedRowCount: 0,
+    lineCount: 2,
+    pendingSupplyValue: '7750.00',
+    pendingInstallValue: '7750.00',
+  },
+  totals: {
+    rowCount: 2,
+    mappedRowCount: 1,
+    lineCount: 5,
+    pendingSupplyValue: '22550.00',
+    pendingInstallValue: '28750.00',
+  },
   unmappedLineCount: 2,
 };
 
@@ -238,6 +256,39 @@ describe('the works-analysis sheet', () => {
     expect(itemAt).toBeGreaterThan(-1);
     expect(totalAt).toBeGreaterThan(itemAt);
     expect(flat[totalAt]).toContain('6000.00');
+  });
+
+  it('puts the scope sentence first, above the tables it qualifies', () => {
+    // UX.md § 38 promises the scope is stated where a reader meets it, not
+    // buried under the footnotes of a page they may never scroll to. A
+    // narrowed report read as the organisation's whole position is the
+    // failure this ordering prevents.
+    const scoped = {
+      ...toDivisionDocument(DIVISION),
+      scope: 'This report covers only the Works you are assigned to.',
+    };
+    const rows = worksAnalysisSheet(scoped).rows.map((row) => row.join('|'));
+    const scopeAt = rows.findIndex((line) => line.includes('only the Works you are'));
+    const firstHeading = rows.findIndex((line) => line.startsWith('Division 100'));
+    expect(scopeAt).toBeGreaterThan(-1);
+    expect(scopeAt).toBeLessThan(firstHeading);
+
+    const html = renderWorksAnalysisHtml(scoped);
+    expect(html.indexOf('only the Works you are')).toBeLessThan(
+      html.indexOf('Division 100'),
+    );
+  });
+
+  it('states that the final-bill stage is not in the executed figure', () => {
+    // `computeStageAmounts` earns the final-bill stage only on the FINAL
+    // Measurement Book, which is a manual act. Excluding it is the only
+    // honest reading, and a reader comparing this page to a contract total
+    // needs to be told rather than left to find the gap.
+    const flat = worksAnalysisSheet(toWorkDocument(WORK))
+      .rows.map((row) => row.join(' '))
+      .join('\n');
+    expect(flat).toContain('final-bill stage');
+    expect(renderWorksAnalysisHtml(toWorkDocument(WORK))).toContain('final-bill stage');
   });
 
   it('carries every exclusion into the workbook', () => {
