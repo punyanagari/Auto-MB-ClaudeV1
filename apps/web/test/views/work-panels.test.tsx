@@ -99,7 +99,16 @@ describe('CompletionExtensions', () => {
     renderCompletion(api, { openComposer: true });
 
     const field = await screen.findByLabelText('Proposed completion date');
-    expect(document.activeElement).toBe(field);
+    // AWAITED, because the focus is not part of the render that puts the
+    // field on screen: `CompletionExtensions` focuses it from an effect
+    // gated on the completion read, so `findBy` can resolve on the node
+    // one tick before the effect runs. Asserting `activeElement`
+    // synchronously here passed on a quiet machine and failed on a loaded
+    // CI runner, which is the definition of a flake rather than a bug in
+    // the panel.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(field);
+    });
     expect((field as HTMLInputElement).value).toBe('');
   });
 
