@@ -274,6 +274,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       },
     }),
     importTallyMasters: vi.fn(),
+    importTallyInvoices: vi.fn(),
     challanCorrectionEligibility: vi.fn().mockResolvedValue({
       challanId: 'aaaa4444-4444-4444-8444-444444444444',
       status: 'issued',

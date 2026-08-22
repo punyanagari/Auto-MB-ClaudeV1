@@ -249,7 +249,13 @@ describe('the schema at head names all three shapes', () => {
     // bare numeric — and against it is that the day a wave does compute
     // with it, a column at some other precision is a rounding difference
     // discovered in a reconciliation report rather than here.
-    expect(adopted.length).toBe(136);
+    //
+    // 0119 adds THREE, and the third argument is the strongest of them:
+    // the Tally cross-reference stores a voucher's own value and the two
+    // sides of a value DISAGREEMENT, and a disagreement measured at two
+    // different precisions is a disagreement about the precision. All
+    // three go through `money.ts`'s BigInt paise on the way in.
+    expect(adopted.length).toBe(139);
   });
 
   it('types every digest column as sha256_hex', () => {

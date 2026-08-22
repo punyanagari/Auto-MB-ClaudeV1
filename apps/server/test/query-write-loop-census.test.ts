@@ -48,6 +48,11 @@ const ALLOWED: Record<string, { readonly writes: number; readonly reason: string
     reason:
       'The loop is over CHUNKS, not rows: one upsert carries 500 ledger masters and a real export holds 4,327, which is well past what one statement should carry in placeholders. Batching further is what this already is — the alternative the rule exists to refuse, a statement per ledger, would be 4,327 round-trips instead of nine. Nothing else in the transaction holds a Work lock: the census reaches `works` nowhere.',
   },
+  'routes/tally-invoices.ts': {
+    writes: 2,
+    reason:
+      'Both loops are over CHUNKS, not rows, for the reason `routes/tally-masters.ts` gives directly above: one statement carries 500 register rows and 500 cross-reference links, and a real filtered export produces 418 of the first and 726 of the second. The alternative the rule exists to refuse — a statement per voucher — would be 1,144 round-trips instead of four. Nothing in the transaction holds a Work lock: the rows it writes reach `works` only through an annotation, which is why `work-supersede.ts` exempts both tables.',
+  },
   'import/importer.ts': {
     writes: 7,
     reason:

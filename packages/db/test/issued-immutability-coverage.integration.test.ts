@@ -550,6 +550,27 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'updated_at',
   ],
 
+  // The Tally invoice cross-reference (0119). Everything an export said
+  // about a correspondence is frozen; what moves is what 0115 calls a
+  // HINGE — an annotation the organisation makes ABOUT the record rather
+  // than a change to it. Two of them, and the grant is column-scoped to
+  // exactly these:
+  //
+  //   * the owner's ruling on a value the two systems disagree about,
+  //     which is ruling 21's second half. Correctable and never
+  //     clearable, so the guard admits one verdict replacing another and
+  //     refuses a return to "never ruled on";
+  //   * the liveness stamp the discard trigger writes, which exists so
+  //     the origin-uniqueness index has a predicate over this table's own
+  //     columns. Written by a trigger and never by a route.
+  tally_invoice_links: [
+    'resolution',
+    'resolved_by_user_id',
+    'resolved_at',
+    'superseded_at',
+    'updated_at',
+  ],
+
   // The Tally ledger census (0118). The INVERSE of the register above it,
   // and the widest list here for a reason the migration argues in full:
   // this table mirrors a file the organisation is still editing, so every

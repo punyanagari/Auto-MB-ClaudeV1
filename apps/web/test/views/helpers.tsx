@@ -391,6 +391,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
         invoiceCount: 0,
         linkedCount: 0,
         totalValue: '0.00',
+        tallySourcedCount: 0,
+        disputedCount: 0,
+        disputedUnresolvedCount: 0,
         earliestDate: null,
         latestDate: null,
       },
@@ -418,6 +421,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
       },
     }),
     importTallyMasters: vi.fn<ApiClient['importTallyMasters']>(),
+    importTallyInvoices: vi.fn<ApiClient['importTallyInvoices']>(),
     challanCorrectionEligibility: vi
       .fn<ApiClient['challanCorrectionEligibility']>()
       .mockResolvedValue({

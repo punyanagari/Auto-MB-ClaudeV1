@@ -2486,6 +2486,10 @@ test('the historical invoice register passes the axe scan', async ({ page }) => 
     page.getByRole('heading', { name: 'Historical invoices' }),
   ).toBeVisible();
   await expect(page.getByLabel('Zoho Books export (.csv)')).toBeVisible();
+  // The TallyPrime half (0119), which is a SECOND upload panel rather
+  // than a format toggle on the first — so the scan sees two file inputs,
+  // each named only by its own label.
+  await expect(page.getByLabel('TallyPrime vouchers (.xml)')).toBeVisible();
   await expect(page.getByLabel('Customer', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Financial year')).toBeVisible();
   await expect(page.getByRole('link', { name: /PL270-CRB/ })).toBeVisible();
@@ -2497,6 +2501,14 @@ test('the historical invoice register passes the axe scan', async ({ page }) => 
   for (const label of ['issued', 'draft', 'cancelled']) {
     await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
   }
+  // Both lamps this wave adds, on their own tones: the source chip in its
+  // neutral family and the disputed chip in the caution family, each of
+  // which has to hold against its ground in both themes.
+  await expect(page.getByText('TallyPrime', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Zoho Books', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Value disputed', { exact: true })).toBeVisible();
+  // The cell that says HOW MANY rather than naming one of several.
+  await expect(page.getByText('2 vouchers', { exact: true })).toBeVisible();
   await expectNoAxeViolations(page, 'historical invoice register');
 });
 

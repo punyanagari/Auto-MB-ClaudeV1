@@ -260,6 +260,20 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     bodyLimit: MAX_TALLY_UPLOAD_BYTES,
     query: '?mode=preview&filename=Master.xml',
   },
+  {
+    // The TallyPrime sales-voucher export (0119). The SAME ceiling as the
+    // masters import above and for a different reason: the file it takes
+    // is a FILTERED export — the Day Book narrowed to Sales, Credit Note
+    // and Debit Note — which is 61 MB against the 3.18 GB of every
+    // voucher TallyPrime holds. The cap is what refuses the unfiltered
+    // file; the route's own copy explains why the narrowing is the
+    // intake rather than a workaround for it.
+    key: 'POST /api/tally-invoices/import',
+    sourceFile: 'routes/tally-invoices.ts',
+    format: 'tally-xml',
+    bodyLimit: MAX_TALLY_UPLOAD_BYTES,
+    query: '?mode=preview&filename=Vouchers.xml',
+  },
 ];
 
 /** What each format's shared refusal answers for a body whose signature
