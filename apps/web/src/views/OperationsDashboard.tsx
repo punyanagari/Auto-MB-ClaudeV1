@@ -454,8 +454,13 @@ export function OperationsDashboard({
         aria-label="Active portfolio"
         className="data-surface grid grid-cols-2 gap-px bg-border lg:grid-cols-4"
       >
+        {/* `min-w-0` is the width guard `ui/card.tsx` documents, applied to
+            a grid cell: a grid item's default `min-width: auto` refuses to
+            shrink below its content, so one long mono figure would widen
+            its column past half a 320px screen and scroll the page
+            sideways. */}
         {metrics.map((metric) => (
-          <div key={metric.label} className="bg-card p-4 sm:p-5">
+          <div key={metric.label} className="min-w-0 bg-card p-4 sm:p-5">
             <Stat
               label={metric.label}
               value={metric.value}

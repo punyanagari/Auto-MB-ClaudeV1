@@ -186,26 +186,39 @@ export function BilledReceivedChart({
       {/* The table view. It is the accessible reading of the plot and the
           relief the palette's lightest step needs: `--chart-2` sits below
           3:1 against the light card, so the figures have to be readable
-          somewhere that is not a fill. */}
-      <table className="sr-only">
-        <caption>Value billed and payments received, by month</caption>
-        <thead>
-          <tr>
-            <th scope="col">Month</th>
-            <th scope="col">Billed</th>
-            <th scope="col">Received</th>
-          </tr>
-        </thead>
-        <tbody>
-          {months.map((row) => (
-            <tr key={row.month}>
-              <th scope="row">{`${monthLabel(row.month)} ${row.month.slice(0, 4)}`}</th>
-              <td>{formatInr(row.billed)}</td>
-              <td>{formatInr(row.received)}</td>
+          somewhere that is not a fill.
+
+          THE WRAPPER IS LOAD-BEARING. `sr-only` is `position: absolute`
+          with `width: 1px; overflow: hidden`, and a `<table>` does not
+          obey a width narrower than its own min-content — put the class
+          on the table itself and it lays out at its full 289px, at its
+          static position, and widens the document past the viewport. A
+          page that scrolls sideways to reveal an invisible row of figures
+          is the defect `globals.css` already records for `sr-only` labels
+          inside scrolled registers, reached from a different direction; a
+          `<div>` obeys the width, so the table is clipped inside it.
+          Measured at 320px by `e2e/responsive.spec.ts`. */}
+      <div className="sr-only">
+        <table>
+          <caption>Value billed and payments received, by month</caption>
+          <thead>
+            <tr>
+              <th scope="col">Month</th>
+              <th scope="col">Billed</th>
+              <th scope="col">Received</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {months.map((row) => (
+              <tr key={row.month}>
+                <th scope="row">{`${monthLabel(row.month)} ${row.month.slice(0, 4)}`}</th>
+                <td>{formatInr(row.billed)}</td>
+                <td>{formatInr(row.received)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   );
 }
