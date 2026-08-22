@@ -267,17 +267,46 @@ division and its AMC ledger), with the deductions pooled across both.
 Nothing else deviates — no receipt is missing a bank line, none is
 unbalanced, none has three or more party lines *and* deductions.
 
-Two further wrinkles that are not deviations but will bite an importer:
+One further wrinkle that is not a deviation but will bite an importer:
+**77 receipts contain a ledger line with no `AMOUNT` element at all** — a
+head named on the voucher with a nil value. A reader that assumes
+`AMOUNT` exists will crash or silently drop the line; a reader that
+treats it as 0.00 reproduces Tally's own behaviour.
 
-- **77 receipts contain a ledger line with no `AMOUNT` element at all** —
-  a head named on the voucher with a nil value. A reader that assumes
-  `AMOUNT` exists will crash or silently drop the line; a reader that
-  treats it as 0.00 reproduces Tally's own behaviour.
-- **`PARTYLEDGERNAME` is not the counterparty on 838 receipts** — Tally
-  fills it with the *bank* ledger for plain collections. The counterparty
-  is the credited line, not the field. Only 4 of those 838 carry
-  deductions, so the railway population is unaffected, but the field
-  cannot be trusted as the customer key.
+### Bank-party receipts are a different voucher class, not a bad party field
+
+`PARTYLEDGERNAME` names a **bank** ledger on 845 of the 2,025 receipts.
+That looks at first like the field being unreliable. It is not: those 845
+receipts were re-scanned line by line and **none of them credits a
+customer ledger.** What they credit:
+
+| Credited ledger group | Receipts |
+| --- | ---: |
+| `Unsecured Loan` | 326 |
+| `Railway Security Deposits` (deposit released back) | 139 |
+| `IREPS EMD` (tender EMD refunded) | 114 |
+| Railway-office FDR/BG groups (`Sr.Dfm-<acct>`, `Pebpl Bg_<acct>`, `FA AND CAO _<acct>`) | 134 |
+| `Fix Deposit with Bank` (FDR matured) | 14 |
+| `Indirect Incomes` (interest) | 31 |
+| Bank-to-bank | 34 |
+| Staff/travel advances and sundries | ~50 |
+
+So these are **not collections at all** — they are loan drawdowns,
+deposit and EMD refunds, and FDR maturities, and `PARTYLEDGERNAME` names
+the bank because the bank is the side the operator entered from. On every
+receipt that credits a customer, the field names the customer.
+
+Two consequences, both good:
+
+1. `PARTYLEDGERNAME` **is** safe as the customer key on customer
+   receipts. The importer still reads amounts from the credited and
+   debited lines, but it does not need a fallback to identify the
+   counterparty.
+2. Bank-party receipts are a separate voucher class with their own
+   meaning: 401 of them are **the release side of the SD / EMD / FDR /
+   PBG instruments catalogued in §4.5** — the event that closes an
+   instrument this product would otherwise only ever see opened. Wave T4
+   should treat them as that, not as leftovers.
 
 ### Per-bill attribution — the important gap
 
@@ -370,14 +399,33 @@ component:
 | …whose Tally total equals the Zoho total within ₹1 | **518** |
 | …that differ | 4 (median gap ≈ ₹1.5 lakh, max ≈ ₹36 lakh) |
 | Zoho invoices with no Tally voucher | 19 (11 `Void`, 7 carry an IRN, ₹3.06 crore) |
-| Tally `Sales` dated ≥ 2023-01-01 with no Zoho invoice | 61 (₹8.37 crore); 52 carry a `P…`-shaped reference absent from the export |
+| Tally `Sales` dated ≥ 2023-01-01 with no Zoho invoice | 61 (₹8.37 crore) — 51 pre-date Zoho's coverage, 5 are renumbered duplicates, 1 is a serial collision, 4 unaccounted (below) |
 
-Two conclusions. First, the two systems agree: the Zoho register PR #167
-imports is the same billing history Tally holds, and 97 % of it can be
-tied together by number with the value reconciling. Second, **the Zoho
-export looks incomplete** — 52 Tally vouchers reference `P…` numbers whose
-serials fall *inside* the exported range but are not in the file (owner
-question 11).
+The two systems agree: the Zoho register PR #167 imports is the same
+billing history Tally holds, and 97 % of it can be tied together by
+number with the value reconciling.
+
+The 61 unlinked Tally vouchers were then read one by one, and they are
+**not** evidence of an incomplete export, which is what the first pass of
+this census suspected:
+
+- The Zoho register **effectively begins in FY 2023-24** — only 3 of its
+  638 invoices are dated before 1 Apr 2023. **51 of the 61 (₹7.88 crore)
+  are dated Jan–Mar 2023**, i.e. Tally history from before Zoho was in
+  use. They belong to question 23, not question 11.
+- **5 are the same document renumbered.** Tally and Zoho agree on the
+  5-digit serial and disagree on the two-digit customer-code segment in
+  the middle of the number (`P<aa>NNNNN` vs `P<bb>NNNNN`); 4 of the 5
+  also agree on amount to the rupee, 3 on date exactly.
+- **1 is a false serial collision** — same 5 digits, different customer,
+  different amount, five months apart. A serial-tolerant matcher must
+  therefore **confirm on amount or customer as well as serial**, or it
+  will link two unrelated invoices; serial alone is not a key.
+- That leaves **4 genuinely unaccounted for** (≈₹32.7 lakh) — owner
+  question 11.
+
+So a serial-tolerant matcher with that guard would raise the linked
+population from 619 to ~624 of 638.
 
 **Proposal:** import no invoices from Tally. Instead, write the Tally
 voucher's GUID onto the matching `imported_invoices` row as a second
@@ -435,6 +483,13 @@ naming conventions, and it has no dates, no expiry and no issuing-bank
 field except inside the name. It should be a **later wave, or a report,
 not an import** — owner question 18.
 
+The ledgers are only half of it. **401 bank-party receipts are the
+release events for these same instruments** (§3): the deposit refunded,
+the EMD returned, the FDR matured. The ledger says an instrument exists
+and what it is worth; those receipts say when it came back and for how
+much. Any instruments wave that reads the names and not the releases
+records instruments that never close.
+
 ---
 
 ## 5. Import-wave proposal
@@ -456,7 +511,7 @@ than guesses:
 | **T1 — masters census (read-only)** | Import nothing. Land a report: ledgers by class, the 344 PL-coded instruments, customer↔contact match, deduction-head inventory | 4,327 ledgers | this document + rulings 1–8 |
 | **T2 — invoice cross-reference** | Attach Tally voucher GUIDs to matching `imported_invoices` rows; report the 19 + 61 non-matches | 1,052 vouchers → 619 links | PR #167 merged; ruling 12 |
 | **T3 — railway receipts as payments** | The 768 deduction-bearing receipts, head-wise, work-linked where a route exists | 768 receipts, ~3,650 deduction lines, ₹20.99 cr | T2; rulings 13–17 |
-| **T4 — plain receipts** | The remaining 1,257 receipts (collections, advances, refunds) | 1,257 | T3 |
+| **T4 — plain and bank-party receipts** | The remaining 1,257 receipts. All but four of the 845 bank-party receipts (§3) sit here: loans, interest, and the 401 SD/EMD/FDR/PBG **release** events T5 needs | 1,257 | T3 |
 | **T5 — instruments (SD/FDR/PBG/EMD)** | If ruled in at all: name-parse the ~900 instrument ledgers into PBG/PAC records | ~900 ledgers | ruling 18 |
 | **not proposed** | Payments (33,828), Journals (31,176), Purchases (12,869), Contra (1,974) | 79,847 | — |
 
@@ -468,6 +523,25 @@ The import is 2,025 receipts and a cross-reference, not 83,061 vouchers.
 
 ## 6. Open questions for the owner
 
+**Ruling status, 22 Aug 2026.** The owner has ruled on questions 1–8, 10,
+12–13 and 15–23. **Those rulings are not transcribed below yet** — their
+text has not reached this document, and a ruling paraphrased from a
+summary is not a ruling. Each lands here as one line under its question,
+and until it does, treat an unannotated question as *answered elsewhere,
+not settled here* — do not read the bare question as still open, and do
+not start the wave it gates from this file alone.
+
+Recorded so far:
+
+- **9 — superseded, pending spot-check.** The re-scan in §3 answers it:
+  the 845 bank-party receipts credit no customer, so `PARTYLEDGERNAME` is
+  safe as the customer key. Three vouchers (one each from 2020, 2023,
+  2026) are with the owner to confirm the reading in TallyPrime.
+- **14 — open.** The owner is reading the underlying vouchers to decide
+  whether `Contracual Deduction` is retention or a catch-all. Nothing in
+  the deduction mapping (§4.4) can be built until it lands, because it
+  decides whether 0114's `retention` head is reachable at all.
+
 1. Is Tally, or is Auto-MB, the system of record for money once this import lands — and if both, which one wins on a disagreement?
 2. Does the import run once (a cutover) or repeatedly (a sync)? `ALTERID` supports incremental re-reads, but a re-read that revises an already-imported payment needs a rule.
 3. The export is dated 19 Aug 2026 and runs to FY 2026-27; is a fresh export taken at import time, and who takes it?
@@ -476,9 +550,9 @@ The import is 2,025 receipts and a cross-reference, not 83,061 vouchers.
 6. Ledger names encode division, work code and instrument number in at least five conventions; may we parse them, or is a name a name and the link must be typed by a person?
 7. Are the `Creditors for A–K` letter categories meaningful to this product, or purely an accounting taxonomy to drop?
 8. May we match contacts on GSTIN from the ledger master rather than on name (30 of 82 Zoho customers match by name alone)?
-9. `PARTYLEDGERNAME` names the bank rather than the customer on 838 receipts — confirm we read the counterparty from the credited line instead.
+9. ~~`PARTYLEDGERNAME` names the bank rather than the customer on 838 receipts — confirm we read the counterparty from the credited line instead.~~ **Superseded** by the §3 re-scan: the 845 bank-party receipts credit *no* customer, so the field is safe as the customer key and those receipts are a separate class. Open only for the owner's spot-check of three named vouchers.
 10. 77 receipt lines name a deduction head with no amount; import as 0.00, or refuse the voucher?
-11. 52 Tally sales vouchers reference `P…` invoice numbers that are **not** in the 638-row Zoho export although their serials fall inside its range — is the export incomplete, or were those invoices deleted in Zoho?
+11. Four Tally sales vouchers inside Zoho's own coverage have no Zoho counterpart at all (≈₹32.7 lakh) — were they raised outside Zoho, or deleted from it? (Re-framed; see §4.3.)
 12. May `imported_invoices` (immutable, migration 0115) gain a Tally-GUID provenance column, or should the cross-reference live in a separate table?
 13. 0114's `retention` and `liquidated_damages` heads have **no** Tally counterpart — leave them permanently empty for imported payments, or is one of the unmapped heads actually retention?
 14. Is `Contracual Deduction` (211 lines) retention, or a catch-all? It is the single largest unmapped head by name.
