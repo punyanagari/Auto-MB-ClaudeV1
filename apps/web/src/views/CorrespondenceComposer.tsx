@@ -7,6 +7,7 @@ import { errorMessage } from '../lib/load-failure.js';
 import { useReload } from '../lib/view-state.js';
 import { Button } from '../ui/button.js';
 import { Card, CardHeader } from '../ui/card.js';
+import { Combobox } from '../ui/combobox.js';
 import { DateField } from '../ui/date-field.js';
 import { Actions, Field, FieldRow, FormError, Hint } from '../ui/form.js';
 import { PageHeader } from '../ui/page-header.js';
@@ -110,9 +111,11 @@ function BackToRegister({ onCancel }: { readonly onCancel: () => void }) {
 }
 
 /** The mock's contact, Work and earlier-letter pickers, in its order and
- * with its placeholder copy. Native selects: `docs/DESIGN.md` maps the
- * mock's `Select` onto the application's own form anatomy, and a listbox
- * widget buys nothing over the platform control here. */
+ * with its placeholder copy. `docs/DESIGN.md` maps the mock's `Select`
+ * onto the application's own form anatomy; the contact and letter pickers
+ * stay native selects, and the Work picker is `ui/combobox` because a
+ * `<select>` over the whole Works register is a wall of titles nobody can
+ * scan (§ 38, owner ruling of 2026-08-22). */
 function LetterPickers({
   pickers,
   idPrefix,
@@ -158,20 +161,20 @@ function LetterPickers({
         </Field>
         <Field>
           <label htmlFor={`${idPrefix}-work`}>Related Work (optional)</label>
-          <select
+          <Combobox
             id={`${idPrefix}-work`}
             value={workId}
-            onChange={(event) => {
-              onWorkId(event.currentTarget.value);
-            }}
-          >
-            <option value="">General correspondence</option>
-            {pickers.works.map((work) => (
-              <option key={work.id} value={work.id}>
-                {work.workCode} · {work.title}
-              </option>
-            ))}
-          </select>
+            onChange={onWorkId}
+            options={[
+              { value: '', label: 'General correspondence' },
+              ...pickers.works.map((work) => ({
+                value: work.id,
+                code: work.workCode,
+                label: work.title,
+              })),
+            ]}
+            noMatchLabel="No Work matches that code or title."
+          />
         </Field>
       </FieldRow>
       <Field>

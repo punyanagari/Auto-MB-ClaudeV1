@@ -268,8 +268,9 @@ export type WorkspaceView =
    *
    * `selection` is what that report is about — the Work for `work`, the
    * railway division for `division` (`none` for the Works whose consignees
-   * name no division or name more than one), and null for `mapped-item`,
-   * which is about the whole portfolio.
+   * name no division or name more than one), and the item group's key for
+   * `mapped-item`. Null on the two portfolio reports is the whole
+   * portfolio, which is what they answer when nothing is chosen.
    */
   | {
       name: 'mis';
@@ -647,11 +648,31 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
   const raw = hash.startsWith('#') ? hash.slice(1) : hash;
   if (raw === '' || raw === '/') return { view: { name: 'dashboard' } };
   if (!raw.startsWith('/')) return null;
+  /* A hand-edited or truncated fragment can carry a broken escape
+   * (`#/reports/analysis/mapped-item/50%off`), and `decodeURIComponent`
+   * THROWS on one — from the router, that is a blank screen rather than a
+   * wrong screen. So a segment that will not decode is kept RAW and
+   * flagged: every validator below then rejects it exactly the way it
+   * rejects any other unrecognised text, and the fragment degrades where
+   * its route already degrades — a Work keeps its Work and loses the
+   * section, a report keeps the Reports screen and loses the
+   * configuration. The flag is for the two routes whose segments validate
+   * nothing because they are free-form — the search query, and the
+   * analysis report's selection — which have no other way to tell garbage
+   * from the description an item key legitimately is. */
+  let malformed = false;
   const segments = raw
     .slice(1)
     .split('/')
     .filter((segment) => segment.length > 0)
-    .map((segment) => decodeURIComponent(segment));
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        malformed = true;
+        return segment;
+      }
+    });
   const [head, ...rest] = segments;
   switch (head) {
     case undefined:
@@ -672,7 +693,10 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       return isMastersTab(tab) ? { view: { name: 'masters' }, mastersTab: tab } : null;
     }
     case 'search': {
-      if (rest.length === 0) return { view: { name: 'search', query: '' } };
+      // A query nothing can decode is no query at all, so it degrades to
+      // the empty search rather than searching for the broken text.
+      if (rest.length === 0 || malformed)
+        return { view: { name: 'search', query: '' } };
       // A single segment by construction (the serializer percent-encodes
       // any slash), but joining is the honest inverse of the split above
       // and keeps a hand-typed `#/search/a/b` meaningful instead of null.
@@ -855,7 +879,9 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     // would type and what the rail calls it. `mis` is the internal name
     // and never appears in an address.
     case 'reports':
-      return parseReportsHash(rest);
+      // A reports fragment carrying a segment nothing can decode is a
+      // half-formed reports fragment, and they all land on the picker.
+      return malformed ? REPORTS_DEFAULT : parseReportsHash(rest);
     default:
       return null;
   }
@@ -889,9 +915,12 @@ function parseReportsHash(segments: readonly string[]): WorkspaceRoute | null {
   if (second === 'work') {
     return third !== undefined && isRecordId(third) ? run(third) : REPORTS_DEFAULT;
   }
-  // The division report runs across every division; a code narrows it.
-  if (second === 'division') return run(third ?? null);
-  return third === undefined ? run(null) : null;
+  // The division report runs across every division and the item report
+  // across every item; a code or an item key narrows either. The key can
+  // be a description, so it carries whatever characters a schedule line
+  // does — which is why every segment is encoded on the way out and
+  // decoded on the way in.
+  return run(third ?? null);
 }
 
 function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {

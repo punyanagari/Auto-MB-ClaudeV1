@@ -566,6 +566,7 @@ function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     workAnalysis: vi.fn(),
     divisionAnalysis: vi.fn(),
     mappedItemAnalysis: vi.fn(),
+    worksAnalysisOptions: vi.fn(),
     itemGroupProposals: vi.fn(),
     downloadWorksAnalysis: vi.fn(),
     listEntitlements: vi.fn(),

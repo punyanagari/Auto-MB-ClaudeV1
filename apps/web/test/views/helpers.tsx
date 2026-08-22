@@ -933,6 +933,9 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     itemGroupProposals: vi
       .fn<ApiClient['itemGroupProposals']>()
       .mockResolvedValue({ proposals: [] }),
+    worksAnalysisOptions: vi
+      .fn<ApiClient['worksAnalysisOptions']>()
+      .mockResolvedValue({ divisions: [], items: [] }),
     workAnalysis: vi.fn<ApiClient['workAnalysis']>(),
     downloadWorksAnalysis: vi.fn<ApiClient['downloadWorksAnalysis']>(),
     // The platform controls (0096). Both lists answer empty by default,

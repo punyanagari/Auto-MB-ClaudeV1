@@ -146,6 +146,7 @@ const DIVISION: DivisionAnalysisResponse = {
       rows: [
         {
           canonicalItemId: '44444444-4444-4444-8444-444444444444',
+          itemKey: '44444444-4444-4444-8444-444444444444',
           label: '42U Rack',
           groupName: 'Racks',
           unitCode: 'nos',
@@ -185,6 +186,7 @@ const MAPPED: MappedItemAnalysisResponse = {
     ...DIVISION.divisions[0]!.rows,
     {
       canonicalItemId: null,
+      itemKey: 'cable',
       label: 'Cable',
       groupName: null,
       unitCode: 'm',

@@ -224,6 +224,24 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('#/reports/analysis/division/100')).toEqual({
       view: { name: 'mis', tab: 'analysis', report: 'division', selection: '100' },
     });
+    expect(parseWorkspaceHash('#/reports/analysis/mapped-item')).toEqual({
+      view: { name: 'mis', tab: 'analysis', report: 'mapped-item', selection: null },
+    });
+  });
+
+  /* The item key is a canonical item's uuid OR a normalised schedule-line
+     description, so the segment carries whatever characters a description
+     does — a slash, a comma, a space. Encoded on the way out and decoded
+     on the way in, which is what makes a narrowed item report a link
+     somebody can send. */
+  it('round-trips an item key through the address, punctuation and all', () => {
+    const key = 'cable, 4 core armoured 1.5 sq/mm';
+    const route = {
+      view: { name: 'mis', tab: 'analysis', report: 'mapped-item', selection: key },
+    } as const;
+    const hash = workspaceHashOf(route);
+    expect(hash).toBe(`#/reports/analysis/mapped-item/${encodeURIComponent(key)}`);
+    expect(parseWorkspaceHash(hash)).toEqual(route);
   });
 
   it('degrades a half-formed Reports fragment to the report picker', () => {
@@ -240,6 +258,50 @@ describe('workspace hash routes', () => {
     // A tab this screen does not have is a fragment nothing can honour.
     expect(parseWorkspaceHash('#/reports/nonsense')).toBeNull();
     expect(parseWorkspaceHash('#/reports/accounts/extra')).toBeNull();
+  });
+
+  /* A fragment is hand-editable, and `decodeURIComponent` throws on a
+     broken escape — `50%off` is a percent sign followed by `of`, not an
+     escape. A throw here is a blank screen, so a segment that will not
+     decode degrades the way every other half-formed fragment does. */
+  it('degrades a malformed percent-escape instead of throwing', () => {
+    const picker = {
+      view: { name: 'mis', tab: 'analysis', report: null, selection: null },
+    };
+    expect(parseWorkspaceHash('#/reports/analysis/mapped-item/50%off')).toEqual(picker);
+    expect(parseWorkspaceHash('#/reports/analysis/division/50%off')).toEqual(picker);
+    expect(parseWorkspaceHash('#/reports/analysis/work/50%off')).toEqual(picker);
+    // A broken report name is unrecognised text like any other.
+    expect(parseWorkspaceHash('#/reports/analysis/50%off')).toEqual(picker);
+    // Not only a bad escape: a well-formed escape of an incomplete UTF-8
+    // sequence throws in exactly the same way, which is why the guard is
+    // a try/catch and not a pattern.
+    expect(parseWorkspaceHash('#/reports/analysis/division/%E0%A4')).toEqual(picker);
+    // The Work keeps its Work and loses the section, exactly as an
+    // unknown section does.
+    expect(parseWorkspaceHash(`#/works/${WORK_ID}/50%off`)).toEqual({
+      view: { name: 'work', workId: WORK_ID },
+    });
+    // A query nothing can decode is no query at all.
+    expect(parseWorkspaceHash('#/search/50%off')).toEqual({
+      view: { name: 'search', query: '' },
+    });
+    // Where the segment had to be a record id, the fragment is refused as
+    // it already is for any other non-uuid.
+    expect(parseWorkspaceHash('#/installations/50%off')).toBeNull();
+    expect(parseWorkspaceHash('#/50%off')).toBeNull();
+    // …and a well-formed escape in the same position still round-trips.
+    expect(parseWorkspaceHash('#/reports/analysis/mapped-item/50%25off')).toEqual({
+      view: {
+        name: 'mis',
+        tab: 'analysis',
+        report: 'mapped-item',
+        selection: '50%off',
+      },
+    });
+    expect(parseWorkspaceHash('#/search/50%25off')).toEqual({
+      view: { name: 'search', query: '50%off' },
+    });
   });
 
   it('builds the link helpers views render as hrefs', () => {

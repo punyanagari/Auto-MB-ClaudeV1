@@ -2326,6 +2326,13 @@ test('the audit register and the management summary pass the axe scan', async ({
 });
 
 test('the works-analysis reports pass the axe scan', async ({ page }) => {
+  /* Eleven dual-theme scans now — the four reports, and the three pickers
+     in their OPEN state, which is where a popup surface's tokens are the
+     only thing on top of the page and therefore the only place a wrong
+     ink in one theme hides. Measured at 19.8s of a 30s budget on a quiet
+     machine; budgeted with `test.slow()` the same way the organisation
+     leg above was when it crossed. */
+  test.slow();
   await mockWorkspace(page);
   /* The Work picker needs something to pick. The workspace mock answers an
      empty works register by default — right for every other screen, and
@@ -2358,6 +2365,29 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
   await expect(page.getByRole('group', { name: 'Columns to include' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Run report' })).toBeVisible();
   await expectNoAxeViolations(page, 'reports — report picker');
+
+  /* The Work picker OPEN, which is the state the whole control exists for
+     and the one no static scan reaches: a popup listbox over the page, its
+     rows at 13px, the active row distinguished, and the input still
+     holding focus while `aria-activedescendant` names a row it does not
+     contain. Scanned in both themes by the caller of this spec — a popup
+     surface is exactly where a token that resolves to the wrong ink in one
+     theme goes unnoticed, because it is only on screen while somebody is
+     typing. */
+  const workPicker = page.getByRole('combobox', { name: 'Work' });
+  await workPicker.click();
+  await expect(page.getByRole('option', { name: /SIG-2026-11/ })).toBeVisible();
+  await expectNoAxeViolations(page, 'reports — the Work picker, open');
+
+  // It FILTERS, which is the whole point, and the code finds the row as
+  // readily as the title does.
+  await workPicker.fill('alpha');
+  await expect(page.getByRole('option', { name: /SIG-2026-11/ })).toBeVisible();
+  await workPicker.fill('zzz');
+  await expect(page.getByRole('option', { name: /SIG-2026-11/ })).toBeHidden();
+  await expect(page.getByText('No Work matches that code or title.')).toBeVisible();
+  await expectNoAxeViolations(page, 'reports — the Work picker, nothing matched');
+  await page.keyboard.press('Escape');
 
   /* One report at a time from here, each at its own address, and every
      one of them a place where meaning can come to rest on presentation
@@ -2424,6 +2454,53 @@ test('the works-analysis reports pass the axe scan', async ({ page }) => {
   await expect(page.getByText('units differ: m, kg')).toBeVisible();
   await expect(page.getByLabel('Item name').first()).toBeVisible();
   await expectNoAxeViolations(page, 'item analysis and its proposals');
+
+  /* One item, chosen from the picker the owner asked for. The report comes
+     back about that item alone, its totals are its own, and the grouping
+     proposals are gone — one item cannot be grouped with itself. */
+  await page.goto(
+    '/#/reports/analysis/mapped-item/c1c1c1c1-0000-4000-8000-000000000001',
+  );
+  await expect(page.getByRole('heading', { name: 'Item analysis' })).toBeVisible();
+  // Asserted on the ROW, not on the text: the picker above the result
+  // offers the same words, which is the point of the picker.
+  await expect(
+    page.getByRole('rowheader', { name: '42U equipment rack' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('rowheader', { name: 'Signalling cable, 4 core armoured' }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole('heading', { name: 'Not mapped to an item master' }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole('heading', { name: 'Proposed item groups' }),
+  ).toBeHidden();
+  await expectNoAxeViolations(page, 'item analysis — one item');
+
+  // The picker offers the item keys before any portfolio read: the choices
+  // come from `/api/reports/analysis/options`, not from a report that has
+  // already been run.
+  await page.goto('/#/reports');
+  await page.getByRole('combobox', { name: 'Report type' }).selectOption('mapped-item');
+  const itemPicker = page.getByRole('combobox', { name: 'Item' });
+  await itemPicker.click();
+  await expect(page.getByRole('option', { name: '42U equipment rack' })).toBeVisible();
+  await expectNoAxeViolations(page, 'reports — the item picker, open');
+  await page.keyboard.press('Escape');
+
+  // And the division picker offers its headings the same way.
+  await page.getByRole('combobox', { name: 'Report type' }).selectOption('division');
+  const divisionPicker = page.getByRole('combobox', { name: 'Railway division' });
+  await divisionPicker.click();
+  await expect(page.getByRole('option', { name: 'Division 100' })).toBeVisible();
+  await expect(
+    page.getByRole('option', { name: 'No division on record' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'reports — the division picker, open');
+  await page.keyboard.press('Escape');
+  await page.goto('/#/reports/analysis/mapped-item');
+  await expect(page.getByRole('heading', { name: 'Item analysis' })).toBeVisible();
 
   /* A column left out leaves the table. The chip is the operator's own
      choice of what the report carries, and the same set travels into the

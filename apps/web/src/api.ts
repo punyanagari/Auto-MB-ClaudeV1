@@ -8,6 +8,7 @@ import type {
   ItemGroupProposalsResponse,
   MappedItemAnalysisResponse,
   WorkAnalysisResponse,
+  WorksAnalysisOptionsResponse,
   WorksAnalysisReport,
   EntitlementFlagKey,
   EntitlementListResponse,
@@ -802,10 +803,18 @@ export interface ApiClient {
     organisationId: string,
   ) => Promise<DivisionAnalysisResponse>;
   /** Pending quantities combined per item master, across every active
-   * Work. */
+   * Work. `item` narrows to one item group — a canonical item's id or a
+   * normalised description — and the totals come back that group's own. */
   readonly mappedItemAnalysis: (
     organisationId: string,
+    item?: string,
   ) => Promise<MappedItemAnalysisResponse>;
+  /** The division headings and item groups the two portfolio reports can
+   * be narrowed to. Read before either report is run, so the pickers can
+   * be used to CHOOSE rather than filled in by a report already read. */
+  readonly worksAnalysisOptions: (
+    organisationId: string,
+  ) => Promise<WorksAnalysisOptionsResponse>;
   /** Unmapped descriptions that differ only in punctuation or spacing,
    * offered as groups to confirm. A read: it writes nothing, and
    * confirming one is `saveCanonicalItem` with the proposed aliases. */
@@ -824,6 +833,7 @@ export interface ApiClient {
     options?: {
       readonly workId?: string;
       readonly division?: string;
+      readonly item?: string;
       readonly columns?: readonly string[];
     },
   ) => Promise<Blob>;
@@ -3715,8 +3725,15 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
         organisationId,
       });
     },
-    async mappedItemAnalysis(organisationId) {
-      return request<MappedItemAnalysisResponse>('/api/reports/mapped-item-analysis', {
+    async mappedItemAnalysis(organisationId, item) {
+      const suffix = item === undefined ? '' : `?item=${encodeURIComponent(item)}`;
+      return request<MappedItemAnalysisResponse>(
+        `/api/reports/mapped-item-analysis${suffix}`,
+        { organisationId },
+      );
+    },
+    async worksAnalysisOptions(organisationId) {
+      return request<WorksAnalysisOptionsResponse>('/api/reports/analysis/options', {
         organisationId,
       });
     },
@@ -3729,6 +3746,7 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       const query = new URLSearchParams();
       if (options.workId !== undefined) query.set('workId', options.workId);
       if (options.division !== undefined) query.set('division', options.division);
+      if (options.item !== undefined) query.set('item', options.item);
       // Comma-separated headings, which is what the schema takes: a
       // repeated key would need array coercion on a querystring the
       // route otherwise reads as flat strings.

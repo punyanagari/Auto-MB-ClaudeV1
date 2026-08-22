@@ -1445,6 +1445,7 @@ const DIVISION_ANALYSIS = {
       rows: [
         {
           canonicalItemId: 'c1c1c1c1-0000-4000-8000-000000000001',
+          itemKey: 'c1c1c1c1-0000-4000-8000-000000000001',
           label: '42U equipment rack',
           groupName: 'Racks and enclosures',
           unitCode: 'nos',
@@ -1462,6 +1463,7 @@ const DIVISION_ANALYSIS = {
         },
         {
           canonicalItemId: null,
+          itemKey: 'miscellaneous site consumables',
           label: 'Miscellaneous site consumables',
           groupName: null,
           unitCode: 'LS',
@@ -1501,6 +1503,7 @@ const DIVISION_ANALYSIS = {
       rows: [
         {
           canonicalItemId: 'c1c1c1c1-0000-4000-8000-000000000002',
+          itemKey: 'c1c1c1c1-0000-4000-8000-000000000002',
           label: 'Signalling cable, 4 core armoured',
           groupName: 'Cables',
           unitCode: 'm',
@@ -1562,6 +1565,44 @@ const MAPPED_ITEM_ANALYSIS = {
   totals: DIVISION_ANALYSIS.totals,
   unmappedLineCount: 1,
 };
+
+/** The two pickers' choices, read before either portfolio report is run.
+ * The same headings and keys the fixtures above carry, because a picker
+ * offering something the report does not draw is the defect. */
+const WORKS_ANALYSIS_OPTIONS = {
+  divisions: ['100', null],
+  items: MAPPED_ITEM_ANALYSIS.rows.map((row) => ({
+    key: row.itemKey,
+    label: row.label,
+    mapped: row.canonicalItemId !== null,
+  })),
+};
+
+/** One item group, with the totals this item's own rather than the
+ * portfolio's — which is what the server sends back and what the spec is
+ * there to prove. A key names exactly one row in these fixtures, so the
+ * total IS that row's figures rather than a sum computed here: this file
+ * does no money arithmetic, for `AGENTS.md` rule 5's reason. */
+function narrowMappedItems(item: string | null): typeof MAPPED_ITEM_ANALYSIS {
+  if (item === null) return MAPPED_ITEM_ANALYSIS;
+  const rows = MAPPED_ITEM_ANALYSIS.rows.filter((row) => row.itemKey === item);
+  const total = (of: typeof rows): (typeof MAPPED_ITEM_ANALYSIS)['mappedTotals'] => ({
+    rowCount: of.length,
+    mappedRowCount: of.filter((row) => row.canonicalItemId !== null).length,
+    lineCount: of[0]?.lineCount ?? 0,
+    pendingSupplyValue: of[0]?.pendingSupplyValue ?? '0.00',
+    pendingInstallValue: of[0]?.pendingInstallValue ?? '0.00',
+  });
+  const mapped = rows.filter((row) => row.canonicalItemId !== null);
+  const unmapped = rows.filter((row) => row.canonicalItemId === null);
+  return {
+    rows,
+    mappedTotals: total(mapped),
+    unmappedTotals: total(unmapped),
+    totals: total(rows),
+    unmappedLineCount: unmapped[0]?.lineCount ?? 0,
+  };
+}
 
 const ITEM_GROUP_PROPOSALS = {
   proposals: [
@@ -2940,8 +2981,16 @@ export async function mockWorkspace(
   await page.route('**/api/reports/division-analysis', (route) =>
     route.fulfill(json(DIVISION_ANALYSIS)),
   );
-  await page.route('**/api/reports/mapped-item-analysis', (route) =>
-    route.fulfill(json(MAPPED_ITEM_ANALYSIS)),
+  /* The item analysis, narrowed on `?item=` exactly as the server
+     narrows it: the picker's whole point is that the report comes back
+     about ONE item, and a fixture that answered the portfolio to every
+     request would let that break without a spec noticing. */
+  await page.route('**/api/reports/mapped-item-analysis*', (route) => {
+    const item = new URL(route.request().url()).searchParams.get('item');
+    return route.fulfill(json(narrowMappedItems(item)));
+  });
+  await page.route('**/api/reports/analysis/options', (route) =>
+    route.fulfill(json(WORKS_ANALYSIS_OPTIONS)),
   );
   await page.route('**/api/reports/item-group-proposals', (route) =>
     route.fulfill(json(ITEM_GROUP_PROPOSALS)),

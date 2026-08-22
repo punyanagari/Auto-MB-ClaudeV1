@@ -362,6 +362,21 @@ const CombinedPendingRowSchema = Type.Object(
     /** The canonical item this row combines, or null where the row is one
      * unmapped work-item description standing alone. */
     canonicalItemId: Type.Union([UuidSchema, Type.Null()]),
+    /**
+     * What this row IS, as one string: the canonical item's id where the
+     * row combines one, and the normalised description otherwise.
+     *
+     * The server's own grouping key, carried out rather than re-derived,
+     * because it is what the item picker offers and what the `item`
+     * parameter names. Deriving it a second time in the client would put
+     * `lower(btrim(…))` in two languages, which is the duplication the
+     * division derivation is deliberately written once to avoid.
+     *
+     * Not unique on its own: a canonical item quantified in two units is
+     * two rows sharing one key, which is exactly the group the picker
+     * narrows to.
+     */
+    itemKey: Type.String(),
     label: Type.String(),
     groupName: Type.Union([Type.String(), Type.Null()]),
     unitCode: Type.String(),
@@ -620,14 +635,76 @@ export function defaultWorksAnalysisColumns(
  * chip vocabulary is shared, but a stale bookmark naming a retired column
  * should still produce the report.
  */
+/**
+ * One item group's key, as the item picker and the `item` parameter carry
+ * it: a canonical item's uuid, or a normalised work-item description.
+ *
+ * A description is capped at 1000 characters by `works.ts`, so the key is
+ * too. Not a uuid format, because half of them are not uuids.
+ */
+const ItemKeySchema = Type.String({ minLength: 1, maxLength: 1000 });
+
 export const WorksAnalysisDocumentQuerySchema = Type.Object(
   {
     workId: Type.Optional(UuidSchema),
     columns: Type.Optional(Type.String({ maxLength: 1000 })),
     division: Type.Optional(Type.String({ maxLength: 50 })),
+    item: Type.Optional(ItemKeySchema),
   },
   { additionalProperties: false },
 );
 export type WorksAnalysisDocumentQuery = Static<
   typeof WorksAnalysisDocumentQuerySchema
+>;
+
+/** The `item` parameter of the item analysis read. Same key, same words. */
+export const MappedItemAnalysisQuerySchema = Type.Object(
+  { item: Type.Optional(ItemKeySchema) },
+  { additionalProperties: false },
+);
+export type MappedItemAnalysisQuery = Static<typeof MappedItemAnalysisQuerySchema>;
+
+/**
+ * What the two portfolio reports can be narrowed TO, read before either is
+ * run.
+ *
+ * The pickers need their choices before the report exists, and the first
+ * cut had them fill themselves FROM the report — "Every division" until a
+ * portfolio-wide read had happened once, and no item picker at all. That
+ * is a picker that cannot be used to choose, and the owner rejected it: an
+ * operator who wants one division should not have to read every division
+ * first.
+ *
+ * So this is a read of its own, and a deliberately cheap one. It carries
+ * no quantities: the divisions are a distinct over the consignee-derived
+ * heading of every visible active Work, and the items are the live
+ * schedule lines' group keys under the same item-master mapping the report
+ * uses — neither touches a challan, an installation or a baseline. It
+ * narrows to the caller's assignments exactly as the reports do, so the
+ * picker never offers a heading the report would then refuse.
+ */
+export const WorksAnalysisOptionsResponseSchema = Type.Object(
+  {
+    /** The division headings, `null` standing for the Works whose
+     * consignees name none or name more than one — the same group the
+     * report files under "no division on record". */
+    divisions: Type.Array(Type.Union([Type.String(), Type.Null()])),
+    items: Type.Array(
+      Type.Object(
+        {
+          key: ItemKeySchema,
+          label: Type.String(),
+          /** Whether the key is a canonical item. The picker says so,
+           * because "not mapped to an item master" is the difference
+           * between a product and one Work's wording of it. */
+          mapped: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type WorksAnalysisOptionsResponse = Static<
+  typeof WorksAnalysisOptionsResponseSchema
 >;
