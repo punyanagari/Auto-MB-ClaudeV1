@@ -91,6 +91,16 @@ export type WorkspaceView =
    * rather than only a section of a Work. */
   | { name: 'invoices' }
   | { name: 'invoice'; invoiceId: string }
+  /** The historical Zoho Books register (migration 0115): the invoices
+   * this organisation raised before this application existed. A
+   * destination of its own rather than a tab of the Invoices register,
+   * because the two answer different questions with different rules —
+   * one is documents this application issues and can act on, and the
+   * other is read-only history that nothing bills or settles against.
+   *
+   * `workId` is the mock's `?work=` deep link, taken the way every other
+   * cross-Work register here takes it. */
+  | { name: 'historical-invoices'; workId: string | null }
   /** Tenant-wide record search. The query is part of the route, so a
    * result set can be linked, bookmarked and reached by Back — the same
    * durability finding 28 gave every other view. */
@@ -325,6 +335,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return '#/invoices';
     case 'invoice':
       return `#/invoices/${view.invoiceId}`;
+    case 'historical-invoices':
+      return view.workId === null
+        ? '#/historical-invoices'
+        : `#/historical-invoices/${view.workId}`;
     case 'search':
       // encodeURIComponent escapes '/' as %2F, and the parser splits the
       // raw fragment before decoding, so a query containing a slash stays
@@ -593,6 +607,14 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       if (invoiceId === undefined) return { view: { name: 'invoices' } };
       if (!isRecordId(invoiceId) || extra.length > 0) return null;
       return { view: { name: 'invoice', invoiceId } };
+    }
+    case 'historical-invoices': {
+      const [workId, ...extra] = rest;
+      if (workId === undefined) {
+        return { view: { name: 'historical-invoices', workId: null } };
+      }
+      if (!isRecordId(workId) || extra.length > 0) return null;
+      return { view: { name: 'historical-invoices', workId } };
     }
     /* The retired standalone serial-lookup destination (`docs/UX.md`
        § `#/serials` merges into Global Search). Old links, bookmarks and

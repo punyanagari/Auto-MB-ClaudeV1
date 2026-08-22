@@ -371,6 +371,21 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     listWarranties: vi
       .fn<ApiClient['listWarranties']>()
       .mockResolvedValue({ warranties: [], nextCursor: null }),
+    listImportedInvoices: vi.fn<ApiClient['listImportedInvoices']>().mockResolvedValue({
+      invoices: [],
+      nextCursor: null,
+      totals: {
+        invoiceCount: 0,
+        linkedCount: 0,
+        totalValue: '0.00',
+        earliestDate: null,
+        latestDate: null,
+      },
+    }),
+    readImportedInvoice: vi.fn<ApiClient['readImportedInvoice']>(),
+    importZohoInvoices: vi.fn<ApiClient['importZohoInvoices']>(),
+    relinkImportedInvoice: vi.fn<ApiClient['relinkImportedInvoice']>(),
+    discardImportedInvoice: vi.fn<ApiClient['discardImportedInvoice']>(),
     challanCorrectionEligibility: vi
       .fn<ApiClient['challanCorrectionEligibility']>()
       .mockResolvedValue({
@@ -424,6 +439,30 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     createWorkMeasurementBook: vi.fn<ApiClient['createWorkMeasurementBook']>(),
     getMeasurementBook: vi.fn<ApiClient['getMeasurementBook']>(),
     setMeasurementBookSources: vi.fn<ApiClient['setMeasurementBookSources']>(),
+    // Resolved rather than bare: the billing-baseline panel loads on
+    // every Measurement tab, so a stub that answered `undefined` would
+    // fail every Work-page test with a `.then` of undefined rather than
+    // with anything about the test's own subject.
+    getWorkBillingBaseline: vi
+      .fn<ApiClient['getWorkBillingBaseline']>()
+      .mockResolvedValue({
+        baseline: null,
+        openable: true,
+        lines: [],
+        deductions: [],
+        grossBilledToDate: '0.00',
+        deductionsTotal: '0.00',
+        netReceivable: '0.00',
+      }),
+    uploadBillingBaselineBill: vi.fn<ApiClient['uploadBillingBaselineBill']>(),
+    uploadBillingBaselineMeasurement:
+      vi.fn<ApiClient['uploadBillingBaselineMeasurement']>(),
+    setBillingBaselineLines: vi.fn<ApiClient['setBillingBaselineLines']>(),
+    confirmBillingBaselineLine: vi.fn<ApiClient['confirmBillingBaselineLine']>(),
+    lockBillingBaseline: vi.fn<ApiClient['lockBillingBaseline']>(),
+    deleteBillingBaseline: vi.fn<ApiClient['deleteBillingBaseline']>(),
+    setWorkDeductions: vi.fn<ApiClient['setWorkDeductions']>(),
+    setMeasurementBookWay: vi.fn<ApiClient['setMeasurementBookWay']>(),
     finalizeMeasurementBook: vi.fn<ApiClient['finalizeMeasurementBook']>(),
     cancelMeasurementBook: vi.fn<ApiClient['cancelMeasurementBook']>(),
     deleteMeasurementBook: vi
@@ -1047,6 +1086,7 @@ export function challanWork(requiresSerials = false): WorkDetailResponse {
   return {
     measurementBookCount: 0,
     taxInvoiceCount: 0,
+    historicalInvoiceCount: 0,
     work: {
       id: WORK_ID,
       workCode: 'DCW-1',
@@ -1238,6 +1278,7 @@ export function billableBook(
     isFinal: false,
     consigneeContactId: null,
     mbDate: '2026-07-30',
+    way: 'coefficient',
     mbNumber: 'DCW-1-MB-01',
     sequenceNumber: 1,
     totalAmount: '4226994.01',

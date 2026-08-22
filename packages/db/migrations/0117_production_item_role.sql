@@ -63,9 +63,14 @@ SET LOCAL statement_timeout = '5min';
 -- physically, per the ruling ("units, job cards, or consumptions"):
 --
 --   * `manufactured` and `serial_controlled` are settled — in either
---     direction — once a job card, a minted unit, or a consumption of
---     this item into somebody else's unit exists. 0084 refused only the
---     first of the three, and only for clearing `manufactured`.
+--     direction — once a job card, a minted unit, a consumption of this
+--     item into somebody else's unit, or a stock ISSUE of it into a job
+--     card exists. 0084 refused only the first of the four, and only for
+--     clearing `manufactured`. The fourth arm is the one a serial-shaped
+--     rule would miss entirely: an unserialised part is consumed by
+--     quantity through 0087's ledger and records no component serial at
+--     all, so without it the commonest consumption in the building is
+--     invisible to the rule.
 --
 -- `item_role` is deliberately NOT frozen. Picking the wrong kind at
 -- creation is exactly the mistake a master edit exists to correct, and
@@ -172,6 +177,21 @@ BEGIN
       SELECT 1 FROM production_component_serials c
       WHERE c.organisation_id = OLD.organisation_id AND c.component_item_id = OLD.id
     )
+    -- The stock ledger's own answer to the same question. A part
+    -- consumed into a job card BY QUANTITY (0087's `issue` movement
+    -- naming a job card) leaves NO `production_component_serials` row,
+    -- because there was no serial to capture — and that is precisely the
+    -- history that turning `serial_controlled` on would retroactively
+    -- claim had been scanned. Without this arm the rule is blind to
+    -- every unserialised part the agency actually consumes, which is
+    -- most of them.
+    OR EXISTS (
+      SELECT 1 FROM stock_movements m
+      WHERE m.organisation_id = OLD.organisation_id
+        AND m.production_item_id = OLD.id
+        AND m.movement_type = 'issue'
+        AND m.production_job_card_id IS NOT NULL
+    )
   ) THEN
     RAISE EXCEPTION
       'item % has job cards, units or consumptions on record, so whether it is manufactured and whether its serials are captured are both settled',
@@ -199,4 +219,4 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_production_item_update() IS
-  'Freezes a production item''s tenant, its serial series once units are minted, its manufactured flag once units, job cards or consumptions exist, and its serial control once any of its serials are on record; refuses retirement while a job card is open.';
+  'Freezes a production item''s tenant, its serial series once units are minted, and both its manufactured flag and its serial control once a job card, a minted unit, a component consumption or a stock issue into a job card references it; refuses retirement while a job card is open.';

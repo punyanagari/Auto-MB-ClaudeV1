@@ -638,6 +638,180 @@ describe('the OEM item master', () => {
     ).rejects.toThrow(/job cards, units or consumptions on record/);
   });
 
+  it('settles the flags once the part is issued into a job card by quantity alone', async () => {
+    /* The arm a serial-shaped rule misses. An UNSERIALISED part is
+       consumed through the stock ledger (0087) and records no
+       `production_component_serials` row at all — which is exactly the
+       history that switching serial capture ON would claim had been
+       scanned. Without the ledger arm the commonest consumption in the
+       building leaves the flags wide open. */
+    const part = await createItem({
+      itemCode: `QTYPART-${suffix}`,
+      name: 'Quantity-only washer',
+      manufactured: false,
+      serialControlled: false,
+      role: 'sub',
+    });
+    expect(part.flagsLocked).toBe(false);
+    const product = await createProduct({ name: 'Washer consumer board' });
+    const raised = await createJobCard(product.id, { quantity: 1 });
+    expect(raised.statusCode, raised.body).toBe(201);
+    const cardId = raised.json<JobCardDetail>().id;
+
+    // Stock in, then out into the card. No serial anywhere.
+    for (const movement of [
+      {
+        movementType: 'adjustment_in',
+        quantity: '10.000',
+        reason: 'Opening stock for the quantity-consumption test',
+      },
+      { movementType: 'issue', quantity: '4.000', productionJobCardId: cardId },
+    ]) {
+      const posted = await authed(office, {
+        method: 'POST',
+        url: '/api/stock/movements',
+        organisationId,
+        payload: { productionItemId: part.id, ...movement },
+      });
+      expect(posted.statusCode, posted.body).toBe(201);
+    }
+
+    const listed = await authed(office, {
+      method: 'GET',
+      url: '/api/production/items',
+      organisationId,
+    });
+    const reread = listed
+      .json<{ items: ProductionItem[] }>()
+      .items.find((row) => row.id === part.id);
+    expect(reread?.flagsLocked).toBe(true);
+
+    const flipped = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${part.id}`,
+      organisationId,
+      payload: {
+        itemCode: part.itemCode,
+        name: part.name,
+        category: part.category,
+        unit: part.unit,
+        manufactured: false,
+        serialControlled: true,
+        role: 'sub',
+      },
+    });
+    expect(flipped.statusCode, flipped.body).toBe(409);
+    expect(flipped.json<{ code: string }>().code).toBe('PRODUCTION_ITEM_LOCKED');
+
+    await expect(
+      admin`
+        update production_items set serial_controlled = true where id = ${part.id}
+      `,
+    ).rejects.toThrow(/job cards, units or consumptions on record/);
+  });
+
+  it('leaves the stored specifications alone when the request carries none', async () => {
+    const part = await createItem({
+      itemCode: `KEEPSPEC-${suffix}`,
+      name: 'Specified bracket',
+      manufactured: false,
+      role: 'sub',
+      specifications: [{ attribute: 'Finish', value: 'Hot-dip galvanised' }],
+    });
+    expect(part.specifications).toHaveLength(1);
+
+    // Absent means KEEP, exactly as `role` does — otherwise a form that
+    // saves one field silently wipes a list it never showed.
+    const renamed = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${part.id}`,
+      organisationId,
+      payload: {
+        itemCode: part.itemCode,
+        name: 'Specified bracket, corrected',
+        category: part.category,
+        unit: part.unit,
+        manufactured: false,
+        role: 'sub',
+      },
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    expect(renamed.json<ProductionItem>().specifications).toEqual(part.specifications);
+
+    // An EMPTY array is a different request, and clears the list.
+    const cleared = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${part.id}`,
+      organisationId,
+      payload: {
+        itemCode: part.itemCode,
+        name: part.name,
+        category: part.category,
+        unit: part.unit,
+        manufactured: false,
+        role: 'sub',
+        specifications: [],
+      },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json<ProductionItem>().specifications).toEqual([]);
+  });
+
+  it('names the remedy when an OEM item is asked to stop being manufactured', async () => {
+    /* The pre-0117 caller: an existing product edited to
+       `manufactured: false` with no `role` in the body keeps its kind
+       and is refused. A deliberate breaking change — a product that
+       stops being built is a part — so the sentence has to name the
+       field that settles it rather than leave a caller guessing. */
+    const product = await createProduct({ name: 'Demotable board' });
+    const refused = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${product.id}`,
+      organisationId,
+      payload: {
+        itemCode: product.itemCode,
+        name: product.name,
+        category: product.category,
+        unit: product.unit,
+        manufactured: false,
+      },
+    });
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect(refused.json<{ code: string }>().code).toBe('PRODUCTION_ITEM_INVALID');
+    expect(refused.json<{ message: string }>().message).toMatch(/role/);
+
+    // And the remedy the sentence names actually works.
+    const demoted = await authed(office, {
+      method: 'PUT',
+      url: `/api/production/items/${product.id}`,
+      organisationId,
+      payload: {
+        itemCode: product.itemCode,
+        name: product.name,
+        category: product.category,
+        unit: product.unit,
+        manufactured: false,
+        role: 'sub',
+      },
+    });
+    expect(demoted.statusCode, demoted.body).toBe(200);
+    expect(demoted.json<ProductionItem>().role).toBe('sub');
+  });
+
+  it('answers the OEM invariant with its own sentence when the guard raises it', async () => {
+    // The CHECK reached directly, which is the arm the route's own test
+    // above never touches: 23514 must map to the rule's sentence rather
+    // than to "check the lengths and that nothing is blank".
+    const product = await createProduct({ name: 'Constraint-reaching board' });
+    await expect(
+      admin`
+        update production_items set manufactured = false, serial_prefix = null,
+          serial_controlled = false
+        where id = ${product.id}
+      `,
+    ).rejects.toThrow(/production_items_oem_manufactured_check/);
+  });
+
   it('lets the flags move while nothing references the item, and locks them after', async () => {
     const part = await createItem({
       itemCode: `FREEFLAG-${suffix}`,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Boxes, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import type {
   BomNode,
@@ -20,6 +20,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { NumericInput } from '../ui/numeric-input.js';
 import { TabRail } from '../ui/tab-rail.js';
+import { useUnavailableControl } from '../ui/unavailable.js';
 
 /**
  * The OEM item master and its recursive bill of material.
@@ -261,9 +262,12 @@ export function ProductionItems({
                   setKind(next);
                   /* The rail's selection follows its filter: an item
                      that is no longer listed cannot be the one the
-                     detail pane is describing. */
-                  const first = items.find((item) => item.role === next);
-                  if (first !== undefined) setActiveId(first.id);
+                     detail pane is describing. When the filter has
+                     nothing to select, the pane clears rather than
+                     keeping the last item — a detail pane describing a
+                     row the rail beside it does not show is the two
+                     halves of the screen disagreeing. */
+                  setActiveId(items.find((item) => item.role === next)?.id ?? null);
                 }}
               />
             </CardHeader>
@@ -316,7 +320,15 @@ export function ProductionItems({
               item={active}
               catalogue={items}
               canModify={canModify}
-              onChanged={reload}
+              onChanged={(saved) => {
+                /* An edit may have changed what KIND the item is, and
+                   the rail filters on exactly that. Following it keeps
+                   the item the operator was editing on screen instead of
+                   dropping it out of the list they are looking at — the
+                   same move the create form makes. */
+                if (saved !== undefined) setKind(saved.role);
+                reload();
+              }}
               onSetActive={(active) => {
                 setActionError(null);
                 api
@@ -336,42 +348,123 @@ export function ProductionItems({
   );
 }
 
-/** The create form. Inline under the header rather than in a modal: the
- * mock's own "Add OEM item" opens nothing, so there is no dialog to
- * replicate, and a six-field form does not earn a focus trap.
+/**
+ * The item form — one component, creating or editing.
  *
- * It opens on a QUESTION rather than on fields, per the owner's item-31
- * ruling: "Add OEM item" misled, because not everything in the catalogue
- * is an OEM product. The kind is asked first because it decides the rest
- * of the form — an OEM item is manufactured and therefore serialised,
- * where a sub item may be bought in.
+ * CREATING, it opens on a QUESTION rather than on fields, per the owner's
+ * item-31 ruling: "Add OEM item" misled, because not everything in the
+ * catalogue is an OEM product. The kind is asked first because it decides
+ * the rest of the form — an OEM item is manufactured and therefore
+ * serialised, where a sub item may be bought in. Inline under the header
+ * rather than in a modal: the mock's own "Add OEM item" opens nothing, so
+ * there is no dialog to replicate, and a six-field form does not earn a
+ * focus trap.
+ *
+ * EDITING is the path the item master never had (owner ruling, item 29).
+ * A production item is a MASTER, and a master is meant to be correctable
+ * — a part number typed wrong on a Tuesday should not be permanent. Name,
+ * part number, category and unit are free; every record that snapshotted
+ * them kept its own copy, so none of them rewrites history.
+ *
+ * ONE component and not two, because the two differ in three lines of
+ * initial state and a verb. The version that split them carried a hundred
+ * duplicated lines of markup, which is a hundred lines for the two forms
+ * to drift apart in — and the field they would drift on is the serial
+ * series, whose rules are the ones that matter most.
+ *
+ * The three things that cannot move are refusals with names rather than
+ * controls quietly missing from the form. Each stays visible, disabled,
+ * and says why — through `ui/unavailable.tsx`'s `useUnavailableControl`,
+ * which is UX § 31's mechanism: the reason is a VISIBLE line bound to the
+ * control by `aria-describedby`, so a touch user with no hover and a
+ * screen reader that never lands on a disabled control both still get it.
+ *
+ *   * the serial series, once a unit carries the prefix on its label;
+ *   * whether the agency manufactures this, and whether its serials are
+ *     captured, once a job card, a unit, a component consumption or a
+ *     stock issue references it;
+ *   * OEM as a KIND, while the item is not manufactured and can no
+ *     longer become so.
+ *
+ * The same three are refused by the route under its own row lock and by
+ * the database guard behind it (`0084` § 1, widened by `0117`). This
+ * layer only spares the operator the trip. None of them can bite while
+ * CREATING — nothing references a row that does not exist yet — so on
+ * that path every reason is null and every control is live.
  */
 function ItemForm({
   api,
   organisationId,
+  item,
   kind: fixedRole,
   onSaved,
   onCancel,
 }: {
   readonly api: ApiClient;
   readonly organisationId: string;
+  /** Present means EDIT this item; absent means create a new one. */
+  readonly item?: ProductionItem;
   /** Set where the kind is not the operator's to choose — the bill of
    * material creates parts, and a part is a sub item by definition. */
   readonly kind?: ProductionItemRole;
   readonly onSaved: (item: ProductionItem) => void;
   readonly onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState<ItemDraft>({
-    ...EMPTY_DRAFT,
-    // The kind the chooser is skipped for still has to bring the default
-    // the chooser would have set: a part is bought in until it says
-    // otherwise, and a form that opened asking for a serial series it
-    // never shows cannot be submitted at all.
-    manufactured: fixedRole !== 'sub',
-  });
-  const [chosen, setChosen] = useState<ProductionItemRole | null>(fixedRole ?? null);
+  const [draft, setDraft] = useState<ItemDraft>(
+    item === undefined
+      ? {
+          ...EMPTY_DRAFT,
+          // The kind the chooser is skipped for still has to bring the
+          // default the chooser would have set: a part is bought in
+          // until it says otherwise, and a form that opened asking for a
+          // serial series it never shows cannot be submitted at all.
+          manufactured: fixedRole !== 'sub',
+        }
+      : {
+          itemCode: item.itemCode,
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+          manufactured: item.manufactured,
+          serialPrefix: item.serialPrefix ?? '',
+          serialControlled: item.serialControlled,
+        },
+  );
+  const [chosen, setChosen] = useState<ProductionItemRole | null>(
+    item?.role ?? fixedRole ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /* One id namespace per instance. Three of these can be on screen at
+     once — the header's create form, an edit form in the detail pane,
+     and the bill of material's inline part form — and a fixed id would
+     put duplicates in the document, which is both an axe violation and a
+     label pointing at the wrong input. */
+  const uid = useId();
+  const at = (field: string): string => `${uid}-${field}`;
+
+  const seriesReason =
+    item?.serialSeriesLocked === true
+      ? `Units have already been built as ${item.serialPrefix ?? ''}-00001 and up, and the prefix is printed on them, so the series can no longer change.`
+      : null;
+  const flagsReason =
+    item?.flagsLocked === true
+      ? 'This item has job cards, units or consumptions on record, so whether the agency manufactures it and whether its serials are captured are both settled.'
+      : null;
+  // Becoming an OEM item means becoming manufactured, which is the one
+  // thing the flags lock refuses.
+  const oemReason =
+    item !== undefined && !item.manufactured && item.flagsLocked
+      ? 'An OEM item is manufactured, and this item cannot start being manufactured now that it has job cards, units or consumptions on record.'
+      : null;
+  /* Four calls and not two, though two of them carry the same sentence:
+     each returns its OWN hint id, and two controls describing themselves
+     by one id would either duplicate the id in the document or leave one
+     of them pointing at a hint that is not beside it. */
+  const oem = useUnavailableControl(oemReason);
+  const series = useUnavailableControl(seriesReason);
+  const madeHere = useUnavailableControl(flagsReason);
+  const captureSerials = useUnavailableControl(flagsReason);
 
   const set = <K extends keyof ItemDraft>(key: K, value: ItemDraft[K]): void => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -431,12 +524,23 @@ function ItemForm({
 
   const role = chosen;
   const manufactured = role === 'oem' || draft.manufactured;
+  const editing = item !== undefined;
 
   return (
     <Card className="mb-4">
       <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">New {ROLE_NOUN_INLINE[role]}</h2>
-        {fixedRole === undefined && (
+        <div>
+          <h2 className="text-base font-semibold">
+            {editing ? 'Edit' : 'New'} {ROLE_NOUN_INLINE[editing ? item.role : role]}
+          </h2>
+          {editing && (
+            <p className="m-0 text-sm text-muted-foreground">
+              Documents that already named this item keep the wording they were issued
+              with.
+            </p>
+          )}
+        </div>
+        {!editing && fixedRole === undefined && (
           <Button
             type="button"
             variant="ghost"
@@ -455,7 +559,7 @@ function ItemForm({
           setError(null);
           setPending(true);
           api
-            .saveProductionItem(organisationId, null, itemBody(draft, role))
+            .saveProductionItem(organisationId, item?.id ?? null, itemBody(draft, role))
             .then(onSaved)
             .catch((cause: unknown) => {
               setError(errorMessage(cause, 'The item could not be saved.'));
@@ -467,9 +571,9 @@ function ItemForm({
       >
         <FieldRow>
           <Field>
-            <label htmlFor="production-item-code">Part number</label>
+            <label htmlFor={at('code')}>Part number</label>
             <input
-              id="production-item-code"
+              id={at('code')}
               required
               minLength={2}
               maxLength={40}
@@ -480,9 +584,9 @@ function ItemForm({
             />
           </Field>
           <Field>
-            <label htmlFor="production-item-name">Name</label>
+            <label htmlFor={at('name')}>Name</label>
             <input
-              id="production-item-name"
+              id={at('name')}
               required
               minLength={2}
               maxLength={200}
@@ -495,9 +599,9 @@ function ItemForm({
         </FieldRow>
         <FieldRow>
           <Field>
-            <label htmlFor="production-item-category">Category</label>
+            <label htmlFor={at('category')}>Category</label>
             <input
-              id="production-item-category"
+              id={at('category')}
               required
               minLength={2}
               maxLength={100}
@@ -508,9 +612,9 @@ function ItemForm({
             />
           </Field>
           <Field>
-            <label htmlFor="production-item-unit">Unit</label>
+            <label htmlFor={at('unit')}>Unit</label>
             <input
-              id="production-item-unit"
+              id={at('unit')}
               required
               maxLength={20}
               value={draft.unit}
@@ -520,6 +624,48 @@ function ItemForm({
             />
           </Field>
         </FieldRow>
+        {/* Creating, the kind was answered by the chooser above and the
+            form is already shaped by it. Editing, it is a field like any
+            other: picking the wrong kind is exactly the mistake a master
+            edit exists to correct (migration 0117). */}
+        {editing && (
+          <fieldset className="m-0 border-0 p-0">
+            <legend className="text-sm leading-snug font-medium">Kind</legend>
+            <label
+              className="mt-2 flex items-center gap-2 text-sm"
+              htmlFor={at('role-oem')}
+              title={oemReason ?? undefined}
+            >
+              <input
+                id={at('role-oem')}
+                type="radio"
+                name={at('role')}
+                checked={role === 'oem'}
+                {...oem.control}
+                onChange={() => {
+                  setChosen('oem');
+                }}
+              />
+              OEM item — a product the agency builds and sells
+            </label>
+            <label
+              className="mt-2 flex items-center gap-2 text-sm"
+              htmlFor={at('role-sub')}
+            >
+              <input
+                id={at('role-sub')}
+                type="radio"
+                name={at('role')}
+                checked={role === 'sub'}
+                onChange={() => {
+                  setChosen('sub');
+                }}
+              />
+              Sub item — a part or a sub-assembly, reached through a bill of material
+            </label>
+            {oemReason !== null && <Hint id={oem.hintId}>{oemReason}</Hint>}
+          </fieldset>
+        )}
         {/* An OEM item is manufactured by definition (migration 0117),
             so the question is only asked of a sub item — a bolt is
             bought and a welded sub-assembly is not. */}
@@ -527,12 +673,14 @@ function ItemForm({
           <Field>
             <label
               className="flex items-center gap-2 font-normal!"
-              htmlFor="production-item-manufactured"
+              htmlFor={at('manufactured')}
+              title={flagsReason ?? undefined}
             >
               <input
-                id="production-item-manufactured"
+                id={at('manufactured')}
                 type="checkbox"
                 checked={draft.manufactured}
+                {...madeHere.control}
                 onChange={(event) => {
                   set('manufactured', event.currentTarget.checked);
                 }}
@@ -540,52 +688,57 @@ function ItemForm({
               The agency manufactures this. A job card may be raised for it, and every
               unit it produces is named from a serial series.
             </label>
+            {flagsReason !== null && <Hint id={madeHere.hintId}>{flagsReason}</Hint>}
           </Field>
         )}
         {manufactured ? (
           <Field>
-            <label htmlFor="production-item-prefix">Serial series</label>
+            <label htmlFor={at('prefix')}>Serial series</label>
             <input
-              id="production-item-prefix"
+              id={at('prefix')}
               required
               pattern="[A-Za-z0-9][A-Za-z0-9-]{1,15}"
               maxLength={16}
               placeholder="IPDB6"
+              title={seriesReason ?? undefined}
+              {...series.control}
               value={draft.serialPrefix}
               onChange={(event) => {
                 set('serialPrefix', event.currentTarget.value);
               }}
             />
-            <p className="m-0 text-xs text-muted-foreground">
-              Units are named{' '}
-              <span className="font-mono tabular-nums">
-                {(draft.serialPrefix || 'PREFIX').toUpperCase()}-00001
-              </span>
-              . It cannot be changed once the first unit is built.
-            </p>
+            <Hint id={series.hintId}>
+              {seriesReason ??
+                `Units are named ${(draft.serialPrefix || 'PREFIX').toUpperCase()}-00001. It cannot be changed once the first unit is built.`}
+            </Hint>
           </Field>
         ) : (
           <Field>
             <label
               className="flex items-center gap-2 font-normal!"
-              htmlFor="production-item-serial-controlled"
+              htmlFor={at('serial-controlled')}
+              title={flagsReason ?? undefined}
             >
               <input
-                id="production-item-serial-controlled"
+                id={at('serial-controlled')}
                 type="checkbox"
                 checked={draft.serialControlled}
+                {...captureSerials.control}
                 onChange={(event) => {
                   set('serialControlled', event.currentTarget.checked);
                 }}
               />
               Capture this part&apos;s serials when it is consumed into a unit.
             </label>
+            {flagsReason !== null && (
+              <Hint id={captureSerials.hintId}>{flagsReason}</Hint>
+            )}
           </Field>
         )}
         {error !== null && <FormError>{error}</FormError>}
         <Actions>
           <Button type="submit" disabled={pending}>
-            Add {ROLE_NOUN_INLINE[role]}
+            {editing ? 'Save item' : `Add ${ROLE_NOUN_INLINE[role]}`}
           </Button>
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
@@ -610,7 +763,10 @@ function ItemDetail({
   readonly item: ProductionItem;
   readonly catalogue: readonly ProductionItem[];
   readonly canModify: boolean;
-  readonly onChanged: () => void;
+  /** The saved item is passed when there IS one, so the page can follow
+   * a kind the edit changed; the specification editor has nothing to
+   * pass and calls this bare. */
+  readonly onChanged: (saved?: ProductionItem) => void;
   readonly onSetActive: (next: {
     readonly id: string;
     readonly active: boolean;
@@ -682,13 +838,13 @@ function ItemDetail({
       </Card>
 
       {editing && canModify && (
-        <ItemEditForm
+        <ItemForm
           api={api}
           organisationId={organisationId}
           item={item}
-          onSaved={() => {
+          onSaved={(saved) => {
             setEditing(false);
-            onChanged();
+            onChanged(saved);
           }}
           onCancel={() => {
             setEditing(false);
@@ -701,7 +857,9 @@ function ItemDetail({
         organisationId={organisationId}
         item={item}
         canModify={canModify}
-        onSaved={onChanged}
+        onSaved={() => {
+          onChanged();
+        }}
       />
 
       {item.manufactured && (
@@ -711,279 +869,12 @@ function ItemDetail({
           item={item}
           catalogue={catalogue}
           canModify={canModify}
-          onCatalogueChanged={onChanged}
+          onCatalogueChanged={() => {
+            onChanged();
+          }}
         />
       )}
     </div>
-  );
-}
-
-/**
- * The edit form the item master never had (owner ruling, item 29).
- *
- * A production item is a MASTER, and a master is meant to be correctable
- * — a part number typed wrong on a Tuesday should not be permanent.
- * Name, part number, category and unit are therefore free; every record
- * that snapshotted them kept its own copy, so none of them rewrites
- * history.
- *
- * The three that are NOT free are refusals with names rather than
- * controls quietly missing from the form. Each stays visible, disabled,
- * and says why — at the pointer through `title`, and in view through the
- * hint under it — because a control that vanished would leave an
- * operator looking for it, and one that submitted and failed would teach
- * them the rule one 409 at a time:
- *
- *   * the serial series, once a unit carries the prefix on its label;
- *   * whether the agency manufactures this, and whether its serials are
- *     captured, once a job card, a unit or a consumption references it;
- *   * OEM as a KIND, while the item is not manufactured and can no
- *     longer become so.
- *
- * The same three are refused by the route under its own row lock and by
- * the database guard behind it (`0084` § 1, widened by `0117`). This
- * layer only spares the operator the trip.
- */
-function ItemEditForm({
-  api,
-  organisationId,
-  item,
-  onSaved,
-  onCancel,
-}: {
-  readonly api: ApiClient;
-  readonly organisationId: string;
-  readonly item: ProductionItem;
-  readonly onSaved: () => void;
-  readonly onCancel: () => void;
-}) {
-  const [draft, setDraft] = useState<ItemDraft>({
-    itemCode: item.itemCode,
-    name: item.name,
-    category: item.category,
-    unit: item.unit,
-    manufactured: item.manufactured,
-    serialPrefix: item.serialPrefix ?? '',
-    serialControlled: item.serialControlled,
-  });
-  const [role, setRole] = useState<ProductionItemRole>(item.role);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
-  const set = <K extends keyof ItemDraft>(key: K, value: ItemDraft[K]): void => {
-    setDraft((current) => ({ ...current, [key]: value }));
-  };
-
-  const manufactured = role === 'oem' || draft.manufactured;
-  const seriesReason = item.serialSeriesLocked
-    ? `Units have already been built as ${item.serialPrefix ?? ''}-00001 and up, and the prefix is printed on them, so the series can no longer change.`
-    : null;
-  const flagsReason = item.flagsLocked
-    ? 'This item has job cards, units or consumptions on record, so whether the agency manufactures it and whether its serials are captured are both settled.'
-    : null;
-  // Becoming an OEM item means becoming manufactured, which is the one
-  // thing the flags lock refuses.
-  const oemReason =
-    !item.manufactured && item.flagsLocked
-      ? 'An OEM item is manufactured, and this item cannot start being manufactured now that it has job cards, units or consumptions on record.'
-      : null;
-
-  return (
-    <Card>
-      <CardHeader>
-        <h2 className="text-base font-semibold">Edit {ROLE_NOUN_INLINE[item.role]}</h2>
-        <p className="m-0 text-sm text-muted-foreground">
-          Documents that already named this item keep the wording they were issued with.
-        </p>
-      </CardHeader>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          setError(null);
-          setPending(true);
-          api
-            .saveProductionItem(
-              organisationId,
-              item.id,
-              itemBody(draft, role, item.specifications),
-            )
-            .then(() => {
-              onSaved();
-            })
-            .catch((cause: unknown) => {
-              setError(errorMessage(cause, 'The item could not be saved.'));
-            })
-            .finally(() => {
-              setPending(false);
-            });
-        }}
-      >
-        <FieldRow>
-          <Field>
-            <label htmlFor="production-item-edit-code">Part number</label>
-            <input
-              id="production-item-edit-code"
-              required
-              minLength={2}
-              maxLength={40}
-              value={draft.itemCode}
-              onChange={(event) => {
-                set('itemCode', event.currentTarget.value);
-              }}
-            />
-          </Field>
-          <Field>
-            <label htmlFor="production-item-edit-name">Name</label>
-            <input
-              id="production-item-edit-name"
-              required
-              minLength={2}
-              maxLength={200}
-              value={draft.name}
-              onChange={(event) => {
-                set('name', event.currentTarget.value);
-              }}
-            />
-          </Field>
-        </FieldRow>
-        <FieldRow>
-          <Field>
-            <label htmlFor="production-item-edit-category">Category</label>
-            <input
-              id="production-item-edit-category"
-              required
-              minLength={2}
-              maxLength={100}
-              value={draft.category}
-              onChange={(event) => {
-                set('category', event.currentTarget.value);
-              }}
-            />
-          </Field>
-          <Field>
-            <label htmlFor="production-item-edit-unit">Unit</label>
-            <input
-              id="production-item-edit-unit"
-              required
-              maxLength={20}
-              value={draft.unit}
-              onChange={(event) => {
-                set('unit', event.currentTarget.value);
-              }}
-            />
-          </Field>
-        </FieldRow>
-        <fieldset className="m-0 border-0 p-0">
-          <legend className="text-sm leading-snug font-medium">Kind</legend>
-          <label
-            className="mt-2 flex items-center gap-2 text-sm"
-            htmlFor="production-item-edit-role-oem"
-            title={oemReason ?? undefined}
-          >
-            <input
-              id="production-item-edit-role-oem"
-              type="radio"
-              name="production-item-edit-role"
-              checked={role === 'oem'}
-              disabled={oemReason !== null}
-              onChange={() => {
-                setRole('oem');
-              }}
-            />
-            OEM item — a product the agency builds and sells
-          </label>
-          <label
-            className="mt-2 flex items-center gap-2 text-sm"
-            htmlFor="production-item-edit-role-sub"
-          >
-            <input
-              id="production-item-edit-role-sub"
-              type="radio"
-              name="production-item-edit-role"
-              checked={role === 'sub'}
-              onChange={() => {
-                setRole('sub');
-              }}
-            />
-            Sub item — a part or a sub-assembly, reached through a bill of material
-          </label>
-          {oemReason !== null && <Hint>{oemReason}</Hint>}
-        </fieldset>
-        {role === 'sub' && (
-          <Field>
-            <label
-              className="flex items-center gap-2 font-normal!"
-              htmlFor="production-item-edit-manufactured"
-              title={flagsReason ?? undefined}
-            >
-              <input
-                id="production-item-edit-manufactured"
-                type="checkbox"
-                checked={draft.manufactured}
-                disabled={flagsReason !== null}
-                onChange={(event) => {
-                  set('manufactured', event.currentTarget.checked);
-                }}
-              />
-              The agency manufactures this. A job card may be raised for it, and every
-              unit it produces is named from a serial series.
-            </label>
-            {flagsReason !== null && <Hint>{flagsReason}</Hint>}
-          </Field>
-        )}
-        {manufactured ? (
-          <Field>
-            <label htmlFor="production-item-edit-prefix">Serial series</label>
-            <input
-              id="production-item-edit-prefix"
-              required
-              pattern="[A-Za-z0-9][A-Za-z0-9-]{1,15}"
-              maxLength={16}
-              placeholder="IPDB6"
-              disabled={seriesReason !== null}
-              title={seriesReason ?? undefined}
-              value={draft.serialPrefix}
-              onChange={(event) => {
-                set('serialPrefix', event.currentTarget.value);
-              }}
-            />
-            <Hint>
-              {seriesReason ??
-                `Units are named ${(draft.serialPrefix || 'PREFIX').toUpperCase()}-00001. It cannot be changed once the first unit is built.`}
-            </Hint>
-          </Field>
-        ) : (
-          <Field>
-            <label
-              className="flex items-center gap-2 font-normal!"
-              htmlFor="production-item-edit-serial-controlled"
-              title={flagsReason ?? undefined}
-            >
-              <input
-                id="production-item-edit-serial-controlled"
-                type="checkbox"
-                checked={draft.serialControlled}
-                disabled={flagsReason !== null}
-                onChange={(event) => {
-                  set('serialControlled', event.currentTarget.checked);
-                }}
-              />
-              Capture this part&apos;s serials when it is consumed into a unit.
-            </label>
-            {flagsReason !== null && <Hint>{flagsReason}</Hint>}
-          </Field>
-        )}
-        {error !== null && <FormError>{error}</FormError>}
-        <Actions>
-          <Button type="submit" disabled={pending}>
-            Save item
-          </Button>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-        </Actions>
-      </form>
-    </Card>
   );
 }
 
@@ -1158,10 +1049,12 @@ function BillOfMaterialCard({
   readonly item: ProductionItem;
   readonly catalogue: readonly ProductionItem[];
   readonly canModify: boolean;
-  /** Called when the panel closes having created a part, so the rail
-   * catches up. Deliberately NOT called the moment the part is created:
-   * the page reload it triggers unmounts this card, and it would take
-   * the half-filled material line with it. */
+  /** Called once this card is done with a part created inside it, so the
+   * page's own catalogue catches up. Deliberately NOT called the moment
+   * the part is created: the reload it triggers replaces the whole grid
+   * with the loading state, which would take the half-filled material
+   * line with it — and returning to that line with the new part selected
+   * is the entire point of creating it here (item 28). */
   readonly onCatalogueChanged: () => void;
 }) {
   const [nodes, setNodes] = useState<readonly BomNode[] | null>(null);
@@ -1176,14 +1069,35 @@ function BillOfMaterialCard({
   const [pending, setPending] = useState(false);
   const [loadVersion, retry] = useReload();
 
-  /** Closes the panel, and tells the page about any part created inside
-   * it. Both exits go through here so neither can forget. */
+  /* The debt of a part created inside this panel: the page's catalogue
+     is one load behind until somebody tells it. Held in a ref and
+     settled on UNMOUNT rather than only when the panel closes, because
+     closing the panel is not the only way to leave it — selecting
+     another item in the rail remounts this card by key, and the version
+     that only paid on close lost the part on that path, leaving it out
+     of the next item's component list until a manual reload. The ref
+     rather than `createdParts` because a cleanup closes over the state
+     it was created with, and this one must read the latest. */
+  const owed = useRef(false);
+  const notify = useRef(onCatalogueChanged);
+  notify.current = onCatalogueChanged;
+  useEffect(
+    () => () => {
+      if (owed.current) notify.current();
+    },
+    [],
+  );
+
+  /** Closes the panel, and settles the debt if there is one. */
   const closePanel = (): void => {
     setAdding(false);
     setCreatingPart(false);
     setComponentId('');
     setQuantity('1');
-    if (createdParts.length > 0) onCatalogueChanged();
+    if (owed.current) {
+      owed.current = false;
+      onCatalogueChanged();
+    }
   };
 
   useEffect(() => {
@@ -1253,6 +1167,7 @@ function BillOfMaterialCard({
             setCreatedParts((current) => [...current, created]);
             setComponentId(created.id);
             setCreatingPart(false);
+            owed.current = true;
           }}
           onCancel={() => {
             setCreatingPart(false);

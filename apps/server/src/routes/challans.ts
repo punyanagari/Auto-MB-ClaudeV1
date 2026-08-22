@@ -44,6 +44,7 @@ import { parseJsonbColumn } from '../jsonb-column.js';
 import {
   cursorRowId,
   keysetPage,
+  registerKeyset,
   sqlLimit,
   workScopedCursorRowId,
 } from '../pagination.js';
@@ -1746,10 +1747,22 @@ export function registerChallanRoutes(
         // predicate as well as the tenant, so an 'assigned'-scoped member
         // cannot use a forbidden challan's id as a position and read its
         // date back out of the comparison; see `workScopedCursorRowId`.
+        // `?sort=date_asc` reads the register oldest first. The ORDER BY,
+        // the seek comparison and the cursor's sort tag are decided by
+        // ONE call, so the seek can never be left pointing the other way
+        // from the ordering, and a cursor minted under the other sort is
+        // refused rather than silently answering the far side of its row.
+        // Omitting `sort` is the register's own newest-first order,
+        // unchanged.
+        const seek = registerKeyset(query.sort, query.cursor, {
+          table: 'delivery_challans',
+          alias: 'dc',
+          columns: ['challan_date', 'created_at', 'id'],
+        });
         const cursor = await workScopedCursorRowId(
           tx,
           'delivery_challans',
-          query.cursor,
+          seek.cursor,
           { userId: user.id, full },
         );
         const rows = await tx<
@@ -1802,16 +1815,15 @@ export function registerChallanRoutes(
             -- and discloses nothing. Served by delivery_challans_work_idx
             -- (organisation_id, work_id, status, challan_date DESC, id).
             and (${query.work === undefined} or dc.work_id = ${query.work ?? null})
-            and (${cursor === null} or
-              (dc.challan_date, dc.created_at, dc.id) < (
-                select c.challan_date, c.created_at, c.id from delivery_challans c
-                where c.id = ${cursor}))
-          order by dc.challan_date desc, dc.created_at desc, dc.id desc
+            and ${seek.predicate(tx, cursor)}
+          order by ${tx.unsafe(seek.orderBy)}
           limit ${sqlLimit(query.limit)}
         `;
         const paged = keysetPage(rows, query.limit, (row) => row.id);
         return {
-          nextCursor: paged.nextCursor,
+          // Tagged with the sort it was minted under, so the next request
+          // cannot pair it with the other one.
+          nextCursor: seek.tag(paged.nextCursor),
           challans: paged.rows.map((row) => {
             const manualLineCount = Number(row.manual_line_count);
             const movement: DeliveryChallanMovement =

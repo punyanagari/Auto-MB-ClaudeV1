@@ -524,6 +524,32 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'discard_reason',
   ],
 
+  // The historical Zoho Books invoice register (0115). Everything the
+  // export stated is frozen by `guard_imported_invoice`, and what is left
+  // is the three annotations this organisation makes ABOUT the record
+  // rather than to it: the Work link a person confirms (and may correct),
+  // the contact link that becomes possible when a customer is added to the
+  // master afterwards, and the discard, which the same guard makes
+  // terminal.
+  //
+  // `issued` is here because it is GENERATED from `irn`, which the freeze
+  // holds — so it is unwritable rather than free, and it appears in no ROW
+  // comparison because a BEFORE trigger cannot read a generated column's
+  // new value.
+  imported_invoices: [
+    'issued',
+    'contact_id',
+    'contact_match_method',
+    'work_id',
+    'link_method',
+    'linked_by_user_id',
+    'linked_at',
+    'discarded_at',
+    'discarded_by_user_id',
+    'discard_reason',
+    'updated_at',
+  ],
+
   // The provider attempt ledger (0041): the request is frozen at start,
   // and the outcome is the append that closes it.
   statutory_provider_operations: [
@@ -622,6 +648,28 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'pbg_requirement_source',
     'gst_basis',
     'gst_rate',
+    // Which way the NEXT Measurement Book on this Work is filed for the
+    // railway (0113). A preference, not a fact about the award: it is set
+    // by flipping a draft and is meant to move.
+    'mb_way_default',
+  ],
+
+  // The opening billing position of a pre-system Work (0114). Its guard
+  // freezes the recorded bill and everything read out of it the moment
+  // the row is written, for 0111's reason about its own bytes — the point
+  // of extracting a fact was that nobody gets to assert it. What is left
+  // mutable is the measurement sheet, which is uploaded afterwards, and
+  // the lock, which is the one state this row has.
+  work_billing_baselines: [
+    'id',
+    'updated_at',
+    'measurement_object_key',
+    'measurement_filename',
+    'measurement_sha256',
+    'measurement_size_bytes',
+    'measurement_extraction',
+    'locked_at',
+    'locked_by_user_id',
   ],
 
   // A supersession record (0071) is written whole when a Work is

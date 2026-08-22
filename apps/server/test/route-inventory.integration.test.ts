@@ -132,6 +132,10 @@ const UNBOUND_ROUTES = new Set([
 const UNPAGINATED_LISTS = new Map<string, string>([
   // --- Bounded by the organisation's configuration ------------------------
   [
+    'GET /api/works/:id/billing-baseline',
+    "one Work's opening billing position (0114): a nullable baseline record, one line per item of that Work's own schedule, and at most five deduction heads. The lines are the record's own parts — bounded by the schedule, confirmed line by line against one pair of documents — and paging them would page a single opening statement",
+  ],
+  [
     'GET /api/audit-events/facets',
     "the audit register's filter vocabularies: the distinct actions, record types and members its own trail contains, each capped at 200 by the route. A picker longer than that is not a picker, and the register itself (GET /api/audit-events) pages normally",
   ],

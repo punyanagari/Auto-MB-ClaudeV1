@@ -479,6 +479,172 @@ describe.each(REGISTERS)('$name', ({ url, key }) => {
   });
 });
 
+/**
+ * The three registers whose order the caller may turn round with
+ * `?sort=`, each read the same way: the parameter is optional and
+ * omitting it must be the register exactly as it was.
+ *
+ * What is actually being proved is that the ORDER BY and the keyset
+ * predicate turned round TOGETHER. Turning only one of them does not
+ * error — it silently loses or repeats rows at each page boundary, which
+ * a "does it come back reversed" test cannot see, so every sort is walked
+ * a row at a time as well. The fixture gives every row of a register the
+ * same date on purpose, so the walk is decided entirely by the
+ * `(created_at, id)` tie-break the predicate has to match.
+ */
+const SORTABLE_REGISTERS = [
+  {
+    name: 'the delivery-challan register',
+    url: '/api/delivery-challans',
+    key: 'challans',
+  },
+  {
+    name: 'the tenant-wide installation register',
+    url: '/api/installations',
+    key: 'installations',
+  },
+  {
+    name: 'the organisation-wide tax-invoice register',
+    url: '/api/tax-invoices',
+    key: 'invoices',
+  },
+] as const;
+
+describe.each(SORTABLE_REGISTERS)('$name sorted', ({ url, key }) => {
+  it('answers an omitted sort exactly as it answers date_desc', async () => {
+    const bare = await readPage(url, key);
+    const explicit = await readPage(`${url}?sort=date_desc`, key);
+
+    expect(explicit.ids).toEqual(bare.ids);
+  });
+
+  it('reverses the register under date_asc', async () => {
+    const descending = await readPage(url, key);
+    const ascending = await readPage(`${url}?sort=date_asc`, key);
+
+    expect(ascending.ids).toEqual([...descending.ids].reverse());
+  });
+
+  it.each(['date_desc', 'date_asc'] as const)(
+    'walks every row exactly once under %s',
+    async (sort) => {
+      const whole = await readPage(`${url}?sort=${sort}`, key);
+
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      // Bounded so a cursor that fails to advance fails the assertion
+      // below rather than looping forever.
+      for (let step = 0; step <= whole.ids.length; step += 1) {
+        const query =
+          cursor === null
+            ? `sort=${sort}&limit=1`
+            : `sort=${sort}&limit=1&cursor=${cursor}`;
+        const page: Page = await readPage(`${url}?${query}`, key);
+        if (page.ids.length === 0) break;
+        expect(page.ids).toHaveLength(1);
+        walked.push(page.ids[0] as string);
+        cursor = page.nextCursor;
+        if (cursor === null) break;
+      }
+
+      // Gap-free and duplicate-free, in the order the unpaginated read of
+      // the SAME sort used.
+      expect(walked).toEqual(whole.ids);
+      expect(new Set(walked).size).toBe(walked.length);
+      expect(cursor).toBeNull();
+    },
+  );
+
+  it('pages a two-row window without dropping the boundary row', async () => {
+    // The one-row walk makes every row a boundary; this makes the
+    // boundary land mid-register, which is where an off-by-one between
+    // the ORDER BY and the predicate shows up as a skipped row rather
+    // than as a short page.
+    const whole = await readPage(`${url}?sort=date_asc`, key);
+    const first = await readPage(`${url}?sort=date_asc&limit=2`, key);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await readPage(
+      `${url}?sort=date_asc&limit=2&cursor=${first.nextCursor ?? ''}`,
+      key,
+    );
+
+    expect([...first.ids, ...second.ids]).toEqual(whole.ids.slice(0, 4));
+  });
+
+  it('refuses a sort it does not offer', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: `${url}?sort=value_desc`,
+    });
+
+    expect(response.statusCode, response.body).toBe(400);
+  });
+
+  /*
+   * The crossed pairing, and why it cannot be allowed to answer 200.
+   *
+   * A bare row id says nothing about which order it was a position in,
+   * and the two orders give it opposite meanings. Replay a descending
+   * walk's cursor under `date_asc` and the predicate seeks the OTHER side
+   * of that row: the answer is a well-formed page of rows the client has
+   * already read, or has skipped past, with no error and nothing about it
+   * looking wrong. A clerk paging a register of issued documents would
+   * simply not be shown some of them.
+   *
+   * So the cursor carries its sort, and a request that pairs it with the
+   * other one is refused exactly as a nonexistent cursor is.
+   */
+  it('mints a cursor that carries the sort it was taken under', async () => {
+    const descending = await readPage(`${url}?limit=1`, key);
+    const ascending = await readPage(`${url}?sort=date_asc&limit=1`, key);
+
+    expect(descending.nextCursor).not.toBeNull();
+    expect(ascending.nextCursor).not.toBeNull();
+    // Same register, same position, different order: the two cursors must
+    // not be interchangeable strings.
+    expect(ascending.nextCursor).not.toEqual(descending.nextCursor);
+  });
+
+  it.each([
+    ['a descending cursor replayed ascending', '', 'sort=date_asc&'],
+    ['an ascending cursor replayed descending', 'sort=date_asc&', 'sort=date_desc&'],
+    ['an ascending cursor replayed with no sort at all', 'sort=date_asc&', ''],
+  ])('refuses %s', async (_name, minted, replayed) => {
+    const first = await readPage(`${url}?${minted}limit=1`, key);
+    expect(first.nextCursor).not.toBeNull();
+
+    const crossed = await authed(owner, {
+      method: 'GET',
+      url: `${url}?${replayed}limit=1&cursor=${first.nextCursor ?? ''}`,
+    });
+    const nonexistent = await authed(owner, {
+      method: 'GET',
+      url: `${url}?${replayed}limit=1&cursor=${randomUUID()}`,
+    });
+
+    expect(crossed.statusCode, crossed.body).toBe(400);
+    // Indistinguishable from a cursor that names no row: same status,
+    // same code, same sentence (the requestId differs per request).
+    const strip = ({ requestId: _, ...rest }: Record<string, unknown>) => rest;
+    expect(strip(crossed.json())).toEqual(strip(nonexistent.json()));
+    expect(crossed.json<{ code: string }>().code).toBe('CURSOR_INVALID');
+  });
+
+  it('accepts its own cursor replayed under the sort that minted it', async () => {
+    // The other half of the rule: tagging must not break the walk it
+    // exists to protect.
+    for (const sort of ['', 'sort=date_asc&'] as const) {
+      const first = await readPage(`${url}?${sort}limit=1`, key);
+      const second = await readPage(
+        `${url}?${sort}limit=1&cursor=${first.nextCursor ?? ''}`,
+        key,
+      );
+      expect(second.ids).toHaveLength(1);
+      expect(second.ids).not.toEqual(first.ids);
+    }
+  });
+});
+
 describe('the approvals queue', () => {
   it('pages within a filter rather than across it', async () => {
     // The queue's own `status` filter and the pagination query compose:

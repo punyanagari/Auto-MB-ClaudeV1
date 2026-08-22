@@ -191,12 +191,11 @@ export function registerMeasurementBookMergeRoutes(
         // MB freeze.
         const [target] = await tx<{ id: string }[]>`
             insert into measurement_books (
-              organisation_id, work_id, mb_date, kind, created_by_user_id
+              organisation_id, work_id, mb_date, kind, mb_way, created_by_user_id
             )
-            values (
-              ${organisationId}, ${workId}, ${body.mbDate}, 'on_account',
-              ${user.id}
-            )
+            select ${organisationId}, ${workId}, ${body.mbDate}, 'on_account',
+                   w.mb_way_default, ${user.id}
+            from works w where w.id = ${workId}
             returning id
           `.catch((error: unknown) => {
           if (error instanceof Error && 'code' in error && error.code === '23505') {

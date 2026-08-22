@@ -21,6 +21,8 @@ import { InstallationsRegister } from '../../src/views/InstallationsRegister.js'
 import { Warranties } from '../../src/views/Warranties.js';
 import { WorkWarranty } from '../../src/views/WorkWarranty.js';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
+import { HistoricalInvoices } from '../../src/views/HistoricalInvoices.js';
+import { WorkHistoricalInvoices } from '../../src/views/WorkHistoricalInvoices.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
 import { Members } from '../../src/views/Members.js';
@@ -60,6 +62,7 @@ import { TenderWorkspace } from '../../src/views/TenderWorkspace.js';
 import { Timeline } from '../../src/views/Timeline.js';
 import { WorkBillingReadiness } from '../../src/views/WorkBillingReadiness.js';
 import { WorkBillSettlement } from '../../src/views/WorkBillSettlement.js';
+import { BillingBaselinePanel } from '../../src/views/BillingBaselinePanel.js';
 import { WorkRetention } from '../../src/views/WorkRetention.js';
 import { WorkConsignees } from '../../src/views/WorkConsignees.js';
 import { WorkDetail } from '../../src/views/WorkDetail.js';
@@ -342,6 +345,33 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry invoices/,
     empty: { text: /No tax invoice has been raised yet/ },
+  },
+  {
+    view: 'HistoricalInvoices.tsx',
+    name: 'the historical Zoho Books register',
+    loads: ['listImportedInvoices'],
+    render: (api) => (
+      <HistoricalInvoices
+        api={api}
+        organisationId={ORG_ID}
+        workId={null}
+        canImport
+        onOpenWork={noop}
+        onClearWorkFilter={noop}
+      />
+    ),
+    retry: /Retry historical invoices/,
+    empty: { text: /No historical invoice has been imported yet/ },
+  },
+  {
+    view: 'WorkHistoricalInvoices.tsx',
+    name: "the Work's pre-cutover billing",
+    loads: ['listImportedInvoices'],
+    render: (api) => (
+      <WorkHistoricalInvoices api={api} organisationId={ORG_ID} workId={WORK_ID} />
+    ),
+    retry: /Retry historical invoices/,
+    empty: { text: /No invoice raised before this system is filed against this Work/ },
   },
   {
     view: 'IssueChallanDetail.tsx',
@@ -1102,6 +1132,24 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry payments against bills/,
     empty: { text: /nothing is outstanding with the railway yet/ },
+  },
+  {
+    view: 'BillingBaselinePanel.tsx',
+    name: "a Work's opening billing position",
+    loads: ['getWorkBillingBaseline'],
+    render: (api) => (
+      <BillingBaselinePanel
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canIssue
+      />
+    ),
+    retry: /Retry opening position/,
+    // The empty state of this panel is the upload that fills it: a Work
+    // with no opening position on record is a Work waiting for its last
+    // railway bill, so the form IS the sentence.
+    empty: { text: /Last railway bill/ },
   },
   {
     view: 'WorkRetention.tsx',

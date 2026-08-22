@@ -552,16 +552,27 @@ async function openMeasurementBook(
 }
 
 test('work detail and challan editor pass the axe scan', async ({ page }) => {
-  /* By far the heaviest spec in the suite: twelve `expectNoAxeViolations`
+  /* By far the heaviest spec in the suite: eighteen `expectNoAxeViolations`
      calls, each a full axe run in both themes, across the Work workspace's
-     seven sections, a challan, its editor, a confirmation and two registers
-     — twenty-four scans behind one test. Measured at 30.5s on the tree
-     before this pack and 30.6s after it, either side of Playwright's 30s
-     default, so it is budgeted rather than left to flake on whichever
-     machine is a second slower. Splitting it would mean re-mounting the
-     same forty-route fixture three times over, which costs more than it
-     saves. */
-  test.slow();
+     seven sections, two railway-measurement panels, a challan, its editor, a
+     confirmation and two registers — thirty-six scans behind one test.
+     Splitting it would mean re-mounting the same forty-route fixture several
+     times over, which costs more than it saves; the fixture is nine hundred
+     lines of test-local mock and every leg needs all of it.
+
+     Budgeted explicitly rather than with `test.slow()`, which the rest of
+     this file uses, because a 3x multiplier is not enough headroom here.
+     The axe runs are CPU-bound and this file is one worker's serial queue
+     while the other workers run theirs, so the elapsed time tracks how
+     busy the machine is rather than anything about the markup. Measured on
+     one mid-range dev box: 31.5s for the file alone, 43.4s and 51.4s for
+     the same test in two full-suite runs three workers wide, and a timeout
+     at `test.slow()`'s 90s when that box was also building something else.
+     The spread is the point — the ceiling has to clear the bad day, not
+     the median. 180s is 6x the default and roughly 2x the worst run seen.
+     Nothing here asserts on elapsed time; the budget only decides when
+     Playwright gives up. */
+  test.setTimeout(180_000);
   const WORK_ID = '33333333-3333-4333-8333-333333333333';
   const ITEM_ID = '55555555-5555-4555-8555-555555555555';
   const SERIAL_ITEM_ID = '55555555-4444-4444-8444-555555555555';
@@ -1732,7 +1743,9 @@ test('work detail and challan editor pass the axe scan', async ({ page }) => {
      editor's disclosure present. */
   await page
     .getByRole('navigation', { name: 'Modules' })
-    .getByRole('link', { name: 'Invoices' })
+    // Exact: the rail names "Historical invoices" directly beneath this
+    // one (0115), and a substring match resolves to both.
+    .getByRole('link', { name: 'Invoices', exact: true })
     .click();
   await expect(page.getByRole('link', { name: 'TI/2026-27/001' })).toBeVisible();
   await expect(page.getByText('Deccan Switchgear Pvt Ltd')).toBeVisible();
@@ -2376,6 +2389,40 @@ test('the purchase order register passes the axe scan', async ({ page }) => {
   await expect(page.getByText('PO-01', { exact: true })).toBeVisible();
   await expect(page.getByText('Outside any LOA').first()).toBeVisible();
   await expectNoAxeViolations(page, 'purchase order register, organisation basis');
+});
+
+test('the historical invoice register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/historical-invoices');
+
+  /* The Zoho Books history (0115). Its own top-level test rather than a
+     leg of the invoice journey, for the reason the warranty register
+     below took one: that journey is already budgeted with test.slow().
+
+     Scanned with the filter row, the import panel and the register on
+     screen together — three labelled controls beside a submit, a file
+     input whose label is the only thing naming it, and a table whose
+     Work cell is sometimes a link and sometimes a word. All three
+     readings of the e-invoice chip are drawn — issued, draft and the
+     Zoho void that renders cancelled — because it is the only colour this
+     screen puts on a word and each tone has to hold against its ground in
+     both themes. */
+  await expect(
+    page.getByRole('heading', { name: 'Historical invoices' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Zoho Books export (.csv)')).toBeVisible();
+  await expect(page.getByLabel('Customer', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Financial year')).toBeVisible();
+  await expect(page.getByRole('link', { name: /PL270-CRB/ })).toBeVisible();
+  // By cell: the filter's own "Not filed against a Work" option carries
+  // the same words inside a closed select, where nothing is visible.
+  await expect(
+    page.getByRole('cell', { name: 'Not filed', exact: true }).first(),
+  ).toBeVisible();
+  for (const label of ['issued', 'draft', 'cancelled']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  await expectNoAxeViolations(page, 'historical invoice register');
 });
 
 test('the warranty register passes the axe scan', async ({ page }) => {

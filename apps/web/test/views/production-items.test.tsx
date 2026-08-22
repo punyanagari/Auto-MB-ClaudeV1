@@ -156,6 +156,9 @@ describe('the catalogue rail', () => {
     view([item()]);
     fireEvent.click(await screen.findByRole('button', { name: 'Sub items' }));
     expect(screen.getByText(/No sub items yet/)).toBeTruthy();
+    // …and the detail pane goes with it. A pane describing a row the
+    // rail beside it does not show is the two halves disagreeing.
+    expect(screen.queryByRole('heading', { name: 'Bill of material' })).toBeNull();
   });
 });
 
@@ -179,6 +182,38 @@ describe('editing an item', () => {
       name: 'IP Display Board · 6 line, corrected',
       unit: 'Set',
       role: 'oem',
+    });
+    /* And it does NOT echo the specifications back. Absent means keep
+       (the contract's own reading), so a form that re-sent the list it
+       was rendered with would overwrite whatever the specification
+       editor saved in between with a copy of the older read. */
+    expect(saved.mock.calls[0]?.[2]).not.toHaveProperty('specifications');
+  });
+
+  it('follows a kind the edit changed, so the item stays on screen', async () => {
+    const demoted = item({
+      role: 'sub',
+      manufactured: false,
+      serialPrefix: null,
+      serialControlled: false,
+    });
+    const saved = vi.fn().mockResolvedValue(demoted);
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [item()] })
+      .mockResolvedValue({ items: [demoted] });
+    view([], { saveProductionItem: saved, listProductionItems: list });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit item/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Sub item/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
+
+    // The rail filter moved to the kind the item now is; without that
+    // the item drops out of the list the operator is looking at.
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Sub items' }).getAttribute('aria-pressed'),
+      ).toBe('true');
     });
   });
 

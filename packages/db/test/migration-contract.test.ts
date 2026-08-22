@@ -114,6 +114,17 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // this census by construction, and its own `it` block below asserts
   // that it replaced the guard rather than adding a second one.
   '0111_railway_measurements.sql': 4,
+  // 0113 creates no trigger: it restates an existing guard and the
+  // trigger 0024 created still carries it (its own block below says so).
+  // Eight in 0114 — three guards and a touch on the baseline, a guard and
+  // a touch on its lines, a guard and a touch on the deductions.
+  '0114_work_billing_baseline.sql': 8,
+  // One guard per table (0115): the invoice's, which freezes everything
+  // the Zoho export stated and admits only the Work link, the contact
+  // link and the discard; and the line's, which refuses an edit outright
+  // and refuses an insert into an invoice this tenant cannot read or has
+  // already discarded.
+  '0115_imported_invoices.sql': 2,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -3589,5 +3600,421 @@ describe('the railway measurement and its gate (0111)', () => {
     expect(sql).not.toContain('SECURITY DEFINER');
     expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(3);
     expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(3);
+  });
+});
+
+describe('the Measurement Book coefficient way (0113)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0113_mb_coefficient_way.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks', () => {
+    // Both ALTERs take an ACCESS EXCLUSIVE lock on a table every request
+    // touches. The columns carry defaults, so PostgreSQL rewrites nothing,
+    // but the lock still has to be taken and waiting for it unbounded is
+    // what turns a fast migration into an outage.
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('gives both columns the same two-value domain and the same default', () => {
+    // Two columns, one vocabulary. A Work whose default said something a
+    // book could not be would be a default nothing can consume.
+    expect(sql).toContain(
+      "ADD COLUMN mb_way_default text NOT NULL DEFAULT 'coefficient'",
+    );
+    expect(sql).toContain("CHECK (mb_way_default IN ('coefficient', 'physical'))");
+    expect(sql).toContain("ADD COLUMN mb_way text NOT NULL DEFAULT 'coefficient'");
+    expect(sql).toContain("CHECK (mb_way IN ('coefficient', 'physical'))");
+  });
+
+  it('freezes the way by restating the guard rather than adding one', () => {
+    // The rule is the existing one — a finalized book's business data is
+    // immutable — and mb_way is one more column of it.
+    expect(sql).toContain(
+      'CREATE OR REPLACE FUNCTION app_private.guard_measurement_book_update()',
+    );
+    expect(sql).toContain('NEW.finalized_at,\n      NEW.mb_way');
+    expect(sql).toContain('OLD.finalized_at,\n      OLD.mb_way');
+    expect(sql).toContain(
+      "RAISE EXCEPTION 'finalized Measurement Book business data is immutable'",
+    );
+  });
+
+  it('restates the CURRENT body, not the one 0024 installed', () => {
+    // The trap this pack walked into and had to be dug out of. This guard
+    // has been restated five times; restating 0024's copy compiles, passes
+    // every text assertion about the new column, and silently deletes the
+    // render evidence, bill-lock, newest-only, completed-Work, `kind` and
+    // closure rules. The four clauses below are one from each of the
+    // migrations that would be lost.
+    // 0036 — the frozen ROW names `kind` and never the generated column.
+    // Read from the ROW itself rather than from the whole file, whose
+    // header discusses `NEW.is_final` precisely to warn against it.
+    const frozenRow =
+      [...sql.matchAll(/IS DISTINCT FROM ROW\([\s\S]*?\) THEN/g)]
+        .map((match) => match[0])
+        .find((row) => row.includes('mb_way')) ?? '';
+    expect(frozenRow).toContain('OLD.kind');
+    expect(frozenRow).not.toContain('is_final');
+    expect(sql).toContain('a closed Measurement Book cannot be reopened'); // 0066
+    expect(sql).toContain('only the newest may be cancelled'); // 0027
+    expect(sql).toContain('reopen it before cancelling a Measurement Book'); // 0032
+  });
+
+  it('creates no trigger and no function of its own', () => {
+    // A restatement, not an addition: 0024's trigger already carries this
+    // guard. A migration creating no trigger is absent from
+    // MIGRATION_TRIGGERS by construction, which is what the census above
+    // requires — and this assertion is why that absence is deliberate
+    // rather than forgotten.
+    expect(sql).not.toMatch(/CREATE TRIGGER/);
+    expect(sql).not.toMatch(/CREATE FUNCTION app_private\./);
+    expect(sql).not.toContain('SECURITY DEFINER');
+  });
+
+  it('takes no custom SQLSTATE of its own', () => {
+    // This pack's block is 23W and 0114 opens it. Nothing here raises a
+    // NEW refusal: the restated guard keeps the `check_violation` codes it
+    // already had, and a way that cannot change on a finalized book is the
+    // immutability sentence rather than a rule of its own.
+    expect(sql).not.toMatch(/USING ERRCODE = '23[A-Z]\d\d'/);
+  });
+
+  it('creates no table, so it adds no RLS surface', () => {
+    // Two columns on tables that already carry organisation_id and are
+    // already under FORCE RLS. The repo-wide coverage assertion above
+    // reads created tables; stating the absence here is what says the
+    // coverage was considered rather than skipped.
+    expect(sql).not.toMatch(/CREATE TABLE/i);
+  });
+});
+
+describe('the opening billing position of a pre-system Work (0114)', () => {
+  let sql = '';
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0114_work_billing_baseline.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('puts all three tables under forced RLS with the initplan predicate', () => {
+    for (const table of [
+      'work_billing_baselines',
+      'work_billing_baseline_lines',
+      'work_deduction_entries',
+    ]) {
+      expect(sql).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      expect(sql).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql).toContain(`CREATE POLICY ${table}_tenant_policy`);
+    }
+    // ADR-0010's scalar-subquery form, once per table.
+    expect(
+      sql.match(
+        /USING \(organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)\)/g,
+      ),
+    ).toHaveLength(3);
+  });
+
+  it('stores its two documents on the same terms as every other inbound PDF', () => {
+    // The tenant prefix is checked HERE as well as in storage.ts, exactly
+    // as 0003 does for loa_documents and 0111 for the measurement: a path
+    // is a filesystem escape and one layer of checking is one bug from
+    // none.
+    expect(sql).toContain("CHECK (bill_object_key LIKE organisation_id::text || '/%')");
+    expect(sql).toContain("measurement_object_key LIKE organisation_id::text || '/%'");
+    expect(sql).toContain("CHECK (bill_media_type = 'application/pdf')");
+    expect(sql).toContain('bill_sha256 sha256_hex NOT NULL');
+    // The optional sheet travels as one fact or not at all.
+    expect(sql).toContain('work_billing_baselines_measurement_shape_check');
+  });
+
+  it('lets an unlocked baseline be deleted and a locked one never', () => {
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON work_billing_baselines TO auto_mb_app;',
+    );
+    // The grant is wide and the GUARD is the rule, which is the opposite
+    // of the posture 0066 and 0111 take with their evidence tables — and
+    // deliberately so: an unlocked baseline is a form somebody is filling
+    // in, not a document that was received.
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_work_billing_baseline_delete()',
+    );
+    expect(sql).toContain(
+      'CREATE TRIGGER work_billing_baselines_guard_delete\nBEFORE DELETE ON work_billing_baselines',
+    );
+  });
+
+  it('holds the lock to a full confirmation count and to a Work with no history here', () => {
+    // The two preconditions that make the lock load-bearing rather than a
+    // timestamp, both in the same guard as the immutability rule.
+    expect(sql).toContain('string_agg(wi.item_number');
+    expect(sql).toContain("USING ERRCODE = '23W03'");
+    // Checked at INSERT and again at LOCK: a Measurement Book can be
+    // finalized in between, and the lock is the moment the row starts
+    // changing what other books compute.
+    expect(sql.match(/USING ERRCODE = '23W01'/g)).toHaveLength(2);
+  });
+
+  it('freezes the deductions with the baseline rather than on their own', () => {
+    expect(sql).toContain(
+      'CREATE FUNCTION app_private.guard_work_deduction_entry_mutation()',
+    );
+    expect(sql).toContain("USING ERRCODE = '23W05'");
+    expect(sql).toContain('b.locked_at IS NOT NULL');
+  });
+
+  it('keeps every refusal inside its own SQLSTATE block', () => {
+    // 23W, this pack's, opened here. Whether the block is FREE is the
+    // repo-wide census above; this only says the file is internally
+    // consistent, which is the distinction 0111 learned the hard way.
+    //
+    // The 23514s are not this pack's: they belong to § 9's restatement of
+    // 0071's soft-delete guard, which carries its own codes with its own
+    // body — a restatement that rewrote them would be a different guard.
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    const own = codes.filter((code) => code !== '23514');
+    expect(codes.filter((code) => code === '23514')).toHaveLength(3);
+    expect(own.length).toBeGreaterThanOrEqual(8);
+    expect(own.every((code) => code?.startsWith('23W'))).toBe(true);
+    expect([...new Set(own)].sort()).toEqual([
+      '23W01',
+      '23W02',
+      '23W03',
+      '23W04',
+      '23W05',
+      '23W06',
+      '23W07',
+    ]);
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    // Every table these guards read is one the caller may already read
+    // under RLS, so definer rights would add authority for nothing — and
+    // a definer here would read across tenants.
+    expect(sql).not.toContain('SECURITY DEFINER');
+    expect(sql.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(5);
+    expect(sql.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(5);
+  });
+
+  it('indexes every foreign key it creates from the referencing side', () => {
+    expect(sql).toContain(
+      'CREATE INDEX work_billing_baselines_work_idx\n  ON work_billing_baselines (organisation_id, work_id);',
+    );
+    expect(sql).toContain(
+      'CREATE INDEX work_billing_baseline_lines_baseline_idx\n  ON work_billing_baseline_lines (organisation_id, work_billing_baseline_id);',
+    );
+    expect(sql).toContain(
+      'CREATE INDEX work_billing_baseline_lines_item_idx\n  ON work_billing_baseline_lines (organisation_id, work_item_id);',
+    );
+    expect(sql).toContain(
+      'CREATE INDEX work_deduction_entries_work_idx\n  ON work_deduction_entries (organisation_id, work_id);',
+    );
+  });
+});
+
+describe('the historical Zoho invoice register (0115)', () => {
+  let sql = '';
+
+  /**
+   * The file with every comment line removed.
+   *
+   * 0052's split-guard assertion does this for the same reason: this
+   * migration's header ARGUES about `SECURITY DEFINER` and about the
+   * whole-row comparison shape it deliberately does not use, so a
+   * `not.toContain` over the raw bytes would fail on the prose that
+   * explains the rule. Refusals about what the migration DOES are read
+   * from code only.
+   */
+  const codeOnly = (source: string): string =>
+    source
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0115_imported_invoices.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that adds a trigger', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('holds both new tables in the ADR-0010 policy shape with no DELETE', () => {
+    for (const table of ['imported_invoices', 'imported_invoice_lines']) {
+      expect(sql, table).toContain(`CREATE POLICY ${table}_tenant_policy`);
+      expect(sql, table).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      expect(sql, table).not.toContain(`DELETE ON ${table} TO auto_mb_app`);
+    }
+    expect(
+      sql.match(
+        /USING \(organisation_id = \(SELECT app_private\.current_organisation_id\(\)\)\)/g,
+      ),
+    ).toHaveLength(2);
+    // The header takes UPDATE for its three hinges; a line has none.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON imported_invoices TO auto_mb_app;',
+    );
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT ON imported_invoice_lines TO auto_mb_app;',
+    );
+    expect(sql).not.toContain('UPDATE ON imported_invoice_lines TO auto_mb_app');
+  });
+
+  it('makes the export’s own id the idempotency key, over live rows only', () => {
+    // Without this a second upload of the same file doubles the register,
+    // and the import route's ON CONFLICT DO NOTHING has nothing to
+    // conflict on.
+    //
+    // PARTIAL, and the WHERE is the load-bearing half. Discarding a row
+    // imported from the wrong file and uploading the corrected export is
+    // this register's only correction path, because there is no DELETE
+    // grant — and under a total key the discarded row keeps owning the id,
+    // so the corrected invoice is skipped and reported as already
+    // imported. Wrong, and confidently reported as right.
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX imported_invoices_zoho_id_key\s+ON imported_invoices \(organisation_id, zoho_invoice_id\)\s+WHERE discarded_at IS NULL/,
+    );
+    // A total constraint would silently disarm the correction path, so it
+    // must not be there beside the index.
+    expect(sql).not.toContain('UNIQUE (organisation_id, zoho_invoice_id)');
+    // …and the invoice NUMBER is deliberately not unique: a Zoho series
+    // may repeat a number across financial years, and refusing that would
+    // refuse history that happened.
+    expect(sql).not.toContain('UNIQUE (organisation_id, invoice_number)');
+  });
+
+  it('completes an import before it stops taking lines', () => {
+    // The line guard has three arms and the third was only in its comment:
+    // a live, undiscarded invoice imported by an EARLIER transaction takes
+    // no further lines. `created_at` defaults to now(), which is
+    // transaction_timestamp(), so the comparison is exact.
+    expect(sql).toContain('IF v_imported <> transaction_timestamp() THEN');
+  });
+
+  it('records a person’s own customer choice as manual', () => {
+    // Settled before any row exists rather than when somebody notices: the
+    // relink route can write this column, and recording a person's choice
+    // as 'name' would claim an automatic match nothing made.
+    expect(sql).toMatch(/contact_match_method IN \('gstin', 'name', 'manual'\)/);
+  });
+
+  it('derives issued-ness from the IRN rather than trusting the status column', () => {
+    // The export says `Draft` on 372 of 638 real invoices, most of which
+    // carry an IRN. A generated column is the only shape in which this
+    // fact cannot acquire a second answer.
+    expect(sql).toContain(
+      'issued boolean NOT NULL GENERATED ALWAYS AS (irn IS NOT NULL) STORED',
+    );
+    // And the raw status survives as evidence rather than being resolved
+    // away.
+    expect(sql).toMatch(/zoho_status text CHECK \(/);
+  });
+
+  it('cannot hold half a link or e-invoice evidence without an IRN', () => {
+    expect(sql).toContain('imported_invoices_work_link_shape_check');
+    expect(sql).toContain('imported_invoices_contact_link_shape_check');
+    // An acknowledgement or a QR with no IRN behind it is e-invoice
+    // evidence for an invoice that was never registered.
+    expect(sql).toContain('imported_invoices_irn_shape_check');
+    expect(sql).toMatch(
+      /irn IS NOT NULL\s+OR \(ack_number IS NULL AND ack_date IS NULL AND qr_payload IS NULL\)/,
+    );
+  });
+
+  it('freezes everything the export stated and admits exactly three hinges', () => {
+    const guard = codeOnly(
+      sql.slice(
+        sql.indexOf('CREATE FUNCTION app_private.guard_imported_invoice()'),
+        sql.indexOf('CREATE TRIGGER imported_invoices_guard'),
+      ),
+    );
+    for (const frozen of [
+      'NEW.zoho_invoice_id',
+      'NEW.invoice_number',
+      'NEW.invoice_date',
+      'NEW.customer_name',
+      'NEW.customer_gstin',
+      'NEW.irn',
+      'NEW.sub_total',
+      'NEW.total',
+      'NEW.balance',
+      'NEW.raw_row',
+    ]) {
+      expect(guard, frozen).toContain(frozen);
+    }
+    // The three hinges are ABSENT from the comparison, which is what makes
+    // them writable. A test that only asserted the frozen list would pass
+    // just as happily with the hinges frozen too, and the register would
+    // be unlinkable.
+    for (const hinge of [
+      'NEW.work_id',
+      'NEW.link_method',
+      'NEW.contact_id',
+      'NEW.contact_match_method',
+      'NEW.discarded_at',
+    ]) {
+      expect(guard, hinge).not.toContain(hinge);
+    }
+    // A discard is final, and it is written as "no UPDATE at all" rather
+    // than as a whole-row comparison: `issued` is GENERATED, and NEW.*
+    // carries a null for it inside a BEFORE trigger.
+    expect(guard).toContain('IF OLD.discarded_at IS NOT NULL THEN');
+    expect(guard).not.toContain('ROW(NEW.*) IS DISTINCT FROM ROW(OLD.*)');
+  });
+
+  it('refuses a line that is edited, orphaned or added to a discarded invoice', () => {
+    const guard = codeOnly(
+      sql.slice(
+        sql.indexOf('CREATE FUNCTION app_private.guard_imported_invoice_line()'),
+        sql.indexOf('CREATE TRIGGER imported_invoice_lines_guard'),
+      ),
+    );
+    expect(guard).toContain("IF TG_OP = 'UPDATE' THEN");
+    expect(guard).toContain('IF v_imported IS NULL THEN');
+    expect(guard).toContain('IF v_discarded IS NOT NULL THEN');
+    // The parent read is tenant-pinned by the row's own key: a guard that
+    // looked the invoice up by id alone would reach across tenants.
+    expect(guard).toContain('WHERE i.organisation_id = NEW.organisation_id');
+  });
+
+  it('keeps every refusal inside its own SQLSTATE block', () => {
+    // 23X, by coordinator allocation. Whether the block is free is the
+    // repo-wide census above; this says only that the codes are all in
+    // one block, which is all a single-file assertion can say.
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    expect(codes.length).toBeGreaterThanOrEqual(5);
+    expect(codes.every((code) => code?.startsWith('23X'))).toBe(true);
+    expect([...new Set(codes)].sort()).toEqual(['23X01', '23X02']);
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    // Every table these guards touch is one the caller may already read
+    // under RLS, so definer rights would add authority for nothing — and a
+    // definer here would read across tenants.
+    const code = codeOnly(sql);
+    expect(code).not.toContain('SECURITY DEFINER');
+    expect(code.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(2);
+    expect(code.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(2);
   });
 });

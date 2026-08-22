@@ -124,6 +124,12 @@ export const SaveProductionItemRequestSchema = Type.Object(
      * split the rail drew before the column existed; on UPDATE, absent
      * leaves the kind alone. */
     role: Type.Optional(ProductionItemRoleSchema),
+    /** Optional with the same reading as `role`, and for the same
+     * reason: absent means the caller has no opinion, so on CREATE the
+     * list starts empty and on UPDATE the stored list is left exactly as
+     * it is. An empty array is a DIFFERENT request — it clears the list
+     * — so a form that saves one field must not send `[]` to mean "I did
+     * not touch the specifications". */
     specifications: Type.Optional(
       Type.Array(ProductionSpecificationSchema, { maxItems: 50 }),
     ),

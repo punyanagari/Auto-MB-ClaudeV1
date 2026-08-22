@@ -24,6 +24,7 @@ import {
   type RowError,
   type TargetColumn,
 } from '../import-targets.js';
+import { headerKey } from '../csv.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { cursorRowId, keysetPage, sqlLimit } from '../pagination.js';
 import { createTenantRouteRegistrar } from '../tenant-route.js';
@@ -44,6 +45,7 @@ import {
   errorResponses,
   requireTrimmed,
   upstreamErrorResponses,
+  writeRefusals,
 } from './shared.js';
 
 /**
@@ -129,15 +131,7 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
   // thing, which is that the server got it wrong.
 };
 
-function rethrowWriteRefusal(error: unknown): never {
-  const code =
-    error !== null && typeof error === 'object' && 'code' in error
-      ? String(error.code)
-      : '';
-  const refusal = DATABASE_REFUSALS[code];
-  if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
-  throw error;
-}
+const rethrowWriteRefusal = writeRefusals(DATABASE_REFUSALS);
 
 /** How many batches the register returns when the caller asks for no
  * page. Imports are occasional — a handful in an organisation's first
@@ -161,18 +155,6 @@ function rowPage(rows: readonly StagedRow[], limit: number) {
 }
 
 /* --- reading the sheet ----------------------------------------------------- */
-
-/** Header text reduced to what an operator meant by it. Case, spacing and
- * the punctuation people sprinkle through a header row ("GSTIN *",
- * "PIN-code:") are all noise, and a template that only matched its own
- * exact strings would refuse the sheet it generated the moment somebody
- * bolded a column and Excel round-tripped it. */
-function headerKey(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
 
 interface SheetMapping {
   /** Target column key, by sheet column index. Sparse: sheet columns the

@@ -3,6 +3,7 @@ import { type ApiClient } from '../api.js';
 import { formatDate } from '../format.js';
 import { DataTable, numericCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
+import { BillingBaselinePanel } from './BillingBaselinePanel.js';
 import { MeasurementBooks } from './MeasurementBooks.js';
 
 interface WorkMeasurementProps {
@@ -133,6 +134,17 @@ export function WorkMeasurement({
           )}
         </>
       )}
+
+      {/* ABOVE the register, because it is the state the register counts
+          from: reading a Work's Measurement Books before reading its
+          opening position tells you a contract the railway has been
+          paying against for four years is at MB-01 (docs/UX.md § 33). */}
+      <BillingBaselinePanel
+        api={api}
+        organisationId={organisationId}
+        workId={workId}
+        canIssue={canIssue}
+      />
 
       <MeasurementBooks
         api={api}

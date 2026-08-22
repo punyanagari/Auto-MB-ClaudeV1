@@ -125,6 +125,15 @@ const TENANT_TABLES = [
   'received_railway_bills',
   'railway_measurements',
   'railway_measurement_confirmations',
+  // The historical Zoho Books invoice register (0115). The invoice
+  // precedes its lines, which name it with a composite tenant reference.
+  'imported_invoices',
+  'imported_invoice_lines',
+  // The opening billing position of a Work whose history predates this
+  // product (0114).
+  'work_billing_baselines',
+  'work_billing_baseline_lines',
+  'work_deduction_entries',
   // The procurement wave and the tax facts that ride with it (0033).
   'purchase_orders',
   'purchase_order_lines',
@@ -319,7 +328,12 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // (0088).
     table !== 'maintenance_dispatches' &&
     table !== 'maintenance_dispatch_lines' &&
-    table !== 'maintenance_returns',
+    table !== 'maintenance_returns' &&
+    // A line of an imported historical invoice is what the Zoho export
+    // said, and this register's two annotations are both on the header
+    // (0115). The application role holds no UPDATE, so a cross-tenant one
+    // raises 42501 rather than matching zero rows.
+    table !== 'imported_invoice_lines',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -334,6 +348,11 @@ const DELETE_REVOKED_TABLES = [
   'received_railway_bills',
   'railway_measurements',
   'railway_measurement_confirmations',
+  // A record of what another system billed does not leave either: an
+  // imported invoice attached from the wrong file is discarded in place,
+  // and its lines are append-only (0115).
+  'imported_invoices',
+  'imported_invoice_lines',
   'works',
   'work_items',
   'loa_documents',
@@ -1031,6 +1050,42 @@ async function seedTenantGraph(
               ${workItem.id}, '1.000')
     `;
 
+    // The opening billing position of a pre-system Work (0114), seeded
+    // HERE — before the Measurement Book below is finalized — because
+    // 0114's own insert guard refuses a baseline on a Work that has
+    // numbered a book in this system, which is exactly the rule this
+    // fixture would otherwise trip over. Ordering it this way keeps the
+    // guard intact and still puts a row of each of the three tables into
+    // both organisations, which is what the isolation census counts.
+    const [billingBaseline] = await tx<{ id: string }[]>`
+      insert into work_billing_baselines (
+        organisation_id, work_id, bill_object_key, bill_filename, bill_sha256,
+        bill_media_type, bill_size_bytes, bill_source, bill_number, bill_date,
+        bill_amount, last_mb_sequence_number, created_by_user_id
+      )
+      values (
+        ${organisationId}, ${work.id},
+        ${`${organisationId}/billingbaseline/${work.id}.pdf`}, 'bill.pdf',
+        ${'d'.repeat(64)}, 'application/pdf', 2048, 'recorded', 'B-1',
+        '2026-01-02', '100.00', 1, ${userId}
+      )
+      returning id
+    `;
+    if (!billingBaseline)
+      throw new Error('seed billing baseline insert returned no row');
+    await tx`
+      insert into work_billing_baseline_lines (
+        organisation_id, work_billing_baseline_id, work_id, work_item_id
+      )
+      values (${organisationId}, ${billingBaseline.id}, ${work.id}, ${workItem.id})
+    `;
+    await tx`
+      insert into work_deduction_entries (
+        organisation_id, work_id, head, amount, recorded_by_user_id
+      )
+      values (${organisationId}, ${work.id}, 'retention', '10.00', ${userId})
+    `;
+
     // Milestone 8 phase 2 Measurement Book tables: a draft claiming the
     // recorded installation, one snapshot line written while draft (the
     // line guard requires it), then the finalize-shaped update.
@@ -1404,6 +1459,42 @@ async function seedTenantGraph(
     await tx`
       insert into organisation_purchase_order_counters (organisation_id, next_value)
       values (${organisationId}, 2)
+    `;
+
+    // The historical Zoho Books invoice register (0115). Seeded LINKED to
+    // this Work and to the consignee contact, so the two composite tenant
+    // foreign keys are exercised rather than left null — a work-less,
+    // contact-less row would prove isolation on the table while proving
+    // nothing about the two links that are the register's whole point.
+    const [importedInvoice] = await tx<{ id: string }[]>`
+      insert into imported_invoices (
+        organisation_id, zoho_invoice_id, invoice_number, invoice_date,
+        customer_name, contact_id, contact_match_method, zoho_status,
+        irn, sub_total, total, work_id, link_method, linked_by_user_id,
+        linked_at, raw_row, imported_by_user_id
+      )
+      values (
+        ${organisationId}, ${`zoho-${workCode}`}, ${`INV-${workCode}-001`},
+        '2023-04-07', 'Integration customer', ${consigneeContact.id}, 'name',
+        'Draft', ${'d'.repeat(64)}, '1000.00', '1180.00', ${work.id},
+        'pl_code', ${userId}, now(),
+        ${tx.json({ 'Invoice Number': `INV-${workCode}-001` })}, ${userId}
+      )
+      returning id
+    `;
+    if (!importedInvoice)
+      throw new Error('seed imported invoice insert returned no row');
+    await tx`
+      insert into imported_invoice_lines (
+        organisation_id, imported_invoice_id, position, item_name, quantity,
+        usage_unit, item_price, item_total, hsn_sac, cgst_rate, sgst_rate,
+        cgst_amount, sgst_amount, raw_row
+      )
+      values (
+        ${organisationId}, ${importedInvoice.id}, 1, 'Seeded historical line',
+        '10.000', 'Nos', '100.00', '1000.00', '998734', '9.00', '9.00',
+        '90.00', '90.00', ${tx.json({ 'Item Name': 'Seeded historical line' })}
+      )
     `;
 
     const [quotation] = await tx<{ id: string }[]>`

@@ -49,6 +49,7 @@ import { registerCorrectionRoutes } from './routes/corrections.js';
 import { registerContractSourceRoutes } from './routes/contract-sources.js';
 import { registerReceivedRailwayBillRoutes } from './routes/received-railway-bills.js';
 import { registerRailwayMeasurementRoutes } from './routes/railway-measurements.js';
+import { registerBillingBaselineRoutes } from './routes/billing-baselines.js';
 import { registerBillPaymentRoutes } from './routes/bill-payments.js';
 import { registerCompanyDocumentRoutes } from './routes/company-documents.js';
 import { registerInspectionRoutes } from './routes/inspections.js';
@@ -74,6 +75,7 @@ import { registerAmcCycleRoutes } from './routes/amc-cycles.js';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.js';
 import { registerInventoryRoutes } from './routes/inventory.js';
 import { registerImportRoutes } from './routes/imports.js';
+import { registerImportedInvoiceRoutes } from './routes/imported-invoices.js';
 import { registerPlatformRoutes } from './routes/platform.js';
 import { registerSigningRoutes } from './routes/signing.js';
 import { registerWarrantyRoutes } from './routes/warranty.js';
@@ -985,13 +987,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerIdentityRoutes(app, authInstance, database);
 
     // Raw bodies for the upload endpoints (LOA PDFs, organisation logo,
-    // imported workbooks); every other route keeps the default JSON-only
-    // content types.
+    // imported workbooks, the Zoho invoice export); every other route
+    // keeps the default JSON-only content types.
+    //
+    // `text/csv` is parsed as a BUFFER like the rest, deliberately, rather
+    // than as a string: the bytes go to the malware scanner before
+    // anything decodes them, and `consumeUpload` proves the body is text
+    // rather than a mis-dragged binary. A string parser would have decoded
+    // whatever arrived before either check could run.
     for (const contentType of [
       'application/pdf',
       'image/png',
       'image/jpeg',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv',
     ]) {
       app.addContentTypeParser(
         contentType,
@@ -1015,6 +1024,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerPurchaseOrderRoutes(app, authInstance, database);
     registerInventoryRoutes(app, authInstance, database);
     registerImportRoutes(app, authInstance, database, scanner);
+    registerImportedInvoiceRoutes(app, authInstance, database, scanner);
     registerMaintenanceRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
     registerAuditRoutes(app, authInstance, database);
@@ -1058,6 +1068,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     // signatures are the bill's question — the bill is what money rests
     // on, and 0066's verdict rules are about that document.
     registerRailwayMeasurementRoutes(app, authInstance, database, storage, scanner);
+    registerBillingBaselineRoutes(app, authInstance, database, storage, scanner);
     registerReceivedRailwayBillRoutes(
       app,
       authInstance,

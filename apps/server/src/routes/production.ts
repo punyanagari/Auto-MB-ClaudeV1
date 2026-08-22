@@ -173,6 +173,13 @@ function isCheckViolation(error: unknown): boolean {
   );
 }
 
+/** The constraint a refusal names, when it names one. */
+function constraintOf(error: unknown): string {
+  return error !== null && typeof error === 'object' && 'constraint_name' in error
+    ? String(error.constraint_name)
+    : '';
+}
+
 function rethrowWriteRefusal(error: unknown): never {
   const code =
     error !== null && typeof error === 'object' && 'code' in error
@@ -181,6 +188,13 @@ function rethrowWriteRefusal(error: unknown): never {
   const refusal = DATABASE_REFUSALS[code];
   if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
   if (isCheckViolation(error)) {
+    // 0117's own CHECK is a RULE, not a column shape, so it gets the
+    // rule's sentence rather than "check the lengths and that nothing is
+    // blank" — which names nothing an operator can act on and points at
+    // the wrong field.
+    if (constraintOf(error) === 'production_items_oem_manufactured_check') {
+      throw oemMustBeManufactured();
+    }
     throw httpError(
       400,
       'PRODUCTION_ITEM_INVALID',
@@ -288,6 +302,18 @@ interface ItemRow {
   flags_locked: boolean;
 }
 
+/** Whether any unit of this item has been minted — 0084's serial-series
+ * freeze, asked as a subquery. Named once because `flags_locked` needs
+ * the same answer, and a second copy of it is a second thing to keep in
+ * step with the guard. */
+const ITEM_HAS_SERIALS = `
+  exists (
+    select 1 from production_serials s
+    where s.organisation_id = production_items.organisation_id
+      and s.item_id = production_items.id
+  )
+`;
+
 /**
  * The item master's columns, plus the two facts an edit form has to know
  * BEFORE it is submitted.
@@ -298,27 +324,34 @@ interface ItemRow {
  * into it and meet a 409. They are correlated EXISTS rather than stored
  * counters for the reason 0084's header gives about stored readiness: a
  * copy of a computed fact is a field that can disagree with the fact.
- * The catalogue is one unpaginated list per organisation, so three
- * EXISTS per row is a cost nobody notices.
+ * The catalogue is one unpaginated list per organisation, so four EXISTS
+ * per row is a cost nobody notices.
+ *
+ * The four arms of `flags_locked` are the four ways a record can already
+ * depend on what this item IS. The last of them is the stock ledger: a
+ * part consumed into a job card BY QUANTITY (0087's `issue` movement
+ * naming a job card) leaves no `production_component_serials` row at
+ * all, because there was no serial to capture — which is exactly the
+ * state that turning `serial_controlled` ON would retroactively claim
+ * had been scanned.
  */
 const ITEM_LOCK_COLUMNS = `
-  exists (
-    select 1 from production_serials s
-    where s.organisation_id = production_items.organisation_id
-      and s.item_id = production_items.id
-  ) as serial_series_locked,
+  ${ITEM_HAS_SERIALS} as serial_series_locked,
   (exists (
      select 1 from production_job_cards j
      where j.organisation_id = production_items.organisation_id
        and j.item_id = production_items.id
-   ) or exists (
-     select 1 from production_serials s
-     where s.organisation_id = production_items.organisation_id
-       and s.item_id = production_items.id
-   ) or exists (
+   ) or ${ITEM_HAS_SERIALS}
+     or exists (
      select 1 from production_component_serials c
      where c.organisation_id = production_items.organisation_id
        and c.component_item_id = production_items.id
+   ) or exists (
+     select 1 from stock_movements m
+     where m.organisation_id = production_items.organisation_id
+       and m.production_item_id = production_items.id
+       and m.movement_type = 'issue'
+       and m.production_job_card_id is not null
    )) as flags_locked
 `;
 
@@ -1033,7 +1066,7 @@ export function registerProductionRoutes(
             ${organisationId}, ${fields.itemCode}, ${fields.name},
             ${fields.category}, ${fields.unit}, ${fields.manufactured},
             ${fields.serialPrefix}, ${fields.serialControlled}, ${role},
-            ${tx.json(fields.specifications as never)}, ${user.id}
+            ${tx.json((fields.specifications ?? []) as never)}, ${user.id}
           )
           returning ${tx.unsafe(ITEM_COLUMNS)}
         `.catch((error: unknown) => {
@@ -1071,14 +1104,18 @@ export function registerProductionRoutes(
       const { id } = request.params;
       return tenant(async (tx) => {
         const fields = itemFieldsOf(request.body);
-        // The row is READ AND LOCKED before the refusals are decided, so
-        // a unit minted between the check and the write cannot slip
-        // past. The guard (0084 § 1, widened by 0117) is the concurrent
-        // arm of the same three rules and answers 23D03 to any writer
-        // that reaches the table another way; what this layer adds is
-        // the SENTENCE — which control is settled and by what — because
-        // the guard's own message reaches an operator as "the item
-        // changed underneath this edit".
+        // The row is READ AND LOCKED before the refusals are decided.
+        // The lock only serialises against writers that take it too, so
+        // the two paths that create the things these refusals ask about
+        // — minting a unit and raising a job card — take it as well;
+        // between the three, whichever transaction reaches the row first
+        // wins and the others see its result rather than a stale
+        // snapshot. The guard (0084 § 1, widened by 0117) is the
+        // concurrent arm of the same rules and answers 23D03 to any
+        // writer that reaches the table another way; what this layer
+        // adds is the SENTENCE — which control is settled and by what —
+        // because the guard's own message reaches an operator as "the
+        // item changed underneath this edit".
         const [current] = await tx<ItemRow[]>`
           select ${tx.unsafe(ITEM_COLUMNS)}
           from production_items where id = ${id} for update
@@ -1109,6 +1146,10 @@ export function registerProductionRoutes(
             'This item already has job cards, units or consumptions on record, so whether the agency manufactures it and whether its serials are captured are both settled.',
           );
         }
+        // `specifications` absent means KEEP, exactly as `role` does. The
+        // bare column on the right of the coalesce below is the OLD
+        // value, so a caller that sent none leaves the stored list as it
+        // was; an empty array is a different request and clears it.
         const [updated] = await tx<ItemRow[]>`
           update production_items
           set item_code = ${fields.itemCode}, name = ${fields.name},
@@ -1117,7 +1158,10 @@ export function registerProductionRoutes(
               serial_prefix = ${fields.serialPrefix},
               serial_controlled = ${fields.serialControlled},
               item_role = ${role},
-              specifications = ${tx.json(fields.specifications as never)}
+              specifications = coalesce(
+                ${fields.specifications === undefined ? null : tx.json(fields.specifications as never)}::jsonb,
+                specifications
+              )
           where id = ${id}
           returning ${tx.unsafe(ITEM_COLUMNS)}
         `.catch((error: unknown) => {
@@ -1451,6 +1495,14 @@ export function registerProductionRoutes(
             'raising a job card against it',
           );
         }
+        // The item row is LOCKED before the card is raised, for the
+        // reason the mint path locks it: 0084's guard reads `manufactured`
+        // on this insert and 0117's edit reads "does a job card exist"
+        // on its own, and two transactions each holding a snapshot the
+        // other cannot see would both commit — leaving a job card on an
+        // item that says it is not built here. Whichever takes the row
+        // first wins, and the other is refused by the rule it broke.
+        await tx`select 1 from production_items where id = ${body.itemId} for update`;
         const fyLabel = financialYearLabel(await todayOf(tx, organisationId));
         // The house counter upsert (0001's challan counters): the number
         // is claimed without locking anything else, so two operators
@@ -1683,8 +1735,17 @@ export function registerProductionRoutes(
             `Job card ${card.number} has already produced its planned ${String(card.quantity)} units.`,
           );
         }
+        // FOR UPDATE, and not merely to read the prefix. The item edit
+        // (0117) locks this same row before deciding whether the series
+        // and the flags are still movable, so taking the lock here is
+        // what serialises the two: whichever transaction reaches the row
+        // first, the other one sees its result. Without it both hold
+        // their own snapshot and commit — a unit minted under a prefix
+        // the edit was simultaneously changing, which is precisely the
+        // state 0084's freeze exists to prevent.
         const [item] = await tx<{ serial_prefix: string | null }[]>`
-          select serial_prefix from production_items where id = ${card.itemId}
+          select serial_prefix from production_items
+          where id = ${card.itemId} for update
         `;
         if (!item?.serial_prefix) {
           throw httpError(
@@ -2129,12 +2190,20 @@ function itemExists(): Error {
 /** The 0117 invariant, refused with a sentence rather than as the
  * `production_items_oem_manufactured_check` a caller reads as a 500. An
  * OEM item is a product named unit by unit, so it is manufactured, which
- * 0084's shape CHECK carries on to a serial series. */
+ * 0084's shape CHECK carries on to a serial series.
+ *
+ * The remedy is NAMED, because the caller that meets this most often is
+ * a pre-0117 one: an existing OEM item edited to `manufactured: false`
+ * with no `role` in the body keeps its kind, and the pair is refused. It
+ * is a deliberate breaking change — a product that stops being built is
+ * a part, and 0117 is what makes the two different facts — so the
+ * sentence says which field settles it rather than leaving a caller to
+ * guess that a second field exists. */
 function oemMustBeManufactured(): Error {
   return httpError(
     400,
     'PRODUCTION_ITEM_INVALID',
-    'An OEM item is a product the agency builds, so it is manufactured and carries a serial series. Record a bought-in part as a sub item instead.',
+    'An OEM item is a product the agency builds, so it is manufactured and carries a serial series. Send role: "sub" to record it as a bought-in part instead.',
   );
 }
 
@@ -2194,7 +2263,10 @@ function itemFieldsOf(body: {
   manufactured: boolean;
   serialPrefix: string | null;
   serialControlled: boolean;
-  specifications: readonly ProductionSpecification[];
+  /** `undefined` when the caller sent none, which means KEEP — the same
+   * absent-means-leave-it-alone reading `role` has. An empty array is a
+   * different request: it clears the list. */
+  specifications: readonly ProductionSpecification[] | undefined;
 } {
   const serialPrefix = optionalTrimmed(body.serialPrefix)?.toUpperCase();
   if (body.manufactured && serialPrefix === undefined) {
@@ -2208,8 +2280,8 @@ function itemFieldsOf(body: {
   // jsonb CHECK measures the stored value, and a blank pair is dropped
   // rather than refused because the form leaves one behind whenever an
   // operator adds a row and changes their mind.
-  const specifications = (body.specifications ?? [])
-    .map((spec) => ({ attribute: spec.attribute.trim(), value: spec.value.trim() }))
+  const specifications = body.specifications
+    ?.map((spec) => ({ attribute: spec.attribute.trim(), value: spec.value.trim() }))
     .filter((spec) => spec.attribute.length > 0 && spec.value.length > 0)
     .map((spec) => ({
       attribute: spec.attribute.slice(0, 100),

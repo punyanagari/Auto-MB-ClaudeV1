@@ -57,6 +57,11 @@ import type {
   SigningAgentResponse,
   ImportBatchDetail,
   ImportBatchList,
+  ImportedInvoiceDetail,
+  ImportedInvoiceImportMode,
+  ImportedInvoiceImportResult,
+  ImportedInvoiceList,
+  RelinkImportedInvoice,
   ImportRowStatus,
   ImportTargetKey,
   SigningQueueResponse,
@@ -233,6 +238,10 @@ import type {
   PacCertificateListResponse,
   RecordPacCertificateRequest,
   CreateMeasurementBookRequest,
+  MbWay,
+  SetBillingBaselineLinesRequest,
+  SetWorkDeductionsRequest,
+  WorkBillingBaselineResponse,
   MeasurementBookDetailResponse,
   ReceivedRailwayBill,
   RailwayMeasurementResponse,
@@ -291,6 +300,7 @@ import type {
   CancelEwayBillRequest,
   CancelStatutoryDocumentRequest,
   RecordManualStatutoryCancellationRequest,
+  RegisterSort,
 } from '@auto-mb/contracts';
 import { isOffline } from './lib/offline.js';
 
@@ -528,6 +538,9 @@ export interface ApiClient {
    * narrows it to one Work — the module's `?work=` deep link, pushed into
    * the request so the answer is that Work's movements rather than the
    * ones that happened to be on the page. */
+  /* No `sort`: this read sends no `limit`, so it receives the whole
+   * register and the Challans screen orders it in the view. The route's
+   * `?sort=` is for the registers that page. */
   readonly listDeliveryChallans: (
     organisationId: string,
     workId?: string | null,
@@ -1084,6 +1097,9 @@ export interface ApiClient {
       readonly limit?: number;
       readonly installedFrom?: string;
       readonly installedTo?: string;
+      /** Which way round the register reads its date column. Omitted is
+       * newest first, exactly as before the parameter existed. */
+      readonly sort?: RegisterSort;
     },
   ) => Promise<InstallationRegisterResponse>;
   readonly recordWorkInstallation: (
@@ -1304,6 +1320,63 @@ export interface ApiClient {
     organisationId: string,
     measurementBookId: string,
     body: SetMbMeasuredQuantitiesRequest,
+  ) => Promise<MeasurementBookDetailResponse>;
+  /** The opening billing position of a Work whose history predates this
+   * product (migration 0114). The upload is the last railway bill; the
+   * four `recorded` figures are for a bill this product cannot read, and
+   * a readable one refuses them. */
+  readonly getWorkBillingBaseline: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly uploadBillingBaselineBill: (
+    organisationId: string,
+    workId: string,
+    file: File,
+    filename: string,
+    recorded?: {
+      billNumber: string;
+      billDate: string;
+      billAmount: string;
+      lastMbSequenceNumber: number;
+    },
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly uploadBillingBaselineMeasurement: (
+    organisationId: string,
+    billingBaselineId: string,
+    file: File,
+    filename: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly setBillingBaselineLines: (
+    organisationId: string,
+    billingBaselineId: string,
+    body: SetBillingBaselineLinesRequest,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly confirmBillingBaselineLine: (
+    organisationId: string,
+    billingBaselineId: string,
+    itemNumber: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly lockBillingBaseline: (
+    organisationId: string,
+    billingBaselineId: string,
+  ) => Promise<WorkBillingBaselineResponse>;
+  readonly deleteBillingBaseline: (
+    organisationId: string,
+    billingBaselineId: string,
+  ) => Promise<void>;
+  readonly setWorkDeductions: (
+    organisationId: string,
+    workId: string,
+    body: SetWorkDeductionsRequest,
+  ) => Promise<WorkBillingBaselineResponse>;
+  /** Flips a DRAFT Measurement Book between the two ways a railway sheet
+   * is filed, and makes the choice the Work's sticky default (migration
+   * 0113). Presentation only: no line moves and no amount changes. */
+  readonly setMeasurementBookWay: (
+    organisationId: string,
+    measurementBookId: string,
+    way: MbWay,
   ) => Promise<MeasurementBookDetailResponse>;
   readonly finalizeMeasurementBook: (
     organisationId: string,
@@ -1915,6 +1988,9 @@ export interface ApiClient {
       readonly limit?: number;
       readonly invoicedFrom?: string;
       readonly invoicedTo?: string;
+      /** Which way round the register reads its date column. Omitted is
+       * newest first, exactly as before the parameter existed. */
+      readonly sort?: RegisterSort;
     },
   ) => Promise<TaxInvoiceRegisterResponse>;
   readonly createWorkTaxInvoice: (
@@ -2316,6 +2392,43 @@ export interface ApiClient {
     organisationId: string,
     target: ImportTargetKey,
   ) => Promise<Blob>;
+
+  /** The historical Zoho Books invoice register (migration 0115): five
+   * years of billing raised before this application existed, read-only
+   * and annotated with the Work each invoice was for. */
+  readonly listImportedInvoices: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly work?: string;
+      readonly customer?: string;
+      readonly linked?: 'linked' | 'unlinked';
+      readonly financialYear?: number;
+      readonly includeDiscarded?: boolean;
+    },
+  ) => Promise<ImportedInvoiceList>;
+  readonly readImportedInvoice: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<ImportedInvoiceDetail>;
+  /** Reads the export and answers what it would do. `preview` writes
+   * nothing; `commit` does the identical reading and inserts. */
+  readonly importZohoInvoices: (
+    organisationId: string,
+    file: File,
+    mode: ImportedInvoiceImportMode,
+  ) => Promise<ImportedInvoiceImportResult>;
+  readonly relinkImportedInvoice: (
+    organisationId: string,
+    invoiceId: string,
+    body: RelinkImportedInvoice,
+  ) => Promise<ImportedInvoiceDetail>;
+  readonly discardImportedInvoice: (
+    organisationId: string,
+    invoiceId: string,
+    body: { readonly reason: string },
+  ) => Promise<ImportedInvoiceDetail>;
   readonly revokeSigningAgent: (
     organisationId: string,
     agentId: string,
@@ -3954,6 +4067,7 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       if (options.installedTo !== undefined) {
         parameters.set('installedTo', options.installedTo);
       }
+      if (options.sort !== undefined) parameters.set('sort', options.sort);
       const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       return request<InstallationRegisterResponse>(`/api/installations${suffix}`, {
         organisationId,
@@ -4237,6 +4351,76 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       return request<MeasurementBookDetailResponse>(
         `/api/measurement-books/${measurementBookId}/sources`,
         { method: 'PUT', body, organisationId },
+      );
+    },
+    async getWorkBillingBaseline(organisationId, workId) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/works/${workId}/billing-baseline`,
+        { organisationId },
+      );
+    },
+    async uploadBillingBaselineBill(organisationId, workId, file, filename, recorded) {
+      const query = new URLSearchParams({ filename });
+      if (recorded !== undefined) {
+        query.set('billNumber', recorded.billNumber);
+        query.set('billDate', recorded.billDate);
+        query.set('billAmount', recorded.billAmount);
+        query.set('lastMbSequenceNumber', String(recorded.lastMbSequenceNumber));
+      }
+      return uploadPdf<WorkBillingBaselineResponse>(
+        `/api/works/${workId}/billing-baseline?${query.toString()}`,
+        organisationId,
+        file,
+      );
+    },
+    async uploadBillingBaselineMeasurement(
+      organisationId,
+      billingBaselineId,
+      file,
+      filename,
+    ) {
+      const query = new URLSearchParams({ filename });
+      return uploadPdf<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/measurement?${query.toString()}`,
+        organisationId,
+        file,
+      );
+    },
+    async setBillingBaselineLines(organisationId, billingBaselineId, body) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/lines`,
+        { method: 'PUT', body, organisationId },
+      );
+    },
+    async confirmBillingBaselineLine(organisationId, billingBaselineId, itemNumber) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/lines/confirm`,
+        { method: 'POST', body: { itemNumber }, organisationId },
+      );
+    },
+    async lockBillingBaseline(organisationId, billingBaselineId) {
+      return request<WorkBillingBaselineResponse>(
+        `/api/billing-baselines/${billingBaselineId}/lock`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async deleteBillingBaseline(organisationId, billingBaselineId) {
+      await request<void>(`/api/billing-baselines/${billingBaselineId}`, {
+        method: 'DELETE',
+        organisationId,
+      });
+    },
+    async setWorkDeductions(organisationId, workId, body) {
+      return request<WorkBillingBaselineResponse>(`/api/works/${workId}/deductions`, {
+        method: 'PUT',
+        body,
+        organisationId,
+      });
+    },
+    async setMeasurementBookWay(organisationId, measurementBookId, way) {
+      return request<MeasurementBookDetailResponse>(
+        `/api/measurement-books/${measurementBookId}/way`,
+        { method: 'PUT', body: { way }, organisationId },
       );
     },
     async finalizeMeasurementBook(organisationId, measurementBookId) {
@@ -4963,6 +5147,7 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       if (options.invoicedTo !== undefined) {
         parameters.set('invoicedTo', options.invoicedTo);
       }
+      if (options.sort !== undefined) parameters.set('sort', options.sort);
       const suffix = parameters.size > 0 ? `?${parameters.toString()}` : '';
       return request<TaxInvoiceRegisterResponse>(`/api/tax-invoices${suffix}`, {
         organisationId,
@@ -5464,6 +5649,56 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     },
     async downloadImportTemplate(organisationId, target) {
       return downloadBlob(`/api/imports/templates/${target}`, organisationId);
+    },
+    async listImportedInvoices(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.work !== undefined) query.set('work', options.work);
+      if (options?.customer !== undefined) query.set('customer', options.customer);
+      if (options?.linked !== undefined) query.set('linked', options.linked);
+      if (options?.financialYear !== undefined) {
+        query.set('financialYear', String(options.financialYear));
+      }
+      if (options?.includeDiscarded === true) query.set('includeDiscarded', 'true');
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportedInvoiceList>(`/api/imported-invoices${suffix}`, {
+        organisationId,
+      });
+    },
+    async readImportedInvoice(organisationId, invoiceId) {
+      return request<ImportedInvoiceDetail>(`/api/imported-invoices/${invoiceId}`, {
+        organisationId,
+      });
+    },
+    async importZohoInvoices(organisationId, file, mode) {
+      // The raw Blob, as every upload in this client sends one: there is
+      // no FormData anywhere here. The file's own name rides the
+      // querystring because it is what the operator calls the import.
+      const query = uploadQuery({ mode, filename: file.name });
+      const response = await fetchImpl(`/api/imported-invoices/import?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'text/csv',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ImportedInvoiceImportResult;
+    },
+    async relinkImportedInvoice(organisationId, invoiceId, body) {
+      return request<ImportedInvoiceDetail>(
+        `/api/imported-invoices/${invoiceId}/link`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async discardImportedInvoice(organisationId, invoiceId, body) {
+      return request<ImportedInvoiceDetail>(
+        `/api/imported-invoices/${invoiceId}/discard`,
+        { method: 'POST', body, organisationId },
+      );
     },
     async downloadSignedPdf(organisationId, requestId) {
       // Fetched rather than linked, like every other PDF here: the
