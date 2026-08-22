@@ -698,6 +698,18 @@ export interface ContactMatch {
 }
 
 /**
+ * Everything the match reads. A `ZohoInvoice` satisfies it structurally,
+ * so the invoice importer's own call is unchanged; it is written out so
+ * the Tally ledger census (0118) can put a party ledger's name and GSTIN
+ * through the SAME rule rather than growing a second implementation of
+ * "GSTIN first, then exact name" that drifts from this one.
+ */
+export interface ContactSubject {
+  readonly customerGstin: string | null;
+  readonly customerName: string;
+}
+
+/**
  * The contact this invoice was billed to, by GSTIN and then by exact name.
  *
  * GSTIN FIRST because it is the identifier the tax system itself uses: two
@@ -713,7 +725,7 @@ export interface ContactMatch {
  * stored on the row itself, so a missing contact costs a join, not a fact.
  */
 export function matchContact(
-  invoice: ZohoInvoice,
+  invoice: ContactSubject,
   candidates: readonly ContactCandidate[],
 ): ContactMatch | null {
   if (invoice.customerGstin !== null) {

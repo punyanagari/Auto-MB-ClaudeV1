@@ -386,6 +386,25 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     importZohoInvoices: vi.fn<ApiClient['importZohoInvoices']>(),
     relinkImportedInvoice: vi.fn<ApiClient['relinkImportedInvoice']>(),
     discardImportedInvoice: vi.fn<ApiClient['discardImportedInvoice']>(),
+    listTallyLedgers: vi.fn<ApiClient['listTallyLedgers']>().mockResolvedValue({
+      ledgers: [],
+      nextCursor: null,
+      totals: {
+        ledgerCount: 0,
+        customerCount: 0,
+        vendorCount: 0,
+        instrumentCount: 0,
+        otherCount: 0,
+        proposedContactCount: 0,
+        unmatchedPartyCount: 0,
+        codedCount: 0,
+        distinctCodeCount: 0,
+        lastImportedAt: null,
+        lastFilename: null,
+        supersededCount: 0,
+      },
+    }),
+    importTallyMasters: vi.fn<ApiClient['importTallyMasters']>(),
     challanCorrectionEligibility: vi
       .fn<ApiClient['challanCorrectionEligibility']>()
       .mockResolvedValue({

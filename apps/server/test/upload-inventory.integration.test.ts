@@ -10,6 +10,7 @@ import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/
 import { buildApp } from '../src/app.js';
 import {
   MAX_CSV_UPLOAD_BYTES,
+  MAX_TALLY_UPLOAD_BYTES,
   MAX_PDF_UPLOAD_BYTES,
   MAX_XLSX_UPLOAD_BYTES,
 } from '../src/upload-guards.js';
@@ -45,7 +46,7 @@ interface UploadRouteExpectation {
   readonly key: string;
   /** The route file that must call `consumeUpload()`. */
   readonly sourceFile: string;
-  readonly format: 'pdf' | 'image' | 'xlsx' | 'csv';
+  readonly format: 'pdf' | 'image' | 'xlsx' | 'csv' | 'tally-xml';
   readonly bodyLimit: number;
   /** Appended verbatim; the routes below either need one or take none. */
   readonly query?: string;
@@ -245,6 +246,20 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     bodyLimit: MAX_CSV_UPLOAD_BYTES,
     query: '?mode=preview&filename=invoice.csv',
   },
+  {
+    // The TallyPrime All Masters export (0118). The largest ceiling here
+    // by an order of magnitude, and the size is a property of Tally's
+    // format rather than of anybody's data: it writes one tag per line,
+    // ~165 tags per ledger of which ~150 are Yes/No engine flags, in
+    // UTF-16 — so a 4,327-ledger chart of accounts is 133 MB. Its
+    // signature is the UTF-16LE byte-order mark, which is the only one
+    // the file has: Tally writes no XML declaration.
+    key: 'POST /api/tally-masters/import',
+    sourceFile: 'routes/tally-masters.ts',
+    format: 'tally-xml',
+    bodyLimit: MAX_TALLY_UPLOAD_BYTES,
+    query: '?mode=preview&filename=Master.xml',
+  },
 ];
 
 /** What each format's shared refusal answers for a body whose signature
@@ -266,6 +281,12 @@ const WRONG_SIGNATURE_CODE = {
   // (0115). The probe body below is plain text, so it is the reader that
   // answers, which is exactly the arm a signature check cannot have.
   csv: 'ZOHO_EXPORT_UNREADABLE',
+  // The Tally export DOES have a signature — the UTF-16LE byte-order mark
+  // and a first character of `<` — so unlike the two above this arm is
+  // genuinely the guard's, not the reader's. One code either way, for the
+  // workbook's reason: a file that is not Tally's XML and a file that is
+  // Tally's XML with nothing readable in it are one problem with one fix.
+  'tally-xml': 'TALLY_EXPORT_UNREADABLE',
 } as const;
 
 const UPLOAD_CONTENT_TYPE = {
@@ -273,6 +294,7 @@ const UPLOAD_CONTENT_TYPE = {
   image: 'image/png',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   csv: 'text/csv',
+  'tally-xml': 'application/xml',
 } as const;
 
 /**

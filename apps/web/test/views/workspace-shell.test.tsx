@@ -311,6 +311,10 @@ describe('OperationsWorkspace mobile shell', () => {
       'Approvals',
       'Masters',
       'Imports',
+      // The Tally ledger census (0118), directly under the other way a
+      // file from another system reaches this one. The mock draws no
+      // cell for it — docs/UX.md § 35, on the same footing as § 34.
+      'Tally census',
       'Members',
       // The two screens 0095 adds, both under Administration and neither
       // drawn by the mock at fdfd610 — recorded as docs/UX.md § 19.
@@ -366,6 +370,7 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Approvals', '#/approvals'],
       ['Masters', '#/masters'],
       ['Imports', '#/imports'],
+      ['Tally census', '#/tally-masters'],
       ['Members', '#/members'],
       ['Audit trail', '#/audit'],
       // The management summary answers to `#/reports`, which is what the

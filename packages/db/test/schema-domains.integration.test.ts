@@ -243,7 +243,13 @@ describe('the schema at head names all three shapes', () => {
     // adds to its prior-cumulative memory and the receivables position
     // is summed from, so a different precision here would be a rounding
     // difference on numbers that decide what is billed next.
-    expect(adopted.length).toBe(135);
+    //
+    // 0118 adds ONE: the Tally ledger census's opening balance. It is
+    // EVIDENCE and nothing computes with it, which is the argument for a
+    // bare numeric — and against it is that the day a wave does compute
+    // with it, a column at some other precision is a rounding difference
+    // discovered in a reconciliation report rather than here.
+    expect(adopted.length).toBe(136);
   });
 
   it('types every digest column as sha256_hex', () => {

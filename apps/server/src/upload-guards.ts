@@ -51,6 +51,29 @@ export const MAX_XLSX_UPLOAD_BYTES = 8 * 1024 * 1024;
  */
 export const MAX_CSV_UPLOAD_BYTES = 16 * 1024 * 1024;
 
+/**
+ * The ceiling on a TallyPrime `All Masters` export (0118).
+ *
+ * Twelve times the CSV cap, and the size is a property of Tally's export
+ * format rather than of this organisation's data. The real file is 133 MB
+ * for 4,327 ledgers — about 32 KB of XML per ledger — because Tally writes
+ * one tag per line, roughly 165 tags per master of which ~150 are engine
+ * flags whose value is the word `Yes` or `No`, and because the whole
+ * document is UTF-16, which doubles every byte of it. The census this
+ * import produces is a few megabytes.
+ *
+ * 192 leaves room for a company several times this one's size and still
+ * refuses `Transactions.xml`, which is 3.18 GB and is a different wave's
+ * problem. The reader's own ceilings — line length, ledger count, refusal
+ * count — bound the axes a byte cap cannot.
+ *
+ * The bytes are read as a STREAM OF LINES off this buffer rather than
+ * decoded into one string: `bytes.toString()` on a 133 MB UTF-16 body
+ * would double the peak for no purpose. See
+ * `apps/server/src/tally-masters.ts`.
+ */
+export const MAX_TALLY_UPLOAD_BYTES = 192 * 1024 * 1024;
+
 const PDF_MAGIC = Buffer.from('%PDF-');
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
@@ -59,6 +82,9 @@ const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
  * holds a workbook rather than a photograph of one is `xlsx.ts`'s
  * question, and it answers by refusing to find the parts. */
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+/** TallyPrime writes its exports as UTF-16LE with a byte-order mark and
+ * no XML declaration, so this is the only signature the file has. */
+const UTF16LE_BOM = Buffer.from([0xff, 0xfe]);
 
 interface ConsumedUpload<MediaType extends string> {
   /** The request body, proven non-empty and proven to carry the format's
@@ -96,6 +122,11 @@ interface CsvUploadSpec {
   readonly code: 'ZOHO_EXPORT_UNREADABLE';
 }
 
+interface TallyXmlUploadSpec {
+  readonly format: 'tally-xml';
+  readonly description: string;
+}
+
 export function consumeUpload(
   body: unknown,
   spec: PdfUploadSpec,
@@ -112,6 +143,10 @@ export function consumeUpload(
   body: unknown,
   spec: CsvUploadSpec,
 ): ConsumedUpload<'text/csv'>;
+export function consumeUpload(
+  body: unknown,
+  spec: TallyXmlUploadSpec,
+): ConsumedUpload<'application/xml'>;
 /**
  * Validates a raw request body and hands back the bytes with the media
  * type its signature proves. Every refusal is a 400 with the code the
@@ -120,8 +155,46 @@ export function consumeUpload(
  */
 export function consumeUpload(
   body: unknown,
-  spec: PdfUploadSpec | ImageUploadSpec | XlsxUploadSpec | CsvUploadSpec,
+  spec:
+    | PdfUploadSpec
+    | ImageUploadSpec
+    | XlsxUploadSpec
+    | CsvUploadSpec
+    | TallyXmlUploadSpec,
 ): ConsumedUpload<string> {
+  if (spec.format === 'tally-xml') {
+    // TALLY'S EXPORT HAS A SIGNATURE, unlike a CSV: it is UTF-16LE with a
+    // byte-order mark and no XML declaration, so the first two bytes are
+    // FF FE and the third begins `<`. Checking it is what turns "the
+    // reader found no <ENVELOPE>" — which an operator reads as a
+    // complaint about their accounts — into "that is not the file
+    // TallyPrime writes".
+    //
+    // A UTF-8 XML is admitted too, because that is what a well-meaning
+    // operator produces by opening the export in an editor and saving it,
+    // and the reader handles both encodings. What is refused is anything
+    // that is not text-with-a-tag at all.
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      throw httpError(
+        400,
+        'TALLY_EXPORT_UNREADABLE',
+        `Send ${spec.description} as an application/xml request body.`,
+      );
+    }
+    const utf16 = body.subarray(0, 2).equals(UTF16LE_BOM);
+    const head = utf16
+      ? body.subarray(2, 400).toString('utf16le')
+      : body.subarray(0, 200).toString('utf8');
+    if (!head.trimStart().startsWith('<')) {
+      throw httpError(
+        400,
+        'TALLY_EXPORT_UNREADABLE',
+        'That file is not the XML TallyPrime writes. In TallyPrime, export All Masters as XML and upload that file unchanged.',
+      );
+    }
+    return { bytes: body, mediaType: 'application/xml' };
+  }
+
   if (spec.format === 'csv') {
     // A CSV HAS NO MAGIC BYTES, and this function's whole promise is that
     // the format is proven by signature rather than by the client's

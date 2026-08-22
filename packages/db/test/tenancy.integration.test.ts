@@ -129,6 +129,9 @@ const TENANT_TABLES = [
   // precedes its lines, which name it with a composite tenant reference.
   'imported_invoices',
   'imported_invoice_lines',
+  // The Tally ledger census (0118): the chart of accounts another system
+  // keeps. Names no other tenant row but the contact it proposes.
+  'tally_ledgers',
   // The opening billing position of a Work whose history predates this
   // product (0114).
   'work_billing_baselines',
@@ -353,6 +356,9 @@ const DELETE_REVOKED_TABLES = [
   // and its lines are append-only (0115).
   'imported_invoices',
   'imported_invoice_lines',
+  // Nor does a census row: a Tally master the newest export no longer
+  // names is superseded by not being seen again, never deleted (0118).
+  'tally_ledgers',
   'works',
   'work_items',
   'loa_documents',
@@ -1494,6 +1500,36 @@ async function seedTenantGraph(
         ${organisationId}, ${importedInvoice.id}, 1, 'Seeded historical line',
         '10.000', 'Nos', '100.00', '1000.00', '998734', '9.00', '9.00',
         '90.00', '90.00', ${tx.json({ 'Item Name': 'Seeded historical line' })}
+      )
+    `;
+
+    // The Tally ledger census (0118). Seeded with the contact PROPOSAL
+    // populated, for the reason above it: the one composite tenant foreign
+    // key this table has is the proposal, and a row with a null one would
+    // prove isolation on the table while proving nothing about the link
+    // that is the census's whole point. TWO rows, because the coverage
+    // sweep requires at least two per tenant table.
+    await tx`
+      insert into tally_ledgers (
+        organisation_id, tally_guid, tally_alterid, ledger_name, parent_group,
+        group_path, classification, proposed_contact_id,
+        proposed_contact_method, source_fields, source_filename,
+        imported_by_user_id
+      )
+      values (
+        ${organisationId}, ${`tally-${workCode}-party`}, 100,
+        ${`Seeded Tally party ${workCode}`}, 'Sundry Debtors',
+        ${tx.array(['Current Assets', 'Sundry Debtors'])}::text[], 'customer',
+        ${consigneeContact.id}, 'name',
+        ${tx.json({ PARENT: 'Sundry Debtors' })}, 'Master.xml', ${userId}
+      ),
+      (
+        ${organisationId}, ${`tally-${workCode}-deposit`}, 100,
+        ${`SD Seeded ${workCode} PL-9`}, 'Railway Security Deposits',
+        ${tx.array(['Current Assets', 'Railway Security Deposits'])}::text[],
+        'instrument', null, null,
+        ${tx.json({ PARENT: 'Railway Security Deposits' })}, 'Master.xml',
+        ${userId}
       )
     `;
 

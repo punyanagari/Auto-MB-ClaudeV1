@@ -2381,6 +2381,40 @@ test('the historical invoice register passes the axe scan', async ({ page }) => 
   await expectNoAxeViolations(page, 'historical invoice register');
 });
 
+test('the Tally ledger census passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/tally-masters');
+
+  /* The Tally masters mirror (0118). Its own top-level test for the same
+     reason the register above took one.
+
+     Scanned with the filter row, the import panel and the census on
+     screen together — three labelled controls beside a submit, a file
+     input whose label is the only thing naming it, and a table whose
+     class cell is the only colour this screen puts on a word. All four
+     tones are drawn, because each has to hold against its ground in both
+     themes, and `other` is the one that renders neutral. */
+  await expect(page.getByRole('heading', { name: 'Tally census' })).toBeVisible();
+  await expect(page.getByLabel('TallyPrime All Masters export (.xml)')).toBeVisible();
+  await expect(page.getByLabel('Ledger name')).toBeVisible();
+  // `exact` on both: the table's own caption region is named by the whole
+  // caption sentence, which contains the words "kind" and "master".
+  await expect(page.getByLabel('Kind', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Contacts master', { exact: true })).toBeVisible();
+  for (const label of ['Customer', 'Vendor', 'Instrument', 'Other']) {
+    await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+  }
+  // TEXT, not a link — owner rulings 4 and 5. Asserted by cell so the
+  // filter's own option text cannot satisfy it.
+  await expect(page.getByRole('cell', { name: 'PL-270', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'PL-270' })).toHaveCount(0);
+  // The half an operator works through.
+  await expect(
+    page.getByRole('cell', { name: 'None proposed', exact: true }).first(),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'tally ledger census');
+});
+
 test('the warranty register passes the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/warranties');

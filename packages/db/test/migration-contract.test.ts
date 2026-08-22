@@ -125,6 +125,12 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // and refuses an insert into an invoice this tenant cannot read or has
   // already discarded.
   '0115_imported_invoices.sql': 2,
+  // One guard in 0118: the census row's IDENTITY. Its contents are a
+  // mirror of a file the organisation is still editing and are meant to
+  // move when a fresher export is imported — what may never move is which
+  // Tally master the row is about, and whether the export it came from is
+  // older than the one already read.
+  '0118_tally_ledgers.sql': 1,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
@@ -4016,5 +4022,147 @@ describe('the historical Zoho invoice register (0115)', () => {
     expect(code).not.toContain('SECURITY DEFINER');
     expect(code.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(2);
     expect(code.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(2);
+  });
+});
+
+describe('the Tally ledger census (0118)', () => {
+  let sql = '';
+
+  /** Comments are evidence of INTENT and are read where a test asserts a
+   * migration explains the rule. Refusals about what the migration DOES
+   * are read from code only. */
+  const codeOnly = (source: string): string =>
+    source
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+
+  beforeAll(async () => {
+    sql = await readFile(
+      path.join(migrationsDirectory, '0118_tally_ledgers.sql'),
+      'utf8',
+    );
+  });
+
+  it('bounds its own locks like every migration that adds a trigger', () => {
+    expect(sql).toContain("SET LOCAL lock_timeout = '2s';");
+    expect(sql).toContain("SET LOCAL statement_timeout = '5min';");
+  });
+
+  it('holds the table in the ADR-0010 policy shape with no DELETE', () => {
+    expect(sql).toContain('CREATE POLICY tally_ledgers_tenant_policy');
+    expect(sql).toContain('ALTER TABLE tally_ledgers FORCE ROW LEVEL SECURITY;');
+    expect(sql).toContain(
+      'USING (organisation_id = (SELECT app_private.current_organisation_id()))',
+    );
+    // UPDATE is taken, because the census is a MIRROR and a fresher export
+    // must be able to refresh it. DELETE is not: a superseded row stays on
+    // the record and falls out of the census by not being seen again.
+    expect(sql).toContain(
+      'GRANT SELECT, INSERT, UPDATE ON tally_ledgers TO auto_mb_app;',
+    );
+    expect(codeOnly(sql)).not.toContain('DELETE ON tally_ledgers');
+  });
+
+  /* THE DELIBERATE DEPARTURE FROM 0115, and the one thing about this
+     migration most likely to be "corrected" by somebody pattern-matching
+     on the register beside it. */
+  it('makes Tally’s GUID the idempotency key over EVERY row, not a partial one', () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX tally_ledgers_guid_key\s+ON tally_ledgers \(organisation_id, tally_guid\);/,
+    );
+    // Partial would be wrong here and the reason is structural: there is
+    // no discard to exclude, and ON CONFLICT DO UPDATE needs an arbiter
+    // covering every row. A WHERE on this index makes the upsert a 42P10
+    // at runtime.
+    expect(sql).not.toMatch(/tally_ledgers_guid_key[\s\S]{0,140}WHERE/);
+    expect(codeOnly(sql)).not.toContain('discarded_at');
+    // The supersession mechanism that replaces the discard.
+    expect(sql).toContain('last_seen_at timestamptz NOT NULL DEFAULT now()');
+  });
+
+  /* OWNER RULINGS 4 AND 5: a Tally code never creates or reaches a Work.
+     The code is text, and because nothing here references `works` there is
+     no work-scope predicate and no 0071 supersession question to answer. */
+  it('reaches no Work at all, and keeps the code as text', () => {
+    const code = codeOnly(sql);
+    expect(code).not.toContain('REFERENCES works');
+    expect(code).not.toContain('work_id');
+    expect(sql).toContain(
+      "pl_code text CHECK (pl_code IS NULL OR pl_code ~ '^PL-[0-9]{1,4}$')",
+    );
+  });
+
+  /* OWNER RULINGS 6 AND 8: a contact is PROPOSED, never linked, only on a
+     party ledger, and never by a name that is not a key. */
+  it('admits a contact only as a proposal, and only on a party ledger', () => {
+    expect(sql).toContain('proposed_contact_id uuid');
+    expect(sql).toContain('REFERENCES contacts (organisation_id, id)');
+    expect(sql).toContain('tally_ledgers_proposal_shape_check');
+    expect(sql).toContain('tally_ledgers_proposal_class_check');
+    expect(sql).toContain('tally_ledgers_ambiguous_name_check');
+    // No `manual` arm: nothing in this wave confirms a proposal, and
+    // offering the value would claim a decision nobody has made.
+    expect(sql).toContain("proposed_contact_method IN ('gstin', 'name')");
+  });
+
+  /* THE CLASSIFICATION IS TALLY'S, NOT THIS COMPANY'S. Owner ruling 7
+     dropped the letter categories as accounting taxonomy, and a schema
+     carrying this organisation's own group spellings would be stale the
+     first time somebody adds a twelfth of them in Tally. */
+  it('hardcodes no group name from this organisation’s chart of accounts', () => {
+    const code = codeOnly(sql);
+    for (const spelling of [
+      'Railway Authority',
+      'Private Parties',
+      'Sub Contract Advance',
+      'Creditors for',
+      'IREPS EMD',
+      'Fix Deposit with Bank',
+    ]) {
+      expect(code, spelling).not.toContain(spelling);
+    }
+    expect(sql).toContain(
+      "classification IN ('customer', 'vendor', 'instrument', 'other')",
+    );
+  });
+
+  it('freezes the row’s identity and refuses an older export, and nothing else', () => {
+    const guard = sql.slice(
+      sql.indexOf('CREATE FUNCTION app_private.guard_tally_ledger()'),
+      sql.indexOf('CREATE TRIGGER tally_ledgers_guard'),
+    );
+    expect(guard).toContain('NEW.id IS DISTINCT FROM OLD.id');
+    expect(guard).toContain('NEW.tally_guid IS DISTINCT FROM OLD.tally_guid');
+    expect(guard).toContain('NEW.organisation_id IS DISTINCT FROM OLD.organisation_id');
+    expect(guard).toContain('NEW.created_at IS DISTINCT FROM OLD.created_at');
+    // The mirror only moves forward: an export older than the one already
+    // read would quietly replace the current census with a stale one.
+    expect(guard).toContain('NEW.tally_alterid < OLD.tally_alterid');
+    // …and the CONTENTS are deliberately absent from the comparison. A
+    // guard that froze `ledger_name` here would refuse exactly the refresh
+    // this table exists to accept.
+    expect(guard).not.toContain('NEW.ledger_name IS DISTINCT FROM');
+    expect(guard).not.toContain('NEW.classification IS DISTINCT FROM');
+    expect(guard).toContain('NEW.updated_at := now();');
+  });
+
+  it('keeps every refusal inside its own SQLSTATE block', () => {
+    // 23T, by coordinator allocation. Whether the block is free is the
+    // repo-wide census above; this says only that the codes are all in one
+    // block, which is all a single-file assertion can say.
+    const codes = [...sql.matchAll(/USING ERRCODE = '([0-9A-Z]{5})'/g)].map(
+      (match) => match[1],
+    );
+    expect(codes.length).toBeGreaterThanOrEqual(2);
+    expect(codes.every((code) => code?.startsWith('23T'))).toBe(true);
+    expect([...new Set(codes)].sort()).toEqual(['23T01']);
+  });
+
+  it('creates no SECURITY DEFINER function', () => {
+    const code = codeOnly(sql);
+    expect(code).not.toContain('SECURITY DEFINER');
+    expect(code.match(/CREATE FUNCTION app_private\.\w+/g)).toHaveLength(1);
+    expect(code.match(/^SET search_path = pg_catalog, public/gm)).toHaveLength(1);
   });
 });

@@ -2683,6 +2683,95 @@ authority of § 18 and migration 0094, for that section's reason. A member
 without it sees the register and not the upload panel, rather than an
 upload panel that answers 403.
 
+### 35. The Tally census — the chart of accounts another system keeps
+
+**Status: application-first, owner rulings of 2026-08-22 (Tally mapping
+census, questions 1–8; migration 0118).** Numbered 35 by coordinator
+allocation, not by position: § 35 was the next free number when this wave
+was written, and if a sibling pack lands one first the coordinator
+renumbers at merge rather than letting two sections share a number.
+
+**There is no mock citation for this screen and none is possible**, for
+§ 34's reason exactly: the mock draws a product that has always existed,
+and this screen exists because it did not. Built in the mock's existing
+grammar under AGENTS.md § Design contract 2 and 4 — page header, data
+table, status chip, filter row — with no new visual language. One icon is
+new to the rail (`BookText`), checked against every icon already on it as
+§ 18 requires.
+
+**A separate rail entry under Imports, in Administration.** The act is the
+same act Imports performs — pointing a file from another system at this
+one — and what it fills is the Contacts register that Masters owns, one
+lamp above. It is not a tab of Imports because Imports is a register of
+spreadsheet BATCHES with a validate-then-commit lifecycle and eleven
+refusals to fix, and this is a mirror of a file with no lifecycle at all.
+
+**Read-only, and the screen says so.** There is no "new ledger" control
+and there never will be: a ledger is created in TallyPrime, which remains
+the general accounting books (ruling 1). What the screen answers is what
+nothing in this application could answer before — who does this company
+trade with, which deposits and guarantees are keyed to which work, and
+which of the parties Tally knows about the contacts master has never
+heard of.
+
+**Two columns are not what an operator would assume, and the screen is
+built around saying so.**
+
+- **The proposed contact is a PROPOSAL, not a link.** Rulings 6 and 8: the
+  match is made on GSTIN first and then on an exact name, ambiguity
+  proposes nothing, and a person confirms. Nothing on this screen confirms
+  one — the cell reads `(by gstin, unconfirmed)` rather than rendering as
+  a relationship somebody agreed to. Confirming is a later wave's act, and
+  a column that looked like a link before then would have been read as
+  one.
+- **The work code reaches no Work.** Rulings 4 and 5: 202 distinct codes
+  appear in the real masters against the works this system holds, most of
+  them naming pre-cutover history, and a Tally code never creates a Work.
+  It is text, and it renders as mono text with no link behind it.
+
+**The kind of ledger is derived from Tally's own reserved groups**, not
+from this company's. `Sundry Debtors` and `Sundry Creditors` exist in
+every Tally company file ever created, and every customer and vendor sits
+somewhere beneath one of them however the organisation has subdivided it —
+this one uses `Railway Authority`, `Private Parties`, `Amc` and eleven
+`Creditors for A–K` categories, which ruling 7 drops as accounting
+taxonomy. Reading the ancestry gives the same answer without knowing any
+of those names, and it stays right when somebody adds a twelfth category
+in Tally next month. The fourth kind, `instrument`, is not a group at all:
+a ledger outside the party tree whose own name carries a work code, which
+is every security deposit, FDR, bank guarantee and tender EMD in the file.
+
+**The import is a conversation, not a button**, on § 34's terms — but what
+comes back from the first read is a REPORT rather than a row list. 638
+invoices is a list a clerk reads before pressing commit; 4,327 ledgers is
+not. The preview says how many masters are new, how many Tally has
+altered since the last import, how many are unchanged, how the file
+divides across the four kinds and across Tally's root groups, how many
+parties the contacts master answered for — and, stated even when they are
+zero, the three counts of things the reader could not use: names carrying
+two different work codes, values that are not GSTINs, and masters sharing
+a name with another master. A count of what could not be read is worth
+more than a count of what could, and silence would read as absence of the
+problem rather than absence of the check.
+
+**Re-importing a fresher export is the correction path, and there is no
+discard.** This is the one place the screen behaves differently from § 34's
+register, and the difference is that a historical invoice is a document
+another system ISSUED while a ledger master is the current state of a row
+somebody is still editing. Ruling 3 has the owner take a fresh export on
+import day, so the second import is the normal case: a master whose Tally
+edit counter moved is refreshed, the rest are left exactly as they are,
+and a master the newest export no longer names falls out of the census
+without being destroyed. The header reports those superseded rows rather
+than hiding them, and a filter reads them back.
+
+**Only the import is gated.** Reading the census carries the writer role
+alone — which parties this organisation trades with is ordinary reference
+data — and pointing a file at it needs the data-import authority of § 18
+and migration 0094, for that section's reason. A member without it sees
+the census and not the upload panel, rather than an upload panel that
+answers 403.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
@@ -3219,7 +3308,8 @@ IRP transport and credit notes · Organisation chooser · Two-factor enrolment a
 recovery · Password recovery · Account security · Organisation access settings ·
 Appearance settings · Monthly payroll · Spreadsheet imports · Signing queue ·
 Warranties register and the Work's defect liability card · Historical invoice
-register and its Zoho Books import (§ 34)
+register and its Zoho Books import (§ 34) · Tally ledger census and its
+TallyPrime masters import (§ 35)
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.

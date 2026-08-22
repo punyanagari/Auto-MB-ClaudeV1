@@ -620,6 +620,16 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Discard this invoice with the reason and import the corrected export instead of editing it — a record of what another system issued is not rewritten, and the register keeps both rows.',
   IMPORTED_INVOICE_DISCARDED:
     'Reload the historical register and import the corrected export, because a withdrawn record takes no further changes.',
+  // ---- The Tally ledger census (0118) --------------------------------------
+  //
+  // The census mirrors a file the organisation is still using, so both
+  // remedies point at the FILE rather than at a row: the export is taken
+  // fresh from TallyPrime, and importing a fresher one is how the census
+  // is corrected.
+  TALLY_EXPORT_UNREADABLE:
+    'Export All Masters from TallyPrime and upload the XML it writes without opening or re-saving it — the preview names the line of anything it cannot read, and writes nothing.',
+  TALLY_LEDGER_IMMUTABLE:
+    'Import a fresh All Masters export instead of editing a census row: the census mirrors what Tally holds, and which Tally master a row is about never changes.',
   // ---- Defect liability periods (0099) ------------------------------------
   //
   // The module has no document to open and no number to quote, so every

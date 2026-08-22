@@ -1369,6 +1369,65 @@ const IMPORTED_INVOICE_REGISTER = {
   },
 };
 
+/* The Tally ledger census (migration 0118), drawn with all four classes on
+   screen at once — the scan needs every tone the class chip can take, and
+   `other` is the only one that renders neutral. One party carries a
+   proposed contact and one does not, because the unmatched half is what
+   the screen exists to work through, and the instrument carries the work
+   code that is TEXT rather than a link. */
+const TALLY_LEDGER_CENSUS = {
+  ledgers: (
+    [
+      ['Central Railway, Bhusawal', 'Railway Authority', 'customer', true],
+      ['Deccan Switchgear Pvt Ltd', 'Private Parties', 'customer', false],
+      ['Konkan Cables & Conductors', 'Sundry Creditors', 'vendor', false],
+      ['SD Bhusawal PL-270', 'Railway Security Deposits', 'instrument', false],
+      ['CGST Input 9%', 'Duties & Taxes', 'other', false],
+    ] as const
+  ).map(([ledgerName, parentGroup, classification, matched], index) => ({
+    id: `7777777${String(index)}-7777-4777-8777-777777777777`,
+    tallyGuid: `tally-guid-${String(index + 1)}`,
+    tallyAlterId: 15_700 + index,
+    ledgerName,
+    parentGroup,
+    groupPath:
+      classification === 'customer'
+        ? ['Current Assets', 'Sundry Debtors', parentGroup]
+        : classification === 'vendor'
+          ? ['Current Liabilities', 'Sundry Creditors']
+          : classification === 'instrument'
+            ? ['Current Assets', 'Deposits (Asset)', parentGroup]
+            : ['Current Liabilities', parentGroup],
+    classification,
+    gstin: matched ? '27AAACR1234E1Z1' : null,
+    openingBalance: classification === 'instrument' ? '-1250000.00' : null,
+    plCode: classification === 'instrument' ? 'PL-270' : null,
+    tallyIsDeleted: false,
+    nameAmbiguous: false,
+    proposedContactId: matched ? '55555555-5555-4555-8555-555555555555' : null,
+    proposedContactName: matched ? 'Central Railway, Bhusawal' : null,
+    proposedContactMethod: matched ? 'gstin' : null,
+    sourceFilename: 'Master.xml',
+    lastSeenAt: '2026-08-22T04:30:00.000Z',
+    importedAt: '2026-08-22T04:30:00.000Z',
+  })),
+  nextCursor: null,
+  totals: {
+    ledgerCount: 5,
+    customerCount: 2,
+    vendorCount: 1,
+    instrumentCount: 1,
+    otherCount: 1,
+    proposedContactCount: 1,
+    unmatchedPartyCount: 2,
+    codedCount: 1,
+    distinctCodeCount: 1,
+    lastImportedAt: '2026-08-22T04:30:00.000Z',
+    lastFilename: 'Master.xml',
+    supersededCount: 0,
+  },
+};
+
 /* The purchase-order register (migration 0109), drawn with both series on
    screen at once: the tab counts are the only place the register puts a
    number in a control, and the Against column is the only cell whose two
@@ -2288,6 +2347,11 @@ export async function mockWorkspace(
   // import lane below it is a POST that no scan makes.
   await page.route('**/api/imported-invoices*', (route) =>
     route.fulfill(json(IMPORTED_INVOICE_REGISTER)),
+  );
+  // The Tally ledger census (0118). The import lane beside it is a POST
+  // that no scan makes.
+  await page.route('**/api/tally-masters/ledgers*', (route) =>
+    route.fulfill(json(TALLY_LEDGER_CENSUS)),
   );
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),

@@ -542,6 +542,33 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'updated_at',
   ],
 
+  // The Tally ledger census (0118). The INVERSE of the register above it,
+  // and the widest list here for a reason the migration argues in full:
+  // this table mirrors a file the organisation is still editing, so every
+  // field the export states is MEANT to move when a fresher one is
+  // imported. What the guard freezes is the row's IDENTITY — which Tally
+  // master it is about, and that an older export cannot overwrite a newer
+  // one — so identity is what is absent from this list.
+  tally_ledgers: [
+    'tally_alterid',
+    'ledger_name',
+    'parent_group',
+    'group_path',
+    'classification',
+    'gstin',
+    'opening_balance',
+    'pl_code',
+    'tally_is_deleted',
+    'name_ambiguous',
+    'proposed_contact_id',
+    'proposed_contact_method',
+    'source_fields',
+    'source_filename',
+    'imported_by_user_id',
+    'last_seen_at',
+    'updated_at',
+  ],
+
   // The provider attempt ledger (0041): the request is frozen at start,
   // and the outcome is the append that closes it.
   statutory_provider_operations: [
