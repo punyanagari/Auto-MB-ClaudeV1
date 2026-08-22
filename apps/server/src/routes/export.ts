@@ -547,6 +547,13 @@ const errorResponses = {
  * BOTH FILES BY HAND AT MERGE if anything landed in between — which is
  * exactly what happened to v37 in the wave before this one, and what this
  * note exists to force.
+ *
+ * CHECKED AT THE MERGE WITH #173 AND #175: `main` still holds v39 and its
+ * newest migration is still 0118, so v40 and 0119 are both unclaimed and
+ * neither moves. The UX section did collide — the works-analysis wave
+ * took § 38 while this one was in flight — and this wave's renumbered to
+ * § 39 by hand, which is the same check applied to the file that DOES
+ * conflict loudly.
  */
 export const EXPORT_FORMAT_VERSION = 'export-v40';
 

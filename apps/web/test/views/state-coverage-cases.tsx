@@ -10,6 +10,7 @@ import { RailwayMeasurementPanel } from '../../src/views/RailwayMeasurementPanel
 import { Approvals } from '../../src/views/Approvals.js';
 import { AuditTrail } from '../../src/views/AuditTrail.js';
 import { Mis } from '../../src/views/Mis.js';
+import { WorksAnalysis } from '../../src/views/WorksAnalysis.js';
 import { CompanyDocuments } from '../../src/views/CompanyDocuments.js';
 import { Inspection } from '../../src/views/Inspection.js';
 import { WorkInspectionClause } from '../../src/views/WorkInspectionClause.js';
@@ -821,6 +822,45 @@ export const STATE_CASES: readonly StateCase[] = [
       notApplicable:
         'the summary always renders: the ageing table carries all five buckets whatever the data, so there is no whole-page empty state. Its output-tax and payroll sections carry their own EmptyStates.',
     },
+  },
+  /* The works-analysis reports, one case per independent load. They are
+   * four cards on one screen and they fail separately on purpose: an
+   * operator wanting the division position should get it whether or not
+   * the item master is in a state to answer, so each retry names the
+   * outage it clears rather than four controls all saying "Try again". */
+  {
+    view: 'WorksAnalysis.tsx',
+    name: 'the per-Work analysis',
+    // The Work list, not the analysis: the picker is what the card waits
+    // for, and with no Work chosen the analysis read never runs.
+    loads: ['listWorks'],
+    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    retry: /Retry the Work analysis/,
+    empty: { text: /No Work has been recorded yet/ },
+  },
+  {
+    view: 'WorksAnalysis.tsx',
+    name: 'the division analysis',
+    loads: ['divisionAnalysis'],
+    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    retry: /Retry the division analysis/,
+    empty: { text: /No active Work carries a pending quantity/ },
+  },
+  {
+    view: 'WorksAnalysis.tsx',
+    name: 'the cross-Work item analysis',
+    loads: ['mappedItemAnalysis'],
+    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    retry: /Retry the item analysis/,
+    empty: { text: /No schedule line maps to an item master yet/ },
+  },
+  {
+    view: 'WorksAnalysis.tsx',
+    name: 'the grouping proposals',
+    loads: ['itemGroupProposals'],
+    render: (api) => <WorksAnalysis api={api} organisationId={ORG_ID} />,
+    retry: /Retry the grouping proposals/,
+    empty: { text: /No two unmapped descriptions differ/ },
   },
   {
     view: 'Employees.tsx',

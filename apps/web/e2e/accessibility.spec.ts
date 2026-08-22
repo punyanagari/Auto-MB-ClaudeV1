@@ -2301,6 +2301,81 @@ test('the audit register and the management summary pass the axe scan', async ({
   await expectNoAxeViolations(page, 'management summary');
 });
 
+test('the works-analysis reports pass the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  /* The Work picker needs something to pick. The workspace mock answers an
+     empty works register by default — right for every other screen, and
+     wrong for the one screen whose first control is a Work selector, so it
+     is overridden here rather than for everybody. */
+  await page.route('**/api/works', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        works: [
+          {
+            id: '5b6c1d2e-3f40-4a51-8b62-7c8d9e0f1a2b',
+            workCode: 'SIG-2026-11',
+            title: 'Signalling and telecom at Alpha yard',
+          },
+        ],
+      }),
+    }),
+  );
+  await page.goto('/#/reports');
+
+  /* Five dense numeric tables and a form, all on one screen, and every one
+     of them a place where meaning can come to rest on presentation alone:
+
+     a DASH stands for "not knowable" in three different columns — an item
+     with no payment-matrix row, a bill with no railway figure yet, an item
+     with no inspection clause — and a dash beside a column of figures reads
+     as a number to a scan and as nothing at all to a screen reader unless
+     the row's own header carries the meaning;
+
+     the per-agency subtotals live in a `tfoot`, so they are announced as
+     the table's summary rather than as three more data rows;
+
+     the pending tables hide columns below `lg` and `md`, and a hidden cell
+     whose header is still announced is the failure that makes a responsive
+     table unreadable rather than merely narrow;
+
+     and the proposal form is a form — three inputs, a submit, and a
+     warning that appears only when the members disagree about their unit,
+     which is the one control on this screen that writes anything. */
+  await expect(page.getByRole('heading', { name: 'Work analysis' })).toBeVisible();
+  // A/3 heads a row in both the quantity and the value table, which is the
+  // point of the two tables; the first is enough to prove the load.
+  await expect(
+    page.getByRole('rowheader', { name: 'A/3', exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Value position' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Payment position' })).toBeVisible();
+  await expectNoAxeViolations(page, 'work analysis');
+
+  await expect(page.getByRole('heading', { name: 'Division analysis' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Division 100' })).toBeVisible();
+  // The ambiguous group: a Work whose consignees name two divisions is
+  // filed here rather than under a code chosen by tie-break.
+  await expect(
+    page.getByRole('heading', { name: 'No division on record' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'division analysis');
+
+  await expect(page.getByRole('heading', { name: 'Item analysis' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Not mapped to an item master' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'item analysis');
+
+  await expect(
+    page.getByRole('heading', { name: 'Proposed item groups' }),
+  ).toBeVisible();
+  await expect(page.getByText('units differ: m, kg')).toBeVisible();
+  await expect(page.getByLabel('Item name').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'item group proposals');
+});
+
 test('the signing kiosk settings pass the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/settings');

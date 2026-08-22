@@ -446,9 +446,26 @@ export const SaveCanonicalItemRequestSchema = Type.Object(
     make: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
     model: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
     defaultUnit: Type.String({ minLength: 1, maxLength: 20 }),
-    /** Trimmed, lowercased and de-duplicated server-side; blanks drop. */
+    /**
+     * Trimmed, lowercased and de-duplicated server-side; blanks drop.
+     *
+     * An alias holds a SCHEDULE LINE'S WORDING verbatim, and
+     * `work_items.description` has a floor of three characters and no
+     * ceiling at all — railway schedule lines routinely run past two
+     * hundred. The mapping compares the whole normalised description, so a
+     * wording the operator cannot store in full is a wording that can never
+     * match again: the group would confirm and immediately stop combining
+     * the very lines it was raised about. The cap is 1000, the bound
+     * `works.title` and the correspondence subject already use for
+     * operator prose.
+     *
+     * `name` stays at 200 because `canonical_items_name_check` binds it in
+     * the database and a catalogue name is a name, not a description.
+     * Widening it would need a migration and buys nothing: the alias is the
+     * half the mapping reads.
+     */
     aliases: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
+      Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 50 }),
     ),
   },
   { additionalProperties: false },

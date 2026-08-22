@@ -4,6 +4,11 @@ import type {
   AuditRegisterResponse,
   ExportableRegister,
   MisSummaryResponse,
+  DivisionAnalysisResponse,
+  ItemGroupProposalsResponse,
+  MappedItemAnalysisResponse,
+  WorkAnalysisResponse,
+  WorksAnalysisReport,
   EntitlementFlagKey,
   EntitlementListResponse,
   EntitlementResponse,
@@ -781,6 +786,36 @@ export interface ApiClient {
   readonly downloadTallyExport: (
     organisationId: string,
     window: { readonly from: string; readonly to: string },
+  ) => Promise<Blob>;
+  /** Works analysis: the quantity and money position of one Work, item by
+   * item, including what is still to supply, install, inspect and bill. */
+  readonly workAnalysis: (
+    organisationId: string,
+    workId: string,
+  ) => Promise<WorkAnalysisResponse>;
+  /** Pending quantities combined across the Works of each railway
+   * division, so ordering can happen per division. */
+  readonly divisionAnalysis: (
+    organisationId: string,
+  ) => Promise<DivisionAnalysisResponse>;
+  /** Pending quantities combined per item master, across every active
+   * Work. */
+  readonly mappedItemAnalysis: (
+    organisationId: string,
+  ) => Promise<MappedItemAnalysisResponse>;
+  /** Unmapped descriptions that differ only in punctuation or spacing,
+   * offered as groups to confirm. A read: it writes nothing, and
+   * confirming one is `saveCanonicalItem` with the proposed aliases. */
+  readonly itemGroupProposals: (
+    organisationId: string,
+  ) => Promise<ItemGroupProposalsResponse>;
+  /** One works-analysis report as a PDF or an .xlsx workbook. `workId` is
+   * required by the `work` report and refused by the other two. */
+  readonly downloadWorksAnalysis: (
+    organisationId: string,
+    report: WorksAnalysisReport,
+    format: 'pdf' | 'xlsx',
+    options?: { readonly workId?: string },
   ) => Promise<Blob>;
   /** Master data (pickers only): `save` with a null id creates, with an id
    * updates; `setActive` retires (false) or reactivates (true). */
@@ -3641,6 +3676,36 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     async downloadTallyExport(organisationId, window) {
       const query = new URLSearchParams({ from: window.from, to: window.to });
       return downloadBlob(`/api/exports/tally.xml?${query.toString()}`, organisationId);
+    },
+    async workAnalysis(organisationId, workId) {
+      return request<WorkAnalysisResponse>(
+        `/api/reports/work-analysis/${encodeURIComponent(workId)}`,
+        { organisationId },
+      );
+    },
+    async divisionAnalysis(organisationId) {
+      return request<DivisionAnalysisResponse>('/api/reports/division-analysis', {
+        organisationId,
+      });
+    },
+    async mappedItemAnalysis(organisationId) {
+      return request<MappedItemAnalysisResponse>('/api/reports/mapped-item-analysis', {
+        organisationId,
+      });
+    },
+    async itemGroupProposals(organisationId) {
+      return request<ItemGroupProposalsResponse>('/api/reports/item-group-proposals', {
+        organisationId,
+      });
+    },
+    async downloadWorksAnalysis(organisationId, report, format, options = {}) {
+      const query = new URLSearchParams();
+      if (options.workId !== undefined) query.set('workId', options.workId);
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      return downloadBlob(
+        `/api/reports/analysis/${report}/report.${format}${suffix}`,
+        organisationId,
+      );
     },
     async listContacts(organisationId, options = {}) {
       const query = new URLSearchParams();

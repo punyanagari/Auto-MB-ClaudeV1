@@ -106,10 +106,31 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * this file proves it has a chunk of its own, as all fifty-two do, and no
  * dependency was added.
  *
+ * RAISED TO 119,250 by the works-analysis reports, and this is the
+ * smallest raise in the file's history for the smallest reason: the pack
+ * adds NO rail entry, NO route variant and NO lazy import, because its
+ * three reports live on the Reports screen the management summary already
+ * has. What crossed the line is five api-client methods — the four reads
+ * and the one document download. Which half is whose, as the raise above
+ * this one records for its own wave:
+ *
+ *   119,200  the line the Tally ledger census left
+ *   119,230  measured on this branch before merging, so the pack itself
+ *            costs about THIRTY BYTES — five api-client methods and
+ *            nothing else, which is smaller than the forty a new module
+ *            costs precisely because this one is not a new module
+ *   119,232  measured after merging #173, which landed while this wave
+ *            was in flight and did not move this line
+ *
+ * The reports themselves are NOT in the initial payload: they are a
+ * component of `views/Mis.tsx`, which has a chunk of its own, and the
+ * second assertion in this file proves all fifty-two views still do. No
+ * dependency was added.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_200;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_250;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

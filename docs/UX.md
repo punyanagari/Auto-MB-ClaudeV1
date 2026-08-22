@@ -1921,12 +1921,26 @@ One Work-level cadence could not describe the letter, and a per-item one
 would ask the operator to type the same number against every item and let
 them disagree.
 
-**What the schedules screen offers.** Each schedule carries two fields:
-how many billing periods its maintenance is measured in, and the word the
-agency calls one of them ("quarter", "month", "year", "half-year",
-"visit"). Both move together — two values set the cycle, two blanks remove
-it, and a half-stated pair is refused (`AMC_CYCLE_INCOMPLETE`). The word
-is the word alone: "quarter", never "quarterly bill" or "1 quarter".
+**What the schedules screen offers.** A schedule carrying at least one
+AMC item carries two fields: how many billing periods its maintenance is
+measured in, and the word the agency calls one of them ("quarter",
+"month", "year", "half-year", "visit"). Both move together — two values
+set the cycle, two blanks remove it, and a half-stated pair is refused
+(`AMC_CYCLE_INCOMPLETE`). The word is the word alone: "quarter", never
+"quarterly bill" or "1 quarter". A `Hint` under the pair says what is
+being asked: "In how many instalments does the LOA bill this
+maintenance, and what does it call each one? A 5-year AMC billed
+half-yearly is 10 periods, each a half-year."
+
+**Only where maintenance is billed** (owner ruling of 2026-08-22,
+corrections). The item's `payment_category = 'AMC'` — the same
+discriminator the cadence route and the Measurement Book engine read —
+decides whether the fields appear at all. A supply-only schedule shows
+nothing here, not even the read-only "No maintenance billing cycle set."
+line: a cadence is not a fact that schedule can have, so an empty
+statement of it is noise on every schedule of every Work. This is not §
+31's disabled-with-a-reason case, which is for a choice the record could
+carry once a data condition is met.
 
 **No default is guessed.** A schedule with no cycle stated proposes
 nothing and bills exactly as it bills today. The owner's rulings default a
@@ -2948,15 +2962,180 @@ and migration 0094, for that section's reason. A member without it sees
 the census and not the upload panel, rather than an upload panel that
 answers 403.
 
-### 38. Two systems on one register — the Tally half of the billing history
+### 38. Works analysis — what is still owed, and what is still owed to us
+
+**Status: application-first, owner requirement of 2026-08-22 (works
+analysis: per-Work summary, division summary, cross-Work mapped-item
+summary).** Numbered 38 as the next free number after § 37; if a section
+lands beside it before this merges, this one renumbers rather than sharing,
+for § 37's reason.
+
+**There is no mock citation and none is possible**, for § 19's reason
+exactly: `punyanagari/Auto-MB-Vercel-du@fdfd610` draws no reports page at
+all, which is why § 19 exists. This extends that recorded divergence rather
+than opening a new one. Built in the mock's grammar with its existing
+components — `PageHeader`, `Card`, `DataTable`, `Field`, `Button`,
+`DownloadButton`, the three shared states — and no new visual language.
+
+**No new rail lamp.** The three reports live on the Reports screen, under
+the management summary, at the `#/reports` address § 19 already gave it.
+That is the whole navigation change: none. A fourth lamp for "the other
+reports" would have made an operator choose between two doors that answer
+the same question, and § 19's own argument for a separate Reports screen
+covers these three exactly — month-end reads by one or two people, not
+something the sign-in loader should wait for.
+
+**Each report loads and fails on its own, and the management summary no
+longer carries the screen.** Before this, a load failure on `/api/mis/summary`
+returned early and blanked everything below it. That was invisible while the
+summary was the only thing there; with three more reports under it, the
+member who most needs "what is still to supply on my Works" — an
+assigned-scope member, whom the summary refuses outright — reached a blank
+page. The summary's refusal now prints where it belongs and the reports
+render beside it.
+
+#### What is on the screen
+
+| Element                 | Taken from                                                             |
+| ----------------------- | ---------------------------------------------------------------------- |
+| The three reports       | `Card` + `CardHeader`, as every panel on Reports uses them             |
+| Work selector           | `Field` with a bare `<select>`, the Receivables filter-bar pattern     |
+| Every table             | `DataTable` with the `sr-only` caption `test/a11y-invariants` requires |
+| Section totals          | `<tfoot>`, so a total is announced as the table's summary              |
+| Document controls       | `Button` for the PDF and the shared `DownloadButton` for the workbook  |
+| Proposal confirm        | `Field` + `Button`, the Masters canonical-item form's own shape        |
+| Empty / loading / error | `EmptyState`, `LoadingState`, `ErrorState`                             |
+
+**No chip words and no lamps are added.** None of these figures has a
+status: a pending quantity is a number, and a division is a heading.
+
+#### Four decisions a reviewer should be able to disagree with
+
+**A dash, never a zero, wherever a figure is not knowable.** Four columns
+carry one: an item whose payment category resolves through no matrix row
+has no percentage to bill at, a bill whose measurement is not closed has no
+railway figure yet, an item with no inspection clause has no lot size, and a
+`consignee` clause has no pending-to-inspect position at all — that
+inspection happens after arrival and can never gate a despatch. Printing
+`0.00` in any of those would answer "nothing is owed" to a question that was
+"we cannot say yet", and the two are not the same sentence to somebody
+deciding whether to chase a payment.
+
+**Pending to inspect is measured against SANCTION and a LIVE certificate,
+not against the clause's lot size.** The lot size is shown, because an
+operator raising a call wants it, and it is labelled as what migration 0082
+says it is: the contract's inspecting lot, offered as the raise-a-call
+default, which "the dispatch gate never reads". What the report measures
+instead is the gate's own arithmetic — the quantity a live certificate _of
+the clause's own agency_ covers, through the same
+`app_private.inspection_certificate_live` the gate asks and against the
+organisation's today — subtracted from the sanctioned quantity. That is the
+answer to the question an operator actually has: how much still needs cover
+before the whole quantity can leave. Called and certified are shown as
+separate columns because the difference between them is the difference
+between "an agency has seen it" and "a lorry may leave", and only the second
+opens a gate.
+
+**Quantities are not totalled; values are.** The quantity columns span
+several units, and a column footer adding metres to pieces is a number that
+is wrong in a way no heading repairs. The tables that carry totals are the
+value tables, and the quantity table says under itself why it has none.
+
+**Two tables, two totals, and the count in the footer is LINES.** The item
+analysis draws mapped and unmapped rows as separate tables, and each totals
+its own rows — a table shown its neighbour's total is a table whose rows do
+not add up to the figure under it, which is the one arithmetic error a
+reader cannot catch by looking. The count beside each total is the schedule
+LINES under those rows, not the row count: a row is a master item and a line
+is a schedule entry, and one row of three lines is exactly what the item
+catalogue exists to produce. The Works column is never totalled, because one
+Work appears under many rows and summing it would count that Work once per
+product.
+
+**The rate of a combined row is a SPREAD, not an average.** Two Works of one
+division rarely carry the same accepted rate for the same product. The row
+prints `1,000 – 1,200` where they differ and one figure where they do not;
+the value columns are summed per line at each line's own rate, so the spread
+never makes a total wrong. An average would have invented a rate no contract
+carries.
+
+**The portfolio reports NARROW for an assigned-scope member rather than
+refusing, and the document says so ABOVE the tables.** § 19 records the
+opposite decision for the management summary, and both are right: a
+management summary of a slice of the portfolio is a management summary that
+is wrong, while "what is still pending on the Works I run" is a complete
+answer to a real question. The scope sentence is printed directly under the
+header of both the PDF and the workbook — not among the footnotes — because
+the misreading it prevents, a narrowed file taken for the organisation's
+whole position, happens at the top of page one and not at the bottom of the
+last. The per-Work report carries no such line: it is about one named Work,
+and the reader asked for that Work.
+
+#### Grouping is propose-and-prove
+
+**Lines combine EXACTLY where an item-master mapping exists** — a schedule
+line whose description equals an active master item's name or one of its
+aliases, lowercased and trimmed, which is the derived mapping migration 0078
+records and `routes/masters.ts` argues for at length. Nothing is ever merged
+on resemblance.
+
+**Near-identical unmapped descriptions are PROPOSED, and a proposal writes
+nothing.** The proposal list is a read: it holds no state, expires the
+moment the descriptions change, and disappears once the group is confirmed.
+Confirming one is the item master's own create control — the proposed name,
+a group the operator types, and the other wordings as aliases — so a
+confirmed group persists exactly where every other mapping lives and starts
+combining on the next load. There is deliberately no third state and no
+table of half-agreed groups, which is why this section needed no migration.
+
+`routes/masters.ts` names trigram and embedding matching as the upgrade path
+and says it belongs behind a review step. This is that review step, and its
+comparison is deliberately weak enough for a person to check by eye: the
+description lowercased, its punctuation dropped, its whitespace collapsed. A
+proposal a human cannot verify would be the silent guessing the item master
+exists to avoid.
+
+**A proposal whose members disagree about their unit says so in red and
+still lets the operator proceed.** They may be looking at a genuine data
+error, and the product is not in a position to know which reading is right —
+but a master item has one default unit, and a report that never adds across
+units cannot repair the confusion afterwards.
+
+#### Every exclusion travels with the document
+
+The PDF and the workbook carry the same footnotes the screen carries,
+because a printed page is the only place a reader can learn them: locked
+opening baselines are INCLUDED in the supplied, installed and billed
+positions; historical and imported invoices are EXCLUDED from every payment
+figure, being display-only history with disputed entries rather than the
+bill ledger; payment is reported per BILL and never per item, because a
+receipt settles a bill and a bill closes a Measurement Book covering many
+items — apportioning one across those items would produce a per-item
+"amount paid" that no document supports; and the FINAL-BILL stage is absent
+from every executed figure, because a Measurement Book earns that stage only
+when it is the final book, which is a manual act rather than a quantity
+threshold. Against a contract total, that last one is the gap a reader
+should expect, so the document names it rather than leaving it to be found.
+
+Money received and money deducted count on EVERY bill, including one the
+railway has not yet priced: cash that arrived is a fact and a deduction is
+money the railway kept, and neither stops being one for want of a railway
+figure. Only OUTSTANDING excludes such a bill, because for a bill nobody has
+priced there is no outstanding amount to state — and the count of those
+bills sits beside the total saying so.
+
+**When the mock grows a reports page, the mock wins**, on § 19's own terms
+and the § 4 iteration pipeline.
+
+### 39. Two systems on one register — the Tally half of the billing history
 
 **Status: application-first, owner rulings of 2026-08-22 (Tally mapping
-census, questions 12, 21, 22, 23; migration 0119).** Numbered 38 as the
-next free number after § 37, which wave T1 took. This wave and T1 both
-extend screens § 34 already settled, so the placeholder note § 37 carries
-applies here too: if another wave lands a section in between, the
-coordinator renumbers at the merge rather than letting two sections share
-a number.
+census, questions 12, 21, 22, 23; migration 0119).** RENUMBERED FROM 38 AT
+THE MERGE, which is what the placeholder note § 37 carries exists to
+force: this wave took 38 as the next free number after § 37, the works
+analysis section landed 38 while it was in flight, and two sections
+sharing a number is the thing the note refuses. The renumber is by hand,
+here, rather than left to a merge that would have taken both silently.
 
 **No new screen.** § 34's Historical invoices register already answers
 "what have we billed this customer" for the Zoho years; this wave gives it

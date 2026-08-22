@@ -2676,6 +2676,82 @@ data-import authority, and the whole voucher GUID and edit counter are
 stored on every row so the one post-training re-read needs no sync
 machinery.
 
+### Works analysis: what is still owed, and what is still owed to us
+
+The ledgers this product keeps could always answer "how far has this Work
+got" one Work and one screen at a time. What they could not answer is the
+question an operator actually acts on: what is still to be ordered, and
+where. Somebody buying material for four Works of one railway division had
+to open four screens and add up by hand — which is exactly the arithmetic
+this section moves into PostgreSQL.
+
+**Three reports, on the Reports screen, each also a PDF and an .xlsx
+workbook.**
+
+**Per Work, item by item.** Sanctioned quantity (the LOA quantity as
+amendments have left it), supplied, installed, pending to supply, pending
+to install, supplied-but-not-installed, and — where an inspection clause
+exists — what has been offered on calls, what a LIVE certificate of that
+clause's own agency covers, and what still needs cover before the whole
+sanctioned quantity could be despatched, split by RITES and RDSO. That last
+figure is the dispatch gate's own arithmetic rather than the clause's lot
+size: the lot size is the contract's inspecting lot, offered when a call is
+raised, and the gate never reads it. Every row carries its unit, its
+accepted rate and its value, and the sections total. Beside them: what
+finalized Measurement Books have BILLED for each item, and what a next book
+would bill for what is already supplied and installed — computed on the
+quantities those books have not yet taken, rounded as they round, so a fully
+billed item reads exactly zero rather than a rounding penny.
+
+**Per railway division.** Works are grouped by division and their pending
+positions combined, so one order can cover a division. There is no client
+contact on a Work in this schema, so the division is DERIVED from the
+division codes on the Work's own consignees, and the report says so. A Work
+whose consignees carry two different codes is reported as unsettled and
+grouped under "no division on record" rather than filed under a code chosen
+by tie-break — a whole pending position under the wrong heading is
+something somebody would then order against.
+
+**Per item, across every active Work.** The same combination without the
+division dimension: the portfolio's ordering position for one product.
+
+**Combination is exact, or it is a proposal.** Lines combine where an
+item-master mapping exists and nowhere else. Descriptions that differ only
+in case, punctuation or spacing are offered as PROPOSED groups; a proposal
+writes nothing, and confirming one records a master item with the other
+wordings as its aliases — the mapping control the product already has.
+Quantities are never added across units, and where the lines under a
+combined row carry different accepted rates the rate is reported as a
+range, never averaged.
+
+**Three things the reports say plainly, because none of them can be
+inferred from a number.** A locked opening billing baseline is INCLUDED in
+the supplied, installed and billed positions, so an imported Work does not
+read as years of pending work. Historical and imported invoices are
+EXCLUDED from every payment figure: that register is display-only history
+carrying disputed entries, not the bill ledger. And payment is reported per
+BILL and never per item — a receipt settles a bill, a bill closes a
+Measurement Book covering many items, and apportioning one across those
+items would produce a per-item "amount paid" that no document supports.
+
+An item whose payment category resolves through no matrix row reports a
+dash rather than a zero, as does a bill whose measurement is not closed:
+"nothing is owed" and "we cannot say yet" are different answers. The
+final-bill stage is excluded from every executed figure, because a
+Measurement Book earns it only when it is the final book — a manual act, not
+a quantity threshold — and the documents say so rather than leaving the gap
+against a contract total to be discovered.
+
+Money received and money deducted count on every bill, including one the
+railway has not yet priced. Only the outstanding figure excludes those,
+because there is no outstanding amount to state against a bill nobody has
+priced, and the reports say how many bills are in that state.
+
+The per-Work report is scoped like every Work-addressed read — an assigned
+member reads their own Works and a guessed id answers 404. The two
+portfolio reports NARROW to the caller's assignments rather than refusing,
+and every exported file states which of the two scopes produced it.
+
 ## 9. Current non-goals and release boundaries
 
 - security-deposit deductions, price variation, and other bill maths not
