@@ -378,6 +378,15 @@ export function registerTallyInvoiceRoutes(
             .filter((row) => row.match_method === 'origin')
             .map((row) => row.tally_guid),
         );
+        // ANY live link at all, of either kind, and that is what makes the
+        // second import of a growing history safe. A voucher this route
+        // once brought in as its own register row may MATCH a Zoho
+        // invoice on a later run, because the Zoho import ran in between —
+        // and writing the match then would leave the register holding two
+        // rows for one document, which is the exact outcome ruling 23
+        // exists to prevent. It is skipped instead; the remedy is to
+        // discard the Tally-sourced row, which the register already
+        // supports and which frees the voucher on the next import.
         const heldAny = new Set(held.map((row) => row.tally_guid));
 
         const works = await candidateWorks(tx, user.id);
