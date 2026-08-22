@@ -47,6 +47,7 @@ export * from './warranty.js';
 export * from './notifications.js';
 export * from './imports.js';
 export * from './imported-invoices.js';
+export * from './tally-invoices.js';
 export * from './tally-masters.js';
 export * from './audit.js';
 export * from './mis.js';

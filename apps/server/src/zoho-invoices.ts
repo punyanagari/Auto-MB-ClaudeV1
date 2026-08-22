@@ -605,11 +605,39 @@ export interface WorkLinkProposal {
  */
 const PL_CODE = /\bPL[- ]?(\d{2,})\b/gi;
 
-/** Punctuation and case removed, so `LOA/2023/117` and `loa-2023-117`
+/**
+ * Punctuation and case removed, so `LOA/2023/117` and `loa-2023-117`
  * compare equal. A letter number is copied by hand into a Zoho field and
- * arrives with whatever separators the typist used. */
-function squeeze(value: string): string {
+ * arrives with whatever separators the typist used.
+ *
+ * EXPORTED because the Tally voucher matcher (0119) compares an invoice
+ * NUMBER under exactly this rule — the same number typed into Tally by
+ * one person and into Zoho by another arrives with different separators,
+ * and the whole exact-number match is that comparison. A second
+ * implementation of "case and punctuation removed" would drift from this
+ * one the first time either side met a character neither author thought
+ * about.
+ */
+export function squeeze(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]+/g, '');
+}
+
+/**
+ * Everything the Work proposal reads.
+ *
+ * A `ZohoInvoice` satisfies it structurally, so the invoice importer's
+ * own call is unchanged; it is written out so the Tally voucher importer
+ * (0119) can put a voucher's reference and narration through the SAME
+ * rule rather than growing a second implementation of "a v1 work code in
+ * the document's own text, ambiguity proposes nothing" that drifts from
+ * this one. `ContactSubject` above exists for the same reason.
+ */
+export interface WorkLinkSubject {
+  readonly referenceText: string | null;
+  readonly lines: readonly {
+    readonly itemName: string | null;
+    readonly itemDescription: string | null;
+  }[];
 }
 
 /**
@@ -632,7 +660,7 @@ function squeeze(value: string): string {
  * codes that resolve to the SAME Work are one match, not an ambiguity.
  */
 export function proposeWorkLink(
-  invoice: ZohoInvoice,
+  invoice: WorkLinkSubject,
   candidates: readonly WorkCandidate[],
 ): WorkLinkProposal | null {
   const haystack = [

@@ -4,6 +4,7 @@ import type {
   ImportedInvoice,
   ImportedInvoiceImportResult,
   ImportedInvoiceList,
+  TallyInvoiceImportResult,
 } from '@auto-mb/contracts';
 import { formValue, type ApiClient } from '../api.js';
 import { formatDate, formatInr } from '../format.js';
@@ -38,6 +39,21 @@ import { WorkLink } from '../ui/work-link.js';
  *     stored as evidence, but the receipts against these invoices are in
  *     Tally — a receivable rendered from a system that never saw the
  *     money would be believed.
+ *
+ * TWO SYSTEMS FEED IT, and the source column says which (0119, owner
+ * ruling 23). Zoho Books held the billing from January 2023; TallyPrime
+ * held it from 2020 and still holds the accounting books, so the three
+ * years before Zoho come from Tally's own sales vouchers. Where BOTH hold
+ * an invoice, Zoho is authoritative and the Tally voucher is provenance —
+ * so the register carries one row and a cross-reference, never two rows
+ * for one document.
+ *
+ * A DISPUTED ROW IS NOT AN ERROR (ruling 21). It is an invoice the two
+ * systems state different values for, with both values imported and
+ * neither overwritten, and it is out of the billed total until the owner
+ * rules on it — exactly as a voided invoice is. The header says what the
+ * total leaves out rather than leaving the arithmetic to be
+ * reverse-engineered.
  *
  * THE IMPORT IS A CONVERSATION, not a button. The file is read twice
  * against the same bytes: once to say what it WOULD do — which Work each
@@ -83,6 +99,15 @@ interface RegisterFilter {
 /** No filter, as one stable object so clearing it does not change
  * `fetchPage`'s identity and refire the read. */
 const NO_FILTER: RegisterFilter = { customer: '', linked: '', financialYear: '' };
+
+/** What a voucher would become, in the operator's words rather than the
+ * wire's. */
+const TALLY_OUTCOME_LABEL: Record<string, string> = {
+  linked: 'Tied to an invoice',
+  imported: 'Joins the register',
+  already_read: 'Already read',
+  skipped: 'Skipped',
+};
 
 /** Zoho's own cancellation, and the one reading of `zohoStatus` this
  * register trusts: a voided invoice billed nobody anything. It stays on
@@ -152,6 +177,19 @@ export function HistoricalInvoices({
   const [preview, setPreview] = useState<ImportedInvoiceImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
+
+  /* The same conversation for the TallyPrime half (0119), in its own
+     panel and with its own state. Not one panel with a format toggle: the
+     two files are different exports of different systems and the reports
+     that come back answer different questions — one proposes Works, the
+     other reconciles two registers against each other. */
+  const tallyInput = useRef<HTMLInputElement>(null);
+  const [tallyChosen, setTallyChosen] = useState<File | null>(null);
+  const [tallyPreview, setTallyPreview] = useState<TallyInvoiceImportResult | null>(
+    null,
+  );
+  const [tallyError, setTallyError] = useState<string | null>(null);
+  const [tallyNotice, setTallyNotice] = useState<string | null>(null);
 
   /* The filter belongs to the WHOLE register and the Work-narrowed view
      does not offer it, so a filter left set from the register would be
@@ -250,6 +288,31 @@ export function HistoricalInvoices({
     }
   }
 
+  async function runTallyImport(mode: 'preview' | 'commit'): Promise<void> {
+    if (tallyChosen === null) return;
+    setPending(true);
+    setTallyError(null);
+    setTallyNotice(null);
+    try {
+      const result = await api.importTallyInvoices(organisationId, tallyChosen, mode);
+      if (mode === 'preview') {
+        setTallyPreview(result);
+        return;
+      }
+      setTallyPreview(null);
+      setTallyChosen(null);
+      if (tallyInput.current !== null) tallyInput.current.value = '';
+      setTallyNotice(
+        `${String(result.importedLinkCount)} voucher(s) tied to the register from ${result.filename}, of which ${String(result.importedInvoiceCount)} brought in an invoice Zoho never held.`,
+      );
+      retry();
+    } catch (cause) {
+      setTallyError(errorMessage(cause, 'The voucher export could not be read.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
   const narrowed = workId !== null;
   const filtered =
     filter.customer !== '' || filter.linked !== '' || filter.financialYear !== '';
@@ -267,6 +330,22 @@ export function HistoricalInvoices({
           ...preview.invoices.filter((row) => row.workId === null),
           ...preview.invoices.filter((row) => row.workId !== null),
         ].slice(0, PREVIEW_ROWS);
+  /* Disputed first, then the ones that would join the register, then
+     everything else — the same rule the Zoho preview follows: the half
+     the operator is deciding about is never the half that gets
+     truncated. */
+  const tallyVoucherRows =
+    tallyPreview === null
+      ? []
+      : [
+          ...tallyPreview.vouchers.filter((row) => row.disputed),
+          ...tallyPreview.vouchers.filter(
+            (row) => !row.disputed && row.outcome === 'imported',
+          ),
+          ...tallyPreview.vouchers.filter(
+            (row) => !row.disputed && row.outcome !== 'imported',
+          ),
+        ].slice(0, PREVIEW_ROWS);
 
   return (
     <>
@@ -274,7 +353,7 @@ export function HistoricalInvoices({
         eyebrow="Documents"
         titleId="historical-invoices-title"
         title="Historical invoices"
-        description="Invoices raised in Zoho Books before this system. Read-only: they are a record of what was billed, and nothing measures, bills or settles against them."
+        description="Invoices raised in Zoho Books and TallyPrime before this system. Read-only: they are a record of what was billed, and nothing measures, bills or settles against them."
       />
 
       <section
@@ -306,7 +385,21 @@ export function HistoricalInvoices({
             <span className="font-mono tabular-nums">
               {formatInr(totals.totalValue)}
             </span>
-            . Invoices Zoho voided are on the register and out of that total.
+            .{' '}
+            <span className="font-mono tabular-nums">
+              {String(totals.tallySourcedCount)}
+            </span>{' '}
+            came from TallyPrime rather than Zoho. Invoices Zoho voided
+            {totals.disputedCount > 0 ? (
+              <>
+                , and the{' '}
+                <span className="font-mono tabular-nums">
+                  {String(totals.disputedCount)}
+                </span>{' '}
+                whose TallyPrime and Zoho figures disagree,
+              </>
+            ) : null}{' '}
+            are on the register and out of that total.
           </p>
         )}
 
@@ -438,6 +531,198 @@ export function HistoricalInvoices({
           </div>
         )}
 
+        {canImport && (
+          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+            <h2 className="text-sm font-semibold">
+              Bring in a TallyPrime sales voucher export
+            </h2>
+            {/* THE NARROWING IS THE INSTRUCTION, not a nicety. The whole
+                voucher file is 3.18 GB and no upload here will take it;
+                narrowed to the three sales-side types it is 61 MB. Saying
+                so here is what stops an operator waiting ten minutes for
+                a refusal. */}
+            <p className="text-[13px] text-muted-foreground">
+              In TallyPrime, open the Day Book, narrow it to Sales, Credit Note and
+              Debit Note over the whole period, and export it as XML. Do not export
+              every voucher: the unfiltered file is several gigabytes and cannot be
+              uploaded. Nothing is written until you have read what it would do, and
+              uploading the same file twice adds what is missing and changes nothing
+              else.
+            </p>
+            <div className="flex flex-wrap items-end gap-4">
+              <Field className="my-0">
+                <label htmlFor="tally-vouchers">TallyPrime vouchers (.xml)</label>
+                <input
+                  ref={tallyInput}
+                  id="tally-vouchers"
+                  name="tally-vouchers"
+                  type="file"
+                  accept=".xml,application/xml,text/xml"
+                  onChange={(event) => {
+                    setTallyChosen(event.currentTarget.files?.[0] ?? null);
+                    setTallyPreview(null);
+                    setTallyError(null);
+                    setTallyNotice(null);
+                  }}
+                />
+              </Field>
+              <Button
+                variant="outline"
+                disabled={tallyChosen === null || pending}
+                onClick={() => void runTallyImport('preview')}
+              >
+                Read the file
+              </Button>
+            </div>
+
+            {tallyError !== null && <FormError>{tallyError}</FormError>}
+            {tallyNotice !== null && <FormNotice>{tallyNotice}</FormNotice>}
+
+            {tallyPreview !== null && (
+              <div className="flex flex-col gap-3">
+                <p className="text-[13px]">
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.voucherCount)}
+                  </span>{' '}
+                  voucher(s) in the file, of which{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.salesCount)}
+                  </span>{' '}
+                  are sales.{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(
+                      tallyPreview.exactMatchCount + tallyPreview.serialMatchCount,
+                    )}
+                  </span>{' '}
+                  correspond to an invoice already on the register (
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.serialMatchCount)}
+                  </span>{' '}
+                  of them by serial rather than by an exact number), and{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.unmatchedCount)}
+                  </span>{' '}
+                  would join the register as billing Zoho never held.
+                </p>
+                {/* Stated even at zero, every one of them. A count of
+                    what could not be used is worth more than a count of
+                    what could, and silence reads as absence of the
+                    problem rather than absence of the check. */}
+                <p className="text-[13px] text-muted-foreground">
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.cancelledCount)}
+                  </span>{' '}
+                  cancelled and{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.optionalCount)}
+                  </span>{' '}
+                  optional voucher(s) are skipped
+                  {tallyPreview.skippedVoucherNumbers.length > 0
+                    ? `: ${tallyPreview.skippedVoucherNumbers.slice(0, 20).join(', ')}`
+                    : ''}
+                  .{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.creditNoteCount + tallyPreview.debitNoteCount)}
+                  </span>{' '}
+                  credit and debit note(s) were read and are not imported — they reverse
+                  an invoice rather than raising one.{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.serialCollisionCount)}
+                  </span>{' '}
+                  near-match(es) shared a serial with an unrelated invoice and were
+                  refused.{' '}
+                  <span className="font-mono tabular-nums">
+                    {String(tallyPreview.invoicesWithNoVoucherCount)}
+                  </span>{' '}
+                  invoice(s) on the register have no voucher in this file.
+                </p>
+                {tallyPreview.disputedComponentCount > 0 && (
+                  <p className="text-[13px]">
+                    <span className="font-mono tabular-nums">
+                      {String(tallyPreview.disputedComponentCount)}
+                    </span>{' '}
+                    group(s) of documents carry different totals in the two systems,
+                    across{' '}
+                    <span className="font-mono tabular-nums">
+                      {String(tallyPreview.disputedLinkCount)}
+                    </span>{' '}
+                    correspondence(s). Both figures are imported and flagged; a disputed
+                    figure joins no total until it is ruled on.
+                  </p>
+                )}
+                <DataTable>
+                  <caption className="sr-only">
+                    What the voucher export would do: each voucher with its number,
+                    date, party, value, what would become of it and the evidence
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Voucher</th>
+                      <th scope="col">Date</th>
+                      <th scope="col">Party</th>
+                      <th scope="col" className={numericCell}>
+                        Value
+                      </th>
+                      <th scope="col">Outcome</th>
+                      <th scope="col">Because</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tallyVoucherRows.map((row) => (
+                      <tr key={row.tallyGuid}>
+                        <th scope="row" className="font-mono">
+                          {row.voucherNumber ?? row.reference ?? '—'}
+                        </th>
+                        <td>{formatDate(row.voucherDate)}</td>
+                        <td className={wrapCell}>{row.partyLedger}</td>
+                        <td className={numericCell}>{formatInr(row.amount)}</td>
+                        <td>{TALLY_OUTCOME_LABEL[row.outcome]}</td>
+                        <td className={wrapCell}>
+                          {row.skipReason ??
+                            (row.disputed
+                              ? `Value disagrees: TallyPrime ${formatInr(row.componentTallyTotal ?? row.amount)} against Zoho ${formatInr(row.componentInvoiceTotal ?? row.amount)}`
+                              : row.matchEvidence !== null
+                                ? `Matched ${row.invoiceNumber ?? row.matchEvidence}${row.matchMethod === 'serial_tolerant' ? ' on the serial, confirmed on the value or the customer' : ''}`
+                                : 'No invoice on the register matches this voucher')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </DataTable>
+                {tallyPreview.vouchers.length > tallyVoucherRows.length && (
+                  <p className="text-[13px] text-muted-foreground">
+                    Showing {String(tallyVoucherRows.length)} of{' '}
+                    {String(tallyPreview.vouchers.length)}; every disputed and unmatched
+                    voucher is listed first.
+                  </p>
+                )}
+                {tallyPreview.refusals.length > 0 && (
+                  <p className="text-[13px] text-muted-foreground">
+                    {String(tallyPreview.refusals.length)} voucher(s) could not be read:{' '}
+                    {tallyPreview.refusals
+                      .slice(0, 5)
+                      .map(
+                        (refusal) =>
+                          `line ${String(refusal.lineNumber)} — ${refusal.reason}`,
+                      )
+                      .join(' ')}
+                  </p>
+                )}
+                <div>
+                  <Button
+                    disabled={pending}
+                    onClick={() => {
+                      void runTallyImport('commit');
+                    }}
+                  >
+                    Import these vouchers
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {!narrowed && (
           <form
             className="flex flex-wrap items-end gap-4"
@@ -500,9 +785,9 @@ export function HistoricalInvoices({
             <>
               <DataTable>
                 <caption className="sr-only">
-                  Historical invoices with their number, date, customer, value, the Work
-                  they are filed against, how they were filed and whether the invoice
-                  reached the e-invoice portal
+                  Historical invoices with their number, date, customer, value, which
+                  system they were read from, the Work they are filed against, how they
+                  were filed and whether the invoice reached the e-invoice portal
                 </caption>
                 <thead>
                   <tr>
@@ -512,6 +797,7 @@ export function HistoricalInvoices({
                     <th scope="col" className={numericCell}>
                       Value
                     </th>
+                    <th scope="col">Source</th>
                     <th scope="col">Work</th>
                     <th scope="col">Filed by</th>
                     <th scope="col">e-Invoice</th>
@@ -525,7 +811,46 @@ export function HistoricalInvoices({
                       </th>
                       <td>{formatDate(row.invoiceDate)}</td>
                       <td className={wrapCell}>{row.customerName}</td>
-                      <td className={numericCell}>{formatInr(row.total)}</td>
+                      <td className={numericCell}>
+                        {formatInr(row.total)}
+                        {/* OWNER RULING 21. The lamp sits on the VALUE
+                            because that is what is disputed — the row is
+                            not in doubt, the figure is — and the header
+                            says such a figure is out of the billed
+                            total. */}
+                        {row.disputed && (
+                          <div className="mt-1">
+                            {/* `tone` rather than a new word in the shared
+                                status map: "disputed" means a value two
+                                systems disagree about HERE and would mean
+                                something else on a register of disputed
+                                claims, which is exactly the case
+                                `chip.tsx` reserves the override for. */}
+                            <StatusChip status="disputed" tone="warning">
+                              Value disputed
+                            </StatusChip>
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {/* WHICH SYSTEM THIS WAS READ FROM (0119). A Tally
+                            row is billing Zoho never held; a Zoho row that
+                            names vouchers is one both systems hold, where
+                            Zoho is authoritative and the voucher is
+                            provenance. The voucher number is shown only
+                            where exactly one corresponds — naming the
+                            first of three would imply it was the only
+                            one. */}
+                        <StatusChip status={row.source} tone="neutral">
+                          {row.source === 'tally' ? 'TallyPrime' : 'Zoho Books'}
+                        </StatusChip>
+                        {row.tallyVoucherCount > 0 && (
+                          <div className="mt-1 font-mono text-xs text-muted-foreground">
+                            {row.tallyVoucherNumber ??
+                              `${String(row.tallyVoucherCount)} vouchers`}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         {/* A Work that has since been superseded (0071) is
                             named and NOT linked: the invoice stays filed

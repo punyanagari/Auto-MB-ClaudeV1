@@ -37,6 +37,26 @@ import {
 
 /* --- Vocabulary ------------------------------------------------------------ */
 
+/**
+ * Which system this historical invoice was read from (migration 0119,
+ * owner ruling 23).
+ *
+ * `zoho` is the register's original population and its default. `tally`
+ * is the three years of billing that predate Zoho — read from TallyPrime
+ * sales vouchers, and imported ONLY where Zoho holds no counterpart,
+ * because where both systems hold the invoice Zoho is authoritative and
+ * the Tally voucher is provenance.
+ *
+ * A Tally-sourced row carries no `zohoInvoiceId` and no `subTotal`:
+ * neither is a thing a Tally voucher states, and inventing them would
+ * mean this register recomputing money another system stated.
+ */
+export const ImportedInvoiceSourceSchema = Type.Union([
+  Type.Literal('zoho'),
+  Type.Literal('tally'),
+]);
+export type ImportedInvoiceSource = Static<typeof ImportedInvoiceSourceSchema>;
+
 /** How an invoice's Work link was arrived at. `pl_code` and `loa_match`
  * name what the importer PROPOSED and a person accepted; `manual` is a
  * person's own choice with no proposal behind it. All three are decisions
@@ -113,8 +133,15 @@ export type ImportedInvoiceLine = Static<typeof ImportedInvoiceLineSchema>;
 export const ImportedInvoiceSchema = Type.Object(
   {
     id: UuidSchema,
-    /** Zoho's own identifier, and the register's idempotency key. */
-    zohoInvoiceId: Type.String({ minLength: 1, maxLength: 60 }),
+    /** Which system the row was read from. See the vocabulary above. */
+    source: ImportedInvoiceSourceSchema,
+    /** Zoho's own identifier, and the Zoho half of the register's
+     * idempotency key. NULL on a Tally-sourced row, which has none: its
+     * key is the voucher GUID, which lives on the cross-reference. */
+    zohoInvoiceId: Type.Union([
+      Type.String({ minLength: 1, maxLength: 60 }),
+      Type.Null(),
+    ]),
     invoiceNumber: Type.String({ minLength: 1, maxLength: 60 }),
     invoiceDate: DateOnlySchema,
     customerName: Type.String({ minLength: 1, maxLength: 300 }),
@@ -136,7 +163,11 @@ export const ImportedInvoiceSchema = Type.Object(
     /** The `PurchaseOrder` column: free text carrying the LOA or PO
      * reference the Work proposal reads. */
     referenceText: Type.Union([Type.String({ maxLength: 2000 }), Type.Null()]),
-    subTotal: SignedMoneyStringSchema,
+    /** NULL on a Tally-sourced row. Tally states a document total on the
+     * party line and never states a sub-total; deriving one would need
+     * the ledger census to tell an income leg from a tax leg, and would
+     * be this register computing money nobody wrote down. */
+    subTotal: Type.Union([SignedMoneyStringSchema, Type.Null()]),
     total: SignedMoneyStringSchema,
     /** EVIDENCE ONLY — what Zoho believed was outstanding, from a system
      * that never saw the payments. */
@@ -152,6 +183,20 @@ export const ImportedInvoiceSchema = Type.Object(
     workWithdrawn: Type.Boolean(),
     linkMethod: Type.Union([ImportedInvoiceLinkMethodSchema, Type.Null()]),
     lineCount: Type.Integer({ minimum: 0 }),
+    /** How many TallyPrime vouchers correspond to this invoice (0119).
+     * Zero on an invoice Tally has no record of; more than one where the
+     * bill was entered as several accounting documents. */
+    tallyVoucherCount: Type.Integer({ minimum: 0 }),
+    /** The corresponding voucher's own number, where exactly one voucher
+     * corresponds and it carries one — the thing an operator searches
+     * TallyPrime for. Null where several correspond, or where the
+     * voucher was numbered manually and nobody numbered it. */
+    tallyVoucherNumber: Type.Union([Type.String({ maxLength: 60 }), Type.Null()]),
+    /** OWNER RULING 21: TallyPrime and Zoho state different figures for
+     * this invoice, both are imported, and a disputed figure joins no sum
+     * until the owner rules on the row. It is out of the register's
+     * billed total, exactly as a voided invoice is. */
+    disputed: Type.Boolean(),
     discardedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     discardReason: Type.Union([Type.String({ maxLength: 500 }), Type.Null()]),
     importedAt: Type.String({ format: 'date-time' }),
@@ -179,6 +224,11 @@ export const ImportedInvoiceQuerySchema = Type.Object(
      * 1 April 2023 to 31 March 2024. */
     financialYear: Type.Optional(Type.Integer({ minimum: 2000, maximum: 2100 })),
     includeDiscarded: Type.Optional(Type.Boolean()),
+    /** Which system's half of the history to read. Offered because the
+     * two halves answer different questions — "what did we bill in
+     * 2021", which only Tally can answer, against "what did we bill last
+     * year", which both can. */
+    source: Type.Optional(ImportedInvoiceSourceSchema),
   },
   { additionalProperties: false },
 );
@@ -206,6 +256,13 @@ export const ImportedInvoiceListSchema = Type.Object(
            * would overstate five years of turnover by whatever Zoho
            * cancelled. */
           totalValue: SignedMoneyStringSchema,
+          /** Read from Tally rather than Zoho (0119, ruling 23). */
+          tallySourcedCount: Type.Integer({ minimum: 0 }),
+          /** Carrying a value TallyPrime and Zoho disagree about, and
+           * therefore OUT of `totalValue` (ruling 21). Counted so the
+           * screen can say what the sum leaves out rather than leaving
+           * the arithmetic to be reverse-engineered. */
+          disputedCount: Type.Integer({ minimum: 0 }),
           /** The oldest and newest invoice date in the filtered register,
            * so the screen's financial-year filter offers every year the
            * register actually spans rather than only the years the first

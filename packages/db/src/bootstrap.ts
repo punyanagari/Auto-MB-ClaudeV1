@@ -149,6 +149,11 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // newest export no longer names is superseded by `last_seen_at`, not
   // destroyed.
   tally_ledgers: 'SELECT, INSERT, UPDATE',
+  // The Tally invoice cross-reference (0119). No UPDATE and no DELETE:
+  // a link records what one export said about one correspondence, and it
+  // is superseded by a discard on the invoice it points at rather than
+  // rewritten — the same posture `imported_invoice_lines` keeps.
+  tally_invoice_links: 'SELECT, INSERT',
   // The opening billing position of a pre-system Work (0114). Full
   // privileges: an unlocked baseline is a form being filled in, and its
   // guards — not the grant — are what stop a locked one from moving.

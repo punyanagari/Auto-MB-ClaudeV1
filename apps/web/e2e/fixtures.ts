@@ -1333,10 +1333,18 @@ const IMPORTED_INVOICE_REGISTER = {
       // Voided, and still carrying the IRN it was registered under — which
       // is why the chip cannot be derived from the IRN alone.
       ['ZB-2025-0233', '2025-02-27', true, null],
+      // Read from TallyPrime rather than Zoho (0119), and carrying a value
+      // the two systems disagree about — so the scan draws BOTH lamps this
+      // wave adds, and the register's own sentence about what its total
+      // leaves out has something to leave out.
+      ['TP-2021-0007', '2021-06-18', false, null],
     ] as const
   ).map(([invoiceNumber, invoiceDate, issued, workId], index) => ({
     id: `6666666${String(index)}-6666-4666-8666-666666666666`,
-    zohoInvoiceId: `zoho-${String(index + 1)}`,
+    // The fourth row came from TallyPrime, which states neither a Zoho
+    // identifier nor a sub-total — see migration 0119.
+    source: index === 3 ? 'tally' : 'zoho',
+    zohoInvoiceId: index === 3 ? null : `zoho-${String(index + 1)}`,
     invoiceNumber,
     invoiceDate,
     customerName:
@@ -1356,7 +1364,7 @@ const IMPORTED_INVOICE_REGISTER = {
     ackNumber: issued ? `11220${String(index)}` : null,
     ackDate: issued ? invoiceDate : null,
     referenceText: workId === null ? 'PO/2024/88' : 'LOA 27/2023',
-    subTotal: '184000.00',
+    subTotal: index === 3 ? null : '184000.00',
     total: '217120.00',
     balance: '0.00',
     roundOff: null,
@@ -1364,19 +1372,30 @@ const IMPORTED_INVOICE_REGISTER = {
     workCode: workId === null ? null : 'PL270-CRB',
     workWithdrawn: false,
     linkMethod: workId === null ? null : 'loa_match',
-    lineCount: 2,
+    lineCount: index === 3 ? 0 : 2,
+    // The cross-reference (0119). The first row is one both systems hold
+    // and agree about, the fourth is Tally's own and disputed, and the
+    // second names two vouchers — which is why the cell says how many
+    // instead of naming one of them.
+    tallyVoucherCount: index === 0 ? 1 : index === 1 ? 2 : index === 3 ? 1 : 0,
+    tallyVoucherNumber:
+      index === 0 ? 'PL270/0041' : index === 3 ? 'TP-2021-0007' : null,
+    disputed: index === 3,
     discardedAt: null,
     discardReason: null,
     importedAt: '2026-08-21T05:00:00.000Z',
   })),
   nextCursor: null,
   totals: {
-    invoiceCount: 3,
+    invoiceCount: 4,
     linkedCount: 1,
-    // The third row is a Zoho void, and the server leaves it out of this
-    // figure: two invoices' worth, not three.
+    // The third row is a Zoho void and the fourth is disputed, and the
+    // server leaves both out of this figure: two invoices' worth, not
+    // four.
     totalValue: '434240.00',
-    earliestDate: '2023-07-14',
+    tallySourcedCount: 1,
+    disputedCount: 1,
+    earliestDate: '2021-06-18',
     latestDate: '2025-02-27',
   },
 };

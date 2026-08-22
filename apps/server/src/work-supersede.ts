@@ -311,6 +311,15 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
     'a historical invoice raised in another system before this Work existed here; its Work link is a correctable annotation, not a document issued from the Work',
   imported_invoice_lines:
     'a line of a historical invoice, which reaches the Work only through an annotation on its header',
+  // The TallyPrime cross-reference (0119), exempt for exactly the reason
+  // its parent is and one step further behind it: a link records that a
+  // voucher in another system's books corresponds to a historical
+  // invoice, and it reaches a Work only through that invoice's own
+  // correctable annotation. Two systems agreeing about a document raised
+  // before this Work existed here cannot be a reason to refuse a
+  // withdrawal.
+  tally_invoice_links:
+    'a correspondence between a TallyPrime voucher and a historical invoice, which reaches the Work only through an annotation on that invoice',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

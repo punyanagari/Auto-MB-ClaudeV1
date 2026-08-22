@@ -136,6 +136,10 @@ const TENANT_TABLES = [
   // The Tally ledger census (0118): the chart of accounts another system
   // keeps. Names no other tenant row but the contact it proposes.
   'tally_ledgers',
+  // The Tally invoice cross-reference (0119), which names the historical
+  // invoice above it with a composite tenant reference and must therefore
+  // follow it.
+  'tally_invoice_links',
   // The opening billing position of a Work whose history predates this
   // product (0114).
   'work_billing_baselines',
@@ -340,7 +344,13 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // said, and this register's two annotations are both on the header
     // (0115). The application role holds no UPDATE, so a cross-tenant one
     // raises 42501 rather than matching zero rows.
-    table !== 'imported_invoice_lines',
+    table !== 'imported_invoice_lines' &&
+    // A cross-reference records what one export said about one
+    // correspondence between two systems (0119). It is superseded by a
+    // discard on the invoice it names, never rewritten, so the
+    // application role holds no UPDATE and a cross-tenant one raises
+    // 42501 rather than matching zero rows.
+    table !== 'tally_invoice_links',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -363,6 +373,9 @@ const DELETE_REVOKED_TABLES = [
   // Nor does a census row: a Tally master the newest export no longer
   // names is superseded by not being seen again, never deleted (0118).
   'tally_ledgers',
+  // Nor a cross-reference: what two systems said about one document is
+  // withdrawn by discarding the invoice, not by deleting the link (0119).
+  'tally_invoice_links',
   'works',
   'work_items',
   'loa_documents',
@@ -1520,6 +1533,37 @@ async function seedTenantGraph(
         ${organisationId}, ${importedInvoice.id}, 1, 'Seeded historical line',
         '10.000', 'Nos', '100.00', '1000.00', '998734', '9.00', '9.00',
         '90.00', '90.00', ${tx.json({ 'Item Name': 'Seeded historical line' })}
+      )
+    `;
+
+    // The Tally invoice cross-reference (0119). Both rows point at the
+    // register row above with the composite tenant foreign key, which is
+    // the only one this table has and the whole reason it exists. TWO,
+    // because the coverage sweep requires at least two per tenant table —
+    // and one of them DISPUTED, so the pair also proves that the shape
+    // check binding a dispute to its two figures is satisfiable. Neither
+    // is an `origin` link: the invoice they name is Zoho-sourced, and
+    // 0119's guard refuses an origin link on such a row.
+    await tx`
+      insert into tally_invoice_links (
+        organisation_id, tally_guid, tally_alterid, tally_voucher_type,
+        tally_voucher_date, tally_voucher_number, tally_party_ledger,
+        tally_amount, imported_invoice_id, match_method, match_evidence,
+        disputed, component_tally_total, component_invoice_total,
+        source_filename, imported_by_user_id
+      )
+      values (
+        ${organisationId}, ${`tally-voucher-${workCode}-a`}, 4242, 'Sales',
+        '2023-04-07', ${`INV-${workCode}-001`}, 'Integration customer',
+        '1180.00', ${importedInvoice.id}, 'exact_number',
+        ${`INV${workCode}001`}, false, null, null, 'Vouchers.xml', ${userId}
+      ),
+      (
+        ${organisationId}, ${`tally-voucher-${workCode}-b`}, 4243, 'Sales',
+        '2023-04-08', ${`INV-${workCode}-002`}, 'Integration customer',
+        '1180.00', ${importedInvoice.id}, 'serial_tolerant',
+        ${`INV${workCode}002`}, true, '2360.00', '1180.00', 'Vouchers.xml',
+        ${userId}
       )
     `;
 

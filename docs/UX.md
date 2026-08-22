@@ -2948,6 +2948,84 @@ and migration 0094, for that section's reason. A member without it sees
 the census and not the upload panel, rather than an upload panel that
 answers 403.
 
+### 38. Two systems on one register — the Tally half of the billing history
+
+**Status: application-first, owner rulings of 2026-08-22 (Tally mapping
+census, questions 12, 21, 22, 23; migration 0119).** Numbered 38 as the
+next free number after § 37, which wave T1 took. This wave and T1 both
+extend screens § 34 already settled, so the placeholder note § 37 carries
+applies here too: if another wave lands a section in between, the
+coordinator renumbers at the merge rather than letting two sections share
+a number.
+
+**No new screen.** § 34's Historical invoices register already answers
+"what have we billed this customer" for the Zoho years; this wave gives it
+the three years before Zoho and the reconciliation between the two. A
+second register for the same question under a different source would have
+made an operator ask which one to look at, which is precisely the state
+§ 34 was built to end. Everything below is one column, two lamps, one
+filter and a second upload panel, in the mock's existing grammar under
+AGENTS.md § Design contract 2 and 4.
+
+**The source column is a lamp, not a label, and it earns its width.** A
+row read from TallyPrime and a row read from Zoho Books are the same kind
+of record and are read the same way — but they answer differently when
+somebody asks where a figure came from, and a register that showed five
+years of billing without saying which system each year came from would
+invite exactly that question and answer none of it. Under the lamp, where
+the two systems both hold the invoice, the corresponding voucher's number
+is shown so an operator can open it in TallyPrime.
+
+**A voucher number is shown only where exactly one voucher corresponds.**
+One accounting entry often covers several bills; naming the first of three
+would name a real document and imply it was the only one. Where several
+correspond the cell says how many, which is the honest reading and the one
+that sends an operator to the import report rather than to the wrong
+voucher.
+
+**A disputed value is a lamp on the VALUE, not a state of the row.** The
+invoice is not in doubt — the figure is, because Tally and Zoho state
+different ones for it and neither is overwritten (ruling 21). The lamp sits
+in the money cell where the disagreement lives, and the header states what
+the billed total therefore leaves out, on the same terms § 34 already set
+for voided invoices. It says it in a sentence rather than leaving the
+arithmetic to be reverse-engineered from a number that will not add up.
+
+**Two upload panels, not one panel with a format toggle.** The two files
+are different exports of different systems, and what comes back from
+reading them answers different questions: the Zoho panel proposes which
+Work each invoice would be filed against, and the Tally panel reconciles
+two registers against each other. A toggle would have put both reports
+behind one control and made the operator remember which one they were
+looking at.
+
+**The narrowing instruction is the first thing the Tally panel says.**
+TallyPrime's whole voucher file is several gigabytes and this application
+will not accept it; narrowed to the three sales-side voucher types it is a
+manageable upload. Telling an operator that BEFORE they choose a file is
+what stops them waiting ten minutes for a refusal — and the refusal, when
+it comes another way, carries the same instruction rather than a generic
+"too large".
+
+**The Tally preview states its zeroes.** How many vouchers were cancelled
+and which, how many credit and debit notes were read and not imported, how
+many near-matches were refused for sharing a serial with an unrelated
+invoice, and how many invoices on the register this file has no voucher
+for — all of them, stated even when they are nought, on the terms § 37 set
+for the census: a count of what could not be used is worth more than a
+count of what could, and silence reads as absence of the problem rather
+than absence of the check.
+
+**The preview lists disputed and unmatched vouchers first**, then the
+rest, truncated. The half an operator is deciding about is never the half
+that gets cut — which is § 34's rule for the Zoho preview, applied to a
+different pair of halves.
+
+**Only the import is gated**, on § 34's terms exactly: reading the
+register carries the writer role, and pointing a file at it needs the
+data-import authority. A member without it sees both halves of the
+register and neither upload panel.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

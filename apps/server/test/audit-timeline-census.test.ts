@@ -56,6 +56,8 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level master data, one level below contacts. Issued documents copy the address text they print, and the inspection clause that joins an address LIVE is configuration whose own save is audited against the Work — either way an edit here belongs to the master’s history, not to any Work’s timeline.',
   tally_ledgers:
     'Organisation-level master data (0118): the chart of accounts another system holds. A census row names no Work at all — owner rulings 4 and 5 keep the work code as text and the table reaches `works` nowhere — and the one event it writes is the import of a file, not an act on a contract.',
+  tally_invoice_links:
+    'Organisation-level (0119): the correspondence between another system’s vouchers and the historical invoice register. The one event it writes is the import of a file — the invoices that import CREATES write their own `imported_invoice.imported` events, which is where a Work-linked act belongs.',
   unit_masters: 'Organisation-level master data.',
   location_masters: 'Organisation-level master data.',
   gst_rates: 'Organisation-level master data (notified rate history).',

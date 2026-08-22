@@ -62,6 +62,8 @@ import type {
   ImportedInvoiceImportResult,
   TallyLedgerList,
   TallyLedgerQuery,
+  TallyInvoiceImportMode,
+  TallyInvoiceImportResult,
   TallyMasterImportMode,
   TallyMasterImportResult,
   ImportedInvoiceList,
@@ -2467,6 +2469,14 @@ export interface ApiClient {
     file: File,
     mode: TallyMasterImportMode,
   ) => Promise<TallyMasterImportResult>;
+  /** The Tally sales-voucher import (0119): ties TallyPrime's vouchers
+   * to the historical invoice register and brings in the three years of
+   * billing that predate Zoho. `preview` writes nothing. */
+  readonly importTallyInvoices: (
+    organisationId: string,
+    file: File,
+    mode: TallyInvoiceImportMode,
+  ) => Promise<TallyInvoiceImportResult>;
   readonly discardImportedInvoice: (
     organisationId: string,
     invoiceId: string,
@@ -5788,6 +5798,24 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       });
       if (!response.ok) throw await parseError(response);
       return (await response.json()) as TallyMasterImportResult;
+    },
+    async importTallyInvoices(organisationId, file, mode) {
+      // The raw Blob, for `importTallyMasters`' reason exactly: the bytes
+      // are UTF-16LE and the server reads the body as a Buffer, because a
+      // string parser would decode Tally's encoding as UTF-8 mojibake
+      // before anything could read the byte-order mark.
+      const query = uploadQuery({ mode, filename: file.name });
+      const response = await fetchImpl(`/api/tally-invoices/import?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/xml',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as TallyInvoiceImportResult;
     },
     async discardImportedInvoice(organisationId, invoiceId, body) {
       return request<ImportedInvoiceDetail>(

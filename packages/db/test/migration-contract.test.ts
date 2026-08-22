@@ -135,6 +135,7 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // Tally master the row is about, and whether the export it came from is
   // older than the one already read.
   '0118_tally_ledgers.sql': 1,
+  '0119_tally_invoice_links.sql': 1,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
