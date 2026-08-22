@@ -8,7 +8,7 @@ import { stubApi, ORG_ID, WORK_ID } from './helpers.js';
 
 /*
  * The redesigned landing screen (owner decision 2026-08-22, `docs/UX.md`
- * § 38): four tiles about the ACTIVE portfolio, one line of lamps, and
+ * § 39): four tiles about the ACTIVE portfolio, one line of lamps, and
  * four panels — completion dates, billed against received, supply and
  * installation, and the ninety-day strip.
  *

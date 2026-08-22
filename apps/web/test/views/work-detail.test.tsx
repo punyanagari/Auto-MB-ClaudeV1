@@ -1551,6 +1551,116 @@ describe('WorkSchedules tax facts', () => {
   });
 });
 
+describe('WorkSchedules AMC billing cycle', () => {
+  const SCHEDULE_ID = '88888888-8888-4888-8888-888888888888';
+  /** One schedule, one item, and the item's payment category is the only
+   * thing that moves — it is the discriminator the cadence fields are
+   * gated on. */
+  const detailWithCategory = (paymentCategory: string) => ({
+    work: {
+      id: WORK_ID,
+      workCode: 'DCW-1',
+      letterNumber: 'L-42/2025',
+      letterDate: '2025-06-01',
+      title: 'Supply of switchboards',
+      advertisedValue: '1000.00',
+      contractValue: '900.00',
+      pricingShape: 'per_schedule',
+      letterPercentage: null,
+      letterPercentageDirection: null,
+      status: 'active',
+      createdAt: '2026-08-08T00:00:00.000Z',
+    },
+    schedules: [
+      {
+        id: SCHEDULE_ID,
+        scheduleCode: 'A',
+        title: 'Schedule A',
+        position: 1,
+        amcBillingPeriods: null,
+        amcCycleNoun: null,
+        items: [
+          {
+            id: ITEM_A,
+            scheduleId: SCHEDULE_ID,
+            itemNumber: 'A/1',
+            description: 'Main switchboard',
+            unitCode: 'Nos',
+            awardedQuantity: '5.000',
+            effectiveRate: '100.00',
+            requiresSerials: false,
+            paymentCategory,
+          },
+        ],
+      },
+    ],
+    installationCounts: { recorded: 0, cancelled: 0 },
+  });
+
+  function renderDetail(api: ApiClient, canModify: boolean) {
+    return render(
+      <WorkDetail
+        api={api}
+        organisationId={ORG_ID}
+        workId={WORK_ID}
+        canModify={canModify}
+        canRecordEvidence={canModify}
+        canIssue={canModify}
+        canSign={false}
+        canCancel={canModify}
+        canApprove={false}
+        canManageStatutory={true}
+        canManageRetention={true}
+        isOwner={false}
+        onNewIssueChallan={vi.fn()}
+        onOpenIssueChallan={vi.fn()}
+        onNewChallan={vi.fn()}
+        onOpenChallan={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+  }
+
+  it('offers the cadence fields, and explains them, on a schedule carrying an AMC item', async () => {
+    const api = stubApi({
+      getWork: vi.fn().mockResolvedValue(detailWithCategory('AMC')),
+    });
+    renderDetail(api, true);
+    await openWorkTab('Schedules & items');
+
+    expect(
+      await screen.findByLabelText('Maintenance billing periods in schedule A'),
+    ).toBeTruthy();
+    expect(screen.getByLabelText('each called a')).toBeTruthy();
+    expect(screen.getByText(/In how many instalments does the LOA bill/)).toBeTruthy();
+  });
+
+  it('says nothing about maintenance billing on a schedule with no AMC item', async () => {
+    renderDetail(
+      stubApi({ getWork: vi.fn().mockResolvedValue(detailWithCategory('SUPPLY')) }),
+      true,
+    );
+    await openWorkTab('Schedules & items');
+
+    expect(await screen.findByText('Main switchboard')).toBeTruthy();
+    expect(
+      screen.queryByLabelText('Maintenance billing periods in schedule A'),
+    ).toBeNull();
+    expect(screen.queryByText(/In how many instalments does the LOA bill/)).toBeNull();
+
+    // Nor the read-only line a member without modify rights would see.
+    cleanup();
+    renderDetail(
+      stubApi({ getWork: vi.fn().mockResolvedValue(detailWithCategory('SUPPLY')) }),
+      false,
+    );
+    await openWorkTab('Schedules & items');
+
+    expect(await screen.findByText('Main switchboard')).toBeTruthy();
+    expect(screen.queryByText('No maintenance billing cycle set.')).toBeNull();
+  });
+});
+
 describe('WorkDetail PBG requirement', () => {
   const PBG_SCHEDULE_ID = '88888888-8888-4888-8888-888888888888';
   const workDetailWith = (pbg: {

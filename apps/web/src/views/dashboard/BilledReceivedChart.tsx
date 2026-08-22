@@ -19,7 +19,7 @@ const HISTORICAL_INVOICES_HASH = workspaceHashOf({
  * at ordinary sizes, positioned by percentage so they still line up.
  *
  * Short on purpose. The row this chart shares with the completion panel
- * has to finish above the fold at 1440px (`docs/UX.md` § 38 R6), and a
+ * has to finish above the fold at 1440px (`docs/UX.md` § 39 R6), and a
  * twelve-point series does not need height to be read — the comparison is
  * between the two bars of a month, which is a horizontal reading.
  */

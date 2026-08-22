@@ -1056,7 +1056,7 @@ export function registerDashboardRoutes(
          * whatever its status — because that is what it has always meant
          * and something may still be reading it. The tiles moved to the
          * running contracts on the owner's decision of 2026-08-22
-         * (`docs/UX.md` § 38): a completed Work's value never leaves the
+         * (`docs/UX.md` § 39): a completed Work's value never leaves the
          * portfolio total, so the headline drifts upward forever and
          * stops describing anything an operator can act on.
          *

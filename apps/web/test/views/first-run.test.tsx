@@ -205,7 +205,7 @@ describe('first run — dashboard', () => {
         ],
       },
     });
-    // The dashboard no longer lists Works (`docs/UX.md` § 38), so the
+    // The dashboard no longer lists Works (`docs/UX.md` § 39), so the
     // anchor is the first panel it always draws instead.
     await screen.findByRole('heading', { name: 'Completion dates' });
     expect(screen.queryByRole('heading', { name: 'First steps' })).toBeNull();

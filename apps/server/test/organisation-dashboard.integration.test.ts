@@ -403,7 +403,7 @@ describe('dashboard', () => {
     expect(work?.issuedChallans).toBe(0);
   });
 
-  /* The landing screen's own figures (`docs/UX.md` § 38). Placed
+  /* The landing screen's own figures (`docs/UX.md` § 39). Placed
    * immediately after the baseline case above and BEFORE the mixed-basis
    * one below, because that test inserts a second Work: these assertions
    * are about the seeded portfolio exactly as `beforeAll` leaves it. */

@@ -24,7 +24,7 @@ interface Lamp {
  * One line of red and amber lamps, and nothing else.
  *
  * This replaced a seven-row alert list (owner decision 2026-08-22,
- * `docs/UX.md` § 38). The list said more, and what it said was already
+ * `docs/UX.md` § 39). The list said more, and what it said was already
  * said better one click away — the receivables register carries every
  * bill's settlement position, the invoice register carries the IRP
  * window, the challan register carries open drafts. What no register

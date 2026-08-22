@@ -106,31 +106,56 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * this file proves it has a chunk of its own, as all fifty-two do, and no
  * dependency was added.
  *
- * RAISED TO 119,400 when the dashboard redesign gave a Work address its
+ * RAISED TO 119,250 by the works-analysis reports, and this is the
+ * smallest raise in the file's history for the smallest reason: the pack
+ * adds NO rail entry, NO route variant and NO lazy import, because its
+ * three reports live on the Reports screen the management summary already
+ * has. What crossed the line is five api-client methods — the four reads
+ * and the one document download. Which half is whose, as the raise above
+ * this one records for its own wave:
+ *
+ *   119,200  the line the Tally ledger census left
+ *   119,230  measured on this branch before merging, so the pack itself
+ *            costs about THIRTY BYTES — five api-client methods and
+ *            nothing else, which is smaller than the forty a new module
+ *            costs precisely because this one is not a new module
+ *   119,232  measured after merging #173, which landed while this wave
+ *            was in flight and did not move this line
+ *
+ * The reports themselves are NOT in the initial payload: they are a
+ * component of `views/Mis.tsx`, which has a chunk of its own, and the
+ * second assertion in this file proves all fifty-two views still do. No
+ * dependency was added.
+ *
+ * RAISED TO 119,450 when the dashboard redesign gave a Work address its
  * first INTENT — `#/works/<id>/overview?focus=extension`, which the
  * completion panel uses to land an operator on the extension composer
- * instead of at the top of a long Overview (`docs/UX.md` § 38).
+ * rather than at the top of a long Overview (`docs/UX.md` § 39). Whose
+ * half is whose, on the convention the two raises above set:
  *
- *   119.20  the line the Tally census left
- *   119.28  measured on this branch — so the address costs about EIGHTY
- *           bytes: one query arm in the serialiser, one literal
- *           comparison in the parser, one piece of shell state and two
- *           navigate handlers. The parse is a string compare rather than
- *           a `URLSearchParams` for exactly this reason; there is one
- *           intent and one spelling of it.
+ *   119,250  the line the works-analysis reports left
+ *   119,280  measured on this branch before merging, so the address costs
+ *            about EIGHTY bytes against the census line it was written
+ *            over: one query arm in the serialiser, one literal
+ *            comparison in the parser, one piece of shell state and two
+ *            navigate handlers. The parse is a string compare rather than
+ *            a `URLSearchParams` precisely because this file exists;
+ *            there is one intent and one spelling of it
+ *   119,380  measured after merging the works-analysis reports, whose own
+ *            thirty bytes this line now also has to hold
  *
- * Shell wiring again, and the same kind of cost the two raises above
- * record: an address the shell has to be able to serialise, parse and
- * hold cannot live in a code-split view. Nothing else on this branch
- * reaches the entry chunk — the four dashboard components and both charts
- * are inside `OperationsDashboard`'s own chunk (22 kB raw, 6 kB gzip),
- * which the second assertion in this file proves is not in the initial
- * payload — and no dependency was added.
+ * Shell wiring again, and the same kind of cost every raise above
+ * records: an address the shell has to serialise, parse and hold cannot
+ * live in a code-split view. Nothing else from the dashboard redesign
+ * reaches the entry chunk — its four panels and both charts are inside
+ * `OperationsDashboard`'s own chunk, which the second assertion in this
+ * file proves is not in the initial payload — and no dependency was
+ * added.
  *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_400;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_450;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.
