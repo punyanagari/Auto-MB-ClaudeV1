@@ -196,7 +196,7 @@ SET LOCAL statement_timeout = '5min';
 --   Tables created                3
 --   Tables altered                0
 --   Functions created             3
---   Triggers created              4
+--   Triggers created              5 (4 plain, 1 deferred constraint)
 --   Indexes created               7
 --   RLS policies created          3
 
