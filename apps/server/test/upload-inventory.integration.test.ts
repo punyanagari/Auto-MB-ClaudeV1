@@ -274,6 +274,17 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     bodyLimit: MAX_TALLY_UPLOAD_BYTES,
     query: '?mode=preview&filename=Vouchers.xml',
   },
+  {
+    // The TallyPrime receipt export (0120), on the same ceiling and the
+    // same terms as the two above: the Day Book narrowed to Receipt is
+    // 2,025 vouchers and 89 MB against the 3.18 GB of every voucher
+    // TallyPrime holds, so the cap is what refuses the unfiltered file.
+    key: 'POST /api/tally-receipts/import',
+    sourceFile: 'routes/tally-receipts.ts',
+    format: 'tally-xml',
+    bodyLimit: MAX_TALLY_UPLOAD_BYTES,
+    query: '?mode=preview&filename=Receipts.xml',
+  },
 ];
 
 /** What each format's shared refusal answers for a body whose signature
@@ -449,6 +460,21 @@ beforeAll(async () => {
   });
   expect(created.statusCode, created.body).toBe(201);
   organisationId = created.json<{ id: string }>().id;
+
+  // THE PAYMENTS AUTHORITY IS NOT IMPLICIT, even for the owner who
+  // created the organisation, and one upload route now needs it: the
+  // TallyPrime receipt import (0120) writes money rows, so it is gated on
+  // `payments` as well as `import`. Without this the wrong-signature
+  // sweep below would meet a 403 on that route and never reach the guard
+  // it exists to prove — which is the authority order working, not a
+  // hole. This suite is about the upload chain, so it grants what the
+  // chain needs and proves nothing about who may run an import; the
+  // authority itself is proved in
+  // `apps/server/test/tally-receipts.integration.test.ts`.
+  await admin`
+    update organisation_memberships set can_manage_payments = true
+    where organisation_id = ${organisationId}
+  `;
 }, 120_000);
 
 afterAll(async () => {

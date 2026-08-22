@@ -148,6 +148,13 @@ export type WorkspaceView =
    * `workId` is the mock's `?work=` deep link, taken the way every other
    * cross-Work register here takes it. */
   | { name: 'historical-invoices'; workId: string | null }
+  /** The railway receipts imported from TallyPrime (0120) — what the
+   * railway paid against the historical billing and what it withheld
+   * under each head. One screen and no record page: a receipt is
+   * another system's voucher, read whole on the register, and there is
+   * nothing to open it onto. `workId` is the same `?work=` deep link
+   * every cross-Work register here takes. */
+  | { name: 'historical-receipts'; workId: string | null }
   /** The Tally ledger census (0118) — this organisation's chart of
    * accounts as TallyPrime holds it. One screen, no record page: a
    * census row is a mirror of somebody else's master and there is
@@ -436,6 +443,10 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return view.workId === null
         ? '#/historical-invoices'
         : `#/historical-invoices/${view.workId}`;
+    case 'historical-receipts':
+      return view.workId === null
+        ? '#/historical-receipts'
+        : `#/historical-receipts/${view.workId}`;
     case 'tally-masters':
       return '#/tally-masters';
     case 'search':
@@ -725,6 +736,14 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       }
       if (!isRecordId(workId) || extra.length > 0) return null;
       return { view: { name: 'historical-invoices', workId } };
+    }
+    case 'historical-receipts': {
+      const [workId, ...extra] = rest;
+      if (workId === undefined) {
+        return { view: { name: 'historical-receipts', workId: null } };
+      }
+      if (!isRecordId(workId) || extra.length > 0) return null;
+      return { view: { name: 'historical-receipts', workId } };
     }
     case 'tally-masters':
       return rest.length > 0 ? null : { view: { name: 'tally-masters' } };

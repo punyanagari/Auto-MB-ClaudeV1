@@ -25,6 +25,7 @@ import { Warranties } from '../../src/views/Warranties.js';
 import { WorkWarranty } from '../../src/views/WorkWarranty.js';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
 import { HistoricalInvoices } from '../../src/views/HistoricalInvoices.js';
+import { HistoricalReceipts } from '../../src/views/HistoricalReceipts.js';
 import { TallyMasters } from '../../src/views/TallyMasters.js';
 import { WorkHistoricalInvoices } from '../../src/views/WorkHistoricalInvoices.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
@@ -401,6 +402,23 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry historical invoices/,
     empty: { text: /No historical invoice has been imported yet/ },
+  },
+  {
+    view: 'HistoricalReceipts.tsx',
+    name: 'the railway receipts register',
+    loads: ['listImportedPayments'],
+    render: (api) => (
+      <HistoricalReceipts
+        api={api}
+        organisationId={ORG_ID}
+        workId={null}
+        canImport
+        onOpenWork={noop}
+        onClearWorkFilter={noop}
+      />
+    ),
+    retry: /Retry the railway receipts/,
+    empty: { text: /No railway receipts have been brought in yet/ },
   },
   {
     view: 'TallyMasters.tsx',

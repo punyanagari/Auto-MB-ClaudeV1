@@ -183,10 +183,27 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * restructure makes the screen READ less — the three portfolio reports
  * now wait for a Run instead of firing on every arrival.
  *
+ * RAISED TO 120,000 by the railway receipts register (migration 0120,
+ * docs/UX.md § 41). ROUTING AND WIRING AGAIN, and nothing else: a
+ * fifty-third screen appears, so `lib/workspace-routes.ts` gains a
+ * serialiser case and a parser arm for `#/historical-receipts`,
+ * `shell/navigation.ts` gains a lamp and its three switch arms, and
+ * `api.ts` gains two methods. The numbers:
+ *
+ *   119,800  the line the Reports restructure left
+ *   119,920  measured on this branch — 120 bytes, which is one address,
+ *            one lamp and two client methods
+ *
+ * The screen itself is NOT in the initial payload: it is
+ * `apps/web/src/views/HistoricalReceipts.tsx`, which has a chunk of its
+ * own, and the second assertion in this file proves all fifty-three views
+ * still do. No dependency was added, and the head labels and the two
+ * lookup tables that name them live in the view's own chunk.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_800;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 120_000;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

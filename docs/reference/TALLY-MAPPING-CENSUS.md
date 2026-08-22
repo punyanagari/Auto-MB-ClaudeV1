@@ -261,11 +261,29 @@ Deduction lines per receipt: 3 → 92, 4 → 166, 5 → 234, 6 → 184, 7 → 51
 
 ### Deviation shapes
 
-All 13 deviations are the same shape: **two credited party lines on one
+~~All 13 deviations are the same shape: **two credited party lines on one
 receipt** (one payment advice covering two customer ledgers, e.g. a
-division and its AMC ledger), with the deductions pooled across both.
-Nothing else deviates — no receipt is missing a bank line, none is
-unbalanced, none has three or more party lines *and* deductions.
+division and its AMC ledger), with the deductions pooled across both.~~
+**Corrected by wave T3's dry run against the same file, 23 Aug 2026.**
+The 13 were counted by treating *any* credited line as a party line, and
+they are not two-customer receipts at all: **13 of them carry a credited
+`Round Off` line** beside a single customer, and the fourteenth credits a
+security-deposit ledger — a deposit released back and netted against the
+bill. Re-scanned with the customer test taken from the ledger census's
+own group ancestry, **no receipt in the file credits two customer
+ledgers**.
+
+That matters twice over. Ruling 20 (refuse and let a person split) is
+therefore a rule with **no rows to apply to** in this export — it stands
+as the guard for the shape rather than as a task; and the 13 are
+dispatched by ruling 16 instead, because folding round-off into the net
+is exactly what makes a credited round-off reconcile. T3 implements both:
+a second credited CUSTOMER refuses (ruling 20), a credited round-off
+folds (ruling 16), and any other credited ledger refuses by name, which
+is what the fourteenth receipt gets.
+
+Nothing else deviates — no receipt is missing a bank line, and none is
+unbalanced.
 
 One further wrinkle that is not a deviation but will bite an importer:
 **77 receipts contain a ledger line with no `AMOUNT` element at all** — a
@@ -450,16 +468,25 @@ Mapping the deduction heads onto migration 0114's five closed heads:
 | `income_tax_tds` | `Tds on Railway Bills` + `TDS & SAT AY <year>` groups + the IT surcharge head | 793 |
 | `security_deposit` | `Railway Security Deposits` group (`SD <Division> PL-<code>`) | 536 |
 | `retention` | **nothing** — no ledger in the file contains "retention" | 0 |
-| `liquidated_damages` | **nothing** — no ledger contains "LD" or "liquidated" | 0 |
-| *unmapped* | 22 ledgers, below | **1,149** |
+| `liquidated_damages` | the `Contracual Deduction` ledger (sic), by the owner's ruling of 23 Aug 2026 on question 14 | 240 |
+| *unmapped* | 21 ledgers, below | **~910** |
 
 The unmapped third is the problem. By line count: bill copy 391,
-"contractual deduction" 211, labour-portion cess 135, round-off 118,
-labour cess 97, conservation 46, postage 45, cess 40, legal 23, water cess
-20, and 12 more with ≤7 lines each (including five lines where a
-railway customer ledger itself appears on the debit side, and one
-`Withheld with <Division> PL-<code>` under `Deposits (Asset)` — the
-closest thing in the file to a retention or LD head).
+~~"contractual deduction" 211~~ (**now `liquidated_damages`** — one ledger,
+240 lines and ₹80.6 lakh on T3's re-scan), labour-portion cess 135,
+round-off 118, labour cess 97, conservation 46, postage 45, cess 40,
+legal 23, water cess 20, and 12 more with ≤7 lines each (including five
+lines where a railway customer ledger itself appears on the debit side,
+and one `Withheld with <Division> PL-<code>` under `Deposits (Asset)` —
+the closest thing left in the file to a retention head).
+
+**Line counts differ slightly between this census and T3's dry run** —
+1,173 GST TDS here against 1,169 there, 536 security deposit against 543
+— because they count different populations: this table counts every
+deduction line in the file, and the dry run counts the lines on the 755
+receipts T3 actually imports, which excludes the bank-party, refused and
+zero-deduction vouchers. Neither is wrong; the wave's own figures are the
+ones its report prints.
 
 So: **two of 0114's five heads have no Tally counterpart at all, and about
 a third of real deduction lines have no 0114 head.** The heads are a
@@ -470,8 +497,9 @@ this is a ruling, not a coding decision — owner questions 13–16.
 **Ruled (10, 13, 15–17, 19, 20).** A Tally receipt becomes one payment
 against a work, with per-head deduction lines, and:
 
-- `retention` and `liquidated_damages` stay **empty** for imported
-  payments; every line stores its source ledger name, so a later
+- `retention` stays **empty** for imported payments. `liquidated_damages`
+  receives the `Contracual Deduction` lines (ruling 14, closed 23 Aug
+  2026). Every line stores its source ledger name either way, so a later
   remapping needs no re-import.
 - Every unmapped head books into a single **`other` bucket** carrying the
   Tally ledger name per line, so **gross = net + Σ heads still holds**.
@@ -482,13 +510,16 @@ against a work, with per-head deduction lines, and:
 - The work comes from the SD head's `PL-<code>` first, the bill
   allocation second, the narration third; the 176 with no route import
   **unlinked into a manual-link queue**.
-- The 13 two-party receipts are **refused** — a person splits each into
-  two clean receipts — and the lines debiting a customer ledger as if it
-  were a head are **held with a named refusal** and listed for the owner.
+- A receipt crediting two CUSTOMER ledgers is **refused** — a person
+  splits it into two clean receipts — and the lines debiting a customer
+  ledger as if it were a head are **held with a named refusal** and
+  listed for the owner. (See § 3: the "13 two-party receipts" this rule
+  was written for turned out to be credited round-offs, so the refusal
+  stands as the guard and fires on nothing in this export.)
 
-`Contracual Deduction` (sic) is the one head that might really be
-retention; question 14 is still open and nothing above may be built
-until it lands.
+`Contracual Deduction` (sic) is **liquidated damages, not retention** —
+the owner read the underlying vouchers and ruled on 23 Aug 2026. Question
+14 is closed and wave T3 is unblocked; § 6 records the ruling.
 
 ### 4.5 PBG / FDR / security-deposit instruments
 
@@ -541,7 +572,7 @@ than guesses:
 | --- | --- | ---: | --- |
 | **T1 — masters census (read-only)** | Import nothing. Land a report: ledgers by class, the 344 PL-coded instruments, customer↔contact match, deduction-head inventory | 4,327 ledgers | this document + rulings 1–8 |
 | **T2 — invoice cross-reference** | A separate link table joining Tally vouchers to `imported_invoices`; the pre-Zoho Tally invoices join the register behind a `tally`/`zoho` source discriminator; report the 19 + 4 non-matches | 1,052 vouchers → 619 links + 370 pre-Zoho | PR #167 merged; rulings 12, 23 |
-| **T3 — railway receipts as payments** | The 768 deduction-bearing receipts, head-wise with the `other` bucket, work-linked where a route exists, refusals held | 768 receipts, ~3,650 deduction lines, ₹20.99 cr | T2; rulings 13, 15–17, 19, 20; **blocked on 14** |
+| **T3 — railway receipts as payments** | The 768 deduction-bearing receipts, head-wise with the `other` bucket, work-linked where a route exists, refusals held | 755 receipts, 3,576 deduction lines, ₹20.75 cr | T2; rulings 13–17, 19, 20 (14 closed 23 Aug 2026) |
 | **T4 — plain and bank-party receipts** | The remaining 1,257 receipts. All but four of the 845 bank-party receipts (§3) sit here: loans, interest, and the 401 SD/EMD/FDR/PBG **release** events T5 needs | 1,257 | T3 |
 | **T5 — instruments reconciliation report** | Per-work openings, movements and releases against the PBG module. No records fabricated from ledger names | ~900 ledgers + 401 release receipts | T4; ruling 18 |
 | **T-export — Auto-MB → Tally XML** | Tally stays the general accounting books, so this product exports its own slice back — sales vouchers, and receipt vouchers with their deduction heads — for the CA to review | ongoing | ruling 1 |
@@ -555,12 +586,13 @@ The import is 2,025 receipts and a cross-reference, not 83,061 vouchers.
 
 ## 6. Questions for the owner, and the rulings
 
-**Ruled 22 Aug 2026.** Every question below carries the owner's ruling
-under it. Two are not closed: **9** is superseded by the §3 re-scan and
-waits only on the owner's TallyPrime spot-check of three named vouchers,
-and **14** is open while the owner reads the underlying vouchers. Nothing
-in the deduction mapping (§4.4) can be built until 14 lands, because it
-decides whether 0114's `retention` head is reachable at all.
+**Ruled 22 Aug 2026, and 14 on 23 Aug 2026.** Every question below
+carries the owner's ruling under it. One is not closed: **9** is
+superseded by the §3 re-scan and waits only on the owner's TallyPrime
+spot-check of three named vouchers. **14 is now closed** — the owner read
+the underlying vouchers and ruled `Contracual Deduction` to be liquidated
+damages — so the deduction mapping (§4.4) is unblocked and wave T3
+implements it.
 
 The rulings are recorded here because this is where the questions were
 asked. They are **not authority** — when a wave implements one, the rule
@@ -591,8 +623,10 @@ file stays what it is: the survey that prompted the question.
 12. May `imported_invoices` (immutable, migration 0115) gain a Tally-GUID provenance column, or should the cross-reference live in a separate table?
     **Ruled:** A **separate provenance-stamped link table**. The 0115 register is not touched.
 13. 0114's `retention` and `liquidated_damages` heads have **no** Tally counterpart — leave them permanently empty for imported payments, or is one of the unmapped heads actually retention?
-    **Ruled:** Both stay empty for imported payments. The source ledger name is stored on every line, so a later remapping is possible without a re-import.
-14. Is `Contracual Deduction` (211 lines) retention, or a catch-all? It is the single largest unmapped head by name. **Open** — the owner is reading the underlying vouchers.
+    **Ruled 22 Aug:** Both stay empty for imported payments. The source ledger name is stored on every line, so a later remapping is possible without a re-import.
+    **Updated 23 Aug by the ruling on 14:** `retention` stays empty — no ledger in the file contains the word. `liquidated_damages` is REACHABLE after all and receives the `Contracual Deduction` lines. The stored ledger name is what made the update cost nothing, which is the argument for storing it.
+14. Is `Contracual Deduction` (211 lines) retention, or a catch-all? It is the single largest unmapped head by name.
+    **Ruled 23 Aug 2026, by the owner with the accountant:** it is **liquidated damages / penalty** — money the railway keeps for late or short performance — and it maps to 0114's `liquidated_damages` head. It is NOT retention: nothing in these books is withheld against a defect-liability period under that name, and `retention` therefore stays permanently empty for imported payments (ruling 13, updated above). One ledger, 240 lines and ₹80.6 lakh on wave T3's dry run against the same export.
 15. Bill copy, conservation, labour cess, water cess, postage and legal (≈800 lines) are real railway deductions with no 0114 head — add heads, book them as one `other` bucket, or drop them and let gross ≠ net + heads?
     **Ruled:** One `other` bucket, with the Tally ledger name preserved per line, so gross = net + Σ heads still holds. Any bucket can be promoted to a first-class head later.
 16. Round-off (118 lines, ₹111 total) — a head, or arithmetic noise to fold into the net?

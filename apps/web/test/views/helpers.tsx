@@ -422,6 +422,19 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
     }),
     importTallyMasters: vi.fn<ApiClient['importTallyMasters']>(),
     importTallyInvoices: vi.fn<ApiClient['importTallyInvoices']>(),
+    listImportedPayments: vi.fn<ApiClient['listImportedPayments']>().mockResolvedValue({
+      payments: [],
+      nextCursor: null,
+      totals: {
+        count: 0,
+        gross: '0.00',
+        net: '0.00',
+        deductionTotal: '0.00',
+        unlinkedCount: 0,
+        heads: [],
+      },
+    }),
+    importTallyReceipts: vi.fn<ApiClient['importTallyReceipts']>(),
     challanCorrectionEligibility: vi
       .fn<ApiClient['challanCorrectionEligibility']>()
       .mockResolvedValue({

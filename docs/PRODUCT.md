@@ -2676,6 +2676,69 @@ data-import authority, and the whole voucher GUID and edit counter are
 stored on every row so the one post-training re-read needs no sync
 machinery.
 
+### Railway receipts: what was paid, and what was kept
+
+A railway does not pay a bill. It pays the bill minus what it deducts
+against it — security deposit, income-tax TDS, GST TDS, liquidated
+damages, bill copy, labour cess — and one voucher in the accounting books
+says all of it: the gross booked to the customer, the net to a bank, and
+each deduction to its own head. Until this landed, the billing history
+this system holds had no statement of what had actually been received
+against it, and the deductions sitting in security deposit could only be
+read one ledger at a time in Tally.
+
+**Three figures, and the third is the point.** Each imported receipt
+records what the railway SETTLED, what reached the bank, and what was
+withheld under each head between them — and `gross = net + Σ heads` holds
+on every row, checked by the schema. Money the railway kept is settled
+money; a register carrying only the bank credit would report every bill
+as short by its own statutory deductions forever.
+
+**The heads are the five this product already names, plus one bucket.**
+Security deposit, retention, liquidated damages, income-tax TDS and GST
+TDS are a closed list by design — a free-text head makes the receivables
+arithmetic a sum over whatever anybody typed. About a third of real
+deduction lines are genuine railway deductions with no head among them
+(bill copy, labour cess, conservation, postage, legal), and they book to
+a single `other` bucket that keeps the Tally ledger name on every line,
+so the arithmetic stays exact and any bucket can be promoted to a
+first-class head later without a re-import. Two owner rulings decide the
+edges: `retention` stays permanently empty, because nothing in these
+books is withheld under that name; and the `Contracual Deduction` ledger
+is liquidated damages rather than retention. Round-off is not a head at
+all — it folds into what was received, and the row says by how much.
+
+**A head named with no figure imports as zero and says so.** Real
+vouchers name a deduction head and leave the amount blank; a reader that
+dropped the line would lose the fact that the head was named, and one
+that treated the blank as a typed zero would state something the export
+does not. The line carries a flag and the import report counts them.
+
+**Which Work a receipt is about is a proposal, in a fixed order.** The
+security-deposit head's own work code first — those ledgers are already
+keyed per work and no receipt splits security deposit across two — then
+the bill the receipt names, then the work code in the narration. A
+receipt that no route reaches imports UNLINKED, into the queue the
+register's own filter reads. Nothing here creates a Work or a contact.
+
+**What it refuses, it refuses by name.** A receipt crediting two
+customers with the deductions pooled across them is refused so a person
+can split it; a receipt debiting a customer ledger as if it were a
+deduction head is held with a named refusal for the owner; and anything
+whose own arithmetic does not close is refused with both figures quoted.
+Receipts whose party is a bank — loan drawdowns, deposit and EMD refunds,
+FDR maturities — and plain collections with no deduction are neither
+imported nor refused: they are counted, reported, and left to the wave
+that models them.
+
+**Importing needs BOTH the data-import authority and the payments one.**
+Pointing a file at a register is a clerical act; bringing in what a
+railway paid and what it withheld is a money decision, and this
+application makes every money authority something a person is granted.
+The register itself reads for any writer, the receipts are never edited
+or deleted once imported, and re-importing the same export adds what is
+missing and changes nothing else.
+
 ### Works analysis: what is still owed, and what is still owed to us
 
 The ledgers this product keeps could always answer "how far has this Work

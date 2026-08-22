@@ -40,6 +40,7 @@ export type ModuleKey =
   | 'challans'
   | 'invoices'
   | 'historical-invoices'
+  | 'historical-receipts'
   | 'quotations'
   | 'correspondence'
   | 'company-documents'
@@ -142,6 +143,12 @@ export const NAVIGATION: readonly NavGroup[] = [
       // is documents this application issues and can act on and the
       // other is read-only history nothing bills or settles against.
       { key: 'historical-invoices', label: 'Historical invoices', icon: Archive },
+      // The railway receipts (0120). Beneath the invoices it settles,
+      // and its own lamp for the same reason theirs is: what the railway
+      // paid and withheld before the cutover is read-only history, and
+      // the Payments register next door is where money this application
+      // can act on lives.
+      { key: 'historical-receipts', label: 'Railway receipts', icon: Archive },
       { key: 'quotations', label: 'Quotations', icon: FileText },
       { key: 'correspondence', label: 'Correspondence', icon: Mails },
       { key: 'company-documents', label: 'Company documents', icon: FileBadge },
@@ -238,6 +245,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'invoices' };
     case 'historical-invoices':
       return { name: 'historical-invoices', workId: null };
+    case 'historical-receipts':
+      return { name: 'historical-receipts', workId: null };
     case 'quotations':
       return { name: 'quotations' };
     case 'correspondence':
@@ -353,6 +362,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'search':
     case 'maintenance':
     case 'historical-invoices':
+    case 'historical-receipts':
     case 'installations':
     case 'warranties':
     case 'purchase-orders':
@@ -431,6 +441,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Tax invoice';
     case 'historical-invoices':
       return 'Historical invoices';
+    case 'historical-receipts':
+      return 'Railway receipts';
     case 'quotations':
       return 'Quotations';
     case 'correspondence':

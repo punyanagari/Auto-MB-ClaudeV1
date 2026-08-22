@@ -2605,6 +2605,44 @@ test('the Tally ledger census passes the axe scan', async ({ page }) => {
   await expectNoAxeViolations(page, 'tally ledger census');
 });
 
+test('the railway receipts register passes the axe scan', async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto('/#/historical-receipts');
+
+  /* The railway receipts (0120). Its own top-level test for the reason
+     the historical invoices and the Tally census both took one: it is a
+     register with an upload panel, a filter and a table on screen
+     together, and its table puts more inside one cell than any other here
+     — the per-head breakdown, which is a list nested in a table cell and
+     therefore the structure most likely to be built wrongly.
+
+     Scanned with a linked row and an unlinked one, because the Work cell
+     renders a link in one and the queue's own words in the other, and
+     with the head line that states no amount, which is the only place
+     this screen qualifies a figure. */
+  await expect(page.getByRole('heading', { name: 'Railway receipts' })).toBeVisible();
+  await expect(page.getByLabel('TallyPrime receipts (.xml)')).toBeVisible();
+  await expect(page.getByLabel('Work', { exact: true })).toBeVisible();
+  // The three money columns, which are the reason the screen exists.
+  for (const column of ['Settled', 'Received', 'Deducted']) {
+    await expect(page.getByRole('columnheader', { name: column })).toBeVisible();
+  }
+  // Every head in the summary INCLUDING the permanently empty one
+  // (ruling 13): a head missing from the list reads as a head nobody
+  // thought about.
+  await expect(
+    page.getByRole('rowheader', { name: 'Retention', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('rowheader', { name: 'Liquidated damages', exact: true }),
+  ).toBeVisible();
+  // Ruling 10, labelled on the line it happened to.
+  await expect(page.getByText('no amount stated in Tally').first()).toBeVisible();
+  // Ruling 17's queue, in the register rather than on a screen of its own.
+  await expect(page.getByText('None proposed').first()).toBeVisible();
+  await expectNoAxeViolations(page, 'railway receipts register');
+});
+
 test('the warranty register passes the axe scan', async ({ page }) => {
   await mockWorkspace(page);
   await page.goto('/#/warranties');

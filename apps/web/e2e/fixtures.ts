@@ -1922,6 +1922,117 @@ const TALLY_LEDGER_CENSUS = {
   },
 };
 
+/* The railway receipts register (migration 0120), drawn with the two
+   shapes the Work cell takes — a receipt whose security-deposit head
+   named a contract, which renders a link, and one nothing reached, which
+   renders the queue's own words — and with a head line that states no
+   amount, because ruling 10's label is the only place this screen
+   qualifies a figure. Every head appears in the summary including the
+   permanently empty one, which is the rule § 41 records. */
+const IMPORTED_PAYMENT_REGISTER = {
+  payments: (
+    [
+      ['R-118', '2024-05-12', '33333333-3333-4333-8333-333333333333'],
+      ['R-119', '2024-06-03', null],
+    ] as const
+  ).map(([voucherNumber, voucherDate, workId], index) => ({
+    id: `8888888${String(index)}-8888-4888-8888-888888888888`,
+    tallyGuid: `receipt-guid-${String(index + 1)}`,
+    voucherNumber,
+    voucherDate,
+    narration: null,
+    counterpartyLedger: 'Central Railway, Bhusawal',
+    contactId: index === 0 ? '55555555-5555-4555-8555-555555555555' : null,
+    contactName: index === 0 ? 'Central Railway, Bhusawal' : null,
+    workId,
+    workCode: workId === null ? null : 'PL-270',
+    workLinkMethod: workId === null ? null : 'sd_ledger',
+    gross: index === 0 ? '1000000.00' : '5000.00',
+    net: index === 0 ? '880000.00' : '4900.00',
+    deductionTotal: index === 0 ? '120000.00' : '100.00',
+    roundOff: '0.00',
+    deductions:
+      index === 0
+        ? [
+            {
+              id: `9999999${String(index)}-9999-4999-8999-999999999991`,
+              head: 'security_deposit',
+              tallyLedgerName: 'SD Bhusawal PL-270',
+              amount: '50000.00',
+              amountMissing: false,
+              plCode: 'PL-270',
+            },
+            {
+              id: `9999999${String(index)}-9999-4999-8999-999999999992`,
+              head: 'liquidated_damages',
+              tallyLedgerName: 'Contracual Deduction',
+              amount: '29000.00',
+              amountMissing: false,
+              plCode: null,
+            },
+            {
+              id: `9999999${String(index)}-9999-4999-8999-999999999993`,
+              head: 'gst_tds',
+              tallyLedgerName: 'CGST TDS 1%',
+              amount: '41000.00',
+              amountMissing: false,
+              plCode: null,
+            },
+            // Ruling 10: named on the voucher with no figure at all.
+            {
+              id: `9999999${String(index)}-9999-4999-8999-999999999994`,
+              head: 'other',
+              tallyLedgerName: 'Bill Copy',
+              amount: '0.00',
+              amountMissing: true,
+              plCode: null,
+            },
+          ]
+        : [
+            {
+              id: `9999999${String(index)}-9999-4999-8999-999999999995`,
+              head: 'gst_tds',
+              tallyLedgerName: 'CGST TDS 1%',
+              amount: '100.00',
+              amountMissing: false,
+              plCode: null,
+            },
+          ],
+    invoiceLinks:
+      index === 0
+        ? [
+            {
+              id: 'aaaaaaa0-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              importedInvoiceId: '66666660-6666-4666-8666-666666666666',
+              invoiceNumber: 'ZB-2023-0041',
+              tallyBillReference: 'ZB-2023-0041',
+              amount: null,
+              matchMethod: 'exact_number',
+            },
+          ]
+        : [],
+    importedAt: '2026-08-23T04:30:00.000Z',
+  })),
+  nextCursor: null,
+  totals: {
+    count: 2,
+    gross: '1005000.00',
+    net: '884900.00',
+    deductionTotal: '120100.00',
+    unlinkedCount: 1,
+    heads: [
+      { head: 'gst_tds', amount: '41100.00', lineCount: 2 },
+      { head: 'income_tax_tds', amount: '0.00', lineCount: 0 },
+      { head: 'security_deposit', amount: '50000.00', lineCount: 1 },
+      // PERMANENTLY EMPTY (ruling 13), and drawn anyway: a head missing
+      // from the list reads as a head nobody thought about.
+      { head: 'retention', amount: '0.00', lineCount: 0 },
+      { head: 'liquidated_damages', amount: '29000.00', lineCount: 1 },
+      { head: 'other', amount: '0.00', lineCount: 1 },
+    ],
+  },
+};
+
 /* The purchase-order register (migration 0109), drawn with both series on
    screen at once: the tab counts are the only place the register puts a
    number in a control, and the Against column is the only cell whose two
@@ -2863,6 +2974,12 @@ export async function mockWorkspace(
   // that no scan makes.
   await page.route('**/api/tally-masters/ledgers*', (route) =>
     route.fulfill(json(TALLY_LEDGER_CENSUS)),
+  );
+  // The railway receipts (0120). The trailing star covers the `?work=`
+  // deep link and the queue's own `?linked=unlinked`; the import lane
+  // beside it is a POST that no scan makes.
+  await page.route('**/api/imported-payments*', (route) =>
+    route.fulfill(json(IMPORTED_PAYMENT_REGISTER)),
   );
   await page.route('**/api/stock/items*', (route) =>
     route.fulfill(json(STOCK_REGISTER)),

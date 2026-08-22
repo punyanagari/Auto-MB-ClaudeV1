@@ -660,6 +660,20 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Rule only on a correspondence the import flagged: where TallyPrime and Zoho state the same figure there is no disagreement to decide, and recording one would move the invoice in or out of the billed total for no reason.',
   TALLY_INVOICE_LINK_IMMUTABLE:
     'Discard the historical invoice and import the corrected export instead of editing what an export said: a record of a correspondence between two systems is not rewritten, and the register keeps both rows.',
+  // ---- Railway receipts as imported payments (0120) ------------------------
+  //
+  // Their own codes again, and their own remedy, because the export to
+  // re-run is a THIRD one: the Day Book narrowed to Receipt. Sending an
+  // operator to export "the sales vouchers" would have them upload a file
+  // holding none of the receipts this import reads.
+  TALLY_RECEIPTS_UNREADABLE:
+    'Export the receipt vouchers from TallyPrime — the Day Book narrowed to Receipt, never the whole voucher file, which is far too large to upload — and send the XML it writes without opening or re-saving it, because the preview names the voucher and the line of anything it cannot read and writes nothing.',
+  TALLY_RECEIPTS_TRUNCATED:
+    'Export the receipt vouchers from TallyPrime again and wait for it to finish writing before uploading — the file that arrived stops partway through, so importing it would record a fraction of what the railway has paid as though it were all of it.',
+  TALLY_LEDGER_CENSUS_REQUIRED:
+    'Import the All Masters export on Administration → Tally census first: nothing on a receipt line says whether the ledger it names is a bank, a customer or a deduction head, and the chart of accounts is what says so.',
+  IMPORTED_PAYMENT_IMMUTABLE:
+    'Import the corrected export rather than editing an imported receipt: it records what a TallyPrime voucher said, its heads must always sum to what it says was deducted, and re-importing the same file changes nothing that is already there.',
   // ---- Defect liability periods (0099) ------------------------------------
   //
   // The module has no document to open and no number to quote, so every

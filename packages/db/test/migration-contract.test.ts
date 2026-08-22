@@ -136,6 +136,17 @@ const MIGRATION_TRIGGERS: Readonly<Record<string, number>> = {
   // older than the one already read.
   '0118_tally_ledgers.sql': 1,
   '0119_tally_invoice_links.sql': 2,
+  // Railway receipts (0120): the immutability guard on each of the three
+  // tables, and the one that refuses a bill allocation naming a discarded
+  // invoice. FOUR rather than five, because the census's own regex reads
+  // `create trigger` and 0120's fifth is a `CREATE CONSTRAINT TRIGGER` —
+  // the deferred one holding a receipt's heads against its stated
+  // deduction total. 0057 and 0071 have the same shape and are counted
+  // the same way; widening the regex here would rewrite their numbers
+  // too, which is a change to this census rather than to this migration.
+  // The constraint trigger is attacked with raw SQL by
+  // `apps/server/test/tally-receipts.integration.test.ts` regardless.
+  '0120_imported_payments.sql': 4,
 };
 
 const TRIGGER_CENSUS = Object.values(MIGRATION_TRIGGERS).reduce(
