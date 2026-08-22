@@ -14,6 +14,7 @@ import { PageHeader } from '../ui/page-header.js';
 import { Stat } from '../ui/stat.js';
 import { EmptyState, ErrorState, LoadingState } from '../ui/state.js';
 import { DataTable, numericCell } from '../ui/table.js';
+import { WorksAnalysis } from './WorksAnalysis.js';
 
 /**
  * The management summary (migration 0095).
@@ -129,6 +130,13 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
     />
   );
 
+  /* The works-analysis reports are their own reads with their own
+     authority, so they render whatever the management summary did.
+     Before this, an assigned-scope member — refused the summary outright —
+     reached a blank Reports screen, and the report that answers "what is
+     still to supply on my Works" is exactly the one they can be served. */
+  const analysis = <WorksAnalysis api={api} organisationId={organisationId} />;
+
   if (loadError !== null) {
     return (
       <section aria-labelledby="mis-title" className="flex flex-col gap-5">
@@ -142,6 +150,7 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
             {loadError}
           </p>
         )}
+        {analysis}
       </section>
     );
   }
@@ -151,6 +160,7 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
       <section aria-labelledby="mis-title" className="flex flex-col gap-5">
         {header}
         <LoadingState label="the management summary" rows={6} columns={4} />
+        {analysis}
       </section>
     );
   }
@@ -449,6 +459,8 @@ export function Mis({ api, organisationId, isOwner }: MisProps) {
           </form>
         </Card>
       )}
+
+      {analysis}
     </section>
   );
 }

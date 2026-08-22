@@ -50,5 +50,6 @@ export * from './imported-invoices.js';
 export * from './tally-masters.js';
 export * from './audit.js';
 export * from './mis.js';
+export * from './works-analysis.js';
 export * from './platform.js';
 export * from './retention-ledger.js';
