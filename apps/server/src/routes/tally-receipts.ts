@@ -661,6 +661,13 @@ export function registerTallyReceiptRoutes(
           if (bucket === undefined) invoicesByNumber.set(key, [entry]);
           else bucket.push(entry);
         }
+        /** Which Work an invoice is filed against, indexed once for the
+         * whole file: ruling 17's second route reads it per receipt, and
+         * scanning the register for each one is the register times the
+         * file. */
+        const workByInvoiceId = new Map(
+          registerRows.map((row) => [row.id, row.work_id]),
+        );
 
         /* --- what each receipt would do -------------------------------- */
 
@@ -696,7 +703,7 @@ export function registerTallyReceiptRoutes(
             }
           }
           const invoiceWorkIds = [...seen]
-            .map((id) => registerRows.find((row) => row.id === id)?.work_id ?? null)
+            .map((id) => workByInvoiceId.get(id) ?? null)
             .filter((id): id is string => id !== null);
           return {
             receipt,
