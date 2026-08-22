@@ -70,6 +70,9 @@ import type {
   TallyLedgerQuery,
   TallyInvoiceImportMode,
   TallyInvoiceImportResult,
+  ImportedPaymentList,
+  TallyReceiptImportMode,
+  TallyReceiptImportResult,
   TallyMasterImportMode,
   TallyMasterImportResult,
   ImportedInvoiceList,
@@ -2529,6 +2532,23 @@ export interface ApiClient {
     file: File,
     mode: TallyInvoiceImportMode,
   ) => Promise<TallyInvoiceImportResult>;
+  /** The railway receipts register (migration 0120): what the railway
+   * settled, what reached the bank, and what it withheld under each
+   * head. `linked: 'unlinked'` is ruling 17's manual-link queue. */
+  readonly listImportedPayments: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly work?: string;
+      readonly linked?: 'linked' | 'unlinked';
+    },
+  ) => Promise<ImportedPaymentList>;
+  readonly importTallyReceipts: (
+    organisationId: string,
+    file: File,
+    mode: TallyReceiptImportMode,
+  ) => Promise<TallyReceiptImportResult>;
   readonly discardImportedInvoice: (
     organisationId: string,
     invoiceId: string,
@@ -5912,6 +5932,33 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
       });
       if (!response.ok) throw await parseError(response);
       return (await response.json()) as TallyInvoiceImportResult;
+    },
+    async listImportedPayments(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.work !== undefined) query.set('work', options.work);
+      if (options?.linked !== undefined) query.set('linked', options.linked);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportedPaymentList>(`/api/imported-payments${suffix}`, {
+        organisationId,
+      });
+    },
+    async importTallyReceipts(organisationId, file, mode) {
+      // The raw Blob, for `importTallyMasters`' reason exactly: the bytes
+      // are UTF-16LE and the server reads the body as a Buffer.
+      const query = uploadQuery({ mode, filename: file.name });
+      const response = await fetchImpl(`/api/tally-receipts/import?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/xml',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as TallyReceiptImportResult;
     },
     async discardImportedInvoice(organisationId, invoiceId, body) {
       return request<ImportedInvoiceDetail>(

@@ -320,6 +320,32 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
   // withdrawal.
   tally_invoice_links:
     'a correspondence between a TallyPrime voucher and a historical invoice, which reaches the Work only through an annotation on that invoice',
+  // Railway receipts imported from TallyPrime (0120), exempt on the same
+  // terms as the historical invoices above and for the same reason: a
+  // receipt records money another system says a railway paid before this
+  // Work existed here, and its Work link is a PROPOSAL a person confirmed
+  // — ruling 17's three routes, none of which is a document this agency
+  // issued. Withdrawing the Work does not make the receipt untrue, and
+  // refusing the withdrawal because a regex once proposed a link would
+  // let an annotation veto a correction.
+  //
+  // The receipt survives the withdrawal rather than stranding, and it
+  // does so UNLINKED IN EFFECT — which the register enforces rather than
+  // merely intending. Nothing here may edit an imported payment, so the
+  // row keeps naming the withdrawn Work; `routes/tally-receipts.ts`
+  // therefore reads "has a Work" as "names a Work that is still live",
+  // once, and every reading follows from it: the receipt rejoins the
+  // manual-link queue, counts in `unlinkedCount`, is excluded by
+  // `linked=linked`, and renders as `CODE (withdrawn)` instead of a link
+  // to a Work that is gone — the shape `imported-invoices.ts` took for
+  // the same case. The wave that adds the manual-link route is the one
+  // that can re-point it at the successor.
+  imported_payments:
+    'a railway receipt another system recorded before this Work existed here; its Work link is a proposal, not a document issued from the Work',
+  imported_payment_deductions:
+    'a deduction head on an imported receipt, which reaches the Work only through that receipt’s own proposed link',
+  imported_payment_invoice_links:
+    'which historical invoice an imported receipt settled, one step further behind the receipt',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

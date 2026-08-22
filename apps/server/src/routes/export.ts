@@ -529,6 +529,12 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  *
+ * export-v41: the railway receipts (0120) join the record — the payments
+ * themselves, the deduction heads under each, and which historical
+ * invoice each settled. Without them a package would restore a billing
+ * history with no statement of what the railway has actually paid
+ * against it, or of what it withheld under each statutory head.
+ *
  * export-v40: the Tally ↔ Zoho invoice cross-reference (0119) joins the
  * record. Without it a historical invoice exports with no statement of
  * which TallyPrime voucher it corresponds to, and the ones Tally alone
@@ -539,23 +545,23 @@ const errorResponses = {
  * this organisation's own chart of accounts as another system holds it,
  * and every Tally wave after T1 reaches its ledgers through it.
  *
- * ⚠ PLACEHOLDER, WAVE T2. This constant and the suite's expected value in
+ * ⚠ PLACEHOLDER, WAVE T3. This constant and the suite's expected value in
  * `apps/server/test/helpers/export-format.ts` sit in different files and
  * auto-merge SILENTLY against each other, so a wave that lands beside
- * this one takes the same number without a conflict. v39 was T1's (#172,
- * merged); v40 is claimed here on that basis. THE COORDINATOR RENUMBERS
+ * this one takes the same number without a conflict. v40 was T2's
+ * (merged); v41 is claimed here on that basis. THE COORDINATOR RENUMBERS
  * BOTH FILES BY HAND AT MERGE if anything landed in between — which is
- * exactly what happened to v37 in the wave before this one, and what this
- * note exists to force.
+ * exactly what happened to v37 two waves ago, and what this note exists
+ * to force.
  *
- * CHECKED AT THE MERGE WITH #173 AND #175: `main` still holds v39 and its
- * newest migration is still 0118, so v40 and 0119 are both unclaimed and
- * neither moves. The UX section did collide — the works-analysis wave
- * took § 38 while this one was in flight — and this wave's renumbered to
- * § 39 by hand, which is the same check applied to the file that DOES
- * conflict loudly.
+ * CHECKED AGAINST `main` WHEN THIS WAVE BRANCHED: it holds v40 and its
+ * newest migration is 0119, so v41 and 0120 are both unclaimed. The UX
+ * section was checked the same way — `main` holds § 40, so this wave
+ * takes § 41 — and that file at least conflicts loudly when two waves
+ * claim one number, which is why the version constants need the note and
+ * it does not.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v40';
+export const EXPORT_FORMAT_VERSION = 'export-v41';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -850,6 +856,30 @@ const SECTIONS: readonly ExportSection[] = [
     key: 'tallyInvoiceLinks',
     sql: `select * from tally_invoice_links
           order by tally_guid, imported_invoice_id`,
+  },
+  {
+    // Railway receipts as imported payments (0120), and the two child
+    // tables that carry what the receipt MEANS: what was deducted under
+    // each head, and which historical invoice was settled. All three ride
+    // together because `gross = net + Σ heads` is only true across them —
+    // a package holding the payments without their heads would restore a
+    // register whose arithmetic does not close.
+    //
+    // `source_fields` rides as stored jsonb for `raw_row`'s reason above.
+    // Ordered by the voucher GUID, the only key stable across imports.
+    key: 'importedPayments',
+    sql: `select * from imported_payments order by tally_guid`,
+    jsonbColumns: ['source_fields'],
+  },
+  {
+    key: 'importedPaymentDeductions',
+    sql: `select * from imported_payment_deductions
+          order by imported_payment_id, tally_ledger_name`,
+  },
+  {
+    key: 'importedPaymentInvoiceLinks',
+    sql: `select * from imported_payment_invoice_links
+          order by imported_payment_id, imported_invoice_id`,
   },
   {
     key: 'deliveryChallans',

@@ -204,6 +204,11 @@ const HistoricalInvoices = lazy(() =>
     default: module.HistoricalInvoices,
   })),
 );
+const HistoricalReceipts = lazy(() =>
+  import('./HistoricalReceipts.js').then((module) => ({
+    default: module.HistoricalReceipts,
+  })),
+);
 const Warranties = lazy(() =>
   import('./Warranties.js').then((module) => ({ default: module.Warranties })),
 );
@@ -1404,6 +1409,26 @@ export function OperationsWorkspace({
                 }}
                 onClearWorkFilter={() => {
                   navigate({ name: 'historical-invoices', workId: null });
+                }}
+              />
+            )}
+
+            {/* BOTH AUTHORITIES for the upload, and only for the upload:
+                a railway receipt is a money row, so the import is gated
+                on `payments` as well as `import` — the server refuses it
+                the same way, so this is the door and not the lock. The
+                register itself reads for every writer. */}
+            {view.name === 'historical-receipts' && (
+              <HistoricalReceipts
+                api={api}
+                organisationId={organisation.id}
+                workId={view.workId}
+                canImport={canImport && canManagePayments}
+                onOpenWork={(openWorkId) => {
+                  navigate({ name: 'work', workId: openWorkId }, { workTab: 'bills' });
+                }}
+                onClearWorkFilter={() => {
+                  navigate({ name: 'historical-receipts', workId: null });
                 }}
               />
             )}

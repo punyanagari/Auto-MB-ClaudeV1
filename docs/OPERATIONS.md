@@ -600,6 +600,50 @@ imported and flagged, and a disputed figure joins no total until the
 owner rules on that row (ruling 21). The preview reports the number and
 the gap; the register shows the lamp afterwards.
 
+### The railway receipts (wave T3, migration 0120)
+
+⚠ **NARROW THIS EXPORT TOO**, for the reason above: the whole voucher
+file cannot be uploaded, and narrowed to `Receipt` it is 2,025 vouchers
+and **89 MB** — under half the 192 MB cap, measured by filtering this
+company's own 3.18 GB voucher file down to the receipts.
+
+**Import the chart of accounts FIRST.** Nothing on a receipt line says
+whether the ledger it names is a bank, a customer or a deduction head;
+the group it sits under says it, and that is what the Tally census holds.
+An import run before the census refuses the whole file in one sentence
+that says so, rather than refusing every receipt in it.
+
+In TallyPrime:
+
+1. **Gateway of Tally → Display More Reports → Day Book.**
+2. `F2` (Period), then the first date the books cover through to today.
+3. `F4` (Change View / Voucher Type) → select **Receipt**.
+4. `Ctrl+E` (Export) → format **XML**, and export.
+5. Upload on **Documents → Railway receipts**, in the "Bring in a
+   TallyPrime receipt voucher export" panel.
+
+Splitting this export by period IS safe, unlike the sales one: a receipt
+is reconciled against itself — its own gross, its own bank line, its own
+deduction heads — and never against a group of documents, so a narrower
+file carries whole receipts and the import is idempotent across files.
+
+**The uploader needs BOTH the data-import authority and the payments
+one.** Every row this import writes is money: what the railway settled,
+what reached the bank, and what it withheld under each statutory head. A
+member who can import invoices may find they cannot import receipts, and
+that is deliberate.
+
+**Read the refusal and skip counts before committing.** Receipts whose
+party is a bank (loan drawdowns, deposit and EMD refunds, FDR maturities)
+and receipts with no deduction at all are counted and left for a later
+wave — they are the bulk of the file and their absence is not data loss.
+Refusals are per voucher, with the voucher number: a receipt crediting
+two customers is split by a person in TallyPrime and exported again, and
+one that debits a customer ledger as a deduction head is for the owner to
+rule on. The preview also counts the head lines that named a deduction
+with no amount (they import as zero, flagged) and the round-off lines
+folded into what was received.
+
 Both TallyPrime files contain customer production data: neither enters
 the repository, agent workspaces, or fixtures. The readers' tests build
 synthetic UTF-16 fixtures whose values belong to nobody.

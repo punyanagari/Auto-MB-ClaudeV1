@@ -79,6 +79,7 @@ import { registerImportRoutes } from './routes/imports.js';
 import { registerImportedInvoiceRoutes } from './routes/imported-invoices.js';
 import { registerTallyInvoiceRoutes } from './routes/tally-invoices.js';
 import { registerTallyMasterRoutes } from './routes/tally-masters.js';
+import { registerTallyReceiptRoutes } from './routes/tally-receipts.js';
 import { registerPlatformRoutes } from './routes/platform.js';
 import { registerSigningRoutes } from './routes/signing.js';
 import { registerWarrantyRoutes } from './routes/warranty.js';
@@ -1037,6 +1038,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<AppInstan
     registerImportedInvoiceRoutes(app, authInstance, database, scanner);
     registerTallyMasterRoutes(app, authInstance, database, scanner);
     registerTallyInvoiceRoutes(app, authInstance, database, scanner);
+    registerTallyReceiptRoutes(app, authInstance, database, scanner);
     registerMaintenanceRoutes(app, authInstance, database);
     registerTimelineRoutes(app, authInstance, database);
     registerAuditRoutes(app, authInstance, database);

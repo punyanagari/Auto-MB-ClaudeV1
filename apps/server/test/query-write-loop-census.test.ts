@@ -53,6 +53,11 @@ const ALLOWED: Record<string, { readonly writes: number; readonly reason: string
     reason:
       'Both loops are over CHUNKS, not rows, for the reason `routes/tally-masters.ts` gives directly above: one statement carries 500 register rows and 500 cross-reference links, and a real filtered export produces 418 of the first and 726 of the second. The alternative the rule exists to refuse — a statement per voucher — would be 1,144 round-trips instead of four. Nothing in the transaction holds a Work lock: the rows it writes reach `works` only through an annotation, which is why `work-supersede.ts` exempts both tables.',
   },
+  'routes/tally-receipts.ts': {
+    writes: 3,
+    reason:
+      'All three loops are over CHUNKS, not rows, for the reason the two Tally imports above give: one statement carries 500 receipts, 500 deduction heads or 500 bill allocations, and a real filtered export produces 755 receipts and 3,576 heads. The alternative the rule exists to refuse — a statement per row — would be 4,661 round-trips instead of eleven. Nothing in the transaction holds a Work lock: an imported receipt reaches `works` only through a proposal, which is why `work-supersede.ts` exempts all three tables.',
+  },
   'import/importer.ts': {
     writes: 7,
     reason:

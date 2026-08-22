@@ -49,6 +49,7 @@ export * from './imports.js';
 export * from './imported-invoices.js';
 export * from './tally-invoices.js';
 export * from './tally-masters.js';
+export * from './tally-receipts.js';
 export * from './audit.js';
 export * from './mis.js';
 export * from './works-analysis.js';
