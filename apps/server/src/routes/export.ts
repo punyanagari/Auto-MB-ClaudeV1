@@ -17,6 +17,21 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v37: what kind of catalogue entry a production item is (0117)
+ * rides along. The `productionItems` section takes `select *`, so
+ * `item_role` travels without an edit here — what moves the version is
+ * the format, not the query: a v36 package restored into a 0117 schema
+ * would land every item on the column's default and file the agency's
+ * own products as parts, so a reader has to be able to tell the two
+ * shapes apart by the string alone. No new section, no manifest change.
+ *
+ * NUMBERED 37 AT MERGE, not when this pack was written: it was branched
+ * claiming 35, and 0114's and 0115's packages landed on main first and
+ * took 35 and 36. Same rule as the two notes below — export versions are
+ * monotonic with the order packages MERGE, and `export-format.ts` moves
+ * with this one.
+ *
+ * ---------------------------------------------------------------------
  * export-v36: the historical Zoho Books register (0115) joins the package
  * — the invoices this organisation raised before this application
  * existed, their lines, and the raw export row each was read from.
@@ -498,7 +513,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v36';
+export const EXPORT_FORMAT_VERSION = 'export-v37';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no

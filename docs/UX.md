@@ -2683,6 +2683,103 @@ authority of § 18 and migration 0094, for that section's reason. A member
 without it sees the register and not the upload panel, rather than an
 upload panel that answers 403.
 
+### 36. The production item master — kinds, editing, and the empty bill
+
+**Status: application-first, owner rulings of 2026-08-21 (round-5
+corrections items 31, 29 and 28; migration 0117).**
+
+**No mock citation, and none is needed.** Everything below is built from
+the mock's own components on the screen the mock already draws
+(`app/production/items/page.tsx`): the `[280px_1fr]` split, its cards, the
+`TabRail` the Production and Maintenance registers already use, the
+shared `EmptyState`, and § 31's `useUnavailableControl` for every refusal.
+The only new words are labels and refusal sentences, which § Approved
+divergences 2 admits app-first.
+
+**"Add OEM item" told an operator something untrue.** Not everything in
+the catalogue is an OEM product — most of it is the parts the products are
+built from. The header button now reads **Add item** and the panel opens
+on a question rather than on fields:
+
+| Kind         | What it means                                                                                                        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| **OEM item** | A product the agency builds and sells. Always manufactured, so always named unit by unit from its own serial series. |
+| **Sub item** | A part or a sub-assembly a product is built from. Bought in or built here — either is ordinary.                      |
+
+The choice re-shapes the form. An OEM item is never asked whether it is
+manufactured, because it always is; a sub item is asked, and only then
+does it need a serial series of its own.
+
+**The kind is a column, not the `manufactured` flag.** A sub-assembly the
+agency welds is manufactured and is still not a product anybody sells, so
+the two facts are different facts. Deriving the kind from the bill of
+material was refused for the reason migration 0084 gives about the
+`manufactured` flag: the catalogue would then gain and lose entries as
+somebody edited a bill.
+
+**The rail lists one kind at a time.** It is titled **Catalogue** and opens
+on OEM items, with a two-tab filter to sub items beside it — parts stay
+fully manageable (renamed, retired, specified) without burying the twelve
+products behind four hundred bolts. Selecting a filter moves the detail
+pane to the first item of that kind, because a pane describing something
+the rail no longer lists is a pane about nothing.
+
+**A production item can now be edited.** It is a master, and a master is
+meant to be correctable: name, part number, category, unit and
+specifications are all freely editable, and nothing an operator types here
+rewrites history — every issued record snapshotted its own copy of the
+wording when it was written.
+
+**Three things still cannot move, and each says so on the control
+itself** — visible, disabled, the reason at the pointer and repeated as a
+hint underneath:
+
+| Control                        | Refused when                                                                     | Because                                                                     |
+| ------------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Serial series                  | a unit has been minted                                                           | the prefix is printed on hardware already in the field                      |
+| Manufactured / capture serials | a job card, a unit, a component consumption or a stock issue references the item | each of those records only makes sense under the flags it was written under |
+| **OEM** as a kind              | the item is not manufactured and can no longer become so                         | an OEM item is manufactured by definition                                   |
+
+The STOCK ISSUE arm is the one a serial-shaped rule would miss. An
+unserialised part is consumed into a job card by QUANTITY through the
+stock ledger (migration 0087) and leaves no component-serial record
+at all — which is exactly the history that switching serial capture on
+would claim had been scanned. Without it the rule would be blind to the
+commonest consumption in the building.
+
+The mechanism is § 31's: the reason is a VISIBLE line bound to the
+control by `aria-describedby` through `ui/unavailable.tsx`'s
+`useUnavailableControl`, not a `title` alone. A control that vanished
+would leave an operator hunting for it; a control that submitted and
+failed would teach the rule one refusal at a time. Each is enforced again
+by the route under a row lock and again by the database guard behind it
+(migration 0084 § 1, widened by 0117), so the screen is convenience and
+never the rule.
+
+**Both halves of the screen stay in step.** Switching the rail filter to
+a kind the catalogue has none of clears the detail pane rather than
+leaving it describing a row the rail no longer lists, and an edit that
+changes an item's KIND moves the filter with it, so the item the operator
+was just editing does not vanish out of the list they are looking at.
+
+**A save carries only what the form asked about.** `specifications` and
+`role` are both optional on the write, and absent means LEAVE IT ALONE —
+so the edit form, which does not show the specification list, does not
+re-send a stale copy of it over whatever the specification editor saved a
+moment earlier. An empty array is a different request and clears the
+list.
+
+**The bill of material no longer dead-ends.** A component select with
+nothing in it used to be an empty dropdown with no explanation and nowhere
+to go — which is the state every new organisation starts in, because the
+first item created has nothing to be built from. The panel now names the
+condition ("There are no other items in the catalogue yet…") and offers
+**Create a part**, which opens the item form fixed to the sub-item kind
+and returns to the material line with the new part already selected. The
+same **Create a part** control sits beside the select once it does have
+options, because the moment an operator discovers a missing part is the
+moment they are adding it to a bill.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.
