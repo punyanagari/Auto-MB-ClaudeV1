@@ -1,6 +1,6 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 3828,
+  "totalDeclarations": 3830,
   "fileCount": 238,
   "files": {
     "apps/server/test/accepted-rate-compound.test.ts": 8,
@@ -195,7 +195,7 @@
     "apps/web/test/views/tenders.test.tsx": 11,
     "apps/web/test/views/warranties.test.tsx": 13,
     "apps/web/test/views/work-bill-settlement.test.tsx": 8,
-    "apps/web/test/views/work-detail.test.tsx": 42,
+    "apps/web/test/views/work-detail.test.tsx": 44,
     "apps/web/test/views/work-panels.test.tsx": 24,
     "apps/web/test/views/work-retention.test.tsx": 10,
     "apps/web/test/views/work-supersede.test.tsx": 7,
