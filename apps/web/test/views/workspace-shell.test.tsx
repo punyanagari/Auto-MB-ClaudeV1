@@ -172,6 +172,7 @@ describe('OperationsWorkspace mobile shell', () => {
       // the same footing as Warranties below and the signing queue's own
       // missing cell in § 16.
       'Historical invoices',
+      'Railway receipts',
       'Quotations',
       'Correspondence',
       // The mock HAS this screen (`app/tenders/company-documents`) but
@@ -255,6 +256,7 @@ describe('OperationsWorkspace mobile shell', () => {
       // The Zoho Books history (0115), directly under the register that
       // answers the same question about the years since the cutover.
       ['Historical invoices', '#/historical-invoices'],
+      ['Railway receipts', '#/historical-receipts'],
       ['Quotations', '#/quotations'],
       ['Correspondence', '#/correspondence'],
       ['Company documents', '#/company-documents'],

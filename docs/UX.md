@@ -3648,6 +3648,77 @@ third month is labelled — plus the first and the last always, because the
 newest bar is the one a reader looks at first and an unlabelled right end
 makes them count backwards.
 
+### 41. Railway receipts — the third figure a bank statement does not carry
+
+**Status: application-first, owner rulings of 22 and 23 August 2026 (the
+Tally mapping census, § 3, § 4.4 and rulings 10 and 13–20).** Numbered 41
+against `main` when this wave branched, which held § 40. § 37 and § 40
+both record a sibling wave taking the number while they were in flight,
+so the check is a habit rather than a scramble; this file at least
+conflicts loudly when two waves claim one number, which the export
+version constants do not.
+
+**No mock citation is possible and none is claimed.** The mock draws no
+receipts screen. This is built entirely inside its existing grammar —
+page header, stat sentence, dense table, one upload panel — under
+AGENTS.md § Design contract 2 and 4, exactly as § 34 and § 37 record for
+the historical invoices and the Tally census.
+
+**The screen exists for the column a bank statement does not have.** A
+railway pays a bill minus what it deducts, on one voucher: gross to the
+customer, net to a bank, each deduction to its own head. So the register
+carries three money columns — **Settled**, **Received**, **Deducted** —
+and `Settled = Received + Deducted` on every row. Two columns would have
+been a payments list; the third is the whole reason the wave exists,
+because money the railway kept is settled money and money that never
+arrived is outstanding money.
+
+**The head breakdown is IN the row, not behind a disclosure.** A real
+receipt carries five or six heads and the question an operator opens this
+screen with is "what did they keep and under what". Hiding that behind a
+click would put the answer one interaction behind the question. Each line
+reads _head · amount · the Tally ledger name_, and the ledger name is not
+decoration: on an `Other` line it is the only thing that says which
+deduction it was.
+
+**Every head is listed in the summary, including the empty ones.**
+`Retention` shows ₹0.00 with 0 lines, permanently, and that is the point:
+a head missing from a list reads as a head nobody thought about, while a
+head showing zero reads as a question that was asked and answered. The
+same rule the Tally census screen keeps about its own zero counts.
+
+**A nil is labelled where it happened.** A head the voucher named with no
+amount at all shows _— no amount stated in Tally_ beside its zero. A nil
+somebody typed and a nil a reader invented are not the same fact and the
+register must never let one read as the other (ruling 10).
+
+**A Work here is a proposal and says which route proposed it** — "from
+the security-deposit head", "from the bill it names", "from the
+narration". A receipt with none imports unlinked, and the Work filter's
+_No Work proposed_ arm IS ruling 17's manual-link queue rather than a
+separate screen: the queue is a filter over the register because the rows
+are the same rows, and a second screen would be a second place to keep
+the same list correct. Nothing on this screen links one by hand yet; the
+wave that adds that route adds the control.
+
+**The import panel is the third of its shape** (Zoho invoices, Tally
+vouchers, and this), and deliberately identical: choose a file, read what
+it would do, then commit. Two things it says that the others do not — the
+Tally census must be imported first, because the chart of accounts is
+what says whether a line is a bank, a customer or a head; and the preview
+reports what it is NOT importing (bank-party receipts and plain
+collections, both a later wave's) beside what it is, because those are
+most of the file and their silence would read as data loss.
+
+**The panel is gated on two authorities, not one.** Every other import
+here takes the data-import authority; this one also takes payments,
+because the rows are money. Withheld rather than offered-and-refused —
+the register still reads for every writer.
+
+**A row wears a TallyPrime lamp.** It came from another system's books,
+nothing in this product settles against it, and the lamp is what stops it
+being mistaken for a receipt somebody recorded here.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

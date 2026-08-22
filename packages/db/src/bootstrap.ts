@@ -158,6 +158,15 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // records table-level privilege, and the column list is the migration's
   // to state.
   tally_invoice_links: 'SELECT, INSERT, UPDATE',
+  // Railway receipts as imported payments (0120). SELECT and INSERT only,
+  // on all three: a receipt is what a TallyPrime voucher said, this wave
+  // has no annotation to make about one, and the wave that adds a manual
+  // Work link adds the column-scoped grant with its own route and audit
+  // event. 0120's guard refuses an UPDATE anyway, so the rule survives a
+  // grant somebody widens without carrying the argument with it.
+  imported_payments: 'SELECT, INSERT',
+  imported_payment_deductions: 'SELECT, INSERT',
+  imported_payment_invoice_links: 'SELECT, INSERT',
   // The opening billing position of a pre-system Work (0114). Full
   // privileges: an unlocked baseline is a form being filled in, and its
   // guards — not the grant — are what stop a locked one from moving.

@@ -205,10 +205,33 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * `decodeURIComponent` also throws on, and would trade correctness for
  * about ten bytes.
  *
+ * RAISED TO 120,050 by the railway receipts register (migration 0120,
+ * docs/UX.md § 41). ROUTING AND WIRING AGAIN, and nothing else: a
+ * fifty-third screen appears, so `lib/workspace-routes.ts` gains a
+ * serialiser case and a parser arm for `#/historical-receipts`,
+ * `shell/navigation.ts` gains a lamp and its three switch arms, and
+ * `api.ts` gains two methods. Whose half is whose, on the convention the
+ * raises above set:
+ *
+ *   119,800  the line the Reports restructure left
+ *   119,920  measured on this branch before merging, so the register
+ *            costs about 120 bytes: one address, one lamp and two client
+ *            methods, which is the smallest shape a new module has
+ *   119,850  the line the percent-escape guard left while this wave was
+ *            in flight, which is why this raise is 200 bytes rather than
+ *            120 — it carries that fix's 50 as well
+ *   119,970  measured after merging it, which this raise has to hold
+ *
+ * The screen itself is NOT in the initial payload: it is
+ * `apps/web/src/views/HistoricalReceipts.tsx`, which has a chunk of its
+ * own, and the second assertion in this file proves all fifty-three views
+ * still do. No dependency was added, and the head labels and the two
+ * lookup tables that name them live in the view's own chunk.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_850;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 120_050;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

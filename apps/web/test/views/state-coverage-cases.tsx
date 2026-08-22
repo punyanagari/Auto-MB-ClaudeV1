@@ -25,8 +25,10 @@ import { Warranties } from '../../src/views/Warranties.js';
 import { WorkWarranty } from '../../src/views/WorkWarranty.js';
 import { InvoicesRegister } from '../../src/views/InvoicesRegister.js';
 import { HistoricalInvoices } from '../../src/views/HistoricalInvoices.js';
+import { HistoricalReceipts } from '../../src/views/HistoricalReceipts.js';
 import { TallyMasters } from '../../src/views/TallyMasters.js';
 import { WorkHistoricalInvoices } from '../../src/views/WorkHistoricalInvoices.js';
+import { WorkRailwayReceipts } from '../../src/views/WorkRailwayReceipts.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
 import { Members } from '../../src/views/Members.js';
@@ -403,6 +405,23 @@ export const STATE_CASES: readonly StateCase[] = [
     empty: { text: /No historical invoice has been imported yet/ },
   },
   {
+    view: 'HistoricalReceipts.tsx',
+    name: 'the railway receipts register',
+    loads: ['listImportedPayments'],
+    render: (api) => (
+      <HistoricalReceipts
+        api={api}
+        organisationId={ORG_ID}
+        workId={null}
+        canImport
+        onOpenWork={noop}
+        onClearWorkFilter={noop}
+      />
+    ),
+    retry: /Retry the railway receipts/,
+    empty: { text: /No railway receipts have been brought in yet/ },
+  },
+  {
     view: 'TallyMasters.tsx',
     name: 'the Tally ledger census',
     loads: ['listTallyLedgers'],
@@ -419,6 +438,16 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry historical invoices/,
     empty: { text: /No invoice raised before this system is filed against this Work/ },
+  },
+  {
+    view: 'WorkRailwayReceipts.tsx',
+    name: "the Work's railway receipts",
+    loads: ['listImportedPayments'],
+    render: (api) => (
+      <WorkRailwayReceipts api={api} organisationId={ORG_ID} workId={WORK_ID} />
+    ),
+    retry: /Retry railway receipts/,
+    empty: { text: /No railway receipt is filed against this Work/ },
   },
   {
     view: 'IssueChallanDetail.tsx',

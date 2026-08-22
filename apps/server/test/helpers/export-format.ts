@@ -20,16 +20,16 @@ import { expect } from 'vitest';
  * suite EXPECTS, and bumping the server's own constant without bumping
  * this one is exactly the mistake the assertions exist to catch.
  */
-// WAVE T2 — v40, claimed on top of T1's v39 (#172, merged).
+// WAVE T3 — v41, claimed on top of T2's v40 (merged).
 //
 // A branch that has not yet been allocated a number writes the SENTINEL
 // below in this file AND in `apps/server/src/routes/export.ts`, rather than
 // claiming one. Two branches claiming the same number auto-merge silently
-// — that is what happened to v37, and to v40 while this wave was in flight
-// — whereas two branches holding the sentinel cannot collide at all, and
+// — that is what happened to v37 two waves ago — whereas two branches
+// holding the sentinel cannot collide at all, and
 // `scripts/check-export-sentinel.mjs` fails if the sentinel survives onto
 // main without the coordinator assigning a concrete version.
-export const EXPECTED_EXPORT_VERSION = 'export-v40';
+export const EXPECTED_EXPORT_VERSION = 'export-v41';
 
 /**
  * The placeholder a feature branch holds instead of claiming a version.

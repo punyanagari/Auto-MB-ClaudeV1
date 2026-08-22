@@ -140,6 +140,13 @@ const TENANT_TABLES = [
   // invoice above it with a composite tenant reference and must therefore
   // follow it.
   'tally_invoice_links',
+  // Railway receipts imported from TallyPrime (0120). The receipt
+  // precedes its heads and its bill allocations, and the allocations name
+  // the historical invoice above with a composite tenant reference, so
+  // all three follow it.
+  'imported_payments',
+  'imported_payment_deductions',
+  'imported_payment_invoice_links',
   // The opening billing position of a Work whose history predates this
   // product (0114).
   'work_billing_baselines',
@@ -350,7 +357,14 @@ const GENERIC_UPDATE_TABLES = TENANT_TABLES.filter(
     // discard on the invoice it names, never rewritten, so the
     // application role holds no UPDATE and a cross-tenant one raises
     // 42501 rather than matching zero rows.
-    table !== 'tally_invoice_links',
+    table !== 'tally_invoice_links' &&
+    // A railway receipt records what a TallyPrime voucher said (0120).
+    // This wave has no annotation to make about one, so the application
+    // role holds no UPDATE on any of the three and a cross-tenant one
+    // raises 42501 rather than matching zero rows.
+    table !== 'imported_payments' &&
+    table !== 'imported_payment_deductions' &&
+    table !== 'imported_payment_invoice_links',
 );
 
 /** Tables where 0003 revoked DELETE outright (reservation anchors and
@@ -376,6 +390,12 @@ const DELETE_REVOKED_TABLES = [
   // Nor a cross-reference: what two systems said about one document is
   // withdrawn by discarding the invoice, not by deleting the link (0119).
   'tally_invoice_links',
+  // Nor a railway receipt (0120): what a voucher said about money the
+  // railway paid and kept is never deleted, and neither are its heads or
+  // its bill allocations.
+  'imported_payments',
+  'imported_payment_deductions',
+  'imported_payment_invoice_links',
   'works',
   'work_items',
   'loa_documents',
@@ -1565,6 +1585,72 @@ async function seedTenantGraph(
         ${`INV${workCode}002`}, true, '2360.00', '1180.00', 'Vouchers.xml',
         ${userId}
       )
+    `;
+
+    // Railway receipts imported from TallyPrime (0120). TWO, because the
+    // coverage sweep requires at least two per tenant table — and one of
+    // them carries the Work link, which is the composite tenant foreign
+    // key this table has beyond its own children. The figures are not
+    // arbitrary: `gross = net + deduction_total` is a row CHECK, and the
+    // deduction lines beneath have to sum to that total or the DEFERRED
+    // constraint trigger refuses the whole transaction at COMMIT.
+    const importedPayments = await tx<{ id: string }[]>`
+      insert into imported_payments (
+        organisation_id, tally_guid, tally_alterid, tally_voucher_number,
+        tally_voucher_date, tally_party_ledger, counterparty_ledger,
+        work_id, work_link_method, gross_amount, net_amount, deduction_total,
+        source_filename, imported_by_user_id
+      )
+      values (
+        ${organisationId}, ${`tally-receipt-${workCode}-a`}, 5100, 'R-1',
+        '2023-05-12', 'Integration customer', 'Integration customer',
+        ${work.id}, 'sd_ledger', '1180.00', '1080.00', '100.00',
+        'Receipts.xml', ${userId}
+      ),
+      (
+        ${organisationId}, ${`tally-receipt-${workCode}-b`}, 5101, 'R-2',
+        '2023-05-19', 'Integration customer', 'Integration customer',
+        null, null, '500.00', '450.00', '50.00', 'Receipts.xml', ${userId}
+      )
+      returning id
+    `;
+    const paymentA = importedPayments[0]?.id ?? '';
+    const paymentB = importedPayments[1]?.id ?? '';
+
+    // The heads, which must sum to each receipt's stated deduction total.
+    await tx`
+      insert into imported_payment_deductions (
+        organisation_id, imported_payment_id, head, tally_ledger_name,
+        amount, pl_code
+      )
+      values
+        (${organisationId}, ${paymentA}, 'gst_tds', 'CGST TDS 1%', '60.00', null),
+        (
+          ${organisationId}, ${paymentA}, 'income_tax_tds',
+          'TDS on Railway Bills AY 23-24', '40.00', null
+        ),
+        (
+          ${organisationId}, ${paymentB}, 'security_deposit',
+          ${`SD Seeded ${workCode} PL-9`}, '50.00', 'PL-9'
+        )
+    `;
+
+    // Which historical invoice each receipt settled — the composite
+    // tenant reference to the register row seeded above.
+    await tx`
+      insert into imported_payment_invoice_links (
+        organisation_id, imported_payment_id, imported_invoice_id,
+        tally_bill_reference, match_method
+      )
+      values
+        (
+          ${organisationId}, ${paymentA}, ${importedInvoice.id},
+          ${`INV-${workCode}-001`}, 'exact_number'
+        ),
+        (
+          ${organisationId}, ${paymentB}, ${importedInvoice.id},
+          ${`INV-${workCode}-002`}, 'exact_number'
+        )
     `;
 
     // The Tally ledger census (0118). Seeded with the contact PROPOSAL

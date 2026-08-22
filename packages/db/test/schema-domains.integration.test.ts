@@ -255,7 +255,16 @@ describe('the schema at head names all three shapes', () => {
     // sides of a value DISAGREEMENT, and a disagreement measured at two
     // different precisions is a disagreement about the precision. All
     // three go through `money.ts`'s BigInt paise on the way in.
-    expect(adopted.length).toBe(139);
+    //
+    // 0120 adds SIX, and the first four are one fact rather than four
+    // columns: a railway receipt's gross, its net, its deduction total
+    // and the round-off folded into the net are held together by a row
+    // CHECK that says `gross = net + deduction_total`, and a CHECK
+    // comparing columns of two precisions would be an arithmetic that
+    // passes on the paise it happens to round the same way. The other two
+    // are the per-head deduction amount and a bill allocation's own
+    // figure, which sum into those totals.
+    expect(adopted.length).toBe(145);
   });
 
   it('types every digest column as sha256_hex', () => {

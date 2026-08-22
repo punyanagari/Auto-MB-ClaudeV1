@@ -141,6 +141,33 @@ const SALES_SIDE_TYPES = new Set(['Sales', 'Credit Note', 'Debit Note']);
 
 export type TallyVoucherType = 'Sales' | 'Credit Note' | 'Debit Note';
 
+/**
+ * What a reader wants out of one voucher export.
+ *
+ * THE SCANNER IS SHARED AND THE MEANING IS NOT — the same argument
+ * `tally-scan.ts` makes about the FORMAT, one level up. Wave T3 reads
+ * `Receipt` vouchers out of the same file, through the same envelope, the
+ * same two accounting-leg tags, the same bill allocations and the same
+ * five refusals about a voucher that has no GUID, no date or a name
+ * longer than the schema stores. What differs is which types are kept and
+ * what the vouchers MEAN, so the types are a parameter and the meaning
+ * lives in `tally-receipts.ts`.
+ */
+export interface TallyVoucherReadOptions {
+  /** The types kept. Everything else is counted and skipped — a Payment
+   * voucher is not malformed, it is another wave's problem. */
+  readonly types: ReadonlySet<string>;
+  /** What to call them in a file-level refusal, so the remedy names the
+   * export the operator should re-run: `sales vouchers`, `receipt
+   * vouchers`. */
+  readonly noun: string;
+}
+
+const SALES_SIDE_OPTIONS: TallyVoucherReadOptions = {
+  types: SALES_SIDE_TYPES,
+  noun: 'sales vouchers',
+};
+
 /* --- refusals -------------------------------------------------------------- */
 
 /**
@@ -170,13 +197,23 @@ export interface TallyVoucherEntry {
   readonly amount: string | null;
 }
 
-export interface TallyVoucher {
+/**
+ * One voucher of whatever type the caller asked for.
+ *
+ * `TallyVoucher` beneath is this record with its type narrowed to the
+ * three sales-side ones, which is what wave T2 writes into a column whose
+ * CHECK names exactly those three. Wave T3 reads `Receipt` vouchers out
+ * of the same file and takes this shape as it stands.
+ */
+export interface TallyVoucherRecord {
   /** Tally's own stable identifier, and therefore the idempotency key. */
   readonly guid: string;
   /** Tally's edit counter (owner ruling 2). NULL when the voucher carries
    * none — unknown, which is not the same as zero. */
   readonly alterId: number | null;
-  readonly voucherType: TallyVoucherType;
+  /** Tally's own name for the type, kept verbatim. Narrowed to the three
+   * sales-side ones on `TallyVoucher`. */
+  readonly voucherType: string;
   /** A date-only `YYYY-MM-DD`, converted from Tally's `YYYYMMDD` by
    * string edit and never through a `Date` — AGENTS.md rule 6. */
   readonly date: string;
@@ -205,13 +242,23 @@ export interface TallyVoucher {
   readonly lineNumber: number;
 }
 
-export interface TallyVoucherRead {
-  readonly vouchers: readonly TallyVoucher[];
+/** A sales-side voucher: the record above with its type narrowed to the
+ * three the `tally_invoice_links` CHECK admits. */
+export interface TallyVoucher extends TallyVoucherRecord {
+  readonly voucherType: TallyVoucherType;
+}
+
+export interface TallyVoucherRecordRead {
+  readonly vouchers: readonly TallyVoucherRecord[];
   /** How many `<VOUCHER>` elements the export declared in total, of every
    * type. Reported so an operator can see whether they exported the whole
    * Day Book or the narrowed register the runbook asks for. */
   readonly voucherCount: number;
   readonly refusals: readonly TallyVoucherRefusal[];
+}
+
+export interface TallyVoucherRead extends TallyVoucherRecordRead {
+  readonly vouchers: readonly TallyVoucher[];
 }
 
 /* --- reading one voucher --------------------------------------------------- */
@@ -280,16 +327,19 @@ function voucherValue(
 }
 
 /**
- * Reads a filtered TallyPrime voucher export into one record per
- * sales-side voucher.
+ * Reads a filtered TallyPrime voucher export into one record per voucher
+ * of the types the caller asked for.
  *
  * Depth is tracked by counting the export's own tags rather than by
  * reading its indentation, for the reason `tally-masters.ts` gives:
  * indentation is a formatting property of one export setting and counting
  * elements cannot be changed by a checkbox in TallyPrime.
  */
-export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
-  const vouchers: TallyVoucher[] = [];
+export function readTallyVoucherRecords(
+  bytes: Buffer,
+  options: TallyVoucherReadOptions,
+): TallyVoucherRecordRead {
+  const vouchers: TallyVoucherRecord[] = [];
   const refusals: TallyVoucherRefusal[] = [];
   const seenGuids = new Set<string>();
   let voucherCount = 0;
@@ -370,7 +420,7 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
     // NOT A REFUSAL. A Payment or a Journal is not malformed; it is a
     // voucher this wave does not model, and counting 79,847 of them as
     // problems would bury the ones that are.
-    if (!SALES_SIDE_TYPES.has(voucherType)) return;
+    if (!options.types.has(voucherType)) return;
     if (guid.length === 0) {
       refuse(
         'This voucher carries no GUID. The GUID is what makes re-importing the export safe, so a voucher without one is not imported.',
@@ -464,7 +514,7 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
     }
     if (vouchers.length >= MAX_VOUCHERS) {
       throw new TallyImportError(
-        `That export declares more than ${String(MAX_VOUCHERS)} sales-side vouchers, which is not a voucher export this register will read.`,
+        `That export declares more than ${String(MAX_VOUCHERS)} ${options.noun}, which is not a voucher export this reader will take.`,
       );
     }
     seenGuids.add(guid);
@@ -476,7 +526,7 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
       // counter value and conflating it with "unknown" makes every
       // re-import of such a record look like progress or regression.
       alterId: /^\d{1,15}$/.test(alterId) ? Number(alterId) : null,
-      voucherType: voucherType as TallyVoucherType,
+      voucherType,
       date: legalDate,
       // TRIMMED AFTER SLICING, every one of them, and that order is the
       // whole point. `clean` already trimmed the value, so slicing is what
@@ -530,7 +580,7 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
       if (line.startsWith('<ENVELOPE')) sawEnvelope = true;
       else if (lineNumber > 20) {
         throw new TallyImportError(
-          'That file does not begin with a Tally <ENVELOPE>. Export the sales vouchers from TallyPrime and upload the XML it writes, unchanged.',
+          `That file does not begin with a Tally <ENVELOPE>. Export the ${options.noun} from TallyPrime and upload the XML it writes, unchanged.`,
         );
       }
     }
@@ -672,7 +722,7 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
   // re-run an export they never ran.
   if (!sawEnvelope) {
     throw new TallyImportError(
-      'That file does not begin with a Tally <ENVELOPE>. Export the sales vouchers from TallyPrime and upload the XML it writes, unchanged.',
+      `That file does not begin with a Tally <ENVELOPE>. Export the ${options.noun} from TallyPrime and upload the XML it writes, unchanged.`,
     );
   }
   // A VOUCHER STILL OPEN AT EOF IS A REFUSAL, NOT A DROP. A file that
@@ -682,18 +732,29 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
   // with every count agreeing with itself and being wrong.
   if (inVoucher) {
     throw new TallyImportError(
-      `That export stops in the middle of a voucher, ${String(lastOffset)} bytes in. It was not finished being written — export the sales vouchers from TallyPrime again and upload the complete file.`,
+      `That export stops in the middle of a voucher, ${String(lastOffset)} bytes in. It was not finished being written — export the ${options.noun} from TallyPrime again and upload the complete file.`,
       'TALLY_EXPORT_TRUNCATED',
     );
   }
   if (!sawEnvelopeEnd) {
     throw new TallyImportError(
-      `That export has no closing </ENVELOPE>, so it stops before Tally finished writing it (${String(lastOffset)} bytes read). Export the sales vouchers from TallyPrime again and upload the complete file.`,
+      `That export has no closing </ENVELOPE>, so it stops before Tally finished writing it (${String(lastOffset)} bytes read). Export the ${options.noun} from TallyPrime again and upload the complete file.`,
       'TALLY_EXPORT_TRUNCATED',
     );
   }
 
   return { vouchers, voucherCount, refusals };
+}
+
+/**
+ * The sales-side read: wave T2's own three types, narrowed.
+ *
+ * The cast is the one place the narrowing is asserted, and `options.types`
+ * is what makes it true — a voucher of any other type never reaches the
+ * array.
+ */
+export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
+  return readTallyVoucherRecords(bytes, SALES_SIDE_OPTIONS) as TallyVoucherRead;
 }
 
 /* --- matching the historical register -------------------------------------- */
