@@ -98,6 +98,26 @@ SET LOCAL statement_timeout = '5min';
 -- billed total therefore excludes an invoice carrying a disputed link,
 -- exactly as it already excludes a voided one, and the screen says so.
 --
+-- AND "UNTIL" IS HALF THE RULING, so the ruling path is here too:
+-- `resolution` records which side the owner ruled for, gated on the
+-- PAYMENTS authority rather than the import one — pointing a file at a
+-- register and deciding which of two systems is right about a rupee
+-- figure are not the same act, and only the second is a money decision.
+--
+--   zoho_correct   the register's own figure stands; the invoice rejoins
+--                  the billed total.
+--   accepted_gap   both figures stand and the difference is accepted;
+--                  the register's figure rejoins.
+--   tally_correct  TallyPrime's figure is the true one. The invoice STAYS
+--                  OUT of the total, and this is the arm worth reading
+--                  twice: the register holds Zoho's figure and cannot
+--                  hold Tally's — 0115 freezes the money — so restoring
+--                  the row would put into "what we have billed" the exact
+--                  number the owner has just ruled against. Excluding it
+--                  understates the total by a known amount that is on the
+--                  record; including it overstates it by an amount
+--                  nothing records at all.
+--
 -- ---------------------------------------------------------------------
 -- § D. IDEMPOTENCY, AND THE DISCARD-AND-REIMPORT PATH.
 --
@@ -157,24 +177,85 @@ SET LOCAL statement_timeout = '5min';
 --   23T03  one voucher sources at most one live register row
 --
 -- ---------------------------------------------------------------------
--- ROLLBACK. One new table with its policy, indexes and guard; one column
--- and two dropped NOT NULLs on `imported_invoices`; one replaced guard
--- function. Reversing it is dropping the table, dropping `source`, and
--- restoring the two NOT NULLs — which is lossless only while no
--- Tally-sourced invoice has been imported, because such a row has no
--- `zoho_invoice_id` and no `sub_total` to restore a NOT NULL over. That
--- is stated here rather than discovered: the reversal window closes at
--- the first Tally invoice import, and after it the exit is discarding
--- those rows, which the register already supports.
+-- ROLLBACK, AS A RECIPE RATHER THAN AS A SENTENCE.
+--
+-- THE WINDOW CLOSES AT THE FIRST TALLY INVOICE IMPORT. A Tally-sourced
+-- row has no `zoho_invoice_id` and no `sub_total`, so there is nothing to
+-- restore a NOT NULL over; after that point the exit is discarding those
+-- rows, which the register already supports. Everything below assumes the
+-- window is still open.
+--
+-- The order matters, and steps 2 and 3 are the ones a reversal written
+-- from memory forgets: PostgreSQL will not drop a column a CHECK or an
+-- index still references.
+--
+--   1. DROP TRIGGER imported_invoices_supersede_tally_links
+--        ON imported_invoices;
+--      DROP FUNCTION app_private.supersede_tally_origin_links();
+--      DROP TABLE tally_invoice_links;          -- takes its own indexes,
+--        -- its policy and its guard trigger with it
+--      DROP FUNCTION app_private.guard_tally_invoice_link();
+--
+--   2. ALTER TABLE imported_invoices
+--        DROP CONSTRAINT imported_invoices_source_shape_check;
+--      DROP INDEX imported_invoices_tally_source_idx;
+--
+--   3. ALTER TABLE imported_invoices DROP COLUMN source;
+--      ALTER TABLE imported_invoices ALTER COLUMN zoho_invoice_id SET NOT NULL;
+--      ALTER TABLE imported_invoices ALTER COLUMN sub_total SET NOT NULL;
+--
+--   4. RESTORE 0115'S GUARD. This migration REPLACED the function body,
+--      and a reversal that drops the column without restoring the body
+--      leaves a guard referencing `NEW.source` — which fails on the next
+--      UPDATE of any historical invoice, as a 42703 nobody will connect
+--      to a rollback run weeks earlier. The body to restore is 0115's
+--      exactly; it is the one at the foot of this file with the two
+--      `source` entries removed from both ROW() lists:
+--
+--        CREATE OR REPLACE FUNCTION app_private.guard_imported_invoice()
+--        RETURNS trigger LANGUAGE plpgsql
+--        SET search_path = pg_catalog, public AS $$
+--        BEGIN
+--          IF TG_OP = 'UPDATE' THEN
+--            IF ROW(
+--                 NEW.id, NEW.organisation_id, NEW.zoho_invoice_id,
+--                 NEW.invoice_number, NEW.invoice_date, NEW.customer_zoho_id,
+--                 NEW.customer_name, NEW.customer_gstin, NEW.place_of_supply,
+--                 NEW.zoho_status, NEW.irn, NEW.ack_number, NEW.ack_date,
+--                 NEW.qr_payload, NEW.reference_text, NEW.sub_total,
+--                 NEW.total, NEW.balance, NEW.round_off, NEW.raw_row,
+--                 NEW.imported_by_user_id, NEW.created_at
+--               ) IS DISTINCT FROM ROW(
+--                 OLD.id, OLD.organisation_id, OLD.zoho_invoice_id,
+--                 OLD.invoice_number, OLD.invoice_date, OLD.customer_zoho_id,
+--                 OLD.customer_name, OLD.customer_gstin, OLD.place_of_supply,
+--                 OLD.zoho_status, OLD.irn, OLD.ack_number, OLD.ack_date,
+--                 OLD.qr_payload, OLD.reference_text, OLD.sub_total,
+--                 OLD.total, OLD.balance, OLD.round_off, OLD.raw_row,
+--                 OLD.imported_by_user_id, OLD.created_at
+--               ) THEN
+--              RAISE EXCEPTION
+--                'imported invoice % records what the export said and cannot be rewritten; only its Work link, its contact link and its discard may change',
+--                OLD.id USING ERRCODE = '23X01';
+--            END IF;
+--            IF OLD.discarded_at IS NOT NULL THEN
+--              RAISE EXCEPTION
+--                'imported invoice % was discarded on % and cannot be changed',
+--                OLD.id, OLD.discarded_at::date USING ERRCODE = '23X01';
+--            END IF;
+--          END IF;
+--          NEW.updated_at := now();
+--          RETURN NEW;
+--        END $$;
 --
 -- CENSUS.
 --
 --   Tables created                1
 --   Tables altered                1
---   Functions created             1
+--   Functions created             2
 --   Functions replaced            1
---   Triggers created              1
---   Indexes created               4
+--   Triggers created              2
+--   Indexes created               5
 --   RLS policies created          1
 
 -- ═════════════════════════════════════════════════════════════════════
@@ -319,6 +400,44 @@ CREATE TABLE tally_invoice_links (
   component_tally_total money_amount,
   component_invoice_total money_amount,
 
+  -- RULING 21'S SECOND HALF: "until the owner rules on that row."
+  --
+  -- The flag above is the first half — the disagreement is recorded and
+  -- the figure joins no sum. This is the ruling itself, and the register
+  -- was incomplete without it: a disputed invoice that nothing could ever
+  -- resolve would be permanently outside the billed total, which is not
+  -- "until" anything.
+  --
+  --   tally_correct   TallyPrime's figure is the true one. The register
+  --                   row holds ZOHO's, which the owner has just ruled
+  --                   against, so it STAYS OUT of the billed total — see
+  --                   the reasoning on the register's own sum. This is
+  --                   the one resolution that does not restore the row.
+  --   zoho_correct    the register's own figure is right; it rejoins.
+  --   accepted_gap    both figures stand and the difference is accepted
+  --                   (a rounding convention, a credit taken in the other
+  --                   system). The register's figure rejoins.
+  --
+  -- CORRECTABLE, NOT ONE-WAY. A ruling made in error has to be fixable,
+  -- so the guard admits a change from one resolution to another — what it
+  -- refuses is CLEARING one, because "this was never ruled on" is not a
+  -- state the register can return to once a sum has been reported under
+  -- it. Each change writes its own audit event.
+  resolution text CHECK (
+    resolution IS NULL
+    OR resolution IN ('tally_correct', 'zoho_correct', 'accepted_gap')
+  ),
+  resolved_by_user_id text,
+  resolved_at timestamptz,
+
+  -- THE ORIGIN LINK'S OWN LIVENESS, and it exists for one reason: the
+  -- partial unique index below needs a predicate over THIS table's
+  -- columns, and the fact it needs — "is the invoice this link sourced
+  -- still on the register" — lives on another. Stamped by the trigger on
+  -- `imported_invoices` beneath, so it cannot drift from the discard it
+  -- mirrors, and never written by a route.
+  superseded_at timestamptz,
+
   source_filename text NOT NULL CHECK (
     btrim(source_filename) = source_filename
     AND length(source_filename) BETWEEN 1 AND 260
@@ -352,6 +471,23 @@ CREATE TABLE tally_invoice_links (
   CONSTRAINT tally_invoice_links_dispute_shape_check CHECK (
     disputed = false
     OR (component_tally_total IS NOT NULL AND component_invoice_total IS NOT NULL)
+  ),
+
+  -- A ruling travels as one fact: what was decided, who decided and when.
+  -- A resolution with no author is a decision nobody can be asked about.
+  CONSTRAINT tally_invoice_links_resolution_shape_check CHECK (
+    (resolution IS NULL AND resolved_by_user_id IS NULL AND resolved_at IS NULL)
+    OR
+    (resolution IS NOT NULL AND resolved_by_user_id IS NOT NULL
+      AND resolved_at IS NOT NULL)
+  ),
+
+  -- ONLY A DISPUTE IS RULED ON. A resolution on a link the two systems
+  -- agreed about is a ruling on nothing, and it would take that link out
+  -- of — or into — a sum on the strength of a decision about a
+  -- disagreement that never existed.
+  CONSTRAINT tally_invoice_links_resolution_disputed_check CHECK (
+    resolution IS NULL OR disputed
   )
 );
 
@@ -365,6 +501,10 @@ COMMENT ON COLUMN tally_invoice_links.disputed IS
   'Owner ruling 21: Tally and Zoho state different figures for this correspondence, both are imported, and a disputed figure joins no sum until the owner rules on the row. The register''s billed total excludes an invoice carrying one, exactly as it excludes a voided invoice.';
 COMMENT ON COLUMN tally_invoice_links.component_tally_total IS
   'The Tally side of the disagreement, summed over the whole connected component rather than over this pair — the correspondence is many-to-many, so a per-pair comparison is meaningless where one voucher covers several bills.';
+COMMENT ON COLUMN tally_invoice_links.resolution IS
+  'Ruling 21''s second half — the owner''s ruling on a disagreement. `zoho_correct` and `accepted_gap` restore the invoice to the register''s billed total; `tally_correct` does NOT, because the figure the register holds is the one the owner ruled against. Correctable, never clearable.';
+COMMENT ON COLUMN tally_invoice_links.superseded_at IS
+  'When the invoice this link sourced was discarded. Stamped by a trigger on imported_invoices, never by a route: it exists so the origin-uniqueness index has a predicate over this table''s own columns, and it must not be able to disagree with the discard it mirrors.';
 
 ALTER TABLE tally_invoice_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tally_invoice_links FORCE ROW LEVEL SECURITY;
@@ -375,11 +515,25 @@ CREATE POLICY tally_invoice_links_tenant_policy ON tally_invoice_links
   USING (organisation_id = (SELECT app_private.current_organisation_id()))
   WITH CHECK (organisation_id = (SELECT app_private.current_organisation_id()));
 
--- No UPDATE and no DELETE. A link records what one export said about one
--- correspondence; it is superseded by a discard on the invoice it points
--- at, not by being rewritten. 0115's lines table keeps the same posture
--- for the same reason.
+-- NO DELETE, AND UPDATE ONLY ON THE HINGES.
+--
+-- What an export said about a correspondence is never rewritten; 0115's
+-- lines table keeps the same posture for the same reason. What CAN move
+-- is exactly what 0115's own header calls a hinge — an annotation this
+-- organisation makes ABOUT the record rather than a change to it:
+--
+--   * the owner's ruling on a disagreement (ruling 21's second half);
+--   * the liveness stamp the discard trigger writes.
+--
+-- The grant is COLUMN-SCOPED, which is the difference between "the route
+-- only writes these" and "only these can be written". A whole-table
+-- UPDATE grant would have made the guard below the only thing standing
+-- between a bug and a rewritten money figure; with this, the privilege
+-- system refuses first and the guard is the second layer it is supposed
+-- to be.
 GRANT SELECT, INSERT ON tally_invoice_links TO auto_mb_app;
+GRANT UPDATE (resolution, resolved_by_user_id, resolved_at, superseded_at, updated_at)
+  ON tally_invoice_links TO auto_mb_app;
 
 -- THE IDEMPOTENCY KEY, over the PAIR. See § D: one voucher may name
 -- several invoices and one invoice several vouchers, and it is the pair
@@ -399,6 +553,34 @@ CREATE INDEX tally_invoice_links_invoice_idx
 CREATE INDEX tally_invoice_links_disputed_idx
   ON tally_invoice_links (organisation_id, imported_invoice_id)
   WHERE disputed;
+
+-- ONE VOUCHER SOURCES AT MOST ONE LIVE REGISTER ROW, ENFORCED BY THE
+-- INDEX RATHER THAN ONLY BY THE TRIGGER.
+--
+-- 23T03 below reads the table and raises a sentence an operator can act
+-- on. What it cannot do is survive a race: two transactions inserting the
+-- same origin link concurrently both find no conflict and both commit,
+-- because neither can see the other's uncommitted row. The route's
+-- per-organisation advisory lock closes that in practice; this closes it
+-- in the schema, which is where a rule that decides whether the register
+-- holds one invoice or two belongs.
+--
+-- PARTIAL ON `superseded_at`, and that column exists FOR this predicate.
+-- An index predicate reads only the indexed table's own columns, and the
+-- fact this rule needs — whether the sourced invoice is still on the
+-- register — lives on `imported_invoices`. The alternatives were both
+-- worse: an unconditional index would close the discard-and-reimport
+-- correction path outright (there is no DELETE grant, so the withdrawn
+-- link could never be cleared out of the way), and leaving the rule to
+-- the trigger alone leaves the race open. So the discard stamps the
+-- links it withdraws, through the trigger below, and the two facts cannot
+-- drift because only one of them is ever written by hand.
+--
+-- The trigger stays as the SENTENCE-PROVIDER: it fires first, names the
+-- invoice, and answers 23T03; this index is what holds when it cannot.
+CREATE UNIQUE INDEX tally_invoice_links_origin_key
+  ON tally_invoice_links (organisation_id, tally_guid)
+  WHERE match_method = 'origin' AND superseded_at IS NULL;
 
 -- ═════════════════════════════════════════════════════════════════════
 -- § 3. THE GUARDS
@@ -425,15 +607,59 @@ DECLARE
   v_conflict uuid;
 BEGIN
   IF TG_OP = 'UPDATE' THEN
-    -- The application role holds no UPDATE on this table, so this arm is
-    -- for a writer that reaches it another way. It is not decoration:
-    -- 0115 records its lines as facts nobody can rewrite and the one
-    -- thing that makes that true is a grant, which a future migration can
-    -- widen without noticing.
-    RAISE EXCEPTION
-      'tally invoice link % records what an export said and is never edited',
-      OLD.id
-      USING ERRCODE = '23T02';
+    -- EVERYTHING THE EXPORT SAID, frozen — 0115's own hinge pattern, and
+    -- the hinges are the columns absent from this comparison: the owner's
+    -- ruling on a disagreement, and the liveness stamp the discard writes.
+    -- The column-scoped grant above already refuses the rest; this is the
+    -- arm that holds when a future migration widens it without noticing,
+    -- which is exactly how 0115 argues its own.
+    IF ROW(
+         NEW.id, NEW.organisation_id, NEW.tally_guid, NEW.tally_alterid,
+         NEW.tally_voucher_type, NEW.tally_voucher_date,
+         NEW.tally_voucher_number, NEW.tally_reference,
+         NEW.tally_party_ledger, NEW.tally_amount, NEW.imported_invoice_id,
+         NEW.match_method, NEW.match_evidence, NEW.disputed,
+         NEW.component_tally_total, NEW.component_invoice_total,
+         NEW.source_filename, NEW.imported_by_user_id, NEW.created_at
+       ) IS DISTINCT FROM ROW(
+         OLD.id, OLD.organisation_id, OLD.tally_guid, OLD.tally_alterid,
+         OLD.tally_voucher_type, OLD.tally_voucher_date,
+         OLD.tally_voucher_number, OLD.tally_reference,
+         OLD.tally_party_ledger, OLD.tally_amount, OLD.imported_invoice_id,
+         OLD.match_method, OLD.match_evidence, OLD.disputed,
+         OLD.component_tally_total, OLD.component_invoice_total,
+         OLD.source_filename, OLD.imported_by_user_id, OLD.created_at
+       ) THEN
+      RAISE EXCEPTION
+        'tally invoice link % records what an export said and cannot be rewritten; only the owner''s ruling on its disagreement may change',
+        OLD.id
+        USING ERRCODE = '23T02';
+    END IF;
+
+    -- A RULING IS CORRECTABLE AND NEVER CLEARABLE. A ruling made in error
+    -- has to be fixable, so one resolution may replace another — but
+    -- "this was never ruled on" is not a state the register can return
+    -- to once a billed total has been reported under it.
+    IF OLD.resolution IS NOT NULL AND NEW.resolution IS NULL THEN
+      RAISE EXCEPTION
+        'tally invoice link % has been ruled on; a ruling is corrected by recording a different one, never by clearing it',
+        OLD.id
+        USING ERRCODE = '23T02';
+    END IF;
+
+    -- The liveness stamp mirrors a discard and is written by the trigger
+    -- on `imported_invoices` alone. Unstamping one would put an origin
+    -- link back into the uniqueness index for an invoice that is still
+    -- withdrawn.
+    IF OLD.superseded_at IS NOT NULL AND NEW.superseded_at IS NULL THEN
+      RAISE EXCEPTION
+        'tally invoice link % was superseded when its invoice was discarded, and that does not un-happen',
+        OLD.id
+        USING ERRCODE = '23T02';
+    END IF;
+
+    NEW.updated_at := now();
+    RETURN NEW;
   END IF;
 
   -- A link points at an invoice that exists in this tenant and has not
@@ -468,13 +694,15 @@ BEGIN
       USING ERRCODE = '23T02';
   END IF;
 
-  -- ONE VOUCHER SOURCES AT MOST ONE LIVE REGISTER ROW. The import route
-  -- checks this first, under the per-organisation advisory lock, so this
-  -- arm is what holds if two imports ever run without it. The check is
-  -- over LIVE rows only, which is the same reading 0115's partial unique
-  -- index takes: discarding a Tally-sourced invoice and importing the
-  -- corrected export is the correction path, and a rule that counted the
-  -- withdrawn row would close it.
+  -- ONE VOUCHER SOURCES AT MOST ONE LIVE REGISTER ROW, and this arm is
+  -- the SENTENCE it is refused with: it names the voucher and the invoice
+  -- that already holds it, which `tally_invoice_links_origin_key` cannot.
+  -- The index is what holds under a race the route's advisory lock does
+  -- not cover; between them the rule has a reason and a floor. The check
+  -- is over LIVE rows only, which is the same reading 0115's partial
+  -- unique index takes: discarding a Tally-sourced invoice and importing
+  -- the corrected export is the correction path, and a rule that counted
+  -- the withdrawn row would close it.
   IF NEW.match_method = 'origin' THEN
     SELECT l.imported_invoice_id INTO v_conflict
     FROM tally_invoice_links l
@@ -504,6 +732,50 @@ COMMENT ON FUNCTION app_private.guard_tally_invoice_link() IS
 CREATE TRIGGER tally_invoice_links_guard
 BEFORE INSERT OR UPDATE ON tally_invoice_links
 FOR EACH ROW EXECUTE FUNCTION app_private.guard_tally_invoice_link();
+
+-- ---------------------------------------------------------------------
+-- THE DISCARD CARRIES ITS ORIGIN LINKS WITH IT.
+--
+-- `superseded_at` exists so the origin-uniqueness index has a predicate
+-- over its own table's columns (see the index). This is what writes it,
+-- and it is a TRIGGER rather than a line in the discard route for the
+-- reason the whole two-layer discipline rests on: a fact maintained by
+-- one route is a fact the second route to discard an invoice forgets. The
+-- register's discard is a plain UPDATE from `imported-invoices.ts`; a
+-- later wave that adds another way to withdraw a row inherits this
+-- without knowing it exists.
+--
+-- AFTER, not BEFORE: the invoice's own guard has to have accepted the
+-- discard before its links are withdrawn on the strength of it.
+--
+-- Only ORIGIN links are stamped. A match link points at an invoice the
+-- discard did not create, and the uniqueness rule this column serves is
+-- about origins alone.
+
+CREATE FUNCTION app_private.supersede_tally_origin_links()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  UPDATE tally_invoice_links
+  SET superseded_at = NEW.discarded_at
+  WHERE organisation_id = NEW.organisation_id
+    AND imported_invoice_id = NEW.id
+    AND match_method = 'origin'
+    AND superseded_at IS NULL;
+  RETURN NULL;
+END
+$$;
+
+COMMENT ON FUNCTION app_private.supersede_tally_origin_links() IS
+  'Stamps the origin links of a historical invoice when it is discarded, so the origin-uniqueness index can read a liveness fact that actually lives on the invoice. A trigger rather than a route line: a fact maintained by one route is a fact the second route to discard a row forgets.';
+
+CREATE TRIGGER imported_invoices_supersede_tally_links
+AFTER UPDATE OF discarded_at ON imported_invoices
+FOR EACH ROW
+WHEN (OLD.discarded_at IS NULL AND NEW.discarded_at IS NOT NULL)
+EXECUTE FUNCTION app_private.supersede_tally_origin_links();
 
 -- ---------------------------------------------------------------------
 -- 0115'S OWN GUARD GAINS THE NEW COLUMN.

@@ -39,6 +39,9 @@ interface Leg {
   readonly amount?: string;
   /** A bill allocation's NAME, a level below the leg. */
   readonly bill?: string;
+  /** A cost-centre allocation's NAME, at the same depth and meaning
+   * something else entirely. */
+  readonly costCentre?: string;
 }
 
 interface VoucherSpec {
@@ -70,6 +73,15 @@ function leg(spec: Leg, tag: string): string[] {
     '       <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>',
     `       <LEDGERNAME>${spec.ledger}</LEDGERNAME>`,
     ...(spec.amount === undefined ? [] : [`       <AMOUNT>${spec.amount}</AMOUNT>`]),
+    // A cost-centre allocation, whose NAME sits at exactly the depth a
+    // bill allocation's does and is NOT a document number.
+    ...(spec.costCentre === undefined
+      ? []
+      : [
+          '       <CATEGORYALLOCATIONS.LIST>',
+          `        <NAME>${spec.costCentre}</NAME>`,
+          '       </CATEGORYALLOCATIONS.LIST>',
+        ]),
     ...(spec.bill === undefined
       ? ['       <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>']
       : [
@@ -248,6 +260,50 @@ describe('readTallyVouchers', () => {
     );
     expect(read.vouchers[0]?.voucherNumber).toBeNull();
     expect(read.vouchers[0]?.billReferences).toEqual(['P01/00005']);
+  });
+
+  it('reads a bill allocation NAME and IGNORES a cost-centre one at the same depth', () => {
+    // FINDING 7. `NAME` two levels deep is not a document number by
+    // itself: a cost-centre or category allocation carries one too, at
+    // exactly the same depth. Feeding those to the matcher offers it
+    // strings that are not invoice numbers at all — harmless on a company
+    // with no cost centres, and a false link waiting on one that has them.
+    const read = readTallyVouchers(
+      envelope(
+        voucher({
+          legs: [
+            {
+              ledger: 'Northern Division Depot',
+              amount: '-11800.00',
+              bill: 'P01/00005',
+              costCentre: 'Northern Zone Overheads',
+            },
+          ],
+        }),
+      ),
+    );
+    expect(read.vouchers[0]?.billReferences).toEqual(['P01/00005']);
+  });
+
+  it('refuses a live sales voucher with no number, reference or bill allocation', () => {
+    // FINDING 8. Such a voucher matches nothing and would become a
+    // register row, whose `invoice_number` is NOT NULL — so the route used
+    // to discover it at COMMIT and refuse the whole file. Refused here it
+    // is a row-level refusal with a line, and the preview and the commit
+    // see the same population.
+    const read = readTallyVouchers(envelope(voucher({ legs: [] })));
+    expect(read.vouchers).toEqual([]);
+    expect(read.refusals).toHaveLength(1);
+    expect(read.refusals[0]?.reason).toMatch(/no voucher number, no reference/);
+    expect(read.refusals[0]?.lineNumber).toBeGreaterThan(0);
+  });
+
+  it('keeps an unnumbered CANCELLED voucher, which becomes nothing anyway', () => {
+    const read = readTallyVouchers(
+      envelope(voucher({ cancelled: true, party: '', legs: [] })),
+    );
+    expect(read.refusals).toEqual([]);
+    expect(read.vouchers).toHaveLength(1);
   });
 
   it('keeps every voucher type the census names and skips the rest without refusing', () => {
@@ -571,6 +627,48 @@ describe('matchTallyVouchers', () => {
     expect(result.links.every((link) => link.disputed)).toBe(true);
     expect(result.links[0]?.componentTallyTotal).toBe('30000.00');
     expect(result.links[0]?.componentInvoiceTotal).toBe('35000.00');
+  });
+
+  it('completes a component from the links the register already holds', () => {
+    // FINDING 4. A period-narrowed export carries ONE of the two vouchers
+    // that cover an invoice. Reconciled against this file alone that
+    // voucher disagrees with the invoice by the other one's whole value —
+    // a false dispute, on a real invoice, produced by an operator
+    // following the runbook's own instruction to upload more than one
+    // file. Feeding the existing link back in makes the second file
+    // COMPLETE the first.
+    const secondFile = read({
+      number: 'P0100080',
+      legs: [{ ledger: 'Northern Division Depot', amount: '-20000.00' }],
+    });
+    const invoices = [
+      invoice({ id: 'a', invoiceNumber: 'P0100080', total: '30000.00' }),
+    ];
+
+    const alone = matchTallyVouchers(secondFile, invoices);
+    expect(alone.disputedComponentCount).toBe(1);
+
+    const withHistory = matchTallyVouchers(secondFile, invoices, [
+      { tallyGuid: 'guid-from-the-first-file', invoiceId: 'a', amount: '10000.00' },
+    ]);
+    expect(withHistory.disputedComponentCount).toBe(0);
+    expect(withHistory.links).toHaveLength(1);
+    expect(withHistory.links[0]?.disputed).toBe(false);
+  });
+
+  it('does not double-count a carried link whose voucher is in this file too', () => {
+    // Re-uploading the SAME file must not add the voucher's value twice
+    // inside its own component, which would manufacture a disagreement
+    // out of an agreement.
+    const vouchers = read({ number: 'P0100081' });
+    const invoices = [
+      invoice({ id: 'a', invoiceNumber: 'P0100081', total: '11800.00' }),
+    ];
+    const guid = vouchers[0]?.guid ?? '';
+    const again = matchTallyVouchers(vouchers, invoices, [
+      { tallyGuid: guid, invoiceId: 'a', amount: '11800.00' },
+    ]);
+    expect(again.disputedComponentCount).toBe(0);
   });
 
   it('tolerates a rupee of rounding between the two systems', () => {

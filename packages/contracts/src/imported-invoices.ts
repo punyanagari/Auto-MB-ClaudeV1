@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { NextCursorSchema } from './pagination.js';
+import { TallyInvoiceLinkSchema } from './tally-invoices.js';
 import {
   DateOnlySchema,
   RateStringSchema,
@@ -195,8 +196,16 @@ export const ImportedInvoiceSchema = Type.Object(
     /** OWNER RULING 21: TallyPrime and Zoho state different figures for
      * this invoice, both are imported, and a disputed figure joins no sum
      * until the owner rules on the row. It is out of the register's
-     * billed total, exactly as a voided invoice is. */
+     * billed total, exactly as a voided invoice is. Stays true after a
+     * ruling — the disagreement happened — and `disputeResolved` is what
+     * says whether it still costs the invoice its place in the total. */
     disputed: Type.Boolean(),
+    /** True once the owner has ruled on every disputed correspondence
+     * this invoice carries. A resolved invoice rejoins the billed total
+     * unless the ruling was that TallyPrime's figure is the right one,
+     * in which case the register's own figure is the one ruled against
+     * and the row stays out — see `TallyDisputeResolutionSchema`. */
+    disputeResolved: Type.Boolean(),
     discardedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
     discardReason: Type.Union([Type.String({ maxLength: 500 }), Type.Null()]),
     importedAt: Type.String({ format: 'date-time' }),
@@ -263,6 +272,9 @@ export const ImportedInvoiceListSchema = Type.Object(
            * screen can say what the sum leaves out rather than leaving
            * the arithmetic to be reverse-engineered. */
           disputedCount: Type.Integer({ minimum: 0 }),
+          /** Of those, how many are still waiting for the owner's ruling.
+           * The difference between the two is the work already done. */
+          disputedUnresolvedCount: Type.Integer({ minimum: 0 }),
           /** The oldest and newest invoice date in the filtered register,
            * so the screen's financial-year filter offers every year the
            * register actually spans rather than only the years the first
@@ -283,6 +295,11 @@ export const ImportedInvoiceDetailSchema = Type.Object(
   {
     invoice: ImportedInvoiceSchema,
     lines: Type.Array(ImportedInvoiceLineSchema),
+    /** The TallyPrime vouchers that correspond to this invoice (0119),
+     * with the evidence that tied each one to it and the owner's ruling
+     * on any figure the two systems disagree about. Empty where Tally has
+     * no record of the invoice. */
+    tallyLinks: Type.Array(TallyInvoiceLinkSchema),
   },
   { additionalProperties: false },
 );

@@ -1,5 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
-import { DateOnlySchema, SignedMoneyStringSchema } from './primitives.js';
+import { DateOnlySchema, SignedMoneyStringSchema, UuidSchema } from './primitives.js';
 
 // --- The Tally ↔ Zoho invoice cross-reference (migration 0119) ----------
 //
@@ -43,6 +43,62 @@ export const TallyInvoiceMatchMethodSchema = Type.Union([
   Type.Literal('manual'),
 ]);
 export type TallyInvoiceMatchMethod = Static<typeof TallyInvoiceMatchMethodSchema>;
+
+/**
+ * The owner's ruling on a value two systems disagree about — ruling 21's
+ * second half, "until the owner rules on that row".
+ *
+ * `zoho_correct` and `accepted_gap` restore the invoice to the register's
+ * billed total. `tally_correct` does NOT, and that is the arm worth
+ * reading twice: the register holds Zoho's figure and cannot hold
+ * Tally's, so restoring the row would put into "what we have billed" the
+ * exact number the owner has just ruled against. Leaving it out
+ * understates the total by an amount that is on the record; putting it
+ * in overstates it by an amount nothing records at all.
+ */
+export const TallyDisputeResolutionSchema = Type.Union([
+  Type.Literal('tally_correct'),
+  Type.Literal('zoho_correct'),
+  Type.Literal('accepted_gap'),
+]);
+export type TallyDisputeResolution = Static<typeof TallyDisputeResolutionSchema>;
+
+/** Recording that ruling. A resolution may be CORRECTED by recording a
+ * different one and never cleared: "this was never ruled on" is not a
+ * state the register can return to once a billed total has been reported
+ * under it. */
+export const ResolveTallyDisputeSchema = Type.Object(
+  { resolution: TallyDisputeResolutionSchema },
+  { additionalProperties: false },
+);
+export type ResolveTallyDispute = Static<typeof ResolveTallyDisputeSchema>;
+
+/** One correspondence, as the register's detail reads it back. */
+export const TallyInvoiceLinkSchema = Type.Object(
+  {
+    id: UuidSchema,
+    tallyGuid: Type.String({ minLength: 1, maxLength: 80 }),
+    voucherType: Type.Union([
+      Type.Literal('Sales'),
+      Type.Literal('Credit Note'),
+      Type.Literal('Debit Note'),
+    ]),
+    voucherDate: DateOnlySchema,
+    voucherNumber: Type.Union([Type.String({ maxLength: 60 }), Type.Null()]),
+    reference: Type.Union([Type.String({ maxLength: 200 }), Type.Null()]),
+    partyLedger: Type.String({ maxLength: 300 }),
+    amount: SignedMoneyStringSchema,
+    matchMethod: TallyInvoiceMatchMethodSchema,
+    matchEvidence: Type.Union([Type.String({ maxLength: 300 }), Type.Null()]),
+    disputed: Type.Boolean(),
+    componentTallyTotal: Type.Union([SignedMoneyStringSchema, Type.Null()]),
+    componentInvoiceTotal: Type.Union([SignedMoneyStringSchema, Type.Null()]),
+    resolution: Type.Union([TallyDisputeResolutionSchema, Type.Null()]),
+    resolvedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type TallyInvoiceLink = Static<typeof TallyInvoiceLinkSchema>;
 
 /** What the upload is being asked to do. `preview` reads, matches and
  * answers; it writes nothing. `commit` does the identical reading and
@@ -100,6 +156,10 @@ export const TallyVoucherProposalSchema = Type.Object(
       Type.Literal('linked'),
       Type.Literal('imported'),
       Type.Literal('already_read'),
+      /** Matched an invoice in an earlier import and matches none now.
+       * Its existing link stands, so it mints no register row — the
+       * double-count a bare "unmatched" reading would have caused. */
+      Type.Literal('previously_linked'),
       Type.Literal('skipped'),
     ]),
     /** Why it was skipped, where it was. */
@@ -164,9 +224,15 @@ export const TallyInvoiceImportResultSchema = Type.Object(
      * by more than a rupee, and the links inside them. */
     disputedComponentCount: Type.Integer({ minimum: 0 }),
     disputedLinkCount: Type.Integer({ minimum: 0 }),
-    /** Sales vouchers no invoice on the register corresponds to — the
-     * pre-Zoho history, which becomes register rows (ruling 23). */
+    /** Sales vouchers no invoice on the register corresponds to AND that
+     * hold no link from an earlier import — the pre-Zoho history, which
+     * becomes register rows (ruling 23). */
     unmatchedCount: Type.Integer({ minimum: 0 }),
+    /** Vouchers that matched something in an earlier import and match
+     * nothing now. Reported rather than passed over: their old link still
+     * stands, so nothing is minted for them, and the usual cause is a
+     * reference edited in TallyPrime or an invoice discarded here. */
+    previouslyLinkedCount: Type.Integer({ minimum: 0 }),
     /** Of those, how many carry a proposed Work through 0115's own
      * propose-and-prove matcher, and how many carry a matched customer. */
     proposedLinkCount: Type.Integer({ minimum: 0 }),

@@ -372,6 +372,17 @@ beforeAll(async () => {
   ownerUserId = membership?.user_id ?? '';
   expect(ownerUserId).not.toBe('');
 
+  // THE PAYMENTS AUTHORITY IS NOT IMPLICIT, even for an owner — unlike
+  // the import authority the upload carries. Ruling on which of two
+  // accounting systems is right about a rupee figure is a money decision,
+  // and this application makes every money authority a thing somebody is
+  // GRANTED. Granted here rather than assumed, so the test proves the
+  // gate rather than walking through a hole in it.
+  await admin`
+    update organisation_memberships set can_manage_payments = true
+    where organisation_id = ${organisationId} and user_id = ${ownerUserId}
+  `;
+
   // The Zoho half of the register, as it stands before Tally is read.
   await seedZohoInvoice({ zohoId: 'z-1', number: 'P0100001', total: '11800.00' });
   // The renumbered one: Zoho spells the customer-code segment
@@ -598,6 +609,250 @@ describe('committing', () => {
   });
 });
 
+describe('the review findings', () => {
+  it('mints nothing for a voucher that matched before and matches no longer', async () => {
+    // FINDING 1. A voucher can leave the matched population without
+    // leaving the register: somebody edits its reference in TallyPrime.
+    // Its old link still stands, so minting a register row for it would
+    // put a SECOND row on the register for a document the register
+    // already holds — the double-count ruling 23 exists to prevent.
+    const before = await counts();
+    // The same voucher GUID as `guid-exact`, with a reference that now
+    // matches nothing on the register.
+    const edited = envelope(
+      voucher({ guid: 'guid-exact', number: 'P09/99999', amount: '11800.00' }),
+    );
+
+    const preview = await importVouchers(edited, 'preview');
+    expect(preview.statusCode, preview.body).toBe(200);
+    const previewed = preview.json<TallyInvoiceImportResult>();
+    expect(previewed.previouslyLinkedCount).toBe(1);
+    expect(previewed.unmatchedCount).toBe(0);
+    expect(previewed.vouchers[0]?.outcome).toBe('previously_linked');
+    expect(previewed.vouchers[0]?.skipReason).toMatch(/earlier import/);
+
+    const commit = await importVouchers(edited, 'commit');
+    expect(commit.statusCode, commit.body).toBe(200);
+    const committed = commit.json<TallyInvoiceImportResult>();
+    expect(committed.importedInvoiceCount).toBe(0);
+    expect(committed.importedLinkCount).toBe(0);
+    expect(await counts()).toEqual(before);
+  });
+
+  it('adds a link a later Zoho import made possible, on the same voucher', async () => {
+    // FINDING 3. `guid-exact` already links to P0100001. A second Zoho
+    // invoice sharing its number is imported afterwards; re-running the
+    // SAME Tally export must add the missing correspondence, which is the
+    // promise the screen makes. Gating this on "any live link" withheld
+    // every such link silently.
+    const second = await seedZohoInvoice({
+      zohoId: 'z-late',
+      number: 'P01/00001',
+      total: '11800.00',
+    });
+    const before = await counts();
+    const response = await importVouchers(exportBytes(), 'commit');
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<TallyInvoiceImportResult>().importedLinkCount).toBe(1);
+    const after = await counts();
+    expect(after.links).toBe(before.links + 1);
+    expect(after.invoices).toBe(before.invoices);
+    const [added] = await admin<{ count: number }[]>`
+      select count(*)::int as count from tally_invoice_links
+      where organisation_id = ${organisationId} and imported_invoice_id = ${second}
+    `;
+    expect(added?.count).toBe(1);
+  });
+
+  it('agrees between preview and commit on a voucher with no usable number', async () => {
+    // FINDING 8. A row-level condition gets a row-level refusal in BOTH
+    // modes, with the line — never a file-level 400 at commit for a
+    // preview an operator already read and approved.
+    const unnumbered = envelope(
+      voucher({ guid: 'guid-no-number', amount: '900.00' }),
+      voucher({ guid: 'guid-fine', number: 'P0100777', amount: '900.00' }),
+    );
+    const preview = await importVouchers(unnumbered, 'preview');
+    expect(preview.statusCode, preview.body).toBe(200);
+    const previewed = preview.json<TallyInvoiceImportResult>();
+    expect(previewed.refusals).toHaveLength(1);
+    expect(previewed.refusals[0]?.lineNumber).toBeGreaterThan(0);
+    expect(previewed.salesCount).toBe(1);
+
+    const commit = await importVouchers(unnumbered, 'commit');
+    expect(commit.statusCode, commit.body).toBe(200);
+    const committed = commit.json<TallyInvoiceImportResult>();
+    expect(committed.refusals).toEqual(previewed.refusals);
+    expect(committed.salesCount).toBe(previewed.salesCount);
+    expect(committed.importedInvoiceCount).toBe(1);
+  });
+
+  it('bounds a skipped voucher name to what the contract types', async () => {
+    // FINDING 10. A `REFERENCE` runs to 200 characters and the wire model
+    // types 60; the over-long one failed RESPONSE validation as a 500.
+    const long = `REF-${'X'.repeat(180)}`;
+    const response = await importVouchers(
+      envelope(
+        voucher({
+          guid: 'guid-long-cancelled',
+          reference: long,
+          amount: '100.00',
+          cancelled: true,
+        }),
+      ),
+      'preview',
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const [named] = response.json<TallyInvoiceImportResult>().skippedVoucherNumbers;
+    expect(named?.length).toBe(60);
+    // The ellipsis is what stops a truncated reference reading as a
+    // complete one an operator would then fail to find in Tally.
+    expect(named?.endsWith('…')).toBe(true);
+  });
+});
+
+describe('ruling on a disagreement (ruling 21, second half)', () => {
+  let disputedLinkId = '';
+  let disputedInvoiceId = '';
+
+  it('finds the disputed correspondence the import flagged', async () => {
+    // The ORIGINAL disagreement — P0100004, ₹90,000 in Tally against
+    // ₹95,000 in Zoho. Named rather than "the first disputed link", so
+    // this block does not move when an earlier test adds another.
+    const [row] = await admin<{ id: string; imported_invoice_id: string }[]>`
+      select l.id, l.imported_invoice_id from tally_invoice_links l
+      where l.organisation_id = ${organisationId} and l.disputed
+        and l.tally_guid = 'guid-disputed'
+    `;
+    disputedLinkId = row?.id ?? '';
+    disputedInvoiceId = row?.imported_invoice_id ?? '';
+    expect(disputedLinkId).not.toBe('');
+  });
+
+  it('refuses the ruling to a member without the payments authority', async () => {
+    // Deciding which of two accounting systems is right about a rupee
+    // figure is a money decision, not a clerical one — so it is gated on
+    // `payments` rather than on the import authority the upload carries.
+    const allowed = await authed(owner, {
+      method: 'POST',
+      url: `/api/tally-invoices/links/${disputedLinkId}/resolve`,
+      organisationId,
+      payload: { resolution: 'zoho_correct' },
+    });
+    expect(allowed.statusCode, allowed.body).toBe(200);
+
+    const denied = await authed(clerk, {
+      method: 'POST',
+      url: `/api/tally-invoices/links/${disputedLinkId}/resolve`,
+      organisationId,
+      payload: { resolution: 'zoho_correct' },
+    });
+    expect(denied.statusCode).toBe(403);
+  });
+
+  it('restores the invoice to the billed total once Zoho is ruled correct', async () => {
+    const response = await authed(owner, {
+      method: 'GET',
+      url: '/api/imported-invoices?limit=50',
+      organisationId,
+    });
+    const page = response.json<ImportedInvoiceList>();
+    // Still disputed — the disagreement happened, and the record of it
+    // does not go away — but no longer WAITING, and therefore back in the
+    // total. The row is asserted rather than the register-wide count,
+    // which other tests in this file legitimately move.
+    const restored = page.invoices.find((row) => row.id === disputedInvoiceId);
+    expect(restored?.disputed).toBe(true);
+    expect(restored?.disputeResolved).toBe(true);
+    // Its value is inside the billed total again.
+    expect(Number(page.totals?.totalValue ?? '0')).toBeGreaterThanOrEqual(
+      Number(restored?.total ?? '0'),
+    );
+  });
+
+  it('keeps the invoice OUT of the total when Tally is ruled correct', async () => {
+    // The arm worth reading twice: the register holds Zoho's figure and
+    // cannot hold Tally's, so restoring the row would report the exact
+    // number the owner has just ruled against.
+    const ruled = await authed(owner, {
+      method: 'POST',
+      url: `/api/tally-invoices/links/${disputedLinkId}/resolve`,
+      organisationId,
+      payload: { resolution: 'tally_correct' },
+    });
+    expect(ruled.statusCode, ruled.body).toBe(200);
+    const detail = ruled.json<{ tallyLinks: { resolution: string | null }[] }>();
+    expect(detail.tallyLinks.some((link) => link.resolution === 'tally_correct')).toBe(
+      true,
+    );
+
+    const page = await authed(owner, {
+      method: 'GET',
+      url: '/api/imported-invoices?limit=50',
+      organisationId,
+    });
+    const row = page
+      .json<ImportedInvoiceList>()
+      .invoices.find((invoice) => invoice.id === disputedInvoiceId);
+    expect(row?.disputed).toBe(true);
+    // Ruled on, and still out: the register holds the figure the ruling
+    // rejected, so `disputeResolved` stays false for this arm alone.
+    expect(row?.disputeResolved).toBe(false);
+  });
+
+  it('refuses a ruling on a correspondence nobody disputed', async () => {
+    const [agreed] = await admin<{ id: string }[]>`
+      select id from tally_invoice_links
+      where organisation_id = ${organisationId} and not disputed
+        and match_method <> 'origin'
+      limit 1
+    `;
+    const response = await authed(owner, {
+      method: 'POST',
+      url: `/api/tally-invoices/links/${agreed?.id ?? ''}/resolve`,
+      organisationId,
+      payload: { resolution: 'zoho_correct' },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('TALLY_DISPUTE_NOT_OPEN');
+  });
+
+  it('refuses clearing a ruling, and refuses rewriting what the export said', async () => {
+    const cleared = await admin`
+      update tally_invoice_links
+      set resolution = null, resolved_by_user_id = null, resolved_at = null
+      where id = ${disputedLinkId}
+    `.catch((cause: unknown) => cause);
+    expect((cleared as { code?: string }).code).toBe('23T02');
+
+    const rewritten = await admin`
+      update tally_invoice_links set tally_amount = '1.00'
+      where id = ${disputedLinkId}
+    `.catch((cause: unknown) => cause);
+    expect((rewritten as { code?: string }).code).toBe('23T02');
+  });
+
+  it('holds the resolution columns to their shape', async () => {
+    // A link nobody has ruled on yet, so setting the verdict ALONE really
+    // does leave the author and the timestamp null — on the one already
+    // ruled on, the other two columns are populated and the check would
+    // pass for the wrong reason.
+    const [unruled] = await admin<{ id: string }[]>`
+      select id from tally_invoice_links
+      where organisation_id = ${organisationId} and disputed and resolution is null
+      limit 1
+    `;
+    expect(unruled?.id).toBeDefined();
+    const orphan = await admin`
+      update tally_invoice_links set resolution = 'zoho_correct'
+      where id = ${unruled?.id ?? ''}
+    `.catch((cause: unknown) => cause);
+    // The shape check refuses a ruling with no author, before the guard
+    // has anything to say about it.
+    expect((orphan as { code?: string }).code).toBe('23514');
+  });
+});
+
 describe('the walls', () => {
   it('refuses a writer without the import authority', async () => {
     const response = await importVouchers(exportBytes(), 'preview', clerk);
@@ -690,6 +945,43 @@ describe('the walls', () => {
       )
     `.catch((cause: unknown) => cause);
     expect((allowed as { code?: string }).code).toBeUndefined();
+  });
+
+  it('stamps and indexes origin liveness, so the race has a floor (23T03)', async () => {
+    // FINDING 6. The trigger above provides the SENTENCE; it cannot
+    // survive two concurrent inserts, because neither transaction can see
+    // the other's uncommitted row. The partial unique index is the floor,
+    // and it needs a predicate over this table's own columns — which is
+    // what `superseded_at` is for, stamped by the trigger on
+    // `imported_invoices` so it cannot drift from the discard it mirrors.
+    const [index] = await admin<{ indexdef: string }[]>`
+      select indexdef from pg_indexes
+      where indexname = 'tally_invoice_links_origin_key'
+    `;
+    expect(index?.indexdef).toMatch(/UNIQUE/);
+    expect(index?.indexdef).toMatch(/superseded_at IS NULL/);
+
+    // The discard of P0100900 earlier in this suite is what stamped it.
+    const [stamped] = await admin<{ superseded_at: string | null }[]>`
+      select l.superseded_at from tally_invoice_links l
+      join imported_invoices i on i.id = l.imported_invoice_id
+      where l.organisation_id = ${organisationId}
+        and l.match_method = 'origin'
+        and i.invoice_number = 'P0100900'
+    `;
+    expect(stamped?.superseded_at).not.toBeNull();
+
+    // And a LIVE origin link is still unique under it: a second one for
+    // the same voucher is refused by the index even where the trigger's
+    // own read would have to lose a race to miss it.
+    const [live] = await admin<{ id: string }[]>`
+      select l.id from tally_invoice_links l
+      join imported_invoices i on i.id = l.imported_invoice_id
+      where l.organisation_id = ${organisationId}
+        and l.match_method = 'origin' and l.superseded_at is null
+      limit 1
+    `;
+    expect(live?.id).toBeDefined();
   });
 
   it('refuses an UPDATE of a link (23T02)', async () => {

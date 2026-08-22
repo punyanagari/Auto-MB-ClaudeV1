@@ -153,7 +153,11 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // a link records what one export said about one correspondence, and it
   // is superseded by a discard on the invoice it points at rather than
   // rewritten — the same posture `imported_invoice_lines` keeps.
-  tally_invoice_links: 'SELECT, INSERT',
+  // UPDATE is COLUMN-SCOPED in 0119 — only the owner's ruling on a
+  // disagreement and the discard's own liveness stamp — but this matrix
+  // records table-level privilege, and the column list is the migration's
+  // to state.
+  tally_invoice_links: 'SELECT, INSERT, UPDATE',
   // The opening billing position of a pre-system Work (0114). Full
   // privileges: an unlocked baseline is a form being filled in, and its
   // guards — not the grant — are what stop a locked one from moving.

@@ -390,13 +390,13 @@ export function HistoricalInvoices({
               {String(totals.tallySourcedCount)}
             </span>{' '}
             came from TallyPrime rather than Zoho. Invoices Zoho voided
-            {totals.disputedCount > 0 ? (
+            {totals.disputedUnresolvedCount > 0 ? (
               <>
                 , and the{' '}
                 <span className="font-mono tabular-nums">
-                  {String(totals.disputedCount)}
+                  {String(totals.disputedUnresolvedCount)}
                 </span>{' '}
-                whose TallyPrime and Zoho figures disagree,
+                whose TallyPrime and Zoho figures disagree and have not been ruled on,
               </>
             ) : null}{' '}
             are on the register and out of that total.
@@ -604,6 +604,20 @@ export function HistoricalInvoices({
                   </span>{' '}
                   would join the register as billing Zoho never held.
                 </p>
+                {tallyPreview.previouslyLinkedCount > 0 && (
+                  <p className="text-[13px] text-muted-foreground">
+                    {/* Reported rather than passed over: these mint nothing,
+                        and the usual cause is a reference edited in
+                        TallyPrime — which an operator can only act on if
+                        the screen says it happened. */}
+                    <span className="font-mono tabular-nums">
+                      {String(tallyPreview.previouslyLinkedCount)}
+                    </span>{' '}
+                    voucher(s) matched an invoice in an earlier import and match none
+                    now. Their existing links stand and no new rows are created; check
+                    whether their numbers changed in TallyPrime.
+                  </p>
+                )}
                 {/* Stated even at zero, every one of them. A count of
                     what could not be used is worth more than a count of
                     what could, and silence reads as absence of the
@@ -825,10 +839,23 @@ export function HistoricalInvoices({
                                 systems disagree about HERE and would mean
                                 something else on a register of disputed
                                 claims, which is exactly the case
-                                `chip.tsx` reserves the override for. */}
-                            <StatusChip status="disputed" tone="warning">
-                              Value disputed
-                            </StatusChip>
+                                `chip.tsx` reserves the override for.
+
+                                A RULED-ON DISAGREEMENT IS NOT THE SAME
+                                STATE as one still waiting, and only the
+                                second is work: the lamp goes neutral once
+                                somebody has decided, and the row's place
+                                in the billed total follows the ruling
+                                rather than the flag. */}
+                            {row.disputeResolved ? (
+                              <StatusChip status="disputed" tone="neutral">
+                                Disagreement ruled on
+                              </StatusChip>
+                            ) : (
+                              <StatusChip status="disputed" tone="warning">
+                                Value disputed
+                              </StatusChip>
+                            )}
                           </div>
                         )}
                       </td>
@@ -846,8 +873,15 @@ export function HistoricalInvoices({
                         </StatusChip>
                         {row.tallyVoucherCount > 0 && (
                           <div className="mt-1 font-mono text-xs text-muted-foreground">
+                            {/* One voucher that TallyPrime numbered is
+                                named; one it did not is still ONE, and
+                                "1 vouchers" is the kind of thing that
+                                teaches an operator the screen was not
+                                read by anybody. */}
                             {row.tallyVoucherNumber ??
-                              `${String(row.tallyVoucherCount)} vouchers`}
+                              `${String(row.tallyVoucherCount)} ${
+                                row.tallyVoucherCount === 1 ? 'voucher' : 'vouchers'
+                              }`}
                           </div>
                         )}
                       </td>

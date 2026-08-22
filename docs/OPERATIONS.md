@@ -561,6 +561,20 @@ In TallyPrime:
    export for **Credit Note** and for **Debit Note**: the import reads
    all three, and it is idempotent, so uploading three files one after
    another is the same as uploading one file holding all three.
+
+   ⚠ **Split by VOUCHER TYPE, never by period.** Splitting by type is
+   safe because only Sales vouchers are reconciled against the invoice
+   register at all. Splitting the SALES export into date ranges is not
+   equivalent: one accounting entry sometimes covers several bills and
+   one bill is sometimes entered as several entries, and the import
+   compares the two systems over the whole group. A narrowed file that
+   carries only part of a group would once have reported the missing
+   part as a disagreement. It no longer does — the import now reconciles
+   against the correspondences the register already holds, so a later
+   file COMPLETES an earlier one — but the whole-period Sales export is
+   still the shape to take, because it is the one that needs no earlier
+   import to have gone right.
+
 4. `Ctrl+E` (Export) → format **XML**, and export.
 5. Upload each file on **Documents → Historical invoices**, in the
    "Bring in a TallyPrime sales voucher export" panel.

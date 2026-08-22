@@ -383,6 +383,7 @@ export function stubApi(overrides: Partial<ApiClient> = {}): ApiClient {
         totalValue: '0.00',
         tallySourcedCount: 0,
         disputedCount: 0,
+        disputedUnresolvedCount: 0,
         earliestDate: null,
         latestDate: null,
       },

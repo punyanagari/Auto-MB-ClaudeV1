@@ -318,6 +318,20 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
   let entryLedger = '';
   let entryAmount: string | null = null;
   let inEntry = false;
+  /**
+   * The depth at which a `BILLALLOCATIONS.LIST` opened, or null when the
+   * scanner is not inside one.
+   *
+   * A bill allocation's `NAME` is a DOCUMENT NUMBER and one of the three
+   * things the matcher reads. `NAME` two levels deep is not: a
+   * `CATEGORYALLOCATIONS.LIST` names a cost category and a
+   * `COSTCENTREALLOCATIONS.LIST` names a cost centre, and both sit at
+   * exactly the same depth. Collecting those fed the matcher strings that
+   * are not document numbers at all — harmless on this company's file,
+   * which has no cost centres, and a false link waiting on any file that
+   * does.
+   */
+  let billAllocationDepth: number | null = null;
   /** The voucher declared more accounting legs than this reader keeps. Its
    * VALUE would then be read off a truncated set — see `closeEntry`. */
   let tooManyEntries = false;
@@ -407,6 +421,32 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
     if (partyLedger.length === 0 && !stripped) {
       refuse(
         'This voucher names no party ledger, so there is no customer to file it under.',
+      );
+      return;
+    }
+    // A LIVE SALES VOUCHER WITH NO DOCUMENT NUMBER ANYWHERE IS REFUSED
+    // HERE, which is what makes the preview and the commit agree.
+    //
+    // Such a voucher matches nothing — the matcher reads exactly these
+    // three fields — so it would become a register row, and
+    // `invoice_number` on that register is NOT NULL because a billing
+    // record with no number is not a record of anything. The route used
+    // to discover this at COMMIT and answer a file-level 400, so a
+    // preview an operator had read and approved could be followed by a
+    // refusal that wrote nothing and named no voucher. A row-level
+    // condition gets a row-level refusal, in both modes, with the line.
+    //
+    // Cancelled and optional vouchers keep their exemption: TallyPrime
+    // strips their numbers too, and they become nothing.
+    if (
+      !stripped &&
+      voucherType === 'Sales' &&
+      voucherNumber.length === 0 &&
+      reference.length === 0 &&
+      billReferences.length === 0
+    ) {
+      refuse(
+        'This sales voucher carries no voucher number, no reference and no bill allocation, so there is no invoice number to file it under.',
       );
       return;
     }
@@ -516,6 +556,7 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
       billReferences = [];
       sourceFields = {};
       inEntry = false;
+      billAllocationDepth = null;
       tooManyEntries = false;
       entryLedger = '';
       entryAmount = null;
@@ -574,7 +615,8 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
         else if (tag === 'AMOUNT' && entryAmount === null) {
           entryAmount = exactRupees(value);
         }
-      } else if (depth >= 2 && tag === 'NAME' && value.length > 0) {
+      } else if (billAllocationDepth !== null && tag === 'NAME' && value.length > 0) {
+        // INSIDE A BILL ALLOCATION ONLY. See `billAllocationDepth`.
         if (billReferences.length < MAX_MATCH_KEYS) billReferences.push(value);
       }
       continue;
@@ -600,11 +642,20 @@ export function readTallyVouchers(bytes: Buffer): TallyVoucherRead {
         entryLedger = '';
         entryAmount = null;
       }
+      // The bill-allocation context the NAME arm reads. Recorded as the
+      // depth it opened at so the close below can end it exactly, rather
+      // than as a boolean a nested list would clear early.
+      if (billAllocationDepth === null && tag === 'BILLALLOCATIONS.LIST') {
+        billAllocationDepth = depth;
+      }
       depth += 1;
       continue;
     }
     if (CLOSE_TAG.test(line) && depth > 0) {
       depth -= 1;
+      if (billAllocationDepth !== null && depth <= billAllocationDepth) {
+        billAllocationDepth = null;
+      }
       continue;
     }
     // Everything left that OPENS a tag and carries text after it is a
@@ -655,6 +706,27 @@ export interface RegisterInvoice {
   readonly customerName: string;
   readonly customerGstin: string | null;
   readonly total: string;
+}
+
+/**
+ * A correspondence the register ALREADY holds, from an earlier import.
+ *
+ * It joins the reconciliation and becomes no new link. Without it a
+ * second file CONTRADICTS the first instead of completing it: a
+ * period-narrowed Sales export carrying one of the three vouchers that
+ * cover an invoice would sum that voucher alone against the invoice's
+ * whole total and report a disagreement of the missing two thirds — a
+ * false dispute, on a real invoice, produced by the operator following
+ * `docs/OPERATIONS.md`'s own instruction to upload more than one file.
+ *
+ * Feeding the existing links back in makes the component the union of
+ * what every import has seen, so the second file completes the picture.
+ */
+export interface ExistingTallyLink {
+  readonly tallyGuid: string;
+  readonly invoiceId: string;
+  /** The voucher's value as the earlier import recorded it. */
+  readonly amount: string;
 }
 
 export type TallyMatchMethod = 'exact_number' | 'serial_tolerant';
@@ -751,6 +823,7 @@ function agreesWithinARupee(left: string, right: string): boolean {
 export function matchTallyVouchers(
   vouchers: readonly TallyVoucher[],
   invoices: readonly RegisterInvoice[],
+  existing: readonly ExistingTallyLink[] = [],
 ): TallyMatchResult {
   const byNumber = new Map<string, RegisterInvoice[]>();
   const bySerial = new Map<string, { invoice: RegisterInvoice; prefix: string }[]>();
@@ -858,6 +931,19 @@ export function matchTallyVouchers(
   for (const pair of pairs) {
     link(`v:${pair.voucher.guid}`, `i:${pair.invoice.id}`);
   }
+  // THE CORRESPONDENCES THE REGISTER ALREADY HOLDS join the graph before
+  // any sum is taken. See `ExistingTallyLink`: without them a second,
+  // narrower file reports the invoices it half-covers as disagreeing by
+  // whatever the first file already accounted for.
+  //
+  // A link whose voucher is IN THIS FILE is dropped rather than added
+  // twice — the file's own reading of that voucher is the current one,
+  // and adding both would double its value inside the component.
+  const inThisFile = new Set(vouchers.map((voucher) => voucher.guid));
+  const carried = existing.filter((entry) => !inThisFile.has(entry.tallyGuid));
+  for (const entry of carried) {
+    link(`v:${entry.tallyGuid}`, `i:${entry.invoiceId}`);
+  }
 
   interface Component {
     readonly vouchers: Map<string, string>;
@@ -873,6 +959,23 @@ export function matchTallyVouchers(
     }
     component.vouchers.set(pair.voucher.guid, pair.voucher.amount);
     component.invoices.set(pair.invoice.id, pair.invoice.total);
+  }
+  // The carried links contribute their voucher's value and their
+  // invoice's total to whichever component they landed in. An invoice
+  // reached ONLY by a carried link forms a component of its own, which is
+  // right: the two systems' figures for it are still being compared, and
+  // a file that says nothing about it changes nothing about it.
+  const invoiceTotals = new Map(invoices.map((invoice) => [invoice.id, invoice.total]));
+  for (const entry of carried) {
+    const root = find(`v:${entry.tallyGuid}`);
+    let component = components.get(root);
+    if (component === undefined) {
+      component = { vouchers: new Map(), invoices: new Map() };
+      components.set(root, component);
+    }
+    component.vouchers.set(entry.tallyGuid, entry.amount);
+    const total = invoiceTotals.get(entry.invoiceId);
+    if (total !== undefined) component.invoices.set(entry.invoiceId, total);
   }
 
   const verdicts = new Map<

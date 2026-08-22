@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
   type ErrorCode,
+  ImportedInvoiceDetailSchema,
+  ResolveTallyDisputeSchema,
   TallyInvoiceImportResultSchema,
   TallyInvoiceUploadQuerySchema,
   type TallyVoucherProposal,
@@ -8,7 +10,7 @@ import {
 import type { Sql, TransactionSql } from '@auto-mb/db';
 import type { AppInstance } from '../app-instance.js';
 import type { Auth } from '../auth.js';
-import { hasFullWorkScope } from '../authz.js';
+import { assertWorkAccess, hasFullWorkScope } from '../authz.js';
 import { httpError } from '../http.js';
 import type { MalwareScanner } from '../malware-scan.js';
 import { TallyImportError } from '../tally-scan.js';
@@ -32,7 +34,14 @@ import {
   matchIndexedContact,
   proposeWorkLink,
 } from '../zoho-invoices.js';
-import { audit, errorResponses, requireTrimmed, writeRefusals } from './shared.js';
+import { readImportedInvoiceDetail } from './imported-invoices.js';
+import {
+  IdParamsSchema,
+  audit,
+  errorResponses,
+  requireTrimmed,
+  writeRefusals,
+} from './shared.js';
 
 /**
  * The Tally ↔ Zoho invoice cross-reference (migration 0119) — wave T2 of
@@ -152,6 +161,12 @@ const DATABASE_REFUSALS: Record<string, readonly [ErrorCode, string]> = {
 };
 
 const rethrowWriteRefusal = writeRefusals(DATABASE_REFUSALS);
+
+/** Cut to a column's width, with an ellipsis where anything was lost, so
+ * a truncated value never reads as a complete one. */
+function ellipsised(value: string, limit: number): string {
+  return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
+}
 
 /** How many rows one insert statement carries. The driver builds one
  * placeholder per value and a thousand rows times twenty columns is well
@@ -356,8 +371,6 @@ export function registerTallyInvoiceRoutes(
           (voucher) => !voucher.cancelled && !voucher.optional,
         );
 
-        const matched = matchTallyVouchers(live, candidates);
-
         // What a previous import of this export already dealt with. Keyed
         // on the voucher GUID and narrowed to links whose invoice is
         // LIVE, which is the same reading the register's own idempotency
@@ -373,20 +386,37 @@ export function registerTallyInvoiceRoutes(
           where l.tally_guid = any(${tx.array(guids)}::text[])
             and i.discarded_at is null
         `;
+        // EVERY LIVE CORRESPONDENCE THE REGISTER HOLDS, not only the ones
+        // this file names. The matcher reconciles by connected component,
+        // and a component is only meaningful over ALL the vouchers that
+        // cover an invoice — so a narrower second file has to be able to
+        // see what the first one already accounted for, or it reports the
+        // part it cannot see as a disagreement. `ExistingTallyLink` in
+        // `tally-vouchers.ts` carries the argument in full.
+        const carriedLinks = await tx<
+          { tally_guid: string; imported_invoice_id: string; tally_amount: string }[]
+        >`
+          select l.tally_guid, l.imported_invoice_id, l.tally_amount
+          from tally_invoice_links l
+          join imported_invoices i
+            on i.organisation_id = l.organisation_id and i.id = l.imported_invoice_id
+          where i.discarded_at is null and l.match_method <> 'origin'
+        `;
+
+        const matched = matchTallyVouchers(
+          live,
+          candidates,
+          carriedLinks.map((row) => ({
+            tallyGuid: row.tally_guid,
+            invoiceId: row.imported_invoice_id,
+            amount: row.tally_amount,
+          })),
+        );
         const heldOrigin = new Set(
           held
             .filter((row) => row.match_method === 'origin')
             .map((row) => row.tally_guid),
         );
-        // ANY live link at all, of either kind, and that is what makes the
-        // second import of a growing history safe. A voucher this route
-        // once brought in as its own register row may MATCH a Zoho
-        // invoice on a later run, because the Zoho import ran in between —
-        // and writing the match then would leave the register holding two
-        // rows for one document, which is the exact outcome ruling 23
-        // exists to prevent. It is skipped instead; the remedy is to
-        // discard the Tally-sourced row, which the register already
-        // supports and which frees the voucher on the next import.
         const heldAny = new Set(held.map((row) => row.tally_guid));
 
         const works = await candidateWorks(tx, user.id);
@@ -398,11 +428,42 @@ export function registerTallyInvoiceRoutes(
 
         /* --- what each voucher would do ------------------------------- */
 
+        /* THE TWO GATES ARE DIFFERENT, and inverting either one is a
+           defect. What each is protecting is not the same thing:
+
+           MINTING A REGISTER ROW is gated on ANY live link, because a
+           voucher that already corresponds to something on the register
+           must never also become a row of its own. A voucher can leave
+           the matched population without leaving the register: somebody
+           edits its reference in Tally, or the Zoho invoice it matched is
+           discarded, and the next import finds it unmatched while its old
+           link still stands. Minting then would put a second row on the
+           register for a document the register already holds — the exact
+           double-count ruling 23 exists to prevent. Such a voucher is
+           reported instead (`previouslyLinkedCount`), because it is a
+           real thing an operator should look at rather than a silence.
+
+           WRITING A MATCH LINK is gated on the ORIGIN links only, which
+           is the one hazard that was ever argued: a voucher that sourced
+           its own register row must not also be tied to a Zoho invoice,
+           or the register holds two rows for one document from the other
+           direction. Everything else is admitted, and that is what makes
+           the promise on the screen true — "uploading the same file again
+           adds what is missing and changes nothing else". A voucher that
+           matched invoice A last month and matches A and B today gets its
+           B link; the A pair collides on the unique index and is a no-op.
+           Gating this on `heldAny` silently withheld every such link. */
         const freshLinks = matched.links.filter(
-          (link) => !heldAny.has(link.voucher.guid),
+          (link) => !heldOrigin.has(link.voucher.guid),
         );
         const freshOrigins = matched.unmatched.filter(
-          (voucher) => !heldOrigin.has(voucher.guid),
+          (voucher) => !heldAny.has(voucher.guid),
+        );
+        /** Unmatched in THIS file, and still linked to something on the
+         * register from an earlier one. Neither imported nor linked, and
+         * named in the report rather than passed over in silence. */
+        const previouslyLinked = matched.unmatched.filter((voucher) =>
+          heldAny.has(voucher.guid),
         );
         const judged = freshOrigins.map((voucher) => ({
           voucher,
@@ -482,20 +543,15 @@ export function registerTallyInvoiceRoutes(
               raw_row: tx.json(voucher.sourceFields as never),
               imported_by_user_id: user.id,
             }));
-            // A voucher with neither a number nor a reference cannot
-            // become a register row: `invoice_number` is NOT NULL and a
-            // billing record with no number is not a record of anything.
-            // The reader proved every real voucher carries one, so this
-            // is the backstop rather than the path.
-            const numbered = invoiceRows.filter((row) => row.invoice_number.length > 0);
-            if (numbered.length !== invoiceRows.length) {
-              throw httpError(
-                400,
-                'TALLY_VOUCHERS_UNREADABLE',
-                `${String(invoiceRows.length - numbered.length)} voucher(s) in this export carry neither a voucher number nor a reference, so there is no invoice number to file them under.`,
-              );
-            }
-
+            // NO FILE-LEVEL REFUSAL HERE, and its absence is the fix.
+            // A live sales voucher with no document number anywhere is
+            // refused by the READER, per voucher, with its line — so the
+            // preview and the commit see the same population and reach
+            // the same outcome. This route used to discover the condition
+            // at commit and answer a 400 for the whole file, which meant
+            // an operator could read and approve a preview and then be
+            // refused by a row-level problem that named no row.
+            const numbered = invoiceRows;
             numberedIds.push(...numbered.map((row) => row.id));
 
             for (let index = 0; index < numbered.length; index += CHUNK) {
@@ -664,9 +720,6 @@ export function registerTallyInvoiceRoutes(
         const invoiceNumberById = new Map(
           registerRows.map((row) => [row.id, row.invoice_number]),
         );
-        const unmatchedGuids = new Set(
-          matched.unmatched.map((voucher) => voucher.guid),
-        );
 
         const vouchers: TallyVoucherProposal[] = read.vouchers.map((voucher) => {
           const base = {
@@ -711,7 +764,12 @@ export function registerTallyInvoiceRoutes(
           if (link !== undefined) {
             return {
               ...base,
-              outcome: heldAny.has(voucher.guid)
+              // `heldOrigin` is the gate the link write uses, so it is
+              // the gate the outcome has to report — a voucher already
+              // holding a match link still gets any NEW match written,
+              // and calling that "already read" would contradict the row
+              // the commit goes on to insert.
+              outcome: heldOrigin.has(voucher.guid)
                 ? ('already_read' as const)
                 : ('linked' as const),
               skipReason: null,
@@ -723,14 +781,47 @@ export function registerTallyInvoiceRoutes(
               disputed: link.disputed,
             };
           }
+          // Unmatched in this file. Three ways that happens, and they are
+          // different things to an operator.
+          if (heldOrigin.has(voucher.guid)) {
+            return {
+              ...base,
+              outcome: 'already_read' as const,
+              skipReason: null,
+              matchMethod: 'origin' as const,
+              matchEvidence: null,
+              invoiceNumber: null,
+              componentTallyTotal: null,
+              componentInvoiceTotal: null,
+              disputed: false,
+            };
+          }
+          if (heldAny.has(voucher.guid)) {
+            // MATCHED ONCE, NOT NOW. Its old link still stands, so it
+            // mints nothing — see the gate comment above. Worth a
+            // sentence rather than a silence: somebody edited a reference
+            // in TallyPrime, or the invoice it matched was discarded.
+            return {
+              ...base,
+              outcome: 'previously_linked' as const,
+              // Bounded by the contract's 200 characters, which an
+              // earlier draft of this sentence exceeded — and a response
+              // that fails its own schema is a 500 with nothing named.
+              skipReason:
+                'Matched an invoice in an earlier import and matches none now; its existing link stands and no row is created. Check whether its number changed in TallyPrime.',
+              matchMethod: null,
+              matchEvidence: null,
+              invoiceNumber: null,
+              componentTallyTotal: null,
+              componentInvoiceTotal: null,
+              disputed: false,
+            };
+          }
           return {
             ...base,
-            outcome:
-              unmatchedGuids.has(voucher.guid) && heldOrigin.has(voucher.guid)
-                ? ('already_read' as const)
-                : ('imported' as const),
+            outcome: 'imported' as const,
             skipReason: null,
-            matchMethod: heldOrigin.has(voucher.guid) ? ('origin' as const) : null,
+            matchMethod: null,
             matchEvidence: null,
             invoiceNumber: null,
             componentTallyTotal: null,
@@ -756,11 +847,18 @@ export function registerTallyInvoiceRoutes(
           // party, so half the real ones have nothing but a reference and
           // some have not even that. The date is what is left, and it is
           // what an operator opens the Day Book at.
-          skippedVoucherNumbers: skipped.map(
-            (voucher) =>
+          // BOUNDED TO SIXTY, because that is what the contract types and
+          // a `REFERENCE` runs to two hundred: an over-long one failed
+          // RESPONSE validation as a 500 with nothing naming the file.
+          // The ellipsis is what stops a truncated reference reading as a
+          // complete one an operator would then fail to find in Tally.
+          skippedVoucherNumbers: skipped.map((voucher) =>
+            ellipsised(
               voucher.voucherNumber ??
-              voucher.reference ??
-              `(unnumbered, ${voucher.date})`,
+                voucher.reference ??
+                `(unnumbered, ${voucher.date})`,
+              60,
+            ),
           ),
           exactMatchCount: matched.links.filter((l) => l.method === 'exact_number')
             .length,
@@ -769,7 +867,8 @@ export function registerTallyInvoiceRoutes(
           serialCollisionCount: matched.serialCollisions,
           disputedComponentCount: matched.disputedComponentCount,
           disputedLinkCount: matched.links.filter((link) => link.disputed).length,
-          unmatchedCount: matched.unmatched.length,
+          unmatchedCount: freshOrigins.length,
+          previouslyLinkedCount: previouslyLinked.length,
           proposedLinkCount: judged.filter(({ proposal }) => proposal !== null).length,
           matchedContactCount: judged.filter(({ contact }) => contact !== null).length,
           // The other half of the reconciliation: invoices this file has
@@ -788,6 +887,123 @@ export function registerTallyInvoiceRoutes(
           vouchers,
           refusals: read.refusals.map((refusal) => ({ ...refusal })),
         };
+      });
+    },
+  );
+
+  /* --- ruling on a disagreement (ruling 21's second half) ---------------- */
+
+  tenantRoute(
+    {
+      method: 'POST',
+      url: '/api/tally-invoices/links/:id/resolve',
+      schema: {
+        params: IdParamsSchema,
+        body: ResolveTallyDisputeSchema,
+        response: { 200: ImportedInvoiceDetailSchema, ...errorResponses },
+      },
+      role: 'writer',
+      // THE PAYMENTS AUTHORITY, NOT THE IMPORT ONE, and the distinction is
+      // the whole reason this route is separate from the import above.
+      // Pointing a file at a register is a clerical act; deciding which of
+      // two accounting systems is right about a rupee figure — and thereby
+      // what this organisation reports as having billed — is a money
+      // decision, which is what `canManagePayments` gates everywhere else
+      // in this application.
+      authority: 'payments',
+    },
+    async ({ request, user, organisationId, tenant }) => {
+      const { id } = request.params;
+      const { resolution } = request.body;
+      return await tenant(async (tx) => {
+        // Locked before it is read, so a concurrent ruling cannot land
+        // between the two — `imported-invoices.ts` takes the same order
+        // for the same reason.
+        const [locked] = await tx<{ id: string }[]>`
+          select id from tally_invoice_links where id = ${id} for update
+        `;
+        if (!locked) {
+          throw httpError(
+            404,
+            'TALLY_INVOICE_LINK_NOT_FOUND',
+            'No such Tally correspondence.',
+          );
+        }
+        const [link] = await tx<
+          {
+            imported_invoice_id: string;
+            disputed: boolean;
+            resolution: string | null;
+            discarded_at: string | null;
+          }[]
+        >`
+          select l.imported_invoice_id, l.disputed, l.resolution, i.discarded_at
+          from tally_invoice_links l
+          join imported_invoices i
+            on i.organisation_id = l.organisation_id and i.id = l.imported_invoice_id
+          where l.id = ${id}
+        `;
+        if (!link) {
+          throw httpError(
+            404,
+            'TALLY_INVOICE_LINK_NOT_FOUND',
+            'No such Tally correspondence.',
+          );
+        }
+        if (link.discarded_at !== null) {
+          throw httpError(
+            409,
+            'IMPORTED_INVOICE_DISCARDED',
+            'The historical invoice this correspondence names was discarded, so there is no figure left to rule on.',
+          );
+        }
+        // A RULING ON A LINK NOBODY DISPUTED is a ruling on nothing, and
+        // it would move an invoice into or out of the billed total on the
+        // strength of a decision about a disagreement that never existed.
+        // 0119's own CHECK refuses it too; this is the sentence.
+        if (!link.disputed) {
+          throw httpError(
+            409,
+            'TALLY_DISPUTE_NOT_OPEN',
+            'TallyPrime and Zoho agree about this correspondence, so there is nothing to rule on.',
+          );
+        }
+        // The invoice's Work, if it has one, is the scope this member
+        // must already hold — the same check every other act on a
+        // historical invoice makes.
+        const [invoice] = await tx<{ work_id: string | null }[]>`
+          select work_id from imported_invoices where id = ${link.imported_invoice_id}
+        `;
+        if (invoice?.work_id != null) {
+          await assertWorkAccess(tx, user.id, invoice.work_id);
+        }
+
+        await tx`
+          update tally_invoice_links
+          set resolution = ${resolution},
+              resolved_by_user_id = ${user.id},
+              resolved_at = now()
+          where id = ${id}
+        `.catch(rethrowWriteRefusal);
+
+        await audit(
+          tx,
+          organisationId,
+          user.id,
+          'tally_invoice_link.resolved',
+          'tally_invoice_links',
+          id,
+          {
+            resolution,
+            previousResolution: link.resolution,
+            importedInvoiceId: link.imported_invoice_id,
+            // Whether this ruling puts the invoice back into the billed
+            // total, recorded because it is the consequence somebody will
+            // be asked about later.
+            restoresToTotal: resolution !== 'tally_correct',
+          },
+        );
+        return await readImportedInvoiceDetail(tx, link.imported_invoice_id);
       });
     },
   );

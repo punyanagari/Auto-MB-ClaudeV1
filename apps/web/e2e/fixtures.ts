@@ -1333,10 +1333,8 @@ const IMPORTED_INVOICE_REGISTER = {
       // Voided, and still carrying the IRN it was registered under — which
       // is why the chip cannot be derived from the IRN alone.
       ['ZB-2025-0233', '2025-02-27', true, null],
-      // Read from TallyPrime rather than Zoho (0119), and carrying a value
-      // the two systems disagree about — so the scan draws BOTH lamps this
-      // wave adds, and the register's own sentence about what its total
-      // leaves out has something to leave out.
+      // Read from TallyPrime rather than Zoho (0119): billing Zoho never
+      // held, so it carries no Zoho id and no sub-total.
       ['TP-2021-0007', '2021-06-18', false, null],
     ] as const
   ).map(([invoiceNumber, invoiceDate, issued, workId], index) => ({
@@ -1378,9 +1376,19 @@ const IMPORTED_INVOICE_REGISTER = {
     // second names two vouchers — which is why the cell says how many
     // instead of naming one of them.
     tallyVoucherCount: index === 0 ? 1 : index === 1 ? 2 : index === 3 ? 1 : 0,
+    // The FOURTH row's single voucher is its own origin and TallyPrime
+    // numbered it; the FIRST row's is a match. The second names two, which
+    // is why that cell says how many instead of naming one of them.
     tallyVoucherNumber:
       index === 0 ? 'PL270/0041' : index === 3 ? 'TP-2021-0007' : null,
-    disputed: index === 3,
+    // DISPUTED SITS ON THE ZOHO-SOURCED ROW, and it has to: a
+    // Tally-sourced row's only correspondence is its `origin` link, and
+    // 0119's own CHECK refuses a disputed origin — there is no second
+    // figure for it to disagree with. Putting the lamp on the Tally row
+    // drew a state the database cannot hold, which is a fixture teaching
+    // the scan about a screen that can never exist.
+    disputed: index === 0,
+    disputeResolved: false,
     discardedAt: null,
     discardReason: null,
     importedAt: '2026-08-21T05:00:00.000Z',
@@ -1389,12 +1397,13 @@ const IMPORTED_INVOICE_REGISTER = {
   totals: {
     invoiceCount: 4,
     linkedCount: 1,
-    // The third row is a Zoho void and the fourth is disputed, and the
-    // server leaves both out of this figure: two invoices' worth, not
-    // four.
+    // The third row is a Zoho void and the first carries an unresolved
+    // disagreement, and the server leaves both out of this figure: two
+    // invoices' worth, not four.
     totalValue: '434240.00',
     tallySourcedCount: 1,
     disputedCount: 1,
+    disputedUnresolvedCount: 1,
     earliestDate: '2021-06-18',
     latestDate: '2025-02-27',
   },
