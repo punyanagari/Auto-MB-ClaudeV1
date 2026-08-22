@@ -7,7 +7,11 @@ import {
   type GstBasis,
 } from '@auto-mb/contracts';
 import type { Sql } from '@auto-mb/db';
-import { executedPercent, portfolioExecutedPercent } from '../executed-value.js';
+import {
+  executedPercent,
+  portfolioExecutedPercent,
+  toTaxableBasis,
+} from '../executed-value.js';
 import { paiseText, toPaise } from '../money.js';
 import type { Auth } from '../auth.js';
 import { hasFullWorkScope } from '../authz.js';
@@ -116,6 +120,10 @@ interface BillingMonthRow extends Record<string, unknown> {
   month: string;
   billed: string;
   received: string;
+  /** The organisation-wide earliest billing month, repeated on every
+   * row because it is a property of the organisation and not of the
+   * month. Null when nothing has been billed or received at all. */
+  billing_since: string | null;
 }
 
 /** One Work whose LOA letter demands a PBG (works.pbg_required_amount is
@@ -134,6 +142,31 @@ interface PbgRequirementRow extends Record<string, unknown> {
   active_amount: string;
   under_required: boolean;
 }
+
+/**
+ * The organisation's own calendar day, as `routes/mis.ts` reads it.
+ *
+ * NOT `current_date`, which is the DATABASE SESSION's day and is UTC on
+ * every deployment this product has. An agency in IST crosses midnight
+ * five and a half hours before the session does, so between 18:30 and
+ * 00:00 IST every countdown on this screen was a day long: a guarantee
+ * expiring tomorrow read as expiring in two days, and a completion date
+ * that had arrived read as one day away. A legal date is decided by the
+ * calendar the contract is performed under (AGENTS.md rule 6), and the
+ * organisation carries its own (`organisations.timezone`, migration
+ * 0001, default `Asia/Kolkata`).
+ *
+ * Joined rather than inlined so one statement cannot read a different
+ * "today" in two of its own branches — the deadline spine unions three
+ * sources and every one of them has to answer to the same day.
+ */
+const TODAY_CTE = `
+  today as (
+    select (now() at time zone o.timezone)::date as day
+    from organisations o
+    where o.id = app_private.current_organisation_id()
+  )
+`;
 
 /**
  * The Works a member may see: everything for full scope, the assigned
@@ -271,7 +304,8 @@ export const DASHBOARD_PBG_SQL = `
  * exactly what production runs.
  */
 export const DASHBOARD_ACTIVE_EXECUTION_SQL = `
-  with ${VISIBLE_WORKS_CTE},
+  with ${TODAY_CTE},
+  ${VISIBLE_WORKS_CTE},
   installed as (
     select i.work_id, sum(i.quantity * wi.effective_rate) as total
     from installations i
@@ -287,8 +321,9 @@ export const DASHBOARD_ACTIVE_EXECUTION_SQL = `
     v.id as work_id,
     coalesce(installed.total, 0)::numeric(18,2)::text as installed_value,
     v.current_completion_date::text as due_on,
-    (v.current_completion_date - current_date)::text as due_in_days
+    (v.current_completion_date - today.day)::text as due_in_days
   from visible v
+  cross join today
   left join installed on installed.work_id = v.id
   where v.status = 'active'
   -- The order the screen draws in: nearest deadline first, and a Work
@@ -316,44 +351,83 @@ export const DASHBOARD_ACTIVE_EXECUTION_SQL = `
  * the alert list and the completion panel both state in words.
  */
 export const DASHBOARD_DEADLINES_SQL = `
-  with ${VISIBLE_WORKS_CTE},
+  with ${TODAY_CTE},
+  ${VISIBLE_WORKS_CTE},
   spine as (
     select
       'completion' as kind, v.id as work_id, v.work_code,
       'Completion' as label, v.current_completion_date as due_on
     from visible v
+    cross join today
     where v.status = 'active'
       and v.current_completion_date is not null
       and v.current_completion_date
-            between current_date and current_date + $3::int
+            between today.day and today.day + $3::int
     union all
     select
       'instrument', wi.work_id, v.work_code,
       upper(wi.kind) || ' ' || wi.reference, wi.expires_on
     from work_instruments wi
     join visible v on v.id = wi.work_id
+    cross join today
     where wi.status = 'active'
-      and wi.expires_on between current_date and current_date + $3::int
+      and wi.expires_on between today.day and today.day + $3::int
     union all
     select
       'defect_liability', iw.work_id, v.work_code,
       'Defect liability', min(iw.dlp_expires_on)
     from installation_warranties iw
     join visible v on v.id = iw.work_id
+    cross join today
     where iw.status = 'active'
-      and iw.dlp_expires_on between current_date and current_date + $3::int
+      and iw.dlp_expires_on between today.day and today.day + $3::int
     group by iw.work_id, v.work_code
   )
   select
-    kind,
-    work_id,
-    work_code,
-    label,
-    due_on::text as due_on,
-    (due_on - current_date)::text as due_in_days
+    spine.kind,
+    spine.work_id,
+    spine.work_code,
+    spine.label,
+    spine.due_on::text as due_on,
+    (spine.due_on - today.day)::text as due_in_days
   from spine
-  order by due_on asc, work_code asc, label asc
+  cross join today
+  order by spine.due_on asc, spine.work_code asc, spine.label asc
   limit $4::int
+`;
+
+/**
+ * Active Works reaching their completion date inside the panel's window,
+ * soonest first, measured against the organisation's own calendar day.
+ *
+ * Read to the PANEL's sixty-day horizon and alerted on at the thirty-day
+ * one, in ONE statement rather than two: the wider set contains the
+ * narrower one exactly, and two reads of the same table could disagree
+ * across a midnight. `$3` is the horizon in days.
+ *
+ * A plain statement rather than a tagged template because it needs the
+ * shared `today` CTE, and postgres.js parameterises everything
+ * interpolated into a template — a CTE is text, not a value.
+ */
+export const DASHBOARD_COMPLETIONS_SQL = `
+  with ${TODAY_CTE}
+  select
+    w.id as work_id,
+    w.work_code,
+    w.title,
+    w.current_completion_date::text as due_on,
+    (w.current_completion_date - today.day)::text as due_in_days
+  from works w
+  cross join today
+  where w.deleted_at is null
+    and w.status = 'active'
+    and w.current_completion_date is not null
+    and w.current_completion_date <= today.day + $3::int
+    and ($1::boolean or exists (
+      select 1 from work_assignments wa
+      where wa.work_id = w.id and wa.user_id = $2
+    ))
+  order by w.current_completion_date asc
 `;
 
 /**
@@ -381,58 +455,91 @@ export const DASHBOARD_DEADLINES_SQL = `
  * seeing a shorter year.
  */
 export const DASHBOARD_MONTHLY_BILLING_SQL = `
-  with ${VISIBLE_WORKS_CTE},
+  with ${TODAY_CTE},
+  ${VISIBLE_WORKS_CTE},
   window_start as (
-    select (date_trunc('month', current_date)
+    select (date_trunc('month', today.day)
             - make_interval(months => $3::int - 1))::date as first_day
+    from today
   ),
   months as (
-    select to_char(day, 'YYYY-MM') as month
-    from window_start,
+    -- Aliased month_day rather than day: the today CTE already owns that
+    -- name here, and an unqualified one is ambiguous.
+    select to_char(month_day, 'YYYY-MM') as month
+    from today, window_start,
       generate_series(
         window_start.first_day,
-        date_trunc('month', current_date)::date,
+        date_trunc('month', today.day)::date,
         interval '1 month'
-      ) as day
+      ) as month_day
   ),
-  invoiced as (
-    select to_char(ti.invoice_date, 'YYYY-MM') as month,
-           sum(ti.total_amount) as total
+  -- Every invoice the caller may see, WORK-BACKED OR DIRECT. A direct
+  -- invoice (migration 0039) belongs to no Work, so there is no
+  -- assignment to check and only a full-scope member may be shown one:
+  -- a member limited to their Works has no claim on the organisation's
+  -- private-customer billing, and silently adding it to their chart
+  -- would leak a total they are not scoped to.
+  visible_invoices as (
+    select ti.invoice_date, ti.total_amount
     from tax_invoices ti
-    join visible v on v.id = ti.work_id
-    cross join window_start
+    left join visible v on v.id = ti.work_id
     where ti.status in ('submitted', 'superseded')
-      and ti.invoice_date >= window_start.first_day
-    group by 1
+      and (v.id is not null or (ti.work_id is null and $1::boolean))
   ),
-  credited as (
-    select to_char(cn.note_date, 'YYYY-MM') as month,
-           sum(cn.total_amount) as total
+  visible_notes as (
+    select cn.note_date, cn.total_amount
     from credit_notes cn
-    join visible v on v.id = cn.work_id
-    cross join window_start
+    left join visible v on v.id = cn.work_id
     where cn.status = 'issued'
-      and cn.note_date >= window_start.first_day
-    group by 1
+      and (v.id is not null or (cn.work_id is null and $1::boolean))
   ),
-  received as (
-    select to_char(p.received_on, 'YYYY-MM') as month,
-           sum(p.received_amount) as total
+  visible_receipts as (
+    select p.received_on, p.received_amount
     from bill_payments p
     join bills b
       on b.organisation_id = p.organisation_id and b.id = p.bill_id
     join visible v on v.id = b.work_id
-    cross join window_start
     where p.voided_at is null
-      and p.received_on >= window_start.first_day
+  ),
+  invoiced as (
+    select to_char(invoice_date, 'YYYY-MM') as month,
+           sum(total_amount) as total
+    from visible_invoices, window_start
+    where invoice_date >= window_start.first_day
     group by 1
+  ),
+  credited as (
+    select to_char(note_date, 'YYYY-MM') as month,
+           sum(total_amount) as total
+    from visible_notes, window_start
+    where note_date >= window_start.first_day
+    group by 1
+  ),
+  received as (
+    select to_char(received_on, 'YYYY-MM') as month,
+           sum(received_amount) as total
+    from visible_receipts, window_start
+    where received_on >= window_start.first_day
+    group by 1
+  ),
+  -- The first month this application holds ANY billing evidence for,
+  -- unbounded by the window above. Ten empty months at the head of a
+  -- trailing year are a cutover, not a collapse, and the screen cannot
+  -- tell them apart without a figure that predates its own chart.
+  earliest as (
+    select least(
+      (select min(invoice_date) from visible_invoices),
+      (select min(received_on) from visible_receipts)
+    ) as day
   )
   select
     months.month,
     (coalesce(invoiced.total, 0) - coalesce(credited.total, 0))
       ::numeric(18,2)::text as billed,
-    coalesce(received.total, 0)::numeric(18,2)::text as received
+    coalesce(received.total, 0)::numeric(18,2)::text as received,
+    to_char(earliest.day, 'YYYY-MM') as billing_since
   from months
+  cross join earliest
   left join invoiced on invoiced.month = months.month
   left join credited on credited.month = months.month
   left join received on received.month = months.month
@@ -484,10 +591,18 @@ export function registerDashboardRoutes(
           }[]
         >`
           select
-            -- Documents queued for the signing kiosk and not yet signed
-            -- (migration 0091). A failed attempt counts with pending and
-            -- claimed: all three describe a document that is still
-            -- unsigned, and the failed one most needs somebody to look.
+            -- Documents the signing kiosk still has to pick up: 'pending'
+            -- and 'claimed', which is the OPEN set migration 0091 defines.
+            --
+            -- 'failed' is deliberately excluded. It is a terminal row —
+            -- nothing is going to pick it up — and the lamp this count
+            -- lights says "waiting to be signed", which a failed attempt
+            -- is not. Counting it there reported a document as queued
+            -- when it had stopped, and an operator reading the lamp would
+            -- have waited for a kiosk that was never coming back to it.
+            -- The signing queue is where a failure is surfaced and
+            -- retried; if it deserves a lamp of its own, that is a lamp
+            -- with its own sentence, not this one widened.
             --
             -- Work-scoped, unlike the three counts below it. 0091 put
             -- work_id on the request precisely so a member limited to
@@ -495,7 +610,7 @@ export function registerDashboardRoutes(
             -- reach has documents in the queue.
             (select count(*) from signing_requests sr
               join works w on w.id = sr.work_id and w.deleted_at is null
-              where sr.status in ('pending', 'claimed', 'failed')
+              where sr.status in ('pending', 'claimed')
                 and (${full} or exists (
                   select 1 from work_assignments wa
                   where wa.work_id = w.id and wa.user_id = ${user.id}
@@ -553,30 +668,14 @@ export function registerDashboardRoutes(
           order by wi.expires_on asc
         `;
 
-        /* Read to the PANEL's sixty-day horizon, and alerted on at the
-         * thirty-day one below. One statement rather than two because the
-         * wider set contains the narrower one exactly, and two reads of
-         * the same table could disagree across a midnight. The alert
-         * list's behaviour is unchanged: nothing between 31 and 60 days
-         * out becomes an alert. */
-        const completions = await tx<CompletionRow[]>`
-          select
-            w.id as work_id,
-            w.work_code,
-            w.title,
-            w.current_completion_date::text as due_on,
-            (w.current_completion_date - current_date)::text as due_in_days
-          from works w
-          where w.deleted_at is null
-            and w.status = 'active'
-            and w.current_completion_date is not null
-            and w.current_completion_date <= current_date + ${COMPLETION_PANEL_DAYS}::int
-            and (${full} or exists (
-              select 1 from work_assignments wa
-              where wa.work_id = w.id and wa.user_id = ${user.id}
-            ))
-          order by w.current_completion_date asc
-        `;
+        /* The completion panel's feed. Its horizon is twice the alert
+         * window; the alert loop below still fires at thirty, so nothing
+         * between 31 and 60 days out becomes an alert. */
+        const completions = (await tx.unsafe(DASHBOARD_COMPLETIONS_SQL, [
+          full,
+          user.id,
+          COMPLETION_PANEL_DAYS,
+        ])) as unknown as CompletionRow[];
 
         // The active portfolio's installation value and completion clock,
         // the deadline strip, and the trailing billing year. Each answers
@@ -986,6 +1085,34 @@ export function registerDashboardRoutes(
          * recorded GST basis rather than on whichever basis was nearest. */
         const worksById = new Map(works.map((row) => [row.work_id, row]));
 
+        /* THE PAIR THE PERCENTAGE IS ACTUALLY OF.
+         *
+         * `activeContractValue` and `activeBilledValue` are the letters'
+         * own rupees added up, and on a portfolio mixing GST bases that
+         * sum is on no single basis — which made the tile's sentence
+         * state a ratio that was true of neither figure printed beside
+         * it. `executed-value.ts` names taxable value as the canonical
+         * basis for anything aggregating across Works, and
+         * `portfolioExecutedPercent` already restates every term onto it
+         * internally; these are that same restatement, kept so the screen
+         * can print the two rupee figures the percentage is genuinely
+         * the ratio of.
+         *
+         * Summed through the same paise-exact BigInt path as everything
+         * else here — `toTaxableBasis` returns an exact decimal string. */
+        const activeTaxable = (pick: (row: ProgressRow) => string): string =>
+          sumDecimal(
+            activeWorks.map((row) =>
+              toTaxableBasis(pick(row), row.gst_basis, gstOf(row)),
+            ),
+          );
+
+        // A cutover is not a collapse. Every row of the billing statement
+        // carries the same organisation-wide figure, so the head of it is
+        // as good as any; null when this application holds no billing
+        // evidence at all.
+        const billingSince = billingMonths[0]?.billing_since ?? null;
+
         return {
           totals: {
             works: works.length,
@@ -1027,6 +1154,8 @@ export function registerDashboardRoutes(
               activeWorks.map((row) => row.contract_value),
             ),
             activeBilledValue: sumDecimal(activeWorks.map((row) => row.billed_value)),
+            activeContractTaxableValue: activeTaxable((row) => row.contract_value),
+            activeBilledTaxableValue: activeTaxable((row) => row.billed_value),
             activeExecutedPercent: portfolioExecutedPercent(
               activeWorks.map((row) => ({
                 contractValue: row.contract_value,
@@ -1037,11 +1166,37 @@ export function registerDashboardRoutes(
             ),
             receivableOutstanding,
             receivableIndeterminate: unpaidBills.length - settledPositions.length,
-            completionsDue: completions.filter(
-              (row) => Number(row.due_in_days) <= COMPLETION_WARNING_DAYS,
+            /* SPLIT, because the two states need different sentences.
+             * A Work eleven days past its completion date and one
+             * reaching it in nine were counted together and reported with
+             * the milder of the two readings — "reaches its completion
+             * date within 30 days" — which is false of the first and is
+             * the one an operator most needs to see. The panel below
+             * already tells them apart row by row; the lamp now does
+             * too. */
+            completionsOverdue: completions.filter((row) => Number(row.due_in_days) < 0)
+              .length,
+            completionsDue: completions.filter((row) => {
+              const days = Number(row.due_in_days);
+              return days >= 0 && days <= COMPLETION_WARNING_DAYS;
+            }).length,
+            /* Same split, same reason, and here it also closes a hole the
+             * ninety-day strip cannot: the strip is forward-only by
+             * design, so an instrument that has ALREADY lapsed appears
+             * nowhere on it. Folded into "expiring within 60 days" it was
+             * a countdown that had run out and did not say so. It is now
+             * its own red lamp with its own sentence. */
+            instrumentsExpired: instruments.filter((row) => Number(row.due_in_days) < 0)
+              .length,
+            instrumentsExpiring: instruments.filter(
+              (row) => Number(row.due_in_days) >= 0,
             ).length,
-            instrumentsExpiring: instruments.length,
             unsignedDocuments: Number(counts?.unsigned_documents ?? '0'),
+            // Stated rather than inferred: a scoped member's tiles are
+            // their slice of the portfolio, and a total that is not the
+            // portfolio has to say which portfolio it is.
+            assignedScopeOnly: !full,
+            billingSince,
           },
           alerts,
           completions: completions.map((row) => {

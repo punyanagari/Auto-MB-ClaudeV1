@@ -33,9 +33,13 @@ function daysLabel(dueInDays: number): string {
 export function CompletionPanel({
   completions,
   onOpenWork,
+  onRequestExtension,
 }: {
   readonly completions: readonly DashboardCompletion[];
   readonly onOpenWork: (workId: string) => void;
+  /** Opens the Work at its extension composer — the same destination as
+   * `onOpenWork`, carrying the address's `?focus=extension` intent. */
+  readonly onRequestExtension: (workId: string) => void;
 }) {
   if (completions.length === 0) {
     return (
@@ -80,11 +84,16 @@ export function CompletionPanel({
               <span className="font-mono text-xs text-muted-foreground tabular-nums">
                 {`${formatDate(row.dueOn)} · ${formatServerPercent(row.executedPercent) ?? '—'} executed`}
               </span>
+              {/* Navigates to the composer's own address — the Work's
+                  Overview carrying `?focus=extension` — so the operator
+                  lands on the proposed-date field rather than at the top
+                  of a long page. The work code above is the plain link
+                  for opening the Work in a tab. */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  onOpenWork(row.workId);
+                  onRequestExtension(row.workId);
                 }}
               >
                 Request extension

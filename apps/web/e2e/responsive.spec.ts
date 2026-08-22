@@ -131,7 +131,14 @@ function scrollportOf(table: Locator) {
  * `views/OrganisationAccessSettings.tsx`. Both are fixed and both are in
  * the list; nothing is held out now. */
 const SCREENS = [
-  { hash: '#/', name: 'dashboard', ready: 'Dashboard' },
+  /* Anchored on the LAST of the dashboard's four panels, not on its page
+     title. The title renders in the loading branch too, so waiting for it
+     resolves against a skeleton and the overflow measurement below then
+     races the charts into place — which is how a one-pixel escape from
+     the billing chart's table view survived a green local run and failed
+     on CI. `accessibility.spec.ts` anchors its own dashboard scan the
+     same way and for the same reason. */
+  { hash: '#/', name: 'dashboard', ready: 'Next 90 days' },
   { hash: '#/works', name: 'works register', ready: 'Works' },
   { hash: '#/members', name: 'members', ready: 'Members' },
   { hash: '#/masters/locations', name: 'masters', ready: 'Masters' },

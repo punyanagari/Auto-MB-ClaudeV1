@@ -179,12 +179,20 @@ export const DASHBOARD = {
     activeWorks: 1,
     activeContractValue: '4520000.00',
     activeBilledValue: '300.00',
+    activeContractTaxableValue: '3830508.47',
+    activeBilledTaxableValue: '254.24',
     activeExecutedPercent: '0.0066',
     receivableOutstanding: '3000.00',
     receivableIndeterminate: 1,
+    completionsOverdue: 1,
     completionsDue: 1,
+    instrumentsExpired: 1,
     instrumentsExpiring: 2,
     unsignedDocuments: 1,
+    assignedScopeOnly: false,
+    // Later than the first month of the twelve below, so the cutover
+    // sentence renders and the axe scan meets it.
+    billingSince: '2026-07',
   },
   completions: [
     {
@@ -246,6 +254,18 @@ export const DASHBOARD = {
       workId: '33333333-3333-4333-8333-333333333333',
       workCode: 'PL270-CRB',
       dueInDays: 38,
+      settlement: null,
+    },
+    // A guarantee that has ALREADY lapsed. The ninety-day rail is
+    // forward-only and cannot draw one, so its panel names them
+    // underneath — and the axe scan has to meet that list rendered.
+    {
+      kind: 'instrument_expired',
+      severity: 'danger',
+      message: 'PBG BG/19 for PL270-CRB expired on 2026-07-30.',
+      workId: '33333333-3333-4333-8333-333333333333',
+      workCode: 'PL270-CRB',
+      dueInDays: -23,
       settlement: null,
     },
     {

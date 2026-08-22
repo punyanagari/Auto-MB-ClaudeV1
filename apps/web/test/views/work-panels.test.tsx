@@ -63,6 +63,7 @@ describe('CompletionExtensions', () => {
       canModify: boolean;
       canIssue: boolean;
       canApprove: boolean;
+      openComposer: boolean;
     }> = {},
   ) {
     return render(
@@ -73,9 +74,46 @@ describe('CompletionExtensions', () => {
         canModify={flags.canModify ?? true}
         canIssue={flags.canIssue ?? true}
         canApprove={flags.canApprove ?? false}
+        openComposer={flags.openComposer ?? false}
       />,
     );
   }
+
+  /* THE ADDRESS'S INTENT, ACTED ON.
+   *
+   * `?focus=extension` is what the dashboard's completion panel links to,
+   * and it exists because this composer sits most of a long Overview
+   * below the fold — landing an operator at the top of that page and
+   * leaving them to scroll is a suggestion, not an action. The composer
+   * opens and the field they have to fill takes focus. Nothing is
+   * pre-filled: a proposal equal to the current date is not an extension. */
+  it('opens the composer and focuses the proposed date when the address asks', async () => {
+    const api = stubApi({
+      getWorkCompletion: vi.fn().mockResolvedValue({
+        ...COMPLETION_SET,
+        // An extension history, so the composer is NOT open by the
+        // empty-state rule and only the intent can have opened it.
+        extensionRequests: [FINALISED_EXTENSION],
+      }),
+    });
+    renderCompletion(api, { openComposer: true });
+
+    const field = await screen.findByLabelText('Proposed completion date');
+    expect(document.activeElement).toBe(field);
+    expect((field as HTMLInputElement).value).toBe('');
+  });
+
+  it('leaves the composer closed when the address did not ask', async () => {
+    const api = stubApi({
+      getWorkCompletion: vi.fn().mockResolvedValue({
+        ...COMPLETION_SET,
+        extensionRequests: [FINALISED_EXTENSION],
+      }),
+    });
+    renderCompletion(api);
+    await screen.findByRole('button', { name: /New extension request/ });
+    expect(screen.queryByLabelText('Proposed completion date')).toBeNull();
+  });
 
   it('sets the completion date once through the one-time form', async () => {
     const setCompletionDate = vi.fn().mockResolvedValue(COMPLETION_SET);

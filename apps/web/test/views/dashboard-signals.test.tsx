@@ -58,14 +58,37 @@ function dashboardPayload(): DashboardResponse {
       // ₹20,00,000 is excluded, and this assertion is the whole point.
       activeContractValue: '3000000.00',
       activeBilledValue: '600000.00',
+      /* The TAXABLE restatement, and deliberately a different pair from
+       * the printed rupees above: this portfolio is GST-inclusive, so
+       * every figure divides by 1.18. `activeExecutedPercent` is the
+       * quotient of THESE two and of no other pair, which is what the
+       * tile has to print beside it. */
+      activeContractTaxableValue: '2542372.88',
+      activeBilledTaxableValue: '508474.58',
       activeExecutedPercent: '20.0000',
       receivableOutstanding: '103000.00',
       receivableIndeterminate: 1,
+      completionsOverdue: 2,
       completionsDue: 1,
+      instrumentsExpired: 3,
       instrumentsExpiring: 2,
       unsignedDocuments: 3,
+      assignedScopeOnly: false,
+      // LATER than the first month drawn below, so the twelve-month view
+      // has a leading run this application holds no evidence for.
+      billingSince: '2026-08',
     },
-    alerts: [],
+    alerts: [
+      {
+        kind: 'instrument_expired',
+        severity: 'danger',
+        message: 'PBG BG/22 for DASH-1 expired on 2026-07-15.',
+        workId: WORK_ID,
+        workCode: 'DASH-1',
+        dueInDays: -38,
+        settlement: null,
+      },
+    ],
     works: [
       {
         workId: WORK_ID,
@@ -146,6 +169,7 @@ function dashboardPayload(): DashboardResponse {
 
 function renderDashboard(payload: DashboardResponse = dashboardPayload()) {
   const onOpenWork = vi.fn();
+  const onRequestExtension = vi.fn();
   const dashboard = vi.fn().mockResolvedValue(payload);
   render(
     <OperationsDashboard
@@ -153,11 +177,13 @@ function renderDashboard(payload: DashboardResponse = dashboardPayload()) {
       organisationId={ORG_ID}
       canModify
       onOpenWork={onOpenWork}
+      onRequestExtension={onRequestExtension}
+      onOpenHistoricalInvoices={vi.fn()}
       onOpenWorks={vi.fn()}
       onUploadLoa={vi.fn()}
     />,
   );
-  return { onOpenWork };
+  return { onOpenWork, onRequestExtension };
 }
 
 describe('the dashboard leads with the active portfolio', () => {
@@ -172,11 +198,43 @@ describe('the dashboard leads with the active portfolio', () => {
     expect(within(tiles).getByText('2')).toBeTruthy();
     expect(within(tiles).getByText('3 in the register')).toBeTruthy();
 
-    // The percentage is the server's, printed as it arrived. A browser
-    // dividing 600000 by 3000000 would also produce 20% — so the
-    // assertion that matters is that the ODD one survives too.
+    // The percentage is the server's, printed as it arrived.
     expect(within(tiles).getByText('20.0%')).toBeTruthy();
-    expect(within(tiles).getByText('of which executed ₹6 L (20.0%)')).toBeTruthy();
+  });
+
+  /* THE THREE NUMBERS IN A SENTENCE SHARE A BASIS.
+   *
+   * The executed tile used to read "of which executed ₹6 L (20.0%)"
+   * beside a headline of ₹30 L — printed rupees on each Work's own GST
+   * basis, and a percentage computed on taxable value. 6 / 30 is 20% only
+   * by coincidence of a single-basis fixture; on a mixed portfolio the
+   * sentence stated a ratio true of neither figure in it. The rupees
+   * printed with the ratio are now the taxable pair the ratio is actually
+   * of, and the tile says which basis that is. */
+  it('prints the executed ratio against the rupees it is the quotient of', async () => {
+    renderDashboard();
+    const tiles = await screen.findByRole('region', { name: 'Active portfolio' });
+
+    expect(within(tiles).getByText('₹5.08 L of ₹25.42 L taxable')).toBeTruthy();
+    // The printed-rupee pair is NOT in that sentence any more, and the
+    // headline that still carries it names its own basis.
+    expect(within(tiles).queryByText(/of which executed/)).toBeNull();
+    expect(within(tiles).getByText('The letters’ own figures')).toBeTruthy();
+  });
+
+  /* A total that is not the organisation's says whose it is. */
+  it('tells a scoped member that the tiles are their slice', async () => {
+    const payload = dashboardPayload();
+    expect(screen.queryByText(/Works you are assigned to/)).toBeNull();
+    renderDashboard({
+      ...payload,
+      signals: { ...payload.signals, assignedScopeOnly: true },
+    });
+    expect(
+      await screen.findByText(
+        'Across the Works you are assigned to, not the whole organisation.',
+      ),
+    ).toBeTruthy();
   });
 
   it('reports outstanding money and the bills that have no figure yet', async () => {
@@ -195,8 +253,15 @@ describe('the dashboard leads with the active portfolio', () => {
     const texts = within(strip)
       .getAllByRole('listitem')
       .map((item) => item.textContent);
+    /* PAST AND FUTURE ARE DIFFERENT SENTENCES. A Work already past its
+     * date and one still approaching it were counted together and
+     * reported with the milder reading; a guarantee that lapsed last
+     * month was reported as "expires within 60 days", a countdown that
+     * had already run out. Four lamps, and the order is worst first. */
     expect(texts).toEqual([
+      '2 Works are at or past their completion dates',
       '1 Work reaches its completion date within 30 days',
+      '3 guarantees or certificates have already expired',
       '2 guarantees or certificates expire within 60 days',
       '3 issued documents are waiting to be signed',
     ]);
@@ -215,7 +280,9 @@ describe('the dashboard leads with the active portfolio', () => {
       ...payload,
       signals: {
         ...payload.signals,
+        completionsOverdue: 0,
         completionsDue: 0,
+        instrumentsExpired: 0,
         instrumentsExpiring: 0,
         unsignedDocuments: 0,
       },
@@ -230,7 +297,7 @@ describe('the dashboard leads with the active portfolio', () => {
 
 describe('the completion panel', () => {
   it('separates the thirty-day works from the sixty-day ones and offers the letter', async () => {
-    const { onOpenWork } = renderDashboard();
+    const { onOpenWork, onRequestExtension } = renderDashboard();
     const heading = await screen.findByRole('heading', { name: 'Completion dates' });
     const panel = heading.closest('section');
     expect(panel).not.toBeNull();
@@ -247,10 +314,15 @@ describe('the completion panel', () => {
       ),
     ).toBeTruthy();
 
+    /* "Request extension" goes to the COMPOSER, not to the top of a long
+     * Overview. It is a different destination from the work code beside
+     * it, and it has to stay one: landing an operator above the fold of
+     * the page holding the form is a suggestion, not an action. */
     fireEvent.click(
       within(rows[0] as HTMLElement).getByRole('button', { name: 'Request extension' }),
     );
-    expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
+    expect(onRequestExtension).toHaveBeenCalledWith(WORK_ID);
+    expect(onOpenWork).not.toHaveBeenCalled();
   });
 
   it('says so plainly when no completion date is near', async () => {
@@ -283,6 +355,66 @@ describe('the billed-against-received chart', () => {
       formatInr('350000.00'),
       formatInr('120000.00'),
     ]);
+  });
+
+  /* A CUTOVER LOOKS EXACTLY LIKE A COLLAPSE.
+   *
+   * An organisation that adopted this product in July has ten empty bars
+   * at the head of a trailing year, and an empty bar says "we billed
+   * nothing" whether that is true or whether the evidence is in the
+   * Historical invoices register. The month is the SERVER's, so the
+   * sentence is data-driven rather than pinned to one organisation's
+   * cutover date. */
+  it('explains a leading run of empty months as a cutover, in the server`s own month', async () => {
+    renderDashboard();
+    const notice = await screen.findByText(/Billing in this application starts in/);
+    expect(notice.textContent).toContain('Aug 2026');
+    expect(notice.textContent).toContain('not because nothing was billed');
+    expect(
+      within(notice).getByRole('link', { name: 'Historical invoices register' }),
+    ).toBeTruthy();
+  });
+
+  it('stays silent when the whole year is in the application', async () => {
+    const payload = dashboardPayload();
+    renderDashboard({
+      ...payload,
+      // At or before the first month drawn, so there is nothing to
+      // explain and a qualifier would be noise.
+      signals: { ...payload.signals, billingSince: '2026-07' },
+      monthlyBilling: [
+        { month: '2026-07', billed: '250000.00', received: '90000.00' },
+        { month: '2026-08', billed: '350000.00', received: '120000.00' },
+      ],
+    });
+    await screen.findByRole('heading', { name: 'Billed against received' });
+    expect(screen.queryByText(/Billing in this application starts in/)).toBeNull();
+  });
+});
+
+/* THE FORWARD-ONLY RAIL CANNOT DRAW A LAPSED GUARANTEE, so the panel that
+ * holds it names them underneath instead. Without this the expired lamp
+ * counted a thing the screen never showed. */
+describe('instruments that have already expired', () => {
+  it('names them under the ninety-day rail and links each to its Work', async () => {
+    const { onOpenWork } = renderDashboard();
+    const heading = await screen.findByRole('heading', { name: 'Next 90 days' });
+    const panel = heading.closest('section') as HTMLElement;
+    const lapsed = within(panel).getByRole('link', {
+      name: 'PBG BG/22 for DASH-1 expired on 2026-07-15.',
+    });
+    // The Work's Instruments tab, which is where a lapsed guarantee is
+    // renewed or released.
+    expect(lapsed.getAttribute('href')).toBe(`#/works/${WORK_ID}/instruments`);
+    fireEvent.click(lapsed);
+    expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
+  });
+
+  it('says nothing at all when none has lapsed', async () => {
+    const payload = dashboardPayload();
+    renderDashboard({ ...payload, alerts: [] });
+    await screen.findByRole('heading', { name: 'Next 90 days' });
+    expect(screen.queryByText(/Already expired/)).toBeNull();
   });
 });
 

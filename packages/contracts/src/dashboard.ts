@@ -161,9 +161,29 @@ const DashboardSignalsSchema = Type.Object(
      * same reading `totals.contractValue` has and for the same recorded
      * reason. */
     activeContractValue: DecimalStringSchema,
-    /** Billed value across those same Works, the numerator of the
-     * percentage below. */
+    /** Billed value across those same Works, each on its own basis. The
+     * companion of `activeContractValue` and on the same mixed footing;
+     * NOT the numerator of the percentage below. */
     activeBilledValue: DecimalStringSchema,
+    /**
+     * THE PAIR THAT SHARES A BASIS WITH THE PERCENTAGE.
+     *
+     * `activeContractValue` and `activeBilledValue` above are the Works'
+     * own printed rupees added up, and on a portfolio mixing GST bases
+     * that sum is on no single basis at all — `apps/server/src/routes/
+     * dashboard.ts` keeps them that way deliberately, because they are
+     * the figures an owner reads off the letters.
+     *
+     * These two are the same money restated as TAXABLE VALUE first, which
+     * `apps/server/src/executed-value.ts` names as the canonical basis for
+     * anything aggregating across Works. `activeExecutedPercent` is
+     * exactly `activeBilledTaxableValue / activeContractTaxableValue`, so
+     * a screen printing all three states one arithmetic a reader can
+     * check rather than a ratio that agrees with neither rupee figure
+     * beside it.
+     */
+    activeContractTaxableValue: DecimalStringSchema,
+    activeBilledTaxableValue: DecimalStringSchema,
     /** Billed against contract across the active portfolio, every term
      * restated as taxable value first. Null when no active Work carries a
      * contract value. */
@@ -176,15 +196,50 @@ const DashboardSignalsSchema = Type.Object(
      * because a table that showed them as nil would state an amount
      * nobody knows. */
     receivableIndeterminate: Type.Integer({ minimum: 0 }),
-    /** Active Works reaching (or past) their completion date inside the
-     * thirty-day window a DOC extension needs. */
+    /** Active Works whose completion date has ARRIVED or PASSED. Counted
+     * apart from the ones still ahead of it, because "reaching its
+     * completion date in nine days" and "eleven days past it" are not the
+     * same sentence and a lamp that merged them said the milder one. */
+    completionsOverdue: Type.Integer({ minimum: 0 }),
+    /** Active Works reaching their completion date within thirty days and
+     * not yet at it — the window a DOC extension needs. */
     completionsDue: Type.Integer({ minimum: 0 }),
-    /** Active instruments — PBG, PAC, DOC — inside the sixty-day expiry
-     * warning window. */
+    /** Active instruments — PBG, PAC, DOC — whose expiry date has already
+     * passed while the instrument is still recorded active. A terminal
+     * state, not a countdown: the ninety-day strip is forward-only and
+     * cannot show these, so the landing screen states them in words. */
+    instrumentsExpired: Type.Integer({ minimum: 0 }),
+    /** Active instruments expiring within the sixty-day warning window and
+     * not yet past it. */
     instrumentsExpiring: Type.Integer({ minimum: 0 }),
-    /** Issued documents queued for the signing kiosk and not yet signed:
-     * pending, claimed, or failed. */
+    /** Issued documents queued for the signing kiosk and still waiting on
+     * it: `pending` or `claimed`, which is what migration 0091 calls open.
+     * `failed` is deliberately NOT counted — a failed attempt is a
+     * terminal row that the signing queue itself surfaces, and folding it
+     * into "waiting to be signed" would report a document as queued when
+     * nothing is going to pick it up. */
     unsignedDocuments: Type.Integer({ minimum: 0 }),
+    /** True when the caller's membership is limited to assigned Works, so
+     * every figure above describes their slice rather than the
+     * organisation. The screen says so rather than letting a scoped member
+     * read a portfolio total that is not the portfolio. */
+    assignedScopeOnly: Type.Boolean(),
+    /**
+     * The earliest month this application holds any billing evidence for
+     * — the earlier of the first submitted invoice's month and the first
+     * recorded receipt's month — as `YYYY-MM`, or null when it holds
+     * none.
+     *
+     * The billing chart needs it to tell a quiet quarter from a cutover.
+     * An organisation that started using this product in 2026-08 has ten
+     * empty months at the head of a trailing year, and without this the
+     * screen states a collapse that never happened; the earlier history
+     * is in the Historical invoices register (migration 0115).
+     */
+    billingSince: Type.Union([
+      Type.String({ pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$' }),
+      Type.Null(),
+    ]),
   },
   { additionalProperties: false },
 );
@@ -222,6 +277,21 @@ export type DashboardCompletion = Static<typeof DashboardCompletionSchema>;
  * the invoice raised against its measurement state the same measured
  * value on two different bases, so adding them would both double-count
  * and mix bases — the mistake `docs/PRODUCT.md` §5.2 names.
+ *
+ * EVERY invoice, including the DIRECT ones that belong to no Work
+ * (migration 0039). "The tax invoices this organisation submitted" has to
+ * mean all of them or the sentence is false, and an agency invoicing
+ * private customers beside its railway contracts would watch a third of
+ * its billing vanish from its own landing screen.
+ *
+ * The two series are therefore NOT symmetrical, and the screen says so
+ * rather than leaving it to be discovered. A receipt in this product is
+ * recorded against a prepared BILL (`bill_payments.bill_id`, migration
+ * 0067), and a direct invoice has no bill — so money received against one
+ * is not held anywhere and cannot join `received`. The gap between the
+ * series is an upper bound on what is outstanding, never a measurement of
+ * it; `signals.receivableOutstanding` is the measured figure and reads
+ * the settlement register.
  */
 const DashboardBillingMonthSchema = Type.Object(
   {

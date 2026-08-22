@@ -30,6 +30,7 @@ import {
   navigateOnClick,
   parseWorkspaceHash,
   workspaceHashOf,
+  type WorkFocus,
   type WorkspaceRoute,
   type WorkspaceView,
 } from '../lib/workspace-routes.js';
@@ -422,6 +423,14 @@ export function OperationsWorkspace({
   const [view, setView] = useState<WorkspaceView>(initialRoute.view);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [workTab, setWorkTab] = useState<WorkTab>(initialRoute.workTab ?? 'overview');
+  /* The Work intent the address asked for, held until the Work page has
+   * acted on it. Not cleared on arrival: the page reads it on mount, and
+   * `currentHash` keeps printing it so a reload lands in the same place —
+   * an address that acts once and then lies about itself is worse than
+   * one that repeats. It clears when the operator navigates elsewhere. */
+  const [workFocus, setWorkFocus] = useState<WorkFocus | undefined>(
+    initialRoute.view.name === 'work' ? initialRoute.workFocus : undefined,
+  );
   const [tabbedWorkId, setTabbedWorkId] = useState<string | null>(
     initialRoute.view.name === 'work' && initialRoute.workTab !== undefined
       ? initialRoute.view.workId
@@ -757,6 +766,11 @@ export function OperationsWorkspace({
     readonly confirmed?: boolean;
     /** The Work tab to open with, for the views that address one. */
     readonly workTab?: WorkTab;
+    /** The one intent a Work address can carry (`lib/workspace-routes.ts`
+     * `WorkFocus`): open the Work with its extension composer expanded
+     * and focused. Consumed once by the page, like the payment-setup
+     * prompt beside it. */
+    readonly workFocus?: WorkFocus;
     readonly mastersTab?: MastersTab;
     /** Open the Work page with its payment setup dialog, once. Only the
      * confirmation of a letter passes it. */
@@ -786,6 +800,9 @@ export function OperationsWorkspace({
         setTabbedWorkId(next.workId);
         setWorkTab(options.workTab);
       }
+      // Every move re-answers the intent question, so leaving a Work
+      // cannot carry its focus onto the next one.
+      setWorkFocus(next.name === 'work' ? options.workFocus : undefined);
       if (next.name === 'masters' && options.mastersTab !== undefined) {
         setMastersTab(options.mastersTab);
       }
@@ -803,6 +820,7 @@ export function OperationsWorkspace({
     view,
     workTab:
       view.name === 'work' && view.workId === tabbedWorkId ? workTab : 'overview',
+    ...(view.name === 'work' && workFocus !== undefined ? { workFocus } : {}),
     ...(view.name === 'masters' ? { mastersTab } : {}),
   });
 
@@ -854,6 +872,9 @@ export function OperationsWorkspace({
   const applyRoute = useCallback((route: WorkspaceRoute) => {
     navigateRef.current(route.view, {
       ...(route.view.name === 'work' ? { workTab: route.workTab ?? 'overview' } : {}),
+      ...(route.view.name === 'work' && route.workFocus !== undefined
+        ? { workFocus: route.workFocus }
+        : {}),
       ...(route.mastersTab !== undefined ? { mastersTab: route.mastersTab } : {}),
     });
   }, []);
@@ -1085,8 +1106,17 @@ export function OperationsWorkspace({
                 onOpenWork={(workId) => {
                   navigate({ name: 'work', workId });
                 }}
+                onRequestExtension={(workId) => {
+                  navigate(
+                    { name: 'work', workId },
+                    { workTab: 'overview', workFocus: 'extension' },
+                  );
+                }}
                 onOpenWorks={() => {
                   navigate({ name: 'works' });
+                }}
+                onOpenHistoricalInvoices={() => {
+                  navigate({ name: 'historical-invoices', workId: null });
                 }}
                 onUploadLoa={() => {
                   navigate({ name: 'upload', tenderId: null });
@@ -1661,6 +1691,7 @@ export function OperationsWorkspace({
                 onPaymentSetupClosed={() => {
                   setPaymentSetupOffered(false);
                 }}
+                focus={workFocus}
               />
             )}
 

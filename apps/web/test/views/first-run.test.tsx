@@ -42,9 +42,15 @@ const EMPTY_DASHBOARD: DashboardResponse = {
     activeExecutedPercent: null,
     receivableOutstanding: '0.00',
     receivableIndeterminate: 0,
+    activeContractTaxableValue: '0.00',
+    activeBilledTaxableValue: '0.00',
+    completionsOverdue: 0,
     completionsDue: 0,
+    instrumentsExpired: 0,
     instrumentsExpiring: 0,
     unsignedDocuments: 0,
+    assignedScopeOnly: false,
+    billingSince: null,
   },
   alerts: [],
   works: [],
@@ -91,6 +97,8 @@ function renderDashboard(
       organisationId={ORG_ID}
       canModify={options.canModify ?? true}
       onOpenWork={vi.fn()}
+      onRequestExtension={vi.fn()}
+      onOpenHistoricalInvoices={vi.fn()}
       onOpenWorks={vi.fn()}
       onUploadLoa={options.onUploadLoa ?? vi.fn()}
     />,
@@ -214,6 +222,8 @@ describe('first run — dashboard', () => {
         organisationId={ORG_ID}
         canModify
         onOpenWork={vi.fn()}
+        onRequestExtension={vi.fn()}
+        onOpenHistoricalInvoices={vi.fn()}
         onOpenWorks={vi.fn()}
         onUploadLoa={vi.fn()}
       />,

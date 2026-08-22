@@ -106,10 +106,31 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * this file proves it has a chunk of its own, as all fifty-two do, and no
  * dependency was added.
  *
+ * RAISED TO 119,400 when the dashboard redesign gave a Work address its
+ * first INTENT — `#/works/<id>/overview?focus=extension`, which the
+ * completion panel uses to land an operator on the extension composer
+ * instead of at the top of a long Overview (`docs/UX.md` § 38).
+ *
+ *   119.20  the line the Tally census left
+ *   119.28  measured on this branch — so the address costs about EIGHTY
+ *           bytes: one query arm in the serialiser, one literal
+ *           comparison in the parser, one piece of shell state and two
+ *           navigate handlers. The parse is a string compare rather than
+ *           a `URLSearchParams` for exactly this reason; there is one
+ *           intent and one spelling of it.
+ *
+ * Shell wiring again, and the same kind of cost the two raises above
+ * record: an address the shell has to be able to serialise, parse and
+ * hold cannot live in a code-split view. Nothing else on this branch
+ * reaches the entry chunk — the four dashboard components and both charts
+ * are inside `OperationsDashboard`'s own chunk (22 kB raw, 6 kB gzip),
+ * which the second assertion in this file proves is not in the initial
+ * payload — and no dependency was added.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_200;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_400;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

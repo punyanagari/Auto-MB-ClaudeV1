@@ -45,9 +45,30 @@ export function AttentionStrip({
   readonly deadlinesRef: React.RefObject<HTMLElement | null>;
 }) {
   const lamps: Lamp[] = [];
+  /* THE PAST AND THE FUTURE GET DIFFERENT SENTENCES.
+   *
+   * One lamp counted a Work eleven days past its completion date beside
+   * one reaching it in nine, and reported both with the milder reading —
+   * "reaches its completion date within 30 days" — which is false of the
+   * first and is the one an operator most needs to see. Same for a
+   * guarantee: "expires within 60 days" said of one that expired last
+   * month is a countdown that has already run out. */
+  if (signals.completionsOverdue > 0) {
+    lamps.push({
+      key: 'completions-overdue',
+      tone: 'danger',
+      text:
+        signals.completionsOverdue === 1
+          ? '1 Work is at or past its completion date'
+          : `${String(signals.completionsOverdue)} Works are at or past their completion dates`,
+      go: () => {
+        reveal(completionsRef.current);
+      },
+    });
+  }
   if (signals.completionsDue > 0) {
     lamps.push({
-      key: 'completions',
+      key: 'completions-due',
       tone: 'danger',
       text:
         signals.completionsDue === 1
@@ -55,6 +76,22 @@ export function AttentionStrip({
           : `${String(signals.completionsDue)} Works reach their completion dates within 30 days`,
       go: () => {
         reveal(completionsRef.current);
+      },
+    });
+  }
+  if (signals.instrumentsExpired > 0) {
+    lamps.push({
+      key: 'instruments-expired',
+      tone: 'danger',
+      text:
+        signals.instrumentsExpired === 1
+          ? '1 guarantee or certificate has already expired'
+          : `${String(signals.instrumentsExpired)} guarantees or certificates have already expired`,
+      // The ninety-day strip is forward-only and cannot draw a lapsed
+      // instrument at all, so its panel carries a named list of them
+      // beneath the rail and this is what sends a reader to it.
+      go: () => {
+        reveal(deadlinesRef.current);
       },
     });
   }

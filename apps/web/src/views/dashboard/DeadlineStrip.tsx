@@ -1,4 +1,4 @@
-import type { DashboardDeadline } from '@auto-mb/contracts';
+import type { DashboardAlert, DashboardDeadline } from '@auto-mb/contracts';
 import { formatDate } from '../../format.js';
 import { navigateOnClick, workHash } from '../../lib/workspace-routes.js';
 
@@ -41,16 +41,61 @@ const KIND_WORD: Record<DashboardDeadline['kind'], string> = {
  */
 export function DeadlineStrip({
   deadlines,
+  expired,
   onOpenWork,
 }: {
   readonly deadlines: readonly DashboardDeadline[];
+  /** Instruments whose expiry has already passed, taken from the alerts
+   * the server ranks. They cannot appear on a forward-only rail, and the
+   * attention lamp that counts them sends its reader here — so this panel
+   * names them rather than leaving the count as the whole statement. */
+  readonly expired: readonly DashboardAlert[];
   readonly onOpenWork: (workId: string) => void;
 }) {
+  const lapsed =
+    expired.length === 0 ? null : (
+      <div className="mt-4 border-t border-border pt-3">
+        <p className="m-0 mb-1.5 text-xs font-medium text-destructive">
+          {expired.length === 1
+            ? 'Already expired — not on the rail above, because it is not a deadline any more'
+            : `Already expired (${String(expired.length)}) — not on the rail above, because they are not deadlines any more`}
+        </p>
+        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-xs">
+          {expired.map((alert, index) => (
+            <li
+              key={`${alert.workCode ?? ''}-${String(index)}`}
+              className="flex items-center gap-1.5"
+            >
+              <span
+                aria-hidden="true"
+                className="size-1.5 shrink-0 rounded-full bg-destructive"
+              />
+              {alert.workId === null ? (
+                <span>{alert.message}</span>
+              ) : (
+                <a
+                  href={workHash(alert.workId, 'instruments')}
+                  onClick={navigateOnClick(() => {
+                    if (alert.workId !== null) onOpenWork(alert.workId);
+                  })}
+                >
+                  {alert.message}
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+
   if (deadlines.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Nothing falls due in the next 90 days.
-      </p>
+      <>
+        <p className="text-sm text-muted-foreground">
+          Nothing falls due in the next 90 days.
+        </p>
+        {lapsed}
+      </>
     );
   }
 
@@ -137,6 +182,7 @@ export function DeadlineStrip({
           </li>
         )}
       </ul>
+      {lapsed}
     </div>
   );
 }

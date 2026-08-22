@@ -37,7 +37,12 @@ interface OperationsDashboardProps {
   readonly organisationId: string;
   readonly canModify: boolean;
   readonly onOpenWork: (workId: string) => void;
+  /** Opens the Work at its extension composer — `?focus=extension` on the
+   * Work address, so the operator lands on the field they have to fill
+   * rather than at the top of a long Overview. */
+  readonly onRequestExtension: (workId: string) => void;
   readonly onOpenWorks: () => void;
+  readonly onOpenHistoricalInvoices: () => void;
   readonly onUploadLoa: () => void;
 }
 
@@ -298,7 +303,9 @@ export function OperationsDashboard({
   organisationId,
   canModify,
   onOpenWork,
+  onRequestExtension,
   onOpenWorks,
+  onOpenHistoricalInvoices,
   onUploadLoa,
 }: OperationsDashboardProps) {
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -387,19 +394,38 @@ export function OperationsDashboard({
       hint: `${String(data.totals.works)} in the register`,
       tone: 'default',
     },
+    /* TWO TILES, TWO BASES, AND EACH ONE SAYS WHICH.
+     *
+     * These used to be one sentence — "₹45.2 L, of which executed ₹300
+     * (0.0066%)" — and the three numbers in it did not share a basis. The
+     * two rupee figures are the letters' own printed amounts added up,
+     * and a portfolio mixing GST-inclusive and GST-exclusive letters
+     * makes that sum a figure on no basis at all; the percentage
+     * restates every term as taxable value before dividing, because
+     * `executed-value.ts` names taxable value as the only honest basis
+     * for a cross-Work ratio. So the sentence stated a ratio that was
+     * true of neither amount printed beside it.
+     *
+     * Split rather than reconciled. The headline stays the rupees an
+     * owner reads off the letters — that is what the tile is for — and
+     * says so. The ratio moves to its own tile with the two taxable
+     * figures it is genuinely the quotient of, and says that. Neither
+     * tile now contains a number that disagrees with its neighbours. */
     {
       label: 'Active contract value',
       value: formatCompactInr(signals.activeContractValue),
-      hint:
-        executedLabel === null
-          ? 'No contract value recorded'
-          : `of which executed ${formatCompactInr(signals.activeBilledValue)} (${executedLabel})`,
+      // Short enough to survive the tile's single truncating line at
+      // 320px; the basis it is NOT on is named by the tile beside it.
+      hint: 'The letters’ own figures',
       tone: 'default',
     },
     {
       label: 'Executed value',
       value: executedLabel ?? '—',
-      hint: 'Billed against active contract value',
+      hint:
+        executedLabel === null
+          ? 'No contract value recorded'
+          : `${formatCompactInr(signals.activeBilledTaxableValue)} of ${formatCompactInr(signals.activeContractTaxableValue)} taxable`,
       tone: 'default',
     },
     {
@@ -471,6 +497,18 @@ export function OperationsDashboard({
         ))}
       </section>
 
+      {/* WHOSE PORTFOLIO THIS IS. A member scoped to their assignments
+          gets tiles summing their slice, and a total that is not the
+          organisation's has to say so — otherwise it reads as the
+          organisation's and is quietly, plausibly wrong. Rendered only
+          for the members it applies to; a full-scope reader needs no
+          sentence explaining that everything means everything. */}
+      {signals.assignedScopeOnly && (
+        <p className="m-0 -mt-2 text-xs text-muted-foreground">
+          Across the Works you are assigned to, not the whole organisation.
+        </p>
+      )}
+
       <AttentionStrip
         signals={signals}
         completionsRef={completionsRef}
@@ -492,7 +530,11 @@ export function OperationsDashboard({
               Active Works reaching their contract completion date within 60 days.
             </p>
           </div>
-          <CompletionPanel completions={data.completions} onOpenWork={onOpenWork} />
+          <CompletionPanel
+            completions={data.completions}
+            onOpenWork={onOpenWork}
+            onRequestExtension={onRequestExtension}
+          />
         </Card>
 
         <Card
@@ -511,7 +553,11 @@ export function OperationsDashboard({
             </div>
             <BilledReceivedLegend />
           </div>
-          <BilledReceivedChart months={data.monthlyBilling} />
+          <BilledReceivedChart
+            months={data.monthlyBilling}
+            billingSince={signals.billingSince}
+            onOpenHistorical={onOpenHistoricalInvoices}
+          />
         </Card>
       </section>
 
@@ -547,7 +593,11 @@ export function OperationsDashboard({
             periods ending.
           </p>
         </div>
-        <DeadlineStrip deadlines={data.deadlines} onOpenWork={onOpenWork} />
+        <DeadlineStrip
+          deadlines={data.deadlines}
+          expired={data.alerts.filter((alert) => alert.kind === 'instrument_expired')}
+          onOpenWork={onOpenWork}
+        />
       </Card>
     </div>
   );
