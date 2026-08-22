@@ -28,6 +28,7 @@ import { HistoricalInvoices } from '../../src/views/HistoricalInvoices.js';
 import { HistoricalReceipts } from '../../src/views/HistoricalReceipts.js';
 import { TallyMasters } from '../../src/views/TallyMasters.js';
 import { WorkHistoricalInvoices } from '../../src/views/WorkHistoricalInvoices.js';
+import { WorkRailwayReceipts } from '../../src/views/WorkRailwayReceipts.js';
 import { IssueChallanDetail } from '../../src/views/IssueChallanDetail.js';
 import { IssueChallanEditor } from '../../src/views/IssueChallanEditor.js';
 import { Members } from '../../src/views/Members.js';
@@ -437,6 +438,16 @@ export const STATE_CASES: readonly StateCase[] = [
     ),
     retry: /Retry historical invoices/,
     empty: { text: /No invoice raised before this system is filed against this Work/ },
+  },
+  {
+    view: 'WorkRailwayReceipts.tsx',
+    name: "the Work's railway receipts",
+    loads: ['listImportedPayments'],
+    render: (api) => (
+      <WorkRailwayReceipts api={api} organisationId={ORG_ID} workId={WORK_ID} />
+    ),
+    retry: /Retry railway receipts/,
+    empty: { text: /No railway receipt is filed against this Work/ },
   },
   {
     view: 'IssueChallanDetail.tsx',

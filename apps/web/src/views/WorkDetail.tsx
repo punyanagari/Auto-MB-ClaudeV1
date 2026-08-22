@@ -67,6 +67,7 @@ import { WorkPaymentSetup } from './WorkPaymentSetup.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
 import { WorkHistoricalInvoices } from './WorkHistoricalInvoices.js';
+import { WorkRailwayReceipts } from './WorkRailwayReceipts.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -1714,6 +1715,16 @@ export function WorkDetail({
               register above is what this contract bills now, and this is
               the part of its billing that happened in Zoho Books. */}
           <WorkHistoricalInvoices
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
+          />
+          {/* …and what came back against it (0120). Beneath the
+              invoices for the reason they are beneath the register above:
+              a bill is raised before it is paid, and what the railway
+              withheld is only readable once there is a bill to withhold
+              it from. */}
+          <WorkRailwayReceipts
             api={api}
             organisationId={organisationId}
             workId={workId}
