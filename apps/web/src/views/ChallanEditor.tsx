@@ -8,6 +8,7 @@ import type {
   WorkBalanceItem,
 } from '@auto-mb/contracts';
 import { existingRecordIdOf, type ApiClient } from '../api.js';
+import { addressOptionLabel, liveAddresses } from '../lib/addresses.js';
 import { errorMessage } from '../lib/load-failure.js';
 import { Button } from '../ui/button.js';
 import { ConfirmDialog } from '../ui/confirm.js';
@@ -312,6 +313,10 @@ export function ChallanEditor({
    * read — which is a different sentence from "there are none". */
   const [consignees, setConsignees] = useState<readonly Contact[] | null>([]);
   const [workConsignees, setWorkConsignees] = useState<readonly Contact[]>([]);
+  /** Which contact the picker last copied from, so the address chooser
+   * below knows whose address list to offer. Not part of the challan: the
+   * document keeps free text, and this is discarded on save. */
+  const [pickedConsignee, setPickedConsignee] = useState<string | null>(null);
   const [poLineChoices, setPoLineChoices] = useState<
     ReadonlyMap<string, readonly PoLineChoice[]>
   >(new Map());
@@ -733,6 +738,13 @@ export function ChallanEditor({
   // contact is refused with 409 CONTACT_RETIRED.
   const linkedConsignees = workConsignees.filter((candidate) => candidate.active);
   const listedConsignees = consignees ?? [];
+  /** The live addresses of the contact the picker last copied from
+   * (migration 0116), primary first as the masters route returns them. */
+  const consigneeAddresses = liveAddresses(
+    [...linkedConsignees, ...listedConsignees].find(
+      (candidate) => candidate.id === pickedConsignee,
+    ),
+  );
 
   // The column exists only while the Work has open purchase orders with
   // lines to receive against; without them the table reads exactly as it
@@ -835,9 +847,14 @@ export function ChallanEditor({
                 (candidate) => candidate.id === event.target.value,
               );
               if (chosen === undefined) return;
+              setPickedConsignee(chosen.id);
               setState({
                 ...state,
                 name: chosen.designation,
+                // `address` is the contact's PRIMARY address (the
+                // database keeps it equal to the primary row of its
+                // address list), which is what this picker has always
+                // copied. A second address is chosen below.
                 address: chosen.address ?? '',
                 phone: chosen.phone ?? '',
               });
@@ -868,6 +885,43 @@ export function ChallanEditor({
               'Consignees linked to this Work are listed first; any active consignee can be picked. Picking copies the details into this challan; edits here never change the contact.'}
           </Hint>
         </Field>
+        {/* The second address onward (migration 0116). Offered only when
+            the consignee just picked keeps more than one, because a
+            one-address contact has nothing to choose between and the
+            control would be a question with a single answer. Choosing
+            copies the text into the field below like everything else on
+            this form: the challan keeps its own copy, and retiring the
+            address afterwards changes nothing here. */}
+        {consigneeAddresses.length > 1 && (
+          <Field>
+            <label htmlFor="consignee-address-picker">Delivery address</label>
+            <select
+              id="consignee-address-picker"
+              value={
+                consigneeAddresses.find((address) => address.address === state.address)
+                  ?.id ?? ''
+              }
+              onChange={(event) => {
+                const chosen = consigneeAddresses.find(
+                  (address) => address.id === event.target.value,
+                );
+                if (chosen === undefined) return;
+                setState({ ...state, address: chosen.address });
+              }}
+            >
+              <option value="">Typed by hand</option>
+              {consigneeAddresses.map((address) => (
+                <option key={address.id} value={address.id}>
+                  {addressOptionLabel(address)}
+                </option>
+              ))}
+            </select>
+            <Hint>
+              This consignee keeps more than one address. The primary one was copied in;
+              pick another and the address below changes with it.
+            </Hint>
+          </Field>
+        )}
         <FieldRow>
           <Field>
             <label htmlFor="consignee-name">Consignee name</label>

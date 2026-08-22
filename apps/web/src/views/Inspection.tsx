@@ -367,6 +367,12 @@ function CallCard({
             {call.agencyCallNumber === null
               ? ' · request placed'
               : ` · inward ${call.agencyCallNumber}`}
+            {/* Both halves of the snapshot: the vendor the call named and
+                the premises it was sent to. The name is present only when
+                the call cited a master vendor, and it is the copy taken
+                when the call was raised — renaming the master afterwards
+                does not rewrite what went out. */}
+            {call.vendorName === null ? '' : ` · ${call.vendorName}`}
             {call.vendorPremises === null ? '' : ` · ${call.vendorPremises}`}
           </p>
           <p className="text-xs text-muted-foreground">

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type {
+  Contact,
   InspectionCall,
   InspectionCallListResponse,
   WorkInspectionConfig,
@@ -251,6 +252,10 @@ async function saveClauses(
         workItemId: string;
         agency: 'RDSO' | 'RITES' | 'consignee' | null;
         inspectionQuantity: string | null;
+        /** The structured premises (0116). Optional here as it is on the
+         * wire, so the cases written before it still read as they did. */
+        vendorContactId?: string | null;
+        vendorAddressId?: string | null;
         vendorPremises: string | null;
         gatesDispatch: boolean;
       }[]
@@ -964,5 +969,641 @@ describe('the walls', () => {
       organisationId,
     });
     expect(read.statusCode, read.body).toBe(403);
+  });
+});
+
+/**
+ * The structured inspection vendor and its address (migration 0116).
+ *
+ * The premises used to be free text on the clause and free text on the
+ * call, retyped for every item. It is now a vendor-role contact and one
+ * of that vendor's saved addresses — and the two records treat it
+ * differently on purpose, which is what these cases prove: the CLAUSE
+ * joins the master live, because it is configuration; the CALL copies the
+ * name and the text, because it is a record of a request that went out.
+ */
+describe('the inspection vendor and its address (0116)', () => {
+  let vendorId = '';
+  let worksAddressId = '';
+  let officeAddressId = '';
+
+  async function newContact(body: Record<string, unknown>): Promise<string> {
+    const response = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: body,
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    return response.json<{ id: string }>().id;
+  }
+
+  beforeAll(async () => {
+    vendorId = await newContact({
+      designation: `RailTech Components ${runId}`,
+      address: 'Plot 14, Industrial Estate, Hosur',
+      pincode: '635109',
+      stateCode: '33',
+      isVendor: true,
+    });
+    // The contact form's address became the vendor's PRIMARY address, so
+    // the list starts with one row and the second is added beside it.
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: '/api/masters/contacts?role=vendor',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    const vendor = listed
+      .json<{ contacts: readonly Contact[] }>()
+      .contacts.find((contact) => contact.id === vendorId);
+    expect(vendor?.addresses).toHaveLength(1);
+    expect(vendor?.addresses?.[0]?.isPrimary).toBe(true);
+    worksAddressId = vendor?.addresses?.[0]?.id ?? '';
+
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${vendorId}/addresses`,
+      organisationId,
+      payload: {
+        label: 'Regd. office',
+        address: '2nd Floor, Anna Salai, Chennai',
+        pincode: '600002',
+        stateCode: '33',
+      },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    officeAddressId = second.json<{ id: string }>().id;
+    // Added beside the primary, not instead of it.
+    expect(second.json<{ isPrimary: boolean }>().isPrimary).toBe(false);
+  });
+
+  it('reads the clause vendor live, so a corrected address reaches the next call', async () => {
+    const saved = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorContactId: vendorId,
+        vendorAddressId: officeAddressId,
+        vendorPremises: null,
+        gatesDispatch: true,
+      },
+    ]);
+    expect(saved.statusCode, saved.body).toBe(200);
+    const row = saved
+      .json<WorkInspectionConfig>()
+      .items.find((item) => item.workItemId === gatedItemId);
+    expect(row?.vendorContactId).toBe(vendorId);
+    expect(row?.vendorAddressId).toBe(officeAddressId);
+    expect(row?.vendorAddress).toBe('2nd Floor, Anna Salai, Chennai');
+    expect(row?.vendorPremises).toBe(null);
+
+    // Correct the address in the master. The CLAUSE follows it, because
+    // a clause is configuration and not a document.
+    const corrected = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${vendorId}/addresses/${officeAddressId}`,
+      organisationId,
+      payload: {
+        label: 'Regd. office',
+        address: '3rd Floor, Anna Salai, Chennai',
+        pincode: '600002',
+        stateCode: '33',
+      },
+    });
+    expect(corrected.statusCode, corrected.body).toBe(200);
+    const reread = await authed(owner, {
+      method: 'GET',
+      url: `/api/works/${workId}/inspection-config`,
+      organisationId,
+    });
+    expect(
+      reread
+        .json<WorkInspectionConfig>()
+        .items.find((item) => item.workItemId === gatedItemId)?.vendorAddress,
+    ).toBe('3rd Floor, Anna Salai, Chennai');
+  });
+
+  it('snapshots the vendor onto the call, immune to a later rename or retirement', async () => {
+    const raised = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/inspection-calls`,
+      organisationId,
+      payload: {
+        agency: 'RDSO',
+        requestedOn: '2026-02-01',
+        vendorContactId: vendorId,
+        vendorAddressId: worksAddressId,
+        vendorPremises: null,
+        items: [{ workItemId: gatedItemId, quantity: '10.000' }],
+      },
+    });
+    expect(raised.statusCode, raised.body).toBe(201);
+    const call = raised.json<InspectionCall>();
+    expect(call.vendorContactId).toBe(vendorId);
+    expect(call.vendorAddressId).toBe(worksAddressId);
+    expect(call.vendorName).toBe(`RailTech Components ${runId}`);
+    expect(call.vendorPremises).toBe('Plot 14, Industrial Estate, Hosur');
+
+    // Rename the vendor and retire the address the call cited. The call
+    // printed what it printed (AGENTS.md rule 7).
+    const renamed = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${vendorId}`,
+      organisationId,
+      payload: {
+        designation: `RailTech Components Pvt Ltd ${runId}`,
+        address: 'Plot 14, Industrial Estate, Hosur',
+        pincode: '635109',
+        stateCode: '33',
+      },
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${vendorId}/addresses/${worksAddressId}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+
+    const after = await authed(owner, {
+      method: 'GET',
+      url: `/api/inspection-calls/${call.id}`,
+      organisationId,
+    });
+    expect(after.statusCode, after.body).toBe(200);
+    const frozen = after.json<InspectionCall>();
+    expect(frozen.vendorName).toBe(`RailTech Components ${runId}`);
+    expect(frozen.vendorPremises).toBe('Plot 14, Industrial Estate, Hosur');
+
+    // Put the address back, so the rest of the suite finds the vendor as
+    // it was left.
+    const back = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${vendorId}/addresses/${worksAddressId}/reactivate`,
+      organisationId,
+    });
+    expect(back.statusCode, back.body).toBe(200);
+  });
+
+  it('refuses a contact that is not a vendor, and an address that is not its own', async () => {
+    const consigneeId = await newContact({
+      designation: `Sr. DEE (G) Salem ${runId}`,
+      address: 'Divisional Office, Salem',
+    });
+    const notAVendor = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorContactId: consigneeId,
+        vendorAddressId: null,
+        vendorPremises: null,
+        gatesDispatch: true,
+      },
+    ]);
+    expect(notAVendor.statusCode, notAVendor.body).toBe(409);
+    expect(notAVendor.json<{ code: string }>().code).toBe('INSPECTION_VENDOR_INVALID');
+
+    // The database says the same thing when the route is not the writer:
+    // 0116's own 23Y01, from the guard on the table.
+    const direct = admin`
+      update inspection_clauses set vendor_contact_id = ${consigneeId}
+      where work_item_id = ${gatedItemId}
+    `;
+    await expect(direct).rejects.toMatchObject({ code: '23Y01' });
+
+    // An address belonging to somebody else is refused by name, and the
+    // composite foreign key refuses it again underneath.
+    const consigneeAddress = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${consigneeId}/addresses`,
+      organisationId,
+      payload: { address: 'Goods Shed, Salem Junction' },
+    });
+    expect(consigneeAddress.statusCode, consigneeAddress.body).toBe(201);
+    const borrowed = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorContactId: vendorId,
+        vendorAddressId: consigneeAddress.json<{ id: string }>().id,
+        vendorPremises: null,
+        gatesDispatch: true,
+      },
+    ]);
+    expect(borrowed.statusCode, borrowed.body).toBe(404);
+    expect(borrowed.json<{ code: string }>().code).toBe('CONTACT_ADDRESS_NOT_FOUND');
+  });
+
+  it('refuses a saved address and free text at once, and keeps free text alone working', async () => {
+    const both = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorContactId: vendorId,
+        vendorAddressId: worksAddressId,
+        vendorPremises: 'Some other shed',
+        gatesDispatch: true,
+      },
+    ]);
+    expect(both.statusCode, both.body).toBe(400);
+    expect(both.json<{ code: string }>().code).toBe('CONTACT_ADDRESS_INVALID');
+
+    // 0082's sub-vendor case survives untouched: no master row, free text
+    // alone, exactly as before this migration.
+    const free = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorPremises: 'A sub-vendor shed with no master row',
+        gatesDispatch: true,
+      },
+    ]);
+    expect(free.statusCode, free.body).toBe(200);
+    const row = free
+      .json<WorkInspectionConfig>()
+      .items.find((item) => item.workItemId === gatedItemId);
+    expect(row?.vendorContactId).toBe(null);
+    expect(row?.vendorPremises).toBe('A sub-vendor shed with no master row');
+  });
+
+  it('keeps one primary address per contact, and promotes an heir when it retires', async () => {
+    const promoted = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${vendorId}/addresses/${officeAddressId}`,
+      organisationId,
+      payload: {
+        label: 'Regd. office',
+        address: '3rd Floor, Anna Salai, Chennai',
+        pincode: '600002',
+        stateCode: '33',
+        isPrimary: true,
+      },
+    });
+    expect(promoted.statusCode, promoted.body).toBe(200);
+    expect(promoted.json<{ isPrimary: boolean }>().isPrimary).toBe(true);
+
+    // The mirror: `contacts.address` and its three companions now read
+    // the new primary, which is what every existing document prefill and
+    // the e-way bill's state code join go on reading.
+    const [mirrored] = await admin<
+      { address: string; pincode: string; state_code: string }[]
+    >`
+      select address, pincode, state_code from contacts where id = ${vendorId}
+    `;
+    expect(mirrored?.address).toBe('3rd Floor, Anna Salai, Chennai');
+    expect(mirrored?.pincode).toBe('600002');
+
+    // Exactly one primary, enforced by the partial unique index.
+    const [count] = await admin<{ primaries: string }[]>`
+      select count(*)::text as primaries from contact_addresses
+      where contact_id = ${vendorId} and is_primary
+    `;
+    expect(count?.primaries).toBe('1');
+
+    // Retiring the primary hands the flag on rather than leaving the
+    // contact advertising nothing.
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${vendorId}/addresses/${officeAddressId}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+    expect(retired.json<{ isPrimary: boolean }>().isPrimary).toBe(false);
+    const [heir] = await admin<{ id: string }[]>`
+      select id from contact_addresses
+      where contact_id = ${vendorId} and is_primary
+    `;
+    expect(heir?.id).toBe(worksAddressId);
+    const [afterHeir] = await admin<{ address: string }[]>`
+      select address from contacts where id = ${vendorId}
+    `;
+    expect(afterHeir?.address).toBe('Plot 14, Industrial Estate, Hosur');
+  });
+
+  async function addressesOf(contactId: string) {
+    const listed = await authed(owner, {
+      method: 'GET',
+      url: '/api/masters/contacts?includeRetired=true',
+      organisationId,
+    });
+    expect(listed.statusCode, listed.body).toBe(200);
+    return (
+      listed
+        .json<{ contacts: readonly Contact[] }>()
+        .contacts.find((contact) => contact.id === contactId)?.addresses ?? []
+    );
+  }
+
+  it('reactivating an address of a contact left with no primary restores it', async () => {
+    const soleId = await newContact({
+      designation: `Sole Address Vendor ${runId}`,
+      address: 'Only Shed, Erode',
+      isVendor: true,
+    });
+    const [only] = await addressesOf(soleId);
+    expect(only?.isPrimary).toBe(true);
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${soleId}/addresses/${only?.id ?? ''}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+    const [cleared] = await admin<{ address: string | null }[]>`
+      select address from contacts where id = ${soleId}
+    `;
+    expect(cleared?.address).toBe(null);
+
+    // The bug this pins down: the row came back live while the contact
+    // kept advertising nothing, so Masters showed an address and every
+    // challan refused the contact as having none.
+    const back = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${soleId}/addresses/${only?.id ?? ''}/reactivate`,
+      organisationId,
+    });
+    expect(back.statusCode, back.body).toBe(200);
+    expect(back.json<{ isPrimary: boolean }>().isPrimary).toBe(true);
+    const [restored] = await admin<{ address: string | null }[]>`
+      select address from contacts where id = ${soleId}
+    `;
+    expect(restored?.address).toBe('Only Shed, Erode');
+  });
+
+  it('never resurrects a primary the contact form deliberately cleared', async () => {
+    const clearedId = await newContact({
+      designation: `Cleared Vendor ${runId}`,
+      address: 'Shed A, Karur',
+      isVendor: true,
+    });
+    // Clearing the address on the contact form demotes the primary but
+    // keeps the rows — an inspection clause may cite them.
+    const clearedForm = await authed(owner, {
+      method: 'PUT',
+      url: `/api/masters/contacts/${clearedId}`,
+      organisationId,
+      payload: { designation: `Cleared Vendor ${runId}` },
+    });
+    expect(clearedForm.statusCode, clearedForm.body).toBe(200);
+    expect(clearedForm.json<{ address: string | null }>().address).toBe(null);
+
+    // A NEW address beside live unprimaried rows must not claim the flag
+    // by default — the operator withdrew it on purpose.
+    const added = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${clearedId}/addresses`,
+      organisationId,
+      payload: { label: 'Depot', address: 'Shed B, Karur' },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    expect(added.json<{ isPrimary: boolean }>().isPrimary).toBe(false);
+    const [still] = await admin<{ address: string | null }[]>`
+      select address from contacts where id = ${clearedId}
+    `;
+    expect(still?.address).toBe(null);
+
+    // Saying so explicitly still works.
+    const claimed = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${clearedId}/addresses`,
+      organisationId,
+      payload: { label: 'Works', address: 'Shed C, Karur', isPrimary: true },
+    });
+    expect(claimed.statusCode, claimed.body).toBe(201);
+    expect(claimed.json<{ isPrimary: boolean }>().isPrimary).toBe(true);
+  });
+
+  it('moves the primary with the body-less verb, past an address-less namesake', async () => {
+    // The trap: the 0028 unique index folds a NULL address to '', so
+    // while the old demote-then-promote pair ran, the mirror wrote the
+    // contact as address-less between the statements and collided with
+    // any same-designation contact that genuinely has no address — which
+    // the v1 importer created plenty of. One statement, no interlude.
+    const namesake = await newContact({
+      designation: `Twin Traders ${runId}`,
+    });
+    expect(namesake).not.toBe('');
+    const twinId = await newContact({
+      designation: `Twin Traders ${runId}`,
+      address: 'Twin Works One',
+      isVendor: true,
+    });
+    const second = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${twinId}/addresses`,
+      organisationId,
+      payload: { address: 'Twin Works Two' },
+    });
+    expect(second.statusCode, second.body).toBe(201);
+    const secondId = second.json<{ id: string }>().id;
+
+    const moved = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${twinId}/addresses/${secondId}/make-primary`,
+      organisationId,
+    });
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect(moved.json<{ isPrimary: boolean }>().isPrimary).toBe(true);
+    const [mirrored] = await admin<{ address: string }[]>`
+      select address from contacts where id = ${twinId}
+    `;
+    expect(mirrored?.address).toBe('Twin Works Two');
+    const [primaries] = await admin<{ count: string }[]>`
+      select count(*)::text as count from contact_addresses
+      where contact_id = ${twinId} and is_primary
+    `;
+    expect(primaries?.count).toBe('1');
+
+    // A PERSISTENT collision — another active contact already carrying
+    // the designation+address pair the mirror would write — is a named
+    // 409, not a bare 500.
+    const squatter = await newContact({
+      designation: `Twin Traders ${runId}`,
+      address: 'Twin Works One',
+    });
+    expect(squatter).not.toBe('');
+    const worksOneId =
+      (await addressesOf(twinId)).find((address) => address.id !== secondId)?.id ?? '';
+    const collided = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${twinId}/addresses/${worksOneId}/make-primary`,
+      organisationId,
+    });
+    expect(collided.statusCode, collided.body).toBe(409);
+    expect(collided.json<{ code: string }>().code).toBe('CONTACT_EXISTS');
+
+    // The retire path answers the same collision by name too: retiring
+    // the primary promotes the heir, and the heir here is the very pair
+    // the squatter holds.
+    const heirCollision = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${twinId}/addresses/${secondId}/retire`,
+      organisationId,
+    });
+    expect(heirCollision.statusCode, heirCollision.body).toBe(409);
+    expect(heirCollision.json<{ code: string }>().code).toBe('CONTACT_EXISTS');
+
+    // With the squatter gone the retire goes through, and a retired row
+    // refuses the verb by name.
+    const squatterGone = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${squatter}/retire`,
+      organisationId,
+    });
+    expect(squatterGone.statusCode, squatterGone.body).toBe(200);
+    const retired = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${twinId}/addresses/${secondId}/retire`,
+      organisationId,
+    });
+    expect(retired.statusCode, retired.body).toBe(200);
+    const onRetired = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${twinId}/addresses/${secondId}/make-primary`,
+      organisationId,
+    });
+    expect(onRetired.statusCode, onRetired.body).toBe(409);
+    expect(onRetired.json<{ code: string }>().code).toBe('CONTACT_ADDRESS_RETIRED');
+  });
+
+  it('keeps a retired citation saveable while unchanged, and names the row that changes', async () => {
+    const retiringId = await newContact({
+      designation: `Retiring Vendor ${runId}`,
+      address: 'Shed 1, Hosur',
+      isVendor: true,
+    });
+    const [shedOne] = await addressesOf(retiringId);
+    const cited = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorContactId: retiringId,
+        vendorAddressId: shedOne?.id ?? null,
+        vendorPremises: null,
+        gatesDispatch: true,
+      },
+    ]);
+    expect(cited.statusCode, cited.body).toBe(200);
+
+    // Retire the address AND the vendor. The stored citation survives.
+    const addressGone = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${retiringId}/addresses/${shedOne?.id ?? ''}/retire`,
+      organisationId,
+    });
+    expect(addressGone.statusCode, addressGone.body).toBe(200);
+    const vendorGone = await authed(owner, {
+      method: 'POST',
+      url: `/api/masters/contacts/${retiringId}/retire`,
+      organisationId,
+    });
+    expect(vendorGone.statusCode, vendorGone.body).toBe(200);
+
+    // The whole-table replace re-submits every row, so an UNCHANGED
+    // citation of the retired pair must not brick the tab.
+    const unchanged = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorContactId: retiringId,
+        vendorAddressId: shedOne?.id ?? null,
+        vendorPremises: null,
+        gatesDispatch: true,
+      },
+    ]);
+    expect(unchanged.statusCode, unchanged.body).toBe(200);
+
+    // Editing the row WITHOUT touching the citation passes too.
+    const requantified = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '50.000',
+        vendorContactId: retiringId,
+        vendorAddressId: shedOne?.id ?? null,
+        vendorPremises: null,
+        gatesDispatch: true,
+      },
+    ]);
+    expect(requantified.statusCode, requantified.body).toBe(200);
+
+    // Changing the citation re-proves it, and the refusal names the row.
+    const changed = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '50.000',
+        vendorContactId: retiringId,
+        vendorAddressId: null,
+        vendorPremises: 'Shed 2, Hosur',
+        gatesDispatch: true,
+      },
+    ]);
+    expect(changed.statusCode, changed.body).toBe(409);
+    const refusal = changed.json<{
+      code: string;
+      message: string;
+      details?: { workItemId?: string };
+    }>();
+    expect(refusal.code).toBe('CONTACT_RETIRED');
+    expect(refusal.message).toMatch(/^Item /);
+    expect(refusal.details?.workItemId).toBe(gatedItemId);
+  });
+
+  it('refuses raising a call for a vendor with no premises, in a sentence', async () => {
+    const bareId = await newContact({
+      designation: `Bare Vendor ${runId}`,
+      isVendor: true,
+    });
+    // A clause may legitimately hold just the vendor — and free text up
+    // to a master address's own width (the 0082 CHECK was 200 wide, the
+    // contract 1000; 0116 reconciles them at 1000).
+    const longPremises = `Door 12, ${'Industrial Estate Phase Two, '.repeat(15)}Hosur`;
+    expect(longPremises.length).toBeGreaterThan(200);
+    const mapped = await saveClauses(owner, [
+      {
+        workItemId: gatedItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '100.000',
+        vendorContactId: bareId,
+        vendorAddressId: null,
+        vendorPremises: null,
+        gatesDispatch: true,
+      },
+      {
+        workItemId: freeItemId,
+        agency: 'RDSO',
+        inspectionQuantity: '10.000',
+        vendorPremises: longPremises,
+        gatesDispatch: false,
+      },
+    ]);
+    expect(mapped.statusCode, mapped.body).toBe(200);
+
+    // The CALL is where the gap has to close: a vendor with no premises
+    // text anywhere has nowhere to send the agency, and before this was
+    // said in a sentence it surfaced as the snapshot CHECK's bare 500.
+    const raised = await authed(owner, {
+      method: 'POST',
+      url: `/api/works/${workId}/inspection-calls`,
+      organisationId,
+      payload: {
+        agency: 'RDSO',
+        requestedOn: '2026-02-01',
+        vendorContactId: bareId,
+        vendorAddressId: null,
+        vendorPremises: null,
+        items: [{ workItemId: gatedItemId, quantity: '10.000' }],
+      },
+    });
+    expect(raised.statusCode, raised.body).toBe(400);
+    expect(raised.json<{ code: string }>().code).toBe('INSPECTION_CLAUSE_INVALID');
   });
 });

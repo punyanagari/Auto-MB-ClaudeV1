@@ -111,6 +111,7 @@ export function ScheduleAccordionControls({
 /** One schedule: a summary row that stays on screen, and its items. */
 export function ScheduleSection({
   code,
+  heading,
   title,
   itemCount,
   total,
@@ -119,7 +120,14 @@ export function ScheduleSection({
   headingLevel,
   children,
 }: {
-  readonly code: string;
+  readonly code?: string;
+  /** The whole summary label, for a section that is not a schedule.
+   * The inspection clause tab splits one Work's items into two of these
+   * sections — the ones whose description names an agency and the rest —
+   * and "Schedule Matched items" would be a lie about what they are.
+   * Style, stickiness and keyboard behaviour are unchanged; only the
+   * words differ. */
+  readonly heading?: string;
   /** The schedule's own heading, when the source has one. The parsed
    * letter binds items to a schedule id and nothing else, so the review
    * screen has none and the code carries the row alone. */
@@ -170,7 +178,9 @@ export function ScheduleSection({
               expanded && 'rotate-90',
             )}
           />
-          <span className="font-mono text-sm font-semibold">Schedule {code}</span>
+          <span className="font-mono text-sm font-semibold">
+            {heading ?? `Schedule ${code ?? ''}`}
+          </span>
           <span className="min-w-0 flex-1 truncate text-sm font-normal text-muted-foreground">
             {title ?? ''}
           </span>
