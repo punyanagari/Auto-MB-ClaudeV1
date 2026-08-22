@@ -382,6 +382,82 @@ describe('dashboard', () => {
     expect(work?.issuedChallans).toBe(0);
   });
 
+  /* The landing screen's own figures (`docs/UX.md` § 38). Placed
+   * immediately after the baseline case above and BEFORE the mixed-basis
+   * one below, because that test inserts a second Work: these assertions
+   * are about the seeded portfolio exactly as `beforeAll` leaves it. */
+  it('states the ACTIVE portfolio, its receivable position, and the ninety-day feed', async () => {
+    const response = await authed(viewer, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const { signals, deadlines, execution, monthlyBilling } =
+      response.json<DashboardResponse>();
+
+    // One active Work, and the tiles state ITS value rather than the
+    // register's. They agree here because nothing is completed yet — the
+    // divergence is asserted where a completed Work exists.
+    expect(signals.activeWorks).toBe(1);
+    expect(signals.activeContractValue).toBe('4520000.00');
+    expect(signals.activeBilledValue).toBe('300.00');
+    expect(signals.activeExecutedPercent).toBe('0.0066');
+
+    // The seeded bill has no Measurement Book, so the railway has
+    // certified no figure: nothing is outstanding against it YET, which
+    // is not the same as nothing being outstanding. It is counted, never
+    // summed in at zero.
+    expect(signals.receivableOutstanding).toBe('0.00');
+    expect(signals.receivableIndeterminate).toBe(1);
+
+    // No completion date is seeded on DASH-1 and nothing is queued for
+    // the kiosk, so both lamps are dark rather than absent.
+    expect(signals.completionsDue).toBe(0);
+    expect(signals.unsignedDocuments).toBe(0);
+    // The expiry lamp counts exactly the instruments the alert loop
+    // already reported, which is what stops the strip and the list from
+    // disagreeing about the same instruments.
+    expect(signals.instrumentsExpiring).toBe(
+      response
+        .json<DashboardResponse>()
+        .alerts.filter((alert) => alert.kind.startsWith('instrument_')).length,
+    );
+
+    // Ninety days FORWARD. The instrument thirty days out is on the
+    // strip; the one that expired five days ago is not — an expired
+    // guarantee is a fact the alert list states in words, not a deadline —
+    // and neither is the one three hundred days out.
+    expect(deadlines).toHaveLength(1);
+    expect(deadlines[0]?.kind).toBe('instrument');
+    expect(deadlines[0]?.dueInDays).toBe(30);
+    expect(deadlines[0]?.workCode).toBe('DASH-1');
+
+    // Supply and installation against contract value, both on the Work's
+    // own basis and both computed here rather than in a browser.
+    expect(execution).toHaveLength(1);
+    expect(execution[0]?.workCode).toBe('DASH-1');
+    expect(execution[0]?.suppliedPercent).toBe('0.0000');
+    expect(execution[0]?.installedPercent).toBe('0.0000');
+    expect(execution[0]?.dueOn).toBeNull();
+
+    // Twelve CALENDAR months, ascending and distinct — the spine is
+    // generated, so a quiet year is twelve empty months rather than a
+    // shorter chart.
+    expect(monthlyBilling).toHaveLength(12);
+    expect(monthlyBilling.map((row) => row.month)).toEqual(
+      [...monthlyBilling.map((row) => row.month)].sort(),
+    );
+    expect(new Set(monthlyBilling.map((row) => row.month)).size).toBe(12);
+    for (const month of monthlyBilling) {
+      expect(month.month).toMatch(/^\d{4}-\d{2}$/);
+      // Nothing is invoiced or received in the fixture, and an absent
+      // month reports zero rather than dropping out.
+      expect(month.billed).toBe('0.00');
+      expect(month.received).toBe('0.00');
+    }
+  });
+
   it('aggregates a MIXED-basis portfolio on one basis, not on printed rupees', async () => {
     // The regression the per-Work attribute exists for, at the API level.
     // DASH-1 is an inclusive Work worth 4,520,000 inclusive — 3,830,508.47

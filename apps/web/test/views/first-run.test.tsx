@@ -35,8 +35,23 @@ const EMPTY_DASHBOARD: DashboardResponse = {
     irpReportingDue: 0,
     irpReportingOverdue: 0,
   },
+  signals: {
+    activeWorks: 0,
+    activeContractValue: '0.00',
+    activeBilledValue: '0.00',
+    activeExecutedPercent: null,
+    receivableOutstanding: '0.00',
+    receivableIndeterminate: 0,
+    completionsDue: 0,
+    instrumentsExpiring: 0,
+    unsignedDocuments: 0,
+  },
   alerts: [],
   works: [],
+  completions: [],
+  monthlyBilling: [],
+  execution: [],
+  deadlines: [],
 };
 
 /** A freshly created organisation: name and slug only. */
@@ -78,7 +93,6 @@ function renderDashboard(
       onOpenWork={vi.fn()}
       onOpenWorks={vi.fn()}
       onUploadLoa={options.onUploadLoa ?? vi.fn()}
-      onOpenApprovals={vi.fn()}
     />,
   );
   return api;
@@ -183,7 +197,9 @@ describe('first run — dashboard', () => {
         ],
       },
     });
-    await screen.findByRole('heading', { name: 'Work portfolio' });
+    // The dashboard no longer lists Works (`docs/UX.md` § 38), so the
+    // anchor is the first panel it always draws instead.
+    await screen.findByRole('heading', { name: 'Completion dates' });
     expect(screen.queryByRole('heading', { name: 'First steps' })).toBeNull();
   });
 
@@ -200,7 +216,6 @@ describe('first run — dashboard', () => {
         onOpenWork={vi.fn()}
         onOpenWorks={vi.fn()}
         onUploadLoa={vi.fn()}
-        onOpenApprovals={vi.fn()}
       />,
     );
     await screen.findByRole('alert');

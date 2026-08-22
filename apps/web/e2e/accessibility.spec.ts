@@ -55,7 +55,12 @@ test('organisation picker and members workspace pass the axe scan', async ({
     .getByRole('button', { name: 'Open workspace' })
     .click();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await expect(page.getByText(/PBG BG\/22 for PL270-CRB expires/)).toBeVisible();
+  /* The redesigned landing screen (`docs/UX.md` § 38). Anchored on the
+     ninety-day strip, which is the LAST of its four panels: waiting for it
+     means the tiles, the attention line, the completion panel and both
+     charts have all committed, so the scan below sees the whole screen
+     rather than a half-painted one. */
+  await expect(page.getByRole('heading', { name: 'Next 90 days' })).toBeVisible();
   await expectNoAxeViolations(page, 'dashboard');
 
   await page.getByRole('link', { name: 'Works', exact: true }).click();

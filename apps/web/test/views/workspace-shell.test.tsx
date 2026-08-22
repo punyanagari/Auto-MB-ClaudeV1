@@ -2,7 +2,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { type ApiClient } from '../../src/api.js';
-import { OperationsDashboard } from '../../src/views/OperationsDashboard.js';
 import { OperationsWorkspace } from '../../src/views/OperationsWorkspace.js';
 import {
   stubApi,
@@ -12,125 +11,6 @@ import {
   BALANCE,
   challanWork,
 } from './helpers.js';
-
-describe('OperationsDashboard', () => {
-  // Second-heaviest here (~340ms alone): a full workspace render plus a view
-  // transition. Under the same contention that stretched the challan-guard
-  // test 14x it lands around 4.7s — inside a rounding error of the 5s default,
-  // so it is budgeted before it starts flaking rather than after.
-  it(
-    'shows totals, alerts with severity, and routes work opens',
-    { timeout: 15_000 },
-    async () => {
-      const dashboard = vi.fn().mockResolvedValue({
-        totals: {
-          works: 2,
-          contractValue: '5807500.00',
-          deliveredValue: '1450000.00',
-          billedValue: '300.00',
-          openDrafts: 1,
-          loaAwaitingReview: 1,
-        },
-        alerts: [
-          {
-            kind: 'instrument_expiring',
-            severity: 'warning',
-            message: 'PBG BG/22 for PL270-CRB expires on 2026-09-15.',
-            workId: WORK_ID,
-            workCode: 'PL270-CRB',
-            dueInDays: 38,
-            settlement: null,
-          },
-          {
-            kind: 'loa_review_pending',
-            severity: 'notice',
-            message: '1 LOA letter is waiting for review and confirmation.',
-            workId: null,
-            workCode: null,
-            dueInDays: null,
-            settlement: null,
-          },
-        ],
-        works: [
-          {
-            workId: WORK_ID,
-            workCode: 'PL270-CRB',
-            title: 'Signalling gear, CR Bhusawal',
-            status: 'active',
-            contractValue: '4520000.00',
-            deliveredValue: '1450000.00',
-            billedValue: '300.00',
-            issuedChallans: 3,
-          },
-          {
-            workId: '22222222-2222-4222-8222-222222222222',
-            workCode: 'VALUE-9',
-            title: 'Nine rupee comparison work',
-            status: 'active',
-            contractValue: '9.00',
-            deliveredValue: '0.00',
-            billedValue: '0.00',
-            issuedChallans: 0,
-          },
-          {
-            workId: '44444444-4444-4444-8444-444444444445',
-            workCode: 'VALUE-100',
-            title: 'One hundred rupee comparison work',
-            status: 'active',
-            contractValue: '100.00',
-            deliveredValue: '0.00',
-            billedValue: '0.00',
-            issuedChallans: 0,
-          },
-        ],
-      });
-      const onOpenWork = vi.fn();
-      const onOpenWorks = vi.fn();
-      render(
-        <OperationsDashboard
-          api={stubApi({ dashboard })}
-          organisationId={ORG_ID}
-          canModify
-          onOpenWork={onOpenWork}
-          onOpenWorks={onOpenWorks}
-          onUploadLoa={vi.fn()}
-          onOpenApprovals={vi.fn()}
-        />,
-      );
-
-      // Awaited on the alert itself, not the "Dashboard" heading: the
-      // dashboard's loading branch renders that heading too, so waiting on
-      // it resolves against the loading state and every read below then
-      // races the dashboard mock (the §2.7 hazard).
-      expect(await screen.findByText(/PBG BG\/22 for PL270-CRB expires/)).toBeTruthy();
-      expect(screen.getByText('38 days left')).toBeTruthy();
-      expect(
-        screen.getByRole('progressbar', { name: 'PL270-CRB delivery progress' }),
-      ).toBeTruthy();
-      // 1450000 / 4520000 = 32%
-      expect(screen.getByText('32%')).toBeTruthy();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Open PL270-CRB' }));
-      expect(onOpenWork).toHaveBeenCalledWith(WORK_ID);
-
-      const portfolio = screen.getByRole('table', {
-        name: 'Work execution and billing progress',
-      });
-      expect(
-        within(portfolio)
-          .getAllByRole('rowheader')
-          .map((header) => header.textContent),
-      ).toEqual([
-        expect.stringContaining('PL270-CRB'),
-        expect.stringContaining('VALUE-100'),
-        expect.stringContaining('VALUE-9'),
-      ]);
-
-      fireEvent.click(screen.getByRole('button', { name: 'Review LOAs' }));
-      expect(onOpenWorks).toHaveBeenCalledTimes(1);
-    },
-  );
-});
 
 describe('OperationsWorkspace mobile shell', () => {
   const organisation = {
@@ -153,7 +33,22 @@ describe('OperationsWorkspace mobile shell', () => {
           openDrafts: 0,
           loaAwaitingReview: 0,
         },
+        signals: {
+          activeWorks: 0,
+          activeContractValue: '0.00',
+          activeBilledValue: '0.00',
+          activeExecutedPercent: null,
+          receivableOutstanding: '0.00',
+          receivableIndeterminate: 0,
+          completionsDue: 0,
+          instrumentsExpiring: 0,
+          unsignedDocuments: 0,
+        },
         alerts: [],
+        completions: [],
+        monthlyBilling: [],
+        execution: [],
+        deadlines: [],
         works: [],
       }),
       ...overrides,
@@ -438,7 +333,22 @@ describe('OperationsWorkspace mobile shell', () => {
               openDrafts: 0,
               loaAwaitingReview: 0,
             },
+            signals: {
+              activeWorks: 0,
+              activeContractValue: '0.00',
+              activeBilledValue: '0.00',
+              activeExecutedPercent: null,
+              receivableOutstanding: '0.00',
+              receivableIndeterminate: 0,
+              completionsDue: 0,
+              instrumentsExpiring: 0,
+              unsignedDocuments: 0,
+            },
             alerts: [],
+            completions: [],
+            monthlyBilling: [],
+            execution: [],
+            deadlines: [],
             works: [],
           }),
         })}
@@ -539,7 +449,32 @@ describe('OperationsWorkspace mobile shell', () => {
             openDrafts: 0,
             loaAwaitingReview: 0,
           },
+          signals: {
+            activeWorks: 0,
+            activeContractValue: '0.00',
+            activeBilledValue: '0.00',
+            activeExecutedPercent: null,
+            receivableOutstanding: '0.00',
+            receivableIndeterminate: 0,
+            completionsDue: 0,
+            instrumentsExpiring: 0,
+            unsignedDocuments: 0,
+          },
           alerts: [],
+          completions: [],
+          monthlyBilling: [],
+          execution: [
+            {
+              workId: WORK_ID,
+              workCode: 'DCW-1',
+              title: 'Supply of switchboards',
+              suppliedPercent: '0.0000',
+              installedPercent: '0.0000',
+              dueOn: null,
+              dueInDays: null,
+            },
+          ],
+          deadlines: [],
           works: [
             {
               workId: WORK_ID,
@@ -599,7 +534,32 @@ describe('OperationsWorkspace mobile shell', () => {
               openDrafts: 0,
               loaAwaitingReview: 0,
             },
+            signals: {
+              activeWorks: 0,
+              activeContractValue: '0.00',
+              activeBilledValue: '0.00',
+              activeExecutedPercent: null,
+              receivableOutstanding: '0.00',
+              receivableIndeterminate: 0,
+              completionsDue: 0,
+              instrumentsExpiring: 0,
+              unsignedDocuments: 0,
+            },
             alerts: [],
+            completions: [],
+            monthlyBilling: [],
+            execution: [
+              {
+                workId: WORK_ID,
+                workCode: 'DCW-1',
+                title: 'Supply of switchboards',
+                suppliedPercent: '0.0000',
+                installedPercent: '0.0000',
+                dueOn: null,
+                dueInDays: null,
+              },
+            ],
+            deadlines: [],
             works: [
               {
                 workId: WORK_ID,
@@ -655,7 +615,32 @@ describe('OperationsWorkspace mobile shell', () => {
             openDrafts: 0,
             loaAwaitingReview: 0,
           },
+          signals: {
+            activeWorks: 0,
+            activeContractValue: '0.00',
+            activeBilledValue: '0.00',
+            activeExecutedPercent: null,
+            receivableOutstanding: '0.00',
+            receivableIndeterminate: 0,
+            completionsDue: 0,
+            instrumentsExpiring: 0,
+            unsignedDocuments: 0,
+          },
           alerts: [],
+          completions: [],
+          monthlyBilling: [],
+          execution: [
+            {
+              workId: WORK_ID,
+              workCode: 'DCW-1',
+              title: 'Supply of switchboards',
+              suppliedPercent: '0.0000',
+              installedPercent: '0.0000',
+              dueOn: null,
+              dueInDays: null,
+            },
+          ],
+          deadlines: [],
           works: [
             {
               workId: WORK_ID,
@@ -746,7 +731,22 @@ describe('OperationsWorkspace hash routing', () => {
           openDrafts: 0,
           loaAwaitingReview: 0,
         },
+        signals: {
+          activeWorks: 0,
+          activeContractValue: '0.00',
+          activeBilledValue: '0.00',
+          activeExecutedPercent: null,
+          receivableOutstanding: '0.00',
+          receivableIndeterminate: 0,
+          completionsDue: 0,
+          instrumentsExpiring: 0,
+          unsignedDocuments: 0,
+        },
         alerts: [],
+        completions: [],
+        monthlyBilling: [],
+        execution: [],
+        deadlines: [],
         works: [],
       }),
       getWork: vi.fn().mockResolvedValue(challanWork()),

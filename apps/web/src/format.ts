@@ -201,16 +201,11 @@ export function formatServerPercent(value: string | null): string | null {
   return `${parsed.toFixed(1)}%`;
 }
 
-/** Whole-percent progress, clamped to 0–100 for display. Only for ratios
- * of two figures already known to be on the SAME GST basis — the
- * dashboard's delivered-against-contract bars, where both sides come from
- * the same Work's own rates. Anything compared across works, or against a
- * figure from a tax document, must be computed on the server instead. */
-export function progressPercent(part: string, whole: string): number {
-  const partValue = Number(part);
-  const wholeValue = Number(whole);
-  if (!Number.isFinite(partValue) || !Number.isFinite(wholeValue) || wholeValue <= 0) {
-    return 0;
-  }
-  return Math.max(0, Math.min(100, Math.round((partValue / wholeValue) * 100)));
-}
+/* `progressPercent` stood here: a browser-side division of two decimal
+ * strings, clamped for a progress bar. Its only caller was the dashboard's
+ * delivered-against-contract column, and the redesigned screen
+ * (`docs/UX.md` § 38) takes both of its percentages from the server, which
+ * is where a ratio against a contract value belongs — each Work's GST
+ * basis decides what its contract value is comparable with (migration
+ * 0062) and the browser does not know it. Removed rather than left for the
+ * next screen to reach for. */

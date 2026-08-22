@@ -2948,6 +2948,123 @@ and migration 0094, for that section's reason. A member without it sees
 the census and not the upload panel, rather than an upload panel that
 answers 403.
 
+### 38. The dashboard stops listing Works and starts answering questions
+
+**Status: application-first, owner decisions of 2026-08-22 (seven
+decisions R1–R7).** § 38 is claimed as the next free number after § 37,
+which was itself renumbered at merge for the reason that section records.
+Siblings are in flight and may claim adjacent numbers; the coordinator
+arbitrates, and this section moves rather than shares.
+
+**No mock citation is possible and none is claimed.** The mock's
+`app/page` draws a five-tile stat row, a Work portfolio table and a
+seven-row alert list, and this screen keeps the first of those and
+replaces the other two. That puts it under AGENTS.md § Design contract 4
+and § Approved divergences 4 — a surface the mock does not cover, built
+inside the mock's own grammar. Every element is one the mock already
+ships:
+
+| Element                       | Taken from                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
+| The four-tile row             | `app/page`'s `.data-surface` stat panel, `Stat`, unchanged but for its cell count   |
+| Panel cards and their headers | `ui/card` plus the header/description block every register uses                     |
+| Lamps                         | the status dot of `components/shared.tsx`, always with a word beside it             |
+| Chart colour                  | `--chart-1` / `--chart-2`, the ramp `docs/DESIGN.md` records for exactly this       |
+| Mono tabular figures          | `.metric-value` and the numeric rules that govern every money column in the product |
+
+**R1 — the Works list is gone from the landing screen.** It was a
+truncated, unsortable copy of a register in the rail that sorts, filters
+and pages. Row 1 is now four tiles about the RUNNING portfolio — active
+Works, active contract value, executed percentage, receivable outstanding
+— and beneath them one line of red and amber lamps: completion dates
+inside thirty days, guarantees and certificates inside sixty, and issued
+documents still waiting on a signature. Each lamp reaches its answer; the
+signing queue is a register of its own, and the other two move the
+viewport to the panel on this screen that holds the detail.
+
+**The seven-row alert list goes with it, and this is the decision worth
+arguing.** What it said is said better one scope in: the receivables
+register carries every bill's settlement position, the invoice register
+carries the IRP reporting window, the challan register carries open
+drafts, and the Works register carries LOA letters awaiting review. What
+no register carried was a single line an operator could read in a second.
+The ranked `alerts` array stays in the API response — nothing about the
+server's severity ordering changed — so a later surface can render it
+without rebuilding it.
+
+**R2 — completion dates are a panel, not a row of a list**, because a
+completion date is the only deadline on this screen whose remedy is a
+document this product writes. Thirty days or less is a red lamp, the next
+thirty amber, and each row carries the days remaining, the date, and the
+executed percentage the extension will be argued from. "Request extension"
+opens the Work whose Overview holds the extension composer, directly
+beneath the two tiles stating the completion date being extended FROM.
+
+**What "prefilled" resolves to, stated because it is not what it sounds
+like.** The composer is prefilled with the WORK and shows its CURRENT
+completion date; the proposed date and the grounds are left empty on
+purpose. A proposal equal to the current date is not an extension, and
+the grounds are the whole substance of the letter — a landing screen
+guessing at either would be inventing a contract argument it cannot see.
+
+**R3 — billed against received, by month, over the trailing year.** Both
+series are GST-INCLUSIVE, which is the only reason they may share an axis:
+`billed` is submitted and superseded tax invoices net of issued credit
+notes, and `received` is what reached the bank. Measurement Book bill
+totals are deliberately in neither: a bill and the invoice raised against
+its measurement state the same measured value on two different bases, so
+adding them would double-count AND mix bases — the mistake `docs/PRODUCT.md`
+§ 5.2 names. There is one y-scale and there never will be two.
+
+**R4 — supply and installation as paired bars, not a stack.** A Work can
+be fully supplied and barely installed, and a stack would draw a total
+that means nothing; two bars on a common 0–100 axis let the eye read the
+GAP, which is material on site that nobody has put up yet. Rows are
+ordered by nearest completion date, and a Work inside thirty days carries
+a red lamp, a tinted row and the words "N days left" — the colour is
+never the message. The bars themselves stay in the two series colours in
+every row: repainting a bar by urgency would break the one thing a legend
+promises.
+
+**R5 — ninety days of dated obligations on one line.** Completion dates,
+instrument expiries and defect liability periods ending, positioned by
+how far off they are and coloured by proximity: red inside a fortnight,
+amber inside a month, neutral beyond. Deliberately NOT an SVG — every
+lamp is a link to its Work, and a focusable link inside an `<svg>` is a
+known way to lose keyboard order and accessible names. It is a list on a
+rail, in document order, soonest first, and each lamp carries the whole
+sentence as text. One lamp per Work for defect liability (the earliest
+live expiry inside the window; a large Work has hundreds of warranties
+and the register owns the rest) and one per instrument, because each
+instrument is a different document with a different bank.
+
+**R6 — the order is the order the questions are asked.** Tiles, then the
+attention line, then the completion panel beside the billing chart, then
+the execution bars, then the strip. At 1440px the tiles, the lamps and
+both row-2 panels are above the fold, which is the constraint that
+decided the panel heights; nothing red or amber is ever below it, because
+the lamps sit third from the top.
+
+**R7 — the tiles are the ACTIVE portfolio, and the value is the effective
+one.** `works.contract_value` is the column an amendment moves (migration
+0104), so there is nothing to add for variations and a second amended
+total would be a second answer that eventually disagrees with the Work's
+own screen. Completed and cancelled Works are excluded: their value never
+leaves a whole-register total, so the old headline drifted upward forever
+and stopped describing anything anybody could act on. The whole-register
+reading stays in `totals` for whatever still wants it, and the tile's
+second line states what the first one leaves out — "of which executed ₹X
+(Y%)".
+
+**Accessibility, stated because two of the checks are not obvious.** The
+billing chart carries a table of every month's two figures: it is the
+screen-reader reading of the plot and the relief the palette needs, since
+`--chart-2` measures 2.55:1 against the light card and a figure that
+exists only as a fill is a figure some readers do not have. And nothing
+on this screen animates — no transitions, no entrance, no smooth scroll —
+so `prefers-reduced-motion` has nothing to switch off rather than
+something to remember to switch off.
+
 ## Settled information architecture
 
 Owner decisions of 2026-08-16 and 2026-08-17, matched against the frozen mock.

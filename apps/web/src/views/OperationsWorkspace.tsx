@@ -1091,9 +1091,6 @@ export function OperationsWorkspace({
                 onUploadLoa={() => {
                   navigate({ name: 'upload', tenderId: null });
                 }}
-                onOpenApprovals={() => {
-                  navigate({ name: 'approvals' });
-                }}
               />
             )}
 

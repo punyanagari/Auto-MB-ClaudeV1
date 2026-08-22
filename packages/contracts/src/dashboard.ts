@@ -1,5 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 import {
+  DateOnlySchema,
   DecimalStringSchema,
   GstRateSchema,
   NonNegativeMoneyStringSchema,
@@ -132,6 +133,151 @@ const DashboardWorkProgressSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * The four figures the landing screen leads with, and the counts behind
+ * its attention strip.
+ *
+ * ACTIVE Works only, on purpose. A portfolio's completed and cancelled
+ * contracts belong in the register's history; what an operator opens this
+ * screen to decide is about the contracts still running, and adding a
+ * finished Work's value to the headline makes the headline drift upward
+ * forever. `totals` above keeps the whole-portfolio reading for anything
+ * that wants it.
+ *
+ * Every figure here is computed by the server. The browser divides no
+ * money and adds no rupees: `activeExecutedPercent` in particular is a
+ * cross-Work ratio and each Work's GST basis decides what its contract
+ * value is comparable with (migration 0062), which the browser does not
+ * know.
+ */
+const DashboardSignalsSchema = Type.Object(
+  {
+    /** Works whose status is `active`, the denominator of everything else
+     * on this object. */
+    activeWorks: Type.Integer({ minimum: 0 }),
+    /** The sum of the ACTIVE Works' contract values — the effective value,
+     * because `works.contract_value` is the column an amendment moves
+     * (migration 0104). Stated on each Work's own basis and added up, the
+     * same reading `totals.contractValue` has and for the same recorded
+     * reason. */
+    activeContractValue: DecimalStringSchema,
+    /** Billed value across those same Works, the numerator of the
+     * percentage below. */
+    activeBilledValue: DecimalStringSchema,
+    /** Billed against contract across the active portfolio, every term
+     * restated as taxable value first. Null when no active Work carries a
+     * contract value. */
+    activeExecutedPercent: Type.Union([PercentStringSchema, Type.Null()]),
+    /** What the railway still owes across every prepared or submitted
+     * bill, summed from `bill_settlement_positions` (migration 0067). */
+    receivableOutstanding: DecimalStringSchema,
+    /** Bills whose measurement is not closed, so no figure is outstanding
+     * against them YET. Counted rather than folded into the sum at zero,
+     * because a table that showed them as nil would state an amount
+     * nobody knows. */
+    receivableIndeterminate: Type.Integer({ minimum: 0 }),
+    /** Active Works reaching (or past) their completion date inside the
+     * thirty-day window a DOC extension needs. */
+    completionsDue: Type.Integer({ minimum: 0 }),
+    /** Active instruments — PBG, PAC, DOC — inside the sixty-day expiry
+     * warning window. */
+    instrumentsExpiring: Type.Integer({ minimum: 0 }),
+    /** Issued documents queued for the signing kiosk and not yet signed:
+     * pending, claimed, or failed. */
+    unsignedDocuments: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type DashboardSignals = Static<typeof DashboardSignalsSchema>;
+
+/** One active Work approaching its completion date, with the figure an
+ * extension conversation is argued from. Soonest first. */
+const DashboardCompletionSchema = Type.Object(
+  {
+    workId: UuidSchema,
+    workCode: Type.String(),
+    title: Type.String(),
+    dueOn: DateOnlySchema,
+    /** Days until the completion date; negative when it has passed. */
+    dueInDays: Type.Integer(),
+    /** Billed against contract on this Work's own basis. Null when the
+     * contract value is zero. */
+    executedPercent: Type.Union([PercentStringSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type DashboardCompletion = Static<typeof DashboardCompletionSchema>;
+
+/**
+ * One month of the billed-against-received pair, oldest first, twelve
+ * entries ending with the current month. Calendar months, including the
+ * quiet ones: a gap in a time series is a hole in the reader's mental
+ * picture, not an economy.
+ *
+ * BOTH FIGURES ARE GST-INCLUSIVE, which is what makes them comparable on
+ * one axis. `billed` is the tax invoices this organisation submitted, net
+ * of the credit notes that reverse them; `received` is what reached the
+ * bank, and a bank credit is always GST-inclusive (migration 0067).
+ * Measurement-Book bill totals are deliberately NOT added in: a bill and
+ * the invoice raised against its measurement state the same measured
+ * value on two different bases, so adding them would both double-count
+ * and mix bases — the mistake `docs/PRODUCT.md` §5.2 names.
+ */
+const DashboardBillingMonthSchema = Type.Object(
+  {
+    /** `YYYY-MM`, the document's own month rather than a timezone reading
+     * of a timestamp: both dates behind it are date-only legal values. */
+    month: Type.String({ pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$' }),
+    /** Submitted and superseded invoices less issued credit notes. May be
+     * negative in a month whose credit notes exceed its invoices. */
+    billed: DecimalStringSchema,
+    received: NonNegativeMoneyStringSchema,
+  },
+  { additionalProperties: false },
+);
+export type DashboardBillingMonth = Static<typeof DashboardBillingMonthSchema>;
+
+/** One active Work's execution against its contract value, ordered by
+ * nearest completion date. Both percentages are computed on the Work's
+ * own GST basis by the server. */
+const DashboardWorkExecutionSchema = Type.Object(
+  {
+    workId: UuidSchema,
+    workCode: Type.String(),
+    title: Type.String(),
+    /** Value on issued delivery challans against contract value. */
+    suppliedPercent: Type.Union([PercentStringSchema, Type.Null()]),
+    /** Value of recorded installations — quantity at the accepted rate
+     * (migration 0063) — against contract value. */
+    installedPercent: Type.Union([PercentStringSchema, Type.Null()]),
+    /** The Work's current completion date, null where none is recorded. */
+    dueOn: Type.Union([DateOnlySchema, Type.Null()]),
+    dueInDays: Type.Union([Type.Integer(), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type DashboardWorkExecution = Static<typeof DashboardWorkExecutionSchema>;
+
+/** One dated obligation inside the next ninety days. The three kinds are
+ * the three clocks a works contract runs on at once. */
+const DashboardDeadlineSchema = Type.Object(
+  {
+    kind: Type.Union([
+      Type.Literal('completion'),
+      Type.Literal('instrument'),
+      Type.Literal('defect_liability'),
+    ]),
+    workId: UuidSchema,
+    workCode: Type.String(),
+    /** What expires: "Completion", "PBG BG/22", "Defect liability". */
+    label: Type.String({ minLength: 1, maxLength: 220 }),
+    dueOn: DateOnlySchema,
+    dueInDays: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+export type DashboardDeadline = Static<typeof DashboardDeadlineSchema>;
+
 export const DashboardResponseSchema = Type.Object(
   {
     totals: Type.Object(
@@ -163,8 +309,25 @@ export const DashboardResponseSchema = Type.Object(
       },
       { additionalProperties: false },
     ),
+    signals: DashboardSignalsSchema,
     alerts: Type.Array(DashboardAlertSchema),
+    /** Every Work the caller may see, whatever its status. The landing
+     * screen no longer LISTS them (`docs/UX.md` § 38 — the Works register
+     * is one click away in the rail and does the job better), but the
+     * totals above are summed from these rows and the first-run checklist
+     * keys off the array being empty, so it stays in the payload. */
     works: Type.Array(DashboardWorkProgressSchema),
+    /** Active Works inside the sixty-day completion window, soonest
+     * first. Thirty days or less is the danger reading; the next thirty
+     * are the caution. */
+    completions: Type.Array(DashboardCompletionSchema),
+    /** Trailing twelve calendar months of billed against received. */
+    monthlyBilling: Type.Array(DashboardBillingMonthSchema),
+    /** Active Works by nearest completion date, with supply and
+     * installation against contract value. */
+    execution: Type.Array(DashboardWorkExecutionSchema),
+    /** Dated obligations inside the next ninety days, soonest first. */
+    deadlines: Type.Array(DashboardDeadlineSchema),
   },
   { additionalProperties: false },
 );
