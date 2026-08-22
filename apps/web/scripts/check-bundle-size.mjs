@@ -183,10 +183,32 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * restructure makes the screen READ less — the three portfolio reports
  * now wait for a Run instead of firing on every arrival.
  *
+ * RAISED TO 119,850 by the guard that stops a malformed percent-escape
+ * throwing the router (`#/reports/analysis/mapped-item/50%off`, where
+ * `%of` is not an escape and `decodeURIComponent` throws rather than
+ * returns). Routing again, and the smallest kind of it — one try/catch
+ * around the per-segment decode, one boolean, and two reads of it:
+ *
+ *   119,800  the line the Reports restructure left
+ *   119,786  measured on `origin/main` at 540ace12, so the searchable
+ *            pickers merged under this line without moving it and left
+ *            fourteen bytes of room
+ *   119,811  measured on this branch, so the guard costs 25 bytes — of
+ *            which fourteen were the room above and eleven are this raise
+ *
+ * A raise for a FIX rather than a feature, which is why it is worth being
+ * explicit that the rule below is not being bent: the payload grew because
+ * the parser now has a failure path it did not have, and a router that
+ * throws paints nothing at all. The cheaper spellings were tried and are
+ * not cheaper by enough to matter: a regex pre-check for a bad escape
+ * misses a well-formed escape of invalid UTF-8 (`%E0%A4`), which
+ * `decodeURIComponent` also throws on, and would trade correctness for
+ * about ten bytes.
+ *
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_800;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_850;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

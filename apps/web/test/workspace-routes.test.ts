@@ -273,6 +273,10 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('#/reports/analysis/work/50%off')).toEqual(picker);
     // A broken report name is unrecognised text like any other.
     expect(parseWorkspaceHash('#/reports/analysis/50%off')).toEqual(picker);
+    // Not only a bad escape: a well-formed escape of an incomplete UTF-8
+    // sequence throws in exactly the same way, which is why the guard is
+    // a try/catch and not a pattern.
+    expect(parseWorkspaceHash('#/reports/analysis/division/%E0%A4')).toEqual(picker);
     // The Work keeps its Work and loses the section, exactly as an
     // unknown section does.
     expect(parseWorkspaceHash(`#/works/${WORK_ID}/50%off`)).toEqual({

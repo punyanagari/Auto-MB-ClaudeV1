@@ -645,10 +645,10 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
    * rejects any other unrecognised text, and the fragment degrades where
    * its route already degrades — a Work keeps its Work and loses the
    * section, a report keeps the Reports screen and loses the
-   * configuration. The flag is for the two segments that validate nothing
-   * because they are free-form (the search query, and the analysis
-   * report's selection), which have no other way to tell garbage from a
-   * legitimate description. */
+   * configuration. The flag is for the two routes whose segments validate
+   * nothing because they are free-form — the search query, and the
+   * analysis report's selection — which have no other way to tell garbage
+   * from the description an item key legitimately is. */
   let malformed = false;
   const segments = raw
     .slice(1)
@@ -860,7 +860,9 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     // would type and what the rail calls it. `mis` is the internal name
     // and never appears in an address.
     case 'reports':
-      return parseReportsHash(rest, malformed);
+      // A reports fragment carrying a segment nothing can decode is a
+      // half-formed reports fragment, and they all land on the picker.
+      return malformed ? REPORTS_DEFAULT : parseReportsHash(rest);
     default:
       return null;
   }
@@ -874,10 +876,7 @@ const REPORTS_DEFAULT: WorkspaceRoute = {
   view: { name: 'mis', tab: 'analysis', report: null, selection: null },
 };
 
-function parseReportsHash(
-  segments: readonly string[],
-  malformed: boolean,
-): WorkspaceRoute | null {
+function parseReportsHash(segments: readonly string[]): WorkspaceRoute | null {
   const [first, second, third, ...extra] = segments;
   if (extra.length > 0) return null;
   if (first === undefined) return REPORTS_DEFAULT;
@@ -901,10 +900,8 @@ function parseReportsHash(
   // across every item; a code or an item key narrows either. The key can
   // be a description, so it carries whatever characters a schedule line
   // does — which is why every segment is encoded on the way out and
-  // decoded on the way in. A selection that will not decode is not a key
-  // any item or division answers to, so it degrades to the picker with
-  // every other half-formed reports fragment.
-  return malformed ? REPORTS_DEFAULT : run(third ?? null);
+  // decoded on the way in.
+  return run(third ?? null);
 }
 
 function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {
