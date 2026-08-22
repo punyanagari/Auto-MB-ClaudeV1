@@ -223,6 +223,27 @@ jobs:
               exit 1
               ;;
           esac
+      # The PostgreSQL service container's own log is streamed into this
+      # job, and this suite's job is to prove that writes are REFUSED: every
+      # cross-tenant denial, every trigger that raises, every ceiling that
+      # holds, is one server-side `ERROR:` line plus its `STATEMENT:` and
+      # `CONTEXT:`. One run carried 1,108 such errors and 3,236 lines, all
+      # of them the sound of the system working.
+      #
+      # They are also redundant. A refusal that a test EXPECTS is asserted
+      # client-side; a refusal that a test does not expect fails that test,
+      # and vitest prints the whole PostgresError — SQLSTATE, message,
+      # detail — from the client. Nothing here is the only record of
+      # anything.
+      #
+      # To read the server's side of a confusing CI failure, delete this
+      # step and re-run: the container goes back to its defaults.
+      - name: Quieten the PostgreSQL service log (expected refusals only)
+        run: |
+          psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 \
+            -c "alter system set log_min_messages = 'fatal'" \
+            -c "alter system set log_min_error_statement = 'fatal'" \
+            -c "select pg_reload_conf()"
       # Build and the whole test matrix, exactly as before the cheap/heavy
       # split. `pnpm -r` already overlaps the packages at its default
       # workspace concurrency, and that arrangement is what has been green.
