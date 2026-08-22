@@ -135,7 +135,9 @@ interface LedgerSpec {
   readonly name: string;
   readonly parent: string;
   readonly guid: string;
-  readonly alterId?: number;
+  /** `null` omits the tag entirely — a master Tally exported with no edit
+   * counter, which is unknown rather than zero. */
+  readonly alterId?: number | null;
   readonly gstin?: string;
   readonly openingBalance?: string;
 }
@@ -146,7 +148,9 @@ function ledger(spec: LedgerSpec): string {
     '      <LANGUAGENAME.LIST TYPE="String"/>',
     `      <GUID>${spec.guid}</GUID>`,
     `      <PARENT>${spec.parent}</PARENT>`,
-    `      <ALTERID> ${String(spec.alterId ?? 100)}</ALTERID>`,
+    ...(spec.alterId === null
+      ? []
+      : [`      <ALTERID> ${String(spec.alterId ?? 100)}</ALTERID>`]),
     '      <ISBILLWISEON>Yes</ISBILLWISEON>',
     '      <ISDELETED>No</ISDELETED>',
     ...(spec.gstin === undefined
@@ -242,10 +246,12 @@ async function importExport(
   mode: 'preview' | 'commit',
   jar: CookieJar = owner,
   org: string = organisationId,
+  options: { readonly force?: boolean } = {},
 ) {
+  const force = options.force === true ? '&force=true' : '';
   return authed(jar, {
     method: 'POST',
-    url: `/api/tally-masters/import?filename=Master.xml&mode=${mode}`,
+    url: `/api/tally-masters/import?filename=Master.xml&mode=${mode}${force}`,
     organisationId: org,
     headers: { 'content-type': 'application/xml' },
     payload: bytes,
@@ -641,5 +647,144 @@ describe('the walls', () => {
         and privilege_type = 'DELETE'
     `;
     expect(grant?.count).toBe(0);
+  });
+});
+
+/* THE REVIEW FINDINGS, on the wire. */
+
+describe('an export whose edit counters have gone backwards', () => {
+  /* FINDING 2. A lower ALTERID normally means an older export is being
+     imported over a newer one, which would quietly replace the current
+     census with a stale one. But a restored TallyPrime backup genuinely
+     lowers every counter, and then the FILE is current and the census is
+     the stale one — so there has to be a sanctioned way through, and it
+     has to be recorded. */
+  it('reports the stale masters on the preview rather than surprising the commit', async () => {
+    const response = await importExport(exportBytes({ depositAlterId: 5 }), 'preview');
+    expect(response.statusCode, response.body).toBe(200);
+    const result = response.json<TallyMasterImportResult>();
+    // The census holds ALTERID 250 for this master from the run above.
+    expect(result.staleCount).toBe(1);
+    expect(result.forced).toBe(false);
+  });
+
+  it('refuses the commit by name, and writes nothing', async () => {
+    const before = await admin<{ tally_alterid: string }[]>`
+      select tally_alterid from tally_ledgers
+      where organisation_id = ${organisationId} and tally_guid = 'guid-instrument'
+    `;
+    const response = await importExport(exportBytes({ depositAlterId: 5 }), 'commit');
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ code: string }>().code).toBe('TALLY_EXPORT_STALE');
+    const after = await admin<{ tally_alterid: string }[]>`
+      select tally_alterid from tally_ledgers
+      where organisation_id = ${organisationId} and tally_guid = 'guid-instrument'
+    `;
+    expect(after[0]?.tally_alterid).toBe(before[0]?.tally_alterid);
+  });
+
+  it('accepts it with the override, and records that the override was used', async () => {
+    const response = await importExport(
+      exportBytes({ depositAlterId: 5 }),
+      'commit',
+      owner,
+      organisationId,
+      { force: true },
+    );
+    expect(response.statusCode, response.body).toBe(200);
+    const result = response.json<TallyMasterImportResult>();
+    expect(result.forced).toBe(true);
+    expect(result.staleCount).toBe(1);
+
+    // The census now holds the restored file's own counter.
+    const [row] = await admin<{ tally_alterid: string }[]>`
+      select tally_alterid from tally_ledgers
+      where organisation_id = ${organisationId} and tally_guid = 'guid-instrument'
+    `;
+    expect(Number(row?.tally_alterid)).toBe(5);
+
+    // AND IT IS ON THE RECORD. An override nobody can find afterwards is
+    // not an override, it is a silent overwrite.
+    const [event] = await admin<{ details: Record<string, unknown> }[]>`
+      select details from audit_events
+      where organisation_id = ${organisationId}
+        and action = 'tally_ledger.imported'
+      order by occurred_at desc limit 1
+    `;
+    expect(event?.details).toMatchObject({ forced: true, staleCount: 1 });
+  });
+
+  it('leaves the override off by default on the next import', async () => {
+    // The GUC is transaction-local, so the run above cannot have leaked
+    // it into this one. Restore the census to the higher counter first,
+    // which is itself an ordinary forward import.
+    const restored = await importExport(exportBytes({ depositAlterId: 250 }), 'commit');
+    expect(restored.statusCode, restored.body).toBe(200);
+    const response = await importExport(exportBytes({ depositAlterId: 5 }), 'commit');
+    expect(response.statusCode).toBe(409);
+  });
+});
+
+describe('a master with no edit counter at all', () => {
+  /* FINDING 2a, on the wire: unknown is not zero, and an unknown counter
+     is never read as a regression. */
+  it('imports as null and re-imports without being called stale', async () => {
+    const bytes = envelope(
+      ...TREE,
+      ledger({
+        name: 'Fixture No Counter',
+        parent: 'Fixture Divisions',
+        guid: 'guid-no-counter',
+        alterId: null,
+      }),
+    );
+    const first = await importExport(bytes, 'commit');
+    expect(first.statusCode, first.body).toBe(200);
+    const [row] = await admin<{ tally_alterid: string | null }[]>`
+      select tally_alterid from tally_ledgers
+      where organisation_id = ${organisationId} and tally_guid = 'guid-no-counter'
+    `;
+    expect(row?.tally_alterid).toBeNull();
+
+    const again = await importExport(bytes, 'commit');
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json<TallyMasterImportResult>().staleCount).toBe(0);
+  });
+});
+
+describe('the superseded count', () => {
+  /* FINDING 7. Counted against the CURRENT latest census only. The first
+     reading subtracted the matched GUIDs from EVERY row in the table,
+     which counted rows already superseded by an earlier import a second
+     time — so after two shrinking imports the same missing master was
+     reported twice and nobody could tell that from two going missing. */
+  it('counts each missing master once, not once per import that missed it', async () => {
+    // A census of three.
+    const three = envelope(
+      ...TREE,
+      ledger({ name: 'Seq One', parent: 'Fixture Divisions', guid: 'seq-1' }),
+      ledger({ name: 'Seq Two', parent: 'Fixture Divisions', guid: 'seq-2' }),
+      ledger({ name: 'Seq Three', parent: 'Fixture Divisions', guid: 'seq-3' }),
+    );
+    expect((await importExport(three, 'commit')).statusCode).toBe(200);
+
+    // Drop one: exactly one master is no longer named.
+    const two = envelope(
+      ...TREE,
+      ledger({ name: 'Seq One', parent: 'Fixture Divisions', guid: 'seq-1' }),
+      ledger({ name: 'Seq Two', parent: 'Fixture Divisions', guid: 'seq-2' }),
+    );
+    const second = await importExport(two, 'commit');
+    expect(second.json<TallyMasterImportResult>().supersededCount).toBe(1);
+
+    // Drop another. The latest census is now the TWO rows the second
+    // import wrote, and this export names one of them — so the answer is
+    // one, not two. Under the old reading it was two.
+    const one = envelope(
+      ...TREE,
+      ledger({ name: 'Seq One', parent: 'Fixture Divisions', guid: 'seq-1' }),
+    );
+    const third = await importExport(one, 'commit');
+    expect(third.json<TallyMasterImportResult>().supersededCount).toBe(1);
   });
 });

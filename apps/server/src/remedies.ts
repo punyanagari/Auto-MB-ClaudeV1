@@ -634,6 +634,12 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
   // is corrected.
   TALLY_EXPORT_UNREADABLE:
     'Export All Masters from TallyPrime and upload the XML it writes without opening or re-saving it — the preview names the line of anything it cannot read, and writes nothing.',
+  TALLY_EXPORT_TRUNCATED:
+    'Export All Masters from TallyPrime again and wait for it to finish writing before uploading — the file that arrived stops partway through, so importing it would record a fraction of the chart of accounts as though it were all of it.',
+  TALLY_EXPORT_STALE:
+    'Import the current export rather than an older one, or — if a TallyPrime backup was restored and this file really is the current chart of accounts — re-run the import with the override, which is recorded against your name.',
+  TALLY_IMPORT_IN_PROGRESS:
+    'Wait for the Tally import already running for this organisation to finish, then read the file again — two imports at once would leave the census describing neither export.',
   TALLY_LEDGER_IMMUTABLE:
     'Import a fresh All Masters export instead of editing a census row: the census mirrors what Tally holds, and which Tally master a row is about never changes.',
   // ---- Defect liability periods (0099) ------------------------------------

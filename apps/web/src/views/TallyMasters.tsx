@@ -35,7 +35,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
  *     proposes nothing, and a person confirms. Nothing on this screen
  *     confirms one yet — the column is evidence that the parties line up,
  *     which is what the wave after this one acts on.
- *   * A WORK CODE HERE REACHES NO WORK. Owner rulings 4 and 5: 198
+ *   * A WORK CODE HERE REACHES NO WORK. Owner rulings 4 and 5: 202
  *     distinct codes appear in the masters against the works this system
  *     holds, most of them naming pre-cutover history, and a Tally code
  *     never creates a Work. It is text, and it is shown as text.
@@ -84,7 +84,12 @@ const CLASS_LABEL: Record<TallyLedger['classification'], string> = {
   other: 'Other',
 };
 
-const NO_FILTER = { classification: '', matched: '', search: '' };
+const NO_FILTER = {
+  classification: '',
+  matched: '',
+  search: '',
+  includeSuperseded: false,
+};
 
 interface TallyMastersProps {
   readonly api: ApiClient;
@@ -122,6 +127,7 @@ export function TallyMasters({ api, organisationId, canImport }: TallyMastersPro
           ? { matched: filter.matched as 'matched' | 'unmatched' }
           : {}),
         ...(filter.search !== '' ? { search: filter.search } : {}),
+        ...(filter.includeSuperseded ? { includeSuperseded: true } : {}),
       }),
     [api, organisationId, filter],
   );
@@ -233,7 +239,28 @@ export function TallyMasters({ api, organisationId, canImport }: TallyMastersPro
                 <span className="font-mono tabular-nums">
                   {String(totals.supersededCount)}
                 </span>{' '}
-                row(s) are not in the latest export and are out of these counts.
+                row(s) are not in the latest export and are out of these counts.{' '}
+                {/* OFFERED ONLY WHEN THERE IS SOMETHING TO SEE. A control
+                    that is always present and almost always changes
+                    nothing teaches an operator to ignore it — and a
+                    superseded row is the rare case, not the standing one.
+                    Reading them back matters because they are evidence
+                    rather than deletions: a master somebody removed in
+                    Tally is exactly what an operator wants to look at. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFilter((current) => ({
+                      ...current,
+                      includeSuperseded: !current.includeSuperseded,
+                    }));
+                  }}
+                >
+                  {filter.includeSuperseded
+                    ? 'Hide the rows the latest export dropped'
+                    : 'Show the rows the latest export dropped'}
+                </Button>
               </>
             )}
           </p>
@@ -438,11 +465,12 @@ export function TallyMasters({ api, organisationId, canImport }: TallyMastersPro
           onSubmit={(event) => {
             event.preventDefault();
             const data = new FormData(event.currentTarget);
-            setFilter({
+            setFilter((current) => ({
+              ...current,
               classification: formValue(data, 'tally-class'),
               matched: formValue(data, 'tally-matched'),
               search: formValue(data, 'tally-search'),
-            });
+            }));
           }}
         >
           <Field className="my-0">

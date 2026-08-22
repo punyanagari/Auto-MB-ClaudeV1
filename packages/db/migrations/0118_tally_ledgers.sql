@@ -17,7 +17,7 @@ SET LOCAL statement_timeout = '5min';
 --
 --   * WHO IT TRADES WITH. 178 customer ledgers and 2,057 vendor ledgers,
 --     against a contacts master that was typed in by hand.
---   * WHICH INSTRUMENTS ARE OUTSTANDING. 350 ledgers whose names carry a
+--   * WHICH INSTRUMENTS ARE OUTSTANDING. 357 ledgers whose names carry a
 --     v1 work code — the security deposits the railway holds, the FDRs,
 --     the bank guarantees, the tender EMDs. The census calls this the
 --     single most valuable fact in the masters: the instruments are
@@ -91,13 +91,14 @@ SET LOCAL statement_timeout = '5min';
 --
 -- `instrument` is the fourth arm and it is not a group at all: a ledger
 -- OUTSIDE the party tree whose own name carries a `PL-<n>` work code.
--- 350 real ledgers, and every one of them a security deposit, an FDR, a
--- bank guarantee or an EMD. Nothing else in the file is shaped that way.
+-- 357 real ledgers across 202 distinct codes, and every one of them a
+-- security deposit, an FDR, a bank guarantee or an EMD. Nothing else in
+-- the file is shaped that way.
 --
 -- ---------------------------------------------------------------------
 -- WHAT THIS TABLE DELIBERATELY DOES NOT HAVE.
 --
---   * NO `work_id`. Owner rulings 4 and 5: 198 distinct work codes
+--   * NO `work_id`. Owner rulings 4 and 5: 202 distinct work codes
 --     appear here against 38 works in the system, the surplus is
 --     pre-cutover history, and a Tally code NEVER creates a Work. The
 --     code is preserved as TEXT in `pl_code`, linkable by a later wave,
@@ -113,6 +114,33 @@ SET LOCAL statement_timeout = '5min';
 --     staging that report reads.
 --   * NO VOUCHERS. T1 is masters only.
 --
+-- ---------------------------------------------------------------------
+-- WHAT A LATER WAVE MUST DO ABOUT STALENESS, PINNED HERE SO IT IS NOT
+-- REDECIDED PER WAVE.
+--
+-- `last_seen_at` makes "the census" a moving target: the rows carrying
+-- the newest stamp. Every wave that JOINS to this table — T2's invoice
+-- cross-reference first — has to say which reading it means, because a
+-- link built against a row that a later import stopped naming is a link
+-- to a master Tally no longer has.
+--
+-- THE RULE: a link wave joins through the latest-census filter, exactly
+-- as `routes/tally-masters.ts` does —
+--
+--   last_seen_at = (SELECT max(last_seen_at) FROM tally_ledgers)
+--
+-- — and never to `tally_ledgers` unfiltered. A row that falls out of the
+-- census is not deleted, so an existing link keeps resolving and stays
+-- readable as history; what the filter prevents is a NEW link being made
+-- to a master the current export does not carry.
+--
+-- The alternative — a per-row `superseded` boolean maintained by the
+-- import — is deliberately NOT taken here: it is a second answer to a
+-- question the timestamp already answers, and two answers drift. If a
+-- later wave finds the filter genuinely unworkable (a join that cannot
+-- carry a subquery, say), the boolean lands WITH that wave and this
+-- comment is what it argues against.
+
 -- ---------------------------------------------------------------------
 -- `source_fields`, AND WHY IT IS NOT THE WHOLE MASTER.
 --
@@ -168,8 +196,15 @@ CREATE TABLE tally_ledgers (
   -- Tally's edit counter, which increments whenever the master is
   -- altered. Ruling 2 stores it on every imported row so the one
   -- post-training top-up re-read can find what moved without any sync
-  -- machinery. Zero means the export did not carry a readable one.
-  tally_alterid bigint NOT NULL DEFAULT 0 CHECK (tally_alterid >= 0),
+  -- machinery.
+  --
+  -- NULLABLE, and null means UNKNOWN rather than zero. Zero is a real
+  -- counter value — a master Tally has never altered — so a column that
+  -- spelled "no counter in the export" as 0 would make the two
+  -- indistinguishable, and the regression guard below would then read
+  -- every such master as having gone backwards the moment a real counter
+  -- appeared. The guard skips a comparison either side of which is null.
+  tally_alterid bigint CHECK (tally_alterid IS NULL OR tally_alterid >= 0),
 
   -- The ledger name. Unique in Tally, and the join key used INSIDE the
   -- export: a voucher names its ledgers by this string and by nothing
@@ -313,7 +348,7 @@ COMMENT ON TABLE tally_ledgers IS
 COMMENT ON COLUMN tally_ledgers.tally_guid IS
   'Tally''s own stable identifier, and therefore the idempotency key: re-importing a fresh export updates the masters it already holds and inserts the ones it does not.';
 COMMENT ON COLUMN tally_ledgers.tally_alterid IS
-  'Tally''s edit counter for this master. Stored per owner ruling 2 so the single post-training top-up re-read can see what the organisation changed, without any sync machinery.';
+  'Tally''s edit counter for this master, or NULL where the export carried none — unknown, which is not the same as zero. Stored per owner ruling 2 so the single post-training top-up re-read can see what the organisation changed, without any sync machinery.';
 COMMENT ON COLUMN tally_ledgers.classification IS
   'Derived from Tally''s OWN reserved group ancestry (Sundry Debtors / Sundry Creditors), never from this organisation''s group spellings, plus an instrument arm for a non-party ledger whose name carries a work code. Owner ruling 7 dropped the letter categories as accounting taxonomy.';
 COMMENT ON COLUMN tally_ledgers.pl_code IS
@@ -402,14 +437,35 @@ BEGIN
         USING ERRCODE = '23T01';
     END IF;
 
-    -- A mirror only ever moves forward. Tally's ALTERID increments on
+    -- A mirror normally only moves forward. Tally's ALTERID increments on
     -- every alteration, so an update carrying a LOWER one is an older
     -- export being imported after a newer one — which would quietly
     -- replace the current census with a stale one and leave the counts
     -- describing neither file.
-    IF NEW.tally_alterid < OLD.tally_alterid THEN
+    --
+    -- TWO THINGS MAKE THIS A RULE RATHER THAN AN INVARIANT, and both are
+    -- written out because a guard that refused unconditionally would be
+    -- refusing reality:
+    --
+    --   * NULL IS UNKNOWN. A master with no counter in either the census
+    --     or the export cannot be compared, and comparing it against zero
+    --     would refuse the honest case forever.
+    --   * A RESTORED TALLY BACKUP GENUINELY GOES BACKWARDS. When the
+    --     company restores last week's company file, every counter drops
+    --     and the FILE is the current truth while the census is the stale
+    --     one. That is a real Tuesday, not corruption. The operator says
+    --     so with the import route's `force` flag, which sets this
+    --     transaction-local setting and writes its own audit event; the
+    --     override is therefore explicit, scoped to one transaction, and
+    --     on the record. `app.` is the same GUC namespace 0001 reads the
+    --     organisation and user from.
+    IF NEW.tally_alterid IS NOT NULL
+       AND OLD.tally_alterid IS NOT NULL
+       AND NEW.tally_alterid < OLD.tally_alterid
+       AND coalesce(nullif(current_setting('app.tally_force', true), ''), 'off')
+           <> 'on' THEN
       RAISE EXCEPTION
-        'tally ledger census row % was read from an export older than the one already imported (ALTERID % against %); import the fresher export',
+        'tally ledger census row % was read from an export older than the one already imported (ALTERID % against %); import the fresher export, or re-run the import with the override if a Tally backup was restored',
         OLD.id, NEW.tally_alterid, OLD.tally_alterid
         USING ERRCODE = '23T01';
     END IF;
@@ -421,7 +477,7 @@ END
 $$;
 
 COMMENT ON FUNCTION app_private.guard_tally_ledger() IS
-  'A census row mirrors one Tally master: its contents move when a fresher export is imported, but which master it is about — the organisation, the GUID and when it first arrived — never changes, and an export older than the one already read cannot overwrite it. The import route upserts on the GUID and cannot reach either case; this is the arm that holds against a writer reaching the table another way.';
+  'A census row mirrors one Tally master: its contents move when a fresher export is imported, but which master it is about — the organisation, the GUID and when it first arrived — never changes. An export older than the one already read cannot overwrite it either, unless the operator sets app.tally_force for one transaction because a Tally backup was restored, which the import route does only on an explicit, audited override. The route refuses first so an operator gets a remedy; this is the arm that holds under concurrency and against a writer reaching the table another way.';
 
 CREATE TRIGGER tally_ledgers_guard
 BEFORE INSERT OR UPDATE ON tally_ledgers

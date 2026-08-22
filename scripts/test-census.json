@@ -1,6 +1,6 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 3778,
+  "totalDeclarations": 3800,
   "fileCount": 237,
   "files": {
     "apps/server/test/accepted-rate-compound.test.ts": 8,
@@ -111,8 +111,8 @@
     "apps/server/test/search.integration.test.ts": 8,
     "apps/server/test/serials.integration.test.ts": 20,
     "apps/server/test/signing.integration.test.ts": 33,
-    "apps/server/test/tally-masters.integration.test.ts": 15,
-    "apps/server/test/tally-masters.test.ts": 32,
+    "apps/server/test/tally-masters.integration.test.ts": 21,
+    "apps/server/test/tally-masters.test.ts": 48,
     "apps/server/test/tally-xml.test.ts": 11,
     "apps/server/test/tax-facts.integration.test.ts": 16,
     "apps/server/test/tax-invoice-html.test.ts": 4,

@@ -38,6 +38,9 @@ interface LedgerSpec {
   readonly nestedGstin?: string;
   readonly openingBalance?: string;
   readonly extra?: string;
+  /** Omit the ALTERID tag entirely — a master Tally exported without
+   * an edit counter. */
+  readonly noAlterId?: boolean;
 }
 
 let guidCounter = 0;
@@ -58,7 +61,9 @@ function ledger(spec: LedgerSpec): string {
     '      <LANGUAGENAME.LIST TYPE="String"/>',
     `      <GUID>${guid}</GUID>`,
     `      <PARENT>${spec.parent}</PARENT>`,
-    `      <ALTERID> ${spec.alterId ?? '4321'}</ALTERID>`,
+    ...(spec.noAlterId === true
+      ? []
+      : [`      <ALTERID> ${spec.alterId ?? '4321'}</ALTERID>`]),
     '      <ISBILLWISEON>Yes</ISBILLWISEON>',
     '      <ISDELETED>No</ISDELETED>',
     '      <AFFECTSSTOCK>No</AFFECTSSTOCK>',
@@ -546,5 +551,234 @@ describe('proposing a contact', () => {
         candidates,
       ),
     ).toBeNull();
+  });
+});
+
+/* --- the review findings --------------------------------------------------- */
+
+describe('a master with no edit counter', () => {
+  /* FINDING 2a. Zero is a real ALTERID — a master Tally has never altered
+     — so reading "absent" as zero made the two indistinguishable and
+     armed 0118's regression guard against the honest case. */
+  it('reads as unknown, not as zero', () => {
+    const read = readTallyMasters(
+      envelope(
+        ...TREE,
+        ledger({ name: 'Fixture One', parent: 'Fixture Divisions', noAlterId: true }),
+        ledger({ name: 'Fixture Two', parent: 'Fixture Divisions', alterId: '0' }),
+      ),
+    );
+    expect(read.refusals).toEqual([]);
+    // Absent.
+    expect(read.ledgers[0]?.alterId).toBeNull();
+    // Present, and genuinely zero.
+    expect(read.ledgers[1]?.alterId).toBe(0);
+  });
+});
+
+describe('a truncated export', () => {
+  /* FINDING 4. A file that stops mid-master is a half-written export, and
+     the ledgers before the cut are a complete-looking prefix. Importing
+     them would record a fraction of the chart of accounts with every
+     count agreeing with itself and being wrong. */
+  const complete = envelope(
+    ...TREE,
+    ledger({ name: 'Fixture One', parent: 'Fixture Divisions' }),
+    ledger({ name: 'Fixture Two', parent: 'Fixture Divisions' }),
+  );
+
+  it('refuses a file cut in the middle of a master', () => {
+    const text = complete.subarray(2).toString('utf16le');
+    const cut = text.slice(0, text.indexOf('Fixture Two') + 40);
+    let thrown: unknown;
+    try {
+      readTallyMasters(utf16(cut));
+    } catch (cause) {
+      thrown = cause;
+    }
+    expect(thrown).toBeInstanceOf(TallyMasterImportError);
+    expect((thrown as TallyMasterImportError).code).toBe('TALLY_EXPORT_TRUNCATED');
+    // The byte position, so an operator can see WHERE it stops.
+    expect((thrown as TallyMasterImportError).message).toMatch(/\d+ bytes/);
+  });
+
+  it('refuses a file with no closing envelope even between masters', () => {
+    const text = complete.subarray(2).toString('utf16le');
+    const cut = text.slice(0, text.indexOf('</ENVELOPE>'));
+    expect(() => readTallyMasters(utf16(cut))).toThrow(TallyMasterImportError);
+  });
+
+  it('accepts the complete file it was cut from', () => {
+    expect(readTallyMasters(complete).ledgers).toHaveLength(2);
+  });
+});
+
+describe('a value that spans lines', () => {
+  /* FINDING 5. Tally writes one tag per line, but a NARRATION an operator
+     typed a newline into is written across several — and any line of that
+     text which happens to look like a tag was counted as an element
+     opening, leaving the scanner one level too deep for the rest of the
+     master and dropping every direct field after it. */
+  const spanning = ledger({
+    name: 'Fixture One',
+    parent: 'Fixture Divisions',
+    gstin: '27AAACR1234A1ZP',
+    extra: [
+      '      <BILLALLOCATIONS.LIST>',
+      '       <NAME>Opening</NAME>',
+      // The narration an operator typed newlines into. The middle line is
+      // what does the damage: on its own it is exactly the shape of a tag
+      // OPENING, so it was counted as one and never closed — leaving the
+      // scanner one level deep for the rest of the master, and every
+      // direct field after this list read as nested and dropped.
+      '       <NARRATION>Paid against the running account bill',
+      '<AMOUNT>',
+      '       and a second continuation line</NARRATION>',
+      '      </BILLALLOCATIONS.LIST>',
+    ].join('\r\n'),
+  });
+
+  it('does not let the text bleed into the master’s own fields', () => {
+    const read = readTallyMasters(envelope(...TREE, spanning));
+    expect(read.refusals).toEqual([]);
+    const [entry] = read.ledgers;
+    // The fields BEFORE the spanning value.
+    expect(entry?.name).toBe('Fixture One');
+    expect(entry?.guid).not.toBe('');
+    // …and the ones AFTER it, which are what a depth desync eats. The
+    // GSTIN and the trailing DAILYSTDRATES.LIST both sit past the
+    // narration in the fixture.
+    expect(entry?.gstin).toBe('27AAACR1234A1ZP');
+    expect(entry?.classification).toBe('customer');
+    // The narration's own text is not mistaken for a field.
+    expect(Object.keys(entry?.sourceFields ?? {})).not.toContain('AMOUNT');
+  });
+
+  it('still finds the master that follows it', () => {
+    const read = readTallyMasters(
+      envelope(
+        ...TREE,
+        spanning,
+        ledger({ name: 'Fixture Two', parent: 'Fixture Divisions' }),
+      ),
+    );
+    expect(read.ledgers.map((entry) => entry.name)).toEqual([
+      'Fixture One',
+      'Fixture Two',
+    ]);
+  });
+});
+
+describe('the column bounds, proven at parse rather than by a CHECK', () => {
+  /* FINDING 8. Each of these has a CHECK behind it in 0118, and a CHECK is
+     the wrong place to meet one: it arrives mid-commit as a 23514 naming a
+     constraint, with nothing saying which master or where. */
+  it('refuses a GUID longer than the census stores, naming the ledger', () => {
+    const read = readTallyMasters(
+      envelope(
+        ...TREE,
+        ledger({
+          name: 'Fixture Long Guid',
+          parent: 'Fixture Divisions',
+          guid: 'g'.repeat(81),
+        }),
+        ledger({ name: 'Fixture One', parent: 'Fixture Divisions' }),
+      ),
+    );
+    expect(read.ledgers.map((entry) => entry.name)).toEqual(['Fixture One']);
+    expect(read.refusals[0]?.ledgerName).toBe('Fixture Long Guid');
+    expect(read.refusals[0]?.reason).toMatch(/GUID/);
+    expect(read.refusals[0]?.lineNumber).toBeGreaterThan(1);
+  });
+
+  it('refuses a group name longer than the census stores', () => {
+    const read = readTallyMasters(
+      envelope(...TREE, ledger({ name: 'Fixture One', parent: 'G'.repeat(301) })),
+    );
+    expect(read.ledgers).toEqual([]);
+    expect(read.refusals[0]?.reason).toMatch(/group name/);
+  });
+
+  it('refuses a group ancestry deeper than the census stores', () => {
+    // Twenty-two groups in a chain, so the ledger at the bottom resolves
+    // past the array bound 0118 declares.
+    const deep = Array.from({ length: 22 }, (_, index) =>
+      group(`Deep ${String(index)}`, index === 0 ? '' : `Deep ${String(index - 1)}`),
+    );
+    const read = readTallyMasters(
+      envelope(...deep, ledger({ name: 'Fixture Deep', parent: 'Deep 21' })),
+    );
+    expect(read.ledgers).toEqual([]);
+    expect(read.refusals[0]?.ledgerName).toBe('Fixture Deep');
+    expect(read.refusals[0]?.reason).toMatch(/groups deep/);
+  });
+});
+
+describe('names that differ only by whitespace', () => {
+  /* FINDING 9. The ambiguity verdict has to be reached under the SAME
+     normalisation the contact match compares under. Keyed on a bare
+     toLowerCase(), `Acme  Ltd` and `Acme Ltd` counted as two names,
+     neither was marked ambiguous, and both then matched the same
+     contact — straight through the hole the guard exists to close. */
+  const read = () =>
+    readTallyMasters(
+      envelope(
+        ...TREE,
+        ledger({ name: 'Fixture  Twin  Ltd', parent: 'Fixture Divisions' }),
+        ledger({ name: 'Fixture Twin Ltd', parent: 'Fixture Divisions' }),
+      ),
+    );
+
+  it('marks both ambiguous', () => {
+    const result = read();
+    expect(result.ledgers).toHaveLength(2);
+    expect(result.duplicateNameCount).toBe(2);
+    expect(result.ledgers.every((entry) => entry.nameAmbiguous)).toBe(true);
+  });
+
+  it('proposes neither to the contact they both collapse onto', () => {
+    const candidates = [{ id: 'contact-1', name: 'Fixture Twin Ltd', gstin: null }];
+    for (const entry of read().ledgers) {
+      expect(proposeContact(entry, candidates)).toBeNull();
+    }
+  });
+});
+
+describe('a four-digit run that is a year, not a work code', () => {
+  /* FINDING 10. Scanned against the real export there is not one
+     four-digit code in the file — every real one is 1..282 — so a space
+     before four digits can only be a year. A hyphen still admits one,
+     because that is the spelling works.work_code itself uses. */
+  it('does not read a year after a space as a work code', () => {
+    expect(readPlCode('SD Fixture Division PL 2024').code).toBeNull();
+    expect(readPlCode('SD Fixture Division PL.2024').code).toBeNull();
+    expect(readPlCode('SD Fixture Division PL2024').code).toBeNull();
+  });
+
+  it('still admits a hyphenated four-digit code', () => {
+    expect(readPlCode('SD Fixture PL-1000').code).toBe('PL-1000');
+  });
+
+  it('admits the dot-space spelling the census lists', () => {
+    expect(readPlCode('123456.Sr.Dfm.Fixture.P.B.G. Pl. 282').code).toBe('PL-282');
+  });
+
+  it('keeps every separator the real export uses', () => {
+    // The four shapes the scan counted: hyphen, dot, bare space, none.
+    expect(readPlCode('SD Fixture PL-282').code).toBe('PL-282');
+    expect(readPlCode('SD Fixture PL.282').code).toBe('PL-282');
+    expect(readPlCode('SD Fixture PL 282').code).toBe('PL-282');
+    expect(readPlCode('123456_BG_Fixture_PL282').code).toBe('PL-282');
+  });
+
+  it('classifies a year-named ledger as other rather than as an instrument', () => {
+    const read = readTallyMasters(
+      envelope(
+        ...TREE,
+        ledger({ name: 'SD Fixture PL 2024', parent: 'Fixture Security Deposits' }),
+      ),
+    );
+    expect(read.ledgers[0]?.plCode).toBeNull();
+    expect(read.ledgers[0]?.classification).toBe('other');
   });
 });

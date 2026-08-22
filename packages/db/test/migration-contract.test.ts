@@ -4212,6 +4212,12 @@ describe('the Tally ledger census (0118)', () => {
     // at runtime.
     expect(sql).not.toMatch(/tally_ledgers_guid_key[\s\S]{0,140}WHERE/);
     expect(codeOnly(sql)).not.toContain('discarded_at');
+    // The edit counter is NULLABLE, because "no counter in the export" and
+    // "a counter of zero" are different facts and a NOT NULL DEFAULT 0
+    // spelled them the same way.
+    expect(sql).toContain(
+      'tally_alterid bigint CHECK (tally_alterid IS NULL OR tally_alterid >= 0)',
+    );
     // The supersession mechanism that replaces the discard.
     expect(sql).toContain('last_seen_at timestamptz NOT NULL DEFAULT now()');
   });
@@ -4271,9 +4277,21 @@ describe('the Tally ledger census (0118)', () => {
     expect(guard).toContain('NEW.tally_guid IS DISTINCT FROM OLD.tally_guid');
     expect(guard).toContain('NEW.organisation_id IS DISTINCT FROM OLD.organisation_id');
     expect(guard).toContain('NEW.created_at IS DISTINCT FROM OLD.created_at');
-    // The mirror only moves forward: an export older than the one already
-    // read would quietly replace the current census with a stale one.
+    // The mirror normally only moves forward: an export older than the
+    // one already read would quietly replace the current census with a
+    // stale one.
     expect(guard).toContain('NEW.tally_alterid < OLD.tally_alterid');
+    // …but NULL IS UNKNOWN, not zero, so a master with no counter either
+    // side is never compared. Without these two arms the guard fired on
+    // every re-import of such a master.
+    expect(guard).toContain('NEW.tally_alterid IS NOT NULL');
+    expect(guard).toContain('OLD.tally_alterid IS NOT NULL');
+    // …and a restored Tally backup genuinely lowers every counter, so the
+    // rule has a sanctioned, transaction-scoped override rather than
+    // being an invariant that refuses reality. `app.` is 0001's own GUC
+    // namespace; `true` is the missing_ok argument, so an unset setting
+    // reads as empty rather than raising.
+    expect(guard).toContain("current_setting('app.tally_force', true)");
     // …and the CONTENTS are deliberately absent from the comparison. A
     // guard that froze `ledger_name` here would refuse exactly the refresh
     // this table exists to accept.

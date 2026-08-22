@@ -710,6 +710,23 @@ export interface ContactSubject {
 }
 
 /**
+ * The one normalisation a name match compares under: case-folded, runs of
+ * whitespace collapsed to one space, ends trimmed.
+ *
+ * EXPORTED because a second caller has to key on exactly this. The Tally
+ * census (0118) decides which of its ledger names are ambiguous — shared
+ * with another master, and therefore not evidence about either — and it
+ * has to reach that verdict under the SAME rule the match below applies.
+ * Keyed on a plain `toLowerCase()` instead, `Acme  Ltd` and `Acme Ltd`
+ * counted as two distinct names, neither was marked ambiguous, and both
+ * then matched the same contact here: the ambiguity guard passed the pair
+ * straight through the hole it exists to close.
+ */
+export function normaliseContactName(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
  * The contact this invoice was billed to, by GSTIN and then by exact name.
  *
  * GSTIN FIRST because it is the identifier the tax system itself uses: two
@@ -728,19 +745,64 @@ export function matchContact(
   invoice: ContactSubject,
   candidates: readonly ContactCandidate[],
 ): ContactMatch | null {
-  if (invoice.customerGstin !== null) {
-    const gstin = invoice.customerGstin.toUpperCase();
-    const hits = candidates.filter(
-      (candidate) => (candidate.gstin ?? '').toUpperCase() === gstin,
-    );
+  return matchIndexedContact(invoice, indexContacts(candidates));
+}
+
+/**
+ * The candidate master, grouped by the two keys the match reads.
+ *
+ * Built ONCE and handed to many subjects. `matchContact` above scans the
+ * whole candidate array twice per subject and normalises every candidate
+ * name inside that scan, which is right for one invoice and wrong for the
+ * Tally census: 2,235 party ledgers against a contacts master is that
+ * work multiplied by both, for an answer that does not change between
+ * subjects.
+ *
+ * Grouped rather than keyed one-to-one on purpose — the AMBIGUITY is the
+ * load-bearing part of owner ruling 8, so a key shared by two contacts
+ * has to survive as a list of two rather than as whichever one was
+ * inserted last.
+ */
+export interface ContactIndex {
+  readonly byGstin: ReadonlyMap<string, readonly ContactCandidate[]>;
+  readonly byName: ReadonlyMap<string, readonly ContactCandidate[]>;
+}
+
+export function indexContacts(candidates: readonly ContactCandidate[]): ContactIndex {
+  const byGstin = new Map<string, ContactCandidate[]>();
+  const byName = new Map<string, ContactCandidate[]>();
+  const push = (
+    map: Map<string, ContactCandidate[]>,
+    key: string,
+    candidate: ContactCandidate,
+  ): void => {
+    const bucket = map.get(key);
+    if (bucket === undefined) map.set(key, [candidate]);
+    else bucket.push(candidate);
+  };
+  for (const candidate of candidates) {
+    if (candidate.gstin !== null && candidate.gstin.length > 0) {
+      push(byGstin, candidate.gstin.toUpperCase(), candidate);
+    }
+    push(byName, normaliseContactName(candidate.name), candidate);
+  }
+  return { byGstin, byName };
+}
+
+/** The match itself, against a prepared index. Identical rule to
+ * `matchContact` — that function is now this one plus an index built on
+ * the spot, so the two cannot drift. */
+export function matchIndexedContact(
+  subject: ContactSubject,
+  index: ContactIndex,
+): ContactMatch | null {
+  if (subject.customerGstin !== null) {
+    const hits = index.byGstin.get(subject.customerGstin.toUpperCase()) ?? [];
     if (hits.length === 1)
       return { contactId: (hits[0] as ContactCandidate).id, method: 'gstin' };
     if (hits.length > 1) return null;
   }
-  const name = invoice.customerName.toLowerCase().replace(/\s+/g, ' ').trim();
-  const hits = candidates.filter(
-    (candidate) => candidate.name.toLowerCase().replace(/\s+/g, ' ').trim() === name,
-  );
+  const hits = index.byName.get(normaliseContactName(subject.customerName)) ?? [];
   return hits.length === 1
     ? { contactId: (hits[0] as ContactCandidate).id, method: 'name' }
     : null;

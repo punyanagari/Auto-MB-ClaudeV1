@@ -46,8 +46,11 @@
 
 import {
   type ContactCandidate,
+  type ContactIndex,
   type ContactMatch,
   matchContact,
+  matchIndexedContact,
+  normaliseContactName,
 } from './zoho-invoices.js';
 
 /* --- ceilings -------------------------------------------------------------- */
@@ -72,6 +75,10 @@ const MAX_LEDGERS = 50_000;
 /** The most groups. 159 real, same reasoning. */
 const MAX_GROUPS = 20_000;
 
+/** The deepest group ancestry a census row stores, matching 0118's own
+ * array bound. The deepest real path in the export is three. */
+const MAX_GROUP_DEPTH = 20;
+
 /**
  * How many named refusals travel back. A file that produces more than
  * this is not a file with some bad rows in it; the preview says so and
@@ -87,10 +94,18 @@ const MAX_SOURCE_FIELDS = 60;
 
 /* --- refusals -------------------------------------------------------------- */
 
-/** A refusal about the whole file: it is not a Tally masters export, or
- * it exceeds a ceiling. Nothing is imported. */
+/** A refusal about the whole file: it is not a Tally masters export, it
+ * stops in the middle, or it exceeds a ceiling. Nothing is imported. */
 export class TallyMasterImportError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** Which named refusal the route answers with. Truncation is its own
+     * code because its remedy is different from every other unreadable
+     * file: the export did not finish being written, so the operator
+     * re-runs it rather than inspecting it. */
+    readonly code:
+      'TALLY_EXPORT_UNREADABLE' | 'TALLY_EXPORT_TRUNCATED' = 'TALLY_EXPORT_UNREADABLE',
+  ) {
     super(message);
     this.name = 'TallyMasterImportError';
   }
@@ -120,8 +135,10 @@ export interface TallyLedger {
   /** Tally's own stable identifier, and therefore the idempotency key. */
   readonly guid: string;
   /** Increments whenever Tally alters the master. The cursor the one
-   * post-training top-up re-read uses (owner ruling 2). */
-  readonly alterId: number;
+   * post-training top-up re-read uses (owner ruling 2). NULL when the
+   * master carries none — unknown, which is not the same as zero, and
+   * which the regression guard skips rather than compares. */
+  readonly alterId: number | null;
   /** The ledger name, which is unique in Tally and is the join key used
    * inside the export itself. */
   readonly name: string;
@@ -241,7 +258,7 @@ function clean(value: string): string {
  * line break would split a line in the middle of a character. It does not
  * happen in this export; it costs one modulo to make impossible.
  */
-function* readLines(bytes: Buffer): Generator<string> {
+function* readLines(bytes: Buffer): Generator<{ text: string; offset: number }> {
   const utf16 = bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe;
   const encoding: BufferEncoding = utf16 ? 'utf16le' : 'utf8';
   const newline = Buffer.from('\n', encoding);
@@ -258,7 +275,11 @@ function* readLines(bytes: Buffer): Generator<string> {
         'That file has a line longer than this reader will assemble, so it is not the one-tag-per-line export Tally writes. Export All Masters from TallyPrime again without reformatting the file.',
       );
     }
-    yield bytes.toString(encoding, start, end);
+    // The BYTE offset travels with the line, so a truncation refusal can
+    // say where the file stops. An operator comparing a half-written
+    // export against the one they meant to send needs a position, not a
+    // line number in a document they cannot open.
+    yield { text: bytes.toString(encoding, start, end), offset: start };
     if (index === -1) return;
     start = index + newline.length;
   }
@@ -284,6 +305,15 @@ const COMPLETE_TAG = /^<([A-Z0-9._:]{1,64})(?:\s[^>]*)?>([\s\S]*)<\/\1>$/i;
 const OPEN_TAG = /^<([A-Z0-9._:]{1,64})(?:\s[^>]*)?>$/i;
 /** `</TAG>` */
 const CLOSE_TAG = /^<\/([A-Z0-9._:]{1,64})>$/i;
+/** `<TAG …>some text` that does NOT close on this line — a value running
+ * across lines, which is the only thing in the export that can contain
+ * something tag-shaped without it being a tag. Tried last, after the
+ * complete, open and close shapes have all been ruled out. */
+// Linear for the reason the two shapes above give: the tag name is capped
+// at 64 and `[^>]*` cannot cross the `>` that must follow it, so the
+// attribute run has exactly one possible extent.
+// eslint-disable-next-line security/detect-unsafe-regex
+const VALUE_OPENS_HERE = /^<([A-Z0-9._:]{1,64})(?:\s[^>]*)?>\S/i;
 /** The `NAME` attribute, which is where Tally puts a master's own name. */
 const NAME_ATTRIBUTE = /\sNAME="([^"]*)"/i;
 
@@ -331,8 +361,34 @@ const VENDOR_ROOT = 'sundry creditors';
  * refuses a letter or digit, so `SUPPL 22` and `APL-9` are not work
  * codes. The lookahead refuses only a further DIGIT: truncating `PL-2821`
  * to `PL-282` would key an instrument to the wrong contract.
+ *
+ * A SPACE MAY NOT INTRODUCE FOUR DIGITS, and that is the difference
+ * between reading a work code and reading a financial year. `SD Division
+ * PL 2024` is a ledger named for a YEAR, and under a rule that took four
+ * digits after a space it became work `PL-2024` — an instrument
+ * confidently keyed to a contract nobody has. Scanned against the real
+ * export the restriction costs nothing, and the scan is what settled the
+ * shape rather than a guess about it:
+ *
+ *   separator  digits  matches
+ *   -          3       234        `.`  2   6
+ *   -          2       106        ` `  3   1
+ *   (none)     2         8        ` `  2   1
+ *   (none)     3         1
+ *
+ * Every real code is THREE DIGITS OR FEWER — the range is 1..282 — and
+ * there is not one four-digit match in the file. So four digits are
+ * admitted only behind a HYPHEN, which is the canonical spelling
+ * `works.work_code` itself uses, leaving a future `PL-1000` readable
+ * while `PL 2024` and `PL.2024` are not codes at all.
+ *
+ * The optional space after `-` or `.` admits `Pl. 282`, which the census
+ * lists among the spellings. It appears zero times in this export; it is
+ * one character of pattern against an operator-typed field that will be
+ * re-exported on import day, and it cannot introduce a year because a
+ * dot is not a hyphen.
  */
-const LEDGER_PL_CODE = /(?<![A-Za-z0-9])PL[-. ]?(\d{1,4})(?!\d)/gi;
+const LEDGER_PL_CODE = /(?<![A-Za-z0-9])PL([-.] ?| ?)(\d{1,4})(?!\d)/gi;
 
 /**
  * The work code this ledger name carries, canonical, or null.
@@ -345,10 +401,15 @@ const LEDGER_PL_CODE = /(?<![A-Za-z0-9])PL[-. ]?(\d{1,4})(?!\d)/gi;
 export function readPlCode(name: string): { code: string | null; ambiguous: boolean } {
   const found = new Set<string>();
   for (const match of name.matchAll(LEDGER_PL_CODE)) {
+    const separator = match[1] ?? '';
+    const digits = match[2] ?? '';
+    // FOUR DIGITS NEED A HYPHEN. See the pattern's own note: everything
+    // else that reaches four digits in a ledger name is a year.
+    if (digits.length === 4 && !separator.startsWith('-')) continue;
     // Leading zeros stripped so `PL-07` and `PL-7` are one code. The
     // canonical spelling is what a later wave joins on `works.work_code`;
     // the name itself keeps whatever the operator typed.
-    found.add(`PL-${(match[1] ?? '').replace(/^0+(?=\d)/, '')}`);
+    found.add(`PL-${digits.replace(/^0+(?=\d)/, '')}`);
   }
   if (found.size === 1) return { code: [...found][0] as string, ambiguous: false };
   return { code: null, ambiguous: found.size > 1 };
@@ -466,9 +527,28 @@ export function readTallyMasters(bytes: Buffer): TallyMasterRead {
       );
       return;
     }
+    // THE COLUMN BOUNDS, PROVEN HERE RATHER THAN BY THE DATABASE. Each of
+    // the three below has a CHECK behind it in migration 0118, and a
+    // CHECK is the wrong place to meet one: it arrives mid-commit as a
+    // 23514 naming a constraint, after 4,326 other rows have been built,
+    // with nothing saying WHICH master or WHERE. Refused here, in the
+    // preview, each carries the ledger and the line. The CHECKs stay as
+    // the backstop they are.
+    if (guid.length > 80) {
+      refuse(
+        'This ledger master’s GUID is longer than this census stores (80 characters), so it is not a Tally GUID.',
+      );
+      return;
+    }
     if (name.length > 300) {
       refuse(
         'This ledger master’s name is longer than this census stores (300 characters).',
+      );
+      return;
+    }
+    if (parent.length > 300) {
+      refuse(
+        'This ledger master’s group name is longer than this census stores (300 characters).',
       );
       return;
     }
@@ -494,15 +574,23 @@ export function readTallyMasters(bytes: Buffer): TallyMasterRead {
     }
 
     seenGuids.add(guid);
-    const lowered = name.toLowerCase();
+    // Keyed on the SAME normalisation the contact match compares under,
+    // imported rather than restated — `normaliseContactName`'s own note
+    // says what keying on a bare `toLowerCase()` let through.
+    const lowered = normaliseContactName(name);
     if (seenNames.has(lowered)) duplicateNames.add(lowered);
     seenNames.add(lowered);
     ledgers.push({
       guid,
-      // A missing or unreadable ALTERID is 0 rather than a refusal: it is
-      // an edit cursor for a later re-read, and a census row without one
-      // is still a census row.
-      alterId: /^\d{1,15}$/.test(alterId) ? Number(alterId) : 0,
+      // NULL, NEVER ZERO, when the master carries no readable ALTERID.
+      // Zero is a real Tally counter value — a master altered zero times
+      // — and conflating "no cursor" with "the lowest cursor" made the
+      // regression guard in 0118 fire on every re-import of such a
+      // master: the census would hold 0, the fresh export would offer 0,
+      // and any real counter that appeared later looked like progress
+      // while the reverse looked like an older file. Unknown is unknown,
+      // and the comparison is skipped for it.
+      alterId: /^\d{1,15}$/.test(alterId) ? Number(alterId) : null,
       name,
       parentGroup: parent,
       // Resolved once the whole tree is read; the placeholder is replaced
@@ -522,10 +610,33 @@ export function readTallyMasters(bytes: Buffer): TallyMasterRead {
   };
 
   let lineNumber = 0;
-  for (const rawLine of readLines(bytes)) {
+  let lastOffset = 0;
+  let sawEnvelopeEnd = false;
+  /** The tag of a value that opened with text on its line and has not
+   * closed yet. See the skip below. */
+  let openValueTag: string | null = null;
+  for (const { text: rawLine, offset } of readLines(bytes)) {
     lineNumber += 1;
+    lastOffset = offset;
     const line = rawLine.trim();
     if (line.length === 0) continue;
+
+    // A VALUE THAT SPANS LINES SWALLOWS ITS OWN CONTENT, and until it is
+    // skipped the scanner reads that content as structure. Tally writes
+    // one tag per line, but a NARRATION an operator typed a newline into
+    // is written across several — and any line of it that happens to look
+    // like `<SOMETHING>` was counted as an element opening, leaving the
+    // depth one too deep for the rest of the master. Every direct field
+    // after it then read as nested and was dropped, so a ledger could
+    // lose its GUID to somebody's typing. Skipping to the close is what
+    // keeps a value a value.
+    if (openValueTag !== null) {
+      // Plain string search rather than a regex built from parsed input:
+      // a tag name like `BILLALLOCATIONS.LIST` carries a `.`, which as a
+      // pattern would match anything.
+      if (line.toUpperCase().includes(`</${openValueTag}>`)) openValueTag = null;
+      continue;
+    }
     if (!sawEnvelope) {
       if (line.startsWith('<ENVELOPE')) sawEnvelope = true;
       else if (lineNumber > 20) {
@@ -536,6 +647,7 @@ export function readTallyMasters(bytes: Buffer): TallyMasterRead {
     }
 
     if (element === null) {
+      if (line.startsWith('</ENVELOPE')) sawEnvelopeEnd = true;
       const open = /^<(LEDGER|GROUP)(?:\s|>)/i.exec(line);
       if (open === null) continue;
       element = (open[1] as string).toUpperCase() as 'LEDGER' | 'GROUP';
@@ -601,20 +713,58 @@ export function readTallyMasters(bytes: Buffer): TallyMasterRead {
     // swallows the slash — and counting it would leave the scanner one
     // level too deep for the rest of the master, hiding every direct
     // field after it.
-    if (OPEN_TAG.test(line) && !line.endsWith('/>')) depth += 1;
-    else if (CLOSE_TAG.test(line) && depth > 0) depth -= 1;
+    if (OPEN_TAG.test(line) && !line.endsWith('/>')) {
+      depth += 1;
+      continue;
+    }
+    if (CLOSE_TAG.test(line) && depth > 0) {
+      depth -= 1;
+      continue;
+    }
+    // Everything left that OPENS a tag and carries text after it is a
+    // value running past the end of its line. Its content is skipped, not
+    // parsed — see the note at the top of the loop.
+    const spanning = VALUE_OPENS_HERE.exec(line);
+    if (spanning !== null) openValueTag = (spanning[1] as string).toUpperCase();
   }
 
+  // NOT AN ENVELOPE AT ALL IS ANSWERED FIRST, before either truncation
+  // check. A file that never had an opening `<ENVELOPE>` is the wrong
+  // file — a spreadsheet, a PDF, somebody's HTML — and telling its sender
+  // that their Tally export "stops partway through" would send them to
+  // re-run an export they never ran.
   if (!sawEnvelope) {
     throw new TallyMasterImportError(
       'That file does not begin with a Tally <ENVELOPE>. Export All Masters from TallyPrime and upload the XML it writes, unchanged.',
     );
   }
 
+  // A MASTER STILL OPEN AT EOF IS A REFUSAL, NOT A DROP. A file that
+  // stops mid-master is a half-written export — a copy taken while
+  // TallyPrime was still writing it, or a transfer that failed — and the
+  // ledgers before the cut are a real, complete-looking prefix. Importing
+  // them silently would leave the census describing a fraction of the
+  // chart of accounts, and every count on the report would agree with
+  // itself and be wrong. The whole file is refused instead, with where it
+  // stops.
+  if (element !== null) {
+    throw new TallyMasterImportError(
+      `That export stops in the middle of a ledger master, ${String(lastOffset)} bytes in. It was not finished being written — export All Masters from TallyPrime again and upload the complete file.`,
+      'TALLY_EXPORT_TRUNCATED',
+    );
+  }
+  if (!sawEnvelopeEnd) {
+    throw new TallyMasterImportError(
+      `That export has no closing </ENVELOPE>, so it stops before Tally finished writing it (${String(lastOffset)} bytes read). Export All Masters from TallyPrime again and upload the complete file.`,
+      'TALLY_EXPORT_TRUNCATED',
+    );
+  }
+
   // The ancestry, now that every group is known. Root first, ending at the
   // immediate parent, and cycle-guarded: a group tree from a file is a
   // tree because Tally says so, not because anything here checked.
-  const resolved = ledgers.map((ledger) => {
+  const resolved: TallyLedger[] = [];
+  for (const ledger of ledgers) {
     const path: string[] = [];
     const seen = new Set<string>();
     let current = ledger.parentGroup;
@@ -623,13 +773,27 @@ export function readTallyMasters(bytes: Buffer): TallyMasterRead {
       path.unshift(current);
       current = groupParents.get(current.toLowerCase()) ?? '';
     }
-    return {
+    // 0118 stores the ancestry as a bounded array, and a chart of
+    // accounts nested twenty deep is not one Tally produced. Refused with
+    // the ledger named rather than met as a 23514 in the middle of the
+    // commit; the deepest real path in the export is three.
+    if (path.length > MAX_GROUP_DEPTH) {
+      if (refusals.length < MAX_REFUSALS) {
+        refusals.push({
+          lineNumber: ledger.lineNumber,
+          ledgerName: ledger.name,
+          reason: `This ledger sits ${String(path.length)} groups deep, and this census stores at most ${String(MAX_GROUP_DEPTH)}.`,
+        });
+      }
+      continue;
+    }
+    resolved.push({
       ...ledger,
       groupPath: path,
       classification: classify(path, ledger.plCode),
-      nameAmbiguous: duplicateNames.has(ledger.name.toLowerCase()),
-    };
-  });
+      nameAmbiguous: duplicateNames.has(normaliseContactName(ledger.name)),
+    });
+  }
 
   return {
     ledgers: resolved,
@@ -658,15 +822,20 @@ export function readTallyMasters(bytes: Buffer): TallyMasterRead {
  */
 export function proposeContact(
   ledger: TallyLedger,
-  candidates: readonly ContactCandidate[],
+  candidates: readonly ContactCandidate[] | ContactIndex,
 ): ContactMatch | null {
   if (ledger.classification !== 'customer' && ledger.classification !== 'vendor') {
     return null;
   }
-  const match = matchContact(
-    { customerGstin: ledger.gstin, customerName: ledger.name },
-    candidates,
-  );
+  const subject = { customerGstin: ledger.gstin, customerName: ledger.name };
+  // An INDEX or a plain list, because the two callers want different
+  // things: a test proposes for one ledger and should not have to build
+  // an index, and the route proposes for 4,327 and should not rebuild one
+  // per ledger. Same rule either way — `matchContact` is the indexed one
+  // with the index built on the spot.
+  const match = Array.isArray(candidates)
+    ? matchContact(subject, candidates)
+    : matchIndexedContact(subject, candidates as ContactIndex);
   // A name shared with another master is not evidence about either of
   // them. The GSTIN arm is unaffected — that is a different identifier
   // and it is the one the ruling prefers anyway.

@@ -187,6 +187,20 @@ export const TallyMasterUploadQuerySchema = Type.Object(
      * blank guard. */
     filename: Type.String({ minLength: 1, maxLength: 255 }),
     mode: TallyMasterImportModeSchema,
+    /**
+     * Accept masters whose Tally edit counter has gone BACKWARDS.
+     *
+     * Normally a lower ALTERID means an older export is being imported
+     * over a newer one, which would quietly replace the current census
+     * with a stale one — so it is refused. But a restored TallyPrime
+     * backup is a legitimate thing that happens to a real company, and
+     * after one the counters genuinely are lower: the file is current and
+     * the census is the stale one. This is the operator saying so. It
+     * needs the same import authority as the import itself and writes its
+     * own audit event, so the override is a recorded decision rather than
+     * a quiet one.
+     */
+    force: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -234,6 +248,10 @@ export const TallyMasterImportResultSchema = Type.Object(
   {
     mode: TallyMasterImportModeSchema,
     filename: Type.String({ minLength: 1, maxLength: 255 }),
+    /** Whether this run accepted backwards edit counters. Echoed so the
+     * screen can say an override was used rather than leaving it to the
+     * audit log. */
+    forced: Type.Boolean(),
     /** Ledger masters read, and group masters behind them. Every
      * classification depends on the group tree, so its size is reported
      * rather than assumed. */
@@ -245,6 +263,12 @@ export const TallyMasterImportResultSchema = Type.Object(
     newCount: Type.Integer({ minimum: 0 }),
     updatedCount: Type.Integer({ minimum: 0 }),
     unchangedCount: Type.Integer({ minimum: 0 }),
+    /** Masters this export carries at a LOWER edit counter than the
+     * census already holds — an older export, or a restored Tally
+     * backup. A commit refuses while this is above zero unless the
+     * operator sends `force`; the preview reports it so the refusal is
+     * never a surprise at the commit. */
+    staleCount: Type.Integer({ minimum: 0 }),
     /** Census rows the census holds and this export does not name. A
      * master deleted in Tally, or — on the first import after a wrong
      * one — the whole of the wrong file. */

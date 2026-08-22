@@ -22,8 +22,8 @@ import {
   assertNotMalware,
   consumeUpload,
 } from '../upload-guards.js';
-import type { ContactCandidate } from '../zoho-invoices.js';
-import { errorResponses, requireTrimmed, writeRefusals } from './shared.js';
+import { type ContactCandidate, indexContacts } from '../zoho-invoices.js';
+import { audit, errorResponses, requireTrimmed, writeRefusals } from './shared.js';
 
 /**
  * The Tally ledger census (migration 0118) — wave T1 of the Tally
@@ -415,6 +415,15 @@ export function registerTallyMasterRoutes(
         read = readTallyMasters(bytes);
       } catch (cause: unknown) {
         if (cause instanceof TallyMasterImportError) {
+          // The two codes are written out as LITERALS rather than passed
+          // through as `cause.code`, and `test/error-remedies.test.ts` is
+          // why: it reads this server's source for the codes each route
+          // can actually answer with, and a code that only ever appears
+          // as a variable is invisible to it — which makes its remedy
+          // look like advice about a refusal nothing throws.
+          if (cause.code === 'TALLY_EXPORT_TRUNCATED') {
+            throw httpError(400, 'TALLY_EXPORT_TRUNCATED', cause.message);
+          }
           throw httpError(400, 'TALLY_EXPORT_UNREADABLE', cause.message);
         }
         throw cause;
@@ -428,40 +437,145 @@ export function registerTallyMasterRoutes(
       }
 
       const commit = request.query.mode === 'commit';
+      const forced = request.query.force === true;
       return await tenant(async (tx) => {
+        // ONE IMPORT PER ORGANISATION AT A TIME, and it refuses rather
+        // than queues.
+        //
+        // Two imports of two different exports interleaving would write
+        // rows from both under two different `now()` stamps, and the
+        // census — which is defined as "the rows carrying the newest
+        // stamp" — would then describe a file that never existed. Nor is
+        // waiting the right answer: the second caller is holding a 133 MB
+        // body, and queueing it behind a multi-second import doubles the
+        // memory the server is committed to. `try` returns immediately
+        // and the caller gets a named 409.
+        //
+        // Transaction-scoped, so it is released by the commit or the
+        // rollback with nothing to unwind. The key is the organisation's
+        // id hashed into the same bigint space `rate-limit.ts` uses for
+        // its own advisory locks; the extra literal keeps this family from
+        // ever colliding with that one.
+        const [lock] = await tx<{ taken: boolean }[]>`
+          select pg_try_advisory_xact_lock(
+            hashtextextended(${`tally-masters:${organisationId}`}, 0)
+          ) as taken
+        `;
+        if (lock?.taken !== true) {
+          throw httpError(
+            409,
+            'TALLY_IMPORT_IN_PROGRESS',
+            'Another Tally masters import is running for this organisation. Wait for it to finish, then read the file again.',
+          );
+        }
+
         const contacts = await candidateContacts(tx);
+        // Indexed ONCE for the whole file rather than re-scanned per
+        // ledger. `matchContact` filters the candidate array, which is
+        // fine for one invoice and is 2,235 party ledgers times every
+        // contact here — with a string normalisation inside the loop.
+        const contactIndex = indexContacts(contacts);
 
         // What the census already holds for these GUIDs, so the report can
         // say what the import would ADD, REFRESH and LEAVE ALONE before
         // anything is written. Keyed on Tally's edit counter: a master
         // whose ALTERID has not moved has not been altered.
-        const held = new Map<string, number>(
+        //
+        // `null` is preserved as null rather than coerced: the census may
+        // hold a master whose export carried no counter, and that is not
+        // the same as a counter of zero.
+        const held = new Map<string, number | null>(
           (
-            await tx<{ tally_guid: string; tally_alterid: string }[]>`
+            await tx<{ tally_guid: string; tally_alterid: string | null }[]>`
               select tally_guid, tally_alterid from tally_ledgers
               where tally_guid = any(${tx.array(
                 read.ledgers.map((ledger) => ledger.guid),
               )}::text[])
             `
-          ).map((row) => [row.tally_guid, Number(row.tally_alterid)]),
+          ).map((row) => [
+            row.tally_guid,
+            row.tally_alterid === null ? null : Number(row.tally_alterid),
+          ]),
         );
-        const [heldTotal] = await tx<{ count: number }[]>`
-          select count(*)::int as count from tally_ledgers
+
+        // ROWS THE LATEST CENSUS HOLDS THAT THIS EXPORT DOES NOT NAME.
+        //
+        // Counted against the CURRENT latest import only, because that is
+        // what the census screen shows and therefore what this number has
+        // to describe. The first reading subtracted the matched GUIDs
+        // from EVERY row in the table, which counted rows already
+        // superseded by an EARLIER import a second time — so after two
+        // shrinking imports the same missing master was reported twice
+        // and nobody could tell that from two masters going missing.
+        //
+        // Read BEFORE anything writes, and computed ENTIRELY IN SQL. Both
+        // halves are deliberate. Before, because on a commit every row
+        // this import touches takes `now()` and `max(last_seen_at)` would
+        // then be this import's own instant, making the answer trivially
+        // zero. In SQL, because the obvious alternative — read the stamp
+        // out, compare against it afterwards — does not survive the round
+        // trip: the driver hands a timestamptz back as text and sends it
+        // back as an untyped parameter, and the equality quietly stops
+        // matching the row it was read from. Never leaving the database
+        // is both simpler and the only version that is right.
+        const [superseded] = await tx<{ count: number }[]>`
+          select count(*)::int as count
+          from tally_ledgers l
+          where l.last_seen_at = (select max(last_seen_at) from tally_ledgers)
+            and not (l.tally_guid = any(${tx.array(
+              read.ledgers.map((ledger) => ledger.guid),
+            )}::text[]))
         `;
+        const supersededCount = superseded?.count ?? 0;
 
         const judged = read.ledgers.map((ledger) => ({
           ledger,
-          contact: proposeContact(ledger, contacts),
+          contact: proposeContact(ledger, contactIndex),
         }));
 
         let newCount = 0;
         let updatedCount = 0;
         let unchangedCount = 0;
+        let staleCount = 0;
         for (const { ledger } of judged) {
-          const alterId = held.get(ledger.guid);
-          if (alterId === undefined) newCount += 1;
-          else if (alterId === ledger.alterId) unchangedCount += 1;
-          else updatedCount += 1;
+          if (!held.has(ledger.guid)) {
+            newCount += 1;
+            continue;
+          }
+          const heldAlterId = held.get(ledger.guid) ?? null;
+          if (heldAlterId === ledger.alterId) {
+            unchangedCount += 1;
+            continue;
+          }
+          // UNKNOWN EITHER SIDE IS NOT A REGRESSION. Only two real
+          // counters can be compared, which is the same rule 0118's guard
+          // keeps — stated in both places because the preview has to
+          // predict exactly what the commit will do.
+          if (
+            heldAlterId !== null &&
+            ledger.alterId !== null &&
+            ledger.alterId < heldAlterId
+          ) {
+            staleCount += 1;
+          }
+          updatedCount += 1;
+        }
+
+        // THE PREVIEW AND THE COMMIT AGREE, which is the whole promise of
+        // reading the file twice. Refused here rather than left to 0118's
+        // guard so the operator gets the count, the remedy and the
+        // override in one sentence instead of a 409 naming one row.
+        if (commit && staleCount > 0 && !forced) {
+          throw httpError(
+            409,
+            'TALLY_EXPORT_STALE',
+            `${String(staleCount)} master(s) in this export carry an older Tally edit counter than the census already holds, so this is an older export than the one already imported. Import the current export instead — or, if a Tally backup was restored and this file is the current one, re-run the import with the override.`,
+          );
+        }
+        if (commit && forced) {
+          // Transaction-local, so it is gone at commit or rollback and
+          // cannot leak into another statement. 0118's guard reads it.
+          await tx`select set_config('app.tally_force', 'on', true)`;
         }
 
         let importedCount = 0;
@@ -539,27 +653,32 @@ export function registerTallyMasterRoutes(
           // row is not a document somebody filed — 4,327 audit events per
           // import would bury the timeline that answers what a person
           // did. The file, the counts and the classes are the act.
-          await tx`
-            insert into audit_events (
-              organisation_id, actor_user_id, action, entity_type,
-              entity_id, details
-            )
-            values (
-              ${organisationId}, ${user.id},
-              'tally_ledger.imported', 'tally_ledgers',
-              null, ${tx.json({
-                filename,
-                ledgerCount: read.ledgers.length,
-                groupCount: read.groupCount,
-                newCount,
-                updatedCount,
-                unchangedCount,
-                refusalCount: read.refusals.length,
-                proposedContactCount: judged.filter(({ contact }) => contact !== null)
-                  .length,
-              })}
-            )
-          `;
+          //
+          // `forced` rides in the payload because it is the whole point
+          // of the override being explicit: "on this date a named member
+          // accepted an export whose counters had gone backwards" is the
+          // sentence somebody will need afterwards.
+          await audit(
+            tx,
+            organisationId,
+            user.id,
+            'tally_ledger.imported',
+            'tally_ledgers',
+            null,
+            {
+              filename,
+              ledgerCount: read.ledgers.length,
+              groupCount: read.groupCount,
+              newCount,
+              updatedCount,
+              unchangedCount,
+              staleCount,
+              forced,
+              refusalCount: read.refusals.length,
+              proposedContactCount: judged.filter(({ contact }) => contact !== null)
+                .length,
+            },
+          );
         }
 
         const byRootGroup = new Map<string, number>();
@@ -578,15 +697,14 @@ export function registerTallyMasterRoutes(
         return {
           mode: request.query.mode,
           filename,
+          forced,
           ledgerCount: read.ledgers.length,
           groupCount: read.groupCount,
           newCount,
           updatedCount,
           unchangedCount,
-          // Rows the census holds that this export does not name. Computed
-          // from the totals rather than by listing them: it is a headline,
-          // and the census screen shows the rows themselves.
-          supersededCount: Math.max((heldTotal?.count ?? 0) - held.size, 0),
+          staleCount,
+          supersededCount,
           customerCount: judged.filter(
             ({ ledger }) => ledger.classification === 'customer',
           ).length,
