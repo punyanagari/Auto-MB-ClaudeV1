@@ -1,7 +1,7 @@
 {
   "$comment": "Ratchet floor for scripts/check-test-census.mjs. Counts are DECLARATION SITES per tracked test file and may only rise; regenerate with `node scripts/check-test-census.mjs --update` when a file is renamed or a suite is deliberately retired, and say why in the pull request.",
-  "totalDeclarations": 3830,
-  "fileCount": 238,
+  "totalDeclarations": 3839,
+  "fileCount": 239,
   "files": {
     "apps/server/test/accepted-rate-compound.test.ts": 8,
     "apps/server/test/amc-schedule.integration.test.ts": 20,
@@ -130,6 +130,7 @@
     "apps/server/test/work-completion.integration.test.ts": 37,
     "apps/server/test/work-scope-default.test.ts": 3,
     "apps/server/test/work-supersede.integration.test.ts": 23,
+    "apps/server/test/works-analysis-document.test.ts": 9,
     "apps/server/test/works-analysis.integration.test.ts": 27,
     "apps/server/test/xlsx.test.ts": 29,
     "apps/server/test/zoho-invoices.test.ts": 31,
