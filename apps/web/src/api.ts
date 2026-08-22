@@ -57,6 +57,11 @@ import type {
   SigningAgentResponse,
   ImportBatchDetail,
   ImportBatchList,
+  ImportedInvoiceDetail,
+  ImportedInvoiceImportMode,
+  ImportedInvoiceImportResult,
+  ImportedInvoiceList,
+  RelinkImportedInvoice,
   ImportRowStatus,
   ImportTargetKey,
   SigningQueueResponse,
@@ -2387,6 +2392,43 @@ export interface ApiClient {
     organisationId: string,
     target: ImportTargetKey,
   ) => Promise<Blob>;
+
+  /** The historical Zoho Books invoice register (migration 0115): five
+   * years of billing raised before this application existed, read-only
+   * and annotated with the Work each invoice was for. */
+  readonly listImportedInvoices: (
+    organisationId: string,
+    options?: {
+      readonly limit?: number;
+      readonly cursor?: string;
+      readonly work?: string;
+      readonly customer?: string;
+      readonly linked?: 'linked' | 'unlinked';
+      readonly financialYear?: number;
+      readonly includeDiscarded?: boolean;
+    },
+  ) => Promise<ImportedInvoiceList>;
+  readonly readImportedInvoice: (
+    organisationId: string,
+    invoiceId: string,
+  ) => Promise<ImportedInvoiceDetail>;
+  /** Reads the export and answers what it would do. `preview` writes
+   * nothing; `commit` does the identical reading and inserts. */
+  readonly importZohoInvoices: (
+    organisationId: string,
+    file: File,
+    mode: ImportedInvoiceImportMode,
+  ) => Promise<ImportedInvoiceImportResult>;
+  readonly relinkImportedInvoice: (
+    organisationId: string,
+    invoiceId: string,
+    body: RelinkImportedInvoice,
+  ) => Promise<ImportedInvoiceDetail>;
+  readonly discardImportedInvoice: (
+    organisationId: string,
+    invoiceId: string,
+    body: { readonly reason: string },
+  ) => Promise<ImportedInvoiceDetail>;
   readonly revokeSigningAgent: (
     organisationId: string,
     agentId: string,
@@ -5607,6 +5649,56 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     },
     async downloadImportTemplate(organisationId, target) {
       return downloadBlob(`/api/imports/templates/${target}`, organisationId);
+    },
+    async listImportedInvoices(organisationId, options) {
+      const query = new URLSearchParams();
+      if (options?.limit !== undefined) query.set('limit', String(options.limit));
+      if (options?.cursor !== undefined) query.set('cursor', options.cursor);
+      if (options?.work !== undefined) query.set('work', options.work);
+      if (options?.customer !== undefined) query.set('customer', options.customer);
+      if (options?.linked !== undefined) query.set('linked', options.linked);
+      if (options?.financialYear !== undefined) {
+        query.set('financialYear', String(options.financialYear));
+      }
+      if (options?.includeDiscarded === true) query.set('includeDiscarded', 'true');
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      return request<ImportedInvoiceList>(`/api/imported-invoices${suffix}`, {
+        organisationId,
+      });
+    },
+    async readImportedInvoice(organisationId, invoiceId) {
+      return request<ImportedInvoiceDetail>(`/api/imported-invoices/${invoiceId}`, {
+        organisationId,
+      });
+    },
+    async importZohoInvoices(organisationId, file, mode) {
+      // The raw Blob, as every upload in this client sends one: there is
+      // no FormData anywhere here. The file's own name rides the
+      // querystring because it is what the operator calls the import.
+      const query = uploadQuery({ mode, filename: file.name });
+      const response = await fetchImpl(`/api/imported-invoices/import?${query}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'text/csv',
+          'x-organisation-id': organisationId,
+        },
+        body: file,
+      });
+      if (!response.ok) throw await parseError(response);
+      return (await response.json()) as ImportedInvoiceImportResult;
+    },
+    async relinkImportedInvoice(organisationId, invoiceId, body) {
+      return request<ImportedInvoiceDetail>(
+        `/api/imported-invoices/${invoiceId}/link`,
+        { method: 'POST', body, organisationId },
+      );
+    },
+    async discardImportedInvoice(organisationId, invoiceId, body) {
+      return request<ImportedInvoiceDetail>(
+        `/api/imported-invoices/${invoiceId}/discard`,
+        { method: 'POST', body, organisationId },
+      );
     },
     async downloadSignedPdf(organisationId, requestId) {
       // Fetched rather than linked, like every other PDF here: the

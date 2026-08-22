@@ -516,6 +516,32 @@ const DECLARED_MUTABLE: Record<string, readonly string[]> = {
     'discard_reason',
   ],
 
+  // The historical Zoho Books invoice register (0115). Everything the
+  // export stated is frozen by `guard_imported_invoice`, and what is left
+  // is the three annotations this organisation makes ABOUT the record
+  // rather than to it: the Work link a person confirms (and may correct),
+  // the contact link that becomes possible when a customer is added to the
+  // master afterwards, and the discard, which the same guard makes
+  // terminal.
+  //
+  // `issued` is here because it is GENERATED from `irn`, which the freeze
+  // holds — so it is unwritable rather than free, and it appears in no ROW
+  // comparison because a BEFORE trigger cannot read a generated column's
+  // new value.
+  imported_invoices: [
+    'issued',
+    'contact_id',
+    'contact_match_method',
+    'work_id',
+    'link_method',
+    'linked_by_user_id',
+    'linked_at',
+    'discarded_at',
+    'discarded_by_user_id',
+    'discard_reason',
+    'updated_at',
+  ],
+
   // The provider attempt ledger (0041): the request is frozen at start,
   // and the outcome is the append that closes it.
   statutory_provider_operations: [

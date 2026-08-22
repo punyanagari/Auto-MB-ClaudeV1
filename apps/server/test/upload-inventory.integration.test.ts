@@ -8,7 +8,11 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { Sql } from '@auto-mb/db';
 import { createDatabasePool, ensureClusterRoles, runMigrations } from '@auto-mb/db';
 import { buildApp } from '../src/app.js';
-import { MAX_PDF_UPLOAD_BYTES, MAX_XLSX_UPLOAD_BYTES } from '../src/upload-guards.js';
+import {
+  MAX_CSV_UPLOAD_BYTES,
+  MAX_PDF_UPLOAD_BYTES,
+  MAX_XLSX_UPLOAD_BYTES,
+} from '../src/upload-guards.js';
 import { tenantRoutesOf } from '../src/tenant-route.js';
 
 /**
@@ -41,7 +45,7 @@ interface UploadRouteExpectation {
   readonly key: string;
   /** The route file that must call `consumeUpload()`. */
   readonly sourceFile: string;
-  readonly format: 'pdf' | 'image' | 'xlsx';
+  readonly format: 'pdf' | 'image' | 'xlsx' | 'csv';
   readonly bodyLimit: number;
   /** Appended verbatim; the routes below either need one or take none. */
   readonly query?: string;
@@ -228,6 +232,19 @@ const UPLOAD_ROUTES: readonly UploadRouteExpectation[] = [
     bodyLimit: MAX_XLSX_UPLOAD_BYTES,
     query: '?target=contacts&filename=inventory.xlsx',
   },
+  {
+    // The historical Zoho Books invoice export (0115). The second upload
+    // here whose bytes are PARSED rather than stored, and the only one
+    // whose format has no signature at all — so its guard proves the body
+    // is TEXT rather than proving it is a CSV, and the parser's own
+    // refusals do the rest. A larger ceiling than the workbook above it
+    // for the opposite reason: a .xlsx is compressed and a CSV is not.
+    key: 'POST /api/imported-invoices/import',
+    sourceFile: 'routes/imported-invoices.ts',
+    format: 'csv',
+    bodyLimit: MAX_CSV_UPLOAD_BYTES,
+    query: '?mode=preview&filename=invoice.csv',
+  },
 ];
 
 /** What each format's shared refusal answers for a body whose signature
@@ -242,12 +259,20 @@ const WRONG_SIGNATURE_CODE = {
   // file that is a broken workbook are the same problem with the same
   // fix, and the sentence names it (0094).
   xlsx: 'IMPORT_SHEET_UNREADABLE',
+  // Same posture as the workbook, and it has to be: a CSV carries no
+  // signature, so "this is not a CSV" and "this is a CSV that is not the
+  // Zoho invoice export" are one refusal reached by two routes — the
+  // binary check in the guard and the missing-columns check in the reader
+  // (0115). The probe body below is plain text, so it is the reader that
+  // answers, which is exactly the arm a signature check cannot have.
+  csv: 'ZOHO_EXPORT_UNREADABLE',
 } as const;
 
 const UPLOAD_CONTENT_TYPE = {
   pdf: 'application/pdf',
   image: 'image/png',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  csv: 'text/csv',
 } as const;
 
 /**

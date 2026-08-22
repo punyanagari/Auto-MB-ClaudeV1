@@ -81,6 +81,8 @@ const NON_TIMELINE: Record<string, string> = {
     'Organisation-level (0092): nothing this pack sends is about a Work — the messages are configuration and test traffic. When document delivery lands (E-whatsapp-delivery) its messages WILL name a Work, and promoting this table then means a whitelist entry, a scoping arm in routes/timeline.ts, web labels and tests, exactly as received_railway_bills got.',
   spreadsheet_import_batches:
     'Organisation-level (0094): an import fills a master register — contacts, the item catalogue — and both are already organisation-level here. A batch names no Work and could not; if a Work-scoped register ever gains an importer, the batch gains a work_id and this entry goes with it.',
+  imported_invoices:
+    'The historical Zoho Books register (0115). Deliberately off the Work timeline, and consistently with its live sibling: tax_invoices is itself a pre-timeline gap, so putting HISTORY on the trail while the invoices this application raises stay off it would tell an operator the wrong story about which invoices a Work has. It is also the weaker kind of Work link — an annotation a person confirmed from a regex proposal, re-pointable at any time — so the events are about the ANNOTATION (imported, relinked, discarded) rather than about anything that happened to the contract. When invoicing joins the timeline, this joins with it: a whitelist entry, a scoping arm in routes/timeline.ts, web labels and tests, exactly as received_railway_bills got.',
   organisation_entitlements:
     'Organisation-level (0096): whether a MODULE is available to the organisation. It governs every Work equally and belongs to none of them, which is the same reason document_number_series is here.',
   statutory_job_schedules:

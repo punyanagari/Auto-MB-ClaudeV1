@@ -38,6 +38,7 @@ function freshWork(): WorkDetailResponse {
     installationCounts: { recorded: 0, cancelled: 0 },
     measurementBookCount: 0,
     taxInvoiceCount: 0,
+    historicalInvoiceCount: 0,
     work: {
       id: WORK_ID,
       workCode: 'PL270-CRB',

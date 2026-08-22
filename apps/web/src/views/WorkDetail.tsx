@@ -65,6 +65,7 @@ import { WorkInstallations } from './WorkInstallations.js';
 import { WorkPaymentSetup } from './WorkPaymentSetup.js';
 import { WorkPurchaseOrders } from './WorkPurchaseOrders.js';
 import { WorkTaxInvoices } from './WorkTaxInvoices.js';
+import { WorkHistoricalInvoices } from './WorkHistoricalInvoices.js';
 
 interface WorkDetailProps {
   readonly api: ApiClient;
@@ -426,6 +427,13 @@ export function WorkDetail({
    * load or change, so the badges track the tabs without a reload. */
   const [measurementBookCount, setMeasurementBookCount] = useState<number | null>(null);
   const [taxInvoiceCount, setTaxInvoiceCount] = useState<number | null>(null);
+  /* The historical Zoho register's tally for this Work (0115), on the same
+     terms as the two above: the Bills tab lists those invoices under the
+     ones this application raised, so the badge has to count them or it
+     claims a smaller number than the tab shows. */
+  const [historicalInvoiceCount, setHistoricalInvoiceCount] = useState<number | null>(
+    null,
+  );
   const [amendments, setAmendments] = useState<readonly ApprovalRequest[]>([]);
   const [correctionNotices, setCorrectionNotices] = useState<
     readonly CorrectionNotice[]
@@ -506,6 +514,7 @@ export function WorkDetail({
         setInstallationCounts(loaded.installationCounts);
         setMeasurementBookCount(loaded.measurementBookCount);
         setTaxInvoiceCount(loaded.taxInvoiceCount);
+        setHistoricalInvoiceCount(loaded.historicalInvoiceCount);
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
@@ -990,6 +999,10 @@ export function WorkDetail({
         label: 'Tax invoices',
         value: taxInvoiceCount === null ? '—' : String(taxInvoiceCount),
       },
+      {
+        label: 'Historical invoices',
+        value: historicalInvoiceCount === null ? '—' : String(historicalInvoiceCount),
+      },
     ],
     instruments: [
       {
@@ -1033,7 +1046,7 @@ export function WorkDetail({
         : null,
     bills:
       relatedStateForTab('bills') === 'ready'
-        ? bills.length + (taxInvoiceCount ?? 0)
+        ? bills.length + (taxInvoiceCount ?? 0) + (historicalInvoiceCount ?? 0)
         : null,
     instruments:
       relatedStateForTab('instruments') === 'ready' ? instruments.length : null,
@@ -1686,6 +1699,15 @@ export function WorkDetail({
             pending={pending}
             act={act}
             onInvoicesKnown={setTaxInvoiceCount}
+          />
+          {/* …and what this Work was billed BEFORE this system (0115).
+              Last on the tab because it is history rather than work: the
+              register above is what this contract bills now, and this is
+              the part of its billing that happened in Zoho Books. */}
+          <WorkHistoricalInvoices
+            api={api}
+            organisationId={organisationId}
+            workId={workId}
           />
         </>
       )}

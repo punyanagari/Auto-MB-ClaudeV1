@@ -1,4 +1,4 @@
-import { ApiErrorSchema } from '@auto-mb/contracts';
+import { ApiErrorSchema, type ErrorCode } from '@auto-mb/contracts';
 import { Type } from '@sinclair/typebox';
 import type { TransactionSql } from '@auto-mb/db';
 import { httpError } from '../http.js';
@@ -88,6 +88,40 @@ export function requireTrimmed(value: string, refusal: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) throw httpError(400, 'FIELD_TOO_SHORT', refusal);
   return trimmed;
+}
+
+/**
+ * Turns a module's SQLSTATE table into the `.catch` a write hands its
+ * refusals to.
+ *
+ * A route checks a rule and then writes; the database's own guard checks
+ * it again. The second check exists for the race the first cannot cover
+ * and for a writer that reaches the table another way — and when it fires,
+ * the caller must get the same named 409 the route's own check would have
+ * given, rather than an unexplained 500 with the reason only in the log.
+ *
+ * The MAPPING is per module, because a SQLSTATE means what its migration
+ * says it means. The plumbing is not: `routes/imports.ts` (0094) and
+ * `routes/imported-invoices.ts` (0115) had byte-identical copies of the
+ * lookup, and a copy of error handling is a place for one of them to stop
+ * mapping a code the other still does.
+ *
+ * An unlisted code is re-thrown untouched. That is deliberate and is how a
+ * guard nobody has a remedy for stays a 500: a 409 with an invented
+ * sentence would tell an operator to retry something that cannot succeed.
+ */
+export function writeRefusals(
+  refusals: Record<string, readonly [ErrorCode, string]>,
+): (error: unknown) => never {
+  return (error: unknown): never => {
+    const code =
+      error !== null && typeof error === 'object' && 'code' in error
+        ? String(error.code)
+        : '';
+    const refusal = refusals[code];
+    if (refusal !== undefined) throw httpError(409, refusal[0], refusal[1]);
+    throw error;
+  };
 }
 
 /**

@@ -17,6 +17,26 @@ const errorResponses = {
 } as const;
 
 /**
+ * export-v36: the historical Zoho Books register (0115) joins the package
+ * — the invoices this organisation raised before this application
+ * existed, their lines, and the raw export row each was read from.
+ *
+ * NUMBERED 36 AT MERGE, not when this pack was written: it was branched
+ * claiming 35, and 0114's package landed on main first and took it.
+ * Export versions are monotonic with the order packages MERGE rather than
+ * the order they are branched — a version string identifies a format, two
+ * formats sharing one string is the failure that matters, and a gap is
+ * not. `apps/server/test/helpers/export-format.ts` carries the value the
+ * suite expects and moves with this one.
+ *
+ * It travels because the whole export exists to hand an organisation back
+ * everything of its own, and five years of billing is not an exception to
+ * that. The raw CSV row rides as the stored jsonb rather than being
+ * rebuilt from the typed columns beside it: the row is the truth source
+ * and the columns are a reading of it, so a package that reconstructed it
+ * would return this schema's opinion of the export instead of the export.
+ *
+ * ---------------------------------------------------------------------
  * export-v35: the opening billing position of a pre-system Work (0114)
  * joins the package — the baseline, its per-item lines, the opening
  * deductions, and the two railway documents it rests on.
@@ -478,7 +498,7 @@ const errorResponses = {
  * without them such an invoice would export as a header with no
  * document.
  */
-export const EXPORT_FORMAT_VERSION = 'export-v35';
+export const EXPORT_FORMAT_VERSION = 'export-v36';
 
 /** Rows fetched per round-trip while streaming a section. Large enough
  * that a big table is not a per-row conversation, small enough that no
@@ -724,6 +744,31 @@ const SECTIONS: readonly ExportSection[] = [
     // What has been withheld against bills this product never saw.
     key: 'workDeductionEntries',
     sql: `select * from work_deduction_entries order by created_at, id`,
+  },
+  {
+    // The historical Zoho Books invoice register (0115). It travels for
+    // the reason the whole export exists: this is five years of the
+    // organisation's billing, and a package that handed back everything
+    // except what the organisation had already invoiced would be a
+    // portability promise with the history taken out.
+    //
+    // The raw CSV row rides as stored jsonb rather than being rebuilt from
+    // the typed columns. It is the truth source — the typed columns are a
+    // reading of it — and a restore that reconstructed it would hand back
+    // this schema's opinion of the export instead of the export.
+    //
+    // `, id` closes the order for the reason the measurement above gives:
+    // two invoices bearing the same date would otherwise come back in
+    // whatever order the planner chose, and a package whose row order is
+    // not deterministic cannot be diffed against yesterday's.
+    key: 'importedInvoices',
+    sql: `select * from imported_invoices order by invoice_date, id`,
+    jsonbColumns: ['raw_row'],
+  },
+  {
+    key: 'importedInvoiceLines',
+    sql: `select * from imported_invoice_lines order by imported_invoice_id, position`,
+    jsonbColumns: ['raw_row'],
   },
   {
     key: 'deliveryChallans',
