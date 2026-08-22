@@ -289,6 +289,28 @@ export const WORK_CHILD_TABLES_EXEMPT: Readonly<Record<string, string>> = {
     'one line of an opening position whose baseline blocks when locked and deletes when draft',
   work_deduction_entries:
     'cumulative figures typed from the agency’s own ledger, restated on the successor the same way',
+  // The historical Zoho Books invoice register (0115), and the exemption
+  // is a different KIND from the ones above rather than a weaker version
+  // of them.
+  //
+  // Every other exempt register here is exempt because a blocker already
+  // covers it. This one is exempt because it is not a document raised
+  // FROM the Work at all: it is a record of an invoice another system
+  // issued before this Work existed here, and its `work_id` is an
+  // ANNOTATION a person added afterwards from a proposal a regex made.
+  // Withdrawing the Work does not make the invoice untrue, and refusing
+  // the withdrawal because somebody once ticked a link would let an
+  // annotation veto a correction — which is backwards.
+  //
+  // The link also survives the withdrawal rather than stranding: it stays
+  // correctable (that is one of the register's three hinges), so an
+  // operator re-points it at the successor Work, and until they do the
+  // Historical invoices register shows it exactly as it shows every other
+  // link. Its lines hang off the invoice, one step further behind.
+  imported_invoices:
+    'a historical invoice raised in another system before this Work existed here; its Work link is a correctable annotation, not a document issued from the Work',
+  imported_invoice_lines:
+    'a line of a historical invoice, which reaches the Work only through an annotation on its header',
   // The rule's own bookkeeping: it points at both ends of the change, and
   // is written by the supersede itself.
   work_supersessions: 'the supersession record itself',

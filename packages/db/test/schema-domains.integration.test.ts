@@ -221,6 +221,20 @@ describe('the schema at head names all three shapes', () => {
     // inside a trigger, so a different precision here would be a silent
     // rounding difference on a comparison that decides what is billed.
     //
+    // 0115 adds nine, all of them figures another system computed: the
+    // historical invoice's sub-total, total, balance and round-off, and
+    // its lines' line total and three tax-head amounts, plus the line
+    // quantity. They are stored and never recomputed — the 0052 backstops
+    // judge invoices this application raised — and adopting the domains is
+    // what stops a register of somebody else's arithmetic being held at a
+    // precision this schema does not use anywhere else.
+    //
+    // NINE and not ten: the line's `item_price` is a RATE and takes 0027's
+    // numeric(18,6) instead. The real export carries three fraction digits
+    // there, so money scale would have rounded a unit price away in
+    // silence — which is the exact failure the domains exist to make
+    // impossible, arrived at from the other direction.
+    //
     // 0114 adds twelve, all on the opening billing position of a
     // pre-system Work: the recorded bill's own amount, the four stage
     // quantities and the amount of a baseline line, the same five again
@@ -229,7 +243,7 @@ describe('the schema at head names all three shapes', () => {
     // adds to its prior-cumulative memory and the receivables position
     // is summed from, so a different precision here would be a rounding
     // difference on numbers that decide what is billed next.
-    expect(adopted.length).toBe(126);
+    expect(adopted.length).toBe(135);
   });
 
   it('types every digest column as sha256_hex', () => {

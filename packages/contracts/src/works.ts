@@ -363,6 +363,14 @@ export const WorkDetailResponseSchema = Type.Object(
      * tab renders them beside the railway bills, so its badge counts
      * both for the same reason. */
     taxInvoiceCount: Type.Integer({ minimum: 0 }),
+    /** How many HISTORICAL invoices (migration 0115) are filed against
+     * this Work — the Zoho Books billing that predates this product. The
+     * Bills tab renders them under the invoices this application raised,
+     * so the badge counts them too, for the reason the two counts above
+     * exist: a tab whose badge disagrees with what the tab shows teaches
+     * an operator not to trust the badge. Discarded rows are excluded,
+     * because the tab does not show them either. */
+    historicalInvoiceCount: Type.Integer({ minimum: 0 }),
   },
   { additionalProperties: false },
 );

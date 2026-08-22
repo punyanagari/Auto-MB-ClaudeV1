@@ -37,6 +37,20 @@ export const MAX_PDF_UPLOAD_BYTES = 25 * 1024 * 1024;
  */
 export const MAX_XLSX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
+/**
+ * The ceiling on an imported CSV export (0115).
+ *
+ * Twice the workbook cap, and the reason is the opposite of the reason
+ * that one is low: a .xlsx is COMPRESSED and a CSV is not. The real Zoho
+ * Books invoice export — 638 invoices, 809 rows, 193 columns, several of
+ * them e-invoice payloads — is 2.3 MB of plain text, so sixteen leaves an
+ * organisation with five years more billing history than this one and
+ * still refuses a file nobody meant to send. The row and column caps in
+ * `apps/server/src/csv.ts` bound the other axis, which a byte cap cannot:
+ * a megabyte of one-character rows is a million records.
+ */
+export const MAX_CSV_UPLOAD_BYTES = 16 * 1024 * 1024;
+
 const PDF_MAGIC = Buffer.from('%PDF-');
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
@@ -72,6 +86,16 @@ interface XlsxUploadSpec {
   readonly description: string;
 }
 
+interface CsvUploadSpec {
+  readonly format: 'csv';
+  readonly description: string;
+  /** The named refusal this format answers with. CSV has no signature to
+   * check, so the refusal belongs to the register being imported into
+   * rather than to a generic "not a CSV" that would tell an operator
+   * nothing about which upload failed. */
+  readonly code: 'ZOHO_EXPORT_UNREADABLE';
+}
+
 export function consumeUpload(
   body: unknown,
   spec: PdfUploadSpec,
@@ -84,6 +108,10 @@ export function consumeUpload(
   body: unknown,
   spec: XlsxUploadSpec,
 ): ConsumedUpload<'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'>;
+export function consumeUpload(
+  body: unknown,
+  spec: CsvUploadSpec,
+): ConsumedUpload<'text/csv'>;
 /**
  * Validates a raw request body and hands back the bytes with the media
  * type its signature proves. Every refusal is a 400 with the code the
@@ -92,8 +120,40 @@ export function consumeUpload(
  */
 export function consumeUpload(
   body: unknown,
-  spec: PdfUploadSpec | ImageUploadSpec | XlsxUploadSpec,
+  spec: PdfUploadSpec | ImageUploadSpec | XlsxUploadSpec | CsvUploadSpec,
 ): ConsumedUpload<string> {
+  if (spec.format === 'csv') {
+    // A CSV HAS NO MAGIC BYTES, and this function's whole promise is that
+    // the format is proven by signature rather than by the client's
+    // Content-Type. Stated rather than quietly skipped: what CAN be proven
+    // about text is that it is text, so the check is a NUL-byte scan over
+    // the head of the body.
+    //
+    // That is not theatre. Every binary an operator plausibly mis-drags
+    // here — the .xlsx of the same export, a PDF of an invoice, a ZIP —
+    // carries a NUL inside its first kilobyte, and each of them would
+    // otherwise reach the CSV reader as mojibake and be refused with a
+    // sentence about a quoted value that is never closed. The scan is
+    // bounded to the head because a NUL two megabytes in is a corrupt file
+    // rather than a wrong one, and the parser's own refusal says so
+    // better.
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      throw httpError(
+        400,
+        spec.code,
+        `Send ${spec.description} as a text/csv request body.`,
+      );
+    }
+    if (body.subarray(0, 1024).includes(0x00)) {
+      throw httpError(
+        400,
+        spec.code,
+        'That file is not a CSV — it looks like a binary file. In Zoho Books, export the invoice register as CSV rather than XLSX or PDF.',
+      );
+    }
+    return { bytes: body, mediaType: 'text/csv' };
+  }
+
   if (spec.format === 'xlsx') {
     if (!Buffer.isBuffer(body) || body.length === 0) {
       throw httpError(

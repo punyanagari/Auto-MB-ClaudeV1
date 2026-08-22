@@ -136,6 +136,13 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // discarding the measurement and uploading another.
   railway_measurements: 'SELECT, INSERT, UPDATE',
   railway_measurement_confirmations: 'SELECT, INSERT',
+  // The historical Zoho Books invoice register (0115). The header takes
+  // UPDATE for exactly three writes — the Work link, the contact link and
+  // the discard — and no DELETE, because a record of what another system
+  // billed does not leave. Its lines are append-only: the export said what
+  // it said and there is no annotation to make about a line.
+  imported_invoices: 'SELECT, INSERT, UPDATE',
+  imported_invoice_lines: 'SELECT, INSERT',
   // The opening billing position of a pre-system Work (0114). Full
   // privileges: an unlocked baseline is a form being filled in, and its
   // guards — not the grant — are what stop a locked one from moving.

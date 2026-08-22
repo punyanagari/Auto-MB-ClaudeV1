@@ -1,4 +1,5 @@
 import {
+  Archive,
   Boxes,
   ChartColumn,
   CircleCheckBig,
@@ -37,6 +38,7 @@ export type ModuleKey =
   | 'tenders'
   | 'challans'
   | 'invoices'
+  | 'historical-invoices'
   | 'quotations'
   | 'correspondence'
   | 'company-documents'
@@ -132,6 +134,12 @@ export const NAVIGATION: readonly NavGroup[] = [
     items: [
       { key: 'challans', label: 'Challans', icon: Truck },
       { key: 'invoices', label: 'Invoices', icon: Receipt },
+      // The Zoho Books history (0115). Directly under Invoices, because
+      // it is the same question asked of the years before the cutover —
+      // and its own lamp rather than a tab of that register, because one
+      // is documents this application issues and can act on and the
+      // other is read-only history nothing bills or settles against.
+      { key: 'historical-invoices', label: 'Historical invoices', icon: Archive },
       { key: 'quotations', label: 'Quotations', icon: FileText },
       { key: 'correspondence', label: 'Correspondence', icon: Mails },
       { key: 'company-documents', label: 'Company documents', icon: FileBadge },
@@ -220,6 +228,8 @@ export function defaultViewOf(key: ModuleKey): WorkspaceView {
       return { name: 'challans', tab: 'delivery', workId: null };
     case 'invoices':
       return { name: 'invoices' };
+    case 'historical-invoices':
+      return { name: 'historical-invoices', workId: null };
     case 'quotations':
       return { name: 'quotations' };
     case 'correspondence':
@@ -329,6 +339,7 @@ export function activeModuleOf(view: WorkspaceView): ModuleKey {
     case 'approvals':
     case 'search':
     case 'maintenance':
+    case 'historical-invoices':
     case 'installations':
     case 'warranties':
     case 'purchase-orders':
@@ -403,6 +414,8 @@ export function pageTitleOf(view: WorkspaceView): string {
       return 'Invoices';
     case 'invoice':
       return 'Tax invoice';
+    case 'historical-invoices':
+      return 'Historical invoices';
     case 'quotations':
       return 'Quotations';
     case 'correspondence':

@@ -614,6 +614,18 @@ export const REMEDIES: Readonly<Partial<Record<ErrorCode, string>>> = {
     'Correct the row in your workbook and upload it again; a staged row is the record of what the file contained.',
   IMPORT_NOTHING_TO_IMPORT:
     'Correct the rows this import lists as errors and upload the sheet again; nothing was written to the register.',
+  // ---- The historical Zoho Books register (0115) ---------------------------
+  //
+  // The remedy for every refusal here is the same act — read the file
+  // first — because the preview is what names the row and the column, and
+  // it writes nothing. The message carries the specific cell; this carries
+  // the step.
+  ZOHO_EXPORT_UNREADABLE:
+    'Export the invoice register from Zoho Books as CSV, upload it without opening it in Excel, and read the file before importing it — the preview names the row and column of anything it cannot read, and writes nothing.',
+  IMPORTED_INVOICE_IMMUTABLE:
+    'Discard this invoice with the reason and import the corrected export instead of editing it — a record of what another system issued is not rewritten, and the register keeps both rows.',
+  IMPORTED_INVOICE_DISCARDED:
+    'Reload the historical register and import the corrected export, because a withdrawn record takes no further changes.',
   // ---- Defect liability periods (0099) ------------------------------------
   //
   // The module has no document to open and no number to quote, so every

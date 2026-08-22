@@ -265,6 +265,12 @@ describe('OperationsWorkspace mobile shell', () => {
       'Receivables',
       'Challans',
       'Invoices',
+      // The Zoho Books history (migration 0115), directly under the
+      // register that answers the same question about the years since
+      // the cutover. The mock draws no cell for it — docs/UX.md § 34, on
+      // the same footing as Warranties below and the signing queue's own
+      // missing cell in § 16.
+      'Historical invoices',
       'Quotations',
       'Correspondence',
       // The mock HAS this screen (`app/tenders/company-documents`) but
@@ -341,6 +347,9 @@ describe('OperationsWorkspace mobile shell', () => {
       ['Receivables', '#/receivables'],
       ['Challans', '#/challans'],
       ['Invoices', '#/invoices'],
+      // The Zoho Books history (0115), directly under the register that
+      // answers the same question about the years since the cutover.
+      ['Historical invoices', '#/historical-invoices'],
       ['Quotations', '#/quotations'],
       ['Correspondence', '#/correspondence'],
       ['Company documents', '#/company-documents'],

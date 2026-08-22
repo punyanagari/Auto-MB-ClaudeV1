@@ -1678,13 +1678,16 @@ export function registerLoaRoutes(
 
         // A Work confirmed from its LOA has no installation records,
         // Measurement Books, or tax invoices yet, by construction — this
-        // transaction is the one that creates it.
+        // transaction is the one that creates it. Nor any historical
+        // invoice: a Zoho row is filed against a Work from the register
+        // after the import, which is necessarily later than this.
         return {
           work: toWork(work),
           schedules,
           installationCounts: ZERO_INSTALLATIONS,
           measurementBookCount: 0,
           taxInvoiceCount: 0,
+          historicalInvoiceCount: 0,
         };
       }).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === '23505') {
@@ -1894,12 +1897,20 @@ export function registerLoaRoutes(
         // formal Measurement Books and the tax invoices render inside
         // their tabs from their own reads, so without these numbers a
         // badge could claim zero while a book or an invoice exists.
-        const [documentCounts] = await tx<{ books: number; invoices: number }[]>`
+        const [documentCounts] = await tx<
+          { books: number; invoices: number; historical: number }[]
+        >`
           select
             (select count(*)::int from measurement_books where work_id = ${id})
               as books,
             (select count(*)::int from tax_invoices where work_id = ${id})
-              as invoices
+              as invoices,
+            -- The historical Zoho register (0115), which the Bills tab
+            -- reads beneath the invoices this application raised.
+            -- Discarded rows are out, because the tab does not list them.
+            (select count(*)::int from imported_invoices
+              where work_id = ${id} and discarded_at is null)
+              as historical
         `;
         return {
           work: { ...toWork(work), allowExcessDelivery: work.allow_excess_delivery },
@@ -1910,6 +1921,7 @@ export function registerLoaRoutes(
           },
           measurementBookCount: documentCounts?.books ?? 0,
           taxInvoiceCount: documentCounts?.invoices ?? 0,
+          historicalInvoiceCount: documentCounts?.historical ?? 0,
         };
       });
     },
