@@ -102,6 +102,13 @@ function useMasterList<T>(
   return { rows, reload, reveal, revealProps };
 }
 
+/** One line for a postal address: the populated parts joined with
+ * middots, an em dash when there are none — the contact register and the
+ * address panel say it identically. */
+function addressSummary(parts: readonly (string | null | undefined)[]): string {
+  return parts.filter((part) => part != null).join(' · ') || '—';
+}
+
 function RetiredFilter({
   id,
   includeRetired,
@@ -690,14 +697,12 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
               <tr key={row.id} {...revealProps(row.id)}>
                 <th scope="row">{row.designation}</th>
                 <td className={wrapCell}>
-                  {[
+                  {addressSummary([
                     row.address,
                     row.pincode,
                     row.locality,
                     row.stateCode ? `State ${row.stateCode}` : null,
-                  ]
-                    .filter((part) => part !== null && part !== undefined)
-                    .join(' · ') || '—'}
+                  ])}
                 </td>
                 <td>{row.gstin ?? '—'}</td>
                 <td className={wrapCell}>
@@ -1042,9 +1047,253 @@ function ContactsTab({ api, organisationId, canModify }: MastersProps) {
         </MasterForm>
       )}
 
+      {/* The address list, and only while a contact is being edited: an
+          address belongs to a contact, and there is nothing to attach one
+          to until one is chosen. The form above owns the PRIMARY address
+          (the four fields it has carried since 0013, which the database
+          keeps equal to the primary row here); this owns the second
+          address onward and which one is first. */}
+      {canModify && editing !== null && (
+        <ContactAddressPanel
+          api={api}
+          organisationId={organisationId}
+          contact={editing}
+          onChanged={(saved) => {
+            // ONE fetch per address action, the panel's own (it must see
+            // retired addresses whatever the register filter says).
+            // Re-reading the whole register here as well doubled every
+            // click; the register row behind the editor catches up on the
+            // next save or reload, and until then only its mirrored
+            // Address column can lag.
+            setEditing(saved);
+          }}
+        />
+      )}
+
       {notice !== null && <FormNotice>{notice}</FormNotice>}
       {error !== null && <FormError>{error}</FormError>}
     </>
+  );
+}
+
+/**
+ * A contact's addresses (migration 0116).
+ *
+ * Separate from the contact form rather than nested inside it, because a
+ * form inside a form is not a document a browser will submit, and because
+ * the two save different things: the contact form saves the contact, this
+ * saves one address at a time.
+ *
+ * Retire, never delete — a challan may already have copied this address,
+ * and retiring it must not, and does not, change what that challan says.
+ */
+function ContactAddressPanel({
+  api,
+  organisationId,
+  contact,
+  onChanged,
+}: {
+  readonly api: ApiClient;
+  readonly organisationId: string;
+  readonly contact: Contact;
+  /** The contact as the server now holds it, so the panel and the
+   * register both stop showing what was true a moment ago. */
+  readonly onChanged: (contact: Contact) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const addresses = contact.addresses ?? [];
+
+  /** Every write here answers with one address, and the panel needs the
+   * whole contact — the primary may have moved, and the mirrored fields
+   * on the contact with it. So the contact is re-read rather than
+   * patched from the answer. */
+  async function run(action: () => Promise<unknown>) {
+    setPending(true);
+    setError(null);
+    try {
+      await action();
+      const reloaded = await api.listContacts(organisationId, {
+        includeRetired: true,
+      });
+      const found = reloaded.find((row) => row.id === contact.id);
+      if (found !== undefined) onChanged(found);
+    } catch (cause) {
+      setError(errorMessage(cause, 'The address could not be saved.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="mt-4">
+      <h3 className="section-label">Addresses for {contact.designation}</h3>
+      <Hint>
+        A contact may keep more than one address — a works and a registered office, a
+        depot beside a headquarters. Pickers offer the primary one first. Editing or
+        retiring an address never changes a document that already copied it.
+      </Hint>
+      {error !== null && <FormError>{error}</FormError>}
+      {addresses.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          This contact has no address yet. Fill the address field above to give it its
+          primary one.
+        </p>
+      ) : (
+        <DataTable>
+          <caption className="sr-only">
+            Addresses for {contact.designation}, primary first
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Label</th>
+              <th scope="col">Address</th>
+              <th scope="col">Status</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {addresses.map((address) => (
+              <tr key={address.id}>
+                <th scope="row">{address.label ?? '—'}</th>
+                <td className={wrapCell}>
+                  {addressSummary([
+                    address.address,
+                    address.pincode,
+                    address.locality,
+                    address.stateCode === null ? null : `State ${address.stateCode}`,
+                  ])}
+                </td>
+                <td>
+                  {address.isPrimary && <Badge variant="info">primary</Badge>}{' '}
+                  <StatusChip active={address.active} />
+                </td>
+                <td>
+                  {!address.isPrimary && address.active && (
+                    <>
+                      {/* The body-less MOVE verb, not the PUT: re-sending
+                          the browser's copy of the text fields would
+                          silently overwrite a concurrent edit of the
+                          address itself. */}
+                      <Button
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() =>
+                          void run(() =>
+                            api.makeContactAddressPrimary(
+                              organisationId,
+                              contact.id,
+                              address.id,
+                            ),
+                          )
+                        }
+                      >
+                        Make primary
+                      </Button>{' '}
+                    </>
+                  )}
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() =>
+                      void run(() =>
+                        api.setContactAddressActive(
+                          organisationId,
+                          contact.id,
+                          address.id,
+                          !address.active,
+                        ),
+                      )
+                    }
+                  >
+                    {address.active ? 'Retire' : 'Reactivate'}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      )}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const data = new FormData(form);
+          const optional = (name: string): string | undefined => {
+            const value = formValue(data, name).trim();
+            return value.length === 0 ? undefined : value;
+          };
+          const address = formValue(data, 'address').trim();
+          if (address.length < 3) return;
+          const label = optional('label');
+          const pincode = optional('pincode');
+          const locality = optional('locality');
+          const stateCode = optional('stateCode');
+          void run(async () => {
+            await api.saveContactAddress(organisationId, contact.id, null, {
+              address,
+              ...(label !== undefined ? { label } : {}),
+              ...(pincode !== undefined ? { pincode } : {}),
+              ...(locality !== undefined ? { locality } : {}),
+              ...(stateCode !== undefined ? { stateCode } : {}),
+            });
+            form.reset();
+          });
+        }}
+      >
+        <FieldRow>
+          <Field>
+            <label htmlFor="contact-address-label">Label (optional)</label>
+            <input id="contact-address-label" name="label" maxLength={100} />
+            <Hint>What this place is called — &ldquo;Works, Hosur&rdquo;.</Hint>
+          </Field>
+          <Field>
+            <label htmlFor="contact-address-line">Address</label>
+            <input
+              id="contact-address-line"
+              name="address"
+              required
+              minLength={3}
+              maxLength={1000}
+            />
+          </Field>
+        </FieldRow>
+        <FieldRow>
+          <Field>
+            <label htmlFor="contact-address-pincode">Pincode (optional)</label>
+            <input
+              id="contact-address-pincode"
+              name="pincode"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+            />
+          </Field>
+          <Field>
+            <label htmlFor="contact-address-locality">Locality / city (optional)</label>
+            <input
+              id="contact-address-locality"
+              name="locality"
+              minLength={2}
+              maxLength={100}
+            />
+          </Field>
+          <Field>
+            <label htmlFor="contact-address-state">State code (optional)</label>
+            <input
+              id="contact-address-state"
+              name="stateCode"
+              inputMode="numeric"
+              pattern="[0-9]{2}"
+            />
+          </Field>
+        </FieldRow>
+        <Actions>
+          <Button type="submit" disabled={pending}>
+            Add address
+          </Button>
+        </Actions>
+      </form>
+    </section>
   );
 }
 

@@ -197,7 +197,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       // because it is the same act — pointing a file from another system
       // at this one — and because what it fills is the Contacts register
       // Masters owns, one lamp above. `BookText` is new to this rail and
-      // was checked against every icon already on it (docs/UX.md § 35).
+      // was checked against every icon already on it (docs/UX.md § 37).
       { key: 'tally-masters', label: 'Tally census', icon: BookText },
       { key: 'members', label: 'Members', icon: Users },
       // The two screens migration 0095 adds. Both sit under

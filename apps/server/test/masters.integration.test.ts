@@ -544,6 +544,33 @@ describe('contacts master (unified role flags; plain creates are consignees)', (
     expect(collide.json()).toMatchObject({ code: 'CONTACT_EXISTS' });
   });
 
+  it('trims a padded address the way the database CHECK counts it', async () => {
+    // contacts.address carries `btrim(address) = address` — untrimmed
+    // input used to sail past the contract's raw-length check and die in
+    // the database as an unnamed 23514.
+    const padded = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: {
+        designation: `Padded Address ${runId}`,
+        address: '  Goods Shed Road, Itarsi  ',
+      },
+    });
+    expect(padded.statusCode, padded.body).toBe(201);
+    expect(padded.json<Contact>().address).toBe('Goods Shed Road, Itarsi');
+
+    // Trimming below the minimum is refused by name, not by SQLSTATE.
+    const short = await authed(owner, {
+      method: 'POST',
+      url: '/api/masters/contacts',
+      organisationId,
+      payload: { designation: `Short Address ${runId}`, address: ' ab ' },
+    });
+    expect(short.statusCode, short.body).toBe(400);
+    expect(short.json<{ code: string }>().code).toBe('CONTACT_ADDRESS_INVALID');
+  });
+
   it('retires (always allowed), hides retired rows by default, and reactivates', async () => {
     const retired = await authed(owner, {
       method: 'POST',

@@ -18,9 +18,8 @@
  * suite EXPECTS, and bumping the server's own constant without bumping
  * this one is exactly the mistake the assertions exist to catch.
  */
-// ⚠ PLACEHOLDER NUMBER — the coordinator renumbers this at merge, TOGETHER
-// with `EXPORT_FORMAT_VERSION` in `apps/server/src/routes/export.ts`. Wave
-// T1 took the next free version above `main`; the two files auto-merge
-// silently against a sibling Tally wave that took the same one, and only a
-// deliberate renumber of BOTH catches it.
-export const EXPECTED_EXPORT_VERSION = 'export-v37';
+// Renumbered from v37 to v39 at the merge with #164, together with
+// `EXPORT_FORMAT_VERSION` in `apps/server/src/routes/export.ts`, which
+// carries the reasoning. The two auto-merge silently against each other,
+// so they move by hand or not at all.
+export const EXPECTED_EXPORT_VERSION = 'export-v39';

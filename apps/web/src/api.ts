@@ -149,6 +149,7 @@ import type {
   ContractSourceDocumentKind,
   ContractSourceUploadResponse,
   Contact,
+  ContactAddress,
   DeliveryChallanRegisterEntry,
   CreateOrganisationRequest,
   DashboardResponse,
@@ -196,6 +197,7 @@ import type {
   SaveProductionItemRequest,
   UpdateJobCardRequest,
   SaveChallanRequest,
+  SaveContactAddressRequest,
   SaveContactRequest,
   SaveStandaloneChallanRequest,
   SaveExtensionRequest,
@@ -782,7 +784,7 @@ export interface ApiClient {
    * updates; `setActive` retires (false) or reactivates (true). */
   readonly listContacts: (
     organisationId: string,
-    options?: { includeRetired?: boolean; role?: 'consignee' },
+    options?: { includeRetired?: boolean; role?: 'consignee' | 'vendor' | 'client' },
   ) => Promise<readonly Contact[]>;
   readonly saveContact: (
     organisationId: string,
@@ -794,6 +796,29 @@ export interface ApiClient {
     id: string,
     active: boolean,
   ) => Promise<Contact>;
+  /** A contact's address list (migration 0116). The four address fields
+   * on the contact itself remain its PRIMARY address; these routes are
+   * for the second address onward and for moving which one is first. */
+  readonly saveContactAddress: (
+    organisationId: string,
+    contactId: string,
+    addressId: string | null,
+    body: SaveContactAddressRequest,
+  ) => Promise<ContactAddress>;
+  readonly setContactAddressActive: (
+    organisationId: string,
+    contactId: string,
+    addressId: string,
+    active: boolean,
+  ) => Promise<ContactAddress>;
+  /** A body-less MOVE of the primary flag: nothing else about the address
+   * is sent, so a concurrent edit of its text cannot be overwritten by a
+   * stale copy the browser held. */
+  readonly makeContactAddressPrimary: (
+    organisationId: string,
+    contactId: string,
+    addressId: string,
+  ) => Promise<ContactAddress>;
   readonly listWorkConsignees: (
     organisationId: string,
     workId: string,
@@ -3627,6 +3652,27 @@ export function createApiClient(send: FetchLike = fetch): ApiClient {
     async setContactActive(organisationId, id, active) {
       return request<Contact>(
         `/api/masters/contacts/${id}/${active ? 'reactivate' : 'retire'}`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async saveContactAddress(organisationId, contactId, addressId, body) {
+      const base = `/api/masters/contacts/${contactId}/addresses`;
+      return request<ContactAddress>(
+        addressId === null ? base : `${base}/${addressId}`,
+        { method: addressId === null ? 'POST' : 'PUT', body, organisationId },
+      );
+    },
+    async setContactAddressActive(organisationId, contactId, addressId, active) {
+      return request<ContactAddress>(
+        `/api/masters/contacts/${contactId}/addresses/${addressId}/${
+          active ? 'reactivate' : 'retire'
+        }`,
+        { method: 'POST', organisationId },
+      );
+    },
+    async makeContactAddressPrimary(organisationId, contactId, addressId) {
+      return request<ContactAddress>(
+        `/api/masters/contacts/${contactId}/addresses/${addressId}/make-primary`,
         { method: 'POST', organisationId },
       );
     },

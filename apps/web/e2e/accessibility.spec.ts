@@ -1981,6 +1981,13 @@ test('maintenance register, job card and request form pass the axe scan', async 
 test('production register, job card and item master pass the axe scan', async ({
   page,
 }) => {
+  /* Nine `expectNoAxeViolations` calls, each a full axe run in both
+     themes. The round-5 item-master surfaces (§ 36) took it from five to
+     nine and from comfortably inside Playwright's 30s default to 22s on
+     an idle machine and over it on a loaded one, so it is budgeted the
+     same way the Work workspace and maintenance legs were rather than
+     left to flake on whichever worker is running beside it. */
+  test.slow();
   await mockWorkspace(page);
   await page.goto('/');
 
@@ -2028,6 +2035,43 @@ test('production register, job card and item master pass the axe scan', async ({
   // runner slow enough for the loading state to still be on screen.
   await expect(page.getByRole('heading', { name: 'Bill of material' })).toBeVisible();
   await expectNoAxeViolations(page, 'production item master');
+
+  /* The three round-5 surfaces (§ 36). Each is scanned in its own right
+     because each puts a kind of ink on the screen the master behind it
+     does not: muted second lines inside a control, disabled controls with
+     a hint under them, and a form nested inside a panel. */
+
+  // Item 31: creation opens on a question. Its two answers are outline
+  // buttons carrying a muted explanatory line INSIDE the control, which
+  // is the one place this module asks small muted text to hold contrast
+  // against a button surface rather than the page.
+  await page.getByRole('button', { name: 'Add item' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'What kind of item is this?' }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, 'production item kind chooser');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  // Item 29: the edit form, scanned on the fixture item whose locks are
+  // both set, so the refusals on screen are real disabled controls. The
+  // disabled control itself is exempt from the contrast rule; the HINT
+  // under it, which is the part an operator actually reads, is not.
+  await page.getByRole('button', { name: 'Edit item' }).click();
+  await expect(page.getByLabel('Serial series')).toBeDisabled();
+  await expect(page.getByText(/printed on them/)).toBeVisible();
+  await expectNoAxeViolations(page, 'production item edit form');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  // Item 28: the escape from a component select with nothing in it. The
+  // fixture catalogue holds a second item, so the empty state itself is
+  // not reachable here — the control it offers is the same one that sits
+  // beside a populated select, and it opens the same nested form.
+  // `exact`, because the default substring match also finds every row's
+  // "Remove … from the bill of material".
+  await page.getByRole('button', { name: 'Material', exact: true }).click();
+  await page.getByRole('button', { name: 'Create a part' }).click();
+  await expect(page.getByRole('heading', { name: 'New sub item' })).toBeVisible();
+  await expectNoAxeViolations(page, 'production item inline part form');
 });
 
 test('the signing queue passes the axe scan', async ({ page }) => {

@@ -2683,13 +2683,189 @@ authority of § 18 and migration 0094, for that section's reason. A member
 without it sees the register and not the upload panel, rather than an
 upload panel that answers 403.
 
-### 35. The Tally census — the chart of accounts another system keeps
+### 35. Inspection clause: two lists, and a vendor with more than one address — APPROVED, owner ruling of 2026-08-21
+
+**The clause tab is two sections, not one list.** A 129-item schedule carries
+perhaps six inspected items, and railway schedules say which ones in the item text
+— "Inspection by RDSO", "RITES inspection at vendor's works". The tab now reads for
+that and splits the items accordingly:
+
+- **Matched items**, expanded on arrival: the description names an agency.
+- **Other items**, collapsed but present: everything else.
+
+The second section is not an afterthought and is never hidden outright, because an
+inspection clause sometimes lives in the tender text rather than in the item
+description. A screen that showed only the matched items would be capable of being
+wrong in a way nobody could see.
+
+The reading is FUZZY and it is a PROPOSAL. Fuzzy, because LOA schedules arrive as
+scanned PDFs typed by a dozen offices: the corpus already carries "Consingee" for
+consignee and runs whole phrases together where the source line-wrapped. The
+matcher strips everything that is not a letter or a digit and then looks for the
+agency's name and an inspection stem within a bounded edit distance, so
+"inspectionbyRDSO", "Inspection by R.D.S.O." and "Insepction by RDSO" all read the
+same (`apps/web/src/lib/inspection-clause-match.ts`, unit-tested over those exact
+variants). A proposal, because the agency select stays EMPTY until an operator
+chooses: a match writes a hint under the control ("Description reads RDSO") and
+nothing else. Mapping an item is what makes a despatch legitimate, and a machine
+reading of item text is not that decision.
+
+**The premises is a vendor and one of its addresses.** It used to be free text,
+retyped per item and differently each time, until the placing request went to the
+wrong works. The clause now names a vendor-role contact and one of that vendor's
+saved addresses, with the free text kept as the fallback it always was — half of
+these premises are sub-vendors with no master row, and refusing them would be a
+worse failure than an untidy field. The two are alternatives, and the database
+refuses the pair.
+
+The clause reads the address LIVE and the call COPIES it. That difference is the
+whole of the rule-7 posture here: a clause is configuration, so an address
+corrected in the master should reach the next call raised under it; a call is a
+record of a request that went out, so it snapshots the vendor's name and the
+address text and keeps them when the master is renamed or the address retired.
+
+**A contact keeps more than one address.** Masters gains an address list per
+contact — label, address, pincode, locality, state code, retire and reactivate,
+and which one is primary. The contact's own address fields are the PRIMARY address
+and the database keeps them equal to it, so every screen that already prefilled
+from a contact keeps working and now means "the primary address" precisely. Where
+an operator may need a different one, a chooser appears, and only when there is
+something to choose:
+
+- the Work challan editor's consignee prefill, and the standalone challan's
+  consignee — both offer the list when the contact keeps more than one;
+- the inspection clause's vendor, above.
+
+Retiring an address never touches a document that copied it, and a retired address
+is refused for a new one. That is the same sentence the Contacts register has
+carried since the master existed, applied one level down.
+
+**Retirement blocks new citations, never the tab.** The clause save re-submits
+the whole table, so a vendor or address retired after being mapped must not brick
+every other row: a citation left exactly as stored saves untouched, and only the
+row whose citation CHANGES is re-proved — its refusal names the item ("Item
+A-0003: …") and carries the `workItemId`. The tab shows a retired citation by
+name, marked "(retired)" on the row that carries it with a destructive badge in
+place of "Mapped"; the picker itself still offers only live vendors and
+addresses. Raising a CALL under a retired citation is where the refusal lands,
+and a vendor mapped with no saved address and no typed premises is refused at
+call time in a sentence rather than surfacing as a bare 500.
+
+**Making an address primary is a body-less verb.** The Masters button posts
+`make-primary` and sends nothing else, so a concurrent edit of the address text
+cannot be overwritten by whatever copy the browser held. Retiring the primary
+hands the flag to the next live address in the same statement; reactivating an
+address of a contact left with no primary restores it — Masters never shows a
+live address while the challan editor refuses the contact as having none. A new
+address never claims primary by itself unless it is the contact's first live one:
+an address deliberately cleared on the contact form stays cleared.
+
+### 36. The production item master — kinds, editing, and the empty bill
+
+**Status: application-first, owner rulings of 2026-08-21 (round-5
+corrections items 31, 29 and 28; migration 0117).**
+
+**No mock citation, and none is needed.** Everything below is built from
+the mock's own components on the screen the mock already draws
+(`app/production/items/page.tsx`): the `[280px_1fr]` split, its cards, the
+`TabRail` the Production and Maintenance registers already use, the
+shared `EmptyState`, and § 31's `useUnavailableControl` for every refusal.
+The only new words are labels and refusal sentences, which § Approved
+divergences 2 admits app-first.
+
+**"Add OEM item" told an operator something untrue.** Not everything in
+the catalogue is an OEM product — most of it is the parts the products are
+built from. The header button now reads **Add item** and the panel opens
+on a question rather than on fields:
+
+| Kind         | What it means                                                                                                        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| **OEM item** | A product the agency builds and sells. Always manufactured, so always named unit by unit from its own serial series. |
+| **Sub item** | A part or a sub-assembly a product is built from. Bought in or built here — either is ordinary.                      |
+
+The choice re-shapes the form. An OEM item is never asked whether it is
+manufactured, because it always is; a sub item is asked, and only then
+does it need a serial series of its own.
+
+**The kind is a column, not the `manufactured` flag.** A sub-assembly the
+agency welds is manufactured and is still not a product anybody sells, so
+the two facts are different facts. Deriving the kind from the bill of
+material was refused for the reason migration 0084 gives about the
+`manufactured` flag: the catalogue would then gain and lose entries as
+somebody edited a bill.
+
+**The rail lists one kind at a time.** It is titled **Catalogue** and opens
+on OEM items, with a two-tab filter to sub items beside it — parts stay
+fully manageable (renamed, retired, specified) without burying the twelve
+products behind four hundred bolts. Selecting a filter moves the detail
+pane to the first item of that kind, because a pane describing something
+the rail no longer lists is a pane about nothing.
+
+**A production item can now be edited.** It is a master, and a master is
+meant to be correctable: name, part number, category, unit and
+specifications are all freely editable, and nothing an operator types here
+rewrites history — every issued record snapshotted its own copy of the
+wording when it was written.
+
+**Three things still cannot move, and each says so on the control
+itself** — visible, disabled, the reason at the pointer and repeated as a
+hint underneath:
+
+| Control                        | Refused when                                                                     | Because                                                                     |
+| ------------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Serial series                  | a unit has been minted                                                           | the prefix is printed on hardware already in the field                      |
+| Manufactured / capture serials | a job card, a unit, a component consumption or a stock issue references the item | each of those records only makes sense under the flags it was written under |
+| **OEM** as a kind              | the item is not manufactured and can no longer become so                         | an OEM item is manufactured by definition                                   |
+
+The STOCK ISSUE arm is the one a serial-shaped rule would miss. An
+unserialised part is consumed into a job card by QUANTITY through the
+stock ledger (migration 0087) and leaves no component-serial record
+at all — which is exactly the history that switching serial capture on
+would claim had been scanned. Without it the rule would be blind to the
+commonest consumption in the building.
+
+The mechanism is § 31's: the reason is a VISIBLE line bound to the
+control by `aria-describedby` through `ui/unavailable.tsx`'s
+`useUnavailableControl`, not a `title` alone. A control that vanished
+would leave an operator hunting for it; a control that submitted and
+failed would teach the rule one refusal at a time. Each is enforced again
+by the route under a row lock and again by the database guard behind it
+(migration 0084 § 1, widened by 0117), so the screen is convenience and
+never the rule.
+
+**Both halves of the screen stay in step.** Switching the rail filter to
+a kind the catalogue has none of clears the detail pane rather than
+leaving it describing a row the rail no longer lists, and an edit that
+changes an item's KIND moves the filter with it, so the item the operator
+was just editing does not vanish out of the list they are looking at.
+
+**A save carries only what the form asked about.** `specifications` and
+`role` are both optional on the write, and absent means LEAVE IT ALONE —
+so the edit form, which does not show the specification list, does not
+re-send a stale copy of it over whatever the specification editor saved a
+moment earlier. An empty array is a different request and clears the
+list.
+
+**The bill of material no longer dead-ends.** A component select with
+nothing in it used to be an empty dropdown with no explanation and nowhere
+to go — which is the state every new organisation starts in, because the
+first item created has nothing to be built from. The panel now names the
+condition ("There are no other items in the catalogue yet…") and offers
+**Create a part**, which opens the item form fixed to the sub-item kind
+and returns to the material line with the new part already selected. The
+same **Create a part** control sits beside the select once it does have
+options, because the moment an operator discovers a missing part is the
+moment they are adding it to a bill.
+
+### 37. The Tally census — the chart of accounts another system keeps
 
 **Status: application-first, owner rulings of 2026-08-22 (Tally mapping
-census, questions 1–8; migration 0118).** Numbered 35 by coordinator
-allocation, not by position: § 35 was the next free number when this wave
-was written, and if a sibling pack lands one first the coordinator
-renumbers at merge rather than letting two sections share a number.
+census, questions 1–8; migration 0118).** Numbered 37 by coordinator
+allocation, not by position. This wave was written against § 35 as the
+next free number; #164 and #166 landed § 35 and § 36 while it was in
+flight, so it was renumbered at the merge rather than being allowed to
+share one — which is exactly what the placeholder note it replaces
+existed to force.
 
 **There is no mock citation for this screen and none is possible**, for
 § 34's reason exactly: the mock draws a product that has always existed,
@@ -3201,11 +3377,13 @@ operator then collapsed, so its inputs have to be React state first. The PAC for
 was converted that way.
 
 The surfaces that stayed flat, and why, so the list is not read as an oversight:
-the challan and issue-challan item tables, the Measurement Book's lines and the
-inspection-clause table all render rows whose API shape carries no schedule, so
-grouping them needs a contract change rather than a screen change; the
-post-creation payment-setup dialog is a dialog, and the summary row sticks against
-a shell header that a dialog does not have.
+the challan and issue-challan item tables and the Measurement Book's lines all
+render rows whose API shape carries no schedule, so grouping them needs a contract
+change rather than a screen change; the post-creation payment-setup dialog is a
+dialog, and the summary row sticks against a shell header that a dialog does not
+have. The inspection-clause table left this list on 2026-08-21 (§35): it is
+sectioned by what the item description SAYS rather than by schedule, which needs
+no contract change at all.
 
 ## Focus, keyboard and navigation
 
@@ -3309,7 +3487,7 @@ recovery · Password recovery · Account security · Organisation access setting
 Appearance settings · Monthly payroll · Spreadsheet imports · Signing queue ·
 Warranties register and the Work's defect liability card · Historical invoice
 register and its Zoho Books import (§ 34) · Tally ledger census and its
-TallyPrime masters import (§ 35)
+TallyPrime masters import (§ 37)
 
 Small confirmation dialogs, validation summaries, skeletons and error panels use
 shared patterns rather than becoming separate product architectures.

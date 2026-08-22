@@ -89,6 +89,19 @@ const InspectionClauseRowSchema = Type.Object(
     manufacturedQuantity: Type.String(),
     agency: Type.Union([InspectionClauseAgencySchema, Type.Null()]),
     inspectionQuantity: Type.Union([Type.String(), Type.Null()]),
+    /** The vendor whose premises this item is inspected at, when it is a
+     * contact this organisation holds (migration 0116). Joined live, not
+     * snapshotted: a clause is configuration, so an address corrected in
+     * the master should reach the next call raised under it. */
+    vendorContactId: Type.Union([UuidSchema, Type.Null()]),
+    vendorName: Type.Union([Type.String(), Type.Null()]),
+    vendorAddressId: Type.Union([UuidSchema, Type.Null()]),
+    /** The chosen address as it currently reads. Present only alongside
+     * `vendorAddressId`; the free-text `vendorPremises` is the other, and
+     * they are mutually exclusive by CHECK. */
+    vendorAddress: Type.Union([Type.String(), Type.Null()]),
+    /** A premises with no master row — half of them are sub-vendors, which
+     * is why 0082 made this free text and why it survives. */
     vendorPremises: Type.Union([Type.String(), Type.Null()]),
     gatesDispatch: Type.Boolean(),
   },
@@ -141,7 +154,12 @@ const InspectionClauseInputSchema = Type.Object(
     workItemId: UuidSchema,
     agency: Type.Union([InspectionClauseAgencySchema, Type.Null()]),
     inspectionQuantity: Type.Union([PositiveDecimalStringSchema, Type.Null()]),
-    vendorPremises: Type.Union([Type.String({ maxLength: 200 }), Type.Null()]),
+    /** Optional, so a caller that predates the address list — the v1
+     * importer, an older client — keeps submitting the free-text
+     * premises alone and means exactly what it always meant. */
+    vendorContactId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    vendorAddressId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    vendorPremises: Type.Union([Type.String({ maxLength: 1000 }), Type.Null()]),
     gatesDispatch: Type.Boolean(),
   },
   { additionalProperties: false },
@@ -226,6 +244,13 @@ export const InspectionCallSchema = Type.Object(
      * and its certificate has not lapsed. Derived on read against the
      * server's date, never stored. */
     certificateLive: Type.Boolean(),
+    /** The vendor as it stood when the call was raised: the id is
+     * provenance, the NAME and the premises text are the snapshot the
+     * placing request printed (migration 0116). Renaming or retiring the
+     * master afterwards changes neither. */
+    vendorContactId: Type.Union([UuidSchema, Type.Null()]),
+    vendorAddressId: Type.Union([UuidSchema, Type.Null()]),
+    vendorName: Type.Union([Type.String(), Type.Null()]),
     vendorPremises: Type.Union([Type.String(), Type.Null()]),
     cancellationReason: Type.Union([Type.String(), Type.Null()]),
     /** ADVISORY. Delivery challans issued for this call's items while its
@@ -274,7 +299,13 @@ export const CreateInspectionCallRequestSchema = Type.Object(
   {
     agency: InspectionAgencySchema,
     requestedOn: DateOnlySchema,
-    vendorPremises: Type.Union([Type.String({ maxLength: 200 }), Type.Null()]),
+    /** Where the agency is being sent. A saved vendor address is copied
+     * onto the call — name and text both — and free text is recorded as
+     * typed; the two are alternatives. Omitting all three raises a call
+     * with no premises, which 0082 already allowed. */
+    vendorContactId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    vendorAddressId: Type.Optional(Type.Union([UuidSchema, Type.Null()])),
+    vendorPremises: Type.Union([Type.String({ maxLength: 1000 }), Type.Null()]),
     items: Type.Array(
       Type.Object(
         {

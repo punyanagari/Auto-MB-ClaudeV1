@@ -52,6 +52,8 @@ const NON_TIMELINE: Record<string, string> = {
   work_assignments:
     'Access administration: who may see a Work is an identity fact, kept off the Work’s own paper trail.',
   contacts: 'Organisation-level master data.',
+  contact_addresses:
+    'Organisation-level master data, one level below contacts. Issued documents copy the address text they print, and the inspection clause that joins an address LIVE is configuration whose own save is audited against the Work — either way an edit here belongs to the master’s history, not to any Work’s timeline.',
   tally_ledgers:
     'Organisation-level master data (0118): the chart of accounts another system holds. A census row names no Work at all — owner rulings 4 and 5 keep the work code as text and the table reaches `works` nowhere — and the one event it writes is the import of a file, not an act on a contract.',
   unit_masters: 'Organisation-level master data.',

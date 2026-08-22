@@ -103,6 +103,10 @@ export const TABLE_PRIVILEGES: Record<string, string> = {
   // caller); its own ACL stays narrow — read for pickers, insert for the
   // importer's master upsert.
   contacts: 'SELECT, INSERT, UPDATE',
+  // A contact's address list (0116). The parent's grant exactly: a
+  // document may have copied one of these rows, so addresses retire by
+  // flag and no DELETE exists.
+  contact_addresses: 'SELECT, INSERT, UPDATE',
   consignee_masters: 'SELECT, INSERT',
   // Work<->consignee association (0028): a preference list, not a
   // document — unlinking deletes nothing but the preference.

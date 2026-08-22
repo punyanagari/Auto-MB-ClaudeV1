@@ -25,7 +25,7 @@ import { SignedMoneyStringSchema, UuidSchema } from './primitives.js';
 //
 // THE MOCK DRAWS NO TALLY SCREEN. Application-first under AGENTS.md
 // § Design contract 2 and 4, built in the mock's existing grammar and in
-// the shape of the Zoho importer beside it. `docs/UX.md` § 35 records the
+// the shape of the Zoho importer beside it. `docs/UX.md` § 37 records the
 // stance.
 
 /* --- Vocabulary ------------------------------------------------------------ */

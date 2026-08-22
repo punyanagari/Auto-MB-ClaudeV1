@@ -49,7 +49,7 @@ import { DataTable, numericCell, wrapCell } from '../ui/table.js';
  * frightening.
  *
  * The mock draws no Tally screen; this is built in its existing grammar
- * under AGENTS.md § Design contract 2 and 4, and `docs/UX.md` § 35
+ * under AGENTS.md § Design contract 2 and 4, and `docs/UX.md` § 37
  * records the stance.
  */
 

@@ -313,7 +313,7 @@ describe('OperationsWorkspace mobile shell', () => {
       'Imports',
       // The Tally ledger census (0118), directly under the other way a
       // file from another system reaches this one. The mock draws no
-      // cell for it — docs/UX.md § 35, on the same footing as § 34.
+      // cell for it — docs/UX.md § 37, on the same footing as § 34.
       'Tally census',
       'Members',
       // The two screens 0095 adds, both under Administration and neither
