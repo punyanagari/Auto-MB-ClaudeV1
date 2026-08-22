@@ -637,11 +637,31 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
   const raw = hash.startsWith('#') ? hash.slice(1) : hash;
   if (raw === '' || raw === '/') return { view: { name: 'dashboard' } };
   if (!raw.startsWith('/')) return null;
+  /* A hand-edited or truncated fragment can carry a broken escape
+   * (`#/reports/analysis/mapped-item/50%off`), and `decodeURIComponent`
+   * THROWS on one — from the router, that is a blank screen rather than a
+   * wrong screen. So a segment that will not decode is kept RAW and
+   * flagged: every validator below then rejects it exactly the way it
+   * rejects any other unrecognised text, and the fragment degrades where
+   * its route already degrades — a Work keeps its Work and loses the
+   * section, a report keeps the Reports screen and loses the
+   * configuration. The flag is for the two segments that validate nothing
+   * because they are free-form (the search query, and the analysis
+   * report's selection), which have no other way to tell garbage from a
+   * legitimate description. */
+  let malformed = false;
   const segments = raw
     .slice(1)
     .split('/')
     .filter((segment) => segment.length > 0)
-    .map((segment) => decodeURIComponent(segment));
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        malformed = true;
+        return segment;
+      }
+    });
   const [head, ...rest] = segments;
   switch (head) {
     case undefined:
@@ -662,7 +682,10 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
       return isMastersTab(tab) ? { view: { name: 'masters' }, mastersTab: tab } : null;
     }
     case 'search': {
-      if (rest.length === 0) return { view: { name: 'search', query: '' } };
+      // A query nothing can decode is no query at all, so it degrades to
+      // the empty search rather than searching for the broken text.
+      if (rest.length === 0 || malformed)
+        return { view: { name: 'search', query: '' } };
       // A single segment by construction (the serializer percent-encodes
       // any slash), but joining is the honest inverse of the split above
       // and keeps a hand-typed `#/search/a/b` meaningful instead of null.
@@ -837,7 +860,7 @@ export function parseWorkspaceHash(hash: string): WorkspaceRoute | null {
     // would type and what the rail calls it. `mis` is the internal name
     // and never appears in an address.
     case 'reports':
-      return parseReportsHash(rest);
+      return parseReportsHash(rest, malformed);
     default:
       return null;
   }
@@ -851,7 +874,10 @@ const REPORTS_DEFAULT: WorkspaceRoute = {
   view: { name: 'mis', tab: 'analysis', report: null, selection: null },
 };
 
-function parseReportsHash(segments: readonly string[]): WorkspaceRoute | null {
+function parseReportsHash(
+  segments: readonly string[],
+  malformed: boolean,
+): WorkspaceRoute | null {
   const [first, second, third, ...extra] = segments;
   if (extra.length > 0) return null;
   if (first === undefined) return REPORTS_DEFAULT;
@@ -875,8 +901,10 @@ function parseReportsHash(segments: readonly string[]): WorkspaceRoute | null {
   // across every item; a code or an item key narrows either. The key can
   // be a description, so it carries whatever characters a schedule line
   // does — which is why every segment is encoded on the way out and
-  // decoded on the way in.
-  return run(third ?? null);
+  // decoded on the way in. A selection that will not decode is not a key
+  // any item or division answers to, so it degrades to the picker with
+  // every other half-formed reports fragment.
+  return malformed ? REPORTS_DEFAULT : run(third ?? null);
 }
 
 function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {

@@ -260,6 +260,46 @@ describe('workspace hash routes', () => {
     expect(parseWorkspaceHash('#/reports/accounts/extra')).toBeNull();
   });
 
+  /* A fragment is hand-editable, and `decodeURIComponent` throws on a
+     broken escape — `50%off` is a percent sign followed by `of`, not an
+     escape. A throw here is a blank screen, so a segment that will not
+     decode degrades the way every other half-formed fragment does. */
+  it('degrades a malformed percent-escape instead of throwing', () => {
+    const picker = {
+      view: { name: 'mis', tab: 'analysis', report: null, selection: null },
+    };
+    expect(parseWorkspaceHash('#/reports/analysis/mapped-item/50%off')).toEqual(picker);
+    expect(parseWorkspaceHash('#/reports/analysis/division/50%off')).toEqual(picker);
+    expect(parseWorkspaceHash('#/reports/analysis/work/50%off')).toEqual(picker);
+    // A broken report name is unrecognised text like any other.
+    expect(parseWorkspaceHash('#/reports/analysis/50%off')).toEqual(picker);
+    // The Work keeps its Work and loses the section, exactly as an
+    // unknown section does.
+    expect(parseWorkspaceHash(`#/works/${WORK_ID}/50%off`)).toEqual({
+      view: { name: 'work', workId: WORK_ID },
+    });
+    // A query nothing can decode is no query at all.
+    expect(parseWorkspaceHash('#/search/50%off')).toEqual({
+      view: { name: 'search', query: '' },
+    });
+    // Where the segment had to be a record id, the fragment is refused as
+    // it already is for any other non-uuid.
+    expect(parseWorkspaceHash('#/installations/50%off')).toBeNull();
+    expect(parseWorkspaceHash('#/50%off')).toBeNull();
+    // …and a well-formed escape in the same position still round-trips.
+    expect(parseWorkspaceHash('#/reports/analysis/mapped-item/50%25off')).toEqual({
+      view: {
+        name: 'mis',
+        tab: 'analysis',
+        report: 'mapped-item',
+        selection: '50%off',
+      },
+    });
+    expect(parseWorkspaceHash('#/search/50%25off')).toEqual({
+      view: { name: 'search', query: '50%off' },
+    });
+  });
+
   it('builds the link helpers views render as hrefs', () => {
     expect(workHash(WORK_ID)).toBe(`#/works/${WORK_ID}`);
     expect(workHash(WORK_ID, 'schedules')).toBe(`#/works/${WORK_ID}/schedules`);
