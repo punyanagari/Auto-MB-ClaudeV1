@@ -11,10 +11,12 @@ import type { WorkTab } from '../views/WorkDetail.js';
  * — report type and the Work or division it is about — survives a bookmark
  * and a Back press.
  *
- * Path segments, not `?tab=`: this build's fragment carries no query string
- * anywhere (`parseWorkspaceHash` splits on `/` and decodes), and the Work
- * page and Masters both address a section as a segment. One serializer, one
- * grammar.
+ * Path segments, not `?tab=`. Every SECTION in this build is a segment —
+ * the Work page's tab, the Masters category, the Challan and Payments
+ * registers — and the one query string the fragment carries (`?focus=` on
+ * a Work address) is an INTENT rather than a destination: something to do
+ * on arrival, which the shell consumes and forgets. A tab is a place, so
+ * it is spelled the way every other place here is.
  */
 export type MisTab = 'analysis' | 'accounts' | 'payroll' | 'tally';
 
@@ -270,11 +272,28 @@ export type WorkspaceView =
     }
   | { name: 'settings' };
 
+/**
+ * What a Work address can ask the opened page to DO, beyond showing a
+ * section.
+ *
+ * One value, and it stays one until a second screen needs one. The
+ * dashboard's completion panel offers "Request extension" against a Work
+ * whose date is running out, and the extension composer lives most of a
+ * long Overview below the fold — landing an operator at the top of that
+ * page and leaving them to scroll is the difference between an action and
+ * a suggestion. Carried as `?focus=extension` on the Work address so the
+ * intent is linkable, bookmarkable and survives a reload, rather than as
+ * state handed sideways between two screens.
+ */
+export type WorkFocus = 'extension';
+
 /** A parsed location: the view plus the tab state some views carry
- * alongside it (the Work page's section, the Masters category). */
+ * alongside it (the Work page's section, the Masters category), and the
+ * one intent a Work address can carry. */
 export interface WorkspaceRoute {
   readonly view: WorkspaceView;
   readonly workTab?: WorkTab;
+  readonly workFocus?: WorkFocus;
   readonly mastersTab?: MastersTab;
 }
 
@@ -354,6 +373,13 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
       return `#/loa/${view.documentId}`;
     case 'work': {
       const tab = route.workTab ?? 'overview';
+      /* A focus names the section it acts on, so the section is spelled
+       * out even for Overview — `#/works/<id>?focus=extension` would be
+       * a query hanging off a bare record address, and the parser would
+       * have to guess whether `overview` was implied. */
+      if (route.workFocus !== undefined) {
+        return `#/works/${view.workId}/${tab}?focus=${route.workFocus}`;
+      }
       return tab === 'overview'
         ? `#/works/${view.workId}`
         : `#/works/${view.workId}/${tab}`;
@@ -484,11 +510,13 @@ export function workspaceHashOf(route: WorkspaceRoute): string {
 }
 
 /** `#/works/<id>` (or a section of it) as a plain href — what a register
- * row or a blocked-action message links to. */
-export function workHash(workId: string, tab?: WorkTab): string {
+ * row or a blocked-action message links to. `focus` adds the one intent a
+ * Work address can carry; see `WorkFocus`. */
+export function workHash(workId: string, tab?: WorkTab, focus?: WorkFocus): string {
   return workspaceHashOf({
     view: { name: 'work', workId },
     ...(tab === undefined ? {} : { workTab: tab }),
+    ...(focus === undefined ? {} : { workFocus: focus }),
   });
 }
 
@@ -892,9 +920,22 @@ function parseWorksHash(segments: readonly string[]): WorkspaceRoute | null {
     return null;
   }
   if (third !== undefined) return null;
-  // A known section, or the Work's Overview: see WORK_TAB_NAMES above for
-  // why an unrecognised section keeps the Work instead of losing it.
-  return isWorkTab(second)
-    ? { view: { name: 'work', workId }, workTab: second }
-    : { view: { name: 'work', workId } };
+  /* The section may carry the one intent a Work address can: split it off
+   * before matching, so `overview?focus=extension` resolves to the
+   * Overview WITH the intent rather than to an unrecognised section. An
+   * unknown or malformed query is dropped rather than refused — the id is
+   * the durable half of the address and a stale intent is no reason to
+   * throw away the Work the operator asked for, which is the same rule
+   * WORK_TAB_NAMES states one comment up. */
+  const [section = '', query] = second.split('?');
+  // A literal comparison rather than `URLSearchParams`: there is exactly
+  // one intent and exactly one spelling of it, and this parser is in the
+  // initial payload every session downloads before it can paint.
+  const workFocus: WorkFocus | undefined =
+    query === 'focus=extension' ? 'extension' : undefined;
+  return {
+    view: { name: 'work', workId },
+    ...(isWorkTab(section) ? { workTab: section } : {}),
+    ...(workFocus === undefined ? {} : { workFocus }),
+  };
 }

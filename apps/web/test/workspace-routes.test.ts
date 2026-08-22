@@ -264,4 +264,35 @@ describe('workspace hash routes', () => {
     expect(mastersHash('contacts')).toBe('#/masters/contacts');
     expect(mastersHash('units')).toBe('#/masters/units');
   });
+
+  /* THE ONE INTENT A WORK ADDRESS CAN CARRY.
+   *
+   * The dashboard's completion panel offers "Request extension", and the
+   * composer it means is most of a long Overview below the fold. The
+   * intent rides the address so it is linkable and survives a reload
+   * rather than being handed sideways between two screens. */
+  it('round-trips the extension focus on a Work address', () => {
+    expect(workHash(WORK_ID, 'overview', 'extension')).toBe(
+      `#/works/${WORK_ID}/overview?focus=extension`,
+    );
+    expect(parseWorkspaceHash(`#/works/${WORK_ID}/overview?focus=extension`)).toEqual({
+      view: { name: 'work', workId: WORK_ID },
+      workTab: 'overview',
+      workFocus: 'extension',
+    });
+  });
+
+  it('keeps the Work when the intent is stale or malformed', () => {
+    // The id is the durable half of the address; an intent a later build
+    // no longer answers is no reason to lose the Work, which is the same
+    // rule an unrecognised section already follows.
+    expect(parseWorkspaceHash(`#/works/${WORK_ID}/overview?focus=nonsense`)).toEqual({
+      view: { name: 'work', workId: WORK_ID },
+      workTab: 'overview',
+    });
+    expect(parseWorkspaceHash(`#/works/${WORK_ID}/schedules?nothing`)).toEqual({
+      view: { name: 'work', workId: WORK_ID },
+      workTab: 'schedules',
+    });
+  });
 });

@@ -79,6 +79,27 @@ async function authed(
   });
 }
 
+/** The organisation's own calendar day, `YYYY-MM-DD`. Every countdown the
+ * dashboard prints is measured from this and not from the session's. */
+async function organisationToday(): Promise<string> {
+  const [row] = await admin<{ day: string }[]>`
+    select (now() at time zone o.timezone)::date::text as day
+    from organisations o
+    where o.id = ${organisationId}
+  `;
+  return row?.day ?? '';
+}
+
+/** Whole days from one date-only string to another. Both are UTC-anchored
+ * so the subtraction is exact — this is test arithmetic on legal dates,
+ * never a timezone conversion. */
+function daysBetween(from: string, to: string): number {
+  const day = 24 * 60 * 60 * 1000;
+  return Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / day,
+  );
+}
+
 /** PNG magic bytes plus filler — the endpoint validates magic, not decoding. */
 const PNG_BYTES = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -380,6 +401,287 @@ describe('dashboard', () => {
     const work = dashboard.works[0];
     expect(work?.workCode).toBe('DASH-1');
     expect(work?.issuedChallans).toBe(0);
+  });
+
+  /* The landing screen's own figures (`docs/UX.md` § 40). Placed
+   * immediately after the baseline case above and BEFORE the mixed-basis
+   * one below, because that test inserts a second Work: these assertions
+   * are about the seeded portfolio exactly as `beforeAll` leaves it. */
+  it('states the ACTIVE portfolio, its receivable position, and the ninety-day feed', async () => {
+    const response = await authed(viewer, {
+      method: 'GET',
+      url: '/api/dashboard',
+      organisationId,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const { signals, deadlines, execution, monthlyBilling } =
+      response.json<DashboardResponse>();
+
+    // One active Work, and the tiles state ITS value rather than the
+    // register's. They agree here because nothing is completed yet — the
+    // divergence is asserted where a completed Work exists.
+    expect(signals.activeWorks).toBe(1);
+    expect(signals.activeContractValue).toBe('4520000.00');
+    expect(signals.activeBilledValue).toBe('300.00');
+    expect(signals.activeExecutedPercent).toBe('0.0066');
+
+    // The seeded bill has no Measurement Book, so the railway has
+    // certified no figure: nothing is outstanding against it YET, which
+    // is not the same as nothing being outstanding. It is counted, never
+    // summed in at zero.
+    expect(signals.receivableOutstanding).toBe('0.00');
+    expect(signals.receivableIndeterminate).toBe(1);
+
+    // No completion date is seeded on DASH-1 and nothing is queued for
+    // the kiosk, so those lamps are dark rather than absent.
+    expect(signals.completionsDue).toBe(0);
+    expect(signals.completionsOverdue).toBe(0);
+    expect(signals.unsignedDocuments).toBe(0);
+    // Full-scope member, so the tiles describe the organisation and the
+    // screen has no scope sentence to print.
+    expect(signals.assignedScopeOnly).toBe(false);
+
+    /* THE TWO INSTRUMENT STATES ARE COUNTED APART. One guarantee lapsed
+     * five days ago and one expires in thirty, and the fixture holds both
+     * precisely so a single "expiring" count cannot pass this. An expired
+     * instrument is a terminal fact the forward-only ninety-day strip
+     * below cannot show at all, so if the landing screen does not state
+     * it here it does not state it anywhere. */
+    expect(signals.instrumentsExpired).toBe(1);
+    expect(signals.instrumentsExpiring).toBe(1);
+    // Together they still account for exactly the instruments the alert
+    // loop reported, which is what stops the lamps and the list from
+    // disagreeing about the same guarantees.
+    expect(signals.instrumentsExpired + signals.instrumentsExpiring).toBe(
+      response
+        .json<DashboardResponse>()
+        .alerts.filter((alert) => alert.kind.startsWith('instrument_')).length,
+    );
+
+    // Ninety days FORWARD. The instrument thirty days out is on the
+    // strip; the one that expired five days ago is not — an expired
+    // guarantee is a fact the lamp above states in words, not a deadline —
+    // and neither is the one three hundred days out.
+    expect(deadlines).toHaveLength(1);
+    expect(deadlines[0]?.kind).toBe('instrument');
+    expect(deadlines[0]?.workCode).toBe('DASH-1');
+    /* Measured against the ORGANISATION's calendar day, not the database
+     * session's. The fixture seeds `current_date + 30`, and this
+     * organisation's default timezone is `Asia/Kolkata` — five and a half
+     * hours ahead of the UTC session — so for part of every day the two
+     * clocks are on different dates and a hard-coded 30 would be wrong on
+     * a schedule. The dedicated case below forces the divergence; this
+     * one just refuses to assume it away. */
+    expect(deadlines[0]?.dueInDays).toBe(
+      daysBetween(await organisationToday(), deadlines[0]?.dueOn ?? ''),
+    );
+
+    // Supply and installation against contract value, both on the Work's
+    // own basis and both computed here rather than in a browser.
+    expect(execution).toHaveLength(1);
+    expect(execution[0]?.workCode).toBe('DASH-1');
+    expect(execution[0]?.suppliedPercent).toBe('0.0000');
+    expect(execution[0]?.installedPercent).toBe('0.0000');
+    expect(execution[0]?.dueOn).toBeNull();
+
+    // Twelve CALENDAR months, ascending and distinct — the spine is
+    // generated, so a quiet year is twelve empty months rather than a
+    // shorter chart.
+    expect(monthlyBilling).toHaveLength(12);
+    expect(monthlyBilling.map((row) => row.month)).toEqual(
+      [...monthlyBilling.map((row) => row.month)].sort(),
+    );
+    expect(new Set(monthlyBilling.map((row) => row.month)).size).toBe(12);
+    for (const month of monthlyBilling) {
+      expect(month.month).toMatch(/^\d{4}-\d{2}$/);
+      // Nothing is invoiced or received in the fixture, and an absent
+      // month reports zero rather than dropping out.
+      expect(month.billed).toBe('0.00');
+      expect(month.received).toBe('0.00');
+    }
+    // Nothing has been invoiced or received, so the organisation has no
+    // billing history at all and the chart has no cutover to explain.
+    expect(signals.billingSince).toBeNull();
+
+    /* THE TILE'S THREE NUMBERS SHARE ONE BASIS. `activeExecutedPercent`
+     * restates every term as taxable value before dividing, so the two
+     * rupee figures a screen prints beside it have to be the taxable ones
+     * or the sentence states a ratio true of neither. Asserted as
+     * arithmetic rather than as a constant: 300 inclusive is 254.24
+     * taxable, 4,520,000 inclusive is 3,830,508.47 taxable, and the
+     * quotient is the percentage above. */
+    expect(signals.activeContractTaxableValue).toBe('3830508.47');
+    expect(signals.activeBilledTaxableValue).toBe('254.24');
+    expect(
+      Number(signals.activeBilledTaxableValue) /
+        Number(signals.activeContractTaxableValue),
+      // Six places, not more: the percentage is reported to four decimal
+      // places, so the quotient can only agree with it to the precision
+      // that rounding left.
+    ).toBeCloseTo(Number(signals.activeExecutedPercent) / 100, 6);
+  });
+
+  /* A DOCUMENT NOBODY IS GOING TO SIGN IS NOT WAITING TO BE SIGNED.
+   *
+   * The lamp counted `failed` beside `pending` and `claimed`, so a
+   * document whose signing attempt had stopped was reported as queued and
+   * an operator reading "waiting to be signed" would have waited for a
+   * kiosk that was never coming back to it. Migration 0091's open set is
+   * the two, and the queue itself is where a failure is retried. */
+  it('counts only the documents the kiosk is still going to pick up', async () => {
+    /* One ISSUED challan per request, because 0091 refuses a signing
+     * request against anything else — signing a draft would put the
+     * organisation's certificate on bytes it is still free to change. */
+    /* And one live kiosk agent holding the certificate every request is
+     * pinned to: 0091 refuses a request the token could never satisfy. */
+    const thumbprint = 'A'.repeat(40);
+    const [agent] = await admin<{ id: string }[]>`
+      insert into signing_agents (
+        organisation_id, label, token_hash, certificate_thumbprint,
+        certificate_subject, certificate_serial, certificate_not_after,
+        certificate_chain_pem, operator_user_id, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'Dashboard kiosk', ${'c'.repeat(64)}, ${thumbprint},
+        'CN=Test', '0A1B2C', now() + interval '365 days',
+        '-----BEGIN CERTIFICATE-----test-----END CERTIFICATE-----',
+        ${ownerUserId}, ${ownerUserId}
+      )
+      returning id
+    `;
+    let sequence = 900;
+    const seedRequest = async (status: string) => {
+      const challanId = randomUUID();
+      sequence += 1;
+      await admin`
+        insert into delivery_challans (
+          id, organisation_id, work_id, status, challan_date, challan_number,
+          sequence_number, prefix, issued_snapshot, issued_at,
+          created_by_user_id, issued_by_user_id
+        )
+        values (
+          ${challanId}, ${organisationId}, ${workId}, 'issued', '2026-08-01',
+          ${`DC/SIGN/${String(sequence)}`}, ${sequence}, 'DC',
+          ${admin.json({})}, now(), ${ownerUserId}, ${ownerUserId}
+        )
+      `;
+      await admin`
+        insert into signing_requests (
+          organisation_id, work_id, document_type, delivery_challan_id, status,
+          signing_agent_id, certificate_thumbprint, source_object_key,
+          source_sha256, authorised_digest, claimed_signing_time, signer_name,
+          signing_reason, signing_location, requested_at, expires_at,
+          claimed_at, completed_at, failure_reason, requested_by_user_id
+        )
+        values (
+          ${organisationId}, ${workId}, 'delivery_challan', ${challanId},
+          ${status}, ${agent?.id ?? null}, ${thumbprint},
+          ${`${organisationId}/challans/${challanId}.pdf`}, ${'d'.repeat(64)},
+          ${'b'.repeat(64)},
+          now(), 'Test Signatory', 'Issued document', 'Nashik',
+          now(), now() + interval '1 hour',
+          -- Only a claimed row carries a claim time; the shape check
+          -- refuses one on a pending row and does not ask for one on a
+          -- failed row.
+          ${status === 'claimed' ? new Date().toISOString() : null},
+          -- A failed request is FINISHED, and the outcome shape refuses a
+          -- half one: it carries the moment it stopped and the reason.
+          -- That is exactly why it must not be counted as waiting.
+          ${status === 'failed' ? new Date().toISOString() : null},
+          ${status === 'failed' ? 'token withdrawn mid-signature' : null},
+          ${ownerUserId}
+        )
+      `;
+    };
+    await seedRequest('pending');
+    await seedRequest('claimed');
+    await seedRequest('failed');
+    try {
+      const response = await authed(viewer, {
+        method: 'GET',
+        url: '/api/dashboard',
+        organisationId,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json<DashboardResponse>().signals.unsignedDocuments).toBe(2);
+    } finally {
+      await admin`delete from signing_requests where organisation_id = ${organisationId}`;
+      await admin`delete from signing_agents where organisation_id = ${organisationId}`;
+      /* The three challans stay: an ISSUED Delivery Challan is not
+       * deletable and that rule is the product working. They carry no
+       * items, so they add nothing to any delivered sum or challan count
+       * the cases after this one read, and `removeOrganisationResidue`
+       * clears them at teardown. */
+    }
+  });
+
+  /* THE COUNTDOWNS ANSWER TO THE ORGANISATION'S CALENDAR, NOT THE
+   * SERVER'S.
+   *
+   * `current_date` is the database session's day, and every deployment
+   * runs it in UTC. An agency in IST crosses midnight five and a half
+   * hours earlier, so for that slice of every day a guarantee expiring
+   * tomorrow read as expiring in two days and a completion date that had
+   * arrived read as one day away. Forced here rather than waited for, on
+   * the pattern `challans.integration.test.ts` already uses: the
+   * organisation is moved to a zone whose date is provably not UTC's, so
+   * the divergence is a fact of the test rather than of the hour it runs
+   * at. */
+  it('measures every countdown against the organisation timezone', async () => {
+    const [original] = await admin<{ timezone: string }[]>`
+      select timezone from organisations where id = ${organisationId}
+    `;
+    expect(original).toBeDefined();
+    try {
+      await admin`
+        update organisations
+        set timezone = case
+          when (now() at time zone 'Etc/GMT+12')::date <>
+               (now() at time zone 'UTC')::date
+            then 'Etc/GMT+12'
+          else 'Pacific/Kiritimati'
+        end
+        where id = ${organisationId}
+      `;
+      const [clock] = await admin<{ day: string; sessionDay: string }[]>`
+        select
+          (now() at time zone o.timezone)::date::text as day,
+          current_date::text as "sessionDay"
+        from organisations o
+        where o.id = ${organisationId}
+      `;
+      // The premise of everything below: the two clocks are on different
+      // dates right now, so a statement reading the wrong one is visible.
+      expect(clock?.day).not.toBe(clock?.sessionDay);
+      const orgDay = clock?.day ?? '';
+
+      const response = await authed(viewer, {
+        method: 'GET',
+        url: '/api/dashboard',
+        organisationId,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const { deadlines, monthlyBilling } = response.json<DashboardResponse>();
+
+      // The deadline strip: its day count is the distance from the
+      // ORGANISATION's today, and reading the session's would be off by
+      // exactly the one day the clocks differ by.
+      const deadline = deadlines[0];
+      expect(deadline).toBeDefined();
+      expect(deadline?.dueInDays).toBe(daysBetween(orgDay, deadline?.dueOn ?? ''));
+      expect(deadline?.dueInDays).not.toBe(
+        daysBetween(clock?.sessionDay ?? '', deadline?.dueOn ?? ''),
+      );
+
+      // And the billing spine ends on the organisation's own month, which
+      // is what decides whether the newest bar is this month or last.
+      expect(monthlyBilling.at(-1)?.month).toBe(orgDay.slice(0, 7));
+    } finally {
+      await admin`
+        update organisations set timezone = ${original?.timezone ?? 'Asia/Kolkata'}
+        where id = ${organisationId}
+      `;
+    }
   });
 
   it('aggregates a MIXED-basis portfolio on one basis, not on printed rupees', async () => {
@@ -767,5 +1069,91 @@ describe('dashboard', () => {
       )
       .map((alert) => Number(/^Bill (\d+) /.exec(alert.message)?.[1] ?? '0'));
     expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  /* EVERY INVOICE THIS ORGANISATION SUBMITTED, including the ones that
+   * belong to no Work.
+   *
+   * The billed series joined the visible Works, so a direct invoice
+   * (migration 0039) fell out of a chart whose own caption says "the tax
+   * invoices this organisation submitted". An agency invoicing private
+   * customers beside its railway contracts watched a third of its billing
+   * vanish from its landing screen. */
+  it('puts direct invoices in the billed series and dates the billing history', async () => {
+    /* A money-carrying invoice needs the organisation's own state code:
+     * without it the CGST+SGST / IGST split is undecidable and the
+     * database refuses the row, exactly as the submit route does. */
+    const [priorProfile] = await admin<{ stateCode: string | null }[]>`
+      select state_code as "stateCode" from organisations where id = ${organisationId}
+    `;
+    await admin`
+      update organisations set state_code = '27' where id = ${organisationId}
+    `;
+    const [contact] = await admin<{ id: string }[]>`
+      insert into contacts (
+        organisation_id, designation, is_client, created_by_user_id
+      )
+      values (${organisationId}, 'Direct customer', true, ${ownerUserId})
+      returning id
+    `;
+    await admin`
+      insert into tax_invoices (
+        organisation_id, status, invoice_number, sequence_number, fy_label,
+        invoice_date, sac_code, service_description, gst_rate,
+        place_of_supply, buyer_contact_id, reverse_charge_applicable,
+        stated_taxable_value, buyer_snapshot, taxable_value, cgst_amount,
+        sgst_amount, igst_amount, total_amount, round_off, issued_snapshot,
+        submitted_at, submitted_by_user_id, created_by_user_id
+      )
+      values (
+        ${organisationId}, 'submitted', ${`DIRECT/${runId}`}, 9001, '2026-27',
+        (select (now() at time zone o.timezone)::date from organisations o
+         where o.id = ${organisationId}),
+        '995461', 'Private supply', '18.00', '27', ${contact?.id ?? null}, false,
+        '100000.00', ${admin.json({ designation: 'Direct customer' })},
+        '100000.00', '9000.00', '9000.00', '0.00', '118000.00', '0.00',
+        ${admin.json({})}, now(), ${ownerUserId}, ${ownerUserId}
+      )
+    `;
+    try {
+      const response = await authed(viewer, {
+        method: 'GET',
+        url: '/api/dashboard',
+        organisationId,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const { signals, monthlyBilling } = response.json<DashboardResponse>();
+
+      // The invoice belongs to no Work, and the chart is the poorer for
+      // its absence rather than the safer.
+      const current = monthlyBilling.at(-1);
+      expect(current?.billed).toBe('118000.00');
+      // And nothing reached the bank against it — a direct invoice has no
+      // prepared bill, so there is no receipt register for one. The series
+      // are asymmetric by construction and the screen says so.
+      expect(current?.received).toBe('0.00');
+
+      /* The cutover marker. By the time this case runs the fixture also
+       * holds recorded receipts from the settlement case above, so the
+       * earliest evidence is theirs and not this invoice's — which is
+       * exactly what the figure means: the first month this application
+       * holds ANY billing evidence for, invoiced or received. It is a
+       * real month, no later than the invoice that certainly exists, and
+       * it is not the head of the window (the first case in this file
+       * proves it reads null when there is nothing at all). */
+      expect(signals.billingSince).toMatch(/^\d{4}-\d{2}$/);
+      // `YYYY-MM` sorts lexically, so this is a date comparison.
+      expect((signals.billingSince ?? '') <= (current?.month ?? '')).toBe(true);
+    } finally {
+      /* The invoice is NOT deleted: a submitted one is an issued document
+       * and the database refuses to destroy it, which is the rule
+       * working. It is left for `removeOrganisationResidue` to clear at
+       * teardown, and this case runs LAST in the file so nothing after it
+       * reads a portfolio it has changed. */
+      await admin`
+        update organisations set state_code = ${priorProfile?.stateCode ?? null}
+        where id = ${organisationId}
+      `;
+    }
   });
 });

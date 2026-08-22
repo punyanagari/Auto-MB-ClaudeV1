@@ -1,81 +1,50 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   Contact,
-  DashboardAlert,
-  DashboardBillSettlement,
   DashboardResponse,
   OrganisationProfile,
   Signatory,
 } from '@auto-mb/contracts';
-import {
-  AlertTriangle,
-  ArrowRight,
-  BriefcaseBusiness,
-  CheckCircle2,
-  CircleAlert,
-  Clock3,
-  Upload,
-} from 'lucide-react';
+import { CheckCircle2, CircleAlert, Upload } from 'lucide-react';
 import type { ApiClient } from '../api.js';
-import {
-  compareDecimalStrings,
-  formatCompactInr,
-  formatInr,
-  formatServerPercent,
-  progressPercent,
-} from '../format.js';
+import { formatCompactInr, formatServerPercent } from '../format.js';
 import { missingOrganisationFacts } from '../lib/organisation-facts.js';
 import { useReload } from '../lib/view-state.js';
-import { Badge } from '../ui/badge.js';
 import { Button } from '../ui/button.js';
 import {
   mastersHash,
-  navigateOnClick,
   SETTINGS_HASH,
-  workHash,
   workspaceHashOf,
 } from '../lib/workspace-routes.js';
 import { Card } from '../ui/card.js';
 import { PageHeader } from '../ui/page-header.js';
-import { ProgressBar } from '../ui/progress.js';
 import { Stat } from '../ui/stat.js';
-import { DataTable, numericCell, wrapCell } from '../ui/table.js';
 import { FormError } from '../ui/form.js';
+import { AttentionStrip } from './dashboard/AttentionStrip.js';
+import {
+  BilledReceivedChart,
+  BilledReceivedLegend,
+} from './dashboard/BilledReceivedChart.js';
+import { CompletionPanel } from './dashboard/CompletionPanel.js';
+import { DeadlineStrip } from './dashboard/DeadlineStrip.js';
+import {
+  WorkExecutionBars,
+  WorkExecutionLegend,
+} from './dashboard/WorkExecutionBars.js';
 
 interface OperationsDashboardProps {
   readonly api: ApiClient;
   readonly organisationId: string;
   readonly canModify: boolean;
   readonly onOpenWork: (workId: string) => void;
+  /** Opens the Work at its extension composer — `?focus=extension` on the
+   * Work address, so the operator lands on the field they have to fill
+   * rather than at the top of a long Overview. */
+  readonly onRequestExtension: (workId: string) => void;
   readonly onOpenWorks: () => void;
+  readonly onOpenHistoricalInvoices: () => void;
   readonly onUploadLoa: () => void;
-  readonly onOpenApprovals: () => void;
 }
-
-const ALERT_TONE: Record<
-  DashboardAlert['severity'],
-  {
-    readonly badge: 'destructive' | 'warning' | 'info';
-    readonly label: string;
-    readonly surface: string;
-  }
-> = {
-  danger: {
-    badge: 'destructive',
-    label: 'Urgent',
-    surface: 'border-destructive/20 bg-destructive/[0.035]',
-  },
-  warning: {
-    badge: 'warning',
-    label: 'Due soon',
-    surface: 'border-warning/25 bg-warning/[0.045]',
-  },
-  notice: {
-    badge: 'info',
-    label: 'Review',
-    surface: 'border-primary/15 bg-primary/[0.025]',
-  },
-};
 
 const UPLOAD_HASH = workspaceHashOf({ view: { name: 'upload', tenderId: null } });
 /** The register that lists uploaded letters and their Review action. */
@@ -308,66 +277,44 @@ function SetupChecklist({
     </Card>
   );
 }
-
 /**
- * The settlement position behind a bill alert: the railway's own bill, and
- * the three figures §5.7 says it takes to state the position honestly.
+ * The signed-in landing screen.
  *
- * Rendered only where there IS arithmetic. While the measurement is open
- * there is no reference figure and no outstanding one, and a row of
- * dashes beside two zeroes would say less than the alert's own sentence
- * already does. Nothing here divides, adds or compares money — every
- * figure arrives from the server as an exact decimal string.
+ * WHAT IT IS FOR, since it stopped being a list of Works. The register in
+ * the rail lists Works better than a truncated copy of it ever did — it
+ * sorts, filters and pages — so the dashboard was spending its best space
+ * repeating a screen one click away. It now answers four questions
+ * instead, in the order an operator asks them (owner decision 2026-08-22,
+ * `docs/UX.md` § 40):
+ *
+ *   1. Where does the running portfolio stand?      — the four tiles
+ *   2. Is anything on fire?                         — the attention strip
+ *   3. What is about to lapse, and what did we bill
+ *      against what came in?                        — completion + billing
+ *   4. Which Works are behind, and what falls due?   — execution + deadlines
+ *
+ * NOTHING ON THIS SCREEN COMPUTES MONEY. Every rupee figure, every
+ * percentage and every day count arrives from `/api/dashboard` as an
+ * exact string the server derived; this file formats and positions them.
+ * Percentages become bar lengths, which is drawing, not arithmetic.
  */
-function SettlementFigures({
-  settlement,
-}: {
-  readonly settlement: DashboardBillSettlement;
-}) {
-  const { reference, outstanding } = settlement;
-  if (reference === null || outstanding === null) return null;
-  const figures = [
-    { label: 'Railway bill', amount: reference, lead: false },
-    { label: 'Received', amount: settlement.received, lead: false },
-    { label: 'Deducted', amount: settlement.deducted, lead: false },
-    // The one an operator is actually reading for, and the one the old
-    // single sentence could not say.
-    { label: 'Outstanding', amount: outstanding, lead: true },
-  ];
-  return (
-    <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-      {figures.map((figure) => (
-        <div key={figure.label} className="flex items-baseline gap-1">
-          <dt className="text-muted-foreground">{figure.label}</dt>
-          <dd
-            className={`m-0 font-mono tabular-nums ${figure.lead ? 'font-semibold' : ''}`}
-          >
-            {formatInr(figure.amount)}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function dueLabel(days: number | null): string | null {
-  if (days === null) return null;
-  if (days < 0) return `${String(-days)} days overdue`;
-  if (days === 0) return 'Due today';
-  return `${String(days)} days left`;
-}
-
 export function OperationsDashboard({
   api,
   organisationId,
   canModify,
   onOpenWork,
+  onRequestExtension,
   onOpenWorks,
+  onOpenHistoricalInvoices,
   onUploadLoa,
-  onOpenApprovals,
 }: OperationsDashboardProps) {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /* The two panels the attention strip sends a reader to. They are on
+     this screen rather than behind a route, so the strip moves the
+     viewport instead of navigating. */
+  const completionsRef = useRef<HTMLElement | null>(null);
+  const deadlinesRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -392,19 +339,6 @@ export function OperationsDashboard({
     };
   }, [api, organisationId]);
 
-  const sortedWorks = useMemo(
-    () =>
-      [...(data?.works ?? [])].sort((left, right) => {
-        if (left.status === right.status) {
-          return compareDecimalStrings(right.contractValue, left.contractValue);
-        }
-        if (left.status === 'active') return -1;
-        if (right.status === 'active') return 1;
-        return left.status.localeCompare(right.status);
-      }),
-    [data],
-  );
-
   if (error !== null) {
     return (
       <Card>
@@ -426,8 +360,8 @@ export function OperationsDashboard({
             Loading the latest contract position…
           </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {Array.from({ length: 5 }, (_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
             <div
               key={index}
               className="h-28 animate-pulse rounded-2xl border border-border bg-card"
@@ -438,66 +372,72 @@ export function OperationsDashboard({
     );
   }
 
-  const deliveryPercent = progressPercent(
-    data.totals.deliveredValue,
-    data.totals.contractValue,
-  );
-  // Executed value against contract — the number work completion is
-  // argued about. Taken from the server, never divided here: each Work's
-  // GST basis decides what its contract value is comparable with, and the
-  // browser does not know it (migration 0062).
-  const executedLabel = formatServerPercent(data.totals.executedPercent);
-  const activeWorks = data.works.filter((work) => work.status === 'active').length;
-  const completedWorks = data.works.filter(
-    (work) => work.status === 'completed',
-  ).length;
-  const urgentAlerts = data.alerts.filter(
-    (alert) => alert.severity === 'danger',
-  ).length;
+  const { signals } = data;
+  // The server's ratio, never a division here: each Work's GST basis
+  // decides what its contract value is comparable with (migration 0062),
+  // and the browser does not know it.
+  const executedLabel = formatServerPercent(signals.activeExecutedPercent);
 
   /* The mock's stat row (`app/page`): a `.data-surface` panel split by
      hairline gaps into equal cells, each one a `Stat` — the 11px uppercase
-     label, the mono tabular figure, the qualifier beneath. The retired
-     tiles carried a coloured icon chip and a lift-on-hover; the mock has
-     neither, and a dashboard's job is to be read, not to respond.
+     label, the mono tabular figure, the qualifier beneath.
 
-     `tone` is emphasis only, never the message: what is wrong is said in
-     the hint, which is why the two tiles that can carry bad news still
-     spell it out in words. */
+     Four tiles, and all four about the ACTIVE portfolio. A completed
+     Work's contract value never leaves a whole-register total, so the old
+     headline drifted upward forever and described nothing anybody could
+     act on. `totals` still carries the whole-register reading for
+     anything that wants it. */
   const metrics = [
     {
       label: 'Active Works',
-      value: String(activeWorks),
-      hint: `${String(completedWorks)} completed`,
+      value: String(signals.activeWorks),
+      hint: `${String(data.totals.works)} in the register`,
+      tone: 'default',
+    },
+    /* TWO TILES, TWO BASES, AND EACH ONE SAYS WHICH.
+     *
+     * These used to be one sentence — "₹45.2 L, of which executed ₹300
+     * (0.0066%)" — and the three numbers in it did not share a basis. The
+     * two rupee figures are the letters' own printed amounts added up,
+     * and a portfolio mixing GST-inclusive and GST-exclusive letters
+     * makes that sum a figure on no basis at all; the percentage
+     * restates every term as taxable value before dividing, because
+     * `executed-value.ts` names taxable value as the only honest basis
+     * for a cross-Work ratio. So the sentence stated a ratio that was
+     * true of neither amount printed beside it.
+     *
+     * Split rather than reconciled. The headline stays the rupees an
+     * owner reads off the letters — that is what the tile is for — and
+     * says so. The ratio moves to its own tile with the two taxable
+     * figures it is genuinely the quotient of, and says that. Neither
+     * tile now contains a number that disagrees with its neighbours. */
+    {
+      label: 'Active contract value',
+      value: formatCompactInr(signals.activeContractValue),
+      // Short enough to survive the tile's single truncating line at
+      // 320px; the basis it is NOT on is named by the tile beside it.
+      hint: 'The letters’ own figures',
       tone: 'default',
     },
     {
-      label: 'Delivered value',
-      value: formatCompactInr(data.totals.deliveredValue),
-      hint: `${String(deliveryPercent)}% of contract value`,
-      tone: 'success',
-    },
-    {
-      label: 'Billed value',
-      value: formatCompactInr(data.totals.billedValue),
+      label: 'Executed value',
+      value: executedLabel ?? '—',
       hint:
         executedLabel === null
           ? 'No contract value recorded'
-          : `${executedLabel} of contract value`,
+          : `${formatCompactInr(signals.activeBilledTaxableValue)} of ${formatCompactInr(signals.activeContractTaxableValue)} taxable`,
       tone: 'default',
     },
     {
-      label: 'Open drafts',
-      value: String(data.totals.openDrafts),
-      hint: 'Documents still in progress',
-      tone: data.totals.openDrafts > 0 ? 'warning' : 'default',
-    },
-    {
-      label: 'LOAs to review',
-      value: String(data.totals.loaAwaitingReview),
+      label: 'Receivable outstanding',
+      value: formatCompactInr(signals.receivableOutstanding),
       hint:
-        urgentAlerts > 0 ? `${String(urgentAlerts)} urgent alerts` : 'No urgent alerts',
-      tone: urgentAlerts > 0 ? 'warning' : 'default',
+        signals.receivableIndeterminate === 0
+          ? 'Against the railway’s own certified bills'
+          : signals.receivableIndeterminate === 1
+            ? '1 bill awaits a railway figure'
+            : `${String(signals.receivableIndeterminate)} bills await a railway figure`,
+      tone: signals.receivableIndeterminate > 0 ? 'warning' : 'default',
     },
   ] as const;
 
@@ -523,7 +463,7 @@ export function OperationsDashboard({
         }
       />
 
-      {/* First run. Above the metrics on purpose: five zero tiles and
+      {/* First run. Above everything on purpose: four zero tiles and
           "nothing needs attention" are an accurate description of an
           organisation that has not started, and useless as a next move. */}
       {data.works.length === 0 && (
@@ -537,11 +477,16 @@ export function OperationsDashboard({
       )}
 
       <section
-        aria-label="Organisation summary"
-        className="data-surface grid grid-cols-2 gap-px bg-border lg:grid-cols-5"
+        aria-label="Active portfolio"
+        className="data-surface grid grid-cols-2 gap-px bg-border lg:grid-cols-4"
       >
+        {/* `min-w-0` is the width guard `ui/card.tsx` documents, applied to
+            a grid cell: a grid item's default `min-width: auto` refuses to
+            shrink below its content, so one long mono figure would widen
+            its column past half a 320px screen and scroll the page
+            sideways. */}
         {metrics.map((metric) => (
-          <div key={metric.label} className="bg-card p-4 sm:p-5">
+          <div key={metric.label} className="min-w-0 bg-card p-4 sm:p-5">
             <Stat
               label={metric.label}
               value={metric.value}
@@ -552,206 +497,108 @@ export function OperationsDashboard({
         ))}
       </section>
 
-      {/* The mock's two-column body (`app/page`): the Works panel on
-          the left at three columns of five, what needs a decision on the
-          right at two. The retired third panel — a conic-gradient donut of
-          the delivery percentage over two value chips — is gone rather
-          than re-skinned: the mock draws no such thing, and every figure
-          it carried is already in the stat row above it (delivered value
-          with its percentage, billed value, contract value). */}
-      <section className="grid gap-5 lg:grid-cols-5">
-        <Card className="min-w-0 p-0 lg:col-span-3">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-            <div>
-              <h2 className="m-0 text-base">Work portfolio</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Live delivery and billing progress for the largest current Works.
-              </p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={onOpenWorks}>
-              View all Works
-              <ArrowRight data-icon="inline-end" aria-hidden="true" />
-            </Button>
-          </div>
-          {sortedWorks.length === 0 ? (
-            <div className="flex min-h-48 flex-col items-center justify-center px-6 py-10 text-center">
-              <BriefcaseBusiness className="mb-3 size-8 text-muted-foreground" />
-              {/* The action lives once, in the First steps panel at the top
-                  of this screen; a second copy of the same button here read
-                  as a second, different thing to do. */}
-              <p className="font-medium">
-                {canModify
-                  ? 'No Works yet — the first one is created from an uploaded Letter of Acceptance.'
-                  : 'No Works yet. An owner or office member uploads the first Letter of Acceptance.'}
-              </p>
-            </div>
-          ) : (
-            <div className="px-3 pb-3">
-              {/* The shared register table, so the dashboard's numbers sit
-                  in the same grammar as every other ledger in the product:
-                  sticky 11px uppercase heading, hairline rules, mono
-                  tabular figures right-aligned. It replaces a hand-rolled
-                  table that had invented its own padding, heading styles
-                  and hover.
+      {/* WHOSE PORTFOLIO THIS IS. A member scoped to their assignments
+          gets tiles summing their slice, and a total that is not the
+          organisation's has to say so — otherwise it reads as the
+          organisation's and is quietly, plausibly wrong. Rendered only
+          for the members it applies to; a full-scope reader needs no
+          sentence explaining that everything means everything. */}
+      {signals.assignedScopeOnly && (
+        <p className="m-0 -mt-2 text-xs text-muted-foreground">
+          Across the Works you are assigned to, not the whole organisation.
+        </p>
+      )}
 
-                  Its scrollport is left on. Five columns of Work code,
-                  progress bar and three money figures do not fit a
-                  320px phone, and without a box of its own the table
-                  pushes the whole dashboard sideways —
-                  `e2e/responsive.spec.ts` measures exactly that. */}
-              <DataTable>
-                <caption className="sr-only">
-                  Work execution and billing progress
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Work</th>
-                    <th scope="col">Delivery progress</th>
-                    <th scope="col" className={numericCell}>
-                      Delivered
-                    </th>
-                    <th scope="col" className={numericCell}>
-                      Billed
-                    </th>
-                    <th scope="col" className={numericCell}>
-                      DCs
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedWorks.slice(0, 8).map((work) => {
-                    const percent = progressPercent(
-                      work.deliveredValue,
-                      work.contractValue,
-                    );
-                    return (
-                      <tr key={work.workId}>
-                        <th scope="row">
-                          {/* A real link so a Work can be middle-clicked
-                              into its own tab; a left click stays in-app. */}
-                          <a
-                            href={workHash(work.workId)}
-                            className="font-mono font-semibold"
-                            onClick={navigateOnClick(() => {
-                              onOpenWork(work.workId);
-                            })}
-                          >
-                            {work.workCode}
-                          </a>
-                          <p
-                            className={`mt-0.5 text-xs text-muted-foreground ${wrapCell}`}
-                          >
-                            {work.title}
-                          </p>
-                        </th>
-                        <td>
-                          <div className="flex min-w-40 items-center gap-2">
-                            <ProgressBar
-                              value={percent}
-                              label={`${work.workCode} delivery progress`}
-                              className="h-1.5 flex-1 bg-muted"
-                            />
-                            <span className="w-9 text-right font-mono text-xs text-muted-foreground tabular-nums">
-                              {percent}%
-                            </span>
-                          </div>
-                        </td>
-                        <td className={numericCell}>
-                          {formatInr(work.deliveredValue)}
-                        </td>
-                        <td className={numericCell}>{formatInr(work.billedValue)}</td>
-                        <td className={numericCell}>{work.issuedChallans}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </DataTable>
-            </div>
-          )}
+      <AttentionStrip
+        signals={signals}
+        completionsRef={completionsRef}
+        deadlinesRef={deadlinesRef}
+      />
+
+      <section className="grid gap-5 lg:grid-cols-5">
+        <Card
+          ref={completionsRef}
+          tabIndex={-1}
+          aria-labelledby="dashboard-completions-heading"
+          className="min-w-0 p-0 lg:col-span-2"
+        >
+          <div className="border-b border-border px-5 py-4">
+            <h2 id="dashboard-completions-heading" className="m-0 text-base">
+              Completion dates
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Active Works reaching their contract completion date within 60 days.
+            </p>
+          </div>
+          <CompletionPanel
+            completions={data.completions}
+            onOpenWork={onOpenWork}
+            onRequestExtension={onRequestExtension}
+          />
         </Card>
 
-        <Card className="min-w-0 p-0 lg:col-span-2">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <Card
+          aria-labelledby="dashboard-billing-heading"
+          className="min-w-0 lg:col-span-3"
+        >
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="m-0 text-base">Needs attention</h2>
+              <h2 id="dashboard-billing-heading" className="m-0 text-base">
+                Billed against received
+              </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                The highest-priority actions across the organisation.
+                Tax invoices submitted, net of credit notes, beside the money that
+                reached the bank. Both figures include GST.
               </p>
             </div>
-            <Button variant="ghost" size="sm" onClick={onOpenApprovals}>
-              Approval queue
-              <ArrowRight data-icon="inline-end" aria-hidden="true" />
-            </Button>
+            <BilledReceivedLegend />
           </div>
-          {data.alerts.length === 0 ? (
-            <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
-              <span className="mb-3 inline-flex size-11 items-center justify-center rounded-2xl bg-success/10 text-success">
-                <CheckCircle2 aria-hidden="true" />
-              </span>
-              <p className="font-medium">Nothing needs immediate attention.</p>
-              <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                Expiring guarantees, overdue completion dates, LOA reviews and open
-                drafts will appear here.
-              </p>
-            </div>
-          ) : (
-            <ul className="m-0 divide-y divide-border p-0">
-              {/* The first seven of a list the server has already ranked
-                  by severity, so what this drops is always the least
-                  urgent. It used to drop whatever the server happened to
-                  build last, which on a busy organisation could be an
-                  overdue PBG. */}
-              {data.alerts.slice(0, 7).map((alert, index) => {
-                const tone = ALERT_TONE[alert.severity];
-                const due = dueLabel(alert.dueInDays);
-                return (
-                  <li
-                    key={`${alert.kind}-${String(index)}`}
-                    className={`flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center ${tone.surface}`}
-                  >
-                    <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-card shadow-sm">
-                      {alert.severity === 'danger' ? (
-                        <AlertTriangle className="size-4 text-destructive" />
-                      ) : (
-                        <Clock3 className="size-4 text-warning-foreground" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={tone.badge}>{tone.label}</Badge>
-                        {due !== null && (
-                          <span className="text-xs font-medium text-muted-foreground tabular-nums">
-                            {due}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm leading-5">{alert.message}</p>
-                      {alert.settlement !== null && (
-                        <SettlementFigures settlement={alert.settlement} />
-                      )}
-                    </div>
-                    {alert.workId !== null ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          if (alert.workId !== null) onOpenWork(alert.workId);
-                        }}
-                      >
-                        Open {alert.workCode ?? 'Work'}
-                      </Button>
-                    ) : alert.kind === 'loa_review_pending' ? (
-                      <Button variant="outline" size="sm" onClick={onOpenWorks}>
-                        Review LOAs
-                      </Button>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <BilledReceivedChart
+            months={data.monthlyBilling}
+            billingSince={signals.billingSince}
+            onOpenHistorical={onOpenHistoricalInvoices}
+          />
         </Card>
       </section>
+
+      <Card aria-labelledby="dashboard-execution-heading" className="p-0">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h2 id="dashboard-execution-heading" className="m-0 text-base">
+              Supply and installation
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Every active Work against its contract value, nearest completion date
+              first.
+            </p>
+          </div>
+          <WorkExecutionLegend />
+        </div>
+        <div className="py-1">
+          <WorkExecutionBars rows={data.execution} onOpenWork={onOpenWork} />
+        </div>
+      </Card>
+
+      <Card
+        ref={deadlinesRef}
+        tabIndex={-1}
+        aria-labelledby="dashboard-deadlines-heading"
+      >
+        <div className="mb-1">
+          <h2 id="dashboard-deadlines-heading" className="m-0 text-base">
+            Next 90 days
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Completion dates, guarantee and certificate expiries, and defect liability
+            periods ending.
+          </p>
+        </div>
+        <DeadlineStrip
+          deadlines={data.deadlines}
+          expired={data.alerts.filter((alert) => alert.kind === 'instrument_expired')}
+          onOpenWork={onOpenWork}
+        />
+      </Card>
     </div>
   );
 }

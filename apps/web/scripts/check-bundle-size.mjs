@@ -127,13 +127,46 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * second assertion in this file proves all fifty-two views still do. No
  * dependency was added.
  *
- * RAISED TO 119,650 by the Reports restructure (docs/UX.md § 38, owner
- * ruling of 2026-08-22). What crossed the line is ROUTING, which is the
- * one kind of growth this chunk exists to carry: the Reports screen went
- * from one address to eight — four tabs, and the works-analysis report
- * plus its Work or division inside the analysis tab — so
- * `lib/workspace-routes.ts` gained a serializer case and a parser for
- * them. About 380 bytes for eight addresses.
+ * RAISED TO 119,450 when the dashboard redesign gave a Work address its
+ * first INTENT — `#/works/<id>/overview?focus=extension`, which the
+ * completion panel uses to land an operator on the extension composer
+ * rather than at the top of a long Overview (`docs/UX.md` § 40). Whose
+ * half is whose, on the convention the two raises above set:
+ *
+ *   119,250  the line the works-analysis reports left
+ *   119,280  measured on this branch before merging, so the address costs
+ *            about EIGHTY bytes against the census line it was written
+ *            over: one query arm in the serialiser, one literal
+ *            comparison in the parser, one piece of shell state and two
+ *            navigate handlers. The parse is a string compare rather than
+ *            a `URLSearchParams` precisely because this file exists;
+ *            there is one intent and one spelling of it
+ *   119,380  measured after merging the works-analysis reports, whose own
+ *            thirty bytes this line now also has to hold
+ *
+ * Shell wiring again, and the same kind of cost every raise above
+ * records: an address the shell has to serialise, parse and hold cannot
+ * live in a code-split view. Nothing else from the dashboard redesign
+ * reaches the entry chunk — its four panels and both charts are inside
+ * `OperationsDashboard`'s own chunk, which the second assertion in this
+ * file proves is not in the initial payload — and no dependency was
+ * added.
+ *
+ * RAISED TO 119,800 by the Reports restructure (docs/UX.md § 38, owner
+ * ruling of 2026-08-22). What crossed the line is ROUTING again, which is
+ * the one kind of growth this chunk exists to carry: the Reports screen
+ * went from one address to eight — four tabs, and the works-analysis
+ * report plus its Work or division inside the analysis tab — so
+ * `lib/workspace-routes.ts` gained a serialiser case and a parser for
+ * them. Whose half is whose, on the convention above:
+ *
+ *   119,250  the line the works-analysis reports left
+ *   119,628  measured on this branch before merging, so the restructure
+ *            itself costs about 380 bytes — eight addresses where there
+ *            was one
+ *   119,450  the line the dashboard redesign left while this branch was
+ *            in flight
+ *   119,760  measured after merging it, which this raise has to hold
  *
  * The near miss worth recording, because the next person will reach for
  * it: the parser needs the three report names, and importing
@@ -153,7 +186,7 @@ const INITIAL_JS_GZIP_BUDGET_BYTES = 220_000;
  * Lower it when a pack takes the number down; the rule against raising it
  * to accommodate a REGRESSION is untouched.
  */
-const INITIAL_JS_GZIP_RATCHET_BYTES = 119_650;
+const INITIAL_JS_GZIP_RATCHET_BYTES = 119_800;
 
 /**
  * The views `views/OperationsWorkspace.tsx` loads through `React.lazy`.

@@ -25,6 +25,13 @@ interface CompletionExtensionsProps {
   readonly canIssue: boolean;
   /** Holds can_approve_amendments — gates manual back-fill deletion. */
   readonly canApprove: boolean;
+  /** The address asked for this panel by name (`?focus=extension`, from
+   * the dashboard's completion panel). The composer opens expanded and
+   * the proposed-date field takes focus, so the operator lands on the
+   * first thing they have to decide instead of most of an Overview above
+   * it. Nothing is pre-filled: a proposal equal to the current date is
+   * not an extension, and the grounds are the substance of the letter. */
+  readonly openComposer?: boolean;
 }
 
 /**
@@ -41,6 +48,7 @@ export function CompletionExtensions({
   canModify,
   canIssue,
   canApprove,
+  openComposer = false,
 }: CompletionExtensionsProps) {
   const [completion, setCompletion] = useState<WorkCompletionResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,6 +77,28 @@ export function CompletionExtensions({
       cancelled = true;
     };
   }, [api, organisationId, workId, loadVersion]);
+
+  /* The address's intent, once the composer it names actually exists.
+   *
+   * The panel reads before it can render a form, so this waits on
+   * `completion` rather than firing on mount into an empty page. It looks
+   * the field up by its own static id: the composer is behind a
+   * Disclosure that unmounts its children, so a ref held here would be
+   * null exactly when the panel is closed, and the id is the same one the
+   * label points at. Scrolled instantly — an animated jump is a new
+   * animation, and this product disables those under
+   * `prefers-reduced-motion` rather than shipping one that ignores it. */
+  useEffect(() => {
+    if (!openComposer || completion === null) return;
+    const field = document.getElementById('extension-proposed');
+    if (!(field instanceof HTMLInputElement)) return;
+    // Optional call, exactly as `lib/view-state.ts` reveals a row: jsdom
+    // does not implement `scrollIntoView`, and the FOCUS is the part that
+    // has to happen — a component test proving the field is focused is
+    // worth more than one that throws on the scroll before reaching it.
+    field.scrollIntoView?.({ block: 'center', behavior: 'auto' });
+    field.focus();
+  }, [openComposer, completion]);
 
   const reload = useCallback(async () => {
     setCompletion(await api.getWorkCompletion(organisationId, workId));
@@ -271,7 +301,10 @@ export function CompletionExtensions({
       )}
 
       {canModify && dates.currentCompletionDate !== null && draft === undefined && (
-        <Disclosure label="New extension request" startOpen={extensions.length === 0}>
+        <Disclosure
+          label="New extension request"
+          startOpen={openComposer || extensions.length === 0}
+        >
           <form
             onSubmit={(event) => {
               event.preventDefault();
